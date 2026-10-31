@@ -1,11 +1,10 @@
-import { InvalidIncidentRetryError } from "@polaris/domain/admin/operational-incident";
 import type { AdminQueryable } from "./platform-principal-repository";
 
 /**
  * What the Admin sees and does about operational incidents (plan PR111, ADR 0085): thin calls to
  * database functions. The Admin role reads no table. An incident has a cause, a count and dates; its
- * events are named by opaque IDs. The retry puts one dead outbox event back to pending, with a reason,
- * and writes the audit in the same transaction.
+ * events are named by opaque IDs. The retry puts one dead outbox event back to pending and writes
+ * the audit in the same transaction.
  */
 
 export interface OperationalIncidentSummary {
@@ -52,7 +51,6 @@ export type IncidentRetryResult =
   | "retried"
   | "unknown_item";
 
-const INVALID_PARAMETER = "22023";
 const RETRY_RESULTS = new Set<string>([
   "already_pending",
   "busy",
@@ -60,11 +58,6 @@ const RETRY_RESULTS = new Set<string>([
   "retried",
   "unknown_item",
 ]);
-
-function sqlState(error: unknown): string | undefined {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" ? code : undefined;
-}
 
 export async function listOperationalIncidents(
   client: AdminQueryable,
@@ -94,36 +87,23 @@ export async function readOperationalIncident(
 }
 
 /**
- * Sends one dead event of an incident again. The database checks the operator, the reason and that the
- * event belongs to the incident, retries it (idempotent) and writes the audit, all in one transaction.
+ * Sends one dead event of an incident again. The database checks the operator and that the event belongs
+ * to the incident, retries it (idempotent) and writes the audit, all in one transaction.
  * `clock_timestamp()` keeps a pooler that caches reads from ever answering this statement.
  */
 export async function retryDeadLetter(
   client: AdminQueryable,
   principalId: string,
   incidentId: string,
-  eventId: string,
-  reason: string
+  eventId: string
 ): Promise<IncidentRetryResult> {
-  try {
-    const { rows } = await client.query(
-      "SELECT public.admin_retry_dead_letter($1::uuid, $2::uuid, $3::uuid, $4::text) AS result, pg_catalog.clock_timestamp() AS at",
-      [principalId, incidentId, eventId, reason]
-    );
-    const result = (rows[0]?.result as { result?: unknown } | null)?.result;
-    if (typeof result === "string" && RETRY_RESULTS.has(result)) {
-      return result as IncidentRetryResult;
-    }
-    throw new Error("incident_retry_unreadable");
-  } catch (error: unknown) {
-    if (
-      sqlState(error) === INVALID_PARAMETER &&
-      error instanceof Error &&
-      error.message === "invalid_incident_reason"
-    ) {
-      // biome-ignore lint/style/useErrorCause: the refusal is the domain's own; the database message only picks it.
-      throw new InvalidIncidentRetryError();
-    }
-    throw error;
+  const { rows } = await client.query(
+    "SELECT public.admin_retry_dead_letter($1::uuid, $2::uuid, $3::uuid) AS result, pg_catalog.clock_timestamp() AS at",
+    [principalId, incidentId, eventId]
+  );
+  const result = (rows[0]?.result as { result?: unknown } | null)?.result;
+  if (typeof result === "string" && RETRY_RESULTS.has(result)) {
+    return result as IncidentRetryResult;
   }
+  throw new Error("incident_retry_unreadable");
 }

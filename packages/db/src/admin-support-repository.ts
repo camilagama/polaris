@@ -406,7 +406,6 @@ export function placeOrganizationLegalHold(
 export interface LegalHoldSummary {
   id: string;
   organizationId: string;
-  organizationName: string;
   placedAt: string;
   placedBy: string;
   reviewAt: string;
@@ -422,7 +421,10 @@ export interface LegalHoldPage {
   next: string | null;
 }
 
-/** The legal holds in force, newest first, read only: a purge that waits for a hold has one to show. */
+/**
+ * The legal holds in force, newest first, read only: a purge that waits for a hold has one to show. The
+ * organization is named by its ID only, never by its name.
+ */
 export async function listOrganizationLegalHolds(
   client: AdminQueryable,
   input: { after: string | null; limit: number }

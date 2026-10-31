@@ -749,9 +749,20 @@ export function supportRoutes(
       if (!paging) {
         return invalid(context);
       }
-      return context.json(
-        await dependencies.listLegalHolds(paging, context.env)
-      );
+      const listed = await dependencies.listLegalHolds(paging, context.env);
+      return context.json({
+        dueForReview: listed.dueForReview,
+        holds: listed.holds.map((hold) => ({
+          id: hold.id,
+          organizationId: hold.organizationId,
+          placedAt: hold.placedAt,
+          placedBy: hold.placedBy,
+          reviewAt: hold.reviewAt,
+          reviewDue: hold.reviewDue,
+          supportCaseId: hold.supportCaseId,
+        })),
+        next: listed.next,
+      });
     }
   );
 

@@ -1120,7 +1120,6 @@ describe("suspension and billing commands", () => {
         {
           id: caseId,
           organizationId: "org_1",
-          organizationName: "Loja",
           placedAt: "2026-10-01T12:00:00.000Z",
           placedBy: principal.id,
           reviewAt: "2026-10-10T12:00:00.000Z",
@@ -1136,6 +1135,20 @@ describe("suspension and billing commands", () => {
     const listed = await call("/api/legal-holds?limit=10");
     expect(listed.status).toBe(200);
     expect(await listed.json()).toEqual(page);
+    const leaky = setup({
+      listLegalHolds: vi.fn(() =>
+        Promise.resolve({
+          ...page,
+          holds: page.holds.map((hold) => ({
+            ...hold,
+            organizationName: "Loja da Maria",
+          })),
+        })
+      ),
+    });
+    const answered = await (await leaky.call("/api/legal-holds")).text();
+    expect(answered).not.toContain("Loja da Maria");
+    expect(JSON.parse(answered)).toEqual(page);
     expect(calls.listLegalHolds).toHaveBeenCalledWith(
       { after: null, limit: 10 },
       bindings

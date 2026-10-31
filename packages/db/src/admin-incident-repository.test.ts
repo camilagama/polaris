@@ -1,4 +1,3 @@
-import { InvalidIncidentRetryError } from "@polaris/domain/admin/operational-incident";
 import { describe, expect, it, vi } from "vitest";
 import {
   listOperationalIncidents,
@@ -78,16 +77,16 @@ describe("readOperationalIncident", () => {
 
 describe("retryDeadLetter", () => {
   const retry = (client: AdminQueryable) =>
-    retryDeadLetter(client, PRINCIPAL, INCIDENT, EVENT, "motivo");
+    retryDeadLetter(client, PRINCIPAL, INCIDENT, EVENT);
 
-  it("calls the database function with the operator, the incident, the event and the reason, in that order", async () => {
+  it("calls the database function with the operator, the incident and the event, in that order, and no reason", async () => {
     const { client, query } = clientReturning([
       { result: { result: "retried" } },
     ]);
     await expect(retry(client)).resolves.toBe("retried");
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining("public.admin_retry_dead_letter"),
-      [PRINCIPAL, INCIDENT, EVENT, "motivo"]
+      [PRINCIPAL, INCIDENT, EVENT]
     );
   });
 
@@ -105,19 +104,9 @@ describe("retryDeadLetter", () => {
     }
   });
 
-  it("raises the domain's refusal when the database says the reason is invalid", async () => {
-    const { client } = clientFailing(
-      Object.assign(new Error("invalid_incident_reason"), { code: "22023" })
-    );
-    await expect(retry(client)).rejects.toBeInstanceOf(
-      InvalidIncidentRetryError
-    );
-  });
-
   it("raises other errors as they are", async () => {
     const cases = [
-      Object.assign(new Error("invalid_incident_reason"), { code: "40001" }),
-      Object.assign(new Error("something else"), { code: "22023" }),
+      Object.assign(new Error("serialization"), { code: "40001" }),
       new Error("down"),
     ];
     for (const error of cases) {

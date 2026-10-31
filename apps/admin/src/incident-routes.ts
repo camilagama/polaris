@@ -4,10 +4,6 @@ import type {
   OperationalIncidentDetail,
   OperationalIncidentPage,
 } from "@polaris/db/admin-incident-repository";
-import {
-  InvalidIncidentRetryError,
-  normalizeIncidentRetryReason,
-} from "@polaris/domain/admin/operational-incident";
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AdminBindings, AdminEnv } from "./app";
@@ -17,7 +13,7 @@ import { readBody, sameOrigin, UUID } from "./support-routes";
  * Operational incidents in the Admin (plan PR111, ADR 0085): a list of the incidents (one per cause, with
  * its count and dates), one incident with its dead events, and the retry of one dead event. Reading asks
  * for `operational_incident:read`; the retry asks for its own capability, `operational_incident:retry`,
- * takes the operator from the verified login, requires a reason and leaves the work and the audit to a
+ * takes the operator from the verified login and leaves the work and the audit to a
  * database function (one transaction). Nothing here deletes a message or an event, in bulk or one by
  * one: a retry sends the same outbox event again and the consumer deduplicates. An incident holds codes,
  * counts, dates and opaque IDs, never the body of a message.
@@ -37,7 +33,6 @@ export interface IncidentDependencies {
     principalId: string,
     incidentId: string,
     eventId: string,
-    reason: string,
     bindings: AdminBindings
   ) => Promise<IncidentRetryResult>;
 }
@@ -67,9 +62,6 @@ export function incidentRoutes(
   const canRetry = requireCapability("operational_incident:retry");
 
   routes.onError((error, context) => {
-    if (error instanceof InvalidIncidentRetryError) {
-      return context.json({ error: error.code }, 400);
-    }
     if (error instanceof Error && error.message === "admin_not_configured") {
       report("admin_not_configured");
       return context.json({ error: "admin_not_configured" }, 503);
@@ -130,13 +122,10 @@ export function incidentRoutes(
       if (!(incidentId && eventId && body)) {
         return invalid(context);
       }
-      // the reason is required and checked here before the database checks it again
-      const reason = normalizeIncidentRetryReason(body.reason);
       const result = await dependencies.retry(
         context.get("principal").id,
         incidentId,
         eventId,
-        reason,
         context.env
       );
       return context.json({ result }, RETRY_STATUS[result]);

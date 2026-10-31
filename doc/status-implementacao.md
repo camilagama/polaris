@@ -1722,14 +1722,14 @@ Terceiro passo da Fase 11 ([ADR 0084](../docs/adr/0084-despachante-e-varredor-do
 
 ### Fase 11D — DLQ, incidente operacional e retry no Admin (PR111; implementação e gates locais concluídos; nada criado na conta Cloudflare)
 
-Quarto passo da Fase 11 ([ADR 0085](../docs/adr/0085-dlq-incidente-operacional-e-retry-no-admin.md); o número pode mudar): a mensagem que esgota as tentativas ou que o consumidor recusa de vez vai para a DLQ e vira incidente operacional; o evento do outbox que passa de 1000 tentativas também; o Admin reenvia um evento morto, com motivo e auditoria.
+Quarto passo da Fase 11 ([ADR 0085](../docs/adr/0085-dlq-incidente-operacional-e-retry-no-admin.md); o número pode mudar): a mensagem que esgota as tentativas ou que o consumidor recusa de vez vai para a DLQ e vira incidente operacional; o evento do outbox que passa de 1000 tentativas também; o Admin reenvia um evento morto, com auditoria (sem motivo desde a t570).
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
 | Base | Concluída | Branch `feat/dlq` sobre a `main` (migration 0072, só aditiva; a do PR #126 também é 0072, e o segundo a entrar renumera a migration e o snapshot). |
 | Filas | Declarado | `polaris-dlq` compartilhada: `dead_letter_queue` nos três consumidores, produtor `QUEUE_DLQ`, consumidor próprio (10 tentativas). O consumidor envia à DLQ um **aviso** (causa e IDs, nunca o corpo) para envelope inválido, tipo ou versão desconhecidos e fila errada. Nada criado na conta: o runbook ganha o passo de criar a DLQ. |
 | Banco | Concluído | `operational_incidents` (uma linha por causa, contagem e datas) e `queue_dead_letters` (um evento morto por linha, só IDs); funções `record_dead_letter`, `record_exhausted_outbox_events`, `retry_dead_letter` (dono do outbox) e `admin_list_operational_incidents`, `admin_read_operational_incident`, `admin_retry_dead_letter` (dono do Admin); o evento `operational_incident.retry` na auditoria. Ninguém apaga linha. |
-| Domínio | Concluído | `@polaris/domain/events/dead-letter` (aviso e classificação) e `@polaris/domain/admin/operational-incident` (motivo do retry); capacidades `operational_incident:read` e `operational_incident:retry`. |
+| Domínio | Concluído | `@polaris/domain/events/dead-letter` (aviso e classificação; o motivo do retry, que ficava em `@polaris/domain/admin/operational-incident`, saiu na t570); capacidades `operational_incident:read` e `operational_incident:retry`. |
 | Worker e Admin | Concluído | Consumidor da DLQ (`handleDeadLetterBatch`), passo do cron do despachante que registra os eventos no teto; rotas `/api/operational-incidents` (lista, detalhe, retry). |
 | Retenção | Proposta | Classe `operational_incident` (sem prazo e sem job; PR112). |
 | Gate PostgreSQL 18 | Local e CI | `dead-letter` (suítes `ci` e `gate11`), novo. |
@@ -2709,3 +2709,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gates de RLS | Em revisão | `tenant-context` e `rls` (suíte `ci`) criam a tabela na base descartável a partir da migration 0001 e a apagam ao terminar (`packages/db/scripts/rls-gate-fixture.ts`); o executor deixou de semear. Nenhuma asserção saiu. |
 | Configuração | Em revisão | `DB_RLS_POC_ENABLED` saiu da rota de RLS e do `wrangler.pr11.jsonc`; `DB_POC_ENABLED` já não existia no código. `verify:staging-isolation` recusa as duas em qualquer bloco, e `apps/web/scripts/proof-routes-outside-app.test.ts` reprova import de `apps/web/poc/` em `src/` ou `worker/`. O script `poc` de `packages/db` saiu. |
 | Fora | Registrado | Workers, Hyperdrive e credenciais de PoC no Cloudflare e no Neon (console do operador); laboratório offline (D2). |
+
+### Menores do purge (t570, P40 e D5 do fechamento do staging; migration 0109)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Migration | Em revisão | `0109_purge_menores.sql` (número provisório até o merge): `CREATE OR REPLACE` de `admin_retry_dead_letter` (quarto parâmetro com `DEFAULT NULL`, ignorado) e de `admin_list_organization_legal_holds` (sem o nome da organização e sem a junção com `organizations`); mesmo dono, mesmas permissões e `search_path` da 0077. Compatível com a Worker anterior (expand/contract, ADR 0096). |
+| Motivo do reenvio | Em revisão | Deixou de ser exigido (ADR 0081, emenda de 31/10/2026): a rota não lê `reason` e `@polaris/domain/admin/operational-incident` saiu. Gate `dead-letter` prova a chamada de três argumentos, a de quatro (motivo que a função recusava, ou nulo) e que o texto não chega à auditoria. |
+| Corrida marca × cancelamento | Em revisão | Gate `organization-purge` cobre as duas ordens: a marca vence (`purge_storage_touched`) e o cancelamento vence (`purge_not_claimed`, armazenamento intacto). |
+| Log do purge | Em revisão | `step` virou `operation` (`organization_purge.<passo>`); `objects` e os contadores do resumo seguem como métricas livres. |
+| Purge parado | Em revisão | `organization_purge_stalled` (3ª tentativa ou mais, falha que o banco não nomeia como espera de propósito) e o sinal `purge-parado` em `alertas.md`; a execução morta antes do log fica de fora (consulta de `attempts` no runbook). |
+| `GET /legal-holds` | Em revisão | Só o ID da organização; a rota monta a resposta com campos fixos, e o gate confere as chaves da listagem. |
+| Provas | Em revisão | Unidade: `organization-purge-job.test.ts`, `incident-routes.test.ts`, `support-routes.test.ts`, `admin-incident-repository.test.ts`, `alerts.test.ts`. Gates `dead-letter`, `organization-purge` e `purge-functions` (PostgreSQL 18). |
