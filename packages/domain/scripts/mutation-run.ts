@@ -48,3 +48,30 @@ export function isComplete(
     states.every((state) => state === "complete")
   );
 }
+
+/** One entry per folder for the summary. A folder this run did not ask for is "not-run" and its report is not read: the JSON left by an earlier run would pass as a finished one. */
+export function foldersForSummary(
+  states: ReadonlyMap<string, FolderState>,
+  read: (folder: string, state: FolderState) => FolderReport
+): FolderReport[] {
+  return FOLDERS.map((folder) => {
+    const state = states.get(folder);
+    return state === undefined
+      ? { folder, report: null, state: "not-run" as const }
+      : read(folder, state);
+  });
+}
+
+/** Text of the warning when `src/` differs from how it was before the run (Stryker with inPlace did not restore it) or the comparison could not be made (`null` diff); `null` when it is the same. */
+export function unrestoredSourceWarning(
+  before: string | null,
+  after: string | null
+): string | null {
+  if (before === null || after === null) {
+    return "Could not check src/ with git diff, so it is not known whether Stryker restored it. Run git status and, if src/ changed: git checkout -- packages/domain/src";
+  }
+  if (before === after) {
+    return null;
+  }
+  return "src/ was left different from how the run found it (Stryker did not restore the mutated files). Restore it before committing: git checkout -- packages/domain/src";
+}

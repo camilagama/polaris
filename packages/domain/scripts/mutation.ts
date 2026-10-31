@@ -10,10 +10,12 @@ import {
 } from "node:fs";
 import {
   FOLDERS,
+  foldersForSummary,
   isComplete,
   parseDeadline,
   remainingMs,
   stateOfRun,
+  unrestoredSourceWarning,
 } from "./mutation-run";
 import {
   type FolderReport,
@@ -39,6 +41,24 @@ const REPORT_DIRECTORY = "reports/mutation";
 const STRYKER_REPORT = `${REPORT_DIRECTORY}/mutation`;
 const setupFilePattern = /^stryker-setup-\d+\.js$/;
 const REPORT_EXTENSIONS = ["html", "json"];
+const UNRESTORED_EXIT_CODE = 3;
+
+function sourceDiff(): string | null {
+  const diff = spawnSync("git", ["diff", "--no-ext-diff", "--", "src"], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return diff.status === 0 ? diff.stdout : null;
+}
+
+// Compared with the start of the run, so edits the developer had not committed are not taken for mutants.
+function warnIfSourceUnrestored(before: string | null): boolean {
+  const warning = unrestoredSourceWarning(before, sourceDiff());
+  if (warning !== null) {
+    console.error(warning);
+  }
+  return warning !== null;
+}
 
 function readReport(folder: string, state: FolderState): FolderReport {
   try {
@@ -110,6 +130,7 @@ if (deadline === "invalid") {
   process.exit(2);
 }
 
+const sourceBefore = sourceDiff();
 removeSetupFiles();
 mkdirSync(REPORT_DIRECTORY, { recursive: true });
 rmSync("reports/complete", { force: true });
@@ -140,17 +161,13 @@ if (isComplete([...states.values()], askedForAll)) {
   writeFileSync("reports/complete", "complete\n");
 }
 
-const summary = renderSummary(
-  FOLDERS.map((folder) => {
-    const state = states.get(folder);
-    const report = readReport(folder, state ?? "complete");
-    return state === undefined && report.report === null
-      ? { ...report, state: "not-run" as const }
-      : report;
-  })
-);
+const summary = renderSummary(foldersForSummary(states, readReport));
 console.log(summary);
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+}
+const unrestored = warnIfSourceUnrestored(sourceBefore);
+if (unrestored) {
+  process.exit(UNRESTORED_EXIT_CODE);
 }
 process.exit([...states.values()].includes("failed") ? 1 : 0);
