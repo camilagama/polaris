@@ -777,13 +777,15 @@ async function run() {
         "the same refusals hold under session_replication_role = replica (the triggers are ENABLE ALWAYS)"
       );
     } else {
-      assert.notEqual(
-        process.env.CI,
-        "true",
+      // in CI the replica proof is owed: either the owner is a superuser, or the runner runs this gate again on
+      // POLARIS_GATE_SUPERUSER_URL
+      assert.ok(
+        process.env.CI !== "true" ||
+          Boolean(process.env.POLARIS_GATE_SUPERUSER_URL),
         "the CI database must let the gate set session_replication_role"
       );
       tests.push(
-        "session_replication_role = replica was not tried: the connection is not a superuser (the CI database always is)"
+        "session_replication_role = replica was not tried: the connection is not a superuser (in CI the superuser run proves it)"
       );
     }
     await closeSupportCase(admin, principal, probeCase.id, "Fim da prova");

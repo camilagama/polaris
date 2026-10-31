@@ -769,11 +769,11 @@ async function run() {
       client: Client,
       label: string,
       reader: { query: Client["query"] } = client,
-      purge: () => Promise<unknown> = () =>
+      runPurge: () => Promise<unknown> = () =>
         client.query("SELECT public.purge_unverified_users(1000)")
     ) => {
       const ids = await everythingEligible(label);
-      await purge();
+      await runPurge();
       assert.equal(await existsIn(client, ids.control), false, "control goes");
       assert.equal(
         (

@@ -826,13 +826,13 @@ async function run() {
     // a role cannot grant itself without SUPERUSER, so an owner that is not one plants the membership of the database
     // owner on a stand-in made the database owner for the time of the check: the clause on datdba finds it (its name
     // ends in no `_owner` and it has no attribute)
-    const superusers = (
+    const [superusers] = (
       await client.query<{ gate_user: boolean; original_owner: boolean }>(
         `SELECT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS gate_user,
                 (SELECT rolsuper FROM pg_roles WHERE rolname = $1) AS original_owner`,
         [originalOwner]
       )
-    ).rows[0];
+    ).rows;
     const gateUserIsSuperuser = superusers?.gate_user === true;
     // the creator of the polaris_* roles: without SUPERUSER it holds an ADMIN-only edge on each (PostgreSQL 16+)
     const originalOwnerIsSuperuser = superusers?.original_owner === true;

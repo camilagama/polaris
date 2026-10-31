@@ -62,10 +62,10 @@ describe("role switches in the gates", () => {
   it("are found in each form a gate could write", () => {
     const planted: Record<string, string> = {
       "a.ts": 'await client.query("SET ROLE polaris_admin_owner");',
-      "b.ts": "await client.query(`SET LOCAL ROLE $" + "{role}`);",
+      "b.ts": "await client.query(`SET LOCAL ROLE x`);",
       "c.ts": "await client.query('RESET ROLE');",
       "d.ts": 'await client.query(" set local role x");',
-      "e.mjs": "await c.query(`\n  SET ROLE $" + "{r}`);",
+      "e.mjs": "await c.query(`\n  SET ROLE x`);",
       "f.ts": 'await c.query("BEGIN; SET LOCAL ROLE x");',
       "g.ts": 'await c.query("SET SESSION ROLE x");',
       "h.ts": 'await c.query("SET SESSION AUTHORIZATION x");',

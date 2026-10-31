@@ -115,6 +115,7 @@ async function becomeOrThrow(
     await client.query(statement);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // biome-ignore lint/style/useErrorCause: sqlState follows `cause`, and this error must carry no SQLSTATE
     throw new Error(`The gate could not become ${role}: ${message}`);
   }
 }
@@ -147,6 +148,7 @@ async function restoreSession(
     // without SQLSTATE: a refusal of the gate's own RESET or REVOKE (a read-only transaction refuses the REVOKE with
     // 25006) must never pass for the refusal a check expects around the work
     const message = error instanceof Error ? error.message : String(error);
+    // biome-ignore lint/style/useErrorCause: sqlState follows `cause`, and this error must carry no SQLSTATE
     throw new Error(`The gate could not give back ${role}: ${message}`);
   }
 }

@@ -19,7 +19,8 @@ import { connectToGateTarget, validateGateTarget } from "./gate-target";
  *   POLARIS_GATE_DATABASE      database name (default `neondb`)
  *   POLARIS_GATE_SUPERUSER_URL optional, local Postgres only: a superuser of the same database, given only to the
  *                              gates that need one (`superuser`); with it set, the owner of POLARIS_GATE_DATABASE_URL
- *                              must NOT be a superuser, so every other gate runs as on Neon
+ *                              must NOT be a superuser, so every other gate runs as on Neon, and a gate that proves
+ *                              more with a superuser (`also`) runs twice, once as each
  * The target must be on the list of hosts in gate-hosts.ts: a Neon disposable
  * endpoint, or a local Postgres when the process runs in CI (`CI=true`); any
  * other host is refused before a connection opens. Each gate script keeps its own checks; this
@@ -49,8 +50,12 @@ interface Gate {
   localOnly?: boolean;
   name: string;
   script: string;
-  /** Needs a real superuser by design (it creates what only one may): runs on POLARIS_GATE_SUPERUSER_URL when set. */
-  superuser?: true;
+  /**
+   * `only`: needs a real superuser by design (it creates what only one may), so it runs on POLARIS_GATE_SUPERUSER_URL
+   * when set. `also`: proves part of its cases only as a superuser, so with the URL set it runs as the owner and again
+   * as the superuser.
+   */
+  superuser?: "also" | "only";
 }
 
 const salesEnv = (context: Context) => ({
@@ -59,9 +64,10 @@ const salesEnv = (context: Context) => ({
   POLARIS_SALES_GATE_DATABASE_URL: context.url,
 });
 
-// on the local Postgres it also proves what needs a superuser (the append-only triggers under session_replication_role =
-// replica); without one, as on Neon, that part is skipped and the gate says so
-const superuserInCi = new Set(["audit-retention"]);
+// as a superuser they prove more (audit-retention: the append-only triggers under session_replication_role = replica;
+// definer-hardening: the planted superusers, the database owner's edges and the attributes only a superuser gives);
+// without one, as on Neon, that part is skipped and the gate says so
+const superuserAlso = new Set(["audit-retention", "definer-hardening"]);
 
 const gates: Gate[] = [
   ["sales-aggregate", "verify-sales-aggregate-gate.ts"],
@@ -183,7 +189,7 @@ const gates: Gate[] = [
   env: salesEnv,
   name: name as string,
   script: script as string,
-  ...(superuserInCi.has(name as string) ? { superuser: true as const } : {}),
+  ...(superuserAlso.has(name as string) ? { superuser: "also" as const } : {}),
 }));
 
 gates.push(
@@ -240,7 +246,7 @@ gates.push(
     env: salesEnv,
     localOnly: true,
     name: "environment-marker",
-    superuser: true,
+    superuser: "only",
     script: "verify-environment-marker-gate.ts",
   },
   // the activation funnel (corte 2.4, ADR 0071 amended): its fixtures write sale headers without items and its measure
@@ -249,7 +255,7 @@ gates.push(
     env: salesEnv,
     localOnly: true,
     name: "activation-funnel",
-    superuser: true,
+    superuser: "only",
     script: "verify-activation-funnel-gate.ts",
   },
   // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
@@ -279,7 +285,7 @@ gates.push(
     env: salesEnv,
     localOnly: true,
     name: "migrations-without-superuser",
-    superuser: true,
+    superuser: "only",
     script: "verify-migrations-without-superuser-gate.ts",
   },
   // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
@@ -516,9 +522,26 @@ function redact(line: string): string {
   return line.replace(urlPattern, "[redacted]");
 }
 
-function runGate(
+/** The runs of a gate: as the owner, as the superuser, or both (see `Gate.superuser`). */
+function runsOf(
   gate: Gate,
   context: Context
+): Array<{ asSuperuser: boolean; label: string }> {
+  if (!(gate.superuser && context.superuserUrl)) {
+    return [{ asSuperuser: false, label: gate.name }];
+  }
+  return gate.superuser === "only"
+    ? [{ asSuperuser: true, label: gate.name }]
+    : [
+        { asSuperuser: false, label: gate.name },
+        { asSuperuser: true, label: `${gate.name} (superuser)` },
+      ];
+}
+
+function runGate(
+  gate: Gate,
+  context: Context,
+  asSuperuser: boolean
 ): Promise<{
   code: number;
   notes: string[];
@@ -529,7 +552,7 @@ function runGate(
     const started = Date.now();
     const lines: string[] = [];
     const notes: string[] = [];
-    const superuserUrl = gate.superuser ? context.superuserUrl : undefined;
+    const superuserUrl = asSuperuser ? context.superuserUrl : undefined;
     const child = spawn(process.execPath, [`scripts/${gate.script}`], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
@@ -701,13 +724,16 @@ async function main() {
       url: isLocalCi ? url : withVerifyFull(url),
     };
 
-    for (const gate of selected) {
-      console.log(`=== ${gate.name}`);
+    const runs = selected.flatMap((gate) =>
+      runsOf(gate, context).map((run) => ({ ...run, gate }))
+    );
+    for (const { asSuperuser, gate, label } of runs) {
+      console.log(`=== ${label}`);
       // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
-      const result = await runGate(gate, context);
+      const result = await runGate(gate, context, asSuperuser);
       const status = result.code === 0 ? "passed" : "failed";
       results.push({
-        gate: gate.name,
+        gate: label,
         ...(result.notes.length > 0 ? { notes: result.notes } : {}),
         seconds: result.seconds,
         status,
