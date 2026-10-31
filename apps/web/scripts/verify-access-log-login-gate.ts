@@ -6,6 +6,7 @@ import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { configureLogging } from "@polaris/observability/logger";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
+import { withGateRole } from "../../../packages/db/scripts/gate-roles";
 import {
   disposableHostPattern,
   gateBranchPattern,
@@ -104,6 +105,22 @@ async function run() {
 
   configureLogging({ service: "polaris-access-log-login-gate" });
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
+  // GRANT and REVOKE on the function are its owner role's (withGateRole), whatever the gate user is
+  const asRecordOwner = async (statement: string) => {
+    const client = await owner.pool.connect();
+    try {
+      const role = (
+        await client.query<{ role: string }>(
+          "SELECT proowner::regrole::text AS role FROM pg_proc WHERE oid = $1::regprocedure",
+          [RECORD]
+        )
+      ).rows[0]?.role;
+      assert.ok(role);
+      await withGateRole(client, role, () => client.query(statement));
+    } finally {
+      client.release();
+    }
+  };
   const logins: [string, string][] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
@@ -405,7 +422,7 @@ async function run() {
     );
 
     // ------------------------------------------------- EXECUTE revoked: the login goes on
-    await owner.pool.query(
+    await asRecordOwner(
       `REVOKE EXECUTE ON FUNCTION ${RECORD} FROM polaris_auth_runtime`
     );
     revoked = true;
@@ -461,7 +478,7 @@ async function run() {
       ip: ipOf(7),
     });
     assert.equal(failedRevoked.status, 401);
-    await owner.pool.query(
+    await asRecordOwner(
       `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
     );
     revoked = false;
@@ -558,10 +575,13 @@ async function run() {
       }
     };
     if (revoked) {
-      await cleanup(
-        "restore execute",
-        `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
-      );
+      try {
+        await asRecordOwner(
+          `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
+        );
+      } catch (error) {
+        cleanupFailures.push(`restore execute (${redactedFailure(error)})`);
+      }
     }
     // test teardown (owner): the throwaway user, its account and sessions; the access log rows stay (append-only)
     for (const id of userIds) {

@@ -6,6 +6,7 @@ import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import { account, user, verification } from "../src/schema/auth";
 import { assertClean, findViolations } from "./definer-hardening-checks";
+import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -14,6 +15,7 @@ import {
   poolerPattern,
   redactedFailure,
   requiredEnvironment,
+  runtimeRole,
   temporaryRuntimeUrl,
 } from "./sales-gate-support";
 
@@ -939,12 +941,18 @@ async function run() {
     assert.ok(onboardingBody.includes(ONBOARDING_SCOPE_LINE));
     const newcomer = await makeUser("newcomer");
     await rolledBack(async () => {
-      await admin.query(onboardingBody.replace(ONBOARDING_SCOPE_LINE, ""));
+      await replaceFunctionAsOwner(
+        admin,
+        onboardingSignature,
+        onboardingBody.replace(ONBOARDING_SCOPE_LINE, "")
+      );
       await assert.rejects(
         () =>
-          admin.query(
-            "SELECT created FROM public.create_initial_organization($1, $2, 'Loja do gate', 'America/Sao_Paulo', $3)",
-            [newcomer, randomUUID(), randomUUID()]
+          withGateRole(admin, "polaris_onboarding_runtime", () =>
+            admin.query(
+              "SELECT created FROM public.create_initial_organization($1, $2, 'Loja do gate', 'America/Sao_Paulo', $3)",
+              [newcomer, randomUUID(), randomUUID()]
+            )
           ),
         (error: unknown) =>
           (error as { detail?: string }).detail === USER_NOT_FOUND,
@@ -1034,9 +1042,15 @@ async function run() {
     const recipientBody = await definitionOf(recipientSignature);
     assert.ok(recipientBody.includes(NOTICE_SCOPE_LINE));
     await rolledBack(async () => {
-      await admin.query(recipientBody.replace(NOTICE_SCOPE_LINE, ""));
+      await replaceFunctionAsOwner(
+        admin,
+        recipientSignature,
+        recipientBody.replace(NOTICE_SCOPE_LINE, "")
+      );
       assert.equal(
-        await recipient(admin, noticeA),
+        await withGateRole(admin, "polaris_auth_runtime", () =>
+          recipient(admin, noticeA)
+        ),
         null,
         "without its set_config: null"
       );
@@ -1061,10 +1075,13 @@ async function run() {
       "v"
     );
     for (const order of ["ASC", "DESC"]) {
-      const answers = await admin.query<{ id: string; unverified: boolean }>(
-        `SELECT notice.id, public.closure_notice_owner_unverified(notice.id, notice.organization_id) AS unverified
+      // as the privacy owner, the role the function grants EXECUTE (its caller in the purge)
+      const answers = await withGateRole(admin, "polaris_privacy_owner", () =>
+        admin.query<{ id: string; unverified: boolean }>(
+          `SELECT notice.id, public.closure_notice_owner_unverified(notice.id, notice.organization_id) AS unverified
            FROM public.closure_notices AS notice WHERE notice.id = ANY ($1::uuid[]) ORDER BY notice.reissue ${order}`,
-        [[noticeA, noticeB]]
+          [[noticeA, noticeB]]
+        )
       );
       assert.deepEqual(
         Object.fromEntries(answers.rows.map((row) => [row.id, row.unverified])),
@@ -1077,10 +1094,16 @@ async function run() {
     const unverifiedBody = await definitionOf(unverifiedSignature);
     assert.ok(unverifiedBody.includes(NOTICE_SCOPE_LINE));
     await rolledBack(async () => {
-      await admin.query(unverifiedBody.replace(NOTICE_SCOPE_LINE, ""));
-      const answer = await admin.query<{ value: boolean }>(
-        "SELECT public.closure_notice_owner_unverified($1::uuid, $2) AS value",
-        [noticeB, noticeOrganization]
+      await replaceFunctionAsOwner(
+        admin,
+        unverifiedSignature,
+        unverifiedBody.replace(NOTICE_SCOPE_LINE, "")
+      );
+      const answer = await withGateRole(admin, "polaris_privacy_owner", () =>
+        admin.query<{ value: boolean }>(
+          "SELECT public.closure_notice_owner_unverified($1::uuid, $2) AS value",
+          [noticeB, noticeOrganization]
+        )
       );
       assert.equal(
         answer.rows[0]?.value,
@@ -1115,17 +1138,22 @@ async function run() {
       "public.end_device_sessions(uuid,text,boolean,boolean,text)";
     const deviceBody = await definitionOf(deviceSignature);
     assert.ok(deviceBody.includes(DEVICE_AUDIT_ACTOR));
+    // as the tenant runtime, the role the function grants EXECUTE: a refusal is the function's, never a missing EXECUTE
     const endSessions = () =>
-      admin.query(
-        "SELECT * FROM public.end_device_sessions($1::uuid, NULL, false, true, 'gate-authrls')",
-        [revokedDevice]
+      withGateRole(admin, runtimeRole, () =>
+        admin.query(
+          "SELECT * FROM public.end_device_sessions($1::uuid, NULL, false, true, 'gate-authrls')",
+          [revokedDevice]
+        )
       );
     await rolledBack(async () => {
       await admin.query(
         "SELECT pg_catalog.set_config('app.user_id', $1, true)",
         [revoker]
       );
-      await admin.query(
+      await replaceFunctionAsOwner(
+        admin,
+        deviceSignature,
         deviceBody.replace(
           DEVICE_AUDIT_ACTOR,
           `'device_revoked', 'succeeded', '${userB}',`
