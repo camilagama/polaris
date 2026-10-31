@@ -370,9 +370,7 @@ for (const [label, failure] of [
     await expect(notice).toContainText(
       "Não deu para atualizar. O que está na tela é da última leitura."
     );
-    await expect(notice).not.toContainText(
-      CLAIMS_STATE
-    );
+    await expect(notice).not.toContainText(CLAIMS_STATE);
     await expect(title(page)).toBeVisible();
     await expect(dates(page)).toContainText("20 de outubro de 2026");
     await expect(
