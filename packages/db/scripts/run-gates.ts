@@ -291,6 +291,15 @@ gates.push(
   }
 );
 
+// the catalog of public read before any other gate runs, so what it sees is the migrated database and nothing a gate left;
+// local Postgres only: it proves nothing about the schemas a Neon project adds
+gates.unshift({
+  env: salesEnv,
+  localOnly: true,
+  name: "rls-forced-catalog",
+  script: "verify-rls-forced-catalog-gate.ts",
+});
+
 /**
  * Named suites. `gate3` proves catalog, stock and private media (plan Gate 3);
  * `gate4` proves the sales core (plan Gate 4). `all` is every gate. `concurrency`
@@ -304,6 +313,7 @@ const suites: Record<string, string[]> = {
   // What the CI job runs against its own Postgres 18 service: the gates that do
   // not depend on Neon-specific roles or hostnames.
   ci: [
+    "rls-forced-catalog",
     "sales-aggregate",
     "sale-transaction",
     "sale-customer-link",

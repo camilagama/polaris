@@ -219,7 +219,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
    **Escopo das consultas 1 e 2:** cobrem só o schema `public` e as tabelas `r` (comuns) e `p` (particionadas). Hoje não há outro schema de loja nem tabela particionada (conferido nas migrations em 31/10/2026); se surgir tabela de loja em outro schema, estenda as consultas antes de confiar na conferência.
 
-   1. **Tabelas do `public` com RLS ligado e forçado.** A contagem e o hash (nome qualificado da tabela, `relrowsecurity` e `relforcerowsecurity`) têm de ser **iguais aos da origem**. O hash compara tabela a tabela e pega a tabela que perdeu o RLS forçado (ou a que apareceu ou sumiu) mesmo quando os totais coincidem; `com_rls_forcado` dá o resumo para ler o resultado:
+   1. **Tabelas do `public` com RLS ligado e forçado.** A contagem e o hash (nome qualificado da tabela, `relrowsecurity` e `relforcerowsecurity`) têm de ser **iguais aos da origem**. O hash compara tabela a tabela e pega a tabela que perdeu o RLS forçado (ou a que apareceu ou sumiu) mesmo quando os totais coincidem; `com_rls_forcado` dá o resumo para ler o resultado. Esta consulta compara origem com restaurado e não diz se a origem está saudável: isso o gate `rls-forced-catalog` cobre no CI (toda tabela do `public` com RLS forçado, salvo a lista versionada em `packages/db/src/rls-exempt-tables.ts`, hoje sem tabela; visão com `security_invoker`; nenhum schema de usuário além de `public` e `drizzle`):
 
       ```sql
       SELECT count(*) AS tabelas,
