@@ -1559,6 +1559,35 @@ test.describe("Ajuda e contato", () => {
     ).toBeVisible();
   });
 
+  test("com a sessão acabada na leitura das lojas, a Ajuda abre e o aviso da sessão aparece", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.route("**/rpc/organization/listMine", (route) =>
+      route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code: "UNAUTHORIZED",
+            data: undefined,
+            defined: false,
+            message: "Unauthorized",
+            status: 401,
+          },
+          meta: [],
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 401,
+      })
+    );
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    await expect(
+      page.getByText("Sua sessão acabou. Entre de novo para continuar.")
+    ).toBeVisible();
+  });
+
   test("sem conexão, a página aberta segue inteira e os links de e-mail continuam lá", async ({
     context,
     page,

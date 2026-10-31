@@ -295,10 +295,10 @@ export function loadAfterFailure(
   return { status: failure };
 }
 
-/** A new read starts from the last one on screen, without its failure notice; with nothing read yet it is loading. */
+/** A new read starts from the last one on screen, failure notice included, so the retry button keeps the focus. */
 export function loadWhenReading(previous: PanelLoad, round: number): PanelLoad {
   return previous.status === "loaded" && round > 0
-    ? { ...previous, refreshFailed: false }
+    ? previous
     : { status: "loading" };
 }
 

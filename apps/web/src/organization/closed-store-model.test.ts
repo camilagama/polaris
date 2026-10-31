@@ -323,9 +323,9 @@ describe("an Atualizar that fails (AC-4, AC-5)", () => {
     });
   });
 
-  it("drops the notice when the next read starts, keeping the stores", () => {
+  it("keeps the stores and the notice while the next read is on its way", () => {
     const failed = loadAfterFailure(loaded, "error");
-    expect(loadWhenReading(failed, 1)).toEqual(loaded);
+    expect(loadWhenReading(failed, 1)).toEqual(failed);
     expect(loadWhenReading(loaded, 0)).toEqual({ status: "loading" });
     expect(loadWhenReading({ status: "error" }, 1)).toEqual({
       status: "loading",
