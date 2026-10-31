@@ -217,6 +217,8 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
    **Confira também que o isolamento entre lojas sobreviveu (RLS).** O `pg_restore` pode terminar sem erro e deixar uma tabela sem RLS forçado, uma política a menos ou um papel com `BYPASSRLS`; nesses casos uma loja passaria a ler os dados de outra. Rode as três consultas abaixo no ambiente restaurado e, as duas primeiras, também na origem, na mesma sessão com `SET search_path = pg_catalog;` (o texto das políticas depende do `search_path`). As migrations do passo 3 criam tabelas e políticas, então a linha de base muda conforme elas tenham ou não sido aplicadas: se o passo 3 **não** aplicou migration, compare com os valores da origem no instante do `pg_dump` (ou da origem, se ela não recebeu migration depois); se aplicou, rode as consultas 1 e 2 também no restaurado **antes do passo 3** (junto do hash das ACLs do passo 2b) e compare esses valores com os da origem no instante do `pg_dump`, e no passo 5 compare com um banco descartável migrado até o mesmo ponto. Nenhuma consulta usa URI, host ou segredo; a conexão é a do dono do banco, lida do ambiente, como no passo 2. Estas conferências não são cobertas pelo gate `deletion-ledger` e ainda não foram ensaiadas contra um restaurado.
 
+   **Escopo das consultas 1 e 2:** cobrem só o schema `public` e as tabelas `r` (comuns) e `p` (particionadas). Hoje não há outro schema de loja nem tabela particionada (conferido nas migrations em 31/10/2026); se surgir tabela de loja em outro schema, estenda as consultas antes de confiar na conferência.
+
    1. **Tabelas do `public` com RLS ligado e forçado.** A contagem e o hash (nome qualificado da tabela, `relrowsecurity` e `relforcerowsecurity`) têm de ser **iguais aos da origem**. O hash compara tabela a tabela e pega a tabela que perdeu o RLS forçado (ou a que apareceu ou sumiu) mesmo quando os totais coincidem; `com_rls_forcado` dá o resumo para ler o resultado:
 
       ```sql
@@ -229,6 +231,28 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p');
       ```
+
+      **Consulta 1b (só quando a 1 divergir): qual tabela divergiu.** É a mesma seleção sem o `md5`: uma linha por tabela, na mesma ordem `COLLATE "C"`. Grave-a em `consulta-1b.sql`, com o `SET search_path` na primeira linha, e rode uma vez em cada ponta, com as variáveis `PG*` daquela ponta (sem URI em argumento), salvando a saída em arquivo:
+
+      ```sql
+      SET search_path = pg_catalog;
+      SELECT n.nspname || '.' || c.relname AS tabela,
+             c.relrowsecurity, c.relforcerowsecurity
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+       ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C";
+      ```
+
+      Primeiro comando com as variáveis `PG*` da origem, o segundo com as do restaurado (cada ponta no seu terminal ou `env` próprio); depois compare:
+
+      ```sh
+      psql --no-psqlrc --quiet -At --set=ON_ERROR_STOP=1 -f consulta-1b.sql > origem.txt
+      psql --no-psqlrc --quiet -At --set=ON_ERROR_STOP=1 -f consulta-1b.sql > restaurado.txt
+      wc -l origem.txt restaurado.txt
+      diff origem.txt restaurado.txt
+      ```
+
+      As duas saídas têm de ter linhas (o `wc -l` bate com a contagem da consulta 1 de cada ponta). `diff` vazio com a consulta 1 divergente não prova que ela errou: as duas saídas vieram da mesma conexão, ou uma conexão falhou e deixou o arquivo vazio ou parcial. Refaça antes de concluir qualquer coisa. No `diff`, `<` é a origem e `>` é o restaurado: uma linha só `<` é tabela que sumiu no restaurado, uma só `>` é tabela a mais, e o par `<` e `>` com o mesmo nome é `relrowsecurity` ou `relforcerowsecurity` diferente (`t` ou `f`, separados por `|`, por exemplo `< public.tabela|t|t` e `> public.tabela|t|f`). Achar a tabela não libera nada: a divergência da consulta 1 continua sendo motivo para o passo 5 não fechar, conforme o parágrafo ao fim da lista.
 
    2. **Políticas do `public`.** A contagem e o hash (tabela, nome, permissiva ou restritiva, papéis, comando, `USING` e `WITH CHECK`) têm de ser **iguais aos da origem**. O hash pega a política trocada ou ampliada (por exemplo, passada a `PUBLIC`), que a contagem não pega:
 
