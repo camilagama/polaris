@@ -133,7 +133,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
        ORDER BY 1;
       ```
 
-      Rode também, **na origem e no restaurado, antes do passo 3**, a consulta do hash das ACLs das funções. Os dois valores têm de ser **iguais**. A origem tem de estar no mesmo nível de migrations do backup (grave o hash dela no instante do `pg_dump`, ou compare só se ela não recebeu migration depois): as migrations pendentes do passo 3 criam e mudam funções e o hash deixa de bater por isso, sem defeito. O hash cobre as funções de todos os schemas, e a lista vazia cobre só o `public`:
+      Rode também, **na origem e no restaurado, antes do passo 3**, a consulta do hash das ACLs das funções. Os dois valores têm de ser **iguais**. (As consultas 1 e 2 de RLS do passo 5 também se rodam na origem e no restaurado antes do passo 3, como o hash, quando o passo 3 aplicar migration: ver o passo 5.) A origem tem de estar no mesmo nível de migrations do backup (grave o hash dela no instante do `pg_dump`, ou compare só se ela não recebeu migration depois): as migrations pendentes do passo 3 criam e mudam funções e o hash deixa de bater por isso, sem defeito. O hash cobre as funções de todos os schemas, e a lista vazia cobre só o `public`:
 
       ```sql
       SELECT md5(string_agg(

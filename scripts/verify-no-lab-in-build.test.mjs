@@ -203,10 +203,10 @@ describe("a build with a lab fails", () => {
 
 describe("the lab build beside the production build", () => {
   const labFiles = {
-    "offline-poc/index.html":
-      "<!doctype html><script src=/assets/x.js></script>",
     "offline-poc/assets/runtime-lab-DOjOZrXW.js":
       'a.pathname==="/offline-runtime-lab"',
+    "offline-poc/index.html":
+      "<!doctype html><script src=/assets/x.js></script>",
   };
 
   it("is not scanned at the top of the directory, where build:offline-poc writes it", () => {
@@ -273,6 +273,22 @@ describe("a directory that proves nothing fails", () => {
   });
 });
 
+const LAB_WORD = /offline-poc|ui-gallery/;
+const RECOGNIZED_LAB_FORMS = [
+  /pathname\s*===\s*"[^"]+"/g,
+  /import\(\s*"\.\/(?:offline-poc|ui-gallery)\/[^"]+"/g,
+  /import\.meta\.env\.MODE === "offline-poc"/g,
+];
+
+/** Lines of the source that name a lab folder in a way the other checks do not read (static import, startsWith, another comparison, a variable). */
+function unrecognizedLabMentions(source) {
+  let rest = source;
+  for (const form of RECOGNIZED_LAB_FORMS) {
+    rest = rest.replace(form, "");
+  }
+  return rest.split("\n").filter((line) => LAB_WORD.test(line));
+}
+
 describe("the list stays complete as the labs change", () => {
   const mainSource = readFileSync(path.join(webSource, "main.tsx"), "utf8");
 
@@ -294,6 +310,10 @@ describe("the list stays complete as the labs change", () => {
     for (const name of imported) {
       expect(NAME_PATTERN.test(name), name).toBe(true);
     }
+  });
+
+  it("finds no mention of a lab folder in main.tsx outside the forms the checks above read", () => {
+    expect(unrecognizedLabMentions(mainSource)).toEqual([]);
   });
 
   it("knows the error screen of every lazy import in main.tsx", () => {
@@ -328,5 +348,36 @@ describe("the list stays complete as the labs change", () => {
 
   it("looks in the folder the production build writes", () => {
     expect(path.relative(root, DEFAULT_BUILD_DIR)).toBe("apps/web/dist");
+  });
+});
+
+describe("unrecognizedLabMentions", () => {
+  it("accepts the forms the drift checks read", () => {
+    const source = [
+      'const on = import.meta.env.MODE === "offline-poc";',
+      'const route = window.location.pathname === "/offline-poc";',
+      'const { Lab } = await import("./offline-poc/runtime-lab");',
+      'const { Gallery } = await import(\n  "./ui-gallery/ui-gallery"\n);',
+    ].join("\n");
+    expect(unrecognizedLabMentions(source)).toEqual([]);
+  });
+
+  it.each([
+    ['import { Lab } from "./offline-poc/runtime-lab";', "static import"],
+    ['if (location.pathname.startsWith("/offline-poc")) {}', "startsWith"],
+    [
+      'const same = window.location.pathname == "/offline-poc";',
+      "loose comparison",
+    ],
+    [
+      ["const { Lab } = await import(`./offline-poc/", "$", "{name}`);"].join(
+        ""
+      ),
+      "template import",
+    ],
+    ['const folder = "ui-gallery";', "variable"],
+    ['switch (path) { case "/offline-poc": break; }', "switch case"],
+  ])("fails on %s (%s)", (line) => {
+    expect(unrecognizedLabMentions(line)).toEqual([line]);
   });
 });

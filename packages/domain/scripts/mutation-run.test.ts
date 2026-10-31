@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   FOLDERS,
+  foldersForSummary,
   isComplete,
   parseDeadline,
   remainingMs,
   stateOfRun,
+  unrestoredSourceWarning,
 } from "./mutation-run";
+import type { FolderReport, FolderState } from "./mutation-summary";
 
 const NOW = Date.UTC(2026, 9, 28, 8, 0, 0);
 
@@ -74,5 +77,71 @@ describe("FOLDERS", () => {
       "money",
       "sales",
     ]);
+  });
+});
+
+describe("foldersForSummary", () => {
+  const staleReport = { files: {} };
+  const read = (folder: string, state: FolderState): FolderReport => ({
+    folder,
+    report: staleReport,
+    state,
+  });
+
+  it("marks the folders this run did not ask for as not run, without reading their old report", () => {
+    const asked = new Map<string, FolderState>([["money", "complete"]]);
+    const readFolders: string[] = [];
+    const folders = foldersForSummary(asked, (folder, state) => {
+      readFolders.push(folder);
+      return read(folder, state);
+    });
+
+    expect(readFolders).toEqual(["money"]);
+    expect(folders.map(({ folder }) => folder)).toEqual(FOLDERS);
+    for (const entry of folders) {
+      if (entry.folder === "money") {
+        expect(entry).toEqual({
+          folder: "money",
+          report: staleReport,
+          state: "complete",
+        });
+      } else {
+        expect(entry).toEqual({
+          folder: entry.folder,
+          report: null,
+          state: "not-run",
+        });
+      }
+    }
+  });
+
+  it("keeps the state of every folder a full run went through", () => {
+    const all = new Map<string, FolderState>(
+      FOLDERS.map((folder) => [folder, "cut"])
+    );
+
+    expect(
+      foldersForSummary(all, read).every(({ state }) => state === "cut")
+    ).toBe(true);
+  });
+});
+
+describe("unrestoredSourceWarning", () => {
+  it("is silent when src/ is as the run found it, even if it already had edits", () => {
+    expect(unrestoredSourceWarning("", "")).toBeNull();
+    expect(unrestoredSourceWarning("diff a", "diff a")).toBeNull();
+  });
+
+  it("says how to restore when src/ changed during the run", () => {
+    expect(unrestoredSourceWarning("", "diff --git a/src/x.ts")).toContain(
+      "git checkout -- packages/domain/src"
+    );
+    expect(unrestoredSourceWarning("diff a", "diff b")).not.toBeNull();
+  });
+
+  it("does not stay silent when git could not be read at either end", () => {
+    expect(unrestoredSourceWarning(null, null)).toContain("git status");
+    expect(unrestoredSourceWarning("", null)).not.toBeNull();
+    expect(unrestoredSourceWarning(null, "")).not.toBeNull();
   });
 });
