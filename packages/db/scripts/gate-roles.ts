@@ -53,6 +53,27 @@ export async function withGateRole<T>(
   role: string,
   work: () => Promise<T>
 ): Promise<T> {
+  const release = await becomeGateRole(client, role);
+  let failed = false;
+  try {
+    return await work();
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    await release(failed);
+  }
+}
+
+/**
+ * The two halves of `withGateRole`, for a session that acts as the role across the whole gate: becomes the role now
+ * and returns the call that gives the session back (RESET ROLE, and the REVOKE of what it granted). Pass `failed` when
+ * an error is already on its way, so a failure of the release does not hide it.
+ */
+export async function becomeGateRole(
+  client: GateQueryable,
+  role: string
+): Promise<(failed?: boolean) => Promise<void>> {
   const quoted = quotedRole(role);
   const state = await firstRow<{ at_session: boolean; can_set: boolean }>(
     client,
@@ -61,7 +82,7 @@ export async function withGateRole<T>(
   );
   if (!state.at_session) {
     throw new Error(
-      `withGateRole(${role}) called while the session already acts as another role.`
+      `The gate asked for ${role} while the session already acts as another role.`
     );
   }
   const granted = !state.can_set;
@@ -72,16 +93,13 @@ export async function withGateRole<T>(
       `GRANT ${quoted} TO SESSION_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
     );
   }
-  let failed = false;
   try {
     await becomeOrThrow(client, role, `SET ROLE ${quoted}`);
-    return await work();
   } catch (error) {
-    failed = true;
+    await restoreSession(client, quoted, granted, true);
     throw error;
-  } finally {
-    await restoreSession(client, quoted, granted, failed);
   }
+  return (failed = false) => restoreSession(client, quoted, granted, failed);
 }
 
 /**
