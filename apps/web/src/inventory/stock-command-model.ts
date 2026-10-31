@@ -849,7 +849,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     {
       discardAttempt: true,
       message:
-        "O saldo mudou depois que você abriu a contagem (uma venda, um recebimento ou outra contagem). Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
+        "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
       refreshBalance: true,
     },
   ],
