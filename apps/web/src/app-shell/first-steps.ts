@@ -165,6 +165,8 @@ export function deviceSaleKept(
  * The server confirmed a sale of this store: its steps are over at once, on every screen. A sale kept on the device is
  * not one yet (it is not an official sale until the server confirms it); the Início reads the steps again anyway.
  * True only for the sale that ended them, the one this tab knew to be the first: the confirmation panel says so once.
+ * A sale the server answers as replayed (the answer of the first try never came) counts the same: the steps were still
+ * open, so no other sale of this tab came before it.
  */
 export function firstSaleConfirmed(
   organizationId: string,
@@ -176,15 +178,6 @@ export function firstSaleConfirmed(
   const kept = keptOnDevice(organizationId, store);
   rememberFirstSteps(organizationId, null, store);
   return !kept;
-}
-
-/** The sale the server just confirmed ended the steps and is the first of the store; one it already had (replayed) is not new. */
-export function confirmedSaleWasFirst(
-  organizationId: string,
-  replayed: boolean,
-  store: SessionStore | null = sessionStore()
-): boolean {
-  return firstSaleConfirmed(organizationId, store) && !replayed;
 }
 
 /**
