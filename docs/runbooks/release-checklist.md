@@ -229,7 +229,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 28. Frases de estado dos Termos e da Política (BLOCK, proposta)
 
-- Critério: nenhuma frase dos Termos ou da Política que dependa do estado do produto ("ainda não…", "enquanto…") fica falsa no ambiente que a promoção liga. Cada linha da tabela abaixo é conferida contra o que a promoção liga; a frase falsa é trocada no mesmo PR que liga a função, nunca antes dela (a frase 2 muda no PR da ligação de `CLOSURE_NOTICE_EMAIL_ENABLED` ou depois dele).
+- Critério: nenhuma frase dos Termos ou da Política que dependa do estado do produto ("ainda não…", "enquanto…") fica falsa no ambiente que a promoção liga. Cada linha da tabela abaixo é conferida contra o que a promoção liga; a frase falsa é trocada no mesmo PR que liga a função, nunca antes dela (a frase 2 muda no PR da ligação de `CLOSURE_NOTICE_EMAIL_ENABLED` de produção ou depois dele).
 - Regra de versão: enquanto só houver aceites de contas de teste, a v1 se edita no lugar; depois do primeiro aceite de pessoa real, mudança de texto vira v2 com novo aceite e "o que mudou" na tela de aceite (§11 dos Termos). O PR que troca uma frase diz qual dos dois casos vale.
 - `apps/web/src/legal/legal-state-phrases.test.ts` lê a tabela e procura cada frase, literalmente, no arquivo indicado. Frase que muda no `.md` sem mudar aqui, ou o contrário, reprova o teste; frase nova com "ainda não" ou "não estiver" no `.md` sem linha aqui também reprova (outras formas, como "quando estiver ligado", dependem da revisão).
 
@@ -239,7 +239,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 | --- | --- | --- | --- | --- |
 | 1 | termos | `ele não confere os outros aparelhos` | a fila dos outros aparelhos passar a ser conferida antes de encerrar | o PR que muda a conferência da tela de encerrar (`OTHER_DEVICES_TEXT`, `closure-model.ts`) |
 | 1 | privacidade | `ele não confere os outros aparelhos` | a mesma condição da linha anterior | o mesmo PR |
-| 2 | termos | `Os avisos por e-mail (ao encerrar, 30 dias antes, 7 dias antes e no dia) ainda não estão disponíveis.` | `CLOSURE_NOTICE_EMAIL_ENABLED` for ligada | o PR que liga a flag, ou um posterior |
+| 2 | termos | `Os avisos por e-mail (ao encerrar, 30 dias antes, 7 dias antes e no dia) ainda não estão disponíveis.` | `CLOSURE_NOTICE_EMAIL_ENABLED` de produção for ligada | o PR que liga a flag de produção, ou um posterior |
 | 3 | termos | `enquanto o pagamento automático não estiver disponível, a tela avisa que a cobrança precisa ser cancelada lá` | `billingSelfService` / `BILLING_SELF_SERVICE_ENABLED` for ligada (a tela já escolhe o texto pela flag) | o PR que liga a flag |
 | 4 | termos | `O pagamento por cartão (Asaas) ainda não está disponível.` | o cartão entrar no ar (decisão do lançamento e Gate 7) | o PR que liga o cartão |
 | 4 | privacidade | `O pagamento por cartão ainda não está disponível` | a mesma condição da linha anterior | o mesmo PR |

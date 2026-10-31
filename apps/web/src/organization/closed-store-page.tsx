@@ -45,6 +45,11 @@ import { TEXT_LINK } from "../sign-in/entry-ui";
 import { NEW_TAB_HINT } from "../sign-in/sign-in-texts";
 import { ClosedQueueSection } from "./closed-queue-section";
 import {
+  OFFLINE_ID,
+  offlineOff,
+  RefreshFailedNotice,
+} from "./closed-refresh-notice";
+import {
   type ClosedStore,
   closedExportFileHref,
   closedRequestRefusal,
@@ -52,6 +57,7 @@ import {
   copyClosedText,
   copyRequestOpen,
   DOWNLOAD_BUTTON,
+  focusTitleAfterRetry,
   justClosedText,
   loadAfterFailure,
   loadWhenReading,
@@ -64,8 +70,6 @@ import {
   PANEL_LOADING_TEXT,
   PANEL_NOT_FOUND_TEXT,
   PANEL_OFFLINE_TEXT,
-  PANEL_REFRESH_FAILED_TEXT,
-  PANEL_REFRESH_RETRY,
   type PanelLoad,
   panelDates,
   panelLoadFailure,
@@ -91,9 +95,9 @@ import {
 
 const PAGE_TITLE = "Loja encerrada";
 const COPY_SECTION_ID = "copia-dos-dados";
-const OFFLINE_ID = "closed-store-offline";
 const UNDO_DIALOG = "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md";
 const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+const TITLE_ID = "titulo-do-painel";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** `setTimeout` takes no longer delay: a later end of the window is caught by the next read. */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -119,14 +123,17 @@ async function readStores(storeId: string | null): Promise<ClosedStore[]> {
 function useClosedStores(storeId: string | null) {
   const [load, setLoad] = useState<PanelLoad>({ status: "loading" });
   const [round, setRound] = useState(0);
+  const [reading, setReading] = useState(false);
 
   useEffect(() => {
     let current = true;
     setLoad((previous) => loadWhenReading(previous, round));
+    setReading(round > 0);
     readStores(storeId)
       .then((stores) => {
         if (current) {
           setLoad({ refreshFailed: false, status: "loaded", stores });
+          setReading(false);
         }
       })
       .catch((error: unknown) => {
@@ -134,6 +141,7 @@ function useClosedStores(storeId: string | null) {
           setLoad((previous) =>
             loadAfterFailure(previous, panelLoadFailure(error))
           );
+          setReading(false);
         }
       });
     return () => {
@@ -142,7 +150,7 @@ function useClosedStores(storeId: string | null) {
   }, [round, storeId]);
 
   const reload = useCallback(() => setRound((value) => value + 1), []);
-  return { load, reload };
+  return { load, reading, reload };
 }
 
 function useNowUntil(first: number, second: number): number {
@@ -190,11 +198,6 @@ interface StatusCardProps {
   onUndo: () => void;
   store: ClosedStore;
 }
-
-const offlineOff = (online: boolean) =>
-  online
-    ? {}
-    : { "aria-describedby": OFFLINE_ID, "aria-disabled": true as const };
 
 function StatusCard({
   now,
@@ -482,32 +485,21 @@ function UndoNotice({ text }: { text: string }) {
   );
 }
 
-function RefreshFailedNotice({
-  online,
-  onRefresh,
+function PanelTitle({
+  children,
+  className,
 }: {
-  online: boolean;
-  onRefresh: () => void;
+  children: ReactNode;
+  className?: string;
 }) {
-  const retry = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    retry.current?.focus();
-  }, []);
   return (
-    <Alert role="alert" variant="warning">
-      <AlertDescription className="grid gap-3">
-        <span>{PANEL_REFRESH_FAILED_TEXT}</span>
-        <Button
-          className="w-fit max-sm:w-full"
-          onClick={onRefresh}
-          ref={retry}
-          variant="outline"
-          {...offlineOff(online)}
-        >
-          {PANEL_REFRESH_RETRY}
-        </Button>
-      </AlertDescription>
-    </Alert>
+    <h1
+      className={cn("font-semibold text-2xl/8 tracking-tight", className)}
+      id={TITLE_ID}
+      tabIndex={-1}
+    >
+      {children}
+    </h1>
   );
 }
 
@@ -534,9 +526,7 @@ function StorePanel({
   const dialogOpen = undo.dialog && (undo.pending || undoOpen(store, now));
   return (
     <>
-      <h1 className="text-balance font-semibold text-2xl/8 tracking-tight">
-        {panelTitle(store)}
-      </h1>
+      <PanelTitle className="text-balance">{panelTitle(store)}</PanelTitle>
       {justClosed ? (
         <Alert role="status">
           <AlertDescription className="text-foreground">
@@ -576,7 +566,7 @@ function StoreChoice({
 }) {
   return (
     <>
-      <h1 className="font-semibold text-2xl/8 tracking-tight">{PAGE_TITLE}</h1>
+      <PanelTitle>{PAGE_TITLE}</PanelTitle>
       {notice}
       <p>{PANEL_CHOOSE_TEXT}</p>
       <ul className="m-0 grid list-none gap-3 p-0">
@@ -600,11 +590,13 @@ function PanelBody({
   load,
   online,
   onRefresh,
+  reading,
 }: {
   justClosed: boolean;
   load: PanelLoad;
   online: boolean;
   onRefresh: () => void;
+  reading: boolean;
 }) {
   if (
     load.status === "loading" ||
@@ -620,9 +612,7 @@ function PanelBody({
   if (load.status === "error") {
     return (
       <>
-        <h1 className="font-semibold text-2xl/8 tracking-tight">
-          {PAGE_TITLE}
-        </h1>
+        <PanelTitle>{PAGE_TITLE}</PanelTitle>
         <Alert role="alert" variant="destructive">
           <AlertDescription>{PANEL_LOAD_FAILED_TEXT}</AlertDescription>
         </Alert>
@@ -637,15 +627,17 @@ function PanelBody({
     );
   }
   const notice = load.refreshFailed ? (
-    <RefreshFailedNotice online={online} onRefresh={onRefresh} />
+    <RefreshFailedNotice
+      online={online}
+      onRefresh={onRefresh}
+      reading={reading}
+    />
   ) : null;
   const [only] = load.stores;
   if (!only) {
     return (
       <>
-        <h1 className="font-semibold text-2xl/8 tracking-tight">
-          {PAGE_TITLE}
-        </h1>
+        <PanelTitle>{PAGE_TITLE}</PanelTitle>
         {notice}
         <p>{PANEL_NOT_FOUND_TEXT}</p>
         <a
@@ -679,7 +671,17 @@ export function ClosedStorePage() {
     closedStoreQuery(window.location.search)
   );
   const online = useConnectionOnline();
-  const { load, reload } = useClosedStores(storeId);
+  const { load, reading, reload } = useClosedStores(storeId);
+  const shown = useRef<PanelLoad>(load);
+  useEffect(() => {
+    const focusLost =
+      document.activeElement === null ||
+      document.activeElement === document.body;
+    if (focusTitleAfterRetry(shown.current, load, focusLost)) {
+      document.getElementById(TITLE_ID)?.focus({ preventScroll: true });
+    }
+    shown.current = load;
+  }, [load]);
 
   useEffect(() => {
     document.title = documentTitle(PAGE_TITLE);
@@ -728,6 +730,7 @@ export function ClosedStorePage() {
             load={load}
             online={online}
             onRefresh={handleRefresh}
+            reading={reading}
           />
           <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-border border-t pt-4">
             <a className={TEXT_LINK} href={NEW_STORE_PATH}>

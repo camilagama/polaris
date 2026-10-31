@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FRESH_SESSION_TEXT } from "../data-export/data-export-model";
+import { NoWorkerAnswerError } from "../lib/connection";
 import {
   type ClosedStore,
   type ClosurePhase,
@@ -10,6 +11,7 @@ import {
   copyRequestOpen,
   DEVICE_CLOSED_LINK,
   deviceClosedText,
+  focusTitleAfterRetry,
   justClosedText,
   loadAfterFailure,
   loadWhenReading,
@@ -37,7 +39,6 @@ import {
   undoOpen,
   undoOutcomeUnknown,
 } from "./closed-store-model";
-import { NoWorkerAnswerError } from "../lib/connection";
 
 const STORE: ClosedStore = {
   canRecover: true,
@@ -330,6 +331,17 @@ describe("an Atualizar that fails (AC-4, AC-5)", () => {
     expect(loadWhenReading({ status: "error" }, 1)).toEqual({
       status: "loading",
     });
+  });
+
+  it("takes the focus to the title only when a retry works and the focus fell to the page", () => {
+    const failed = loadAfterFailure(loaded, "error");
+    expect(focusTitleAfterRetry(failed, loaded, true)).toBe(true);
+    expect(focusTitleAfterRetry(failed, loaded, false)).toBe(false);
+    expect(focusTitleAfterRetry(failed, failed, true)).toBe(false);
+    expect(focusTitleAfterRetry(loaded, loaded, true)).toBe(false);
+    expect(focusTitleAfterRetry(failed, { status: "session" }, true)).toBe(
+      false
+    );
   });
 
   it("says only what is known: the screen is from the last read", () => {
