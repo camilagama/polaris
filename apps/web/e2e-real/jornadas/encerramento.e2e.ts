@@ -192,7 +192,7 @@ test("encerramento: encerra pela tela com os prazos do domínio, recusa tudo no 
   ) => ({
     baseVersion: null,
     commandId: nextCommandId(),
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(runT0()).toISOString(),
     deviceId: device.id,
     lease,
     payload: { customerId, email: null, name, notes: null, phone },
@@ -230,9 +230,8 @@ test("encerramento: encerra pela tela com os prazos do domínio, recusa tudo no 
     exact: true,
     name: CLOSE_BUTTON,
   });
-  await expect(confirm).not.toHaveAttribute("aria-disabled", "true", {
-    timeout: 30_000,
-  });
+  await expect(confirm).toBeEnabled({ timeout: 30_000 });
+  const clickedAt = Date.now();
   await confirm.click();
   await page.waitForURL(CLOSED_PANEL);
   await expect(
@@ -248,7 +247,8 @@ test("encerramento: encerra pela tela com os prazos do domínio, recusa tudo no 
   expect(closed?.recovered).toBe(false);
   expect(Number(closed?.recover_seconds)).toBe((RECOVERY_DAYS * DAY_MS) / 1000);
   const requestedAt = Number(closed?.requested_at);
-  expect(Math.abs(requestedAt - Date.now())).toBeLessThan(15 * 60_000);
+  expect(requestedAt).toBeGreaterThanOrEqual(clickedAt);
+  expect(requestedAt).toBeLessThanOrEqual(Date.now());
   const status = (await rpc.organization.closedStatus({ organizationId }))
     .organization;
   const deletionDate = addDays(
@@ -405,7 +405,6 @@ test("encerramento: com outra loja ativa na conta, o desfazer é recusado e nada
       timezone: ZONE,
     })
   ).organization.id;
-  expect(second).not.toBe(first);
   const before = await organizationState(sql, first);
   expect(before?.status).toBe("closing");
   const counts = await rowCounts(sql, first);

@@ -71,7 +71,9 @@ describe("the environment of an e2e run", () => {
       expect(off.E2E_PREVIEW_VARIABLES, name).not.toContain(name);
     }
     expect(on.OFFLINE_LEASE_SECRET).not.toBe(on.SYNC_PAYLOAD_HASH_SECRET);
-    expect(closedEnvironment(on, "build").OFFLINE_LEASE_SECRET).toBeUndefined();
+    const build = closedEnvironment(on, "build");
+    expect(build.OFFLINE_LEASE_SECRET).toBeUndefined();
+    expect(build.SYNC_PAYLOAD_HASH_SECRET).toBeUndefined();
   });
 
   it("refuses a binding missing or left on the wrangler.jsonc fallback (postgres:postgres)", () => {
