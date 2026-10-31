@@ -638,7 +638,6 @@ describe("the staging isolation check", () => {
   it("accepts the closure notices flag in staging only as true or false", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
-    expect(staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe("false");
     for (const value of ["true", "false"]) {
       staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = value;
       expect(findIsolationProblems(entries), value).toEqual([]);
@@ -649,6 +648,15 @@ describe("the staging isolation check", () => {
         'web: env.staging: vars.CLOSURE_NOTICE_EMAIL_ENABLED must be "true" or "false"',
       ]);
     }
+  });
+
+  it("has the closure notices on in staging only, off at the top level and in production", () => {
+    const { config } = entryOf(repositoryEntries(), "web");
+    expect(config.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe("false");
+    expect(config.env.staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe("true");
+    expect(config.env.production.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe(
+      "false"
+    );
   });
 
   it("accepts staging with the password off and refuses a value that is neither true nor false", () => {

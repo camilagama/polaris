@@ -254,7 +254,7 @@
         "AUTH_ABUSE_PROTECTION_ENABLED": "true",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
-        "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+        "CLOSURE_NOTICE_EMAIL_ENABLED": "true",
         "BILLING_SELF_SERVICE_ENABLED": "false",
         "BILLING_SUPPORT_EMAIL": "",
         "WELCOME_EMAIL_ENABLED": "false",

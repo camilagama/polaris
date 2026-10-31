@@ -21,7 +21,9 @@ Pré-requisitos:
 Passos:
 
 1. Ligue primeiro em staging, com um endereço de teste. Nunca com um cliente real.
-2. O responsável põe `CLOSURE_NOTICE_EMAIL_ENABLED` = `"true"` no Worker e faz o deploy. A flag fica `"false"` em todos os ambientes do `wrangler.jsonc` até ele decidir.
+2. O responsável põe `CLOSURE_NOTICE_EMAIL_ENABLED` = `"true"` no Worker e faz o deploy. A flag está `"true"` só em `env.staging` do `wrangler.jsonc`; no topo (local) e em `env.production` fica `"false"` até ele decidir.
+
+   **Staging ligado desde 30/10/2026**, com dados sintéticos: o remetente é `@araute.app` e os destinatários são só contas de teste. Os Termos são um texto só para todos os ambientes: no staging o e-mail sai e a frase 2 do §8 ("os avisos por e-mail ainda não estão disponíveis") ainda diz o contrário, o que é aceito por serem dados sintéticos. Em produção ela segue verdadeira e só muda no PR que liga a flag lá; a tabela do [release-checklist](./release-checklist.md) vale para a produção.
 3. Na primeira hora, o repasse da varredura de privacidade envia o aviso devido mais recente de cada ciclo e grava os anteriores devidos como pulados. O dono não recebe avisos antigos em sequência.
 
 O repasse pega até 20 lojas por execução. Uma loja sem aviso devido a quem ainda é dono não entra (nada dela sairia; o caminho é reemitir). As lojas entram pela última vez em que uma tentativa achou o e-mail sem verificação: as nunca achadas assim vêm primeiro, e cada tentativa sem verificação manda a loja para o fim da fila. Assim, avisos que não podem sair agora revezam no fim do lote e não impedem os que podem. Um aviso que falha por um erro passageiro do provedor não muda de lugar; com o provedor fora do ar, todos esperam juntos.
