@@ -4,7 +4,7 @@
 
 **Por quê:** um restore ressuscita o que já foi removido: um cliente anonimizado volta com nome, telefone, email e observações; uma organização purgada volta inteira. A [deletion ledger](../adr/0080-ledger-minimo-de-exclusoes.md) (`public.deletion_ledger`) é o registro mínimo (IDs opacos, tipo de registro, operação, instante) do que deve ser removido de novo. Regra de privacidade: **o restore reaplica o ledger antes de o ambiente ser reutilizado** ([privacidade](../business-rules/privacy.md)).
 
-> **Nada deste procedimento foi executado contra um ambiente real**, e não há automação: ela é da Fase 16. A consulta de lista e a de verificação são provadas pelo gate `deletion-ledger` num banco descartável. Qualquer comando Cloudflare ou Neon segue a [política de perfis de CLI](./cli-profile-policy.md). Reaplicar altera dado: é uma ação do responsável, em ambiente já autorizado por ele.
+> **Nada deste procedimento foi executado contra um ambiente real**, e não há automação: ela é da Fase 16. O restore lógico (`pg_dump`/`pg_restore`) foi ensaiado numa branch Neon descartável (31/10/2026, V12; três tentativas, só a terceira válida), e o que o ensaio achou está nos passos 2 e 2b e na conferência do passo 5. A consulta de lista e a de verificação são provadas pelo gate `deletion-ledger` num banco descartável. Qualquer comando Cloudflare ou Neon segue a [política de perfis de CLI](./cli-profile-policy.md). Reaplicar altera dado: é uma ação do responsável, em ambiente já autorizado por ele.
 
 ## Pré-requisitos de acesso
 
@@ -65,7 +65,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
    SELECT count(*) FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner';  -- 18
    ```
 
-   Se faltar algum, crie-os antes com o bloco `DO $roles$` da migration que cria cada um (por exemplo, a 0095 cria `polaris_sync_owner`, `polaris_authorization_epoch_owner` e `polaris_onboarding_owner`), nunca com `CREATE ROLE` à mão com outros atributos. Restaure **sem** `--no-owner` e **sem** `--no-privileges`. Depois do restore e das migrations do passo 3, a mesma consulta do papel e esta, que repete a checagem `foreignOwner` de `definer-hardening-checks.ts` (o `staging:verify-database` só aceita o marcador `staging`), devem voltar 18 e **vazia**:
+   Se faltar algum, crie-os antes com o bloco `DO $roles$` da migration que cria cada um (por exemplo, a 0095 cria `polaris_sync_owner`, `polaris_authorization_epoch_owner` e `polaris_onboarding_owner`), nunca com `CREATE ROLE` à mão com outros atributos. Restaure **sem** `--no-owner` e **sem** `--no-privileges`. No Neon isso não funciona sem preparo (ver abaixo). Depois do restore, do passo 2b e das migrations do passo 3, a mesma consulta do papel e esta, que repete a checagem `foreignOwner` de `definer-hardening-checks.ts` (o `staging:verify-database` só aceita o marcador `staging`), devem voltar 18 e **vazia**:
 
    ```sql
    SELECT n.nspname || '.' || p.proname AS funcao, pg_get_userbyid(p.proowner) AS dono
@@ -76,7 +76,103 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
       AND pg_get_userbyid(p.proowner) NOT LIKE 'polaris\_%\_owner';
    ```
 
-   Registre as duas respostas sem IDs.
+   Registre as duas respostas sem IDs. **Estas duas consultas não detectam o problema das ACLs das funções** (passo 2b): no ensaio V12 elas voltaram 18 e vazia num restaurado com 129 funções `SECURITY DEFINER` executáveis por PUBLIC. A prova das ACLs é a conferência obrigatória do passo 2b.
+
+   **No Neon, o restore com donos exige preparo antes e limpeza depois.** O papel de login do banco (`neondb_owner`) tem `ADMIN` sobre os papéis `polaris_*`, mas não `SET`, e não pode criar objetos no `public` como outro papel. Sem o preparo, o `pg_restore` falha em dezenas de instruções (`must be able to SET ROLE "polaris_*_owner"`, depois `permission denied for schema public`). No ensaio foram 136. Conecte como o dono do banco, **no banco restaurado**, com a conexão lida do ambiente (variáveis `PG*` ou equivalente; nunca em argumento, log ou arquivo). Antes de qualquer comando abaixo, confirme o alvo nos dois sentidos: `SELECT current_database(), shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();` tem de dar o nome do banco restaurado e o marcador do ambiente restaurado, **nunca** o da origem (o `GRANT`, o `REVOKE` e a reaplicação das ACLs rodariam na origem viva), e o `psql` e o `pg_restore` abaixo usam essa mesma conexão (`PGDATABASE`). Os `GRANT` de papel são do **cluster**, não do banco: apagar o banco restaurado não os desfaz. Em qualquer saída antes do passo 2b, item 3 (restore reprovado, banco apagado, procedimento abandonado), rode o `REVOKE` do passo 2b, item 3, e confirme `set_restante = 0`. Faça:
+
+   1. **Antes do `pg_restore`**, conceda a si mesmo o `SET` nos papéis `polaris_*` e o `CREATE` no schema `public` aos donos:
+
+      ```sql
+      DO $grant$
+      DECLARE r text;
+      BEGIN
+        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%' LOOP
+          EXECUTE format('GRANT %I TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE', r);
+        END LOOP;
+        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner' LOOP
+          EXECUTE format('GRANT CREATE ON SCHEMA public TO %I', r);
+        END LOOP;
+      END
+      $grant$;
+      ```
+
+      Antes dos `GRANT` acima, registre a ACL do schema `public` **da origem** (`SELECT nspacl::text FROM pg_namespace WHERE nspname = 'public';`): ela é a referência da conferência do passo 2b.
+   2. **Restaure**, com a saída de erro guardada (o `arquivo.dump` é o do `pg_dump -Fc` da origem):
+
+      ```bash
+      pg_restore --dbname="$PGDATABASE" --no-password arquivo.dump 2> restore.err; echo "rc=$?"
+      ```
+
+      **O `rc=1` é esperado mesmo quando o restore deu certo:** o Neon recusa dois `ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin`, que são da plataforma e inofensivos. Qualquer outro erro reprova o restore (revogue o preparo, apague o banco restaurado, corrija e refaça). Confira à mão a lista de `pg_restore: error:` em `restore.err`: no ensaio foram 2, e o `Command was:` de cada uma era um `ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin …`; qualquer erro cujo comando seja outro reprova. `restore.err` pode trazer linhas de dados de cliente quando o erro é de dados: trate-o como dado sensível, não o cole em PR nem em registro (só a contagem e os comandos do `cloud_admin`) e apague-o ao terminar. O `pg_restore` também **avisa** (`warning`, sem contar como erro) quando não consegue aplicar uma ACL: não use a contagem de erros como prova das ACLs, ela não pega isso.
+   3. **Ainda com o preparo do item 1 ativo**, faça o passo 2b. Só depois revogue (passo 2b, item 3).
+
+2b. **Reaplicar as ACLs, conferir e limpar o preparo (restore lógico no Neon).** O `pg_restore` aplica as ACLs como o papel de login, que não é dono das funções nem tem *grant option*. O PostgreSQL só **avisa**, e o `REVOKE ALL … FROM PUBLIC` e os `GRANT EXECUTE … TO polaris_*_runtime` das funções `SECURITY DEFINER` **não são aplicados**: o restaurado fica com as funções executáveis por PUBLIC e os runtimes sem os grants, sem nenhum erro. É uma falha de permissão de função definer: não abra o ambiente com ela. Com o preparo do passo 2 ainda ativo, no banco restaurado e **antes das migrations do passo 3**:
+
+   1. **Reaplique só as entradas ACL**, como o dono de cada objeto. O `-l` lista o conteúdo do dump, o filtro fica só com as entradas `ACL` (as `DEFAULT ACL` não entram), o `-L` aplica só essa lista e o `-f` grava o SQL em vez de executar:
+
+      ```bash
+      pg_restore -l arquivo.dump | grep -E '^[0-9]+; [0-9]+ [0-9]+ ACL ' > acl.lst
+      wc -l < acl.lst
+      pg_restore -L acl.lst --use-set-session-authorization -f acl.sql arquivo.dump
+      sed -E -e 's/^SET SESSION AUTHORIZATION /SET ROLE /' -e 's/^RESET SESSION AUTHORIZATION;/RESET ROLE;/' acl.sql > acl-role.sql
+      grep -c 'SESSION AUTHORIZATION' acl-role.sql
+      ```
+
+      O `wc` tem de dar mais que zero e o último `grep -c`, **zero**: o papel de login não tem `SET SESSION AUTHORIZATION`, e o `SET ROLE <dono>` é o que o preparo do passo 2 permite. Rode o resultado parando no primeiro erro (qualquer erro reprova):
+
+      ```bash
+      psql --no-psqlrc --set=ON_ERROR_STOP=1 --file=acl-role.sql
+      ```
+   2. **Conferência obrigatória das ACLs.** No restaurado, esta consulta lista as funções `SECURITY DEFINER` do schema `public` executáveis por PUBLIC e **tem de voltar vazia**:
+
+      ```sql
+      SELECT p.oid::regprocedure AS funcao, pg_get_userbyid(p.proowner) AS dono
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE p.prosecdef AND n.nspname = 'public'
+         AND has_function_privilege('public', p.oid, 'EXECUTE')
+       ORDER BY 1;
+      ```
+
+      Rode também, **na origem e no restaurado, antes do passo 3**, a consulta do hash das ACLs das funções. Os dois valores têm de ser **iguais**. A origem tem de estar no mesmo nível de migrations do backup (grave o hash dela no instante do `pg_dump`, ou compare só se ela não recebeu migration depois): as migrations pendentes do passo 3 criam e mudam funções e o hash deixa de bater por isso, sem defeito. O hash cobre as funções de todos os schemas, e a lista vazia cobre só o `public`:
+
+      ```sql
+      SELECT md5(string_agg(
+               n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ') '
+               || pg_get_userbyid(p.proowner) || ' '
+               || array_to_string(ARRAY(SELECT x::text FROM unnest(coalesce(p.proacl, acldefault('f', p.proowner))) AS x ORDER BY x::text COLLATE "C"), ','),
+               E'\n' ORDER BY n.nspname COLLATE "C", p.proname COLLATE "C", pg_get_function_identity_arguments(p.oid) COLLATE "C")) AS hash_acl_funcoes
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\_toast%'
+         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e');
+      ```
+
+      Se a lista não voltar vazia ou o hash divergir, **pare**: não abra o ambiente, refaça o item 1 (a reaplicação é idempotente) e, persistindo, trate como incidente. A consulta de donos do passo 2 não serve para isso. A conferência cobre as funções, onde está o risco do `SECURITY DEFINER`. A reaplicação do item 1 reaplica **todas** as ACLs do dump (tabelas, sequências e schemas), que esta conferência não compara. Se quiser comparar as tabelas, normalize o `relacl` com `acldefault('r', relowner)` antes de comparar: no ensaio a única diferença foi `legal_acceptance_contract_end` (na origem, ACL explícita igual ao padrão do dono; no restaurado, nula), sem efeito.
+   3. **Revogue o preparo** (só depois dos itens 1 e 2) e confira:
+
+      ```sql
+      DO $revoke$
+      DECLARE r text;
+      BEGIN
+        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner' LOOP
+          EXECUTE format('REVOKE CREATE ON SCHEMA public FROM %I', r);
+        END LOOP;
+        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%' LOOP
+          EXECUTE format('REVOKE %I FROM CURRENT_USER', r);
+        END LOOP;
+      END
+      $revoke$;
+
+      SELECT count(*) AS set_restante
+        FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid
+       WHERE r.rolname LIKE 'polaris\_%' AND m.member = (SELECT oid FROM pg_roles WHERE rolname = current_user) AND m.set_option;
+
+      SELECT nspacl::text FROM pg_namespace WHERE nspname = 'public';
+      ```
+
+      O `set_restante` tem de ser **0** e a ACL do `public` tem de ser **igual à da origem** (a registrada no passo 2). Se a ACL divergir, não corrija à mão com outro valor: pare e acione o responsável.
+
+   Isto vale para o **restore lógico**. O restore por **branch Neon** (ponto no tempo) leva papéis e ACLs junto e dispensa o preparo, a reaplicação e o `GRANT`/`REVOKE` acima, mas **ainda não foi ensaiado**: depois dele, rode a mesma conferência do item 2 (a consulta vazia e o hash contra a origem) antes de seguir, e registre o resultado.
+
 3. **Aplicar as migrations pendentes** no ambiente restaurado, se o backup for anterior à tabela ou a alguma migration (sem `public.deletion_ledger` os passos seguintes falham). **Carregar os tombstones da lista** que ainda não existirem (`INSERT` pelo dono do banco, **com lista de colunas**, copiando da lista, linha a linha, `organization_id`, `entity_type`, `entity_id`, `operation`, `privacy_case_id` e o `recorded_at` original, senão o instante vira o do ambiente restaurado; o índice único recusa repetição, então `ON CONFLICT DO NOTHING` é seguro):
 
    ```sql
@@ -117,7 +213,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
       AND o.status <> 'purged';
    ```
 
-   Vazia significa: nenhum cliente com tombstone continua com dado pessoal, e nenhuma organização com tombstone de purge está fora de `purged` (a linha da organização fica como marca de remoção, então a consulta confere o estado, não a existência). **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Registre o resultado (sem IDs) e o instante.
+   Vazia significa: nenhum cliente com tombstone continua com dado pessoal, e nenhuma organização com tombstone de purge está fora de `purged` (a linha da organização fica como marca de remoção, então a consulta confere o estado, não a existência). **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Rode de novo, nesse ponto (as migrations do passo 3 criam e mudam funções), a consulta das funções `SECURITY DEFINER` executáveis por PUBLIC do passo 2b: tem de voltar **vazia**. Num restore lógico no Neon, o passo 5 não fecha sem ela. Registre o resultado (sem IDs) e o instante.
 6. **Só então** reabrir o ambiente (Workers, cron, sincronização). Aparelhos que sincronizaram com o ambiente anterior podem estar à frente do restaurado: é um limite geral do restore, tratado na Fase 16.
 
 ### Reaplicar um purge de organização
@@ -176,7 +272,7 @@ O resultado esperado é `purged` e `varrida` verdadeiro. Além disso, a organiza
 
 ## Verificação do procedimento
 
-O gate `deletion-ledger` (suítes `ci` e `gate10`) roda a consulta do passo 1 como o dono de privacidade e as dos passos 0 e 5 sobre tombstones de cliente anonimizado e de cliente que não foi, num banco descartável.
+O gate `deletion-ledger` (suítes `ci` e `gate10`) roda a consulta do passo 1 como o dono de privacidade e as dos passos 0 e 5 sobre tombstones de cliente anonimizado e de cliente que não foi, num banco descartável. O gate **não** cobre o preparo de papéis, a reaplicação de ACLs nem a conferência do passo 2b: elas só existem no restore lógico em Neon, ensaiado à mão (V12).
 
 ## Rollback ou forward-fix
 
