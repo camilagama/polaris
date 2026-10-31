@@ -697,6 +697,96 @@ async function emailScenario(
     "the handover (with the e-mail on) sends the latest notice owed of each cycle and settles the earlier owed ones skipped, leaves one recorded in the last 15 minutes to its consumer, takes a bounded batch, and only the privacy runtime runs it"
   );
 
+  // two stores in one run: the owner of the first never verified the e-mail (so it could not even own a store through
+  // the app), and the handover still sends the second, leaving the first owed with the note, and throws nothing
+  const heldBack = await closed(
+    "handover not verified",
+    await localDayStart(owner, ZONE, -85)
+  );
+  await record();
+  const heldBackNotice = await owedOf(owner, heldBack.organizationId);
+  await owner.query(
+    'UPDATE public."user" SET email_verified = false WHERE id = $1',
+    [heldBack.userId]
+  );
+  const goesOut = await closed("handover verified");
+  await record();
+  const goesOutNotice = await owedOf(owner, goesOut.organizationId);
+  await owner.query(
+    "UPDATE public.closure_notices SET recorded_at = now() - interval '20 minutes' WHERE id = ANY($1::uuid[])",
+    [[heldBackNotice.id, goesOutNotice.id]]
+  );
+  const batch = await maintenance.listOwedClosureNotices(20);
+  const batchIds = batch.map((row) => row.noticeId);
+  assert.ok(
+    batchIds.indexOf(heldBackNotice.id) >= 0 &&
+      batchIds.indexOf(heldBackNotice.id) < batchIds.indexOf(goesOutNotice.id),
+    "the notice of the owner not verified is handed over first, so the second store proves the run goes on"
+  );
+  const twoStores = fakeProvider();
+  const twoStoresReport = await handOverOwedClosureNotices({
+    email: email(twoStores.send),
+    notices: maintenance,
+  });
+  assert.ok(twoStoresReport.notVerified >= 1 && twoStoresReport.sent >= 1);
+  assert.equal(twoStoresReport.failed, 0);
+  assert.equal(twoStoresReport.retry, 0);
+  assert.equal(
+    twoStores.sent.filter((sent) => sent.idempotencyKey === goesOutNotice.id)
+      .length,
+    1,
+    "the notice of the verified owner goes out once"
+  );
+  assert.ok(
+    !twoStores.sent.some((sent) => sent.idempotencyKey === heldBackNotice.id),
+    "nothing goes for the owner not verified"
+  );
+  assert.ok(
+    (await rowsOf(owner, goesOut.organizationId)).find(
+      (row) => row.id === goesOutNotice.id
+    )?.sent_at,
+    "the second store's notice is sent"
+  );
+  const heldBackRow = (await rowsOf(owner, heldBack.organizationId)).find(
+    (row) => row.id === heldBackNotice.id
+  );
+  assert.ok(heldBackRow);
+  assert.equal(heldBackRow.sent_at, null);
+  assert.equal(heldBackRow.failed_at, null);
+  assert.equal(heldBackRow.failure_code, null);
+  assert.equal(heldBackRow.skipped, false);
+  assert.equal(
+    (await owedOf(owner, heldBack.organizationId)).id,
+    heldBackNotice.id,
+    "the notice of the owner not verified stays owed"
+  );
+  assert.ok(
+    (
+      await owner.query<{ unverified_at: Date | null }>(
+        "SELECT unverified_at FROM public.closure_notices WHERE id = $1",
+        [heldBackNotice.id]
+      )
+    ).rows[0]?.unverified_at,
+    "and the database keeps the note that the address was found not verified"
+  );
+  assert.equal(
+    (
+      await owner.query<{ unverified_at: Date | null }>(
+        "SELECT unverified_at FROM public.closure_notices WHERE id = $1",
+        [goesOutNotice.id]
+      )
+    ).rows[0]?.unverified_at,
+    null,
+    "the note is only on the notice of the owner not verified"
+  );
+  await owner.query(
+    "UPDATE public.closure_notices SET skipped = true WHERE id = $1",
+    [heldBackNotice.id]
+  );
+  tests.push(
+    "the handover with two stores in one run, the first of an owner whose e-mail is not verified: only the second is sent, the first stays owed (neither sent, failed nor skipped) with the note of an address not verified, and nothing throws"
+  );
+
   // the handover takes turns: 21 cycles that cannot go out now (an address not verified, requested earlier) and 3 owed
   // to a user who left never keep a notice that can go out out of a batch of 20
   const stuck: { noticeId: string; organizationId: string }[] = [];

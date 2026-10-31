@@ -346,6 +346,75 @@ describe("the handover of the owed closure notices", () => {
     );
     expectNoPersonalData(everythingLogged(spies));
   });
+
+  it("goes on to the stores after one whose owner never verified the e-mail, which stays owed and throws nothing", async () => {
+    const spies = spyLogger();
+    const { dependencies, notices, recipients, send } = setup();
+    const owed = ["1", "2", "3"].map((digit) => ({
+      noticeId: `0199f0aa-2b3c-7d4e-8f90-12345678900${digit}`,
+      organizationId: `org_${digit}`,
+    }));
+    notices.listOwedClosureNotices.mockResolvedValueOnce(owed);
+    recipients.recipient
+      .mockResolvedValueOnce({ verified: false })
+      .mockResolvedValueOnce({ email: ADDRESS, verified: true })
+      .mockResolvedValueOnce({ email: ADDRESS, verified: true });
+
+    const report = await handOverOwedClosureNotices(dependencies);
+
+    expect(report).toEqual({
+      failed: 0,
+      handedOver: 3,
+      notVerified: 1,
+      retry: 0,
+      sent: 2,
+    });
+    expect(recipients.recipient.mock.calls).toEqual(
+      owed.map((notice) => [notice.noticeId, notice.organizationId])
+    );
+    expect(send.mock.calls.map(([message]) => message.idempotencyKey)).toEqual([
+      owed[1]?.noticeId,
+      owed[2]?.noticeId,
+    ]);
+    expect(notices.markClosureNoticeSent.mock.calls).toEqual([
+      [owed[1]?.noticeId, owed[1]?.organizationId],
+      [owed[2]?.noticeId, owed[2]?.organizationId],
+    ]);
+    expect(notices.markClosureNoticeFailed).not.toHaveBeenCalled();
+    expect(spies.warn).toHaveBeenCalledTimes(1);
+    expect(spies.warn).toHaveBeenCalledWith(
+      "closure_notice_not_sent",
+      expect.objectContaining({ reason: "email_not_verified" })
+    );
+    expectNoPersonalData(everythingLogged(spies));
+  });
+
+  it("sends and settles nothing when every owner of the batch is not verified, and reports them all", async () => {
+    const spies = spyLogger();
+    const { dependencies, notices, recipients, send } = setup({
+      recipient: { verified: false },
+    });
+    const owed = ["1", "2"].map((digit) => ({
+      noticeId: `0199f0aa-2b3c-7d4e-8f90-12345678900${digit}`,
+      organizationId: `org_${digit}`,
+    }));
+    notices.listOwedClosureNotices.mockResolvedValueOnce(owed);
+
+    const report = await handOverOwedClosureNotices(dependencies);
+
+    expect(report).toEqual({
+      failed: 0,
+      handedOver: 2,
+      notVerified: 2,
+      retry: 0,
+      sent: 0,
+    });
+    expect(recipients.recipient).toHaveBeenCalledTimes(2);
+    expect(send).not.toHaveBeenCalled();
+    expect(notices.markClosureNoticeSent).not.toHaveBeenCalled();
+    expect(notices.markClosureNoticeFailed).not.toHaveBeenCalled();
+    expectNoPersonalData(everythingLogged(spies));
+  });
 });
 
 function configFor(
