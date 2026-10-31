@@ -1515,6 +1515,79 @@ test.describe("Ajuda e contato", () => {
     await expectHelpPage(page);
   });
 
+  test("a conta sem loja abre a Ajuda, e as outras páginas seguem pedindo a loja", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page, []);
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    await expect(
+      page.getByRole("region", { name: "Dados pessoais" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Abra a sua loja" })
+    ).toHaveCount(0);
+    await page.goto("/products");
+    await expect(
+      page.getByRole("heading", { name: "Abra a sua loja" })
+    ).toBeVisible();
+  });
+
+  test("com a leitura das lojas falhando, a Ajuda abre e as outras páginas mostram o erro", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.route("**/rpc/organization/listMine", (route) =>
+      route.fulfill({
+        body: JSON.stringify({
+          json: { code: "INTERNAL_SERVER_ERROR", defined: false, status: 500 },
+          meta: [],
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 500,
+      })
+    );
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await page.goto("/products");
+    await expect(
+      page.getByRole("heading", { name: "Não foi possível abrir o Polaris" })
+    ).toBeVisible();
+  });
+
+  test("com a sessão acabada na leitura das lojas, a Ajuda abre e o aviso da sessão aparece", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.route("**/rpc/organization/listMine", (route) =>
+      route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code: "UNAUTHORIZED",
+            data: undefined,
+            defined: false,
+            message: "Unauthorized",
+            status: 401,
+          },
+          meta: [],
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 401,
+      })
+    );
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    await expect(
+      page.getByText("Sua sessão acabou. Entre de novo para continuar.")
+    ).toBeVisible();
+  });
+
   test("sem conexão, a página aberta segue inteira e os links de e-mail continuam lá", async ({
     context,
     page,

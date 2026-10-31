@@ -824,14 +824,17 @@ export function AppShell({
   const acceptanceMissing =
     useLegalAcceptanceRequired() ||
     (snapshot?.legalAcceptanceRequired ?? false);
-  // the session notice comes first (there is nothing to accept without a session); the gate says it itself
+  // the session notice comes first (there is nothing to accept without a session); the gate says it itself, and a page
+  // with no gate (Ajuda, the 404) needs the notice
   const showAcceptanceNotice =
     acceptanceMissing &&
     !sessionOver &&
-    load.status !== "legal_acceptance_required";
+    (!requiresOrganization || load.status !== "legal_acceptance_required");
   // the devices screen has its own panels for this (with the same button); the gate says it itself
   const showNotice =
-    sessionOver && routeId !== "devices" && load.status !== "session_ended";
+    sessionOver &&
+    routeId !== "devices" &&
+    (!requiresOrganization || load.status !== "session_ended");
   const organization: CurrentOrganization | null =
     load.status === "ready" && !accessExpired
       ? {

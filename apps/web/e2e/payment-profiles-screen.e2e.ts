@@ -625,6 +625,44 @@ test("arquivar com o 503 server_busy diz que pode ter sido salvo, lê a lista de
   ).toHaveCount(0);
 });
 
+test("restaurar com o 503 sem motivo diz que pode ter sido salvo, lê a lista de novo e não repete sozinho", async ({
+  page,
+}) => {
+  let restores = 0;
+  let lists = 0;
+  await openServerScreen(page, {
+    lists: [
+      (route) => {
+        lists += 1;
+        return route.fulfill(
+          rpc({ profiles: [{ ...MACHINE, status: "archived" }] })
+        );
+      },
+    ],
+    others: {
+      "paymentProfile/restore": (route) => {
+        restores += 1;
+        return route.fulfill(unavailable);
+      },
+    },
+  });
+  await page.getByRole("checkbox", { name: "Incluir arquivados" }).check();
+  await page
+    .getByRole("button", { name: "Restaurar perfil Maquininha da loja" })
+    .click();
+  await expect(
+    page.getByText(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+    )
+  ).toBeVisible();
+  await expect.poll(() => lists).toBeGreaterThan(1);
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(restores).toBe(1);
+});
+
 test("a recusa do servidor sai da tela quando a pessoa mexe no formulário (U-56)", async ({
   page,
 }) => {

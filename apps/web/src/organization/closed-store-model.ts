@@ -37,6 +37,9 @@ export interface ClosedStore {
 export const PANEL_LOADING_TEXT = "Carregando…";
 export const PANEL_LOAD_FAILED_TEXT =
   "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo.";
+export const PANEL_REFRESH_FAILED_TEXT =
+  "Não deu para atualizar. O que está na tela é da última leitura.";
+export const PANEL_REFRESH_RETRY = "Tentar de novo";
 export const PANEL_NOT_FOUND_TEXT =
   "Não encontramos uma loja encerrada nesta conta.";
 export const PANEL_OFFLINE_TEXT =
@@ -268,6 +271,35 @@ export function panelLoadFailure(
     return "acceptance";
   }
   return rpcErrorCode(error) === "UNAUTHORIZED" ? "session" : "error";
+}
+
+export type PanelLoad =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "session" }
+  | { status: "acceptance" }
+  | {
+      status: "loaded";
+      refreshFailed: boolean;
+      stores: readonly ClosedStore[];
+    };
+
+/** An Atualizar that fails keeps what was read before: only a failed first read replaces the panel with the error. */
+export function loadAfterFailure(
+  previous: PanelLoad,
+  failure: ReturnType<typeof panelLoadFailure>
+): PanelLoad {
+  if (failure === "error" && previous.status === "loaded") {
+    return { ...previous, refreshFailed: true };
+  }
+  return { status: failure };
+}
+
+/** A new read starts from the last one on screen, failure notice included, so the retry button keeps the focus. */
+export function loadWhenReading(previous: PanelLoad, round: number): PanelLoad {
+  return previous.status === "loaded" && round > 0
+    ? previous
+    : { status: "loading" };
 }
 
 export type UndoFailure =
