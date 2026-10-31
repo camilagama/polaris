@@ -116,6 +116,23 @@ describe("the sentences of each phase (AC-6)", () => {
     expect(undoOpen(at("closing"), AFTER_WINDOW)).toBe(false);
   });
 
+  it("`closing` that the server says cannot be undone, before the date, does not say the time is over nor count days", () => {
+    const store = at("closing", { canRecover: false });
+    expect(undoOpen(store, DURING_WINDOW)).toBe(false);
+    expect(phaseLines(store, DURING_WINDOW)).toEqual([
+      "A partir de 18 de janeiro de 2027 (faltam 80 dias) os dados podem ser apagados. Baixe o que precisar antes dessa data.",
+    ]);
+    expect(panelDates(store, DURING_WINDOW)[1]?.left).toBe("");
+  });
+
+  it("the same store past the date says the time is over, in the lines and in the dates", () => {
+    const store = at("closing", { canRecover: false });
+    expect(phaseLines(store, AFTER_WINDOW)[0]).toBe(
+      "O prazo para desfazer acabou. Não dá mais para reabrir esta loja."
+    );
+    expect(panelDates(store, AFTER_WINDOW)[1]?.left).toBe("prazo encerrado");
+  });
+
   it("names the store in the title and shows no technical code in any phase", () => {
     expect(panelTitle(STORE)).toBe("Loja de Teste está encerrada");
     for (const phase of [

@@ -153,11 +153,12 @@ export interface PanelDate {
 export function panelDates(store: ClosedStore, now: number): PanelDate[] {
   const tz = store.timezone;
   const recoverDate = localDate(new Date(store.recoverUntil), tz);
-  // only a store still closing counts down to the end of the undo: past it (by the server's word) the time is over
+  // the count runs only while the undo is open: with the server saying it cannot be undone there is nothing to count, and
+  // past the date the time is over
+  const beforeRecoverUntil =
+    store.phase === "closing" && now < Date.parse(store.recoverUntil);
   const recoverLeft = daysLeftText(
-    store.phase === "closing" && Date.parse(store.recoverUntil) > now
-      ? daysUntil(recoverDate, now, tz)
-      : -1
+    undoOpen(store, now) ? daysUntil(recoverDate, now, tz) : -1
   );
   const deletionLeft = daysLeftText(
     Date.parse(store.deletableFrom) > now
@@ -171,7 +172,7 @@ export function panelDates(store: ClosedStore, now: number): PanelDate[] {
       value: dateOf(store.requestedAt, tz),
     },
     {
-      left: recoverLeft ?? "prazo encerrado",
+      left: recoverLeft ?? (beforeRecoverUntil ? "" : "prazo encerrado"),
       term: "Desfazer até",
       value: `${dateOf(store.recoverUntil, tz)}, às ${formatTime(store.recoverUntil, tz)}`,
     },
@@ -227,9 +228,13 @@ export function phaseLines(store: ClosedStore, now: number): string[] {
       `Seus dados ficam guardados. A partir de ${deletion} eles podem ser apagados. Baixe o que precisar antes dessa data.`,
     ];
   }
+  const deletionLine = `A partir de ${deletionWithDays} os dados podem ser apagados. Baixe o que precisar antes dessa data.`;
+  if (store.phase === "closing" && now < Date.parse(store.recoverUntil)) {
+    return [deletionLine];
+  }
   return [
     "O prazo para desfazer acabou. Não dá mais para reabrir esta loja.",
-    `A partir de ${deletionWithDays} os dados podem ser apagados. Baixe o que precisar antes dessa data.`,
+    deletionLine,
   ];
 }
 
