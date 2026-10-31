@@ -47,6 +47,7 @@ import { ClosedQueueSection } from "./closed-queue-section";
 import {
   OFFLINE_ID,
   offlineOff,
+  refreshButtonProps,
   RefreshFailedNotice,
 } from "./closed-refresh-notice";
 import {
@@ -70,6 +71,7 @@ import {
   PANEL_LOADING_TEXT,
   PANEL_NOT_FOUND_TEXT,
   PANEL_OFFLINE_TEXT,
+  PANEL_REFRESHING,
   type PanelLoad,
   panelDates,
   panelLoadFailure,
@@ -196,14 +198,16 @@ interface StatusCardProps {
   online: boolean;
   onRefresh: () => void;
   onUndo: () => void;
+  reading: boolean;
   store: ClosedStore;
 }
 
-function StatusCard({
+export function StatusCard({
   now,
   online,
   onRefresh,
   onUndo,
+  reading,
   store,
 }: StatusCardProps) {
   const undo = undoOpen(store, now);
@@ -242,11 +246,10 @@ function StatusCard({
           ) : null}
           <Button
             className="max-sm:w-full"
-            onClick={onRefresh}
             variant="outline"
-            {...offlineOff(online)}
+            {...refreshButtonProps(online, reading, onRefresh)}
           >
-            Atualizar
+            {reading ? PANEL_REFRESHING : "Atualizar"}
           </Button>
         </div>
       </CardContent>
@@ -511,12 +514,14 @@ function StorePanel({
   notice,
   online,
   onRefresh,
+  reading,
   store: read,
 }: {
   justClosed: boolean;
   notice: ReactNode;
   online: boolean;
   onRefresh: () => void;
+  reading: boolean;
   store: ClosedStore;
 }) {
   const undo = useUndo(read);
@@ -544,6 +549,7 @@ function StorePanel({
         online={online}
         onRefresh={onRefresh}
         onUndo={undo.open}
+        reading={reading}
         store={store}
       />
       <UndoDialog
@@ -588,7 +594,7 @@ function StoreChoice({
   );
 }
 
-function PanelBody({
+export function PanelBody({
   justClosed,
   load,
   online,
@@ -664,6 +670,7 @@ function PanelBody({
       notice={notice}
       online={online}
       onRefresh={onRefresh}
+      reading={reading}
       store={only}
     />
   );

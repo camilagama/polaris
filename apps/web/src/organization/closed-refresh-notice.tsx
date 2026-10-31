@@ -14,6 +14,16 @@ export const offlineOff = (online: boolean) =>
     ? {}
     : { "aria-describedby": OFFLINE_ID, "aria-disabled": true as const };
 
+export const refreshButtonProps = (
+  online: boolean,
+  reading: boolean,
+  onRefresh: () => void
+) => ({
+  onClick: reading ? undefined : onRefresh,
+  ...offlineOff(online),
+  ...(reading ? { "aria-disabled": true as const } : {}),
+});
+
 export function RefreshFailedNotice({
   online,
   onRefresh,
@@ -33,11 +43,9 @@ export function RefreshFailedNotice({
         <span>{PANEL_REFRESH_FAILED_TEXT}</span>
         <Button
           className="w-fit max-sm:w-full"
-          onClick={reading ? undefined : onRefresh}
           ref={retry}
           variant="outline"
-          {...offlineOff(online)}
-          {...(reading ? { "aria-disabled": true as const } : {})}
+          {...refreshButtonProps(online, reading, onRefresh)}
         >
           {reading ? PANEL_REFRESHING : PANEL_REFRESH_RETRY}
         </Button>

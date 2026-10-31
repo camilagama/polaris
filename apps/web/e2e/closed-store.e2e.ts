@@ -428,6 +428,82 @@ test("Tentar de novo que falha de novo mantém o aviso e o foco no botão", asyn
   await expect(notice).toContainText("Não deu para atualizar.");
 });
 
+test("Atualizar do cartão diz Atualizando… travado e com o foco nele, um pedido por toque, e o aviso acompanha", async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const calls = await openPanel(page, {
+    statuses: [
+      store(),
+      (route) => route.abort("internetdisconnected"),
+      async (route) => {
+        await held;
+        await route.fulfill(rpc({ organization: store({ phase: "closed" }) }));
+      },
+    ],
+  });
+  await expect(title(page)).toBeVisible();
+  const refresh = page
+    .getByRole("button", { exact: true, name: "Atualizar" })
+    .first();
+  await refresh.focus();
+  await refresh.click();
+  const notice = page.getByRole("alert");
+  await expect(notice).toBeVisible();
+  await notice.getByRole("button", { name: "Tentar de novo" }).click();
+  await expect.poll(() => calls.statuses).toBe(3);
+  const reading = page.getByRole("button", {
+    exact: true,
+    name: "Atualizando…",
+  });
+  await expect(reading).toHaveCount(2);
+  await expect(reading.first()).toHaveAttribute("aria-disabled", "true");
+  await expect(reading.last()).toHaveAttribute("aria-disabled", "true");
+  await reading.first().dispatchEvent("click");
+  release();
+  await expect(notice).toHaveCount(0);
+  await expect(reading).toHaveCount(0);
+  expect(calls.statuses).toBe(3);
+});
+
+test("Atualizar do cartão sozinho: Atualizando… com o foco nele até a resposta, depois volta a Atualizar", async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const calls = await openPanel(page, {
+    statuses: [
+      store(),
+      async (route) => {
+        await held;
+        await route.fulfill(rpc({ organization: store() }));
+      },
+    ],
+  });
+  await expect(title(page)).toBeVisible();
+  const refresh = page
+    .getByRole("button", { exact: true, name: "Atualizar" })
+    .first();
+  await refresh.focus();
+  await refresh.click();
+  const reading = page.getByRole("button", {
+    exact: true,
+    name: "Atualizando…",
+  });
+  await expect(reading).toHaveAttribute("aria-disabled", "true");
+  await expect(reading).toBeFocused();
+  await reading.dispatchEvent("click");
+  release();
+  await expect(reading).toHaveCount(0);
+  await expect(refresh).toBeFocused();
+  expect(calls.statuses).toBe(2);
+});
+
 test("a primeira leitura que falha continua mostrando só o erro, sem painel (AC-4)", async ({
   page,
 }) => {
