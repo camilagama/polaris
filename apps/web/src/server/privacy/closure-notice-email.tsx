@@ -54,6 +54,13 @@ function formatTime(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
+function calendarDaysBetween(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T12:00:00.000Z`) - Date.parse(`${from}T12:00:00.000Z`)) /
+      DAY_MS
+  );
+}
+
 /** The panel of the closed store on the app's own origin: a fixed path, with no store, query or token. */
 export function closureNoticePanelUrl(appOrigin: string): string {
   return new URL(closedStorePath(), new URL(appOrigin).origin).toString();
@@ -144,21 +151,24 @@ export function closureNoticeContent(
           copyLine,
           ...signInParagraph,
         ],
-        preview: `Os dados da loja ${store} podem ser apagados a partir de ${deletionDay}.`,
-        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
+        preview: `Faltam 30 dias: os dados da loja ${store} podem ser apagados a partir de ${deletionDay}.`,
+        subject: `Faltam 30 dias: os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
       };
-    case "d7":
+    case "d7": {
+      // a d7 sent again counts from the day it is sent, so the number is the real one, not always 7
+      const daysLeft = `Faltam ${calendarDaysBetween(localDate(delivery.dueAt, delivery.timeZone), closureNoticeDeletionDate(delivery))} dias`;
       return {
         actionLabel: panelLabel,
-        heading: "Faltam 7 dias para os dados da loja poderem ser apagados",
+        heading: `${daysLeft} para os dados da loja poderem ser apagados`,
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${firstDay}.${beforeDeletionDay ? " Depois de apagados, não podem ser recuperados." : ""}`,
           copyLine,
           ...signInParagraph,
         ],
-        preview: `Os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
-        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${firstDay}`,
+        preview: `${daysLeft}: os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
+        subject: `${daysLeft}: os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${firstDay}`,
       };
+    }
     case "deletion_day":
       return {
         actionLabel: panelLabel,
@@ -258,7 +268,7 @@ function ClosureNoticeEmail({
             }}
           >
             Este é um aviso automático sobre o encerramento da loja. O Polaris
-            nunca pede a sua senha por e-mail.
+            nunca pede senha, código ou pagamento por e-mail.
           </Text>
         </Container>
       </Body>
