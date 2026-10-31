@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  * `gate-roles.ts` (`withGateRole`, `becomeGateRole`, or `setLoginRole` for the login's own right).
  *
  * The test reads every `.ts` and `.mjs` of the gate folders, tests and support files included; the only file allowed to
- * hold the statement are the helper itself and this test (its planted cases), an exact list. A statement starts a string literal (quote, apostrophe or
+ * hold the statement are the helper itself and the tests that plant it or expect it from the helper, an exact list. A statement starts a string literal (quote, apostrophe or
  * backtick) or follows a semicolon inside one, so a comment that talks about SET ROLE is not one; SET SESSION
  * AUTHORIZATION and `set_config('role', …)` switch role too and count anywhere.
  */
@@ -17,6 +17,7 @@ const ROOTS = {
   "packages/db/scripts": new URL("./", import.meta.url),
 } as const;
 const ALLOWED = [
+  "packages/db/scripts/gate-roles-release.test.ts",
   "packages/db/scripts/gate-roles.test.ts",
   "packages/db/scripts/gate-roles.ts",
 ];

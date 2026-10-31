@@ -16,6 +16,7 @@ import {
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
 import { withGateRole } from "./gate-roles";
+import { assertSuperuserCasesProved } from "./gate-runs";
 import {
   assertOwnerRolesClean,
   findOwnerAttributeViolations,
@@ -834,6 +835,7 @@ async function run() {
       )
     ).rows;
     const gateUserIsSuperuser = superusers?.gate_user === true;
+    assertSuperuserCasesProved(gateUserIsSuperuser, "definer-hardening");
     // the creator of the polaris_* roles: without SUPERUSER it holds an ADMIN-only edge on each (PostgreSQL 16+)
     const originalOwnerIsSuperuser = superusers?.original_owner === true;
     if (gateUserIsSuperuser) {

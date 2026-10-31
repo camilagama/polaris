@@ -3,6 +3,12 @@ import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { Client } from "pg";
 import { isLocalGateHost } from "./gate-hosts";
+import {
+  type GateRun,
+  runMarkers,
+  runsOf,
+  type SuperuserNeed,
+} from "./gate-runs";
 import { connectToGateTarget, validateGateTarget } from "./gate-target";
 
 /**
@@ -50,12 +56,8 @@ interface Gate {
   localOnly?: boolean;
   name: string;
   script: string;
-  /**
-   * `only`: needs a real superuser by design (it creates what only one may), so it runs on POLARIS_GATE_SUPERUSER_URL
-   * when set. `also`: proves part of its cases only as a superuser, so with the URL set it runs as the owner and again
-   * as the superuser.
-   */
-  superuser?: "also" | "only";
+  /** See gate-runs.ts: with POLARIS_GATE_SUPERUSER_URL set, `only` runs as the superuser and `also` runs as both. */
+  superuser?: SuperuserNeed;
 }
 
 const salesEnv = (context: Context) => ({
@@ -246,8 +248,8 @@ gates.push(
     env: salesEnv,
     localOnly: true,
     name: "environment-marker",
-    superuser: "only",
     script: "verify-environment-marker-gate.ts",
+    superuser: "only",
   },
   // the activation funnel (corte 2.4, ADR 0071 amended): its fixtures write sale headers without items and its measure
   // loads auto_explain, both only for a superuser, so the job's Postgres only
@@ -255,8 +257,8 @@ gates.push(
     env: salesEnv,
     localOnly: true,
     name: "activation-funnel",
-    superuser: "only",
     script: "verify-activation-funnel-gate.ts",
+    superuser: "only",
   },
   // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
   // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
@@ -285,8 +287,8 @@ gates.push(
     env: salesEnv,
     localOnly: true,
     name: "migrations-without-superuser",
-    superuser: "only",
     script: "verify-migrations-without-superuser-gate.ts",
+    superuser: "only",
   },
   // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
   // Local Postgres only, like admin-worker. They are the last gates of the list, which is the order they run in (not the order of a
@@ -522,26 +524,10 @@ function redact(line: string): string {
   return line.replace(urlPattern, "[redacted]");
 }
 
-/** The runs of a gate: as the owner, as the superuser, or both (see `Gate.superuser`). */
-function runsOf(
-  gate: Gate,
-  context: Context
-): Array<{ asSuperuser: boolean; label: string }> {
-  if (!(gate.superuser && context.superuserUrl)) {
-    return [{ asSuperuser: false, label: gate.name }];
-  }
-  return gate.superuser === "only"
-    ? [{ asSuperuser: true, label: gate.name }]
-    : [
-        { asSuperuser: false, label: gate.name },
-        { asSuperuser: true, label: `${gate.name} (superuser)` },
-      ];
-}
-
 function runGate(
   gate: Gate,
   context: Context,
-  asSuperuser: boolean
+  run: GateRun
 ): Promise<{
   code: number;
   notes: string[];
@@ -552,11 +538,15 @@ function runGate(
     const started = Date.now();
     const lines: string[] = [];
     const notes: string[] = [];
-    const superuserUrl = asSuperuser ? context.superuserUrl : undefined;
+    const superuserUrl = run.asSuperuser ? context.superuserUrl : undefined;
+    // the superuser URL reaches only the run that uses it, and only as the URL of that run
+    const { POLARIS_GATE_SUPERUSER_URL: _superuserUrl, ...inherited } =
+      process.env;
     const child = spawn(process.execPath, [`scripts/${gate.script}`], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
-        ...process.env,
+        ...inherited,
+        ...runMarkers(run),
         ...(superuserUrl
           ? {
               ...gate.env({ ...context, url: superuserUrl }),
@@ -612,7 +602,7 @@ async function superuserTarget(input: {
   admin: Client;
   branch: string;
   database: string;
-  hostname: string;
+  host: string;
   isLocalCi: boolean;
 }): Promise<string | undefined> {
   const url = process.env.POLARIS_GATE_SUPERUSER_URL;
@@ -624,7 +614,7 @@ async function superuserTarget(input: {
     database: input.database,
     url,
   });
-  if (!input.isLocalCi || parsed.hostname !== input.hostname) {
+  if (!input.isLocalCi || parsed.host !== input.host) {
     throw new Error(
       "POLARIS_GATE_SUPERUSER_URL is for the local Postgres of the job only, on the same host as the owner."
     );
@@ -686,16 +676,19 @@ async function main() {
   }
 
   const { admin } = await connectToGateTarget({ branch, database, url });
-  const superuserUrl = await superuserTarget({
-    admin,
-    branch,
-    database,
-    hostname: parsed.hostname,
-    isLocalCi,
-  }).catch(async (error: unknown) => {
-    await admin.end();
+  let superuserUrl: string | undefined;
+  try {
+    superuserUrl = await superuserTarget({
+      admin,
+      branch,
+      database,
+      host: parsed.host,
+      isLocalCi,
+    });
+  } catch (error) {
+    await admin.end().catch(() => undefined);
     throw error;
-  });
+  }
   const login = `polaris_gate_runner_${randomBytes(6).toString("hex")}`;
   const password = randomBytes(24).toString("hex");
   const results: Array<{
@@ -725,15 +718,18 @@ async function main() {
     };
 
     const runs = selected.flatMap((gate) =>
-      runsOf(gate, context).map((run) => ({ ...run, gate }))
+      runsOf(gate.name, gate.superuser, Boolean(superuserUrl)).map((run) => ({
+        gate,
+        run,
+      }))
     );
-    for (const { asSuperuser, gate, label } of runs) {
-      console.log(`=== ${label}`);
+    for (const { gate, run } of runs) {
+      console.log(`=== ${run.label}`);
       // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
-      const result = await runGate(gate, context, asSuperuser);
+      const result = await runGate(gate, context, run);
       const status = result.code === 0 ? "passed" : "failed";
       results.push({
-        gate: label,
+        gate: run.label,
         ...(result.notes.length > 0 ? { notes: result.notes } : {}),
         seconds: result.seconds,
         status,

@@ -155,6 +155,10 @@ async function cleanupTemporaryRuntimeRole(input: {
   if (input.onboarding) {
     try {
       await input.onboarding.pool.end();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
       await input.adminPool.query(
         `DROP ROLE IF EXISTS "${input.onboarding.login}"`
       );

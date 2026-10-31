@@ -409,10 +409,11 @@ async function run() {
     );
 
     // ------------------------------------------------- EXECUTE revoked: the login goes on
+    // set first: the REVOKE may commit and the give-back of the owner role fail after it (the GRANT back is idempotent)
+    revoked = true;
     await asRecordOwner(
       `REVOKE EXECUTE ON FUNCTION ${RECORD} FROM polaris_auth_runtime`
     );
-    revoked = true;
     const sizeBefore = logs.captured.length;
     const resilient = await call(requestOf(4), "/api/auth/sign-in/email", {
       ...json({ email, password: PASSWORD }),

@@ -25,6 +25,7 @@ import { createCustomer } from "../src/customer-repository";
 import { requestOrganizationClosure } from "../src/organization-closure-repository";
 import { createPrivacyMaintenanceClient } from "../src/privacy-maintenance";
 import { withGateRole } from "./gate-roles";
+import { assertSuperuserCasesProved } from "./gate-runs";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -777,13 +778,7 @@ async function run() {
         "the same refusals hold under session_replication_role = replica (the triggers are ENABLE ALWAYS)"
       );
     } else {
-      // in CI the replica proof is owed: either the owner is a superuser, or the runner runs this gate again on
-      // POLARIS_GATE_SUPERUSER_URL
-      assert.ok(
-        process.env.CI !== "true" ||
-          Boolean(process.env.POLARIS_GATE_SUPERUSER_URL),
-        "the CI database must let the gate set session_replication_role"
-      );
+      assertSuperuserCasesProved(isSuperuser, "audit-retention");
       tests.push(
         "session_replication_role = replica was not tried: the connection is not a superuser (in CI the superuser run proves it)"
       );

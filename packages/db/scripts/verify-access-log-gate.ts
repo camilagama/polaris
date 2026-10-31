@@ -1086,12 +1086,13 @@ async function run() {
     );
 
     // ------------------------------------------------------------- the grant revoked
+    // set first: the REVOKE may commit and the give-back of the owner role fail after it (the GRANT back is idempotent)
+    revoked = true;
     await queryAsFunctionOwner(
       owner.pool,
       RECORD,
       `REVOKE EXECUTE ON FUNCTION ${RECORD} FROM polaris_auth_runtime`
     );
-    revoked = true;
     const rowsWhileRevoked = await countOf(
       "SELECT count(*)::text AS count FROM public.auth_access_log"
     );
