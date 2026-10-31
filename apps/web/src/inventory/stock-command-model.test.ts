@@ -1179,6 +1179,19 @@ describe("informing the cost of units on hand (the cost panel)", () => {
     expect(failed.step).toBe("editing");
   });
 
+  it("answers a count version conflict with the short text, a fresh attempt and a new read", () => {
+    const failure = mapStockError("count", {
+      code: "CONFLICT",
+      data: { reason: "inventory_version_conflict" },
+    });
+    expect(failure).toMatchObject({
+      discardAttempt: true,
+      message:
+        "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
+      refreshBalance: true,
+    });
+  });
+
   it("is blocked once the cost is known, the balance is 0, or there is no connection", () => {
     expect(stockActionBlock("cost", unknownCostTarget)).toBeNull();
     expect(stockActionBlock("cost", target)).toBe(
