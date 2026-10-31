@@ -4,6 +4,7 @@ import {
   FRESH_SESSION_TEXT,
   type RequestRefusal,
 } from "../data-export/data-export-model";
+import type { SaleRefusal } from "../lib/organization-closed";
 import {
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
@@ -396,16 +397,39 @@ const DEVICE_CLOSED_REST =
 const DEVICE_COPY_KEPT_REST =
   "O que não foi enviado continua guardado na fila deste aparelho.";
 
+const SALE_NOT_RECORDED =
+  "A venda que você acabou de confirmar não foi registrada.";
+const SALE_MAYBE_RECORDED =
+  "Não deu para saber se a venda que você acabou de confirmar foi registrada. Se uma tentativa anterior chegou ao servidor, ela está na cópia dos seus dados.";
+const SALE_QUEUE_REST =
+  "A cópia deste aparelho foi apagada. O que já estava na fila continua guardado.";
+const SALE_QUEUE_KEPT_REST =
+  "O que já estava na fila deste aparelho continua guardado.";
+const SALE_CART_KEPT =
+  "O carrinho fica guardado aqui e volta em Vender se a loja reabrir. Se você fechar o Polaris, ele se perde.";
+
 /**
  * The notice of a device whose store was closed; without the date while it is not known (or not the user's to read).
- * It says the copy was deleted only once the device confirmed it.
+ * It says the copy was deleted only once the device confirmed it. When the refusal came back to a sale just confirmed
+ * on the server, it says where its cart is and that the sale was not recorded, unless that command had already been
+ * sent once with no answer: the refusal comes before the server's replay of a recorded command, so then it only says
+ * it could not tell. The sale never entered the queue, which the queue sentence must not suggest.
  */
 export function deviceClosedText(
   store: ClosedStore | null,
-  copyDropped: boolean
+  copyDropped: boolean,
+  saleRefusal: SaleRefusal | null = null
 ): string {
   const closed = store
     ? `Esta loja foi encerrada em ${dateOf(store.requestedAt, store.timezone)}.`
     : "Esta loja foi encerrada.";
+  if (saleRefusal) {
+    const queue = copyDropped ? SALE_QUEUE_REST : SALE_QUEUE_KEPT_REST;
+    const sale =
+      saleRefusal === "maybe_recorded"
+        ? SALE_MAYBE_RECORDED
+        : SALE_NOT_RECORDED;
+    return `${closed} ${sale} ${queue} ${SALE_CART_KEPT}`;
+  }
   return `${closed} ${copyDropped ? DEVICE_CLOSED_REST : DEVICE_COPY_KEPT_REST}`;
 }

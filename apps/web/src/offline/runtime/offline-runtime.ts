@@ -159,6 +159,11 @@ export interface RuntimeDependencies {
     namespace: LocalNamespace,
     deviceId: string
   ) => Promise<OpenedStores>;
+  /**
+   * Whether any queue database exists on this browser, whoever's store it is: what tells an empty registry of
+   * namespaces from one that lost the index of a queue still on the disk.
+   */
+  outboxOnDisk: () => Promise<boolean>;
   purge: (
     namespace: LocalNamespace,
     options: { discardPending: boolean }
@@ -176,6 +181,11 @@ export interface RuntimeDependencies {
  * offered to any screen and nothing new is queued (emenda do ADR 0047).
  */
 type RuntimePhase = "expired" | "off" | "ready" | "starting" | "unavailable";
+
+export interface LogoutInspection {
+  readable: boolean;
+  workspaces: LogoutWorkspace[];
+}
 
 export interface RuntimeSnapshot {
   /** Whether the local collections hold a complete snapshot of the organization. */
@@ -647,9 +657,18 @@ export class OfflineRuntime {
    * person switches to it. Each workspace releases what it opened.
    */
   async logoutWorkspaces(): Promise<LogoutWorkspace[]> {
+    return (await this.inspectLogout()).workspaces;
+  }
+
+  /**
+   * `logoutWorkspaces` with the one thing an empty list cannot say: whether the runtime could look. `readable` is
+   * false when it could not tell who is signed in (offline, the server unreachable, the start still running), where an
+   * empty list may hide a queue; true with an empty list means the signed-in user has nothing on this browser.
+   */
+  async inspectLogout(): Promise<LogoutInspection> {
     const current = this.logoutWorkspace();
     if (!current) {
-      return await this.closedLogoutWorkspaces();
+      return await this.closedLogoutInspection();
     }
     const others: LogoutWorkspace[] = [];
     for (const item of this.namespaces()) {
@@ -669,7 +688,7 @@ export class OfflineRuntime {
       });
       others.push(workspace);
     }
-    return [current, ...others];
+    return { readable: true, workspaces: [current, ...others] };
   }
 
   /**
@@ -682,16 +701,18 @@ export class OfflineRuntime {
    * (patient-level data) and the lease go anyway, the same rule as a revocation:
    * the queue stays until the person sends or discards it (ADR 0038).
    */
-  private async closedLogoutWorkspaces(): Promise<LogoutWorkspace[]> {
+  private async closedLogoutInspection(): Promise<LogoutInspection> {
     if (this.snapshot.phase === "starting") {
-      return []; // the start is still opening stores: not a moment to open them again
+      // the start is still opening stores: not a moment to open them again
+      return { readable: false, workspaces: [] };
     }
     const userId = await this.signedInUserForLogout();
-    if (!userId) {
-      return [];
+    if (!(userId && this.namespaceRegistryReadable())) {
+      return { readable: false, workspaces: [] };
     }
     const workspaces: LogoutWorkspace[] = [];
-    for (const item of this.namespaces()) {
+    const registered = this.namespaces();
+    for (const item of registered) {
       if (item.userId === userId) {
         // biome-ignore lint/performance/noAwaitInLoops: each namespace is opened and inspected in turn
         const workspace = await this.inspectedWorkspace(item, {
@@ -700,7 +721,27 @@ export class OfflineRuntime {
         workspaces.push(workspace);
       }
     }
-    return workspaces;
+    if (
+      workspaces.length === 0 &&
+      registered.length === 0 &&
+      (await this.queueOnDiskUnseen())
+    ) {
+      return { readable: false, workspaces: [] };
+    }
+    return { readable: true, workspaces };
+  }
+
+  /**
+   * Only asked when the registry is empty: with namespaces of other people listed, the queue databases on the disk are
+   * presumed theirs, and an orphan queue beside theirs goes undetected (no worse than before this
+   * check existed). A failed look at the disk is no proof that it holds no queue.
+   */
+  private async queueOnDiskUnseen(): Promise<boolean> {
+    try {
+      return await this.dependencies.outboxOnDisk();
+    } catch {
+      return true;
+    }
   }
 
   /**
@@ -1160,6 +1201,28 @@ export class OfflineRuntime {
       throw new Error("no_session_offline");
     }
     return { confirmed: false, userId: remembered };
+  }
+
+  /**
+   * The registry of namespaces is the only index of the queues on this browser: absent is an empty browser, but one
+   * that does not parse or has an entry of another shape hides what it lists, and an empty list from it proves nothing.
+   */
+  private namespaceRegistryReadable(): boolean {
+    try {
+      const parsed: unknown = JSON.parse(
+        this.dependencies.keyValues.read(NAMESPACES_KEY) ?? "[]"
+      );
+      return (
+        Array.isArray(parsed) &&
+        parsed.every(
+          (item) =>
+            typeof item?.organizationId === "string" &&
+            typeof item?.userId === "string"
+        )
+      );
+    } catch {
+      return false;
+    }
   }
 
   private namespaces(): { organizationId: string; userId: string }[] {

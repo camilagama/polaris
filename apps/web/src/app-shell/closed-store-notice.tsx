@@ -8,6 +8,7 @@ import {
 } from "../lib/current-organization-model";
 import {
   closedStoreToShow,
+  closedSaleRefusal,
   useOrganizationsClosedHere,
 } from "../lib/organization-closed";
 import { orpcClient } from "../lib/orpc";
@@ -106,7 +107,13 @@ export function ClosedStoreNotice({
     >
       <TriangleAlertIcon aria-hidden="true" />
       <AlertDescription className="grid justify-items-start gap-2 [&_p:not(:last-child)]:mb-0">
-        <p>{deviceClosedText(store, copyDropped)}</p>
+        <p>
+          {deviceClosedText(
+            store,
+            copyDropped,
+            closedSaleRefusal(organizationId)
+          )}
+        </p>
         {store ? (
           <a
             className={TEXT_LINK}

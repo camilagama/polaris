@@ -8,25 +8,62 @@ const NONE: readonly string[] = [];
  * organizations again, and a closed one is no longer listed.
  */
 let closed: readonly string[] = NONE;
+/** The closed ones whose refusal came back to a sale being confirmed: that sale was never queued on the device. */
+let saleRefused: readonly string[] = NONE;
+/** Of those, the ones where the command had already been sent once with no answer: the server may hold that sale. */
+let saleMaybeRecorded: readonly string[] = NONE;
 const listeners = new Set<() => void>();
 
+export type SaleRefusalCause = "sale" | "sale_resent";
+export type SaleRefusal = "maybe_recorded" | "not_recorded";
+
 /** Every refusal is kept: the one of the store open now must not be lost behind one that came earlier. */
-export function markOrganizationClosed(organizationId: string): void {
-  if (organizationId === "" || closed.includes(organizationId)) {
+export function markOrganizationClosed(
+  organizationId: string,
+  cause: SaleRefusalCause | "other" = "other"
+): void {
+  if (organizationId === "") {
     return;
   }
-  closed = [...closed, organizationId];
+  const newlyClosed = !closed.includes(organizationId);
+  const newlyRefusedSale =
+    cause !== "other" && !saleRefused.includes(organizationId);
+  const newlyMaybeRecorded =
+    cause === "sale_resent" && !saleMaybeRecorded.includes(organizationId);
+  if (!(newlyClosed || newlyRefusedSale || newlyMaybeRecorded)) {
+    return;
+  }
+  // a new list also for the cause alone: the notice already on the screen reads it again
+  closed = newlyClosed ? [...closed, organizationId] : [...closed];
+  if (newlyRefusedSale) {
+    saleRefused = [...saleRefused, organizationId];
+  }
+  if (newlyMaybeRecorded) {
+    saleMaybeRecorded = [...saleMaybeRecorded, organizationId];
+  }
   for (const listener of listeners) {
     listener();
   }
 }
 
+/** Null when no refusal of this store came back to a sale the person had just confirmed. */
+export function closedSaleRefusal(organizationId: string): SaleRefusal | null {
+  if (!saleRefused.includes(organizationId)) {
+    return null;
+  }
+  return saleMaybeRecorded.includes(organizationId)
+    ? "maybe_recorded"
+    : "not_recorded";
+}
+
 /** The session is over or changed hands: no refusal of the earlier one says anything about the next. */
 export function clearOrganizationsClosedHere(): void {
-  if (closed.length === 0) {
+  if (closed.length === 0 && saleRefused.length === 0) {
     return;
   }
   closed = NONE;
+  saleRefused = NONE;
+  saleMaybeRecorded = NONE;
   for (const listener of listeners) {
     listener();
   }

@@ -3,6 +3,7 @@ import {
   clearOrganizationsClosedHere,
   closedStoreToShow,
   markOrganizationClosed,
+  closedSaleRefusal,
   organizationsClosedHere,
   requestedOrganizationId,
   subscribeOrganizationsClosed,
@@ -49,6 +50,46 @@ describe("the stores refused as closed", () => {
     markOrganizationClosed("b");
     expect(organizationsClosedHere()).not.toBe(first);
     expect(first).toEqual(["a"]);
+  });
+
+  it("remembers that the refusal came back to a sale, even when the store was already marked", () => {
+    const listener = vi.fn();
+    markOrganizationClosed("a");
+    expect(closedSaleRefusal("a")).toBeNull();
+    const before = organizationsClosedHere();
+    const unsubscribe = subscribeOrganizationsClosed(listener);
+    markOrganizationClosed("a", "sale");
+    expect(closedSaleRefusal("a")).toBe("not_recorded");
+    expect(closedSaleRefusal("b")).toBeNull();
+    expect(organizationsClosedHere()).toEqual(["a"]);
+    expect(organizationsClosedHere()).not.toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    markOrganizationClosed("a", "sale");
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("tells a refused resend of an unanswered command from a first try, and never goes back to the first", () => {
+    const listener = vi.fn();
+    markOrganizationClosed("a", "sale");
+    const unsubscribe = subscribeOrganizationsClosed(listener);
+    markOrganizationClosed("a", "sale_resent");
+    expect(closedSaleRefusal("a")).toBe("maybe_recorded");
+    expect(listener).toHaveBeenCalledTimes(1);
+    markOrganizationClosed("a", "sale");
+    expect(closedSaleRefusal("a")).toBe("maybe_recorded");
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("forgets the sale refusal with the rest", () => {
+    markOrganizationClosed("a", "sale");
+    markOrganizationClosed("b", "sale_resent");
+    clearOrganizationsClosedHere();
+    expect(closedSaleRefusal("a")).toBeNull();
+    expect(closedSaleRefusal("b")).toBeNull();
+    markOrganizationClosed("b", "sale");
+    expect(closedSaleRefusal("b")).toBe("not_recorded");
   });
 
   it("is cleared as a whole, and only tells when there was something", () => {

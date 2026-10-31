@@ -19,6 +19,7 @@ import {
   type RuntimeDependencies,
   SessionUnreachableError,
 } from "./offline-runtime";
+import { logoutDependencies } from "./logout-dependencies";
 import { syncStatusLabel } from "./sync-status";
 
 const key = { id: "k1", secret: "s".repeat(40) };
@@ -47,6 +48,8 @@ function memoryKeyValues(): KeyValueStore & { data: Map<string, string> } {
 function world(options: { leaseHours?: number } = {}) {
   const server = new FakeCatalogServer();
   const network = { online: true };
+  /** Whether a queue database exists on the browser, apart from the namespaces the registry lists. */
+  const disk = { failure: undefined as Error | undefined, outbox: false };
   let clock = new Date("2026-10-14T12:00:00.000Z");
   const calls = {
     issueLease: 0,
@@ -279,6 +282,10 @@ function world(options: { leaseHours?: number } = {}) {
         };
         return Promise.resolve(opened);
       },
+      outboxOnDisk: () =>
+        disk.failure
+          ? Promise.reject(disk.failure)
+          : Promise.resolve(disk.outbox),
       purge: (_namespace, purgeOptions) => {
         purged.push(purgeOptions);
         return Promise.resolve();
@@ -320,6 +327,7 @@ function world(options: { leaseHours?: number } = {}) {
         }
       }
     },
+    disk,
     gates,
     keyValues,
     labels,
@@ -860,6 +868,100 @@ describe("starting", () => {
     expect((await kept?.outbox.snapshot())?.commands).toHaveLength(1);
     expect(w.keyValues.read("polaris.offline.namespaces")).toContain(userId);
   });
+
+  it("inspecting a logout tells an empty copy of the signed-in user from a copy it could not look at", async () => {
+    const w = world();
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: true,
+      workspaces: [],
+    });
+
+    w.network.online = false;
+    expect(await w.make().inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+    w.network.online = true;
+    w.failures.sessionUser = new SessionUnreachableError("session_http_503");
+    expect(await w.make().inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+  });
+
+  it("inspecting a logout does not take an empty registry for an empty browser while a queue database is on the disk", async () => {
+    const w = world();
+    w.disk.outbox = true;
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+    const signOut = vi.fn(() => Promise.resolve());
+    expect(
+      await logoutDependencies(runtime, {
+        leave: () => undefined,
+        revoke: () => Promise.resolve({ endedCurrentSession: false }),
+        signOut,
+      })
+    ).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("inspecting a logout presumes the queue databases on the disk belong to the other people in the registry, so a signed-in user with no queue can leave", async () => {
+    const w = world();
+    w.keyValues.write(
+      "polaris.offline.namespaces",
+      JSON.stringify([{ organizationId, userId: "someone-else" }])
+    );
+    w.disk.outbox = true;
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: true,
+      workspaces: [],
+    });
+    const signOut = vi.fn(() => Promise.resolve());
+    const dependencies = await logoutDependencies(runtime, {
+      leave: () => undefined,
+      revoke: () => Promise.resolve({ endedCurrentSession: false }),
+      signOut,
+    });
+    expect(dependencies?.workspaces).toEqual([]);
+    await dependencies?.signOut();
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("inspecting a logout keeps stopping when the disk cannot be read with the registry empty", async () => {
+    const w = world();
+    w.disk.failure = new Error("indexeddb_unavailable");
+    const runtime = w.make();
+    expect(await runtime.inspectLogout()).toEqual({
+      readable: false,
+      workspaces: [],
+    });
+    const signOut = vi.fn(() => Promise.resolve());
+    expect(
+      await logoutDependencies(runtime, {
+        leave: () => undefined,
+        revoke: () => Promise.resolve({ endedCurrentSession: false }),
+        signOut,
+      })
+    ).toBeNull();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it.each(["{", '{"a":1}', '[{"userId":"u"}]', "[null]"])(
+    "inspecting a logout does not take an unreadable registry of namespaces (%s) for an empty browser",
+    async (registry) => {
+      const w = world();
+      w.keyValues.write("polaris.offline.namespaces", registry);
+      expect(await w.make().inspectLogout()).toEqual({
+        readable: false,
+        workspaces: [],
+      });
+    }
+  );
 
   it("logging out with no store open only reaches the namespaces of whoever is signed in, and names no one when the server answers nonsense", async () => {
     const w = world();

@@ -45,6 +45,8 @@ const LAB_KEY = {
 const HOUR = 3_600_000;
 const SESSION_USER_KEY = "polaris.offline.session-user";
 const DEVICE_KEY = "polaris.offline.device";
+const LOJA_ENCERRADA = /\/loja-encerrada/;
+const ENTRAR_SAIU = /\/entrar\?motivo=saiu/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const NOTICE =
   "Esta loja foi encerrada em 20 de outubro de 2026. A cópia deste aparelho foi apagada; o que não foi enviado continua guardado na fila.";
@@ -67,6 +69,8 @@ class ClosingServer {
   pushes = 0;
   leases = 0;
   closedRefusals = 0;
+  signedOut = false as boolean;
+  signOuts = 0;
 
   readonly userId: string;
 
@@ -117,10 +121,20 @@ class ClosingServer {
         return route.abort("internetdisconnected");
       }
       return route.fulfill({
-        body: JSON.stringify({
-          session: { id: "s" },
-          user: { id: this.userId },
-        }),
+        body: JSON.stringify(
+          this.signedOut
+            ? null
+            : { session: { id: "s" }, user: { id: this.userId } }
+        ),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      });
+    });
+    await page.route("**/api/auth/sign-out", (route) => {
+      this.signOuts += 1;
+      this.signedOut = true;
+      return route.fulfill({
+        body: JSON.stringify({ success: true }),
         contentType: "application/json",
         headers: { ...WORKER_MARK },
       });
@@ -158,6 +172,9 @@ class ClosingServer {
         await ClosingServer.ok(route, { device: { id } });
         return;
       }
+      case "device/revokeCurrent":
+        await ClosingServer.ok(route, { endedCurrentSession: false });
+        return;
       case "device/check":
         await ClosingServer.ok(route, { device: { id: input.deviceId } });
         return;
@@ -429,6 +446,120 @@ test.describe("aparelho com a loja encerrada (AC-11)", () => {
     await page.reload();
 
     await expectClosedDevice(page, server, queued, device);
+  });
+
+  test("Sair no painel da loja encerrada, sem nada na fila, encerra a sessão e chega à entrada", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    await openSales(page, server);
+    server.refusing = "read";
+    await page.reload();
+    await expectClosedDevice(page, server, [], await stored(page, DEVICE_KEY));
+
+    await notice(page)
+      .getByRole("link", { name: "Ver a loja encerrada" })
+      .click();
+    await expect(page).toHaveURL(LOJA_ENCERRADA);
+    await page.getByRole("button", { name: "Sair" }).click();
+
+    await expect(page).toHaveURL(ENTRAR_SAIU, { timeout: 20_000 });
+    expect(server.signOuts).toBe(1);
+  });
+
+  test("a mensagem do Sair que falhou rola até a tela e recebe o foco", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    await openSales(page, server);
+    server.refusing = "read";
+    await page.reload();
+    await expectClosedDevice(page, server, [], await stored(page, DEVICE_KEY));
+    await page.route("**/api/auth/sign-out", (route) =>
+      route.fulfill({
+        body: JSON.stringify({}),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 500,
+      })
+    );
+
+    await notice(page)
+      .getByRole("link", { name: "Ver a loja encerrada" })
+      .click();
+    await page.getByRole("button", { name: "Sair" }).click();
+
+    const message = page.getByRole("alert").filter({
+      hasText: "não foi possível encerrar a sessão",
+    });
+    await expect(message).toBeVisible({ timeout: 20_000 });
+    await expect(message).toBeFocused();
+    await expect(message).toBeInViewport();
+  });
+
+  test("Sair no painel com operação guardada na fila continua parando no aviso", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    await openSales(page, server);
+    await queueTwoSales(page);
+    const queued = await outboxCommands(page);
+    server.pushAnswer = "fail";
+    server.refusing = "read";
+    await page.context().setOffline(false);
+    await page.reload();
+    await expectClosedDevice(
+      page,
+      server,
+      queued,
+      await stored(page, DEVICE_KEY)
+    );
+
+    await notice(page)
+      .getByRole("link", { name: "Ver a loja encerrada" })
+      .click();
+    await page.getByRole("button", { name: "Sair" }).click();
+
+    await expect(
+      page.getByText("Este aparelho guarda 2 operações")
+    ).toBeVisible({
+      timeout: 20_000,
+    });
+    expect(server.signOuts).toBe(0);
+    expect(await outboxCommands(page)).toEqual(queued);
+  });
+
+  test("Sair no painel com a fila no disco e o registro de lojas vazio não encerra a sessão", async ({
+    page,
+  }) => {
+    const server = new ClosingServer(`user-${crypto.randomUUID()}`);
+    await openSales(page, server);
+    await queueTwoSales(page);
+    const queued = await outboxCommands(page);
+    server.pushAnswer = "fail";
+    server.refusing = "read";
+    await page.context().setOffline(false);
+    await page.reload();
+    await expectClosedDevice(
+      page,
+      server,
+      queued,
+      await stored(page, DEVICE_KEY)
+    );
+    await page.evaluate(() =>
+      window.localStorage.removeItem("polaris.offline.namespaces")
+    );
+
+    await notice(page)
+      .getByRole("link", { name: "Ver a loja encerrada" })
+      .click();
+    await page.getByRole("button", { name: "Sair" }).click();
+
+    await expect(
+      page.getByText("Não foi possível verificar o trabalho guardado")
+    ).toBeVisible({ timeout: 20_000 });
+    expect(server.signOuts).toBe(0);
+    expect(await outboxCommands(page)).toEqual(queued);
   });
 
   test("contraste: um FORBIDDEN sem motivo no push não vira loja encerrada", async ({
