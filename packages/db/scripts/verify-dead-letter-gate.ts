@@ -1,7 +1,6 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { InvalidIncidentRetryError } from "@polaris/domain/admin/operational-incident";
 import { Client } from "pg";
 import {
   listOperationalIncidents,
@@ -31,7 +30,7 @@ import {
  * only through two functions and reads nothing; the Admin owner alone retries (the retry puts the same
  * outbox event back to pending, starts an event past the attempts cap over and forgets its processing
  * record, and refuses while a run holds it); the Admin role lists, reads and retries only through three
- * functions that check the operator and the reason and write the audit in the retry's transaction; the
+ * functions that check the operator and write the audit in the retry's transaction (no reason is asked or kept); the
  * incident carries a cause, a type and opaque IDs, never a message body; the incidents carry no
  * organization, so the purge of an organization leaves them. Removing an organization's dead events
  * is the purge's own job (its policy and DELETE grant come with the purge PR, which proves it).
@@ -462,9 +461,8 @@ async function run() {
     const adminRetry = (
       incidentId: string,
       eventId: string,
-      why: string,
       principalId = operator
-    ) => retryDeadLetter(adminClient, principalId, incidentId, eventId, why);
+    ) => retryDeadLetter(adminClient, principalId, incidentId, eventId);
 
     // ------------------------------------------------- 1. who owns and reaches what
     const permission = async (text: string, values: unknown[]) =>
@@ -1971,7 +1969,7 @@ async function run() {
       ["a disabled principal", disabled],
     ] as const) {
       await expectSqlState(
-        () => adminRetry(x.incident, x.id, "motivo valido", id),
+        () => adminRetry(x.incident, x.id, id),
         "42501",
         `${label} is refused`
       );
@@ -1979,61 +1977,20 @@ async function run() {
     await expectSqlState(
       () =>
         adminClient.query(
-          "SELECT public.admin_retry_dead_letter(NULL, $1::uuid, $2::uuid, 'motivo')",
+          "SELECT public.admin_retry_dead_letter(NULL, $1::uuid, $2::uuid)",
           [x.incident, x.id]
         ),
       "42501",
       "a null principal is refused"
     );
     await untouched(x, "an invalid operator");
-    // the reason
-    const reasons: [string, string | null][] = [
-      ["an empty reason", ""],
-      ["a reason of spaces", "     "],
-      ["a null reason", null],
-      ["a reason of 151 characters", "r".repeat(151)],
-      ["a reason with a tab", "um\ttab"],
-      ["a reason with a line break", "uma\nlinha"],
-      ["a reason with a carriage return", "uma\rlinha"],
-      ["a reason with a bell", "toque\u0007"],
-      ["a reason with DEL", "del\u007f"],
-      ["a reason with a C1 control", "c1\u0085"],
-      ["a reason with a zero-width space", "zw\u200bsp"],
-      ["a reason with a line separator", "ls\u2028ls"],
-      ["a reason with a paragraph separator", "ps\u2029ps"],
-      ["a reason with a direction override", "rl\u202eo"],
-      ["a reason with a direction isolate", "is\u2066o"],
-      ["a reason with a byte order mark", "bom\ufeff"],
-    ];
-    for (const [label, reason] of reasons) {
-      await expectError(
-        () =>
-          adminClient.query(
-            "SELECT public.admin_retry_dead_letter($1::uuid, $2::uuid, $3::uuid, $4::text)",
-            [operator, x.incident, x.id, reason]
-          ),
-        "22023",
-        "invalid_incident_reason",
-        `${label} is refused`
-      );
-    }
-    await assert.rejects(
-      () => adminRetry(x.incident, x.id, " \t "),
-      InvalidIncidentRetryError,
-      "the repository turns the refusal into the domain error"
-    );
-    await untouched(x, "an invalid reason");
     // an item that is not of the incident
     for (const [label, incident, event] of [
       ["an event of another incident", y.incident, x.id],
       ["an event that is no item", x.incident, randomUUID()],
       ["an incident that does not exist", randomUUID(), x.id],
     ] as const) {
-      assert.equal(
-        await adminRetry(incident, event, "motivo valido"),
-        "unknown_item",
-        label
-      );
+      assert.equal(await adminRetry(incident, event), "unknown_item", label);
     }
     await untouched(x, "an item that is not of the incident");
     await untouched(y, "an item that is not of the incident");
@@ -2045,7 +2002,7 @@ async function run() {
       "none of the refusals wrote an audit"
     );
     tests.push(
-      "admin_retry_dead_letter, refusals: an unknown, a disabled or a null principal is refused with 42501; an empty, spaces-only, null, 151-character or control-character (tab, line break, carriage return, bell, DEL) reason is refused with 22023 invalid_incident_reason (and the repository raises InvalidIncidentRetryError); an event of another incident, an event that is no item and an incident that does not exist answer unknown_item; in every case the event, the item and the audit are unchanged"
+      "admin_retry_dead_letter, refusals: an unknown, a disabled or a null principal is refused with 42501; an event of another incident, an event that is no item and an incident that does not exist answer unknown_item; in every case the event, the item and the audit are unchanged"
     );
 
     // atomicity: the audit fails, so the retry must not stay
@@ -2063,7 +2020,7 @@ async function run() {
     await putProcessing(atomicCap, 1000, "done");
     try {
       await expectError(
-        () => adminRetry(atomicBelow.incident, atomicBelow.id, "motivo valido"),
+        () => adminRetry(atomicBelow.incident, atomicBelow.id),
         "P0001",
         "gate_dlq_audit_blocked",
         "a failing audit fails the retry"
@@ -2074,7 +2031,7 @@ async function run() {
         atomicCap.key
       );
       await expectError(
-        () => adminRetry(atomicCap.incident, atomicCap.id, "motivo valido"),
+        () => adminRetry(atomicCap.incident, atomicCap.id),
         "P0001",
         "gate_dlq_audit_blocked",
         "a failing audit fails the retry at the cap"
@@ -2106,8 +2063,7 @@ async function run() {
     );
 
     // success: exactly one audit, the same transaction
-    const reason = "  razão: reenvio após correção do consumidor  ";
-    assert.equal(await adminRetry(x.incident, x.id, reason), "retried");
+    assert.equal(await adminRetry(x.incident, x.id), "retried");
     assert.deepEqual(await eventOf(x.id), {
       attempts: 6,
       due: true,
@@ -2117,7 +2073,7 @@ async function run() {
     const xAudits = await auditsOf(x.id);
     assert.equal(xAudits.length, 1, "exactly one audit row");
     assert.deepEqual(xAudits[0], {
-      // the operator's reason is checked and never written (ADR 0085)
+      // no reason is asked or written (ADR 0085)
       detail: "result=retried",
       entity_id: x.id,
       entity_type: "queue_dead_letter",
@@ -2126,36 +2082,43 @@ async function run() {
       principal_id: operator,
       support_case_id: null,
     });
-    assert.equal(
-      JSON.stringify(xAudits).includes("razão"),
-      false,
-      "no word of the reason reaches the audit"
-    );
     assert.equal((await itemOf(x.id))?.state, "retried");
     // a repeat is audited too and changes nothing
-    assert.equal(
-      await adminRetry(x.incident, x.id, "segunda tentativa"),
-      "already_pending"
-    );
+    assert.equal(await adminRetry(x.incident, x.id), "already_pending");
     const xAudits2 = await auditsOf(x.id);
     assert.equal(xAudits2.length, 2, "a repeat is audited");
     assert.equal(xAudits2[1]?.detail, "result=already_pending");
     assert.equal((await itemOf(x.id))?.retry_count, 1);
-    // the longest reason is accepted and, as any other, not written
-    const longReason = "é".repeat(150);
-    assert.equal(
-      await adminRetry(y.incident, y.id, longReason),
-      "retried",
-      "a reason of 150 characters is accepted"
-    );
+    // the previous Worker still sends a fourth argument, the reason: whatever it is (even the ones the function used to
+    // refuse) it is not checked and not written, and the new call without it is the same function
+    const previousWorkerReason = "  razão: reenvio\napós correção\u202e  ";
+    const [previousWorkerResult] = (
+      await adminClient.query(
+        "SELECT public.admin_retry_dead_letter($1::uuid, $2::uuid, $3::uuid, $4::text) AS result",
+        [operator, y.incident, y.id, previousWorkerReason]
+      )
+    ).rows as { result: { result: string } }[];
+    assert.equal(previousWorkerResult?.result.result, "retried");
     const [yAudit] = await auditsOf(y.id);
     assert.equal(yAudit?.detail, "result=retried");
+    assert.equal(
+      JSON.stringify(yAudit).includes("razão"),
+      false,
+      "no word of the reason reaches the audit"
+    );
+    const nullReason = (
+      await adminClient.query(
+        "SELECT public.admin_retry_dead_letter($1::uuid, $2::uuid, $3::uuid, NULL) AS result",
+        [operator, y.incident, y.id]
+      )
+    ).rows[0] as { result: { result: string } };
+    assert.equal(nullReason.result.result, "already_pending");
     // busy and event_gone are audited with their result, and change nothing
     const busy = await deadItem(orgB.organizationId, typeAdmin, {
       attempts: 3,
       lock: "live",
     });
-    assert.equal(await adminRetry(busy.incident, busy.id, "tentativa"), "busy");
+    assert.equal(await adminRetry(busy.incident, busy.id), "busy");
     assert.equal((await auditsOf(busy.id))[0]?.detail, "result=busy");
     assert.equal(
       (await auditsOf(busy.id))[0]?.organization_id,
@@ -2170,7 +2133,7 @@ async function run() {
       vanished.id,
     ]);
     assert.equal(
-      await adminRetry(vanished.incident, vanished.id, "tentativa"),
+      await adminRetry(vanished.incident, vanished.id),
       "event_gone"
     );
     assert.equal((await auditsOf(vanished.id))[0]?.detail, "result=event_gone");
@@ -2178,11 +2141,11 @@ async function run() {
       await countOf(
         "SELECT count(*)::text AS count FROM public.platform_audit_events WHERE event_type = 'operational_incident.retry'"
       ),
-      auditCountBefore + 5,
-      "five audited retries in all: retried, repeat, retried, busy, event_gone"
+      auditCountBefore + 6,
+      "six audited retries in all: retried, repeat, retried (the previous Worker's call), repeat (a null reason), busy, event_gone"
     );
     tests.push(
-      "admin_retry_dead_letter, success: one audit row (event_type operational_incident.retry, entity_type queue_dead_letter, entity_id the event, the event's organization, no support case, the operator, detail 'result=retried', never the operator's reason) in the same transaction as the retry; a repeat answers already_pending, audits too and changes no count; a 150-character reason is accepted and not written; busy and event_gone are audited with their result and change nothing"
+      "admin_retry_dead_letter, success: one audit row (event_type operational_incident.retry, entity_type queue_dead_letter, entity_id the event, the event's organization, no support case, the operator, detail 'result=retried', never the operator's reason) in the same transaction as the retry; a repeat answers already_pending, audits too and changes no count; the previous Worker's four-argument call (a reason the function used to refuse, or null) is accepted and the reason is not written; busy and event_gone are audited with their result and change nothing"
     );
 
     // the list
@@ -2324,7 +2287,7 @@ async function run() {
     }
     const detailIncident = (await itemOf(detailItems[0]?.id as string))
       ?.incident_id as string;
-    await adminRetry(detailIncident, detailItems[1]?.id as string, "um motivo");
+    await adminRetry(detailIncident, detailItems[1]?.id as string);
     const itemRows = (
       await owner.pool.query<{ event_id: string }>(
         "SELECT event_id FROM public.queue_dead_letters WHERE incident_id = $1 ORDER BY event_id DESC",

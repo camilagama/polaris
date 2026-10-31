@@ -20,6 +20,7 @@
     "test": "vitest run",
     "tokens:generate": "node scripts/generate-color-tokens.mjs",
     "typecheck": "turbo run typecheck && tsc -p tsconfig.skills.json",
+    "verify:no-lab-in-build": "node scripts/verify-no-lab-in-build.mjs",
     "verify:staging-isolation": "node scripts/verify-staging-isolation.mjs"
   },
   "overrides": {

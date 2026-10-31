@@ -183,9 +183,9 @@ const dependencies: AdminDependencies = {
       withAdminDatabase(connectionOf(bindings), (client) =>
         listOperationalIncidents(client, input)
       ),
-    retry: (principalId, incidentId, eventId, reason, bindings) =>
+    retry: (principalId, incidentId, eventId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
-        retryDeadLetter(client, principalId, incidentId, eventId, reason)
+        retryDeadLetter(client, principalId, incidentId, eventId)
       ),
   },
   privacy: {
