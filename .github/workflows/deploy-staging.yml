@@ -146,6 +146,12 @@ jobs:
       - name: Build the staging Workers
         env:
           CLOUDFLARE_ENV: staging
+          # the company data of the legal texts (ADR 0100): public repository variables; an absent or empty one shows
+          # the example of the field in staging, never a token, and never stops this build
+          VITE_LEGAL_RAZAO_SOCIAL: ${{ vars.LEGAL_RAZAO_SOCIAL }}
+          VITE_LEGAL_ENDERECO: ${{ vars.LEGAL_ENDERECO }}
+          VITE_LEGAL_CONTATO_EMAIL: ${{ vars.LEGAL_CONTATO_EMAIL }}
+          VITE_LEGAL_DPO_EMAIL: ${{ vars.LEGAL_DPO_EMAIL }}
           # the offline runtime is on in staging only, for the manual Gate 5 (ADR 0043)
           VITE_OFFLINE_RUNTIME_ENABLED: "true"
           # the reports of errors of the browser (ADR 0098, amended): on in the client, with the commit of the build as
