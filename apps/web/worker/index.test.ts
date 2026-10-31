@@ -724,6 +724,39 @@ describe("the scheduled maintenance", () => {
       );
     });
 
+    it("warns purge-parado, with no store named, when a purge was claimed over and over with no step done", async () => {
+      const report = (stalledPurges: number) => ({
+        closedOrganizations: 0,
+        closureNoticesOverdue: 0,
+        overduePurges: 0,
+        purgeSchedulingEnabled: false,
+        purgesHeldBack: 0,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+        stalledPurges,
+      });
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(0));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: "organization_purge_stalled" })
+      );
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(2));
+      await runScheduled({ ...configured, ...privacy });
+      const emitted = vi
+        .mocked(console.warn)
+        .mock.calls.map((call) =>
+          typeof call[0] === "string" ? JSON.parse(call[0]) : call[0]
+        )
+        .filter((entry) => entry.event === "organization_purge_stalled");
+      expect(emitted).toHaveLength(1);
+      expect(
+        Object.keys(emitted[0]).filter((key) =>
+          key.toLowerCase().includes("organization")
+        )
+      ).toEqual([]);
+      expect(emitted[0]).toMatchObject({ source: "no_log", stalledPurges: 2 });
+    });
+
     it("is skipped, without failing, where the privacy role is not provisioned", async () => {
       await expect(runScheduled(configured)).resolves.toBeUndefined();
 

@@ -304,7 +304,7 @@ export const alertSignals = [
     },
     threshold: { atLeast: 1, kind: "count" },
     title:
-      "Purge de loja encerrada parado: um passo que falha na 3ª tentativa ou mais",
+      "Purge de loja encerrada parado: um passo que falha na 3ª tentativa ou mais, ou um purge sem avançar em 24 h que nenhum log viu",
     windowMinutes: 1440,
   },
   {
