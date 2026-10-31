@@ -366,6 +366,7 @@ const suites: Record<string, string[]> = {
     "device-sessions",
     "auth-tables-row-security",
     "account-key",
+    "catalog-size-ceilings",
     "offline-lease",
     "sync-log",
     "bootstrap",
