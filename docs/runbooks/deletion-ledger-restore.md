@@ -214,6 +214,40 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
    ```
 
    Vazia significa: nenhum cliente com tombstone continua com dado pessoal, e nenhuma organização com tombstone de purge está fora de `purged` (a linha da organização fica como marca de remoção, então a consulta confere o estado, não a existência). **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Rode de novo, nesse ponto (as migrations do passo 3 criam e mudam funções), a consulta das funções `SECURITY DEFINER` executáveis por PUBLIC do passo 2b: tem de voltar **vazia**. Num restore lógico no Neon, o passo 5 não fecha sem ela. Registre o resultado (sem IDs) e o instante.
+
+   **Confira também que o isolamento entre lojas sobreviveu (RLS).** O `pg_restore` pode terminar sem erro e deixar uma tabela sem RLS forçado, uma política a menos ou um papel com `BYPASSRLS`; nesses casos uma loja passaria a ler os dados de outra. Rode as três consultas abaixo no ambiente restaurado e, as duas primeiras, também na origem, na mesma sessão com `SET search_path = pg_catalog;` (o texto das políticas depende do `search_path`). As migrations do passo 3 criam tabelas e políticas, então a linha de base muda conforme elas tenham ou não sido aplicadas: se o passo 3 **não** aplicou migration, compare com os valores da origem no instante do `pg_dump` (ou da origem, se ela não recebeu migration depois); se aplicou, rode as consultas 1 e 2 também no restaurado **antes do passo 3** (junto do hash das ACLs do passo 2b) e compare esses valores com os da origem no instante do `pg_dump`, e no passo 5 compare com um banco descartável migrado até o mesmo ponto. Nenhuma consulta usa URI, host ou segredo; a conexão é a do dono do banco, lida do ambiente, como no passo 2. Estas conferências não são cobertas pelo gate `deletion-ledger` e ainda não foram ensaiadas contra um restaurado.
+
+   1. **Tabelas do `public` com RLS ligado e forçado.** Os dois números (`tabelas` e `com_rls_forcado`) têm de ser **iguais aos da origem**:
+
+      ```sql
+      SELECT count(*) AS tabelas,
+             count(*) FILTER (WHERE c.relrowsecurity AND c.relforcerowsecurity) AS com_rls_forcado
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p');
+      ```
+
+   2. **Políticas do `public`.** A contagem e o hash (tabela, nome, permissiva ou restritiva, papéis, comando, `USING` e `WITH CHECK`) têm de ser **iguais aos da origem**. O hash pega a política trocada ou ampliada (por exemplo, passada a `PUBLIC`), que a contagem não pega:
+
+      ```sql
+      SELECT count(*) AS politicas,
+             md5(string_agg(
+               tablename || '.' || policyname || ' ' || permissive || ' '
+               || array_to_string(roles, ',') || ' ' || cmd || ' '
+               || coalesce(qual, '') || ' ' || coalesce(with_check, ''),
+               E'\n' ORDER BY tablename COLLATE "C", policyname COLLATE "C")) AS hash_politicas
+        FROM pg_policies
+       WHERE schemaname = 'public';
+      ```
+
+   3. **Nenhum papel `polaris_*` ignora RLS.** No restaurado, esta consulta tem de voltar **vazia** (os papéis `polaris_*`, de runtime e donos, são criados `NOBYPASSRLS`; superusuário também ignora RLS, por isso a consulta o inclui; os papéis são do cluster, então ela vale para o cluster inteiro):
+
+      ```sql
+      SELECT rolname FROM pg_roles
+       WHERE rolname LIKE 'polaris\_%' AND (rolbypassrls OR rolsuper)
+       ORDER BY 1;
+      ```
+
+   Se qualquer uma divergir da origem (itens 1 e 2) ou não voltar vazia (item 3), **o passo 5 não fecha**: não abra o ambiente, não corrija à mão com outro valor, refaça o restore ou pare e acione o responsável, e trate como incidente de isolamento entre lojas. Registre os resultados (só números, hash e a lista vazia, sem IDs) e o instante.
 6. **Só então** reabrir o ambiente (Workers, cron, sincronização). Aparelhos que sincronizaram com o ambiente anterior podem estar à frente do restaurado: é um limite geral do restore, tratado na Fase 16.
 
 ### Reaplicar um purge de organização
