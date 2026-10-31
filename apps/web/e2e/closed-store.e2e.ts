@@ -358,8 +358,21 @@ for (const [label, failure] of [
   test(`Atualizar que falha (${label}) mantém as datas e o botão da cópia, avisa sem afirmar o estado e Tentar de novo lê outra vez (AC-4, AC-5)`, async ({
     page,
   }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const calls = await openPanel(page, {
-      statuses: [store(), failure, store({ phase: "closed" })],
+      statuses: [
+        store(),
+        failure,
+        async (route) => {
+          await held;
+          await route.fulfill(
+            rpc({ organization: store({ phase: "closed" }) })
+          );
+        },
+      ],
     });
     await expect(title(page)).toBeVisible();
     await page
@@ -380,10 +393,40 @@ for (const [label, failure] of [
     const retry = notice.getByRole("button", { name: "Tentar de novo" });
     await expect(retry).toBeFocused();
     await retry.click();
+    const reading = notice.getByRole("button", { name: "Atualizando…" });
+    await expect(reading).toHaveAttribute("aria-disabled", "true");
+    await expect(reading).toBeFocused();
+    await expect(notice).toContainText(
+      "Não deu para atualizar. O que está na tela é da última leitura."
+    );
+    await expect.poll(() => calls.statuses).toBe(3);
+    await reading.dispatchEvent("click");
+    release();
     await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(title(page)).toBeFocused();
     expect(calls.statuses).toBe(3);
   });
 }
+
+test("Tentar de novo que falha de novo mantém o aviso e o foco no botão", async ({
+  page,
+}) => {
+  const fail = (route: Route) => route.abort("internetdisconnected");
+  const calls = await openPanel(page, { statuses: [store(), fail, fail] });
+  await expect(title(page)).toBeVisible();
+  await page
+    .getByRole("button", { exact: true, name: "Atualizar" })
+    .first()
+    .click();
+  const notice = page.getByRole("alert");
+  const retry = notice.getByRole("button", { name: "Tentar de novo" });
+  await expect(retry).toBeFocused();
+  await retry.click();
+  await expect.poll(() => calls.statuses).toBe(3);
+  await expect(retry).toBeVisible();
+  await expect(retry).toBeFocused();
+  await expect(notice).toContainText("Não deu para atualizar.");
+});
 
 test("a primeira leitura que falha continua mostrando só o erro, sem painel (AC-4)", async ({
   page,

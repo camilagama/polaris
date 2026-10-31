@@ -41,6 +41,7 @@ export const PANEL_LOAD_FAILED_TEXT =
 export const PANEL_REFRESH_FAILED_TEXT =
   "Não deu para atualizar. O que está na tela é da última leitura.";
 export const PANEL_REFRESH_RETRY = "Tentar de novo";
+export const PANEL_REFRESHING = "Atualizando…";
 export const PANEL_NOT_FOUND_TEXT =
   "Não encontramos uma loja encerrada nesta conta.";
 export const PANEL_OFFLINE_TEXT =
@@ -301,6 +302,24 @@ export function loadWhenReading(previous: PanelLoad, round: number): PanelLoad {
   return previous.status === "loaded" && round > 0
     ? previous
     : { status: "loading" };
+}
+
+/**
+ * A "Tentar de novo" that works removes the button that held the focus: it falls to the body, and the title (stable
+ * in every state of the panel) takes it. A focus the person already moved is left where it is.
+ */
+export function focusTitleAfterRetry(
+  previous: PanelLoad,
+  next: PanelLoad,
+  focusLost: boolean
+): boolean {
+  return (
+    focusLost &&
+    previous.status === "loaded" &&
+    previous.refreshFailed &&
+    next.status === "loaded" &&
+    !next.refreshFailed
+  );
 }
 
 export type UndoFailure =
