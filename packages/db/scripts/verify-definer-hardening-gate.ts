@@ -826,12 +826,17 @@ async function run() {
     // a role cannot grant itself without SUPERUSER, so an owner that is not one plants the membership of the database
     // owner on a stand-in made the database owner for the time of the check: the clause on datdba finds it (its name
     // ends in no `_owner` and it has no attribute)
-    const ownerIsSuperuser = (
-      await client.query<{ rolsuper: boolean }>(
-        "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
+    const superusers = (
+      await client.query<{ gate_user: boolean; original_owner: boolean }>(
+        `SELECT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS gate_user,
+                (SELECT rolsuper FROM pg_roles WHERE rolname = $1) AS original_owner`,
+        [originalOwner]
       )
-    ).rows[0]?.rolsuper;
-    if (ownerIsSuperuser) {
+    ).rows[0];
+    const gateUserIsSuperuser = superusers?.gate_user === true;
+    // the creator of the polaris_* roles: without SUPERUSER it holds an ADMIN-only edge on each (PostgreSQL 16+)
+    const originalOwnerIsSuperuser = superusers?.original_owner === true;
+    if (gateUserIsSuperuser) {
       await plantMembership(originalOwner, "TRUE", "FALSE", false);
       await plantMembership(originalOwner, "FALSE", "TRUE", false);
     } else {
@@ -941,7 +946,7 @@ async function run() {
       (await findViolations(client)).privilegedRuntime,
       [
         `${runner} (database owner)`,
-        ...(ownerIsSuperuser
+        ...(originalOwnerIsSuperuser
           ? []
           : [`${originalOwner} (CREATEROLE, REPLICATION or BYPASSRLS)`]),
       ].sort()
@@ -949,10 +954,10 @@ async function run() {
     // an owner role that is a member of the database owner, with no attribute on that role: only the database-owner clause finds it
     await client.query(`CREATE ROLE ${dbOwnerMember} NOLOGIN NOSUPERUSER`);
     dbOwnerMemberCreated = true;
-    // the control is empty, except (owner not a superuser) the attributes of the original owner and of the roles it is a
+    // the control is empty, except (original owner not a superuser) the attributes of the original owner and of the roles it is a
     // member of, which its unexempted ADMIN-only edges on the runtime groups make reachable while it owns nothing
     const baseline = (await findOwnerAttributeViolations(client)).findings;
-    if (ownerIsSuperuser) {
+    if (originalOwnerIsSuperuser) {
       assert.deepEqual(baseline, []);
     } else {
       const explained = new Set([

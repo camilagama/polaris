@@ -222,3 +222,22 @@ export async function replaceFunctionAsOwner(
     await client.query(`REVOKE CREATE ON SCHEMA public FROM ${quoted}`);
   }
 }
+
+/** A statement on a function that only its owner may run (GRANT or REVOKE EXECUTE), as that owner, outside a transaction. */
+export async function queryAsFunctionOwner(
+  pool: Pool,
+  signature: string,
+  statement: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const { owner } = await firstRow<{ owner: string }>(
+      client,
+      "SELECT proowner::regrole::text AS owner FROM pg_proc WHERE oid = $1::regprocedure",
+      [signature]
+    );
+    await withGateRole(client, owner, () => client.query(statement));
+  } finally {
+    client.release();
+  }
+}
