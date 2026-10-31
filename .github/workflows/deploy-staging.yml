@@ -166,6 +166,9 @@ jobs:
       # what the deploy follows: refuses placeholders, shared resources and a name without -staging
       - name: Staging isolation (generated config)
         run: node scripts/verify-staging-isolation.mjs --built
+      # what is published must not carry the offline labs or the UI gallery (same build mode as production)
+      - name: No offline lab in the build
+        run: node scripts/verify-no-lab-in-build.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staging-build

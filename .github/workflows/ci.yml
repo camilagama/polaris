@@ -91,6 +91,11 @@ jobs:
       - name: Build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: bun run build
+      # The offline labs and the UI gallery are for the browser checks; this reads the files of the build just made
+      # (apps/web/dist, client and Worker) and fails if any chunk, route or source map carries one of them.
+      - name: No offline lab in the production build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bun run verify:no-lab-in-build
       - name: Unit tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: bun run test
