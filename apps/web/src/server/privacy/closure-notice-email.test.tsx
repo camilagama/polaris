@@ -18,6 +18,8 @@ import {
 const STORE = "Loja de Teste";
 const LINE_BREAK = /[\r\n]/;
 
+const DAYS_LEFT_START = /^Faltam/;
+
 // what invites the owner to ask for a copy
 const COPY_INVITATION = /peça|cópia agora|guardar uma cópia|solicit/i;
 
@@ -133,7 +135,7 @@ describe("the content of a closure notice", () => {
     });
     expect(bodyOf(first)).toContain("a partir de 1º de fevereiro de 2027");
     expect(closureNoticeContent(first).subject).toBe(
-      `Os dados da sua loja ${STORE} no Polaris podem ser apagados a partir de 1º de fevereiro de 2027`
+      `Faltam 30 dias: os dados da sua loja ${STORE} no Polaris podem ser apagados a partir de 1º de fevereiro de 2027`
     );
   });
 
@@ -357,6 +359,84 @@ describe("the content of a closure notice", () => {
   });
 });
 
+describe("the subject and the preview of D minus 30 and minus 7 days", () => {
+  it("open with the days left, so the two are not the same conversation in the inbox", () => {
+    const d30 = closureNoticeContent(notice({ milestone: "d30" }));
+    const d7 = closureNoticeContent(notice({ milestone: "d7" }));
+    expect(d30.subject).toBe(
+      `Faltam 30 dias: os dados da sua loja ${STORE} no Polaris podem ser apagados a partir de 18 de janeiro de 2027`
+    );
+    expect(d7.subject).toBe(
+      `Faltam 7 dias: os dados da sua loja ${STORE} no Polaris podem ser apagados a partir de 18 de janeiro de 2027`
+    );
+    expect(d30.subject).not.toBe(d7.subject);
+    expect(d30.preview).toBe(
+      `Faltam 30 dias: os dados da loja ${STORE} podem ser apagados a partir de 18 de janeiro de 2027.`
+    );
+    expect(d7.preview).toBe(
+      `Faltam 7 dias: os dados da loja ${STORE} podem ser apagados a partir de 18 de janeiro de 2027.`
+    );
+  });
+
+  it("do not start with a number in the other milestones", () => {
+    for (const milestone of [
+      "closure",
+      "deletion_day",
+      "rescheduled",
+    ] as const) {
+      const content = closureNoticeContent(
+        notice({
+          milestone,
+          purgeFrom: new Date("2027-02-03T03:00:00.000Z"),
+        })
+      );
+      expect(content.subject).not.toMatch(DAYS_LEFT_START);
+      expect(content.preview).not.toMatch(DAYS_LEFT_START);
+    }
+  });
+
+  it("count the real days in a d7 sent again, from the day it is sent", () => {
+    const early = closureNoticeContent(
+      notice({
+        dueAt: new Date("2026-12-29T15:00:00.000Z"),
+        milestone: "d7",
+        reissue: 1,
+      })
+    );
+    expect(early.heading).toBe(
+      "Faltam 20 dias para os dados da loja poderem ser apagados"
+    );
+    expect(early.subject).toContain("Faltam 20 dias: ");
+    expect(early.preview).toContain("Faltam 20 dias: ");
+    expect(early.subject).not.toContain("Faltam 7 dias");
+
+    const late = closureNoticeContent(
+      notice({
+        dueAt: new Date("2027-01-15T15:00:00.000Z"),
+        milestone: "d7",
+        reissue: 1,
+      })
+    );
+    expect(late.heading).toBe(
+      "Faltam 7 dias para os dados da loja poderem ser apagados"
+    );
+    expect(late.subject).toContain("Faltam 7 dias: ");
+    expect(late.subject).toContain("a partir de 22 de janeiro de 2027");
+  });
+
+  it("count the day in the store's calendar near midnight", () => {
+    const content = closureNoticeContent(
+      notice({
+        dueAt: new Date("2027-01-11T02:59:00.000Z"),
+        milestone: "d7",
+      })
+    );
+    expect(content.heading).toBe(
+      "Faltam 8 dias para os dados da loja poderem ser apagados"
+    );
+  });
+});
+
 describe("the first day of deletion of a notice", () => {
   it("is D for a d7 sent on time", () => {
     expect(closureNoticeDeletionDate(notice({ milestone: "d7" }))).toBe(
@@ -469,6 +549,27 @@ describe("the rendered e-mail", () => {
     expect(message.subject).toBe(
       `Os dados da sua loja ${STORE} no Polaris podem ser apagados a partir de hoje`
     );
+  });
+
+  it("ends every milestone with the footer that never asks for a password, a code or a payment", async () => {
+    const footer =
+      "O Polaris nunca pede senha, código ou pagamento por e-mail.";
+    const messages = await Promise.all(
+      milestones.map((milestone) =>
+        renderClosureNoticeEmail(
+          notice({
+            milestone,
+            purgeFrom: new Date("2027-02-03T03:00:00.000Z"),
+          }),
+          "https://app.example.invalid"
+        )
+      )
+    );
+    for (const message of messages) {
+      expect(message.text).toContain(footer);
+      expect(message.html).toContain("nunca pede senha, código ou pagamento");
+      expect(message.text).not.toContain("nunca pede a sua senha");
+    }
   });
 
   it("escapes the store's name in the HTML", async () => {
