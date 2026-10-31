@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { queryAsFunctionOwner } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -1085,7 +1086,9 @@ async function run() {
     );
 
     // ------------------------------------------------------------- the grant revoked
-    await owner.pool.query(
+    await queryAsFunctionOwner(
+      owner.pool,
+      RECORD,
       `REVOKE EXECUTE ON FUNCTION ${RECORD} FROM polaris_auth_runtime`
     );
     revoked = true;
@@ -1118,7 +1121,9 @@ async function run() {
       ),
       rowsWhileRevoked
     );
-    await owner.pool.query(
+    await queryAsFunctionOwner(
+      owner.pool,
+      RECORD,
       `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
     );
     revoked = false;
@@ -1162,9 +1167,12 @@ async function run() {
       }
     };
     if (revoked) {
-      await cleanup(
-        "restore execute",
+      await queryAsFunctionOwner(
+        owner.pool,
+        RECORD,
         `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
+      ).catch((error: unknown) =>
+        cleanupFailures.push(`restore execute (${redactedFailure(error)})`)
       );
     }
     await cleanup(

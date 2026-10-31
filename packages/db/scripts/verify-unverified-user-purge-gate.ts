@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -767,10 +768,12 @@ async function run() {
     const probe = async (
       client: Client,
       label: string,
-      reader: { query: Client["query"] } = client
+      reader: { query: Client["query"] } = client,
+      purge: () => Promise<unknown> = () =>
+        client.query("SELECT public.purge_unverified_users(1000)")
     ) => {
       const ids = await everythingEligible(label);
-      await client.query("SELECT public.purge_unverified_users(1000)");
+      await purge();
       assert.equal(await existsIn(client, ids.control), false, "control goes");
       assert.equal(
         (
@@ -828,6 +831,14 @@ async function run() {
         true,
       ],
     ];
+    // inside the mutant's transaction: the function is replaced by its owner role and called by the authentication
+    // runtime, as in production; the probe reads the rows back on the gate's own connection. The ROLLBACK undoes it all.
+    const writeMutant = (client: Client, mutated: string) =>
+      replaceFunctionAsOwner(client, FUNCTION, mutated);
+    const purgeAsRuntime = (client: Client) =>
+      withGateRole(client, "polaris_auth_runtime", () =>
+        client.query("SELECT public.purge_unverified_users(1000)")
+      );
     const mutationClient = await owner.pool.connect();
     try {
       const original = await definitionOf(mutationClient);
@@ -839,9 +850,15 @@ async function run() {
         assert.notEqual(mutated, original, `${label}: it changes the function`);
         await mutationClient.query("BEGIN");
         try {
-          await mutationClient.query(mutated);
+          await writeMutant(mutationClient, mutated);
           await assert.rejects(
-            () => probe(mutationClient, `mutant-${label.replaceAll(" ", "")}`),
+            () =>
+              probe(
+                mutationClient,
+                `mutant-${label.replaceAll(" ", "")}`,
+                mutationClient,
+                () => purgeAsRuntime(mutationClient)
+              ),
             (error: unknown) =>
               anyError
                 ? sqlState(error) === "23001"
@@ -877,8 +894,10 @@ async function run() {
         );
         await client.query("BEGIN");
         try {
-          await client.query(mutated);
-          await probe(client, "mutant-e-mailverified-policy");
+          await writeMutant(client, mutated);
+          await probe(client, "mutant-e-mailverified-policy", client, () =>
+            purgeAsRuntime(client)
+          );
         } finally {
           await client.query("ROLLBACK");
         }

@@ -15,6 +15,7 @@ import {
   MIN_DEFINER_FUNCTIONS,
   RUNTIME_GROUP_PATTERN,
 } from "./definer-hardening-checks";
+import { withGateRole } from "./gate-roles";
 import {
   assertOwnerRolesClean,
   findOwnerAttributeViolations,
@@ -117,6 +118,8 @@ async function run() {
   const reach = `gate_definer_reach_${randomUUID().slice(0, 8).replaceAll("-", "")}`;
   let originalOwner: string | undefined;
   let ownerChanged = false;
+  const standInOwner = `gate_definer_dbowner_${randomUUID().slice(0, 8).replaceAll("-", "")}`;
+  let standInOwnerCreated = false;
   const chainGroup = `polaris_gate_chain_${randomUUID().slice(0, 8).replaceAll("-", "")}_runtime`;
   let chainGroupCreated = false;
   let runnerCreated = false;
@@ -247,28 +250,28 @@ async function run() {
         `CREATE ROLE ${creator} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
       );
       await client.query(`GRANT CREATE ON SCHEMA public TO ${creator}`);
-      await client.query(
-        `GRANT ${creator} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
-      );
-      await client.query(`SET ROLE ${creator}`);
-      await client.query(
-        `CREATE FUNCTION public.${probe}_kept() RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS 'SELECT 1'`
-      );
-      await client.query(
-        `REVOKE EXECUTE ON FUNCTION public.${probe}_kept() FROM PUBLIC`
-      );
-      await client.query("RESET ROLE");
+      await withGateRole(client, creator, async () => {
+        await client.query(
+          `CREATE FUNCTION public.${probe}_kept() RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS 'SELECT 1'`
+        );
+        await client.query(
+          `REVOKE EXECUTE ON FUNCTION public.${probe}_kept() FROM PUBLIC`
+        );
+      });
       const created = await findViolations(client);
       assert.deepEqual(created.foreignOwner, [
         `public.${probe}_kept() (${creator})`,
       ]);
       assertClean({ ...created, foreignOwner: [] });
       await client.query(`GRANT CREATE ON SCHEMA public TO ${CONTROL_OWNER}`);
+      // ALTER … OWNER is the owner's (the creator's), who must be able to SET ROLE to the new owner
       await client.query(
-        `GRANT ${CONTROL_OWNER} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+        `GRANT ${CONTROL_OWNER} TO ${creator} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
       );
-      await client.query(
-        `ALTER FUNCTION public.${probe}_kept() OWNER TO ${CONTROL_OWNER}`
+      await withGateRole(client, creator, () =>
+        client.query(
+          `ALTER FUNCTION public.${probe}_kept() OWNER TO ${CONTROL_OWNER}`
+        )
       );
       assertClean(await findViolations(client));
     });
@@ -655,13 +658,20 @@ async function run() {
       const bypass = async () =>
         (await findViolations(client)).forcedTableOwnerWithoutBypass;
       assert.deepEqual(await bypass(), []);
+      // without SUPERUSER, ALTER … OWNER TO needs SET on the new owner and the new owner needs CREATE on the schema
+      // (both undone with the savepoint)
+      await client.query(
+        `GRANT ${detached} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
+      );
+      await client.query(`GRANT CREATE ON SCHEMA public TO ${detached}`);
       await client.query(`ALTER TABLE public.${table} OWNER TO ${detached}`);
       assert.deepEqual(await bypass(), [`public.${table} (${detached})`]);
       await client.query(`ALTER ROLE ${detached} BYPASSRLS`);
       assert.deepEqual(await bypass(), []);
       await client.query(`ALTER ROLE ${detached} NOBYPASSRLS`);
-      await client.query(
-        `ALTER TABLE public.${table} NO FORCE ROW LEVEL SECURITY`
+      // the table's owner is now the detached role
+      await withGateRole(client, detached, () =>
+        client.query(`ALTER TABLE public.${table} NO FORCE ROW LEVEL SECURITY`)
       );
       assert.deepEqual(await bypass(), []);
       await client.query("ROLLBACK TO SAVEPOINT rls_probe");
@@ -681,37 +691,31 @@ async function run() {
       await client.query(
         `GRANT CREATE ON SCHEMA public TO ${CONTROL_OWNER}, polaris_onboarding_owner`
       );
-      await client.query(
-        `GRANT ${CONTROL_OWNER}, polaris_onboarding_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
-      );
       const writer = (name: string) =>
         `CREATE FUNCTION public.${probe}_${name}() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN PERFORM pg_catalog.set_config( 'APP.owner_scope.probe_writer_id', 'x', true); END $body$`;
-      await client.query("SET ROLE polaris_onboarding_owner");
-      await client.query(writer("other_owner"));
-      await client.query("RESET ROLE");
+      await withGateRole(client, "polaris_onboarding_owner", () =>
+        client.query(writer("other_owner"))
+      );
       assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
         unwritten,
       ]);
       // a writer of the same owner that is only a comment, or that sets the scope for the session (false), does not count
-      await client.query(`SET ROLE ${CONTROL_OWNER}`);
-      await client.query(
-        `CREATE FUNCTION public.${probe}_commented() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN\n  -- PERFORM pg_catalog.set_config('app.owner_scope.probe_writer_id', 'x', true);\n  NULL;\nEND $body$`
-      );
-      await client.query(
-        `CREATE FUNCTION public.${probe}_session_wide() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN PERFORM pg_catalog.set_config('app.owner_scope.probe_writer_id', 'x', false); END $body$`
-      );
-      await client.query("RESET ROLE");
+      await withGateRole(client, CONTROL_OWNER, async () => {
+        await client.query(
+          `CREATE FUNCTION public.${probe}_commented() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN\n  -- PERFORM pg_catalog.set_config('app.owner_scope.probe_writer_id', 'x', true);\n  NULL;\nEND $body$`
+        );
+        await client.query(
+          `CREATE FUNCTION public.${probe}_session_wide() RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $body$ BEGIN PERFORM pg_catalog.set_config('app.owner_scope.probe_writer_id', 'x', false); END $body$`
+        );
+      });
       assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
         unwritten,
       ]);
-      await client.query(`SET ROLE ${CONTROL_OWNER}`);
-      await client.query(writer("own_owner"));
-      await client.query("RESET ROLE");
+      await withGateRole(client, CONTROL_OWNER, () =>
+        client.query(writer("own_owner"))
+      );
       assert.deepEqual((await findViolations(client)).scopeWithoutWriter, []);
       // the real owner: end_device_sessions without its set_config leaves the five policies of its owner without a writer
-      await client.query(
-        "GRANT polaris_device_session_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE"
-      );
       await client.query(
         "GRANT CREATE ON SCHEMA public TO polaris_device_session_owner"
       );
@@ -723,9 +727,9 @@ async function run() {
       assert.ok(body);
       const withoutScope = body.replace(DEVICE_SESSION_SCOPE_LINE, "");
       assert.notEqual(withoutScope, body);
-      await client.query("SET ROLE polaris_device_session_owner");
-      await client.query(withoutScope);
-      await client.query("RESET ROLE");
+      await withGateRole(client, "polaris_device_session_owner", () =>
+        client.query(withoutScope)
+      );
       assert.deepEqual((await findViolations(client)).scopeWithoutWriter, [
         "public.auth_security_audit_event.auth_security_audit_event_device_session_owner_insert (polaris_device_session_owner): app.owner_scope.device_session_user_id",
         "public.device_sessions.device_sessions_session_owner_select (polaris_device_session_owner): app.owner_scope.device_session_user_id",
@@ -799,23 +803,63 @@ async function run() {
     );
     runnerCreated = true;
     assertClean(await findViolations(client));
-    for (const [target, inherit, set] of [
-      [otherOwner, "TRUE", "FALSE"],
-      [otherOwner, "FALSE", "TRUE"],
-      [originalOwner, "TRUE", "FALSE"],
-      [originalOwner, "FALSE", "TRUE"],
-    ] as const) {
+    const plantMembership = async (
+      target: string,
+      inherit: string,
+      set: string,
+      exact: boolean
+    ) => {
       await client.query(
         `GRANT "${target}" TO ${runner} WITH INHERIT ${inherit}, SET ${set}`
       );
       const reached = (await findViolations(client)).ownerMembership;
       // a member of a superuser owner reaches every other owner through it, so only the target itself is asserted there
-      if (target === otherOwner) {
+      if (exact) {
         assert.deepEqual(reached, [`${runner}->${target}`]);
       } else {
         assert.ok(reached.includes(`${runner}->${target}`));
       }
       await client.query(`REVOKE "${target}" FROM ${runner}`);
+    };
+    await plantMembership(otherOwner, "TRUE", "FALSE", true);
+    await plantMembership(otherOwner, "FALSE", "TRUE", true);
+    // a role cannot grant itself without SUPERUSER, so an owner that is not one plants the membership of the database
+    // owner on a stand-in made the database owner for the time of the check: the clause on datdba finds it (its name
+    // ends in no `_owner` and it has no attribute)
+    const superusers = (
+      await client.query<{ gate_user: boolean; original_owner: boolean }>(
+        `SELECT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS gate_user,
+                (SELECT rolsuper FROM pg_roles WHERE rolname = $1) AS original_owner`,
+        [originalOwner]
+      )
+    ).rows[0];
+    const gateUserIsSuperuser = superusers?.gate_user === true;
+    // the creator of the polaris_* roles: without SUPERUSER it holds an ADMIN-only edge on each (PostgreSQL 16+)
+    const originalOwnerIsSuperuser = superusers?.original_owner === true;
+    if (gateUserIsSuperuser) {
+      await plantMembership(originalOwner, "TRUE", "FALSE", false);
+      await plantMembership(originalOwner, "FALSE", "TRUE", false);
+    } else {
+      await client.query(
+        `CREATE ROLE ${standInOwner} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
+      );
+      standInOwnerCreated = true;
+      // inherited, so the owner can hand the database back
+      await client.query(
+        `GRANT ${standInOwner} TO CURRENT_USER WITH INHERIT TRUE, SET TRUE`
+      );
+      await client.query(
+        `ALTER DATABASE "${expectedDatabase}" OWNER TO ${standInOwner}`
+      );
+      ownerChanged = true;
+      await plantMembership(standInOwner, "TRUE", "FALSE", false);
+      await plantMembership(standInOwner, "FALSE", "TRUE", false);
+      await client.query(
+        `ALTER DATABASE "${expectedDatabase}" OWNER TO "${originalOwner}"`
+      );
+      ownerChanged = false;
+      await client.query(`DROP ROLE ${standInOwner}`);
+      standInOwnerCreated = false;
     }
     // a membership with neither INHERIT, SET nor ADMIN grants nothing that the gate cares about
     await client.query(
@@ -864,11 +908,28 @@ async function run() {
       await client.query("CREATE ROLE neon_superuser NOLOGIN NOSUPERUSER");
       neonSuperuserCreated = true;
     }
-    await client.query(`GRANT neon_superuser TO ${runner}`);
-    assert.deepEqual((await findViolations(client)).ownerMembership, [
-      `${runner}->neon_superuser`,
-    ]);
-    await client.query(`REVOKE neon_superuser FROM ${runner}`);
+    // on Neon the role belongs to the platform and its owner has no ADMIN OPTION on it, so nobody here can plant the
+    // membership; the check runs wherever the owner can (a superuser, or a Postgres where the gate created the role)
+    const canGrantNeonSuperuser = (
+      await client.query<{ admin: boolean }>(
+        "SELECT pg_has_role('neon_superuser', 'USAGE WITH ADMIN OPTION') AS admin"
+      )
+    ).rows[0]?.admin;
+    assert.ok(
+      canGrantNeonSuperuser || !gateUserIsSuperuser,
+      "a superuser gate user plants and checks the membership of neon_superuser"
+    );
+    if (canGrantNeonSuperuser) {
+      await client.query(`GRANT neon_superuser TO ${runner}`);
+      assert.deepEqual((await findViolations(client)).ownerMembership, [
+        `${runner}->neon_superuser`,
+      ]);
+      await client.query(`REVOKE neon_superuser FROM ${runner}`);
+    } else {
+      console.log(
+        "gate-note: definer-hardening: neon_superuser exists and the owner has no ADMIN OPTION on it; its planted membership was not checked"
+      );
+    }
     if (neonSuperuserCreated) {
       await client.query("DROP ROLE neon_superuser");
       neonSuperuserCreated = false;
@@ -883,22 +944,49 @@ async function run() {
       `ALTER DATABASE "${expectedDatabase}" OWNER TO ${runner}`
     );
     ownerChanged = true;
-    assert.deepEqual((await findViolations(client)).privilegedRuntime, [
-      `${runner} (database owner)`,
-    ]);
+    // an original owner that is not a superuser keeps its ADMIN-only edges on the runtime groups (PostgreSQL 16+ gives
+    // them to the creator); no longer the database owner, nothing exempts them, and its attributes are reported too
+    assert.deepEqual(
+      (await findViolations(client)).privilegedRuntime,
+      [
+        `${runner} (database owner)`,
+        ...(originalOwnerIsSuperuser
+          ? []
+          : [`${originalOwner} (CREATEROLE, REPLICATION or BYPASSRLS)`]),
+      ].sort()
+    );
     // an owner role that is a member of the database owner, with no attribute on that role: only the database-owner clause finds it
     await client.query(`CREATE ROLE ${dbOwnerMember} NOLOGIN NOSUPERUSER`);
     dbOwnerMemberCreated = true;
-    assert.deepEqual(
-      await findOwnerAttributeViolations(client).then(
-        (check) => check.findings
-      ),
-      []
-    );
+    // the control is empty, except (original owner not a superuser) the attributes of the original owner and of the roles it is a
+    // member of, which its unexempted ADMIN-only edges on the runtime groups make reachable while it owns nothing
+    const baseline = (await findOwnerAttributeViolations(client)).findings;
+    if (originalOwnerIsSuperuser) {
+      assert.deepEqual(baseline, []);
+    } else {
+      const explained = new Set([
+        originalOwner,
+        ...(
+          await client.query<{ rolname: string }>(
+            `SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+              WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = $1) AND (m.inherit_option OR m.set_option)`,
+            [originalOwner]
+          )
+        ).rows.map((row) => row.rolname),
+      ]);
+      assert.deepEqual(
+        baseline.filter(
+          (finding) => !explained.has(finding.split(": ")[0] ?? "")
+        ),
+        [],
+        "only the original owner's own attributes, and those of its groups"
+      );
+    }
     await client.query(
       `GRANT ${runner} TO ${dbOwnerMember} WITH INHERIT TRUE, SET FALSE`
     );
     assert.deepEqual((await findOwnerAttributeViolations(client)).findings, [
+      ...baseline,
       `${dbOwnerMember}->${runner}`,
     ]);
     await client.query(`DROP ROLE ${dbOwnerMember}`);
@@ -1171,6 +1259,37 @@ async function run() {
       await client.query(`ALTER ROLE ${privRole} NOCREATEROLE BYPASSRLS`);
       ownerTargets.push(privRole);
     }
+    // without SUPERUSER nobody grants the database owner (a role does not administer itself) nor, on Neon, the platform's
+    // neon_superuser; the check names any role an edge reaches, so the other targets prove it there
+    const ungrantable: string[] = [];
+    for (const target of [...ownerTargets]) {
+      const grantable = (
+        await client.query<{ admin: boolean }>(
+          "SELECT pg_has_role($1, 'USAGE WITH ADMIN OPTION') AS admin",
+          [target]
+        )
+      ).rows[0]?.admin;
+      if (!grantable) {
+        ungrantable.push(target);
+        ownerTargets.splice(ownerTargets.indexOf(target), 1);
+      }
+    }
+    // a superuser grants every role, and without one only the database owner and neon_superuser may be left out: a
+    // target that silently drops anywhere else would shrink the check
+    assert.deepEqual(
+      ungrantable.filter(
+        (target) =>
+          isSuperuser ||
+          (target !== originalOwner && target !== "neon_superuser")
+      ),
+      [],
+      "the owner roles' edges are planted to every target the gate user can grant"
+    );
+    if (ungrantable.length > 0) {
+      console.log(
+        `gate-note: definer-hardening: the owner cannot grant ${ungrantable.join(", ")}; an owner role's edge to it was not planted`
+      );
+    }
     for (const target of ownerTargets) {
       assert.deepEqual(
         await memberOf(target, "INHERIT TRUE, SET FALSE"),
@@ -1290,10 +1409,18 @@ async function run() {
       )
     ).rows[0]?.rolname;
     assert.ok(polarisOwner);
+    // the grantor named: a superuser's REVOKE removes only its own grant, and the creator of the roles granted this one
+    const readerGrantor = (
+      await client.query<{ grantor: string }>(
+        `SELECT m.grantor::regrole::text AS grantor FROM pg_auth_members m
+          WHERE m.roleid = 'polaris_closed_export_reader'::regrole AND m.member = 'polaris_privacy_runtime'::regrole`
+      )
+    ).rows[0]?.grantor;
+    assert.ok(readerGrantor);
     for (const [statement, floor] of [
       [`ALTER ROLE ${polarisOwner} RENAME TO ${renamedProbe}`, OWNER_FLOOR],
       [
-        "REVOKE polaris_closed_export_reader FROM polaris_privacy_runtime",
+        `REVOKE polaris_closed_export_reader FROM polaris_privacy_runtime GRANTED BY ${readerGrantor}`,
         REACHABLE_FLOOR,
       ],
       [
@@ -1481,7 +1608,15 @@ async function run() {
         `ALTER DATABASE "${expectedDatabase}" OWNER TO "${originalOwner}"`
       );
     }
+    if (standInOwnerCreated) {
+      await cleanup("stand-in owner", `DROP ROLE IF EXISTS ${standInOwner}`);
+    }
     if (reachCreated) {
+      // DROP OWNED needs the privileges of the role, which an owner that is not a superuser has only by inheriting it
+      await cleanup(
+        "reach role membership",
+        `GRANT ${reach} TO CURRENT_USER WITH INHERIT TRUE, SET FALSE, ADMIN FALSE`
+      );
       await cleanup("reach role privileges", `DROP OWNED BY ${reach}`);
       await cleanup("reach role", `DROP ROLE IF EXISTS ${reach}`);
     }

@@ -12,7 +12,7 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
 
 ### Pré-requisitos
 
-- PostgreSQL 18 em `localhost` (por exemplo, um container `postgres:18`, como o do CI), com o dono `neondb_owner` e um banco vazio e descartável (`polaris_gate`). Nunca aponte para um banco com dados que importem: as migrations e os gates escrevem no banco, e os gates de falha injetada criam gatilhos nele.
+- PostgreSQL 18 em `localhost` (por exemplo, um container `postgres:18`, como o do CI), com o dono `neondb_owner` **sem superusuário**, como no Neon (`CREATEDB`, `CREATEROLE`, `BYPASSRLS`, `REPLICATION`), e um banco vazio e descartável (`polaris_gate`) dele. Nunca aponte para um banco com dados que importem: as migrations e os gates escrevem no banco, e os gates de falha injetada criam gatilhos nele.
 - Cliente `psql` e `docker` (ou outro PostgreSQL 18 em `localhost`). Não é preciso CLI Cloudflare ou Neon, nem credencial alguma além da senha do PostgreSQL local, que fica só nas variáveis do processo.
 - O executor só aceita um host da lista de `packages/db/scripts/gate-hosts.ts`: um endpoint Neon direto em São Paulo, ou `localhost`/`127.0.0.1` com `CI=true`; qualquer outro é recusado antes de abrir conexão (teste em `gate-target.test.ts`). Fora do CI, o `CI=true` vai só no prefixo dos comandos do executor, como abaixo.
 - Não rode dois gates ao mesmo tempo no mesmo banco: os gates de falha injetada criam gatilhos nas tabelas compartilhadas e contaminam a execução do outro.
@@ -21,14 +21,19 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
 
 1. Subir o PostgreSQL 18 e preparar o ambiente do processo (valores iguais aos do job do CI; a senha abaixo é a do container descartável do CI, não um segredo):
 
-       docker run -d --rm --name polaris-gate-pg -p 5432:5432 -e POSTGRES_USER=neondb_owner -e POSTGRES_PASSWORD=polaris-ci -e POSTGRES_DB=polaris_gate postgres:18
-       until pg_isready -h localhost -U neondb_owner -d polaris_gate; do sleep 1; done
+       docker run -d --rm --name polaris-gate-pg -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=polaris-ci -e POSTGRES_DB=postgres postgres:18
+       until pg_isready -h localhost -U postgres -d postgres; do sleep 1; done
+       psql postgresql://postgres:polaris-ci@localhost:5432/postgres -v ON_ERROR_STOP=1 \
+         -c "CREATE ROLE neondb_owner LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS REPLICATION PASSWORD 'polaris-ci'" \
+         -c "GRANT pg_monitor, pg_signal_backend TO neondb_owner"
+       psql postgresql://neondb_owner:polaris-ci@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE polaris_gate"
        export DATABASE_URL=postgresql://neondb_owner:polaris-ci@localhost:5432/polaris_gate
        export POLARIS_GATE_DATABASE_URL="$DATABASE_URL"
+       export POLARIS_GATE_SUPERUSER_URL=postgresql://postgres:polaris-ci@localhost:5432/polaris_gate
        export POLARIS_GATE_BRANCH=pr0-local-gate
        export POLARIS_GATE_DATABASE=polaris_gate
 
-   `POLARIS_GATE_BRANCH` precisa casar `^pr\d+-[a-z0-9-]+-gate$`; fora do Neon é só um rótulo.
+   `POLARIS_GATE_BRANCH` precisa casar `^pr\d+-[a-z0-9-]+-gate$`; fora do Neon é só um rótulo. `POLARIS_GATE_SUPERUSER_URL` vai só para os gates que precisam de superusuário por desenho (`environment-marker`, `activation-funnel`, `migrations-without-superuser` e `audit-retention`); com ela definida, o executor recusa um `POLARIS_GATE_DATABASE_URL` cujo dono seja superusuário, e todos os outros gates rodam como no Neon ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda do dono sem superusuário).
 2. Criar a role que vive fora das migrations (no Neon ela vem da `production`; aqui não existe) e aplicar as migrations do zero:
 
        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
@@ -39,7 +44,7 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
        CI=true bun run --filter @polaris/db gates:ci   # o que o CI roda, incluindo os gates de venda e o gate4
 
    `gates:gate3` e `gates:all` incluem o `gate2-runtime`, só de Neon, e falham num PostgreSQL local (`gates:gate4` roda local). Para um subconjunto, escolha gates pelo nome: `CI=true bun scripts/run-gates.ts sale-return gate4` (a partir de `packages/db`). Cada gate termina com `"status": "passed"`; o executor imprime só o resumo (e a cauda redigida de um gate que falhar), nunca a URL.
-4. Para repetir do zero, derrube o container (`docker stop polaris-gate-pg`) e suba outro; as migrations são sempre reaplicadas desde a 0000. Remova as variáveis do processo ao final (`unset DATABASE_URL POLARIS_GATE_DATABASE_URL POLARIS_GATE_BRANCH POLARIS_GATE_DATABASE`).
+4. Para repetir do zero, derrube o container (`docker stop polaris-gate-pg`) e suba outro; as migrations são sempre reaplicadas desde a 0000. Remova as variáveis do processo ao final (`unset DATABASE_URL POLARIS_GATE_DATABASE_URL POLARIS_GATE_SUPERUSER_URL POLARIS_GATE_BRANCH POLARIS_GATE_DATABASE`).
 
 Gates avulsos continuam existindo (`poc:sales:verify`, `poc:sales:transaction:verify`, `poc:sales:customer-link:verify`, `poc:sales:cancellation:verify`, `poc:sales:return:verify`, `poc:sales:dates:verify`, `poc:gate4:verify`, `poc:review-hardening:verify`) e usam as variáveis `POLARIS_SALES_GATE_*`; o executor é o caminho recomendado.
 
