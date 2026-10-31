@@ -389,6 +389,62 @@ describe("the handover of the owed closure notices", () => {
     expectNoPersonalData(everythingLogged(spies));
   });
 
+  it("never sends to an address that comes with verified false, keeps the notice owed as not verified and still sends the other stores", async () => {
+    const spies = spyLogger();
+    const { dependencies, notices, recipients, send } = setup();
+    const owed = ["1", "2", "3"].map((digit) => ({
+      noticeId: `0199f0aa-2b3c-7d4e-8f90-12345678900${digit}`,
+      organizationId: `org_${digit}`,
+    }));
+    notices.listOwedClosureNotices.mockResolvedValueOnce(owed);
+    // the type allows an address only with verified true; a wrong answer from the database must still not reach the provider
+    const unverifiedWithAddress = {
+      email: ADDRESS,
+      verified: false,
+    } as ClosureNoticeRecipient;
+    recipients.recipient
+      .mockResolvedValueOnce({ email: "outra@example.invalid", verified: true })
+      .mockResolvedValueOnce(unverifiedWithAddress)
+      .mockResolvedValueOnce({
+        email: "terceira@example.invalid",
+        verified: true,
+      });
+
+    const report = await handOverOwedClosureNotices(dependencies);
+
+    expect(report).toEqual({
+      failed: 0,
+      handedOver: 3,
+      notVerified: 1,
+      retry: 0,
+      sent: 2,
+    });
+    expect(recipients.recipient.mock.calls).toEqual(
+      owed.map((notice) => [notice.noticeId, notice.organizationId])
+    );
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls.map(([message]) => message.to)).toEqual([
+      "outra@example.invalid",
+      "terceira@example.invalid",
+    ]);
+    expect(JSON.stringify(send.mock.calls)).not.toContain(ADDRESS);
+    expect(send.mock.calls.map(([message]) => message.idempotencyKey)).toEqual([
+      owed[0]?.noticeId,
+      owed[2]?.noticeId,
+    ]);
+    expect(notices.markClosureNoticeSent.mock.calls).toEqual([
+      [owed[0]?.noticeId, owed[0]?.organizationId],
+      [owed[2]?.noticeId, owed[2]?.organizationId],
+    ]);
+    expect(notices.markClosureNoticeFailed).not.toHaveBeenCalled();
+    expect(spies.warn).toHaveBeenCalledTimes(1);
+    expect(spies.warn).toHaveBeenCalledWith(
+      "closure_notice_not_sent",
+      expect.objectContaining({ reason: "email_not_verified" })
+    );
+    expectNoPersonalData(everythingLogged(spies));
+  });
+
   it("sends and settles nothing when every owner of the batch is not verified, and reports them all", async () => {
     const spies = spyLogger();
     const { dependencies, notices, recipients, send } = setup({
