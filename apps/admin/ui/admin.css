@@ -323,9 +323,13 @@ button {
   color: var(--destructive);
 }
 
-/* the live region stays in the tree, empty, so the text put in it later is announced; it only takes no room */
+/* display: none would take the empty live region out of the accessibility tree and the text put in it later would not be announced: it is clipped like .sr-only instead */
 .field-error:empty {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
 }
 
 /* what the refund area cannot do and what each read leaves behind: said in words, not only by colour */

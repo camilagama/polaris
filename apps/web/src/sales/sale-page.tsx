@@ -41,6 +41,7 @@ import { isSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { confirmOnServer } from "./confirm-on-server";
 import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
+import { firstSaleIdOf } from "./first-sale-id";
 import {
   mergeLastPrices,
   type RememberedPrices,
@@ -56,7 +57,6 @@ import {
   sessionStorageOrNull,
   writeSaleAttempt,
 } from "./sale-attempt-storage";
-import { firstSaleIdOf } from "./first-sale-id";
 import { ConfirmedSalePanel } from "./sale-confirmed-panel";
 import { SaleDraftBar } from "./sale-draft-bar";
 import {
