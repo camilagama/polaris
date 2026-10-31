@@ -1,7 +1,14 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import type { Client } from "pg";
 import { isLocalGateHost } from "./gate-hosts";
+import {
+  type GateRun,
+  runMarkers,
+  runsOf,
+  type SuperuserNeed,
+} from "./gate-runs";
 import { connectToGateTarget, validateGateTarget } from "./gate-target";
 
 /**
@@ -16,6 +23,10 @@ import { connectToGateTarget, validateGateTarget } from "./gate-target";
  *   POLARIS_GATE_DATABASE_URL  direct (non-pooled) owner URL of the disposable database
  *   POLARIS_GATE_BRANCH        branch name, `prNN-...-gate`
  *   POLARIS_GATE_DATABASE      database name (default `neondb`)
+ *   POLARIS_GATE_SUPERUSER_URL optional, local Postgres only: a superuser of the same database, given only to the
+ *                              gates that need one (`superuser`); with it set, the owner of POLARIS_GATE_DATABASE_URL
+ *                              must NOT be a superuser, so every other gate runs as on Neon, and a gate that proves
+ *                              more with a superuser (`also`) runs twice, once as each
  * The target must be on the list of hosts in gate-hosts.ts: a Neon disposable
  * endpoint, or a local Postgres when the process runs in CI (`CI=true`); any
  * other host is refused before a connection opens. Each gate script keeps its own checks; this
@@ -35,6 +46,7 @@ interface Context {
   host: string;
   runtimeLogin: string;
   runtimeUrl: string;
+  superuserUrl: string | undefined;
   url: string;
 }
 
@@ -44,6 +56,8 @@ interface Gate {
   localOnly?: boolean;
   name: string;
   script: string;
+  /** See gate-runs.ts: with POLARIS_GATE_SUPERUSER_URL set, `only` runs as the superuser and `also` runs as both. */
+  superuser?: SuperuserNeed;
 }
 
 const salesEnv = (context: Context) => ({
@@ -51,6 +65,11 @@ const salesEnv = (context: Context) => ({
   POLARIS_SALES_GATE_DATABASE: context.database,
   POLARIS_SALES_GATE_DATABASE_URL: context.url,
 });
+
+// as a superuser they prove more (audit-retention: the append-only triggers under session_replication_role = replica;
+// definer-hardening: the planted superusers, the database owner's edges and the attributes only a superuser gives);
+// without one, as on Neon, that part is skipped and the gate says so
+const superuserAlso = new Set(["audit-retention", "definer-hardening"]);
 
 const gates: Gate[] = [
   ["sales-aggregate", "verify-sales-aggregate-gate.ts"],
@@ -172,6 +191,7 @@ const gates: Gate[] = [
   env: salesEnv,
   name: name as string,
   script: script as string,
+  ...(superuserAlso.has(name as string) ? { superuser: "also" as const } : {}),
 }));
 
 gates.push(
@@ -229,6 +249,7 @@ gates.push(
     localOnly: true,
     name: "environment-marker",
     script: "verify-environment-marker-gate.ts",
+    superuser: "only",
   },
   // the activation funnel (corte 2.4, ADR 0071 amended): its fixtures write sale headers without items and its measure
   // loads auto_explain, both only for a superuser, so the job's Postgres only
@@ -237,6 +258,7 @@ gates.push(
     localOnly: true,
     name: "activation-funnel",
     script: "verify-activation-funnel-gate.ts",
+    superuser: "only",
   },
   // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
   // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
@@ -266,6 +288,7 @@ gates.push(
     localOnly: true,
     name: "migrations-without-superuser",
     script: "verify-migrations-without-superuser-gate.ts",
+    superuser: "only",
   },
   // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
   // Local Postgres only, like admin-worker. They are the last gates of the list, which is the order they run in (not the order of a
@@ -513,7 +536,8 @@ function redact(line: string): string {
 
 function runGate(
   gate: Gate,
-  context: Context
+  context: Context,
+  run: GateRun
 ): Promise<{
   code: number;
   notes: string[];
@@ -524,11 +548,22 @@ function runGate(
     const started = Date.now();
     const lines: string[] = [];
     const notes: string[] = [];
+    const superuserUrl = run.asSuperuser ? context.superuserUrl : undefined;
+    // the superuser URL reaches only the run that uses it, and only as the URL of that run
+    const { POLARIS_GATE_SUPERUSER_URL: _superuserUrl, ...inherited } =
+      process.env;
     const child = spawn(process.execPath, [`scripts/${gate.script}`], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
-        ...process.env,
-        ...gate.env(context),
+        ...inherited,
+        ...runMarkers(run),
+        ...(superuserUrl
+          ? {
+              ...gate.env({ ...context, url: superuserUrl }),
+              DATABASE_URL: superuserUrl,
+              POLARIS_GATE_DATABASE_URL: superuserUrl,
+            }
+          : gate.env(context)),
         POLARIS_GATE_BRANCH: context.branch,
         POLARIS_GATE_DATABASE: context.database,
         POLARIS_GATE_RUNTIME_LOGIN: context.runtimeLogin,
@@ -560,6 +595,58 @@ function runGate(
       });
     });
   });
+}
+
+async function isSuperuser(client: Client): Promise<boolean> {
+  const result = await client.query<{ rolsuper: boolean }>(
+    "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
+  );
+  return result.rows[0]?.rolsuper === true;
+}
+
+/**
+ * The superuser URL of the gates that need one, checked against the owner's: the same local host and database, a real
+ * superuser, and an owner that is not one (the configuration that proves the other gates without superuser).
+ */
+async function superuserTarget(input: {
+  admin: Client;
+  branch: string;
+  database: string;
+  host: string;
+  isLocalCi: boolean;
+}): Promise<string | undefined> {
+  const url = process.env.POLARIS_GATE_SUPERUSER_URL;
+  if (!url) {
+    return undefined;
+  }
+  const parsed = validateGateTarget({
+    branch: input.branch,
+    database: input.database,
+    url,
+  });
+  if (!input.isLocalCi || parsed.host !== input.host) {
+    throw new Error(
+      "POLARIS_GATE_SUPERUSER_URL is for the local Postgres of the job only, on the same host as the owner."
+    );
+  }
+  if (await isSuperuser(input.admin)) {
+    throw new Error(
+      "With POLARIS_GATE_SUPERUSER_URL set, the owner of POLARIS_GATE_DATABASE_URL must not be a superuser."
+    );
+  }
+  const { admin } = await connectToGateTarget({
+    branch: input.branch,
+    database: input.database,
+    url,
+  });
+  try {
+    if (!(await isSuperuser(admin))) {
+      throw new Error("POLARIS_GATE_SUPERUSER_URL is not a superuser.");
+    }
+  } finally {
+    await admin.end();
+  }
+  return url;
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear script of validation, setup, sequential runs and teardown
@@ -599,6 +686,19 @@ async function main() {
   }
 
   const { admin } = await connectToGateTarget({ branch, database, url });
+  let superuserUrl: string | undefined;
+  try {
+    superuserUrl = await superuserTarget({
+      admin,
+      branch,
+      database,
+      host: parsed.host,
+      isLocalCi,
+    });
+  } catch (error) {
+    await admin.end().catch(() => undefined);
+    throw error;
+  }
   const login = `polaris_gate_runner_${randomBytes(6).toString("hex")}`;
   const password = randomBytes(24).toString("hex");
   const results: Array<{
@@ -623,16 +723,23 @@ async function main() {
       runtimeUrl: isLocalCi
         ? runtime.toString()
         : withVerifyFull(runtime.toString()),
+      superuserUrl,
       url: isLocalCi ? url : withVerifyFull(url),
     };
 
-    for (const gate of selected) {
-      console.log(`=== ${gate.name}`);
+    const runs = selected.flatMap((gate) =>
+      runsOf(gate.name, gate.superuser, Boolean(superuserUrl)).map((run) => ({
+        gate,
+        run,
+      }))
+    );
+    for (const { gate, run } of runs) {
+      console.log(`=== ${run.label}`);
       // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
-      const result = await runGate(gate, context);
+      const result = await runGate(gate, context, run);
       const status = result.code === 0 ? "passed" : "failed";
       results.push({
-        gate: gate.name,
+        gate: run.label,
         ...(result.notes.length > 0 ? { notes: result.notes } : {}),
         seconds: result.seconds,
         status,

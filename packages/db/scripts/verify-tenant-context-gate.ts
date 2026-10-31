@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
@@ -8,8 +8,8 @@ import {
   type CreateInitialOrganizationInDatabaseResult,
   createInitialOrganizationInDatabase,
 } from "../src/organization-repository";
-import { memberships, organizations } from "../src/schema/organization";
 import { rlsPocOperations } from "../src/rls-poc-client";
+import { memberships, organizations } from "../src/schema/organization";
 import { tenantAuditEvents } from "../src/schema/tenant-audit";
 import { recordTenantAuditEvent } from "../src/tenant-audit";
 import {
@@ -17,6 +17,8 @@ import {
   withAuthorizedTenantTransaction,
 } from "../src/tenant-transaction";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
+import { becomeGateRole } from "./gate-roles";
+import { temporaryRuntimeUrl } from "./sales-gate-support";
 import { dropRlsGateFixture, recreateRlsGateFixture } from "./rls-gate-fixture";
 import { deleteOrganizationsWithAudit } from "./teardown-support";
 
@@ -40,7 +42,6 @@ const expectedPocSeeds = [
 ];
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 const rollbackFailurePattern = /intentional PR23 rollback/;
-const sqlIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -138,54 +139,29 @@ async function expectTenantAuthorizationError(
   });
 }
 
-async function ensureRuntimeRoleCanBeSet(
-  adminPool: ReturnType<typeof createDatabase>["pool"],
-  roleName: string
-): Promise<{ adminRoleName: string; canSetRuntimeRole: boolean }> {
-  const result = await adminPool.query<{
-    admin_role: string;
-    can_set_runtime_role: boolean;
-  }>(
-    "SELECT current_user AS admin_role, pg_has_role(current_user, $1, 'SET') AS can_set_runtime_role",
-    [roleName]
-  );
-  const [adminRole] = result.rows;
-  assert.ok(adminRole);
-  assert.match(adminRole.admin_role, sqlIdentifierPattern);
-  return {
-    adminRoleName: adminRole.admin_role,
-    canSetRuntimeRole: adminRole.can_set_runtime_role,
-  };
-}
-
 async function cleanupTemporaryRuntimeRole(input: {
   adminPool: ReturnType<typeof createDatabase>["pool"];
-  adminRoleName: string | undefined;
-  runtimeClient: Client;
-  runtimeClientConnected: boolean;
-  runtimeRoleName: string;
-  runtimeRoleMembershipGrantAttempted: boolean;
+  onboarding: { login: string; pool: { end: () => Promise<void> } } | undefined;
+  releaseRuntimeRole: ((failed?: boolean) => Promise<void>) | undefined;
 }): Promise<unknown[]> {
   const errors: unknown[] = [];
-  if (input.runtimeClientConnected) {
+  if (input.releaseRuntimeRole) {
     try {
-      await input.runtimeClient.query("RESET ROLE");
+      await input.releaseRuntimeRole();
     } catch (error) {
       errors.push(error);
     }
   }
-  if (input.runtimeRoleMembershipGrantAttempted && input.adminRoleName) {
+  if (input.onboarding) {
+    try {
+      await input.onboarding.pool.end();
+    } catch (error) {
+      errors.push(error);
+    }
     try {
       await input.adminPool.query(
-        `REVOKE "${input.runtimeRoleName}" FROM "${input.adminRoleName}"`
+        `DROP ROLE IF EXISTS "${input.onboarding.login}"`
       );
-      const roleMembership = await input.adminPool.query<{
-        can_set_runtime_role: boolean;
-      }>(
-        "SELECT pg_has_role(current_user, $1, 'SET') AS can_set_runtime_role",
-        [input.runtimeRoleName]
-      );
-      assert.equal(roleMembership.rows[0]?.can_set_runtime_role, false);
     } catch (error) {
       errors.push(error);
     }
@@ -273,12 +249,9 @@ async function main() {
   assert.equal(databaseUrl.hostname.includes("-pooler"), false);
   assert.match(databaseUrl.hostname, disposableHostPattern);
 
-  const { db: adminDatabase, pool: adminPool } = createDatabase(
-    connectionString,
-    {
-      maxConnections: 2,
-    }
-  );
+  const { pool: adminPool } = createDatabase(connectionString, {
+    maxConnections: 2,
+  });
   const runtimeClient = new Client({
     connectionString,
     connectionTimeoutMillis: 5000,
@@ -291,8 +264,15 @@ async function main() {
   const fixtureOrganizationIds: string[] = [];
   const fixtureOperationTokens: string[] = [];
   let gatePassed = false;
-  let adminRoleName: string | undefined;
-  let runtimeRoleMembershipGrantAttempted = false;
+  let releaseRuntimeRole: ((failed?: boolean) => Promise<void>) | undefined;
+  // the onboarding is the product's: the real function through a login of the onboarding runtime, never the owner
+  let onboarding:
+    | {
+        db: ReturnType<typeof createDatabase>["db"];
+        login: string;
+        pool: ReturnType<typeof createDatabase>["pool"];
+      }
+    | undefined;
   let pocFixtureCreated = false;
 
   async function createUser(name: string): Promise<string> {
@@ -309,7 +289,22 @@ async function main() {
     userId: string,
     name: string
   ): Promise<CreateInitialOrganizationInDatabaseResult> {
-    const result = await createInitialOrganizationInDatabase(adminDatabase, {
+    if (!onboarding) {
+      const login = `polaris_tctx_onboarding_${randomBytes(6).toString("hex")}`;
+      const password = randomBytes(24).toString("hex");
+      // the pool connects lazily: registered before the CREATE ROLE, the login is dropped by the cleanup however far
+      // the setup got
+      const created = createDatabase(
+        temporaryRuntimeUrl(connectionString, login, password),
+        { maxConnections: 1 }
+      );
+      onboarding = { ...created, login };
+      await adminPool.query(
+        `CREATE ROLE "${login}" WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`
+      );
+      await adminPool.query(`GRANT polaris_onboarding_runtime TO "${login}"`);
+    }
+    const result = await createInitialOrganizationInDatabase(onboarding.db, {
       id: randomUUID(),
       name,
       requestId: randomUUID(),
@@ -494,16 +489,10 @@ async function main() {
     });
     pocFixtureCreated = true;
     await recreateRlsGateFixture(adminPool);
-    const { adminRoleName: resolvedAdminRoleName, canSetRuntimeRole } =
-      await ensureRuntimeRoleCanBeSet(adminPool, runtimeRole);
-    adminRoleName = resolvedAdminRoleName;
-    if (!canSetRuntimeRole) {
-      runtimeRoleMembershipGrantAttempted = true;
-      await adminPool.query(`GRANT "${runtimeRole}" TO "${adminRoleName}"`);
-    }
     await runtimeClient.connect();
     runtimeClientConnected = true;
-    await runtimeClient.query("SET ROLE polaris_pr11_runtime");
+    // the owner's session acts as the runtime group for the rest of the gate (current_user is asserted below)
+    releaseRuntimeRole = await becomeGateRole(runtimeClient, runtimeRole);
     const currentRole = await runtimeClient.query(
       "SELECT current_user AS role"
     );
@@ -1053,11 +1042,10 @@ async function main() {
   } finally {
     const cleanupErrors = await cleanupTemporaryRuntimeRole({
       adminPool,
-      adminRoleName,
-      runtimeClient,
-      runtimeClientConnected,
-      runtimeRoleMembershipGrantAttempted,
-      runtimeRoleName: runtimeRole,
+      onboarding,
+      releaseRuntimeRole: runtimeClientConnected
+        ? releaseRuntimeRole
+        : undefined,
     });
     const fixtureCleanupErrors = await cleanupTenantFixtures({
       adminPool,

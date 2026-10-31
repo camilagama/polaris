@@ -1,5 +1,6 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import {
   dismissClosureNotice,
   openPrivacyCase,
@@ -7,9 +8,9 @@ import {
 } from "@polaris/db/admin-support-repository";
 import type { ClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
-import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
-import { randomUUID } from "node:crypto";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
+import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
+import { queryAsGateRole } from "../../../packages/db/scripts/gate-roles";
 import { expectSqlState } from "../../../packages/db/scripts/sales-gate-support";
 import {
   type ClosureNoticeDependencies,
@@ -18,12 +19,12 @@ import {
   handOverOwedClosureNotices,
 } from "../src/server/privacy/closure-notice";
 import type {
-  ClosureNoticeSendResult,
   ClosureNoticeSender,
+  ClosureNoticeSendResult,
 } from "../src/server/privacy/closure-notice-email";
 import {
-  acceptedDeletionCase,
   type AutomaticPurgeContext,
+  acceptedDeletionCase,
   asRole,
   awayFromMidnight,
   closedOrganization as closedWithDeliveredNotice,
@@ -124,7 +125,10 @@ async function emailOf(owner: Pool, userId: string): Promise<string> {
 }
 
 async function waitOf(owner: Pool, organizationId: string) {
-  const result = await owner.query<{ wait: string | null }>(
+  // the function is internal to the purge: only its owner executes it
+  const result = await queryAsGateRole<{ wait: string | null }>(
+    owner,
+    "polaris_purge_owner",
     `SELECT public.closed_organization_purge_wait(closure.organization_id, closure.requested_at) AS wait
        FROM public.organization_closures AS closure WHERE closure.organization_id = $1`,
     [organizationId]

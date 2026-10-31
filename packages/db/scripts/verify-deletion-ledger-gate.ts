@@ -4,11 +4,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CustomerVersionConflictError } from "@polaris/domain/customers/customer";
 import { createDatabase } from "../src/client";
-import { recordDeletionLedgerEntry } from "../src/deletion-ledger";
 import {
   anonymizeCustomerForPrivacy,
   createCustomer,
 } from "../src/customer-repository";
+import { recordDeletionLedgerEntry } from "../src/deletion-ledger";
+import { withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -576,49 +577,46 @@ async function run() {
     const restore = await owner.pool.connect();
     try {
       await restore.query("BEGIN");
-      await restore.query(
-        "GRANT polaris_privacy_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE"
-      );
-      await restore.query("SET LOCAL ROLE polaris_privacy_owner");
-      const listed = await restore.query<{
-        entity_type: string;
-        entity_id: string;
-        operation: string;
-        organization_id: string;
-        privacy_case_id: string | null;
-      }>(RESTORE_QUERY, [new Date(before - 60_000)]);
-      assert.deepEqual(
-        listed.rows
-          .filter((row) =>
-            [tenantA.organizationId, tenantB.organizationId].includes(
-              row.organization_id
+      await withGateRole(restore, "polaris_privacy_owner", async () => {
+        const listed = await restore.query<{
+          entity_type: string;
+          entity_id: string;
+          operation: string;
+          organization_id: string;
+          privacy_case_id: string | null;
+        }>(RESTORE_QUERY, [new Date(before - 60_000)]);
+        assert.deepEqual(
+          listed.rows
+            .filter((row) =>
+              [tenantA.organizationId, tenantB.organizationId].includes(
+                row.organization_id
+              )
             )
-          )
-          .map((row) => [row.operation, row.entity_type, row.entity_id])
-          .sort(),
-        [
-          ["anonymize", "customer", customer.id],
-          ["anonymize", "customer", foreign.id],
-        ].sort(),
-        "the restore query lists every tombstone from the restore point on"
-      );
-      assert.deepEqual(
-        Object.keys(listed.rows[0] ?? {}).sort(),
-        [
-          "entity_id",
-          "entity_type",
-          "operation",
-          "organization_id",
-          "privacy_case_id",
-          "recorded_at",
-        ],
-        "and nothing but opaque IDs, the kinds and the time"
-      );
-      const none = await restore.query(RESTORE_QUERY, [
-        new Date(Date.now() + 3_600_000),
-      ]);
-      assert.equal(none.rows.length, 0, "a later restore point lists none");
-      await restore.query("RESET ROLE");
+            .map((row) => [row.operation, row.entity_type, row.entity_id])
+            .sort(),
+          [
+            ["anonymize", "customer", customer.id],
+            ["anonymize", "customer", foreign.id],
+          ].sort(),
+          "the restore query lists every tombstone from the restore point on"
+        );
+        assert.deepEqual(
+          Object.keys(listed.rows[0] ?? {}).sort(),
+          [
+            "entity_id",
+            "entity_type",
+            "operation",
+            "organization_id",
+            "privacy_case_id",
+            "recorded_at",
+          ],
+          "and nothing but opaque IDs, the kinds and the time"
+        );
+        const none = await restore.query(RESTORE_QUERY, [
+          new Date(Date.now() + 3_600_000),
+        ]);
+        assert.equal(none.rows.length, 0, "a later restore point lists none");
+      });
     } finally {
       await restore.query("ROLLBACK");
       restore.release();

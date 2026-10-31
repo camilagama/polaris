@@ -6,13 +6,13 @@ import {
   ProductLifecycleError,
   ProductStockNotEmptyError,
 } from "@polaris/domain/catalog/product";
+import { resultQuality } from "@polaris/domain/economics/period-summary";
 import {
   InsufficientStockError,
   InvalidStockMovementError,
   InventoryVersionConflictError,
   StockCommandConflictError,
 } from "@polaris/domain/inventory/inventory";
-import { resultQuality } from "@polaris/domain/economics/period-summary";
 import { InvalidInventoryCountInputError } from "@polaris/domain/inventory/inventory-count";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -50,10 +50,11 @@ import {
 } from "./concurrency-support";
 import { runClock, storeDay, storeNoon } from "./gate-clock";
 import { assertAllowedGateUrl, disposableHostPattern } from "./gate-hosts";
+import { setLoginRole } from "./gate-roles";
 import {
   confirmPlainSale,
-  createSellableProduct,
   createTenantFixture as createSalesTenantFixture,
+  createSellableProduct,
   withTenantAs,
 } from "./sales-gate-support";
 
@@ -174,7 +175,8 @@ async function createRuntimeSession(
     connectionTimeoutMillis: 5000,
   });
   await client.connect();
-  await client.query("SET ROLE polaris_pr11_runtime");
+  // the gate granted the runtime role to its user above (or the user could already SET to it)
+  await setLoginRole(client, runtimeRole, "session");
   const role = await client.query("SELECT current_user AS role");
   assert.equal(role.rows[0]?.role, runtimeRole);
   return {
