@@ -849,7 +849,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     {
       discardAttempt: true,
       message:
-        "O saldo mudou depois que você abriu a contagem (uma venda, um recebimento ou outra contagem). Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
+        "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
       refreshBalance: true,
     },
   ],
@@ -1466,7 +1466,7 @@ export function stockQueueFailed(
     field = "quantity";
   } else if (name === "StaleLocalCountError") {
     message =
-      "O saldo deste aparelho mudou depois que você abriu a contagem (uma venda ou um movimento guardado, ou uma atualização). Feche e abra a contagem de novo para revisar a quantidade.";
+      "O saldo deste aparelho mudou depois que você abriu a contagem. Feche e abra a contagem de novo para revisar a quantidade.";
   }
   return {
     ...state,
