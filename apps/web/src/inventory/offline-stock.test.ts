@@ -400,9 +400,10 @@ describe("a count made against the balance the person reviewed", () => {
         name: "StaleLocalCountError",
       })
     );
+    expect(failed.submission.phase).toBe("failed");
     if (failed.submission.phase === "failed") {
-      expect(failed.submission.failure.message).toContain(
-        "mudou depois que você abriu a contagem"
+      expect(failed.submission.failure.message).toBe(
+        "O saldo deste aparelho mudou depois que você abriu a contagem. Feche e abra a contagem de novo para revisar a quantidade."
       );
     }
   });
