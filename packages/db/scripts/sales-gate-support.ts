@@ -123,7 +123,7 @@ export function recentInstant(hoursAgo = 3): string {
 }
 
 export async function createTenantFixture(
-  adminPool: AdminPool,
+  adminPool: Pick<AdminPool, "query">,
   label: string,
   timezone = "America/Sao_Paulo",
   plan: "free" | "pro" = "pro"

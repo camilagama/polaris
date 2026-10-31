@@ -56,10 +56,10 @@ const migrationStatements = readFileSync(
 
 const legacyCount = `
   SELECT
-    coalesce((SELECT max(char_length(name)) FROM public.product_option_values), 0)::int AS max_value,
-    (SELECT count(*) FROM public.product_option_values WHERE char_length(name) > ${MAX_PRODUCT_OPTION_VALUE_LENGTH})::int AS over_value,
-    coalesce((SELECT max(char_length(sku)) FROM public.product_variants), 0)::int AS max_sku,
-    (SELECT count(*) FROM public.product_variants WHERE char_length(sku) > ${MAX_PRODUCT_VARIANT_SKU_LENGTH})::int AS over_sku`;
+    coalesce((SELECT max(char_length(name)) FROM public.product_option_values WHERE organization_id = $1), 0)::int AS max_value,
+    (SELECT count(*) FROM public.product_option_values WHERE organization_id = $1 AND char_length(name) > ${MAX_PRODUCT_OPTION_VALUE_LENGTH})::int AS over_value,
+    coalesce((SELECT max(char_length(sku)) FROM public.product_variants WHERE organization_id = $1), 0)::int AS max_sku,
+    (SELECT count(*) FROM public.product_variants WHERE organization_id = $1 AND char_length(sku) > ${MAX_PRODUCT_VARIANT_SKU_LENGTH})::int AS over_sku`;
 
 interface CatalogFixture {
   valueId: string;
@@ -238,6 +238,45 @@ async function proveCeilingsOnTheDatabase(
   });
 }
 
+/**
+ * The count is scoped to the organization of the gate's own fixture: another organization with a value or a SKU above
+ * a ceiling, as the rows other gates leave behind in the same database, must not change it. The bystander lives in a
+ * savepoint so the migration replay that follows sees only the fixture's rows. It runs only with the two CHECKs dropped,
+ * since the bystander's rows are above the ceilings. SET CONSTRAINTS ALL DEFERRED undoes the IMMEDIATE that the
+ * gate's own fixture left on, so the bystander's product can be built before its variant.
+ */
+async function countWithBystander(client: PoolClient, tenant: TenantFixture) {
+  await client.query("SAVEPOINT bystander");
+  await client.query("SET CONSTRAINTS ALL DEFERRED");
+  const other = await createTenantFixture(client, "size-ceilings-bystander");
+  const bystander = await createCatalogFixture(client, other);
+  await setValue(
+    client,
+    bystander,
+    "b".repeat(MAX_PRODUCT_OPTION_VALUE_LENGTH + 10)
+  );
+  await setSku(
+    client,
+    bystander,
+    "b".repeat(MAX_PRODUCT_VARIANT_SKU_LENGTH + 10)
+  );
+  await client.query("SET CONSTRAINTS ALL IMMEDIATE");
+  const seen = await client.query(legacyCount, [other.organizationId]);
+  assert.deepEqual(
+    seen.rows[0],
+    {
+      max_sku: MAX_PRODUCT_VARIANT_SKU_LENGTH + 10,
+      max_value: MAX_PRODUCT_OPTION_VALUE_LENGTH + 10,
+      over_sku: 1,
+      over_value: 1,
+    },
+    "the count sees the rows of the organization it is given"
+  );
+  const counted = await client.query(legacyCount, [tenant.organizationId]);
+  await client.query("ROLLBACK TO SAVEPOINT bystander");
+  return counted;
+}
+
 async function proveReplay(
   owner: ReturnType<typeof createDatabase>,
   tenant: TenantFixture
@@ -289,7 +328,7 @@ async function proveReplay(
         );
       }
       await client.query("SET CONSTRAINTS ALL IMMEDIATE");
-      const counted = await client.query(legacyCount);
+      const counted = await countWithBystander(client, tenant);
       assert.deepEqual(counted.rows[0], {
         max_sku: legacy.overSku ? MAX_PRODUCT_VARIANT_SKU_LENGTH + 1 : 0,
         max_value: legacy.overValue ? MAX_PRODUCT_OPTION_VALUE_LENGTH + 1 : 1,
