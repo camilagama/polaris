@@ -14,6 +14,7 @@ import {
   type RefundedRenewal,
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
+import { withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -181,7 +182,7 @@ async function run() {
         await client.end();
       }
     };
-    /** Runs as an owner role (the gate user is a superuser in CI), inside a transaction that is rolled back. */
+    /** Runs as an owner role (withGateRole: also when the gate user is not a superuser), inside a transaction that is rolled back. */
     const asOwnerRole = async <T>(
       role: string,
       operation: (client: Client) => Promise<T>
@@ -189,8 +190,7 @@ async function run() {
       as(adminUrl, async (client) => {
         await client.query("BEGIN");
         try {
-          await client.query(`SET LOCAL ROLE ${role}`);
-          return await operation(client);
+          return await withGateRole(client, role, () => operation(client));
         } finally {
           await client.query("ROLLBACK");
         }
@@ -1119,9 +1119,11 @@ async function run() {
     for (const cause of ["refund_unknown", null]) {
       await expectSqlState(
         () =>
-          owner.pool.query(
-            "SELECT public.record_billing_refund_pending_incident($1::uuid, $2::text)",
-            [randomUUID(), cause]
+          as(billingUrl, (client) =>
+            client.query(
+              "SELECT public.record_billing_refund_pending_incident($1::uuid, $2::text)",
+              [randomUUID(), cause]
+            )
           ),
         "22023",
         `the incident takes only its two causes (${String(cause)})`

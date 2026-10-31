@@ -7,11 +7,11 @@ import {
   openPrivacyCase,
   openSupportCase,
   placeOrganizationLegalHold,
+  readSupportCase,
   recordPrivacyDecision,
   recordPrivacyIdentity,
   recordPrivacyRole,
   recordPrivacyScope,
-  readSupportCase,
   releaseOrganizationLegalHold,
   revokeTenantAccess,
   scheduleOrganizationPurge,
@@ -26,6 +26,10 @@ import {
   closurePurgeNotBefore,
 } from "@polaris/domain/organization/closure-deadlines";
 import { ORGANIZATION_PURGE_REQUIRED_SCOPE } from "@polaris/domain/privacy/organization-purge";
+import {
+  queryAsGateRole,
+  withGateRole,
+} from "../../../packages/db/scripts/gate-roles";
 import {
   createTenantFixture,
   expectSqlState,
@@ -241,8 +245,9 @@ export async function asRole(
   const client = await owner.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`SET LOCAL ROLE ${role}`);
-    return await client.query(statement, values);
+    return await withGateRole(client, role, () =>
+      client.query(statement, values)
+    );
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
@@ -1335,7 +1340,10 @@ async function dropNotices(owner: Pool, organizationId: string) {
 }
 
 async function waitOf(owner: Pool, organizationId: string) {
-  const result = await owner.query<{ wait: string | null }>(
+  // the function is internal to the purge: only its owner executes it
+  const result = await queryAsGateRole<{ wait: string | null }>(
+    owner,
+    "polaris_purge_owner",
     `SELECT public.closed_organization_purge_wait(closure.organization_id, closure.requested_at) AS wait
        FROM public.organization_closures AS closure WHERE closure.organization_id = $1`,
     [organizationId]

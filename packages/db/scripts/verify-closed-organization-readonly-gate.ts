@@ -13,6 +13,7 @@ import {
 import { sql } from "drizzle-orm";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { setLoginRole, withGateRole } from "./gate-roles";
 import {
   CLOSED_EXPORT_READER_ROLE,
   withClosedExportTransaction,
@@ -803,8 +804,8 @@ async function run() {
 
     // the limit to the second: D is a local midnight, so the real clock never lands one second from it. The function is
     // the live definition (read from the catalog, nothing retyped) with its clock fixed at the instant under test, in a
-    // transaction that is rolled back: nothing it writes stays. The gate's owner connection is a superuser, so the
-    // replacement keeps the function's owner (the privacy owner) and the call runs as it does in production.
+    // transaction that is rolled back: nothing it writes stays. The replacement runs as the function's owner (the privacy
+    // owner), so it keeps its owner and grants, and the call runs as the tenant runtime group, as it does in production.
     const requestFunctionName = "public.request_closed_data_export";
     const requestFunction = `${requestFunctionName}(text,text[],uuid)`;
     const askWithClockAt = async (tenant: TenantFixture, clock: Date) => {
@@ -812,8 +813,8 @@ async function run() {
       try {
         await client.query("BEGIN");
         const [live] = (
-          await client.query<{ definition: string }>(
-            "SELECT pg_get_functiondef($1::regprocedure) AS definition",
+          await client.query<{ definition: string; owner: string }>(
+            "SELECT pg_get_functiondef($1::regprocedure) AS definition, (SELECT proowner::regrole::text FROM pg_proc WHERE oid = $1::regprocedure) AS owner",
             [requestFunction]
           )
         ).rows;
@@ -824,13 +825,17 @@ async function run() {
         );
         assert.notEqual(fixed, live.definition, "the clock of the function");
         assert.ok(!fixed.includes("pg_catalog.now()"));
-        await client.query(fixed);
+        // CREATE OR REPLACE needs CREATE on the schema, which the owner roles hold only during a migration
+        await client.query(`GRANT CREATE ON SCHEMA public TO ${live.owner}`);
+        await withGateRole(client, live.owner, () => client.query(fixed));
         await client.query("SELECT set_config('app.user_id', $1, true)", [
           tenant.userId,
         ]);
-        await client.query(
-          `SELECT ${requestFunctionName}($1, ARRAY['json']::text[], NULL)`,
-          [tenant.organizationId]
+        await withGateRole(client, runtimeRole, () =>
+          client.query(
+            `SELECT ${requestFunctionName}($1, ARRAY['json']::text[], NULL)`,
+            [tenant.organizationId]
+          )
         );
         return "accepted";
       } catch (error: unknown) {
@@ -1000,7 +1005,7 @@ async function run() {
           [settings.exportId ?? "", settings.lease ?? ""]
         );
         if (settings.role !== false) {
-          await client.query(`SET LOCAL ROLE ${CLOSED_EXPORT_READER_ROLE}`);
+          await setLoginRole(client, CLOSED_EXPORT_READER_ROLE);
         }
         return await operation(client);
       } finally {
@@ -1155,13 +1160,15 @@ async function run() {
         await client.query(
           `CREATE POLICY gate_probe_write ON public.${table} AS PERMISSIVE FOR ALL TO ${CLOSED_EXPORT_READER_ROLE} USING (true) WITH CHECK (true)`
         );
-        if (readOnly) {
-          await client.query("SET LOCAL transaction_read_only = on");
-        }
-        await client.query(`SET LOCAL ROLE ${CLOSED_EXPORT_READER_ROLE}`);
-        const [, update, remove] = writes(table);
-        await client.query(update[1]);
-        await client.query(`${remove[1]} AND false`);
+        await withGateRole(client, CLOSED_EXPORT_READER_ROLE, async () => {
+          // after the GRANT of withGateRole, which a read-only transaction refuses
+          if (readOnly) {
+            await client.query("SET LOCAL transaction_read_only = on");
+          }
+          const [, update, remove] = writes(table);
+          await client.query(update[1]);
+          await client.query(`${remove[1]} AND false`);
+        });
       } finally {
         await client.query("ROLLBACK").catch(() => undefined);
         await client.end();
@@ -1311,6 +1318,9 @@ async function run() {
          JOIN pg_roles member ON member.oid = m.member
          JOIN pg_roles granted ON granted.oid = m.roleid
         WHERE (granted.rolname = $1 OR member.rolname = $1)
+          -- the database owner's ADMIN-only edge, which PostgreSQL 16+ gives a creator without SUPERUSER (definer-hardening-checks.ts)
+          AND NOT (m.member = (SELECT datdba FROM pg_database WHERE datname = current_database())
+                   AND m.admin_option AND NOT m.inherit_option AND NOT m.set_option)
         ORDER BY 1, 2`,
       [CLOSED_EXPORT_READER_ROLE]
     );
