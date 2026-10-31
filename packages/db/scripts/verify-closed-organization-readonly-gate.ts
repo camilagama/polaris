@@ -13,7 +13,6 @@ import {
 import { sql } from "drizzle-orm";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
-import { setLoginRole, withGateRole } from "./gate-roles";
 import {
   CLOSED_EXPORT_READER_ROLE,
   withClosedExportTransaction,
@@ -38,6 +37,11 @@ import {
   type TenantRequestTransaction,
 } from "../src/tenant-transaction";
 import { runClock, storeDay } from "./gate-clock";
+import {
+  replaceFunctionAsOwner,
+  setLoginRole,
+  withGateRole,
+} from "./gate-roles";
 import {
   createProductFixture,
   createTenantFixture,
@@ -813,8 +817,8 @@ async function run() {
       try {
         await client.query("BEGIN");
         const [live] = (
-          await client.query<{ definition: string; owner: string }>(
-            "SELECT pg_get_functiondef($1::regprocedure) AS definition, (SELECT proowner::regrole::text FROM pg_proc WHERE oid = $1::regprocedure) AS owner",
+          await client.query<{ definition: string }>(
+            "SELECT pg_get_functiondef($1::regprocedure) AS definition",
             [requestFunction]
           )
         ).rows;
@@ -825,9 +829,7 @@ async function run() {
         );
         assert.notEqual(fixed, live.definition, "the clock of the function");
         assert.ok(!fixed.includes("pg_catalog.now()"));
-        // CREATE OR REPLACE needs CREATE on the schema, which the owner roles hold only during a migration
-        await client.query(`GRANT CREATE ON SCHEMA public TO ${live.owner}`);
-        await withGateRole(client, live.owner, () => client.query(fixed));
+        await replaceFunctionAsOwner(client, requestFunction, fixed);
         await client.query("SELECT set_config('app.user_id', $1, true)", [
           tenant.userId,
         ]);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -99,8 +100,14 @@ const TERMS_V1 = sha256Of("termos v1");
 const TERMS_V2 = sha256Of("termos v2");
 const PRIVACY_V1 = sha256Of("privacidade v1");
 
-/** The calls of the two functions, on one connection (the authentication runtime in the gate; the owner for a mutant). */
-function acceptanceCalls(client: Client) {
+/**
+ * The calls of the two functions, on one connection: a login of the authentication runtime, or (for a mutant) the gate's
+ * connection with each call made as that runtime through `as`.
+ */
+function acceptanceCalls(
+  client: Client,
+  as: <T>(work: () => Promise<T>) => Promise<T> = (work) => work()
+) {
   return {
     async record(
       user: string,
@@ -110,16 +117,20 @@ function acceptanceCalls(client: Client) {
       origin: string,
       request: string
     ): Promise<string> {
-      const result = await client.query<{ result: string }>(
-        "SELECT public.record_legal_acceptance($1, $2, $3, $4, $5, $6) AS result",
-        [user, document, version, sha256, origin, request]
+      const result = await as(() =>
+        client.query<{ result: string }>(
+          "SELECT public.record_legal_acceptance($1, $2, $3, $4, $5, $6) AS result",
+          [user, document, version, sha256, origin, request]
+        )
       );
       return String(result.rows[0]?.result);
     },
     async versions(user: string): Promise<Version[]> {
-      const result = await client.query<Version>(
-        "SELECT document, version FROM public.legal_acceptance_versions($1)",
-        [user]
+      const result = await as(() =>
+        client.query<Version>(
+          "SELECT document, version FROM public.legal_acceptance_versions($1)",
+          [user]
+        )
       );
       return result.rows;
     },
@@ -982,15 +993,22 @@ async function run() {
         assert.ok(probe);
         await mutationClient.query("BEGIN");
         try {
-          await mutationClient.query(mutated);
-          // the owner role holds INSERT and SELECT, so inside the transaction the mutant runs as the migration user
-          // with the rows visible (it bypasses RLS here) and the same function body
+          await replaceFunctionAsOwner(mutationClient, signature, mutated);
+          // the mutant is called by the authentication runtime, as in production; the probe reads and writes the table
+          // on the gate's own connection, which owns it and bypasses RLS, so the rows are visible
           await assert.rejects(
             () =>
               probe(
-                acceptanceCalls(mutationClient),
+                acceptanceCalls(mutationClient, (work) =>
+                  withGateRole(mutationClient, "polaris_auth_runtime", work)
+                ),
                 freshUser(`mutant-${index}`)
               ),
+            // an assertion of the probe failed, or the table's own check refused the row (the request ID that is an IP);
+            // never a refusal of the setup (withGateRole's errors carry no SQLSTATE) or of a privilege
+            (error: unknown) =>
+              error instanceof assert.AssertionError ||
+              sqlState(error) === "23514",
             `the probes catch the mutation: ${label}`
           );
         } finally {

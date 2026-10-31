@@ -176,3 +176,31 @@ export async function queryAsGateRole<R extends QueryResultRow>(
     client.release();
   }
 }
+
+/**
+ * Replaces a function with `definition` (a mutant, or the live body with a fixed clock) as the role that owns it, so it
+ * keeps its owner and its grants. CREATE OR REPLACE needs CREATE on the schema, which the owner roles hold only while a
+ * migration runs: it is granted for the statement and taken back. Call it inside a transaction the caller rolls back.
+ */
+export async function replaceFunctionAsOwner(
+  client: GateQueryable,
+  signature: string,
+  definition: string
+): Promise<void> {
+  const { can_create, owner } = await firstRow<{
+    can_create: boolean;
+    owner: string;
+  }>(
+    client,
+    "SELECT proowner::regrole::text AS owner, has_schema_privilege(proowner, 'public', 'CREATE') AS can_create FROM pg_proc WHERE oid = $1::regprocedure",
+    [signature]
+  );
+  const quoted = quotedRole(owner);
+  if (!can_create) {
+    await client.query(`GRANT CREATE ON SCHEMA public TO ${quoted}`);
+  }
+  await withGateRole(client, owner, () => client.query(definition));
+  if (!can_create) {
+    await client.query(`REVOKE CREATE ON SCHEMA public FROM ${quoted}`);
+  }
+}
