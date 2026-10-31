@@ -150,6 +150,8 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
       connectionForm={route.connectionForm}
       navId={route.navId}
       onlineOnly={route.onlineOnly}
+      // Ajuda is the way out when the organization does not open: it needs none and makes no request
+      requiresOrganization={route.id !== "help"}
       routeId={route.id}
     >
       <ErrorBoundary onRetry={Page.reset}>

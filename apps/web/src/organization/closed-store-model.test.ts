@@ -11,7 +11,11 @@ import {
   DEVICE_CLOSED_LINK,
   deviceClosedText,
   justClosedText,
+  loadAfterFailure,
+  loadWhenReading,
   notRecoverableOutcome,
+  PANEL_REFRESH_FAILED_TEXT,
+  type PanelLoad,
   panelDates,
   panelLoadFailure,
   panelTitle,
@@ -288,6 +292,55 @@ describe("the undo and the moment after the closure", () => {
   });
 });
 
+describe("an Atualizar that fails (AC-4, AC-5)", () => {
+  const loaded: PanelLoad = {
+    refreshFailed: false,
+    status: "loaded",
+    stores: [STORE],
+  };
+
+  it("keeps the stores, and so the dates and the copy, and marks the failure", () => {
+    expect(loadAfterFailure(loaded, "error")).toEqual({
+      refreshFailed: true,
+      status: "loaded",
+      stores: [STORE],
+    });
+  });
+
+  it("replaces the panel with the error only when nothing was read yet", () => {
+    expect(loadAfterFailure({ status: "loading" }, "error")).toEqual({
+      status: "error",
+    });
+    expect(loadAfterFailure({ status: "error" }, "error")).toEqual({
+      status: "error",
+    });
+  });
+
+  it("still takes a lost session or acceptance to its page, whatever was on screen", () => {
+    expect(loadAfterFailure(loaded, "session")).toEqual({ status: "session" });
+    expect(loadAfterFailure(loaded, "acceptance")).toEqual({
+      status: "acceptance",
+    });
+  });
+
+  it("drops the notice when the next read starts, keeping the stores", () => {
+    const failed = loadAfterFailure(loaded, "error");
+    expect(loadWhenReading(failed, 1)).toEqual(loaded);
+    expect(loadWhenReading(loaded, 0)).toEqual({ status: "loading" });
+    expect(loadWhenReading({ status: "error" }, 1)).toEqual({
+      status: "loading",
+    });
+  });
+
+  it("says only what is known: the screen is from the last read", () => {
+    expect(PANEL_REFRESH_FAILED_TEXT).toBe(
+      "Não deu para atualizar. O que está na tela é da última leitura."
+    );
+    expect(PANEL_REFRESH_FAILED_TEXT).not.toMatch(CLAIMS_STATE);
+  });
+});
+
+const CLAIMS_STATE = /nada foi alterado|desfeito|encerramento/i;
 const TECHNICAL_IN_UNDO = /_|organização|closure|FORBIDDEN|CONFLICT/;
 const CLAIMS_AN_OUTCOME = /reaberta|não foi desfeito/i;
 const refusal = (code: string, reason?: string, status = 409) => ({

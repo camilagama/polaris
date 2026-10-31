@@ -1,5 +1,12 @@
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
@@ -46,6 +53,8 @@ import {
   copyRequestOpen,
   DOWNLOAD_BUTTON,
   justClosedText,
+  loadAfterFailure,
+  loadWhenReading,
   NEW_STORE_LINK,
   type NotRecoverableOutcome,
   notRecoverableOutcome,
@@ -55,6 +64,9 @@ import {
   PANEL_LOADING_TEXT,
   PANEL_NOT_FOUND_TEXT,
   PANEL_OFFLINE_TEXT,
+  PANEL_REFRESH_FAILED_TEXT,
+  PANEL_REFRESH_RETRY,
+  type PanelLoad,
   panelDates,
   panelLoadFailure,
   panelTitle,
@@ -86,13 +98,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** `setTimeout` takes no longer delay: a later end of the window is caught by the next read. */
 const MAX_TIMER_MS = 2_147_483_647;
 
-type Load =
-  | { status: "loading" }
-  | { status: "error" }
-  | { status: "session" }
-  | { status: "acceptance" }
-  | { status: "loaded"; stores: readonly ClosedStore[] };
-
 /** Each read also refreshes what the Início of an active store remembers of the closed ones (no read of its own). */
 async function readStores(storeId: string | null): Promise<ClosedStore[]> {
   if (storeId !== null && UUID.test(storeId)) {
@@ -112,25 +117,23 @@ async function readStores(storeId: string | null): Promise<ClosedStore[]> {
  * call, AC-14).
  */
 function useClosedStores(storeId: string | null) {
-  const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [load, setLoad] = useState<PanelLoad>({ status: "loading" });
   const [round, setRound] = useState(0);
 
   useEffect(() => {
     let current = true;
-    setLoad((previous) =>
-      previous.status === "loaded" && round > 0
-        ? previous
-        : { status: "loading" }
-    );
+    setLoad((previous) => loadWhenReading(previous, round));
     readStores(storeId)
       .then((stores) => {
         if (current) {
-          setLoad({ status: "loaded", stores });
+          setLoad({ refreshFailed: false, status: "loaded", stores });
         }
       })
       .catch((error: unknown) => {
         if (current) {
-          setLoad({ status: panelLoadFailure(error) });
+          setLoad((previous) =>
+            loadAfterFailure(previous, panelLoadFailure(error))
+          );
         }
       });
     return () => {
@@ -479,13 +482,44 @@ function UndoNotice({ text }: { text: string }) {
   );
 }
 
+function RefreshFailedNotice({
+  online,
+  onRefresh,
+}: {
+  online: boolean;
+  onRefresh: () => void;
+}) {
+  const retry = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    retry.current?.focus();
+  }, []);
+  return (
+    <Alert role="alert" variant="warning">
+      <AlertDescription className="grid gap-3">
+        <span>{PANEL_REFRESH_FAILED_TEXT}</span>
+        <Button
+          className="w-fit max-sm:w-full"
+          onClick={onRefresh}
+          ref={retry}
+          variant="outline"
+          {...offlineOff(online)}
+        >
+          {PANEL_REFRESH_RETRY}
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function StorePanel({
   justClosed,
+  notice,
   online,
   onRefresh,
   store: read,
 }: {
   justClosed: boolean;
+  notice: ReactNode;
   online: boolean;
   onRefresh: () => void;
   store: ClosedStore;
@@ -510,6 +544,7 @@ function StorePanel({
           </AlertDescription>
         </Alert>
       ) : null}
+      {notice}
       {undo.notice ? <UndoNotice key={undo.notice} text={undo.notice} /> : null}
       <StatusCard
         now={now}
@@ -532,10 +567,17 @@ function StorePanel({
   );
 }
 
-function StoreChoice({ stores }: { stores: readonly ClosedStore[] }) {
+function StoreChoice({
+  notice,
+  stores,
+}: {
+  notice: ReactNode;
+  stores: readonly ClosedStore[];
+}) {
   return (
     <>
       <h1 className="font-semibold text-2xl/8 tracking-tight">{PAGE_TITLE}</h1>
+      {notice}
       <p>{PANEL_CHOOSE_TEXT}</p>
       <ul className="m-0 grid list-none gap-3 p-0">
         {stores.map((store) => (
@@ -560,7 +602,7 @@ function PanelBody({
   onRefresh,
 }: {
   justClosed: boolean;
-  load: Load;
+  load: PanelLoad;
   online: boolean;
   onRefresh: () => void;
 }) {
@@ -594,6 +636,9 @@ function PanelBody({
       </>
     );
   }
+  const notice = load.refreshFailed ? (
+    <RefreshFailedNotice online={online} onRefresh={onRefresh} />
+  ) : null;
   const [only] = load.stores;
   if (!only) {
     return (
@@ -601,6 +646,7 @@ function PanelBody({
         <h1 className="font-semibold text-2xl/8 tracking-tight">
           {PAGE_TITLE}
         </h1>
+        {notice}
         <p>{PANEL_NOT_FOUND_TEXT}</p>
         <a
           className={cn(
@@ -615,11 +661,12 @@ function PanelBody({
     );
   }
   if (load.stores.length > 1) {
-    return <StoreChoice stores={load.stores} />;
+    return <StoreChoice notice={notice} stores={load.stores} />;
   }
   return (
     <StorePanel
       justClosed={justClosed}
+      notice={notice}
       online={online}
       onRefresh={onRefresh}
       store={only}

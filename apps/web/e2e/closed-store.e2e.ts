@@ -11,6 +11,7 @@ const PATH = `/loja-encerrada?loja=${STORE_ID}`;
 const NOW = new Date("2026-10-30T12:00:00-03:00");
 const TECHNICAL =
   /closing|deletion_scheduled|deletable|purged|not_handled|fresh_session|closed_export|_required|_unavailable/;
+const CLAIMS_STATE = /nada foi alterado|desfeito|encerramento/i;
 const SIGN_IN = /\/entrar\?motivo=sessao&voltar=\/loja-encerrada/;
 
 type Store = Record<string, unknown>;
@@ -345,6 +346,59 @@ test("carregando, sem botão de ação; a leitura que falha dá Tentar novamente
   await page.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(title(page)).toBeVisible();
   expect(calls.statuses).toBe(2);
+});
+
+for (const [label, failure] of [
+  ["rede", (route: Route) => route.abort("internetdisconnected")],
+  [
+    "5xx",
+    (route: Route) => route.fulfill(refusal("INTERNAL_SERVER_ERROR", 500)),
+  ],
+] as const) {
+  test(`Atualizar que falha (${label}) mantém as datas e o botão da cópia, avisa sem afirmar o estado e Tentar de novo lê outra vez (AC-4, AC-5)`, async ({
+    page,
+  }) => {
+    const calls = await openPanel(page, {
+      statuses: [store(), failure, store({ phase: "closed" })],
+    });
+    await expect(title(page)).toBeVisible();
+    await page
+      .getByRole("button", { exact: true, name: "Atualizar" })
+      .first()
+      .click();
+    const notice = page.getByRole("alert");
+    await expect(notice).toContainText(
+      "Não deu para atualizar. O que está na tela é da última leitura."
+    );
+    await expect(notice).not.toContainText(
+      CLAIMS_STATE
+    );
+    await expect(title(page)).toBeVisible();
+    await expect(dates(page)).toContainText("20 de outubro de 2026");
+    await expect(
+      page.getByRole("link", { name: "Baixar meus dados" })
+    ).toBeVisible();
+    await expect(undoButton(page)).toBeVisible();
+    const retry = notice.getByRole("button", { name: "Tentar de novo" });
+    await expect(retry).toBeFocused();
+    await retry.click();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(calls.statuses).toBe(3);
+  });
+}
+
+test("a primeira leitura que falha continua mostrando só o erro, sem painel (AC-4)", async ({
+  page,
+}) => {
+  await openPanel(page, {
+    statuses: [(route) => route.abort("internetdisconnected")],
+  });
+  await expect(page.getByRole("alert")).toHaveText(
+    "Não foi possível carregar os dados da loja. Verifique a conexão e tente de novo."
+  );
+  await expect(
+    page.getByRole("button", { name: "Tentar de novo" })
+  ).toHaveCount(0);
 });
 
 test("sem loja no endereço, lista as encerradas do dono e abre a única ou deixa escolher (e-mail)", async ({
