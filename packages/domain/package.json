@@ -5,7 +5,6 @@
   "exports": {
     "./admin/organization-diagnostics": "./src/admin/organization-diagnostics.ts",
     "./admin/access-log": "./src/admin/access-log.ts",
-    "./admin/operational-incident": "./src/admin/operational-incident.ts",
     "./admin/privacy-case": "./src/admin/privacy-case.ts",
     "./admin/refund-window": "./src/admin/refund-window.ts",
     "./admin/support-access": "./src/admin/support-access.ts",

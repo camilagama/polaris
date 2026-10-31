@@ -296,6 +296,18 @@ export const alertSignals = [
     windowMinutes: 1440,
   },
   {
+    id: "purge-parado",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["organization_purge_stalled"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Purge de loja encerrada parado: um passo que falha na 3ª tentativa ou mais",
+    windowMinutes: 1440,
+  },
+  {
     id: "aviso-de-encerramento-falhando",
     notify: "report",
     severity: "warning",

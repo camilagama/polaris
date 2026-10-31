@@ -33,6 +33,7 @@
 | [`link-de-verificacao`](#link-de-verificacao) | `auth_verification_link_record_failed` | 24 h | 1 | warning | não |
 | [`apagamento-automatico`](#apagamento-automatico) | `closure_auto_purge_volume_high` | 24 h | 1 | critical | sim |
 | [`loja-encerrada-parada`](#loja-encerrada-parada) | `closure_purge_overdue` | 24 h | 1 | warning | não |
+| [`purge-parado`](#purge-parado) | `organization_purge_stalled` | 24 h | 1 | warning | não |
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
 | [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed` | 60 min | 1 | critical | sim |
@@ -227,6 +228,18 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 **O que fazer.** Cada loja é uma decisão: pôr a trava legal (se há motivo para guardar), agendar o purge pelo Admin sob o caso de exclusão (toda escrita no Admin manda `Origin: https://<host do Admin>`; sem ela, 403, [ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md)), revogar o acesso temporário esquecido ou resolver a renovação no provedor (siga [cobranca-reconcile](#cobranca-reconcile) e o [runbook dos provedores](./billing-providers.md)) ou, se o aviso não foi entregue, corrigir o envio (o e-mail não configurado, um endereço recusado) para o aviso sair; não se grava `sent_at` à mão. Registre a decisão no caso.
 
 **Com o e-mail desligado, nenhum purge sai**, nem o do Admin por caso de privacidade: nenhum aviso fica entregue, então o caso pode agendar o purge e a execução espera. Com o e-mail ligado, os avisos saem, e o repasse horário envia o mais recente de cada ciclo devido. O ato de suporte resolve o que sobra (aviso pulado, falho ou de dono sem conta). O prazo de resposta do caso (`PRIVACY_CASE_RESPONSE_DAYS`, 15 dias, provisório) segue valendo: responda ao titular dentro dele, dizendo que a exclusão está aceita e só ocorre depois do aviso, e registre o motivo da espera no caso.
+
+<a id="purge-parado"></a>
+
+### purge-parado — purge de loja encerrada que não avança
+
+**O que significa.** O job do purge ([ADR 0081](../adr/0081-purge-completo-da-organizacao-encerrada.md)) tentou o mesmo purge pela 3ª vez ou mais e o passo falhou de novo, por um erro que o banco não nomeia como espera de propósito. O evento é `organization_purge_stalled` (nível `error`), com `organizationId` opaco, `attempt`, `phase` (`purge` ou `sweep`), `operation` (`organization_purge.<passo>`: `mark_storage`, `exports_storage`, `media_storage`, `database` ou `second_sweep`) e `reason` (o código gravado em `organization_purges.last_error_code`, como `purge_media_storage_failed`). Sai junto do `organization_purge_step_failed` da mesma tentativa. Cada hora em que o purge falha de novo traz outro evento.
+
+**Fora do sinal.** Um purge segurado de propósito (`legal_hold_active`, `closure_period_not_elapsed`, `closure_notice_not_delivered`, `renewal_alive`, `tenant_access_active`) sai como `organization_purge_step_failed` com `outcome = "rejected"` e não entra aqui: ele aparece em [loja-encerrada-parada](#loja-encerrada-parada) (`purgesHeldBack`) e na trava legal pendente de revisão (`GET /legal-holds`). **Limite:** uma execução que o Worker mata antes de escrever o log (tempo ou CPU) não gera o evento. Ela aparece só como `attempts` crescendo na linha do purge, na consulta abaixo.
+
+**Como confirmar.** Workers Logs: `event = "organization_purge_stalled"`, agrupado por `operation` e `reason`; o `organization_purge_step_failed` da mesma `organizationId` mostra a sequência. Banco, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT organization_id, attempts, last_error_code, storage_touched_at, locked_until FROM organization_purges WHERE purged_at IS NULL AND attempts >= 3 ORDER BY attempts DESC`. Com `storage_touched_at` preenchido o armazenamento já perdeu objetos e o cancelamento é recusado para sempre: o purge precisa terminar.
+
+**O que fazer.** O passo diz onde olhar: `exports_storage` e `media_storage` (R2 fora do ar, cota ou chave de mídia fora do prefixo da organização: veja [r2-e-midia](#r2-e-midia)), `database` (a transação do purge falhou; o log do job não traz a mensagem do erro, então ache a causa em [erros-de-banco](#erros-de-banco), pelo horário da tentativa) e `second_sweep` (objetos que apareceram depois). O purge é reexecutável de ponta a ponta: corrigida a causa, o cron horário o pega de novo, sem ato manual, depois que o `locked_until` passa (até 15 minutos). Se a causa não é de infraestrutura, não force o purge: abra a correção por PR e deixe o caso de exclusão do dono com a nota do atraso.
 
 <a id="aviso-de-encerramento-falhando"></a>
 

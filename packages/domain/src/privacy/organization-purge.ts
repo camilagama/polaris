@@ -28,6 +28,12 @@ export const ORGANIZATION_PURGE_STEPS = Object.freeze([
  */
 export const ORGANIZATION_PURGE_LEASE_SECONDS = 15 * 60;
 
+/**
+ * A purge whose step failed for the third time or more (a failure the database does not name as a refusal on purpose)
+ * is not advancing: the job reports it as stalled.
+ */
+export const ORGANIZATION_PURGE_STALLED_ATTEMPTS = 3;
+
 const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export class InvalidOrganizationIdError extends Error {

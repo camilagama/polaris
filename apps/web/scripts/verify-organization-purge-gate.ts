@@ -494,6 +494,113 @@ async function raceCancellationAgainstMark(
   return await outcome;
 }
 
+/**
+ * The other order of the race: a cancellation commits first (its transaction is still open and holds the
+ * organization's row, with the lease made valid again inside it so only the cancellation can refuse the mark) while the
+ * run asks to mark the storage. The mark waits for the row, finds the organization closed and is refused; it has
+ * not ended before the cancellation committed. Returns how the mark ended.
+ */
+async function raceMarkAgainstCancellation(
+  pool: {
+    connect: () => Promise<{
+      query: (statement: string, values?: unknown[]) => Promise<unknown>;
+      release: () => void;
+    }>;
+  },
+  cancellation: {
+    caseId: string;
+    organizationId: string;
+    principalId: string;
+    reason: string;
+  },
+  mark: () => Promise<unknown>
+): Promise<unknown> {
+  const canceller = await pool.connect();
+  let settled = false;
+  let outcome: Promise<unknown>;
+  try {
+    await canceller.query("BEGIN");
+    await canceller.query(
+      "SELECT public.admin_cancel_organization_purge($1, $2, $3, $4)",
+      [
+        cancellation.principalId,
+        cancellation.caseId,
+        cancellation.organizationId,
+        cancellation.reason,
+      ]
+    );
+    await canceller.query(
+      "UPDATE public.organization_purges SET locked_until = now() + interval '15 minutes' WHERE organization_id = $1",
+      [cancellation.organizationId]
+    );
+    outcome = mark().then(
+      () => {
+        settled = true;
+        return "marked";
+      },
+      (error: unknown) => {
+        settled = true;
+        return error;
+      }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.equal(
+      settled,
+      false,
+      "the mark waits for the organization the cancellation holds"
+    );
+    await canceller.query("COMMIT");
+  } catch (error) {
+    await canceller.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    canceller.release();
+  }
+  return await outcome;
+}
+
+async function expectCancellationBeatsMark(context: {
+  auditCount: (eventType: string) => Promise<string | undefined>;
+  cancellation: Parameters<typeof raceMarkAgainstCancellation>[1];
+  mark: () => Promise<unknown>;
+  pool: Parameters<typeof raceMarkAgainstCancellation>[0];
+  purgeState: () => Promise<unknown>;
+}): Promise<void> {
+  const outcome = await raceMarkAgainstCancellation(
+    context.pool,
+    context.cancellation,
+    context.mark
+  );
+  assert.ok(
+    outcome instanceof Error,
+    "the mark that waited for the cancellation is refused"
+  );
+  assert.equal((outcome as { code?: string }).code, "55000");
+  assert.equal(outcome.message, "purge_not_claimed");
+  assert.deepEqual(await context.purgeState(), {
+    attempts: 1,
+    status: "closed",
+    storage_touched: false,
+  });
+  assert.equal(await context.auditCount("organization.purge_cancelled"), "3");
+}
+
+function expectHoldNamesOrganizationById(hold: object | undefined): void {
+  assert.deepEqual(
+    Object.keys(hold ?? {}).sort(),
+    [
+      "id",
+      "organizationId",
+      "placedAt",
+      "placedBy",
+      "reviewAt",
+      "reviewDue",
+      "supportCaseId",
+    ],
+    "a hold names its organization by ID only, never by name"
+  );
+}
+
 /** The audit rows of the organization to purge cover both classes, so the purge is proved to keep each. */
 function hasBothAuditClasses(rows: { event_class: string }[]) {
   const classes = new Set(rows.map((row) => row.event_class));
@@ -1404,6 +1511,7 @@ async function run() {
     });
     assert.equal(firstPage.holds.length, 1);
     assert.equal(firstPage.dueForReview, overdue.dueForReview);
+    expectHoldNamesOrganizationById(firstPage.holds[0]);
     await expectRefusal(
       privacyCase.id,
       "legal_hold_active",
@@ -1455,7 +1563,7 @@ async function run() {
       );
     }
     tests.push(
-      "the schedule refuses an active or closing organization, an open window, a closure younger than 90 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record"
+      "the schedule refuses an active or closing organization, an open window, a closure younger than 90 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record; the list names the organization by ID only"
     );
 
     // the operator names the organization of the case, or nothing happens
@@ -2015,6 +2123,40 @@ async function run() {
     assert.equal(await auditCount("organization.purge_cancelled"), "2");
     // nobody rewrites the history: the owner of the Admin functions only reads and appends
     await expectCancellationsAppendOnly(owner.pool);
+    await purgeRowSettled();
+    const lateRun = await maintenance.claimOrganizationPurge(900);
+    assert.equal(lateRun?.organizationId, target.organizationId);
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET locked_until = now() - interval '1 second' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    const racingPrivacy = concurrentPrivacy;
+    await expectCancellationBeatsMark({
+      auditCount,
+      cancellation: {
+        caseId: privacyCase.id,
+        organizationId: target.organizationId,
+        principalId: principal,
+        reason: "Corrida com o cancelamento",
+      },
+      mark: () =>
+        racingPrivacy.markOrganizationPurgeStorageTouched(
+          target.organizationId
+        ),
+      pool: owner.pool,
+      purgeState,
+    });
+    assert.deepEqual(
+      { changed: (await schedule(privacyCase.id))?.changed },
+      { changed: true }
+    );
+    assert.deepEqual(await purgeState(), {
+      attempts: 0,
+      status: "purge_pending",
+      storage_touched: false,
+    });
+    assert.equal(await auditCount("organization.purge_scheduled"), "4");
+    await expectCancellationsAppendOnly(owner.pool);
     // a run reaches the storage: written down before the first object goes, and from then on no cancellation
     await purgeRowSettled();
     const reached = await maintenance.claimOrganizationPurge(900);
@@ -2086,10 +2228,10 @@ async function run() {
       status: "purge_pending",
       storage_touched: true,
     });
-    assert.equal(await auditCount("organization.purge_cancelled"), "2");
-    assert.equal((await cancellations()).length, 2);
+    assert.equal(await auditCount("organization.purge_cancelled"), "3");
+    assert.equal((await cancellations()).length, 3);
     tests.push(
-      "a scheduled purge is cancelled only with a reason, while no run holds it and before the first object left the storage (an attempt that never reached it does not stop it): the organization goes back to closed, the audit records it without the reason, the reason goes to an append-only history that scheduling again does not erase, nothing is deleted, and it can be scheduled again"
+      "a scheduled purge is cancelled only with a reason, while no run holds it and before the first object left the storage (an attempt that never reached it does not stop it): the organization goes back to closed, the audit records it without the reason, the reason goes to an append-only history that scheduling again does not erase, nothing is deleted, and it can be scheduled again; the race between the mark of the storage and a cancellation is proved in both orders (the mark wins the row and the cancellation is refused with purge_storage_touched; the cancellation commits first and the mark is refused with purge_not_claimed, with the storage untouched)"
     );
 
     // the purge owner deletes tenant data: it is never a login, bypasses nothing and has no member that could become it
@@ -2372,7 +2514,7 @@ async function run() {
     assert.equal(survivor?.privacy, "1");
     assert.ok(Number(survivor?.audit) >= 4);
     assert.equal(survivor?.billing, "1");
-    assert.equal(survivor?.cancellations, "2");
+    assert.equal(survivor?.cancellations, "3");
     tests.push(
       "the support and privacy cases, the Admin audit, the billing record and the history of cancellations survive the organization"
     );

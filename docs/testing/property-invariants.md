@@ -52,7 +52,7 @@ Legenda: **P** = teste de propriedade com oráculo; **E** = teste por exemplos j
 | ADM-4 | Um caso abre exatamente quando o tipo é conhecido e motivo e contexto, aparados, respeitam o tamanho em pontos de código e a regra de caracteres de controle. | P idem |
 | ADM-5 | A data de revisão da retenção legal é aceita só se futura e a no máximo 366 dias, em qualquer deslocamento, e volta em UTC. | P idem |
 | ADM-6 | Data que não existe (30 de fevereiro, hora 24, minuto 60, mês 13) é recusada, nunca "rolada" para uma real. | P idem |
-| ADM-7 | O acesso de suporte, o caso de privacidade, o registro de acesso e o incidente operacional seguem os estados e limites das regras. | E `admin/support-access.test.ts`, `admin/privacy-case.test.ts`, `admin/access-log.test.ts`, `admin/operational-incident.test.ts` |
+| ADM-7 | O acesso de suporte, o caso de privacidade e o registro de acesso seguem os estados e limites das regras. | E `admin/support-access.test.ts`, `admin/privacy-case.test.ts`, `admin/access-log.test.ts` |
 
 ### Events
 
