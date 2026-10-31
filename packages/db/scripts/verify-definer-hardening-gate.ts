@@ -1394,10 +1394,18 @@ async function run() {
       )
     ).rows[0]?.rolname;
     assert.ok(polarisOwner);
+    // the grantor named: a superuser's REVOKE removes only its own grant, and the creator of the roles granted this one
+    const readerGrantor = (
+      await client.query<{ grantor: string }>(
+        `SELECT m.grantor::regrole::text AS grantor FROM pg_auth_members m
+          WHERE m.roleid = 'polaris_closed_export_reader'::regrole AND m.member = 'polaris_privacy_runtime'::regrole`
+      )
+    ).rows[0]?.grantor;
+    assert.ok(readerGrantor);
     for (const [statement, floor] of [
       [`ALTER ROLE ${polarisOwner} RENAME TO ${renamedProbe}`, OWNER_FLOOR],
       [
-        "REVOKE polaris_closed_export_reader FROM polaris_privacy_runtime",
+        `REVOKE polaris_closed_export_reader FROM polaris_privacy_runtime GRANTED BY ${readerGrantor}`,
         REACHABLE_FLOOR,
       ],
       [
