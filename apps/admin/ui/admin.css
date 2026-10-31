@@ -323,6 +323,11 @@ button {
   color: var(--destructive);
 }
 
+/* the live region stays in the tree, empty, so the text put in it later is announced; it only takes no room */
+.field-error:empty {
+  display: none;
+}
+
 /* what the refund area cannot do and what each read leaves behind: said in words, not only by colour */
 .warning,
 .audit {

@@ -21,7 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui/card";
-import { deviceSaleKept, firstSaleConfirmed } from "../app-shell/first-steps";
+import { deviceSaleKept } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
@@ -56,6 +56,7 @@ import {
   sessionStorageOrNull,
   writeSaleAttempt,
 } from "./sale-attempt-storage";
+import { firstSaleIdOf } from "./first-sale-id";
 import { ConfirmedSalePanel } from "./sale-confirmed-panel";
 import { SaleDraftBar } from "./sale-draft-bar";
 import {
@@ -172,15 +173,6 @@ function draftReadMessage(read: SaleDraftRead): string | null {
     return DRAFT_EXPIRED_MESSAGE;
   }
   return read.kind === "unreadable" ? DRAFT_UNREADABLE_MESSAGE : null;
-}
-
-function firstSaleIdOf(
-  organizationId: string,
-  submission: SubmissionState
-): string | null {
-  const confirmed = submission.phase === "confirmed" ? submission.sale : null;
-  const first = firstSaleConfirmed(organizationId);
-  return first && confirmed ? confirmed.saleId : null;
 }
 
 export function SalePage() {

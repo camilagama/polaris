@@ -238,13 +238,14 @@ describe("the refund area of the chosen store (AC-9)", () => {
     async (reason, text) => {
       const { calls, document, section } = await chosen([]);
       const before = calls.length;
+      expect(byId(section, "motivo-erro").textContent).toBe("");
       byId(section, "motivo").value = reason;
       buttons(section, "Abrir caso")[0]?.click();
       await flush();
       const field = byId(section, "motivo");
       const error = byId(section, "motivo-erro");
       expect(error.textContent).toBe(text);
-      expect(error.hasAttribute("hidden")).toBe(false);
+      expect(error.getAttribute("aria-live")).toBe("polite");
       expect(field.getAttribute("aria-describedby")).toContain("motivo-erro");
       expect(field.getAttribute("aria-invalid")).toBe("true");
       expect(document.activeElement).toBe(field);
@@ -252,7 +253,8 @@ describe("the refund area of the chosen store (AC-9)", () => {
       expect(alertOf(section)).toBeUndefined();
       expect(calls).toHaveLength(before);
       field.dispatch("input");
-      expect(error.hasAttribute("hidden")).toBe(true);
+      expect(error.textContent).toBe("");
+      expect(error.hasAttribute("hidden")).toBe(false);
       expect(field.hasAttribute("aria-invalid")).toBe(false);
     }
   );
