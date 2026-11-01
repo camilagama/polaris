@@ -17,11 +17,11 @@ Um segundo aviso, que a prova por remoção ensinou: **muitas corridas têm mais
 
 ## Como rodar
 
-    # PostgreSQL 18 descartável e vazio (as variáveis POLARIS_GATE_* do runbook do Gate 4)
+    # PostgreSQL 18 descartável e vazio (as variáveis POLARIS_GATE_* do runbook do Gate 4, inclusive POLARIS_GATE_SUPERUSER_URL)
     CI=true bun run --filter @polaris/db gates:concurrency
     POLARIS_CONCURRENCY_REPEAT=10 CI=true bun run --filter @polaris/db gates:concurrency   # mais rodadas
 
-`gates:concurrency` é uma suíte nomeada de `packages/db/scripts/run-gates.ts`: ela só **escolhe** gates que já estão em `gates:ci`, sem duplicar nenhum gate; o único job próprio é o noturno `Concurrency nightly`, fora dos PRs. Rode-a num banco novo; os gates não são reexecutáveis num banco que já os rodou (ver o [runbook do Gate 4](../runbooks/gate-4-sales-core.md#passos)).
+`gates:concurrency` é uma suíte nomeada de `packages/db/scripts/run-gates.ts`: ela só **escolhe** gates que já estão em `gates:ci`, sem duplicar nenhum gate; o único job próprio é o noturno `Concurrency nightly`, fora dos PRs. Rode-a num banco novo; os gates não são reexecutáveis num banco que já os rodou (ver o [runbook do Gate 4](../runbooks/gate-4-sales-core.md#passos)). Com `CI=true` no PostgreSQL local, o executor exige `POLARIS_GATE_SUPERUSER_URL` (URL do superusuário do contêiner, `<url-superusuario>`; no CI vem do job `PostgreSQL 18 gates`) e recusa um `POLARIS_GATE_DATABASE_URL` cujo dono seja superusuário: sem o preparo do passo 1 do runbook, a execução para antes de rodar qualquer gate ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda do dono sem superusuário).
 
 ### Quando rodar `gates:concurrency`
 

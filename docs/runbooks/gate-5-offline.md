@@ -13,6 +13,8 @@ O plano define o Gate 5 assim: o offline só é considerado pronto quando (1) um
 
 ## Passos automáticos
 
+Antes, prepare o ambiente do processo como no [passo 1 do Gate 4](./gate-4-sales-core.md#passos). Com `CI=true` no PostgreSQL local, o executor exige `POLARIS_GATE_SUPERUSER_URL` (URL do superusuário do contêiner, `<url-superusuario>`; no CI vem do job `PostgreSQL 18 gates`) e recusa um `POLARIS_GATE_DATABASE_URL` cujo dono seja superusuário: sem isso, a execução para antes de rodar qualquer gate ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda do dono sem superusuário). O `gates:all` abaixo é de Neon (sem `CI=true`) e não roda no PostgreSQL local.
+
     CI=true bun scripts/run-gates.ts gate5     # suíte offline (Fase 5), a partir de packages/db; também roda na suíte ci do CI
     bun run --filter @polaris/db gates:all     # tudo
 
