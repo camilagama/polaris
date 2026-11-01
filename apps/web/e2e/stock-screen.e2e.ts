@@ -622,11 +622,12 @@ for (const viewport of FORM_VIEWPORTS) {
 const TURN_EVE = new Date("2026-11-01T02:50:00.000Z");
 
 /**
- * Waits until what the clock jump set off has reached the network: the page's own task queue is drained (React's
- * scheduler runs on it, and the fake clock does not stop it), then a request that only this test answers goes out
- * behind whatever the jump started, so a read started by it would have been counted before this returns.
+ * Waits until what the page had already started has reached the network: one turn of the page's task queue (where
+ * React's scheduler posts its work), then a request that only this test answers, twice, so a read that starts one
+ * asynchronous hop after the first barrier still goes out before the second. A read slower than two hops would
+ * escape it; the rendered state is what the test asserts around it.
  */
-async function settled(page: Page) {
+async function settledRound(page: Page) {
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
@@ -636,6 +637,11 @@ async function settled(page: Page) {
       })
   );
   await page.evaluate(() => fetch("/__settled").then(() => undefined));
+}
+
+async function settled(page: Page) {
+  await settledRound(page);
+  await settledRound(page);
 }
 
 const TURN_CASES = [
@@ -700,6 +706,7 @@ test.describe("virada do dia da loja", () => {
       await page.route("**/__settled", (route) =>
         route.fulfill({ body: "", status: 204 })
       );
+      await settled(page);
       const reads = listRequests.length + attentionRequests.length;
 
       await page.getByRole("button", { name: turn.trigger }).click();
@@ -733,8 +740,10 @@ test.describe("virada do dia da loja", () => {
       await expect(page.getByText(turn.saldo)).toBeVisible();
 
       expect(sent).toHaveLength(2);
-      expect(sent[0]).toContain("2026-10-31");
-      expect(sent[1]).toContain("2026-11-01");
+      expect(sent.map((body) => JSON.parse(body).json.occurredOn)).toEqual([
+        "2026-10-31",
+        "2026-11-01",
+      ]);
     });
   }
 });
