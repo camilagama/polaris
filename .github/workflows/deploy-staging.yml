@@ -193,7 +193,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: staging
     permissions:
       contents: read
@@ -303,6 +303,7 @@ jobs:
           # --no-install: only the wrangler of the lockfile, never a download
           (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")
           (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
+          node scripts/verify-deployed-sha.mjs
       # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
