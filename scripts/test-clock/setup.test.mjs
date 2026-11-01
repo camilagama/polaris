@@ -132,18 +132,70 @@ describe("freezeClock", () => {
 
 describe("assertTimeZone", () => {
   it.each(["America/Manaus", "America/Sao_Paulo", "UTC", "Asia/Tokyo"])(
-    "aceita %s",
+    "aceita %s quando o processo usa esse fuso",
     (tz) => {
-      expect(() => assertTimeZone(tz)).not.toThrow();
+      expect(() => assertTimeZone(tz, tz)).not.toThrow();
     }
   );
 
   it.each([undefined, "", "Marte/Olimpo", ":America/Sao_Paulo"])(
     "recusa %j",
     (tz) => {
-      expect(() => assertTimeZone(tz)).toThrow("bun run test:datas");
+      expect(() => assertTimeZone(tz, "America/Sao_Paulo")).toThrow(
+        "bun run test:datas"
+      );
     }
   );
+
+  it.each([
+    ["america/sao_paulo", "UTC"],
+    ["+03:00", "America/Sao_Paulo"],
+    ["America/Manaus", "America/Sao_Paulo"],
+    ["UTC", null],
+  ])("recusa TZ=%s quando o processo usa %j", (tz, effective) => {
+    expect(() => assertTimeZone(tz, effective)).toThrow("mas o processo usa");
+    expect(() => assertTimeZone(tz, effective)).toThrow("bun run test:datas");
+  });
+});
+
+describe("fuso efetivo do processo", () => {
+  const originalTz = process.env.TZ;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    if (originalTz === undefined) {
+      Reflect.deleteProperty(process.env, "TZ");
+    } else {
+      process.env.TZ = originalTz;
+    }
+  });
+
+  function loadSetup(tz) {
+    vi.stubEnv("POLARIS_TEST_NOW", "2026-11-01T03:30:00Z");
+    vi.stubEnv("TZ", tz);
+    vi.resetModules();
+    return import("./setup.mjs");
+  }
+
+  it.each([
+    ["minúsculas", "america/manaus"],
+    ["deslocamento", "+03:00"],
+  ])(
+    "o setup falha ao carregar com TZ em %s, que o Intl aceita e o processo não usa",
+    async (_caso, tz) => {
+      await expect(loadSetup(tz)).rejects.toThrow("bun run test:datas");
+    }
+  );
+
+  it("o setup carrega com TZ=America/Manaus, que o processo usa de fato", async () => {
+    await loadSetup("America/Manaus");
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(
+      "America/Manaus"
+    );
+    expect(vi.isFakeTimers()).toBe(true);
+  });
 });
 
 describe("POLARIS_TEST_NOW", () => {

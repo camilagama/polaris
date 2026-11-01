@@ -9,21 +9,30 @@ export function freezeClock(instant) {
   }
 }
 
-export function assertTimeZone(tz) {
-  let valid = typeof tz === "string" && tz !== "";
-  if (valid) {
-    try {
-      valid = Boolean(
-        new Intl.DateTimeFormat("en-US", { timeZone: tz }).resolvedOptions()
-          .timeZone
-      );
-    } catch {
-      valid = false;
-    }
+function resolveZone(timeZone) {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone }).resolvedOptions()
+      .timeZone;
+  } catch {
+    return null;
   }
-  if (!valid) {
+}
+
+// Intl accepts names the process itself does not honor (lowercase, +03:00): the process then falls back to the machine zone or UTC, so the only reliable check is the zone it actually resolved.
+export function assertTimeZone(
+  tz,
+  effective = Intl.DateTimeFormat().resolvedOptions().timeZone
+) {
+  const requested =
+    typeof tz === "string" && tz !== "" ? resolveZone(tz) : null;
+  if (!requested) {
     throw new Error(
       `TZ ausente ou inválido (${JSON.stringify(tz ?? null)}) com POLARIS_TEST_NOW definido: sem o fuso do processo, a data seria lida no fuso da máquina. Use bun run test:datas, que fixa o fuso, ou defina TZ com um fuso IANA, por exemplo TZ=America/Sao_Paulo.`
+    );
+  }
+  if (effective !== requested) {
+    throw new Error(
+      `TZ=${JSON.stringify(tz)} pede ${requested}, mas o processo usa ${JSON.stringify(effective ?? null)}: o processo não reconheceu o valor (minúsculas e deslocamentos como +03:00 não valem; escreva o nome IANA exato) e a data seria lida em outro fuso. Use bun run test:datas, que fixa o fuso.`
     );
   }
 }
