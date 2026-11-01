@@ -47,6 +47,8 @@ import {
  */
 
 export interface AdminBindings {
+  /** `staging` or `production` (per environment in `wrangler.jsonc`); labels the `environment` of every log event. */
+  POLARIS_ENVIRONMENT?: string;
   ACCESS_AUDIENCE?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ADMIN_HYPERDRIVE?: { connectionString: string };

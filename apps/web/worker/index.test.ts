@@ -244,6 +244,18 @@ describe("the scheduled maintenance", () => {
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
 
+  it("labels the events with the environment the Worker variable names", async () => {
+    mocks.reconcileStagedMedia.mockResolvedValue({ removed: 1 });
+
+    await runScheduled({ ...configured, POLARIS_ENVIRONMENT: "staging" });
+
+    const event = vi
+      .mocked(console.info)
+      .mock.calls.map(([entry]) => entry as Record<string, unknown>)
+      .find((entry) => entry.event === "media_staging_reconciliation_complete");
+    expect(event).toMatchObject({ environment: "staging" });
+  });
+
   it("masks personal data and secrets in a job report that grew a field, through the real logger", async () => {
     // a report spread into the log (`{ ...report }`) carries whatever it grows
     mocks.reconcileStagedMedia.mockResolvedValue({

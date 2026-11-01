@@ -1,4 +1,8 @@
-import { configureLogging, logger } from "@polaris/observability/logger";
+import {
+  configureLogging,
+  logger,
+  useLoggingEnvironment,
+} from "@polaris/observability/logger";
 import { createBillingStore } from "@polaris/db/billing-store";
 import { createAuthLoginLockMaintenanceClient } from "@polaris/db/auth-login-lock-maintenance";
 import { createAuthUnverifiedUserMaintenanceClient } from "@polaris/db/auth-unverified-user-maintenance";
@@ -799,6 +803,7 @@ export default {
     env: WorkerBindings,
     context?: ExecutionContext
   ) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
     if (env.ASSETS && isBuiltAssetRequest(request)) {
       countIsolateInvocation();
       return serveBuiltAsset(request, env.ASSETS);
@@ -806,10 +811,12 @@ export default {
     return app.fetch(request, env, context);
   },
   queue: (batch: QueueBatch, env) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
     countIsolateInvocation();
     return consumeQueue(batch, env);
   },
   scheduled: (controller, env) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
     countIsolateInvocation();
     return runScheduledTick(controller.cron, env);
   },
