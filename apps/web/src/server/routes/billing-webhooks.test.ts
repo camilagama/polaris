@@ -1,7 +1,7 @@
 import type { BillingStore } from "@polaris/db/billing-store";
 import type { BillingFact } from "@polaris/domain/billing/facts";
 import { Hono } from "hono";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type BillingProviderAdapter,
   type ParsedBillingEvent,
@@ -556,33 +556,47 @@ describe("the webhook path in the server app", () => {
 
 describe("an unresolved event is held for a retry only while its date is recent", () => {
   const minute = 60_000;
-  const unresolvedAdapter = (eventDate: Date): BillingProviderAdapter => ({
+  const clock = new Date("2026-10-19T12:00:00.000Z");
+  const unresolvedAdapter = (
+    eventDate: Date,
+    clamped = false
+  ): BillingProviderAdapter => ({
     parse: () => [
       {
         eventType: "PAYMENT_CONFIRMED",
         kind: "unresolved",
         occurredAt: eventDate,
+        ...(clamped ? { occurredAtClamped: true as const } : {}),
         providerEventId: "evt-unresolved",
         resourceId: "pay_1",
       } satisfies UnresolvedBillingEvent,
     ],
     provider: "fake",
   });
-  const send = (offsetMs: number) => {
+  const send = (offsetMs: number, clamped = false) => {
     const t = setup({
-      adapter: unresolvedAdapter(new Date(Date.now() + offsetMs)),
+      adapter: unresolvedAdapter(new Date(clock.getTime() + offsetMs), clamped),
     });
     return t.send("/webhooks/billing/fake", { headers: signed });
   };
 
+  beforeEach(() => {
+    vi.useFakeTimers({ now: clock, toFake: ["Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it("refuses with a 503 for a date a little ahead or a little behind", async () => {
-    expect((await send(2 * minute)).status).toBe(503);
-    expect((await send(-10 * minute)).status).toBe(503);
+    expect((await send(5 * minute)).status).toBe(503);
+    expect((await send(-30 * minute)).status).toBe(503);
   });
 
   it.each([
-    ["more than 5 minutes ahead", 6 * minute, "future"],
-    ["more than 30 minutes behind", -31 * minute, "stale"],
+    ["more than 5 minutes ahead", 5 * minute + 1, "future"],
+    ["more than 30 minutes behind", -30 * minute - 1, "stale"],
   ])(
     "acknowledges a date %s and logs the reason with IDs only",
     async (_name, offsetMs, reason) => {
@@ -599,7 +613,17 @@ describe("an unresolved event is held for a retry only while its date is recent"
           resourceId: "pay_1",
         })
       );
-      errorLog.mockRestore();
     }
   );
+
+  it("an event the adapter already cut down to now is acknowledged with no reason of its own", async () => {
+    const errorLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const response = await send(0, true);
+    expect(response.status).toBe(200);
+    const [entry] = errorLog.mock.calls[0] as [Record<string, unknown>];
+    expect(entry.event).toBe("billing_webhook_unresolved_given_up");
+    expect(entry).not.toHaveProperty("reason");
+  });
 });

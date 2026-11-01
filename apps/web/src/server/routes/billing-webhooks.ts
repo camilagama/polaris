@@ -120,8 +120,10 @@ function answerUnresolved(
   provider: string,
   unresolved: readonly UnresolvedBillingEvent[]
 ): Response {
+  const now = new Date();
   const retry = unresolved.some(
-    (entry) => !entry.occurredAtClamped && withinRetryWindow(entry.occurredAt)
+    (entry) =>
+      !entry.occurredAtClamped && withinRetryWindow(entry.occurredAt, now)
   );
   for (const entry of unresolved) {
     const ids = {
@@ -137,7 +139,7 @@ function answerUnresolved(
         ...ids,
         ...(entry.occurredAtClamped
           ? {}
-          : { reason: retryRefusalReason(entry.occurredAt) }),
+          : { reason: retryRefusalReason(entry.occurredAt, now) }),
         requestId: context.get("requestId"),
       });
     }
