@@ -478,7 +478,8 @@ async function main() {
   let releaseOnboardingFixture:
     | ((failed?: boolean) => Promise<void>)
     | undefined;
-  // the owner's session acts as the tenant runtime, then the onboarding runtime, then the tenant runtime again
+  // the owner's session acts as the tenant runtime, then the onboarding runtime, then the tenant runtime again;
+  // the fixture session of onboardingClient acts only as the onboarding runtime
   let releaseRole: ((failed?: boolean) => Promise<void>) | undefined;
   let passed = false;
 
@@ -497,9 +498,11 @@ async function main() {
 
   async function createOrganization(userId: string, name: string) {
     // since migration 0095 only the onboarding runtime executes the writer: the owner's session cannot
-    if (!releaseOnboardingFixture) {
+    if (!onboardingConnected) {
       await onboardingClient.connect();
       onboardingConnected = true;
+    }
+    if (!releaseOnboardingFixture) {
       releaseOnboardingFixture = await becomeGateRole(
         onboardingClient,
         onboardingRole
@@ -1097,6 +1100,9 @@ async function main() {
     const organizationB = await createOrganization(userB, "Gate 2 tenant B");
     assert.equal(organizationA.created, true);
     assert.equal(organizationB.created, true);
+    // released here so the GRANT and REVOKE of the onboarding role below are exercised by the runtime session itself
+    await releaseOnboardingFixture?.();
+    releaseOnboardingFixture = undefined;
 
     const onboardingUser = await createUser("Gate 2 onboarding writer");
     const onboardingOrganizationId = randomUUID();
