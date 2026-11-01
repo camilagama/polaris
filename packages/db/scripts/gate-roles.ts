@@ -1,5 +1,5 @@
 import type { Pool, QueryResult, QueryResultRow } from "pg";
-import { sqlState } from "./sales-gate-support";
+import { redactConnectionStrings, sqlState } from "./sales-gate-support";
 
 /**
  * The two ways a gate acts as another role, so it runs the same with an owner who is a superuser (the CI service)
@@ -224,7 +224,9 @@ export async function replaceFunctionAsOwner(
 /**
  * A statement on a function that only its owner may run (GRANT or REVOKE EXECUTE), as that owner, outside a transaction.
  * When the statement fails, the connection is discarded and the GRANT of the role this call made is revoked from a new
- * one, so the edge does not stay in the database; if that revoke fails too, the failure is logged.
+ * one, so the edge does not stay in the database, and the error of the statement propagates. If that revoke fails
+ * too, the call rejects with an AggregateError that names both failures and carries no SQLSTATE: a caller that expects
+ * a refusal of the statement must not take it for one while the grant may still be in the database.
  */
 export async function queryAsFunctionOwner(
   pool: Pool,
@@ -251,14 +253,26 @@ export async function queryAsFunctionOwner(
     // outside a transaction a failed give-back stays committed: the connection must not return to the pool
     client.release(true);
     if (owner && granted) {
-      await giveBackGrant(pool, owner).catch((giveBackError: unknown) => {
-        console.error(
-          `The gate could not revoke ${owner} from a new connection: ${String(giveBackError)}`
+      try {
+        await giveBackGrant(pool, owner);
+      } catch (giveBackError) {
+        // biome-ignore lint/style/useErrorCause: sqlState follows `cause`, and this error must carry no SQLSTATE
+        throw new AggregateError(
+          [
+            new Error(failureMessage(error)),
+            new Error(failureMessage(giveBackError)),
+          ],
+          `The statement failed (${failureMessage(error)}) and the gate could not revoke ${owner} from a new connection (${failureMessage(giveBackError)}): the grant may still be in the database.`
         );
-      });
+      }
     }
     throw error;
   }
+}
+
+function failureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return redactConnectionStrings(message);
 }
 
 async function giveBackGrant(pool: Pool, role: string): Promise<void> {

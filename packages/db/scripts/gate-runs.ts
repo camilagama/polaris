@@ -122,6 +122,22 @@ export function assertCiOwnerSetup(input: {
 }
 
 /**
+ * `assertCiOwnerSetup` with the owner's superuser flag read only where it decides something: outside the local Postgres
+ * of the CI the check returns before looking at it, so the probe is not run there.
+ */
+export async function checkCiOwnerSetup(input: {
+  hasSuperuserUrl: boolean;
+  isLocalCi: boolean;
+  ownerIsSuperuser: () => Promise<boolean>;
+}): Promise<void> {
+  assertCiOwnerSetup({
+    hasSuperuserUrl: input.hasSuperuserUrl,
+    isLocalCi: input.isLocalCi,
+    ownerIsSuperuser: input.isLocalCi ? await input.ownerIsSuperuser() : false,
+  });
+}
+
+/**
  * Runs `work`, then `cleanup`. A failure of `cleanup` never hides the failure of `work`: it goes to `onCleanupError`
  * and the error of `work` is the one that propagates. After a successful `work`, a failure of `cleanup` propagates.
  */
