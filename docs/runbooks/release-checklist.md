@@ -80,8 +80,8 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 6. Smoke test definido e executado (BLOCK)
 
 - Critério: antes da promoção, a lista de verificações de fumaça está escrita: rota, resposta esperada e o que fazer se falhar, para cada Worker promovido. Ela é executada contra o ambiente que recebe o SHA e, depois da implantação em produção, contra produção.
-- **Proposta, pendente de decisão:** lista manual, escrita no relatório da execução e executada por uma pessoa com o perfil autorizado, porque o repositório não tem script de smoke test. A alternativa (script versionado ou verificação no CI) é decisão do time e muda este item.
-- Evidência: a lista, o resultado de cada verificação, a data e o host. Sem tokens nem dados de cliente.
+- **Decidido (decisão 4):** vale o smoke do workflow do staging, ampliado: `scripts/smoke-staging.mjs`, 15 verificações sem conta e sem escrita (release do Worker, shell igual ao artefato, métodos de entrada, `/rpc` com o ping, as três recusas de origem e as duas recusas anônimas, get-session e catálogo). A lista, o que cada falha quer dizer e a regra do `cpu/plataforma` estão no [runbook do staging](./staging.md#smoke-do-deploy). A escrita fica de fora do automático: um passo manual no staging, por quem tem conta Google de teste, numa loja `smoke-<data>` (venda confirmada e cancelada). Produção ganha os hosts dela no mesmo script quando o deploy de produção existir.
+- Evidência: o log do passo `Smoke` do run (verificação e status, sem corpo), o passo manual de escrita, a data e o host. Sem tokens nem dados de cliente.
 
 ### 7. Critérios de rollback e responsável (BLOCK)
 
@@ -91,9 +91,9 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 8. SHA implantado conferido no host de deploy (BLOCK)
 
 - Critério: para cada Worker promovido, o SHA lido de volta no host de deploy (versão do Worker ou identificador exposto pelo deploy) é igual ao SHA candidato. A promoção só é dada como feita depois disso.
-- **Proposta, pendente de decisão:** leitura manual, por quem tem o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)), sem script. O repositório não expõe o SHA no Worker nem tem script de deploy.
+- **Decidido (decisão 5):** o SHA é lido do host e comparado com o commit. Cada Worker declara o commit com que foi construído no cabeçalho `X-Polaris-Release` (12 hex; web em `/health`, catálogo em `/robots.txt`), só com `RELEASE_HEADER_ENABLED` igual a `"true"` ([ADR 0098, emenda de 31/10](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)); o shell, servido pelos Static Assets sem o Worker, é comparado byte a byte com o artefato publicado. No staging o smoke faz as duas leituras a cada deploy. Em produção a var fica `"false"` até a primeira execução deste item lá, que decide entre ligá-la ou ler a API de deployments por quem tem o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)).
 - Se o host não expõe o SHA, o item fica como dados insuficientes. Não se presume que o deploy é igual ao candidato.
-- Evidência: a leitura de volta, com o identificador e a data.
+- Evidência: o log do passo `Smoke` (release "igual" nas verificações 1 e 12 e shell igual ao artefato) ou a leitura de volta, com o identificador e a data.
 
 ### 9. Nenhum achado "bloqueia" aberto do revisor (BLOCK)
 
@@ -279,7 +279,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 ## Estado atual
 
 - O checklist de go-live declara que nada foi executado. Enquanto um item tocado estiver aberto, a primeira execução tende a bloquear.
-- Nenhum `package.json` do repositório tem script de deploy nem de smoke test (o `build` de `apps/admin` usa `wrangler deploy --dry-run`). Os itens 6 e 8 precisam de definição antes da primeira execução. O staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)) traz a configuração `env.staging`/`env.production` e as verificações de isolamento. O workflow de deploy e o smoke do staging vêm num PR próprio.
+- Nenhum `package.json` do repositório tem script de deploy nem de smoke test (o `build` de `apps/admin` usa `wrangler deploy --dry-run`). Os itens 6 e 8 já têm forma no staging (o smoke do deploy); em produção dependem do deploy de produção. O staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)) traz a configuração `env.staging`/`env.production` e as verificações de isolamento. O workflow `deploy-staging.yml` roda o smoke a cada deploy do staging.
 
 ## Decisões pendentes
 
@@ -288,7 +288,7 @@ Cada uma está marcada no texto como proposta, pendente de decisão:
 1. Severidade final de cada item, exceto 10, 14, 15, 16, 18, 19, 24 e 25, já decididos (hoje 18 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
-4. Como fazer o smoke test do item 6.
-5. Como ler o SHA no host de deploy (item 8).
+4. ~~Como fazer o smoke test do item 6.~~ Decidido: o smoke do workflow do staging, ampliado (item 6).
+5. ~~Como ler o SHA no host de deploy (item 8).~~ Decidido: o cabeçalho `X-Polaris-Release` lido do host, atrás de `RELEASE_HEADER_ENABLED`; em produção, a decidir na primeira execução (item 8).
 6. Se uma execução anterior da suíte completa em Neon (a do fim da fase) vale como evidência do item 4, e se o nome `run-AAAA-MM-DD-<SHA curto>.md` é o adotado para o relatório.
 7. Frequência do item 16 (severidade BLOCK já decidida): se basta uma prova antes do go-live e outra quando mudar a configuração `observability` ou a `compatibility_date`, ou se é por promoção.

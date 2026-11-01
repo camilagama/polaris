@@ -9,7 +9,8 @@ import { dirname, resolve } from "node:path";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
+import { serverRelease, serverReleasePlugin } from "../web/pwa/server-release";
 
 // "bare-entry" exists only for the browser tests: a Worker whose main skips src/server.ts, the
 // misconfiguration the router must refuse (catalog_nonce_missing). It is never deployed, so it
@@ -121,6 +122,10 @@ export default defineConfig(({ mode }) => {
       }),
       tanstackStart(),
       react(),
+      // the Worker declares the commit it was built from on /robots.txt (ADR 0098, amended), never the browser
+      serverReleasePlugin(
+        serverRelease(loadEnv(mode, import.meta.dirname, "VITE_"))
+      ),
       ...(bare ? [restoreDeployRedirectAfterPreview("dist-bare")] : []),
       ...(fixtures ? [restoreDeployRedirectAfterPreview("dist-fixture")] : []),
     ],

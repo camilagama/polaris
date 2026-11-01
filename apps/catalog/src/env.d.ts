@@ -16,5 +16,10 @@ declare namespace Cloudflare {
      * means the footer is only text. Declared in every environment of wrangler.jsonc.
      */
     POLARIS_SITE_URL?: string;
+    /**
+     * Exactly `true` makes `/robots.txt` declare the commit the Worker was built from (`X-Polaris-Release`, ADR 0098
+     * amended); absent or any other value sends no release. `true` only in `env.staging`.
+     */
+    RELEASE_HEADER_ENABLED?: string;
   }
 }
