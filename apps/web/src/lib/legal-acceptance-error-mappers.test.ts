@@ -126,7 +126,7 @@ describe("every screen error mapper treats the refusal for the missing acceptanc
   );
 
   it("mapSaleSubmitError keeps the items and names the acceptance", () => {
-    expect(mapSaleSubmitError(refusal).message).toContain(
+    expect(mapSaleSubmitError(refusal, []).message).toContain(
       "falta aceitar os Termos de Uso"
     );
   });

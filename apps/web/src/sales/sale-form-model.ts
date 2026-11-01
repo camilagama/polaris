@@ -6,7 +6,11 @@ import type {
   ProductReadModel,
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
-import { MAX_RATE_PERCENTAGE_POINTS, Money } from "@polaris/domain/money/money";
+import {
+  MAX_RATE_PERCENTAGE_POINTS,
+  Money,
+  Percentage,
+} from "@polaris/domain/money/money";
 import {
   CONFIRM_SALE_COMMAND_VERSION,
   MAX_FUTURE_CLOCK_SKEW_MS,
@@ -1286,25 +1290,35 @@ function resolveProfile(
 
 const invalidAdjustmentMessage =
   "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.";
-const nonZeroDigit = /[1-9]/;
 const percentageCapMessage = `O percentual vai até ${MAX_RATE_PERCENTAGE_POINTS}%.`;
 
-/** True when a percentage adjustment is above the domain cap on rates (100 points). */
+function isAboveRateCap(text: string): boolean {
+  try {
+    Percentage.fromRate(text);
+    return false;
+  } catch {
+    return isWellFormedPercentage(text);
+  }
+}
+
+function isWellFormedPercentage(text: string): boolean {
+  try {
+    Percentage.from(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when a percentage adjustment is well formed but above the domain cap on rates. */
 function hasPercentageAboveCap(
   adjustments: SaleCommandBody["adjustments"]
 ): boolean {
-  return adjustments.some((adjustment) => {
-    if (adjustment.value.type !== "percentage") {
-      return false;
-    }
-    const [whole = "0", fraction = ""] = adjustment.value.percentage.split(".");
-    const wholePoints = Number(whole);
-    return (
-      wholePoints > MAX_RATE_PERCENTAGE_POINTS ||
-      (wholePoints === MAX_RATE_PERCENTAGE_POINTS &&
-        nonZeroDigit.test(fraction))
-    );
-  });
+  return adjustments.some(
+    (adjustment) =>
+      adjustment.value.type === "percentage" &&
+      isAboveRateCap(adjustment.value.percentage)
+  );
 }
 
 function calculationIssue(
@@ -2033,7 +2047,7 @@ function refusalMessage(
  */
 export function mapSaleSubmitError(
   error: unknown,
-  sentAdjustments: SaleCommandBody["adjustments"] = []
+  sentAdjustments: SaleCommandBody["adjustments"]
 ): SaleSubmitFailure {
   // a definite refusal like any FORBIDDEN, so the items stay on the screen; the shell offers `/aceite`
   if (isLegalAcceptanceRefusal(error)) {
@@ -2394,7 +2408,7 @@ export function startSubmission(state: SubmissionState): SubmissionState {
 /** Definite failures unlock editing; an unknown outcome locks the sale. */
 export function failSubmission(
   error: unknown,
-  sentAdjustments?: SaleCommandBody["adjustments"]
+  sentAdjustments: SaleCommandBody["adjustments"]
 ): SubmissionState {
   const mapped = mapSaleSubmitError(error, sentAdjustments);
   return mapped.unknownOutcome
