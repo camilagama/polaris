@@ -36,6 +36,7 @@ import {
   TenantAuthorizationError,
   type TenantRequestTransaction,
 } from "../src/tenant-transaction";
+import { isClosedExportPolicyQual } from "./closed-export-policy-qual";
 import { runClock, storeDay } from "./gate-clock";
 import {
   replaceFunctionAsOwner,
@@ -113,8 +114,6 @@ const PRIVACY_OWNER_FUNCTIONS = [
 const LEASE_TOKEN = /^[0-9a-f-]{36}$/;
 const INIT_PLAN = /InitPlan/;
 const SUB_PLAN = /SubPlan/;
-const SCOPE_SUBQUERY =
-  /\(\s*SELECT closed_export_organization\(\) AS closed_export_organization\)/;
 
 type Row = Record<string, unknown>;
 
@@ -1349,15 +1348,14 @@ async function run() {
       "one policy per exported table, and only there"
     );
     for (const policy of policies) {
-      assert.match(
-        policy.qual,
-        SCOPE_SUBQUERY,
-        `${policy.tablename}: by the scope`
+      assert.ok(
+        isClosedExportPolicyQual(policy.tablename, policy.qual),
+        `${policy.tablename}: by the scope and nothing else, got ${policy.qual}`
       );
       assert.equal((policy as unknown as { cmd: string }).cmd, "SELECT");
     }
     tests.push(
-      "the reader holds SELECT on exactly the columns of EXPORT_DATASETS minus omit (has_column_privilege on every column of every table), no INSERT, UPDATE, REFERENCES, DELETE, TRUNCATE, TRIGGER or MAINTAIN and no sequence anywhere; authentication, billing, memberships, sessions, offline grants, devices, sync, the exports themselves, the closure, the purge and the audits are out of reach; it executes only its scope; it is NOLOGIN, NOINHERIT, NOBYPASSRLS, without TEMPORARY or CREATE; only the privacy runtime may become it (SET, not INHERIT) and it is a member of nothing; its policies are one SELECT per exported table, each by the scope as a subquery"
+      "the reader holds SELECT on exactly the columns of EXPORT_DATASETS minus omit (has_column_privilege on every column of every table), no INSERT, UPDATE, REFERENCES, DELETE, TRUNCATE, TRIGGER or MAINTAIN and no sequence anywhere; authentication, billing, memberships, sessions, offline grants, devices, sync, the exports themselves, the closure, the purge and the audits are out of reach; it executes only its scope; it is NOLOGIN, NOINHERIT, NOBYPASSRLS, without TEMPORARY or CREATE; only the privacy runtime may become it (SET, not INHERIT) and it is a member of nothing; its policies are one SELECT per exported table, each with the whole qual equal to the scope as a subquery and nothing else (no OR, AND or other column)"
     );
 
     // ------------------------------------------------- 8. who records the file of a copy (the trigger, both sides)
