@@ -619,6 +619,58 @@ for (const viewport of FORM_VIEWPORTS) {
   });
 }
 
+const TURN_EVE = new Date("2026-11-01T02:50:00.000Z");
+
+test("na virada do dia da loja, o painel já aberto fica como está, o próximo abre com o dia novo e o servidor recebe esse dia sem nova leitura", async ({
+  page,
+}) => {
+  await page.clock.install({ time: TURN_EVE });
+  await openStockLab(page, "claro");
+  const sent: string[] = [];
+  await page.route("**/rpc/inventory/receiveStock", (route) => {
+    sent.push(route.request().postData() ?? "");
+    return route.fallback();
+  });
+  await expect.poll(() => attentionRequests.length).toBe(2);
+  await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+  const reads = listRequests.length + attentionRequests.length;
+
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await page.getByLabel("Quantidade recebida").fill("7");
+  await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+    "Data, 31/10/2026"
+  );
+
+  await page.clock.fastForward("11:00");
+  await page.clock.fastForward("30:00");
+  await page.waitForTimeout(250);
+  await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+    "Data, 31/10/2026"
+  );
+  await expect(page.getByLabel("Quantidade recebida")).toHaveValue("7");
+  expect(listRequests.length + attentionRequests.length).toBe(reads);
+
+  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+  await page.getByRole("button", { name: "Confirmar recebimento" }).click();
+  await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Fechar" }).click();
+
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+    "Data, 01/11/2026"
+  );
+  await page.getByLabel("Quantidade recebida").fill("4");
+  await page.getByLabel("Custo unitário (R$)").fill("12,50");
+  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+  await expect(page.getByText("data no futuro")).toHaveCount(0);
+  await page.getByRole("button", { name: "Confirmar recebimento" }).click();
+  await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
+  expect(sent).toHaveLength(2);
+  expect(sent[0]).toContain("2026-10-31");
+  expect(sent[1]).toContain("2026-11-01");
+});
+
 test("a revisão vazia leva o foco ao primeiro campo inválido, e o campo diz o erro", async ({
   page,
 }) => {

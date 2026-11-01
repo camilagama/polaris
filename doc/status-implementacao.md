@@ -2701,6 +2701,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas (AC-3, AC-5) | Em revisão | Unidade: `stock-command-model.test.ts`, `stock-list-model.test.ts`. Gate `inventory` (PostgreSQL 18): contagem de delta 0 com valoração sobre custo desconhecido, versão velha recusada sem mudar nada, e o `periodSummary` de um dia anterior igual antes e depois. Navegador: `e2e-pwa/ui-stock-cost.e2e.ts`, `e2e/stock-screen.e2e.ts`, e a jornada real `e2e-real/jornadas/estoque.e2e.ts` (linha, faixa e Início diminuem). |
 | Limites | Registrado | Com saldo e custo desconhecido, a linha não oferece mais "Contar": contar com diferença essa variante pede informar o custo antes (ou baixar). Os textos do Petković e a nota de arquitetura citados no corte não estavam na máquina do dev: os textos seguem a tarefa, e os de conflito, recusa, sem conexão e bloqueio do painel de custo são do dev, para revisão. |
 
+### Estoque: o dia da loja acompanha a virada (t653; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| `inventory/inventory-page.tsx` | Em revisão | O `today` da tela passa a vir de `useStoreToday` (`expenses/use-store-today.ts`, o mesmo da Despesas: a cada minuto e ao voltar à aba, no fuso da loja; só a string `AAAA-MM-DD` fica no estado). Depois da virada, um recebimento, contagem, baixa ou informe de custo aberto em seguida nasce com o dia novo, e a data de hoje deixa de ser recusada como futura. O painel já aberto guarda o dia em que abriu e o que a pessoa digitou. A virada não lê nada do servidor; o servidor segue decidindo se a data é futura. Painel de resultado e importação ficam como estão. |
+| Provas | Em revisão | `e2e/stock-screen.e2e.ts` com `page.clock` (23:50 de 31/10 em São Paulo): o painel aberto antes fica em 31/10 com a quantidade digitada, o seguinte abre em 01/11 e o servidor recebe cada dia, e a virada não faz leitura da lista nem de "Precisa de ação"; falha com o `today` antigo. O hook segue provado em `use-store-today.test.tsx`. |
+
 ### Superfícies de prova fora do banco e da configuração (t548, D1 do fechamento do staging; migration 0108)
 
 | Item | Status | Observação |

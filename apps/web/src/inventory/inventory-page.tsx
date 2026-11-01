@@ -6,7 +6,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -21,8 +20,8 @@ import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusNav } from "../catalog/screen-parts";
+import { useStoreToday } from "../expenses/use-store-today";
 import { useCurrentOrganization } from "../lib/current-organization";
-import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { isStockAction, type StockAction } from "./stock-command-model";
@@ -264,10 +263,7 @@ export function InventoryPage() {
       });
     }
   }, [entryLink]);
-  const today = useMemo(
-    () => calendarDayInTimezone(new Date(), organization.timezone),
-    [organization.timezone]
-  );
+  const today = useStoreToday(organization.timezone);
   const view = stockListView(state, filters, offline);
   const more = stockMoreView(state);
   const countText =
