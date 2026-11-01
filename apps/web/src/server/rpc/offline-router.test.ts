@@ -663,11 +663,11 @@ describe("device.revokeCurrent (Sair revokes this device)", () => {
           ) => Promise<unknown>;
         }) => input.operation({}, session, hanging),
       });
-      const started = Date.now();
+      const started = performance.now();
       await expect(client.device.revokeCurrent({ deviceId })).resolves.toEqual(
         ownResult
       );
-      const elapsed = Date.now() - started;
+      const elapsed = performance.now() - started;
       expect(elapsed).toBeGreaterThanOrEqual(290);
       expect(elapsed).toBeLessThan(2000);
       expect(hanging.query).toHaveBeenCalledWith(
