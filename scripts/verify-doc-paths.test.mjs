@@ -10,6 +10,9 @@ import {
   namedPaths,
 } from "./verify-doc-paths.mjs";
 
+// the walk reads the whole tree; a loaded runner can pass the default 5 s
+const REPOSITORY_WALK_TIMEOUT_MS = 20_000;
+
 describe("namedPaths", () => {
   it("reads repository paths between backticks and relative links", () => {
     expect(
@@ -84,8 +87,12 @@ describe("missingPaths", () => {
 });
 
 describe("the repository", () => {
-  it("is exact: every entry of the list matches the tree", () => {
-    expect(checkRepository()).toEqual([]);
-    expect(Object.keys(DOC_PATHS_LIST).length).toBeGreaterThan(0);
-  });
+  it(
+    "is exact: every entry of the list matches the tree",
+    () => {
+      expect(checkRepository()).toEqual([]);
+      expect(Object.keys(DOC_PATHS_LIST).length).toBeGreaterThan(0);
+    },
+    REPOSITORY_WALK_TIMEOUT_MS
+  );
 });

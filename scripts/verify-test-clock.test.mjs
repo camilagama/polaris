@@ -12,6 +12,9 @@ import {
   testClockProblems,
 } from "./verify-test-clock.mjs";
 
+// the walk reads the whole tree; a loaded runner can pass the default 5 s
+const REPOSITORY_WALK_TIMEOUT_MS = 20_000;
+
 describe("which files are tests", () => {
   it.each([
     ["apps/web/src/expenses/expenses-model.test.ts", true],
@@ -102,8 +105,12 @@ describe("the list", () => {
     }
   });
 
-  it("is exact for the repository: every entry matches the tree", () => {
-    expect(checkRepository()).toEqual([]);
-    expect(Object.keys(TEST_CLOCK_LIST).length).toBeGreaterThan(0);
-  });
+  it(
+    "is exact for the repository: every entry matches the tree",
+    () => {
+      expect(checkRepository()).toEqual([]);
+      expect(Object.keys(TEST_CLOCK_LIST).length).toBeGreaterThan(0);
+    },
+    REPOSITORY_WALK_TIMEOUT_MS
+  );
 });

@@ -6,6 +6,9 @@ import {
   overrideProblems,
 } from "./verify-dependency-overrides.mjs";
 
+// the walk reads the whole tree; a loaded runner can pass the default 5 s
+const REPOSITORY_WALK_TIMEOUT_MS = 20_000;
+
 const TABLE = `# Auditoria
 
 ## Overrides vigentes
@@ -116,7 +119,11 @@ describe("overrideProblems", () => {
 });
 
 describe("the repository", () => {
-  it("has every root override in the runbook table, and nothing else", () => {
-    expect(checkRepository()).toEqual([]);
-  });
+  it(
+    "has every root override in the runbook table, and nothing else",
+    () => {
+      expect(checkRepository()).toEqual([]);
+    },
+    REPOSITORY_WALK_TIMEOUT_MS
+  );
 });

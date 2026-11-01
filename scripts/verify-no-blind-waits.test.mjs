@@ -11,6 +11,9 @@ import {
   isPlaywrightFile,
 } from "./verify-no-blind-waits.mjs";
 
+// the walk reads the whole tree; a loaded runner can pass the default 5 s
+const REPOSITORY_WALK_TIMEOUT_MS = 20_000;
+
 describe("what counts as a blind wait", () => {
   it.each([
     ["page.waitForTimeout(250);", 1],
@@ -98,8 +101,12 @@ describe("the list", () => {
     }
   });
 
-  it("is exact for the repository: every entry matches the tree", () => {
-    expect(checkRepository()).toEqual([]);
-    expect(Object.keys(BLIND_WAITS_LIST).length).toBeGreaterThan(0);
-  });
+  it(
+    "is exact for the repository: every entry matches the tree",
+    () => {
+      expect(checkRepository()).toEqual([]);
+      expect(Object.keys(BLIND_WAITS_LIST).length).toBeGreaterThan(0);
+    },
+    REPOSITORY_WALK_TIMEOUT_MS
+  );
 });
