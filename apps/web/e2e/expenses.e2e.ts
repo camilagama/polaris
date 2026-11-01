@@ -15,7 +15,7 @@ import {
   sizeFor,
 } from "./form-dialog-checks";
 import { expectTabsKeyboard } from "./tabs-keyboard";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The real expenses screen in a real browser, over a small in-memory stand-in
@@ -408,8 +408,8 @@ async function installServer(page: Page, server: FakeExpenseServer) {
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status: answer.status,
     });
   });
@@ -1109,6 +1109,86 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe n
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-10");
   await expect(trigger).toBeFocused();
+});
+
+const TURN_EVE = "2026-11-01T02:50:00.000Z";
+
+async function openExpensesOnTheEveOfTheTurn(page: Page) {
+  await page.clock.install({ time: new Date(TURN_EVE) });
+  const server = new FakeExpenseServer();
+  const months: string[] = [];
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", async (route) => {
+      const body = route.request().postDataJSON() as {
+        json?: { from?: string };
+      };
+      months.push(String(body.json?.from ?? "").slice(0, 7));
+      await route.fallback();
+    })
+  );
+  return months;
+}
+
+test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma única leitura da lista", async ({
+  page,
+}) => {
+  const months = await openExpensesOnTheEveOfTheTurn(page);
+  const trigger = page.locator("#expense-month");
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await page.waitForTimeout(250);
+  const reads = months.length;
+
+  await page.clock.fastForward("11:00");
+  await expect(trigger).toHaveText("Novembro de 2026");
+  await expect.poll(() => months.length).toBe(reads + 1);
+  expect(months.at(-1)).toBe("2026-11");
+
+  await page.clock.fastForward("30:00");
+  await page.clock.fastForward("30:00");
+  await page.waitForTimeout(250);
+  await expect(trigger).toHaveText("Novembro de 2026");
+  expect(months).toHaveLength(reads + 1);
+});
+
+test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a lista não é lida", async ({
+  page,
+}) => {
+  const months = await openExpensesOnTheEveOfTheTurn(page);
+  const trigger = page.locator("#expense-month");
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await expect(trigger).toHaveText("Setembro de 2026");
+  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await page.waitForTimeout(250);
+  const reads = months.length;
+
+  await page.clock.fastForward("11:00");
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await page.clock.fastForward("30:00");
+  await page.clock.fastForward("30:00");
+  await page.waitForTimeout(250);
+  await expect(trigger).toHaveText("Outubro de 2026");
+  expect(months).toHaveLength(reads);
+
+  await trigger.click();
+  await popup.getByRole("button", { name: "Este mês" }).click();
+  await expect(trigger).toHaveText("Novembro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-11");
+});
+
+test("fora da virada, o tempo andando não lê a lista de novo", async ({
+  page,
+}) => {
+  const months = await openExpensesOnTheEveOfTheTurn(page);
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await page.waitForTimeout(250);
+  const reads = months.length;
+  await page.clock.fastForward("05:00");
+  await expect(page.locator("#expense-month")).toHaveText("Outubro de 2026");
+  expect(months).toHaveLength(reads);
 });
 
 test("a grade de meses não volta de janeiro de 2000, pelos botões nem pelo teclado, e o futuro continua livre", async ({
