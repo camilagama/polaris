@@ -17,6 +17,7 @@ const SHA = /^[0-9a-f]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const ATTEMPTS = 3;
 export const WRANGLER_TIMEOUT_MS = 20_000;
+export const PAUSE_MS = 5000;
 
 /** A gradual rollout has no single commit. */
 function activeVersionId(deployment) {
@@ -173,7 +174,7 @@ export function runWrangler(
   });
 }
 
-const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
+const wait = () => new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
 
 async function main() {
   const failures = await verifyDeployedSha(
