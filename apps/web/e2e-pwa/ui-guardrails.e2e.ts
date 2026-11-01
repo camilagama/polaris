@@ -630,13 +630,15 @@ test.describe("controle: cada verificação pega a falha", () => {
           Promise.all(node.getAnimations().map((item) => item.finished))
         );
         await watchExitStart(panel);
+        const stretchedBefore = await stretchedGuards(page);
         await ask();
         // when the exit animation begins the panel is still there, closing, and the animation lasts 200 ms
         await expect
           .poll(() => exitStart(page), { message: "a saída animada começou" })
           .toEqual({ closing: true, duration: 200, open: true });
-        // the stretch reached the guard (the constant of the panel is still 300 ms): without it nothing here would fail
-        expect(await stretchedGuards(page)).toBeGreaterThan(0);
+        // the stretch reached the guard of this exit (the counter is cumulative, so it is compared with its value before
+        // the way out was asked for): without it nothing here would fail
+        expect(await stretchedGuards(page)).toBeGreaterThan(stretchedBefore);
         await expect(panel).toBeHidden();
         await expect(more).toBeFocused();
         await expect(more).toHaveAttribute("aria-expanded", "false");
