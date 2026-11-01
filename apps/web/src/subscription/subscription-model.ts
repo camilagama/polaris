@@ -581,6 +581,23 @@ const CONNECTION_TEXT =
 const CHECKOUT_UNCONFIRMED_TEXT =
   "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.";
 
+/**
+ * `previous_checkout_unverified`: the provider did not answer whether the checkout the store had before was paid.
+ * That one may have been approved with its webhook late, so unlike `CHECKOUT_UNCONFIRMED_TEXT` this text never says
+ * nothing was charged; "Atualizar" reads the plan, where the subscription shows up if it was approved.
+ */
+const PREVIOUS_CHECKOUT_UNVERIFIED_TEXT =
+  "Não deu para confirmar se o pagamento que você começou antes foi aprovado. Toque em Atualizar: se foi, a assinatura aparece aqui. Se não, tente de novo.";
+
+/**
+ * `previous_renewal_cancel_unverified`: the provider did not confirm the cancellation of the renewal of the old
+ * subscription. It may have been made with the answer lost, so the text never says nothing changed; "Atualizar"
+ * reads the plan before trying again. The new subscription is never created before this step, so saying it did not
+ * start is safe; the old renewal may still be alive, so the text avoids "Nada foi cobrado" and a direct retry.
+ */
+const PREVIOUS_RENEWAL_CANCEL_UNVERIFIED_TEXT =
+  "A assinatura nova não começou. Não deu para confirmar o encerramento da anterior: toque em Atualizar para ver o plano antes de tentar de novo.";
+
 /** The text of each refusal of the checkout (AS-17) and of the read; the server's message where it has one. */
 export function checkoutRefusal(error: unknown): Refusal {
   if (isConnectionFailure(error)) {
@@ -654,6 +671,18 @@ export function checkoutRefusal(error: unknown): Refusal {
         reread: true,
         retry: true,
         text: CHECKOUT_UNCONFIRMED_TEXT,
+      };
+    case "previous_checkout_unverified":
+      return {
+        reread: true,
+        retry: true,
+        text: PREVIOUS_CHECKOUT_UNVERIFIED_TEXT,
+      };
+    case "previous_renewal_cancel_unverified":
+      return {
+        reread: true,
+        retry: false,
+        text: PREVIOUS_RENEWAL_CANCEL_UNVERIFIED_TEXT,
       };
     case "billing_not_configured":
     case "billing_self_service_off":
