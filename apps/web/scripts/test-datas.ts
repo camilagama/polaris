@@ -45,7 +45,7 @@ for (const instant of instants) {
         "vitest",
         "run",
         "--config",
-        "apps/web/vitest.clock.config.ts",
+        "apps/web/test-clock/config.ts",
         ...vitestArguments,
       ],
       {

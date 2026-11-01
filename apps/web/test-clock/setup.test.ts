@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import rootConfig from "../../vitest.config";
-import clockConfig from "./vitest.clock.config";
+import rootConfig from "../../../vitest.config";
+import clockConfig from "./config";
 
 const pinned = process.env.POLARIS_CLOCK_SETUP
   ? process.env.POLARIS_TEST_NOW
