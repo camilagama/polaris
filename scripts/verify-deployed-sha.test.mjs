@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkWorker,
+  runWrangler,
   STAGING_WORKERS,
   verifyDeployedSha,
 } from "./verify-deployed-sha.mjs";
@@ -305,6 +306,32 @@ esac
     expect(calls[0]).toBe(
       "apps/web --no-install wrangler deployments status --json --name polaris-web-staging"
     );
+  });
+
+  it("stops a wrangler that hangs, together with the process it started", async () => {
+    writeFileSync(
+      join(bin, "bunx"),
+      `#!/bin/sh
+sleep 30 &
+echo $! > "${join(bin, "child.pid")}"
+wait
+`
+    );
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    try {
+      const started = Date.now();
+      await expect(
+        runWrangler("web", "polaris-web-staging", ["x"], 300)
+      ).rejects.toThrow("wrangler was stopped (SIGKILL)");
+      expect(Date.now() - started).toBeLessThan(5000);
+    } finally {
+      process.env.PATH = path;
+    }
+    const pid = Number(readFileSync(join(bin, "child.pid"), "utf8"));
+    await vi.waitFor(() => {
+      expect(() => process.kill(pid, 0)).toThrow();
+    });
   });
 
   it("never passes what wrangler wrote on stderr to its own output", () => {

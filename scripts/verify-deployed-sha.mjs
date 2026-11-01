@@ -121,21 +121,41 @@ export async function verifyDeployedSha(expectedSha, wranglerJson, pause) {
   return failures;
 }
 
-function runWrangler(app, worker, args) {
+/**
+ * The timeout kills the whole process group: killing only `bunx` would leave wrangler holding the stdout pipe,
+ * and `close` would never come.
+ */
+export function runWrangler(
+  app,
+  worker,
+  args,
+  timeoutMs = WRANGLER_TIMEOUT_MS
+) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       "bunx",
       ["--no-install", "wrangler", ...args, "--name", worker],
       {
         cwd: `apps/${app}`,
+        detached: true,
         stdio: ["ignore", "pipe", "ignore"],
-        timeout: WRANGLER_TIMEOUT_MS,
       }
     );
+    const killGroup = setTimeout(() => {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    }, timeoutMs);
     const chunks = [];
     child.stdout.on("data", (chunk) => chunks.push(chunk));
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(killGroup);
+      reject(error);
+    });
     child.on("close", (code, signal) => {
+      clearTimeout(killGroup);
       if (code !== 0) {
         reject(
           new WranglerError(
