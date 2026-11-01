@@ -651,6 +651,7 @@ const TURN_CASES = [
       await page.getByLabel("Quantidade recebida").fill(quantity);
       await page.getByLabel("Custo unitário (R$)").fill("12,50");
     },
+    quantities: ["7", "4"],
     quantityLabel: "Quantidade recebida",
     route: "receiveStock",
     saldo: "Saldo: 15 unidades",
@@ -661,10 +662,26 @@ const TURN_CASES = [
     fill: async (page: Page, quantity: string) => {
       await page.getByLabel("Quantidade contada").fill(quantity);
     },
+    quantities: ["7", "4"],
     quantityLabel: "Quantidade contada",
     route: "inventoryCount",
     saldo: "Saldo: 9 unidades",
     trigger: "Contar estoque de Calça jeans, 42",
+  },
+  {
+    confirm: "Confirmar baixa",
+    fill: async (page: Page, quantity: string) => {
+      await page.getByLabel("Quantidade a baixar").fill(quantity);
+      await page
+        .getByRole("combobox", { exact: true, name: "Motivo da baixa" })
+        .click();
+      await page.getByRole("option", { exact: true, name: "Avariado" }).click();
+    },
+    quantities: ["1", "1"],
+    quantityLabel: "Quantidade a baixar",
+    route: "writeOffStock",
+    saldo: "Saldo: 2 unidades",
+    trigger: WRITE_OFF_JEANS,
   },
 ] as const;
 
@@ -696,6 +713,20 @@ test.describe("virada do dia da loja", () => {
           })
         )
       );
+      await page.route("**/rpc/inventory/writeOffStock", (route) =>
+        route.fulfill(
+          rpc({
+            balance: {
+              movingAverageCost: "62.400000",
+              quantity: 2,
+              variantId: JEANS.variantId,
+              version: 2,
+            },
+            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+            replayed: false,
+          })
+        )
+      );
       const sent: string[] = [];
       await page.route(`**/rpc/inventory/${turn.route}`, (route) => {
         sent.push(route.request().postData() ?? "");
@@ -710,7 +741,7 @@ test.describe("virada do dia da loja", () => {
       const reads = listRequests.length + attentionRequests.length;
 
       await page.getByRole("button", { name: turn.trigger }).click();
-      await turn.fill(page, "7");
+      await turn.fill(page, turn.quantities[0]);
       await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
         "Data, 31/10/2026"
       );
@@ -720,7 +751,9 @@ test.describe("virada do dia da loja", () => {
       await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
         "Data, 31/10/2026"
       );
-      await expect(page.getByLabel(turn.quantityLabel)).toHaveValue("7");
+      await expect(page.getByLabel(turn.quantityLabel)).toHaveValue(
+        turn.quantities[0]
+      );
       await settled(page);
       expect(listRequests.length + attentionRequests.length).toBe(reads);
 
@@ -733,7 +766,7 @@ test.describe("virada do dia da loja", () => {
       await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
         "Data, 01/11/2026"
       );
-      await turn.fill(page, "4");
+      await turn.fill(page, turn.quantities[1]);
       await page.getByRole("button", { exact: true, name: "Revisar" }).click();
       await expect(page.getByText("data no futuro")).toHaveCount(0);
       await page.getByRole("button", { name: turn.confirm }).click();
@@ -744,6 +777,76 @@ test.describe("virada do dia da loja", () => {
         "2026-10-31",
         "2026-11-01",
       ]);
+    });
+  }
+
+  const COST_TURNS = [
+    {
+      day: "2026-10-31",
+      name: "o painel aberto antes da virada mantém o dia em que abriu",
+      openAfterTurn: false,
+    },
+    {
+      day: "2026-11-01",
+      name: "o painel aberto depois da virada nasce com o dia novo",
+      openAfterTurn: true,
+    },
+  ] as const;
+
+  for (const turn of COST_TURNS) {
+    test(`Informar custo: ${turn.name}, e o servidor recebe ${turn.day} sem nova leitura`, async ({
+      page,
+    }) => {
+      await page.clock.install({ time: TURN_EVE });
+      await openStockLab(page, "claro");
+      await page.route("**/rpc/inventory/inventoryCount", (route) =>
+        route.fulfill(
+          rpc({
+            balance: {
+              movingAverageCost: "12.500000",
+              quantity: SHIRT.quantity,
+              variantId: SHIRT.variantId,
+              version: 2,
+            },
+            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+            replayed: false,
+          })
+        )
+      );
+      const sent: string[] = [];
+      await page.route("**/rpc/inventory/inventoryCount", (route) => {
+        sent.push(route.request().postData() ?? "");
+        return route.fallback();
+      });
+      await expect.poll(() => attentionRequests.length).toBe(2);
+      await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+      await page.route("**/__settled", (route) =>
+        route.fulfill({ body: "", status: 204 })
+      );
+      await settled(page);
+      const reads = listRequests.length + attentionRequests.length;
+      const cost = page.getByLabel("Custo de cada unidade (R$)");
+
+      if (!turn.openAfterTurn) {
+        await page.getByRole("button", { name: INFORM_SHIRT }).click();
+        await cost.fill("12,50");
+      }
+      await page.clock.fastForward("11:00");
+      await page.clock.fastForward("30:00");
+      if (turn.openAfterTurn) {
+        await page.getByRole("button", { name: INFORM_SHIRT }).click();
+        await cost.fill("12,50");
+      }
+      await expect(cost).toHaveValue("12,50");
+      await settled(page);
+      expect(listRequests.length + attentionRequests.length).toBe(reads);
+
+      await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+      await page.getByRole("button", { name: "Confirmar custo" }).click();
+      await expect(page.getByText("Saldo: 5 unidades")).toBeVisible();
+
+      expect(sent).toHaveLength(1);
+      expect(JSON.parse(sent[0] ?? "{}").json.occurredOn).toBe(turn.day);
     });
   }
 });
