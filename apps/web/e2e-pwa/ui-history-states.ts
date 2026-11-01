@@ -86,6 +86,9 @@ const rpc = (body: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+/** The calendar opens on the month of the page clock; the days these states click are in October 2026. */
+const CLOCK = new Date("2026-10-23T15:00:00.000Z");
+
 /** Starts the lab's runtime and waits for the screen; the network is the lab's checkbox. */
 async function openHistoryLab(
   page: Page,
@@ -93,6 +96,7 @@ async function openHistoryLab(
   hold = false,
   sales: readonly unknown[] = SALES
 ) {
+  await page.clock.setFixedTime(CLOCK);
   if (hold) {
     // the server never answers: the list stays loading
     await page.route(
