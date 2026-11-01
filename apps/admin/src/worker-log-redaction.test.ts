@@ -79,11 +79,12 @@ describe("the Admin Worker's log", () => {
           "cf-connecting-ip": "203.0.113.9",
         },
       }),
-      {} as never,
+      { POLARIS_ENVIRONMENT: "staging" } as never,
       { passThroughOnException: vi.fn(), waitUntil: vi.fn() } as never
     );
 
     expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(warnings(warn).at(-1)).toMatchObject({ environment: "staging" });
     const json = JSON.stringify(warnings(warn));
     expect(warn).toHaveBeenCalled();
     expect(json).toContain('"service":"polaris-admin"');

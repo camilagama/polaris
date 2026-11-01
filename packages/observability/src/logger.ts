@@ -148,9 +148,9 @@ const deployedEnvironments: ReadonlySet<string> = new Set([
 /**
  * Takes the `environment` of the events from the Worker's `POLARIS_ENVIRONMENT`
  * variable (`staging` or `production`, set per environment in `wrangler.jsonc`).
- * Without it evlog falls back to `development`, which would label a deployed
- * Worker as local; any other value is ignored for the same reason, so a
- * mistyped variable cannot invent an environment. Cheap to call on every
+ * Without it evlog falls back to the bundle's `NODE_ENV`, or `production`, so a
+ * staging Worker would be labelled by a build default; any other value is
+ * ignored, so a mistyped variable cannot invent an environment. Cheap to call on every
  * invocation: it only reconfigures when the value changes.
  */
 export function useLoggingEnvironment(value: unknown): void {

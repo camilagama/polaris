@@ -366,7 +366,7 @@ describe("logging environment", () => {
     expect(initial).not.toBe("production");
   });
 
-  it("reconfigures only when the value changes", async () => {
+  it("keeps the service and the version when it reconfigures for the environment", async () => {
     const fresh = await import("./logger");
     fresh.configureLogging({ service: "polaris-test", version: "v1" });
 

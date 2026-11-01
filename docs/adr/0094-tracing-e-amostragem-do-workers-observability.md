@@ -48,7 +48,7 @@ Premissas (**hipóteses, não medidas**: a página não dá bytes por evento ou 
 
 - Em produção, todo erro registrado pelo logger é enviado ao Workers Logs (sem descarte por amostragem) e 1 de cada 20 requisições gera um trace, enquanto a conta ficar abaixo de 0,5 GB por dia.
 - **Os *invocation logs* desligados tiram o registro automático por invocação** (requisição, resposta e metadados da plataforma): sem evento largo por requisição (ADR 0091), o status HTTP e o resultado de uma requisição que não passa pelo logger não ficam no Workers Logs. A documentação lista exceções não capturadas entre os logs, mas não diz se sobrevivem com `invocation_logs: false`; isso fica para validar na Fase 14, junto com o evento largo por requisição. A validação é o item 16 do [checklist de release](../runbooks/release-checklist.md#16-exceção-não-capturada-visível-nos-workers-logs-com-invocation_logs-desligado-block): no staging, provocar uma exceção não capturada em cada Worker e conferir se ela aparece nos Workers Logs. Se não aparecer, ligar `invocation_logs` (o custo é uma linha por requisição, dentro da estimativa acima) antes do go-live é a saída.
-- O campo `environment` do evento (vem de `POLARIS_ENVIRONMENT`, [ADR 0089](0089-evlog-e-logger-tipado-no-backend.md)) e a medida de CPU do evlog continuam sem prova em nuvem; ficam para a Fase 14.
+- O campo `environment` do evento (vem de `POLARIS_ENVIRONMENT`; sem ela o evlog usa o `NODE_ENV` do bundle, [ADR 0089](0089-evlog-e-logger-tipado-no-backend.md)) e a medida de CPU do evlog continuam sem prova em nuvem; ficam para a Fase 14.
 
 ## Alternativas descartadas
 
