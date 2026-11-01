@@ -436,6 +436,12 @@ async function main() {
       "Set POLARIS_GATE2_TEST_CONFIRM_DISPOSABLE=gate2-runtime-proof only for the auto-expiring disposable Neon branch."
     );
   }
+  const runnerLogin = process.env.POLARIS_GATE_RUNTIME_LOGIN;
+  if (!runnerLogin) {
+    throw new Error(
+      "POLARIS_GATE_RUNTIME_LOGIN names the login of the runtime group; run the gate through scripts/run-gates.ts, which creates and passes it."
+    );
+  }
   const databaseUrl = new URL(connectionString);
   assert.equal(databaseUrl.hostname, expectedHostname);
   assert.equal(databaseUrl.pathname, `/${gateDatabase}`);
@@ -529,8 +535,43 @@ async function main() {
       ]),
       [
         [onboardingRole, false, false],
-        [runtimeRole, false, true],
+        [runtimeRole, false, false],
       ]
+    );
+
+    const runnerState = await adminPool.query<{
+      bypassRls: boolean;
+      canLogin: boolean;
+      createDb: boolean;
+      createRole: boolean;
+      inherit: boolean;
+      replication: boolean;
+      set: boolean;
+      superuser: boolean;
+    }>(
+      'SELECT r.rolcanlogin AS "canLogin", r.rolbypassrls AS "bypassRls", ' +
+        'r.rolsuper AS superuser, r.rolcreatedb AS "createDb", r.rolcreaterole AS "createRole", ' +
+        'r.rolreplication AS replication, m.inherit_option AS inherit, m.set_option AS "set" ' +
+        "FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid " +
+        "WHERE r.rolname = $1 AND m.roleid = (SELECT oid FROM pg_roles WHERE rolname = $2) " +
+        "AND m.admin_option = false",
+      [runnerLogin, runtimeRole]
+    );
+    assert.deepEqual(
+      runnerState.rows,
+      [
+        {
+          bypassRls: false,
+          canLogin: true,
+          createDb: false,
+          createRole: false,
+          inherit: true,
+          replication: false,
+          set: true,
+          superuser: false,
+        },
+      ],
+      "the gate runner's own login is the environment's runtime login: LOGIN, no SUPERUSER, BYPASSRLS, CREATEDB, CREATEROLE or REPLICATION, member of the runtime group with INHERIT and SET"
     );
 
     const rls = await adminPool.query<{
@@ -586,8 +627,9 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'categories' " +
-        // the purge owner's read and delete policies are checked by the purge gate (ADR 0081)
-        "AND roles NOT IN ('{polaris_purge_owner}') " +
+        // the purge owner's read and delete policies are checked by the purge gate (ADR 0081); the closed-store export
+        // reader's read policy by `closed-organization-readonly`. Exact role-array literals only, never a pattern
+        "AND roles NOT IN ('{polaris_purge_owner}', '{polaris_closed_export_reader}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -635,7 +677,7 @@ async function main() {
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' " +
         // the tenant policies; the billing owner's read policy is checked on its own below
-        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}') " +
+        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -676,7 +718,7 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'product_variants' " +
-        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}') " +
+        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -755,7 +797,7 @@ async function main() {
       "SELECT tablename AS relation, policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' " +
-        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}') ORDER BY tablename, policyname",
+        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}') ORDER BY tablename, policyname",
       [["product_option_values", "product_options", "variant_option_values"]]
     );
     assert.deepEqual(

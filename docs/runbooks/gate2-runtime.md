@@ -13,6 +13,7 @@ O script do Worker cria duas roles de login temporárias, cada uma membro de ape
 - Branch Neon gate2-runtime-proof, PostgreSQL 18, região AWS South America East 1 (São Paulo), expiração automática em 1 dia.
 - URL owner direta para neondb, sem pooler.
 - Role polaris_pr11_runtime existente, sem BYPASSRLS e sem ownership das tabelas.
+- Role polaris_pr11_runtime NOLOGIN (grupo) e um login próprio dela: LOGIN, NOSUPERUSER, NOBYPASSRLS, membro com INHERIT e SET, com o nome em `POLARIS_GATE_RUNTIME_LOGIN` (só o nome, nunca senha nem URL). O executor (`bun scripts/run-gates.ts gate2-runtime`) cria o `polaris_gate_runner_*` e passa o nome; o `poc:gate2:verify` direto exige a variável apontando para um login assim. O gate só confere esse login no catálogo; a sessão do gate continua sendo a do dono, que assume o grupo com `SET ROLE`.
 - Dependências instaladas com bun install --frozen-lockfile.
 
 Use Read-Host -AsSecureString para digitar a URL e mantenha-a somente em variável de ambiente durante os testes. Não grave URL ou senha em arquivo, repositório, log ou comando visível. Não use o plugin Neon.

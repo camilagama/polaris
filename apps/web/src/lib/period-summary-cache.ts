@@ -15,7 +15,7 @@ import type { PreferenceStorage } from "./current-organization-model";
  */
 const KEY_PREFIX = "polaris.offline.periodSummary.";
 
-/** The Início's own copy (`home/home-copy.ts`): the days before the month, the goal shown and whether the store sold. */
+/** The Início's own copy (`home/home-copy.ts`): the days before the month and the goal shown. */
 export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 
 /** The copy of the Início's map (`home/rhythm-copy.ts`): the light daily series before the month, ~3 KB. */

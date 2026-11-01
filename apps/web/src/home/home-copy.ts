@@ -25,9 +25,9 @@ import { readRhythmCopy } from "./rhythm-copy";
 /**
  * The Início's copy on the device (ADR 0056, emenda (ii)): A, the month, lives under the key
  * of the period summary that the Resultado also keeps; here, under `polaris.offline.home.<org>`, the rest of what
- * the Início showed: B (the days before the month), the goal of the card and whether the store already sold. All of
- * it as the server said it, never a figure of the device; read back only after the shape checks, and gone with the
- * session (`clearPeriodSummaryCaches`).
+ * the Início showed: B (the days before the month) and the goal of the card. All of it as the server said it, never
+ * a figure of the device; read back only after the shape checks, and gone with the session
+ * (`clearPeriodSummaryCaches`).
  */
 export interface HomeCopy {
   /** B as the server returned it; its day after the end is in the month of A. */
@@ -39,8 +39,6 @@ export interface HomeCopy {
   beforeStale?: boolean;
   /** The goal the card showed and when (the server's clock as the device estimated it), null when not read. */
   goal: { at: string; view: GoalView } | null;
-  /** The store sold at least once (the checklist does not come back, AC-23). */
-  hadSale: boolean;
 }
 
 type Dictionary = Record<string, unknown>;
@@ -119,8 +117,7 @@ function isHomeCopy(value: unknown): value is HomeCopy {
     (value.before === null || isPeriodSummary(value.before)) &&
     (value.beforeStale === undefined ||
       typeof value.beforeStale === "boolean") &&
-    (value.goal === null || isKeptGoal(value.goal)) &&
-    typeof value.hadSale === "boolean"
+    (value.goal === null || isKeptGoal(value.goal))
   );
 }
 
@@ -143,8 +140,8 @@ export function readHomeCopy(
 }
 
 /**
- * Keeps what the server just said, over what was kept: B replaces B, the goal replaces the goal, and the store that
- * sold stays a store that sold. The caller asks the guard first (runtime on, `report:read`, no sign-out under way).
+ * Keeps what the server just said, over what was kept: B replaces B and the goal replaces the goal. The caller asks
+ * the guard first (runtime on, `report:read`, no sign-out under way).
  */
 export function writeHomeCopy(
   storage: PreferenceStorage | null,
@@ -157,7 +154,6 @@ export function writeHomeCopy(
   const kept = readHomeCopy(storage, organizationId) ?? {
     before: null,
     goal: null,
-    hadSale: false,
   };
   // a B read from the server is as fresh as it gets, unless the caller says otherwise
   const stale =
@@ -167,7 +163,6 @@ export function writeHomeCopy(
     before: change.before === undefined ? kept.before : change.before,
     ...(stale ? { beforeStale: true } : {}),
     goal: change.goal === undefined ? kept.goal : change.goal,
-    hadSale: kept.hadSale || change.hadSale === true,
   };
   if (!isHomeCopy(next)) {
     return;
