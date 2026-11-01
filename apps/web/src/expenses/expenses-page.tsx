@@ -1,6 +1,6 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
@@ -33,6 +33,16 @@ import { useFormDialog } from "./use-form-dialog";
 import { useStoreToday } from "./use-store-today";
 
 type StatusChange = "restore" | "void";
+
+/**
+ * What the person chose. While `chosenMonth` is null the month follows the store's day, so it moves to the new month
+ * at the turn (one read of the list); a month picked by hand stays, and the turn reads nothing.
+ */
+interface ExpenseChoices {
+  categoryId: string;
+  chosenMonth: string | null;
+  status: ExpenseFilters["status"];
+}
 
 function savedMessage(
   editing: boolean,
@@ -92,11 +102,19 @@ export function ExpensesPage() {
   const { organization, organizationId } = useCurrentOrganization();
   const today = useStoreToday(organization.timezone);
   const [view, selectView] = useExpenseView();
-  const [filters, setFilters] = useState<ExpenseFilters>(() => ({
+  const [choices, setChoices] = useState<ExpenseChoices>({
     categoryId: "",
-    month: monthOfDay(today),
+    chosenMonth: null,
     status: "active",
-  }));
+  });
+  const filters = useMemo<ExpenseFilters>(
+    () => ({
+      categoryId: choices.categoryId,
+      month: choices.chosenMonth ?? monthOfDay(today),
+      status: choices.status,
+    }),
+    [choices, today]
+  );
   const { busy, clearFeedback, feedback, run } = useCommandRunner();
   const categories = useExpenseCategories(organizationId);
   const { loadMore, refresh, state } = useExpenseList(organizationId, filters);
@@ -205,7 +223,17 @@ export function ExpensesPage() {
   );
   const handleNew = useCallback(() => openForm("new"), [openForm]);
   const handleMonth = useCallback(
-    (month: string) => setFilters((current) => ({ ...current, month })),
+    (month: string) =>
+      setChoices((current) => ({ ...current, chosenMonth: month })),
+    []
+  );
+  const handleFilters = useCallback(
+    (next: ExpenseFilters) =>
+      setChoices((current) => ({
+        ...current,
+        categoryId: next.categoryId,
+        status: next.status,
+      })),
     []
   );
 
@@ -303,7 +331,7 @@ export function ExpensesPage() {
               <ExpenseFiltersBar
                 categories={categories.state.categories}
                 filters={filters}
-                onChange={setFilters}
+                onChange={handleFilters}
               />
               <ExpenseSummary filters={filters} state={state} />
               <ExpenseList

@@ -1129,31 +1129,26 @@ async function openExpensesOnTheEveOfTheTurn(page: Page) {
   return months;
 }
 
-test("na virada do mês da loja, 'Este mês' escolhe o mês novo sem recarregar, e o mês que estava na tela não se move", async ({
+test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma única leitura da lista", async ({
   page,
 }) => {
   const months = await openExpensesOnTheEveOfTheTurn(page);
   const trigger = page.locator("#expense-month");
-  const popup = page.getByRole("dialog", { name: "Mês de competência" });
-  // late evening of the last day of the month in São Paulo, while UTC is already the next month: the store day rules
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-10");
   const reads = months.length;
 
   await page.clock.fastForward("11:00");
-  await expect(trigger).toHaveText("Outubro de 2026");
-  await trigger.click();
-  await expect(popup).toBeVisible();
-  expect(months).toHaveLength(reads);
-
-  await popup.getByRole("button", { name: "Este mês" }).click();
-  await expect(popup).toBeHidden();
   await expect(trigger).toHaveText("Novembro de 2026");
-  await expect.poll(() => months.at(-1)).toBe("2026-11");
+  await expect.poll(() => months.length).toBe(reads + 1);
+  expect(months.at(-1)).toBe("2026-11");
+
+  await page.clock.fastForward("30:00");
+  await expect(trigger).toHaveText("Novembro de 2026");
   expect(months).toHaveLength(reads + 1);
 });
 
-test("antes da virada da loja, 'Este mês' ainda é o mês velho, e o filtro escolhido não se move quando ela chega", async ({
+test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a lista não é lida", async ({
   page,
 }) => {
   const months = await openExpensesOnTheEveOfTheTurn(page);
@@ -1161,25 +1156,34 @@ test("antes da virada da loja, 'Este mês' ainda é o mês velho, e o filtro esc
   const popup = page.getByRole("dialog", { name: "Mês de competência" });
   await page.getByRole("button", { name: "Mês anterior" }).click();
   await expect(trigger).toHaveText("Setembro de 2026");
-  await expect.poll(() => months.at(-1)).toBe("2026-09");
+  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await page.waitForTimeout(250);
   const reads = months.length;
 
-  await trigger.click();
-  await popup.getByRole("button", { name: "Este mês" }).click();
-  await expect(trigger).toHaveText("Outubro de 2026");
-  await page.getByRole("button", { name: "Mês anterior" }).click();
-  await expect(trigger).toHaveText("Setembro de 2026");
-  await expect.poll(() => months.at(-1)).toBe("2026-09");
-  const readsBeforeTurn = months.length;
-  expect(readsBeforeTurn).toBeGreaterThan(reads);
-
   await page.clock.fastForward("11:00");
-  await expect(trigger).toHaveText("Setembro de 2026");
-  expect(months).toHaveLength(readsBeforeTurn);
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await page.clock.fastForward("30:00");
+  await expect(trigger).toHaveText("Outubro de 2026");
+  expect(months).toHaveLength(reads);
+
   await trigger.click();
   await popup.getByRole("button", { name: "Este mês" }).click();
   await expect(trigger).toHaveText("Novembro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-11");
+});
+
+test("fora da virada, o tempo andando não lê a lista de novo", async ({
+  page,
+}) => {
+  const months = await openExpensesOnTheEveOfTheTurn(page);
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await page.waitForTimeout(250);
+  const reads = months.length;
+  await page.clock.fastForward("05:00");
+  await expect(page.locator("#expense-month")).toHaveText("Outubro de 2026");
+  expect(months).toHaveLength(reads);
 });
 
 test("a grade de meses não volta de janeiro de 2000, pelos botões nem pelo teclado, e o futuro continua livre", async ({
