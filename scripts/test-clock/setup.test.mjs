@@ -179,6 +179,7 @@ describe("fuso efetivo do processo", () => {
     return import("./setup.mjs");
   }
 
+  // Node resolves a lowercase TZ to no zone at all and a +03:00 offset to the machine zone (an IANA name), so neither can equal the requested zone whatever the machine is.
   it.each([
     ["minúsculas", "america/manaus"],
     ["deslocamento", "+03:00"],
