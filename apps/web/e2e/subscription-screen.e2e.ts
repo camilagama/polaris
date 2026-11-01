@@ -831,7 +831,13 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
       "SERVICE_UNAVAILABLE",
       503,
       { reason: "previous_checkout_unverified" },
-      "Não deu para confirmar o pagamento que você começou antes. Toque em Atualizar: se ele foi aprovado, a assinatura aparece aqui.",
+      "Não deu para confirmar se o pagamento que você começou antes foi aprovado. Toque em Atualizar: se foi, a assinatura aparece aqui. Se não, tente de novo.",
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
+      503,
+      { reason: "previous_renewal_cancel_unverified" },
+      "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -877,6 +883,7 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
       "checkout_pending_confirmation",
       "cycle_not_offered",
       "previous_checkout_unverified",
+      "previous_renewal_cancel_unverified",
       "renewal_cancelled_until",
       "trial_already_used",
       "trial_in_progress",

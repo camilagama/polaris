@@ -587,7 +587,15 @@ const CHECKOUT_UNCONFIRMED_TEXT =
  * nothing was charged; "Atualizar" reads the plan, where the subscription shows up if it was approved.
  */
 const PREVIOUS_CHECKOUT_UNVERIFIED_TEXT =
-  "Não deu para confirmar o pagamento que você começou antes. Toque em Atualizar: se ele foi aprovado, a assinatura aparece aqui.";
+  "Não deu para confirmar se o pagamento que você começou antes foi aprovado. Toque em Atualizar: se foi, a assinatura aparece aqui. Se não, tente de novo.";
+
+/**
+ * `previous_renewal_cancel_unverified`: the provider did not confirm the cancellation of the renewal of the old
+ * subscription. It may have been made with the answer lost, so the text never says nothing changed; "Atualizar"
+ * reads the plan before trying again.
+ */
+const PREVIOUS_RENEWAL_CANCEL_UNVERIFIED_TEXT =
+  "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.";
 
 /** The text of each refusal of the checkout (AS-17) and of the read; the server's message where it has one. */
 export function checkoutRefusal(error: unknown): Refusal {
@@ -668,6 +676,12 @@ export function checkoutRefusal(error: unknown): Refusal {
         reread: true,
         retry: true,
         text: PREVIOUS_CHECKOUT_UNVERIFIED_TEXT,
+      };
+    case "previous_renewal_cancel_unverified":
+      return {
+        reread: true,
+        retry: false,
+        text: PREVIOUS_RENEWAL_CANCEL_UNVERIFIED_TEXT,
       };
     case "billing_not_configured":
     case "billing_self_service_off":

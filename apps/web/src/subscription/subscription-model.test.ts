@@ -757,7 +757,14 @@ describe("checkoutRefusal", () => {
       "previous_checkout_unverified",
       true,
       true,
-      "Não deu para confirmar o pagamento que você começou antes. Toque em Atualizar: se ele foi aprovado, a assinatura aparece aqui.",
+      "Não deu para confirmar se o pagamento que você começou antes foi aprovado. Toque em Atualizar: se foi, a assinatura aparece aqui. Se não, tente de novo.",
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
+      "previous_renewal_cancel_unverified",
+      true,
+      false,
+      "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -888,6 +895,15 @@ describe("checkoutRefusal", () => {
     );
     expect(refusal.text).not.toContain("Nada foi cobrado");
     expect(refusal.text).not.toBe(CHECKOUT_UNCONFIRMED);
+  });
+
+  it("does not say nothing changed when the old renewal's cancellation could not be confirmed", () => {
+    const refusal = checkoutRefusal(
+      rpcError("SERVICE_UNAVAILABLE", "previous_renewal_cancel_unverified")
+    );
+    expect(refusal.text).not.toContain("Nada foi cobrado");
+    expect(refusal.text).not.toBe(CHECKOUT_UNCONFIRMED);
+    expect(refusal.reread).toBe(true);
   });
 
   it("asks to reread on an unknown reason, with no word about a charge", () => {

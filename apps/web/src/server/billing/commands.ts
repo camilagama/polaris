@@ -4,7 +4,6 @@ import {
   type PreparedSubscription,
   ProviderNotConfiguredError,
   ProviderNotFoundError,
-  ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import type {
   BillingProviderLink,
@@ -73,6 +72,20 @@ class PreviousCheckoutUnverifiedError extends Error {
   constructor(options?: ErrorOptions) {
     super("previous_checkout_unverified", options);
     this.name = "PreviousCheckoutUnverifiedError";
+  }
+}
+
+/**
+ * The provider could not confirm the cancellation of the old subscription's renewal, so the new checkout is not
+ * created. Its own code, apart from `provider_unavailable`: the cancellation may have been made before the answer
+ * was lost, and the client must not tell the owner that nothing was changed.
+ */
+class PreviousRenewalCancelUnverifiedError extends Error {
+  readonly code = "previous_renewal_cancel_unverified";
+
+  constructor(options?: ErrorOptions) {
+    super("previous_renewal_cancel_unverified", options);
+    this.name = "PreviousRenewalCancelUnverifiedError";
   }
 }
 
@@ -236,7 +249,7 @@ async function assertOldCheckoutMadeNoSubscription(
  * renewal the hourly safety net had not cancelled yet would stay alive once the new link clears its memory
  * (`revoked_*`), and charge again with no organization behind it. Only a link a subscription came from
  * (`provider_subscription_id`); a checkout nobody paid is the next check's. The checkout is refused if the provider
- * cannot cancel it (`provider_unavailable`): the swap is never made with the old renewal alive. The rule reads the
+ * cannot cancel it (`previous_renewal_cancel_unverified`): the swap is never made with the old renewal alive. The rule reads the
  * link, not the state: in `trial_setup` too (the card paid at the provider and a fact stored the `sub_`, but the
  * trial's fact not applied yet), the old subscription is cancelled, since once the new link replaces it its trial
  * would run and charge with no organization behind it (ADR 0104, item 1).
@@ -274,7 +287,7 @@ async function cancelOldRenewal(
       oldProvider: link.provider,
     });
     // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
-    throw new ProviderUnavailableError({ cause: error });
+    throw new PreviousRenewalCancelUnverifiedError({ cause: error });
   }
   if (result === "cancelled") {
     // a renewal that was still alive behind a store off Pro: the operator's log, the safety net did not get to it

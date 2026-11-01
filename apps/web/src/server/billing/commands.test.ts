@@ -2509,7 +2509,7 @@ describe("the old link's renewal is cancelled before a new checkout (ADR 0104, P
     expect(store.attachProvider).not.toHaveBeenCalled();
   });
 
-  it("refuses with provider_unavailable, creating nothing, when the provider cannot cancel the old renewal", async () => {
+  it("refuses with previous_renewal_cancel_unverified, creating nothing, when the provider cannot cancel the old renewal", async () => {
     const port = fakePort({
       cancelRenewal: vi.fn(() => Promise.reject(new Error("socket hang up"))),
     });
@@ -2523,8 +2523,11 @@ describe("the old link's renewal is cancelled before a new checkout (ADR 0104, P
       (caught: unknown) => caught
     );
 
-    expect(error).toBeInstanceOf(ProviderUnavailableError);
-    expect(error).toMatchObject({ code: "provider_unavailable" });
+    expect(error).not.toBeInstanceOf(ProviderUnavailableError);
+    expect(error).toMatchObject({
+      code: "previous_renewal_cancel_unverified",
+      name: "PreviousRenewalCancelUnverifiedError",
+    });
     expect(port.prepareSubscription).not.toHaveBeenCalled();
     expect(store.startTrial).not.toHaveBeenCalled();
     expect(store.attachProvider).not.toHaveBeenCalled();

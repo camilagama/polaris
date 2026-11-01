@@ -447,6 +447,31 @@ describe("billing.startCheckout", () => {
     expect(fixture.store.attachProvider).not.toHaveBeenCalled();
   });
 
+  it("answers service unavailable with its own reason when the provider cannot cancel the old renewal", async () => {
+    const fixture = setup({
+      portOverrides: {
+        cancelRenewal: vi.fn(() => Promise.reject(new Error("socket hang up"))),
+      },
+      storeOverrides: {
+        readProviderLink: vi.fn(() =>
+          Promise.resolve({
+            ...unconfirmedLink,
+            providerSubscriptionId: "sub_old0001",
+          })
+        ),
+      },
+    });
+
+    await expect(
+      fixture.client.billing.startCheckout(valid)
+    ).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "previous_renewal_cancel_unverified" },
+    });
+    expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
+    expect(fixture.store.attachProvider).not.toHaveBeenCalled();
+  });
+
   it("answers service unavailable, with no word of the provider, when the provider cannot be reached", async () => {
     const fixture = setup({
       portOverrides: {

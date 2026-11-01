@@ -105,6 +105,7 @@ function pixPayerKeyConfigured(bindings: WorkerBindings): boolean {
 const unavailableReasons: ReadonlyMap<string, string> = new Map([
   ["billing_provider_not_configured", "billing_provider_unavailable"],
   ["previous_checkout_unverified", "previous_checkout_unverified"],
+  ["previous_renewal_cancel_unverified", "previous_renewal_cancel_unverified"],
   ["provider_not_found", "billing_provider_unavailable"],
   ["provider_rejected", "billing_provider_unavailable"],
   ["provider_response_malformed", "billing_provider_unavailable"],
