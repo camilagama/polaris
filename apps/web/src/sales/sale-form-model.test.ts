@@ -525,12 +525,42 @@ describe("exact totals and command body", () => {
         ).message
       ).toBe(genericAdjustmentMessage);
       expect(
-        mapSaleSubmitError({
-          code: "BAD_REQUEST",
-          data: { reason: "invalid_sale_adjustment" },
-        }).message
+        mapSaleSubmitError(
+          {
+            code: "BAD_REQUEST",
+            data: { reason: "invalid_sale_adjustment" },
+          },
+          []
+        ).message
       ).toBe(genericAdjustmentMessage);
     });
+
+    it.each([
+      ["100", false],
+      ["100.00", false],
+      ["100.000000", false],
+      ["100.01", true],
+      ["100.000001", true],
+      ["99.99", false],
+      ["150", true],
+      ["0", false],
+      ["", false],
+      ["abc", false],
+      ["-5", false],
+      ["1e3", false],
+      ["+150", false],
+      ["100.0000001", false],
+      [" 150 ", true],
+    ])(
+      "percentage %j sent and refused: cap message is %s",
+      (percentage, above) => {
+        const failure = mapSaleSubmitError(
+          { code: "BAD_REQUEST", data: { reason: "invalid_sale_adjustment" } },
+          [{ kind: "discount", value: { percentage, type: "percentage" } }]
+        );
+        expect(failure.message === "O percentual vai até 100%.").toBe(above);
+      }
+    );
 
     it("says the cap when the server refuses an adjustment and the sent percentage is above 100", () => {
       const failure = mapSaleSubmitError(
@@ -1220,42 +1250,45 @@ describe("idempotent attempts", () => {
 
 describe("server errors", () => {
   it("maps each oRPC code to a message", () => {
-    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).kind).toBe(
+    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }, []).kind).toBe(
       "unauthorized"
     );
     // the sentence about the session is the notice's, not the red box's
-    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).message).toBe(
+    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }, []).message).toBe(
       "A venda não foi registrada."
     );
-    expect(mapSaleSubmitError({ code: "FORBIDDEN" }).message).toContain(
+    expect(mapSaleSubmitError({ code: "FORBIDDEN" }, []).message).toContain(
       "permissão"
     );
-    expect(mapSaleSubmitError({ code: "BAD_REQUEST" }).kind).toBe(
+    expect(mapSaleSubmitError({ code: "BAD_REQUEST" }, []).kind).toBe(
       "bad_request"
     );
-    const notFound = mapSaleSubmitError({ code: "NOT_FOUND" });
+    const notFound = mapSaleSubmitError({ code: "NOT_FOUND" }, []);
     expect(notFound.kind).toBe("not_found");
     expect(notFound.refreshData).toBe(true);
   });
 
   it("a refusal for lack of the legal acceptance keeps the items and says what is missing", () => {
-    const refused = mapSaleSubmitError({
-      code: "FORBIDDEN",
-      data: { reason: "legal_acceptance_required" },
-      status: 403,
-    });
+    const refused = mapSaleSubmitError(
+      {
+        code: "FORBIDDEN",
+        data: { reason: "legal_acceptance_required" },
+        status: 403,
+      },
+      []
+    );
     expect(refused.kind).toBe("forbidden");
     expect(refused.discardAttempt).toBe(false);
     expect(refused.message).toContain("Termos de Uso");
     expect(refused.message).toContain("Os itens continuam aqui");
     // a plain FORBIDDEN keeps the permission message
-    const plain = mapSaleSubmitError({ code: "FORBIDDEN" });
+    const plain = mapSaleSubmitError({ code: "FORBIDDEN" }, []);
     expect(plain.message).toContain("permissão");
     expect(plain.message).not.toContain("Termos de Uso");
   });
 
   it("explains a conflict generically and asks to refresh data", () => {
-    const conflict = mapSaleSubmitError({ code: "CONFLICT" });
+    const conflict = mapSaleSubmitError({ code: "CONFLICT" }, []);
     expect(conflict.kind).toBe("conflict");
     expect(conflict.message).toBe(
       "A venda não foi registrada: algo mudou (estoque, produto ou perfil de pagamento). Atualize os dados e revise a venda."
@@ -1265,20 +1298,26 @@ describe("server errors", () => {
   });
 
   it("uses the stable data.reason for a specific message", () => {
-    const stock = mapSaleSubmitError({
-      code: "CONFLICT",
-      data: { reason: "insufficient_stock" },
-    });
+    const stock = mapSaleSubmitError(
+      {
+        code: "CONFLICT",
+        data: { reason: "insufficient_stock" },
+      },
+      []
+    );
     expect(stock.message).toBe(
       "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
     );
     expect(stock.refreshData).toBe(true);
     expect(stock.reason).toBe("insufficient_stock");
 
-    const future = mapSaleSubmitError({
-      code: "BAD_REQUEST",
-      data: { reason: "sale_occurred_in_future" },
-    });
+    const future = mapSaleSubmitError(
+      {
+        code: "BAD_REQUEST",
+        data: { reason: "sale_occurred_in_future" },
+      },
+      []
+    );
     expect(future.message).toBe(
       "O horário da venda está adiantado em relação ao servidor. Verifique o relógio do dispositivo."
     );
@@ -1297,9 +1336,9 @@ describe("server errors", () => {
       ["CONFLICT", "payment_profile_lifecycle_conflict"],
       ["NOT_FOUND", "payment_profile_not_found"],
     ] as const;
-    const generic = mapSaleSubmitError({ code: "CONFLICT" }).message;
+    const generic = mapSaleSubmitError({ code: "CONFLICT" }, []).message;
     for (const [code, reason] of refreshing) {
-      const failure = mapSaleSubmitError({ code, data: { reason } });
+      const failure = mapSaleSubmitError({ code, data: { reason } }, []);
       expect(failure.refreshData, reason).toBe(true);
       expect(failure.message, reason).not.toBe(generic);
       expect(failure.unknownOutcome, reason).toBe(false);
@@ -1313,29 +1352,38 @@ describe("server errors", () => {
       "sale_adjustment_limit",
     ] as const;
     for (const reason of validation) {
-      const failure = mapSaleSubmitError({
-        code: "BAD_REQUEST",
-        data: { reason },
-      });
+      const failure = mapSaleSubmitError(
+        {
+          code: "BAD_REQUEST",
+          data: { reason },
+        },
+        []
+      );
       expect(failure.refreshData, reason).toBe(false);
       expect(failure.reason).toBe(reason);
       expect(failure.message, reason).not.toBe(
-        mapSaleSubmitError({ code: "BAD_REQUEST" }).message
+        mapSaleSubmitError({ code: "BAD_REQUEST" }, []).message
       );
     }
     expect(
-      mapSaleSubmitError({
-        code: "CONFLICT",
-        data: { reason: "payment_profile_version_conflict" },
-      }).message
+      mapSaleSubmitError(
+        {
+          code: "CONFLICT",
+          data: { reason: "payment_profile_version_conflict" },
+        },
+        []
+      ).message
     ).toContain("revise a prévia");
   });
 
   it("starts a fresh attempt after a command conflict", () => {
-    const failure = mapSaleSubmitError({
-      code: "CONFLICT",
-      data: { reason: "sale_command_conflict" },
-    });
+    const failure = mapSaleSubmitError(
+      {
+        code: "CONFLICT",
+        data: { reason: "sale_command_conflict" },
+      },
+      []
+    );
     expect(failure.discardAttempt).toBe(true);
     expect(failure.message).toContain("nova tentativa será criada");
     const attempt = {
@@ -1344,50 +1392,60 @@ describe("server errors", () => {
       recordedAt: "r",
       signature: "z",
     };
-    const conflict = failSubmission({
-      code: "CONFLICT",
-      data: { reason: "sale_command_conflict" },
-    });
-    const stock = failSubmission({
-      code: "CONFLICT",
-      data: { reason: "insufficient_stock" },
-    });
+    const conflict = failSubmission(
+      {
+        code: "CONFLICT",
+        data: { reason: "sale_command_conflict" },
+      },
+      []
+    );
+    const stock = failSubmission(
+      {
+        code: "CONFLICT",
+        data: { reason: "insufficient_stock" },
+      },
+      []
+    );
     expect(attemptAfterFailure(conflict, attempt)).toBeNull();
     expect(attemptAfterFailure(stock, attempt)).toBeNull();
   });
 
   it("falls back to the generic per-code message for a missing or unknown reason", () => {
-    const generic = mapSaleSubmitError({ code: "CONFLICT" }).message;
+    const generic = mapSaleSubmitError({ code: "CONFLICT" }, []).message;
     for (const data of [
       { reason: "something_new" },
       undefined,
       { reason: 42 },
     ]) {
-      expect(mapSaleSubmitError({ code: "CONFLICT", data }).message).toBe(
+      expect(mapSaleSubmitError({ code: "CONFLICT", data }, []).message).toBe(
         generic
       );
     }
     expect(
-      mapSaleSubmitError({ code: "BAD_REQUEST", data: { reason: "nope" } }).kind
+      mapSaleSubmitError({ code: "BAD_REQUEST", data: { reason: "nope" } }, [])
+        .kind
     ).toBe("bad_request");
   });
 
   it("ignores a reason on authorization errors", () => {
-    const forbidden = mapSaleSubmitError({
-      code: "FORBIDDEN",
-      data: { reason: "insufficient_stock" },
-    });
+    const forbidden = mapSaleSubmitError(
+      {
+        code: "FORBIDDEN",
+        data: { reason: "insufficient_stock" },
+      },
+      []
+    );
     expect(forbidden.kind).toBe("forbidden");
     expect(forbidden.reason).toBeNull();
   });
 
   it("treats network, 5xx and unknown failures as an unknown outcome", () => {
-    const network = mapSaleSubmitError(new TypeError("Failed to fetch"));
+    const network = mapSaleSubmitError(new TypeError("Failed to fetch"), []);
     expect(network.kind).toBe("network");
     expect(network.message).toContain("não sabemos se a venda foi registrada");
-    const server = mapSaleSubmitError({ code: "SERVICE_UNAVAILABLE" });
+    const server = mapSaleSubmitError({ code: "SERVICE_UNAVAILABLE" }, []);
     expect(server.kind).toBe("server");
-    const unknown = mapSaleSubmitError(new Error("boom"));
+    const unknown = mapSaleSubmitError(new Error("boom"), []);
     expect(unknown.kind).toBe("unknown");
     for (const failure of [network, server, unknown]) {
       expect(failure.unknownOutcome).toBe(true);
@@ -1487,7 +1545,7 @@ describe("submission state", () => {
       { code: "INTERNAL_SERVER_ERROR" },
       new Error("boom"),
     ]) {
-      const state = failSubmission(error);
+      const state = failSubmission(error, []);
       expect(state.phase).toBe("locked");
       expect(isFormLocked(state)).toBe(true);
       expect(submitButtonLabel(state)).toBe("Tentar novamente (seguro)");
@@ -1503,7 +1561,7 @@ describe("submission state", () => {
       { code: "UNAUTHORIZED" },
       { code: "FORBIDDEN" },
     ]) {
-      const state = failSubmission(error);
+      const state = failSubmission(error, []);
       expect(state.phase).toBe("failed");
       expect(isFormLocked(state)).toBe(false);
       expect(submitButtonLabel(state)).toBe("Confirmar venda");
@@ -1516,13 +1574,13 @@ describe("submission state", () => {
     const { draftId } = lineOf(form);
     const edit = (current: SaleFormState) =>
       updateItem(current, draftId, { quantity: "9" });
-    const locked = failSubmission(new TypeError("x"));
+    const locked = failSubmission(new TypeError("x"), []);
     expect(editSaleForm(locked, form, edit)).toBe(form);
     expect(editSaleForm(startSubmission(idleSubmission), form, edit)).toBe(
       form
     );
     expect(lineOf(editSaleForm(idleSubmission, form, edit)).quantity).toBe("9");
-    const rejected = failSubmission({ code: "CONFLICT" });
+    const rejected = failSubmission({ code: "CONFLICT" }, []);
     expect(lineOf(editSaleForm(rejected, form, edit)).quantity).toBe("9");
   });
 
@@ -1542,7 +1600,7 @@ describe("submission state", () => {
     if (!first.ok) {
       throw new Error("expected a prepared request");
     }
-    const locked = failSubmission(new TypeError("x"));
+    const locked = failSubmission(new TypeError("x"), []);
     expect(attemptAfterFailure(locked, first.attempt)).toBe(first.attempt);
     expect(canStartSubmission(locked, evaluate(validForm()))).toBe(true);
     expect(startSubmission(locked)).toEqual({ phase: "submitting" });
@@ -1557,7 +1615,7 @@ describe("submission state", () => {
   });
 
   it("needs an explicit second step to discard a locked sale", () => {
-    const locked = failSubmission({ code: "BAD_GATEWAY" });
+    const locked = failSubmission({ code: "BAD_GATEWAY" }, []);
     expect(discardLockedSale(locked, sequentialIds())).toBeNull();
     const confirming = requestDiscard(locked);
     expect(confirming).toMatchObject({
@@ -1579,7 +1637,7 @@ describe("submission state", () => {
     }
     const now = new Date("2026-05-01T12:00:00.000Z");
     const old = resolveSaleAttempt(null, body, organizationId, ids, now);
-    const confirming = requestDiscard(failSubmission(new TypeError("x")));
+    const confirming = requestDiscard(failSubmission(new TypeError("x"), []));
     const discarded = discardLockedSale(confirming, ids);
     expect(discarded).not.toBeNull();
     if (!discarded) {
@@ -1602,7 +1660,7 @@ describe("submission state", () => {
   });
 
   it("unlocks after a locked retry succeeds and reports a replay", () => {
-    let state: SubmissionState = failSubmission(new TypeError("x"));
+    let state: SubmissionState = failSubmission(new TypeError("x"), []);
     state = startSubmission(state);
     expect(isFormLocked(state)).toBe(true);
     state = confirmSubmission({ ...confirmed, replayed: true });
@@ -1613,7 +1671,9 @@ describe("submission state", () => {
   });
 
   it("locks again if the retry also ends with an unknown outcome", () => {
-    expect(failSubmission({ code: "GATEWAY_TIMEOUT" }).phase).toBe("locked");
+    expect(failSubmission({ code: "GATEWAY_TIMEOUT" }, []).phase).toBe(
+      "locked"
+    );
   });
 
   it("shows the confirmed sale as the server snapshot returned it", () => {
@@ -1850,25 +1910,34 @@ describe("sale date and time", () => {
   });
 
   it("maps a sale too old to a message, without lock, with a fresh attempt", () => {
-    const failure = mapSaleSubmitError({
-      code: "BAD_REQUEST",
-      data: { reason: "sale_occurred_too_old" },
-    });
+    const failure = mapSaleSubmitError(
+      {
+        code: "BAD_REQUEST",
+        data: { reason: "sale_occurred_too_old" },
+      },
+      []
+    );
     expect(failure.message).toContain("limite retroativo de 30 dias");
     expect(failure.message).toContain("mais recente");
     expect(failure.discardAttempt).toBe(true);
     expect(failure.unknownOutcome).toBe(false);
     expect(
-      failSubmission({
-        code: "BAD_REQUEST",
-        data: { reason: "sale_occurred_too_old" },
-      }).phase
+      failSubmission(
+        {
+          code: "BAD_REQUEST",
+          data: { reason: "sale_occurred_too_old" },
+        },
+        []
+      ).phase
     ).toBe("failed");
     expect(
-      mapSaleSubmitError({
-        code: "BAD_REQUEST",
-        data: { reason: "sale_occurred_in_future" },
-      }).message
+      mapSaleSubmitError(
+        {
+          code: "BAD_REQUEST",
+          data: { reason: "sale_occurred_in_future" },
+        },
+        []
+      ).message
     ).toContain("adiantado");
   });
 
@@ -2013,10 +2082,13 @@ describe("the refusal for stock", () => {
     }
     return built;
   };
-  const refused = failSubmission({
-    code: "CONFLICT",
-    data: { reason: "insufficient_stock" },
-  });
+  const refused = failSubmission(
+    {
+      code: "CONFLICT",
+      data: { reason: "insufficient_stock" },
+    },
+    []
+  );
   const stockOf = (quantities: Record<string, number>) =>
     Object.fromEntries(
       Object.entries(quantities).map(([id, quantity]) => [
@@ -2208,7 +2280,7 @@ describe("the refusal for stock", () => {
   });
 
   it("leaves every other failure as it was", () => {
-    const other = failSubmission({ code: "CONFLICT" });
+    const other = failSubmission({ code: "CONFLICT" }, []);
     expect(
       describeStockRefusal(other, {
         canAdjustStock: true,

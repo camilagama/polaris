@@ -61,10 +61,13 @@ const evaluation = {
 
 function renderRefusal(canAdjustStock: boolean): string {
   const submission = describeStockRefusal(
-    failSubmission({
-      code: "CONFLICT",
-      data: { reason: "insufficient_stock" },
-    }),
+    failSubmission(
+      {
+        code: "CONFLICT",
+        data: { reason: "insufficient_stock" },
+      },
+      []
+    ),
     {
       canAdjustStock,
       items: [{ quantity: 2, variantId }],
