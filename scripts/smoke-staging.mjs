@@ -38,7 +38,7 @@ const EXPECTED_AUTH_METHODS = { emailPassword: true, google: true };
 /** The release a Worker declares: the first 12 characters of the commit (`pwa/server-release.ts`). */
 const releaseOf = (commit) => commit.slice(0, 12);
 
-const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 function parsed(body) {
   try {
@@ -94,7 +94,7 @@ export function smokeChecks({ catalog, web }, { release, shell }) {
         return sha256(body) === shell.index || "shell different";
       },
       name: "web / (SPA shell with CSP, equal to the artifact)",
-      readBody: true,
+      readBody: "bytes",
       url: `${web}/`,
     },
     {
@@ -103,7 +103,7 @@ export function smokeChecks({ catalog, web }, { release, shell }) {
           ? sha256(body) === shell.serviceWorker || "service worker different"
           : "not 200",
       name: "web /sw.js (equal to the artifact)",
-      readBody: true,
+      readBody: "bytes",
       url: `${web}/sw.js`,
     },
     {
@@ -112,7 +112,7 @@ export function smokeChecks({ catalog, web }, { release, shell }) {
           ? sha256(body) === shell.index || "shell different"
           : "not 200",
       name: "web /entrar (the shell, equal to the artifact)",
-      readBody: true,
+      readBody: "bytes",
       url: `${web}/entrar`,
     },
     {
@@ -279,13 +279,13 @@ function reasonOf(error) {
 const ALLOWED_HOSTS = new Set(Object.values(STAGING_FIXED_HOST));
 
 /**
- * One request of a check. A POST leaves only for a fixed staging host: whatever builds the list, nothing is ever
- * posted elsewhere.
+ * One request of a check. It leaves only for a fixed staging host: whatever builds the list, nothing is ever sent
+ * (and above all posted) elsewhere.
  */
 export async function send(check, fetchImpl) {
   const method = check.method ?? "GET";
-  if (method !== "GET" && !ALLOWED_HOSTS.has(new URL(check.url).host)) {
-    throw new Error("post_host_refused");
+  if (!ALLOWED_HOSTS.has(new URL(check.url).host)) {
+    throw new Error("host_refused");
   }
   return await fetchImpl(check.url, {
     body: check.body,
@@ -302,6 +302,14 @@ export async function send(check, fetchImpl) {
   });
 }
 
+/** The shell is compared as bytes, as published; the answers of the Worker are read as text. */
+async function bodyOf(check, response) {
+  if (check.readBody === "bytes") {
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  return check.readBody ? await response.text() : "";
+}
+
 /** True when the check passed, otherwise the fixed reason of the failure; never a body or a header value. */
 async function judge(check, response) {
   if (
@@ -310,8 +318,7 @@ async function judge(check, response) {
   ) {
     return "no X-Request-Id";
   }
-  const body = check.readBody ? await response.text() : "";
-  return check.expect(response, body);
+  return check.expect(response, await bodyOf(check, response));
 }
 
 /** A failure of the platform, not of the Worker: Cloudflare's own 503 (CPU exceeded, 1102) has no request id. */
@@ -352,9 +359,7 @@ const wait = () => new Promise((resolve) => setTimeout(resolve, 5000));
 /** The sha256 of the shell files of the web build the deploy published (`apps/web/dist/client`). */
 async function shellOf(buildDir) {
   const [index, serviceWorker] = await Promise.all(
-    ["index.html", "sw.js"].map((file) =>
-      readFile(join(buildDir, file), "utf8")
-    )
+    ["index.html", "sw.js"].map((file) => readFile(join(buildDir, file)))
   );
   return { index: sha256(index), serviceWorker: sha256(serviceWorker) };
 }

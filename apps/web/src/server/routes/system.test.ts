@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { createSystemRoutes, systemRoutes } from "./system";
@@ -9,6 +9,21 @@ const RELEASE = "9b3d37ed5c22";
 const ON: ReleaseSwitch = { RELEASE_HEADER_ENABLED: "true" };
 
 describe("the health check", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("reads the release the build defined, and the switch of the bindings", async () => {
+    vi.stubEnv("POLARIS_SERVER_RELEASE", RELEASE);
+    vi.resetModules();
+    const built = (await import("./system")).systemRoutes;
+    const on = await built.request("/health", {}, ON);
+    expect(on.headers.get("X-Polaris-Release")).toBe(RELEASE);
+    const off = await built.request("/health", {}, {});
+    expect(off.headers.has("X-Polaris-Release")).toBe(false);
+  });
+
   it("declares the release, not cacheable, with the switch on", async () => {
     const response = await createSystemRoutes(RELEASE).request(
       "/health",

@@ -93,7 +93,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: para cada Worker promovido, o SHA lido de volta no host de deploy (versão do Worker ou identificador exposto pelo deploy) é igual ao SHA candidato. A promoção só é dada como feita depois disso.
 - **Decidido (decisão 5):** o SHA é lido do host e comparado com o commit. Cada Worker declara o commit com que foi construído no cabeçalho `X-Polaris-Release` (12 hex; web em `/health`, catálogo em `/robots.txt`), só com `RELEASE_HEADER_ENABLED` igual a `"true"` ([ADR 0098, emenda de 31/10](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)); o shell, servido pelos Static Assets sem o Worker, é comparado byte a byte com o artefato publicado. No staging o smoke faz as duas leituras a cada deploy. Em produção a var fica `"false"` até a primeira execução deste item lá, que decide entre ligá-la ou ler a API de deployments por quem tem o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)).
 - Se o host não expõe o SHA, o item fica como dados insuficientes. Não se presume que o deploy é igual ao candidato.
-- Evidência: o log do passo `Smoke` (release "igual" nas verificações 1 e 12 e shell igual ao artefato) ou a leitura de volta, com o identificador e a data.
+- Evidência: o log do passo `Smoke` (verificações 1 e 12, do release, e 2 a 4, do shell, com `ok`) ou a leitura de volta, com o identificador e a data.
 
 ### 9. Nenhum achado "bloqueia" aberto do revisor (BLOCK)
 

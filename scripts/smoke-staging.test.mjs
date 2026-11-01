@@ -490,7 +490,7 @@ describe("the staging smoke", () => {
     );
   });
 
-  it("never posts to a host outside the fixed staging hosts", async () => {
+  it("never sends a request, above all a POST, to a host outside the fixed staging hosts", async () => {
     const fetchImpl = vi.fn();
     for (const url of [
       "https://evil.example/rpc/system/ping",
@@ -498,7 +498,7 @@ describe("the staging smoke", () => {
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
       await expect(send({ method: "POST", url }, fetchImpl)).rejects.toThrow(
-        "post_host_refused"
+        "host_refused"
       );
       expect(
         await attempt(
@@ -511,6 +511,9 @@ describe("the staging smoke", () => {
         passed: false,
       });
     }
+    await expect(
+      send({ url: "https://evil.example/health" }, fetchImpl)
+    ).rejects.toThrow("host_refused");
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

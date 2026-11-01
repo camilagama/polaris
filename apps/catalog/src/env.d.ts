@@ -23,3 +23,8 @@ declare namespace Cloudflare {
     RELEASE_HEADER_ENABLED?: string;
   }
 }
+
+interface ImportMetaEnv {
+  /** The short SHA the Worker was built from, defined by `apps/web/pwa/server-release.ts` outside the client. */
+  readonly POLARIS_SERVER_RELEASE?: string;
+}

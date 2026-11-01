@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const bindings = vi.hoisted(() => ({}) as { RELEASE_HEADER_ENABLED?: string });
+const bindings = vi.hoisted(
+  () => ({}) as { RELEASE_HEADER_ENABLED?: string | undefined }
+);
 
 vi.mock("cloudflare:workers", () => ({ env: bindings }));
 
@@ -10,6 +12,22 @@ const { secureResponse } = await import("./security");
 const RELEASE = "9b3d37ed5c22";
 
 describe("the robots.txt of the catalog", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    bindings.RELEASE_HEADER_ENABLED = undefined;
+  });
+
+  it("reads the release the build defined and the switch of the Worker's bindings", async () => {
+    vi.stubEnv("POLARIS_SERVER_RELEASE", RELEASE);
+    vi.resetModules();
+    const built = (await import("./robots")).serveRobotsTxt;
+    expect(built().headers.has("X-Polaris-Release")).toBe(false);
+    bindings.RELEASE_HEADER_ENABLED = "true";
+    expect(built().headers.get("X-Polaris-Release")).toBe(RELEASE);
+    bindings.RELEASE_HEADER_ENABLED = "false";
+    expect(built().headers.has("X-Polaris-Release")).toBe(false);
+  });
+
   it("declares the release, not cacheable, with the switch on", async () => {
     const response = robotsTxt(RELEASE, "true");
     expect(await response.text()).toBe("User-agent: *\nAllow: /\n");

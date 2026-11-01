@@ -37,6 +37,10 @@ describe("the release of the Worker's build", () => {
     }
   });
 
+  it("is the key the Workers read (`routes/system.ts` of the web, `server/robots.ts` of the catalog)", () => {
+    expect(SERVER_RELEASE_KEY).toBe("import.meta.env.POLARIS_SERVER_RELEASE");
+  });
+
   it("is defined for every environment but the client", () => {
     const plugin = serverReleasePlugin("9b3d37ed5c22");
     const configEnvironment = plugin.configEnvironment as (
