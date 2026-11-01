@@ -1,5 +1,5 @@
+import { SHORT_SHA } from "@polaris/http-security";
 import type { Plugin } from "vite";
-import { SHORT_SHA } from "./index";
 
 /** What the Worker reads: `import.meta.env.POLARIS_SERVER_RELEASE`, undefined outside a build (tests, dev). */
 export const SERVER_RELEASE_KEY = "import.meta.env.POLARIS_SERVER_RELEASE";
