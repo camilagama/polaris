@@ -710,6 +710,11 @@ function checkProductionBlock(app, production, staging, problems) {
       `${app}: env.production vars.CLIENT_ERRORS_ENABLED must not be "1" (the reports of errors of the browser stay off in production until the item of the release checklist, ADR 0098)`
     );
   }
+  if (production.vars?.RELEASE_HEADER_ENABLED === "true") {
+    problems.push(
+      `${app}: env.production vars.RELEASE_HEADER_ENABLED must not be "true" (the release header is on in staging only until the item 8 of the release checklist, ADR 0098)`
+    );
+  }
   checkProductionHosts(app, production, problems);
   checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();

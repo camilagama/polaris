@@ -345,3 +345,24 @@ export function renderStaticHeadersFile(
   ];
   return lines.join("\n");
 }
+
+/** The header by which a Worker says the commit it was built from (ADR 0098, amended): the staging smoke reads it. */
+export const RELEASE_HEADER = "X-Polaris-Release";
+
+export const SHORT_SHA = /^[0-9a-f]{12}$/;
+
+/**
+ * The headers that declare the release on `/health` of the web and `/robots.txt` of the catalog. Only with the
+ * switch exactly `"true"` (staging; absent or any other value is off) and a release of 12 lowercase hex characters:
+ * otherwise nothing, failing closed. The answer that carries the release is never cached, so what the smoke reads is
+ * what the Worker on the air answered.
+ */
+export function releaseHeaders(
+  release: string,
+  enabled: string | undefined
+): Record<string, string> {
+  if (enabled !== "true" || !SHORT_SHA.test(release)) {
+    return {};
+  }
+  return { "Cache-Control": "no-store", [RELEASE_HEADER]: release };
+}

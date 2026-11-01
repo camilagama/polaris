@@ -158,6 +158,12 @@ export interface WorkerBindings {
   /** The dead-letter queue (ADR 0085). */
   QUEUE_DLQ?: QueueProducerBinding;
   QUEUE_MEDIA?: QueueProducerBinding;
+  /**
+   * Exactly `true` makes `/health` declare the commit the Worker was built from (`X-Polaris-Release`, ADR 0098 amended);
+   * absent or any other value sends no release. Set to `true` only in `env.staging`; the isolation check refuses it in
+   * production.
+   */
+  RELEASE_HEADER_ENABLED?: string;
   RESEND_API_KEY?: string;
   /**
    * `true` makes `http_request_timed` (with `isolate.id`/`seq`) cover every matched `/rpc` procedure and named `/api` route, not

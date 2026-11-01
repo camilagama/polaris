@@ -13,6 +13,10 @@ import {
   clientErrorsBuildDefine,
   sentryBuildSettings,
 } from "./pwa/sentry-build";
+import {
+  serverRelease,
+  serverReleasePlugin,
+} from "@polaris/http-security/server-release";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
@@ -109,6 +113,7 @@ export default defineConfig(({ mode }) => {
       uiPlugins(),
       react(),
       cloudflare(),
+      serverReleasePlugin(serverRelease(viteEnv)),
       appShellHeadersPlugin(sentry.connectSources),
       serviceWorkerPlugin({
         source: fileURLToPath(new URL("./src/pwa/sw.ts", import.meta.url)),

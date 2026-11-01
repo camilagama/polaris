@@ -266,7 +266,9 @@
         // the per-route CPU measure of CPU-1e (ADR 0094, amended 26/10/2026). Staging only; production keeps "false".
         "ROUTE_TIMING_ALL": "true",
         // the reports of errors of the browser: on here to measure the volume against the limit per address
-        "CLIENT_ERRORS_ENABLED": "1"
+        "CLIENT_ERRORS_ENABLED": "1",
+        // /health declares the commit of the Worker (X-Polaris-Release), read by the smoke (ADR 0098, amended)
+        "RELEASE_HEADER_ENABLED": "true"
       },
       // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
       "observability": {
@@ -434,7 +436,9 @@
         // the timing of every route is a staging measure (ADR 0094); the isolation check refuses "true" here
         "ROUTE_TIMING_ALL": "false",
         // off until the item of the go-live checklist (ADR 0098, amended); only "1" turns it on
-        "CLIENT_ERRORS_ENABLED": "0"
+        "CLIENT_ERRORS_ENABLED": "0",
+        // no release header in production until the item 8 of the release checklist; the isolation check refuses "true"
+        "RELEASE_HEADER_ENABLED": "false"
       },
       "observability": {
         "enabled": true,
