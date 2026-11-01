@@ -58,6 +58,7 @@ const gateDatabase =
 
 const runtimeRole = "polaris_pr11_runtime";
 const onboardingRole = "polaris_onboarding_runtime";
+const onboardingOwnerRole = "polaris_onboarding_owner";
 const expectedHost = /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
 const rollbackMessagePattern = /intentional Gate 2 rollback/;
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
@@ -463,9 +464,20 @@ async function main() {
   const runtimeDb = drizzle({ client: runtimeClient }) as unknown as ReturnType<
     typeof createDatabase
   >["db"];
+  const onboardingClient = new Client({
+    connectionString,
+    connectionTimeoutMillis: 5000,
+  });
+  const onboardingDb = drizzle({
+    client: onboardingClient,
+  }) as unknown as ReturnType<typeof createDatabase>["db"];
   const fixtureUsers: string[] = [];
   const fixtureOrganizations: string[] = [];
   let connected = false;
+  let onboardingConnected = false;
+  let releaseOnboardingFixture:
+    | ((failed?: boolean) => Promise<void>)
+    | undefined;
   // the owner's session acts as the tenant runtime, then the onboarding runtime, then the tenant runtime again
   let releaseRole: ((failed?: boolean) => Promise<void>) | undefined;
   let passed = false;
@@ -484,7 +496,16 @@ async function main() {
   }
 
   async function createOrganization(userId: string, name: string) {
-    const result = await createInitialOrganizationInDatabase(adminDb, {
+    // since migration 0095 only the onboarding runtime executes the writer: the owner's session cannot
+    if (!releaseOnboardingFixture) {
+      await onboardingClient.connect();
+      onboardingConnected = true;
+      releaseOnboardingFixture = await becomeGateRole(
+        onboardingClient,
+        onboardingRole
+      );
+    }
+    const result = await createInitialOrganizationInDatabase(onboardingDb, {
       id: randomUUID(),
       name,
       requestId: randomUUID(),
@@ -1059,7 +1080,7 @@ async function main() {
     assert.deepEqual(functionAccess.rows[0], {
       config: ["search_path=pg_catalog, pg_temp"],
       onboardingCanExecute: true,
-      owner: ownerName,
+      owner: onboardingOwnerRole,
       publicCanExecute: false,
       runtimeCanExecute: false,
       securityDefiner: true,
@@ -2804,6 +2825,13 @@ async function main() {
         cleanupErrors.push(error);
       }
     }
+    if (onboardingConnected && releaseOnboardingFixture) {
+      try {
+        await releaseOnboardingFixture();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
     const organizationCleanup = await Promise.allSettled(
       fixtureOrganizations.map((organizationId) =>
         deleteOrganizationsWithAudit(adminPool, [organizationId])
@@ -2826,6 +2854,7 @@ async function main() {
     }
     await Promise.allSettled([
       connected ? runtimeClient.end() : Promise.resolve(),
+      onboardingConnected ? onboardingClient.end() : Promise.resolve(),
       adminPool.end(),
     ]);
     if (cleanupErrors.length > 0) {
