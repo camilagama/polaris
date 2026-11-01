@@ -13,6 +13,7 @@ import {
   type UnresolvedBillingEvent,
   WebhookMalformedError,
   WebhookRejectedError,
+  retryRefusalReason,
   withinRetryWindow,
 } from "../billing/provider-adapter";
 import type { ServerEnv } from "../environment";
@@ -134,6 +135,9 @@ function answerUnresolved(
     } else {
       logger.error("billing_webhook_unresolved_given_up", {
         ...ids,
+        ...(entry.occurredAtClamped
+          ? {}
+          : { reason: retryRefusalReason(entry.occurredAt) }),
         requestId: context.get("requestId"),
       });
     }

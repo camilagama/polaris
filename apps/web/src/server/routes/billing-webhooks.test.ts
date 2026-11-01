@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type BillingProviderAdapter,
   type ParsedBillingEvent,
+  type UnresolvedBillingEvent,
   WebhookMalformedError,
   WebhookRejectedError,
 } from "../billing/provider-adapter";
@@ -95,6 +96,7 @@ function fakeStore(
 
 function setup(
   options: {
+    adapter?: BillingProviderAdapter;
     bindings?: Record<string, unknown>;
     store?: ReturnType<typeof fakeStore>;
   } = {}
@@ -107,7 +109,7 @@ function setup(
   app.route(
     "/",
     createBillingWebhookRoutes({
-      adapters: { fake: fakeAdapter() },
+      adapters: { fake: options.adapter ?? fakeAdapter() },
       createStore,
       runInBackground: (promise) => {
         background.push(promise);
@@ -550,4 +552,54 @@ describe("the webhook path in the server app", () => {
       )
     ).toBe(true);
   });
+});
+
+describe("an unresolved event is held for a retry only while its date is recent", () => {
+  const minute = 60_000;
+  const unresolvedAdapter = (eventDate: Date): BillingProviderAdapter => ({
+    parse: () => [
+      {
+        eventType: "PAYMENT_CONFIRMED",
+        kind: "unresolved",
+        occurredAt: eventDate,
+        providerEventId: "evt-unresolved",
+        resourceId: "pay_1",
+      } satisfies UnresolvedBillingEvent,
+    ],
+    provider: "fake",
+  });
+  const send = (offsetMs: number) => {
+    const t = setup({
+      adapter: unresolvedAdapter(new Date(Date.now() + offsetMs)),
+    });
+    return t.send("/webhooks/billing/fake", { headers: signed });
+  };
+
+  it("refuses with a 503 for a date a little ahead or a little behind", async () => {
+    expect((await send(2 * minute)).status).toBe(503);
+    expect((await send(-10 * minute)).status).toBe(503);
+  });
+
+  it.each([
+    ["more than 5 minutes ahead", 6 * minute, "future"],
+    ["more than 30 minutes behind", -31 * minute, "stale"],
+  ])(
+    "acknowledges a date %s and logs the reason with IDs only",
+    async (_name, offsetMs, reason) => {
+      const errorLog = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+      const response = await send(offsetMs);
+      expect(response.status).toBe(200);
+      expect(errorLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "billing_webhook_unresolved_given_up",
+          providerEventId: "evt-unresolved",
+          reason,
+          resourceId: "pay_1",
+        })
+      );
+      errorLog.mockRestore();
+    }
+  );
 });
