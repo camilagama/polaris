@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ATTEMPTS,
   checkWorker,
+  PAUSE_MS,
   runWrangler,
   STAGING_WORKERS,
   verifyDeployedSha,
@@ -337,10 +338,9 @@ wait
   });
 
   it("keeps the worst case of the whole check at about 260 s, as the runbook says", () => {
-    const pauseMs = 5000;
     const callsPerTry = 2;
     const perWorker =
-      ATTEMPTS * callsPerTry * WRANGLER_TIMEOUT_MS + (ATTEMPTS - 1) * pauseMs;
+      ATTEMPTS * callsPerTry * WRANGLER_TIMEOUT_MS + (ATTEMPTS - 1) * PAUSE_MS;
     expect(WRANGLER_TIMEOUT_MS).toBe(20_000);
     expect(STAGING_WORKERS.length * perWorker).toBe(260_000);
   });
