@@ -4,7 +4,7 @@ Um teste que lê o relógio real passa hoje e quebra no dia 1 do mês, depois da
 
 ## Varredura local, fora do CI
 
-`bun run --cwd apps/web test:web:datas` roda a suíte vitest do `apps/web` em 4 instantes, cada um com `TZ=America/Sao_Paulo` e com `TZ=UTC` (8 rodadas, cerca de 7 a 9 min cada nesta máquina):
+`bun run --cwd apps/web test:web:datas` roda a suíte vitest do `apps/web` em 4 instantes, cada um com `TZ=America/Sao_Paulo` e com `TZ=UTC` (8 rodadas de mais de 7 min cada; o script inteiro passa de 1 h, então rode uma combinação por vez com `--instante` e `--tz` se o seu terminal limita o tempo do comando):
 
 | Instante | Valor (UTC) | Em São Paulo |
 | --- | --- | --- |
@@ -15,5 +15,5 @@ Um teste que lê o relógio real passa hoje e quebra no dia 1 do mês, depois da
 
 - `--instante <nome>` e `--tz <fuso>` rodam uma só combinação; o que vem depois de `--` vai ao vitest (`-- apps/web/src/server/auth.test.ts`).
 - Por baixo, `apps/web/vitest.clock.config.ts` carrega `apps/web/vitest.clock.setup.ts`, que lê `POLARIS_TEST_NOW` (ISO 8601 com fuso) e congela só o `Date`. O relógio fica parado: para medir duração, o teste usa `performance.now()`, nunca `Date.now()`.
-- O teste que fixa o próprio relógio manda no dele, e o do setup volta antes do teste seguinte. Sem a variável, nada muda, e o `vitest.config.ts` da raiz (e o CI) não carrega o setup.
+- O teste que fixa o próprio relógio manda no dele, e o do setup volta antes do teste seguinte. Sem a variável, nada muda, e o `vitest.config.ts` da raiz (e o CI) não carrega o setup: no CI só roda 1 dos 5 testes de `vitest.clock.setup.test.ts` (o resto é pulado de propósito, e prova o setup só na varredura local). O mesmo arquivo confere que o `exclude` e o alias da config da varredura são os do projeto `node` da raiz.
 - Com a CPU carregada, teste que estoura os 5 s do vitest pode falhar sem relação com a data: rode o arquivo sozinho no mesmo instante antes de culpar o relógio.
