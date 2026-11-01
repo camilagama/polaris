@@ -6,8 +6,9 @@ import { expect, test } from "@playwright/test";
  * What the date pickers tell a screen reader, read from the accessibility tree of the gallery (roles, states and
  * accessible names, never classes). The names of the buttons and the error tied to the button are in
  * ui-date-pickers.e2e.ts; here: the button announces a dialog and its open state, opening moves the focus inside,
- * Escape closes and gives it back, the chosen day and today are announced, and the two ends of a period are told
- * apart. "Hoje" is `24/10/2026` in the gallery.
+ * Escape closes and gives it back, the chosen day and today are announced, and the days of a period are checked
+ * as selected (its two ends differ only by their date and by "Hoje," on today; nothing says which is the start and
+ * which is the end). "Hoje" is `24/10/2026` in the gallery.
  */
 const SELECTED = /, selecionado$/;
 const TODAY_PREFIX = /^Hoje, /;
@@ -134,7 +135,7 @@ test.describe("DatePicker, o dia no calendário", () => {
 });
 
 test.describe("DateRangePicker, os dias do período", () => {
-  test("início e fim têm nomes distintos, e o dia de hoje diz Hoje", async ({
+  test("os dias do período são selecionados, e só a data e o Hoje diferenciam os nomes das pontas", async ({
     page,
   }) => {
     await openGallery(page);
