@@ -10,14 +10,14 @@ import { DOC_PATHS_LIST } from "./verify-doc-paths.list.mjs";
  * named the old file. This check reads every Markdown file of the repository and resolves each
  * repository path it names: a path between backticks that starts with a top folder (`apps/`,
  * `packages/`, `scripts/`, `docs/`, `doc/`, `design/`, `.claude/`, `.github/`) and the target of
- * a relative Markdown link. A path counts as found when it exists from the repository root, from
- * the folder of the document or from a workspace (`apps/*`, `packages/*`), because runbooks name
- * `scripts/x.ts` meaning the one of the app they talk about.
+ * a relative Markdown link. A link resolves from the folder of the document, as on GitHub; a path in
+ * backticks counts as found from the repository root, the folder of the document or a workspace
+ * (`apps/*`, `packages/*`), because runbooks name `scripts/x.ts` meaning the one of the app they talk about.
  *
  * Not checked: build output and local state (`dist`, `.wrangler`, `test-results`, reports,
  * `.dev.vars` and the like), paths with a placeholder (`*`, `<id>`, `{a,b}`, `$VAR`), and names of
- * functions or types, which no file system can confirm. The main branch already has missing paths,
- * so `verify-doc-paths.list.mjs` keeps the exact count per document and target.
+ * functions or types, which no file system can confirm. Missing paths that exist before the rule stay
+ * in `verify-doc-paths.list.mjs` with their exact count per document and target.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -33,6 +33,7 @@ const placeholder = /[*<>{}$|]|\.\.\.|…/;
 const NOT_IN_GIT = new Set([
   ".dev.vars",
   ".e2e-state",
+  ".lighthouseci",
   ".wrangler",
   "coverage",
   "dist",
@@ -51,24 +52,29 @@ export const ADVICE =
   "ou diga o que o substituiu (`rg -n '<nome antigo>' DESIGN.md AGENTS.md doc docs .claude` acha as outras).";
 
 /** The repository paths a Markdown text names, as written (line and anchor suffixes dropped). */
+const clean = (name) =>
+  name.replace(lineSuffix, "").replace(trailingPunctuation, "");
+const checkable = (name) =>
+  name !== "" &&
+  !placeholder.test(name) &&
+  !name.split("/").some((part) => NOT_IN_GIT.has(part));
+
+/**
+ * The repository paths a Markdown text names, as written (line and anchor suffixes dropped): `code`
+ * for a path between backticks, `link` for the target of a relative link.
+ */
 export function namedPaths(markdown) {
-  const named = [];
-  for (const match of markdown.matchAll(backtickPath)) {
-    named.push(match[1]);
-  }
-  for (const match of markdown.matchAll(markdownLink)) {
-    named.push(match[1]);
-  }
-  return named
-    .map((name) =>
-      name.replace(lineSuffix, "").replace(trailingPunctuation, "")
-    )
-    .filter(
-      (name) =>
-        name !== "" &&
-        !placeholder.test(name) &&
-        !name.split("/").some((part) => NOT_IN_GIT.has(part))
-    );
+  const named = [
+    ...[...markdown.matchAll(backtickPath)].map((match) => ({
+      kind: "code",
+      name: clean(match[1]),
+    })),
+    ...[...markdown.matchAll(markdownLink)].map((match) => ({
+      kind: "link",
+      name: clean(match[1]),
+    })),
+  ];
+  return named.filter(({ name }) => checkable(name));
 }
 
 /** The workspace folders (`apps/*`, `packages/*`) of the repository. */
@@ -82,10 +88,14 @@ export function workspaceFolders(base) {
   );
 }
 
-/** Whether `name`, named in `document`, exists from the root, the document's folder or a workspace. */
-export function resolves(base, document, name, workspaces) {
+/**
+ * Whether a path named in `document` exists. A link resolves from the document's folder only, as on
+ * GitHub; a path in backticks from the root, the document's folder or a workspace.
+ */
+export function resolves(base, document, { kind, name }, workspaces) {
   const decoded = decodeURIComponent(name);
-  const bases = [".", path.posix.dirname(document), ...workspaces];
+  const folder = path.posix.dirname(document);
+  const bases = kind === "link" ? [folder] : [".", folder, ...workspaces];
   return bases.some((from) => existsSync(path.join(base, from, decoded)));
 }
 
@@ -94,9 +104,9 @@ export function missingPaths(base = root) {
   const found = {};
   for (const document of walkFiles(base, (file) => file.endsWith(".md"))) {
     const markdown = readFileSync(path.join(base, document), "utf8");
-    for (const name of namedPaths(markdown)) {
-      if (!resolves(base, document, name, workspaces)) {
-        const key = `${document} → ${name}`;
+    for (const named of namedPaths(markdown)) {
+      if (!resolves(base, document, named, workspaces)) {
+        const key = `${document} → ${named.name}`;
         found[key] = (found[key] ?? 0) + 1;
       }
     }

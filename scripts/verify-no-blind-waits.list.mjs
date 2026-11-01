@@ -1,6 +1,6 @@
 /**
  * The blind waits each Playwright file is allowed (`verify-no-blind-waits.mjs`). The entries below were in
- * the main branch when the check started; each keeps its exact count, so the list only goes down. A new
+ * the tree before the rule; each keeps its exact count, so the list only goes down. A new
  * entry says why the fixed time is the behaviour under test (for example, the latency of a simulated answer).
  */
 const BEFORE_THE_RULE =

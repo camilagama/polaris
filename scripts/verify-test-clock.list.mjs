@@ -1,6 +1,6 @@
 /**
  * The reads of the wall clock each test file is allowed (`verify-test-clock.mjs`). The entries below were in
- * the main branch when the check started; each keeps its exact count, so the list only goes down. A new
+ * the tree before the rule; each keeps its exact count, so the list only goes down. A new
  * entry says why the real clock is what the test needs (for example, a test of the clock setup itself).
  */
 const BEFORE_THE_RULE =
@@ -12,11 +12,13 @@ export const TEST_CLOCK_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/sale-draft.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
+  "apps/web/e2e-pwa/support.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
   "apps/web/e2e-pwa/update.e2e.ts": { count: 1, reason: BEFORE_THE_RULE },
+  "apps/web/e2e-real/global-setup.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-real/harness/relogio.e2e.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
@@ -81,14 +83,6 @@ export const TEST_CLOCK_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/server/billing/asaas-adapter.test.ts": {
-    count: 3,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/billing/owner-commands.test.ts": {
-    count: 1,
-    reason: BEFORE_THE_RULE,
-  },
-  "apps/web/src/server/billing/woovi-adapter.test.ts": {
     count: 2,
     reason: BEFORE_THE_RULE,
   },
@@ -97,7 +91,7 @@ export const TEST_CLOCK_LIST = {
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/server/rpc/billing-router.test.ts": {
-    count: 2,
+    count: 1,
     reason: BEFORE_THE_RULE,
   },
   "apps/web/src/server/rpc/data-export-router.test.ts": {

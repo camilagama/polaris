@@ -34,7 +34,11 @@ export function overrideKeys(packageJson) {
       keys.push(keyOf(name, value));
     } else {
       for (const [child, version] of Object.entries(value)) {
-        keys.push(keyOf(child, String(version), name));
+        keys.push(
+          typeof version === "string"
+            ? keyOf(child, version, name)
+            : `${child} em mais de um nível sob ${name}`
+        );
       }
     }
   }
@@ -137,14 +141,20 @@ const isWorkspacePackage = (relative) =>
 
 export function checkRepository(base = root) {
   const read = (relative) => readFileSync(path.join(base, relative), "utf8");
+  const parse = (relative) => {
+    try {
+      return JSON.parse(read(relative));
+    } catch (error) {
+      throw new Error(`${relative}: JSON inválido (${error.message})`, {
+        cause: error,
+      });
+    }
+  };
   return overrideProblems({
-    rootPackage: JSON.parse(read("package.json")),
+    rootPackage: parse("package.json"),
     runbook: read(RUNBOOK),
     workspacePackages: Object.fromEntries(
-      walkFiles(base, isWorkspacePackage).map((file) => [
-        file,
-        JSON.parse(read(file)),
-      ])
+      walkFiles(base, isWorkspacePackage).map((file) => [file, parse(file)])
     ),
   });
 }

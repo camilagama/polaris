@@ -36,6 +36,14 @@ describe("overrideKeys", () => {
   });
 });
 
+describe("overrideKeys with more than one level", () => {
+  it("names the deep override so it can never match a row", () => {
+    expect(overrideKeys({ overrides: { a: { b: { c: "1.0.0" } } } })).toEqual([
+      "b em mais de um nível sob a",
+    ]);
+  });
+});
+
 describe("documentedOverrides", () => {
   it("reads only the rows of the section", () => {
     expect([...documentedOverrides(TABLE).rows.keys()]).toEqual([

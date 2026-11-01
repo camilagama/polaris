@@ -16,7 +16,12 @@ describe("namedPaths", () => {
       namedPaths(
         "Veja `apps/web/src/a.ts:12-20`, `docs/x.md#seção`, [b](../b.md) e `scripts/c.mjs`."
       )
-    ).toEqual(["apps/web/src/a.ts", "docs/x.md", "scripts/c.mjs", "../b.md"]);
+    ).toEqual([
+      { kind: "code", name: "apps/web/src/a.ts" },
+      { kind: "code", name: "docs/x.md" },
+      { kind: "code", name: "scripts/c.mjs" },
+      { kind: "link", name: "../b.md" },
+    ]);
   });
 
   it.each([
@@ -24,6 +29,7 @@ describe("namedPaths", () => {
     "`apps/web/.wrangler/state`",
     "`apps/web/test-results/e2e-real/`",
     "`apps/web/.dev.vars`",
+    "`apps/web/.lighthouseci/`",
     "`packages/domain/reports/`",
     "`apps/web/src/**/*.tsx`",
     "`docs/adr/0NNN-<nome>.md`",
@@ -45,7 +51,7 @@ describe("missingPaths", () => {
     "apps/web/src/a.ts": "",
     "DESIGN.md": "`apps/web/src/velho.ts` e `apps/web/src/velho.ts:3`\n",
     "docs/runbooks/x.md":
-      "`apps/web/src/a.ts`, `scripts/serve.mjs` (do app), [y](y.md), [z](../../docs/runbooks/y.md)\n",
+      "`apps/web/src/a.ts`, `scripts/serve.mjs` (do app), [y](y.md), [z](../../docs/runbooks/y.md), [w](docs/runbooks/y.md)\n",
     "docs/runbooks/y.md": "",
   };
 
@@ -62,16 +68,17 @@ describe("missingPaths", () => {
     }
   };
 
-  it("resolves from the root, the document folder and a workspace, and counts what is missing", () => {
+  it("resolves a code path from the root, the document folder or a workspace, and a link only from the document folder", () => {
     expect(withTree(missingPaths)).toEqual({
       "DESIGN.md → apps/web/src/velho.ts": 2,
+      "docs/runbooks/x.md → docs/runbooks/y.md": 1,
     });
   });
 
   it("refuses a document that still names a deleted file and says how to find the others", () => {
-    expect(withTree((base) => checkRepository(base, {}))).toEqual([
-      `DESIGN.md → apps/web/src/velho.ts: 2 referência(s) a um caminho que não existe no repositório. ${ADVICE}`,
-    ]);
+    expect(withTree((base) => checkRepository(base, {}))[0]).toBe(
+      `DESIGN.md → apps/web/src/velho.ts: 2 referência(s) a um caminho que não existe no repositório. ${ADVICE}`
+    );
     expect(ADVICE).toContain("rg -n");
   });
 });

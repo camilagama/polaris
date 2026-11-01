@@ -15,17 +15,18 @@ import { stripComments } from "./verify-no-history-comments.mjs";
  * Counted, after comments are dropped, in every file of a folder whose name starts with `e2e` and in
  * every `*.e2e.ts`: `.waitForTimeout(`, a `new Promise` resolved by `setTimeout`, and an import of
  * `node:timers/promises`. Not caught: a sleep inside a helper imported from outside those folders,
- * `setTimeout` reached through a variable, a busy loop on `Date.now()`.
+ * `setTimeout` reached through a variable, `page["waitForTimeout"]`, a busy loop on `Date.now()`.
  *
- * The main branch already has these waits, so the list in `verify-no-blind-waits.list.mjs` keeps the
- * exact count per file; only a change that adds one fails. Simulating a slow answer inside a
+ * Waits that exist before the rule stay in `verify-no-blind-waits.list.mjs` with their exact count per
+ * file, so only a change that adds one fails. Simulating a slow answer inside a
  * `page.route` handler is a legitimate use: it goes into the list with its reason.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const BLIND_WAITS = [
   /\.\s*waitForTimeout\s*\(/g,
-  /\bnew\s+Promise\s*(?:<[^>]*>)?\s*\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*\{?\s*(?:(?:globalThis|window|self)\s*\.\s*)?setTimeout\s*\(/g,
+  /\bnew\s+Promise\s*(?:<[^>]*>)?\s*\(\s*(?:\([^)]*\)|\w+)\s*=>\s*\{?\s*(?:(?:globalThis|window|self)\s*\.\s*)?setTimeout\s*\(/g,
+  /\bnew\s+Promise\s*(?:<[^>]*>)?\s*\(\s*function\b[^{]*\{\s*(?:(?:globalThis|window|self)\s*\.\s*)?setTimeout\s*\(/g,
   /\bfrom\s*["']node:timers\/promises["']|\brequire\s*\(\s*["']node:timers\/promises["']\s*\)/g,
 ];
 

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BLIND_WAITS_LIST } from "./verify-no-blind-waits.list.mjs";
 import {
@@ -16,6 +19,8 @@ describe("what counts as a blind wait", () => {
     ["await new Promise(r => setTimeout(r, 40));", 1],
     ["await new Promise<void>((done) => { setTimeout(done, 10); });", 1],
     ["await new Promise((r) => globalThis.setTimeout(r, 10));", 1],
+    ["await new Promise((resolve, reject) => setTimeout(resolve, 10));", 1],
+    ["await new Promise(function (r) { setTimeout(r, 10); });", 1],
     ['import { setTimeout as sleep } from "node:timers/promises";', 1],
     ['const { setTimeout } = require("node:timers/promises");', 1],
   ])("counts %s", (source, count) => {
@@ -70,6 +75,27 @@ describe("the list", () => {
         { "apps/web/e2e/old.e2e.ts": { count: 1, reason: "r" } }
       )
     ).toHaveLength(1);
+  });
+
+  it("walks a planted tree: Playwright code counts, unit tests and build output do not", () => {
+    const base = mkdtempSync(path.join(tmpdir(), "blind-waits-"));
+    try {
+      for (const file of [
+        "apps/web/e2e-pwa/helper.ts",
+        "apps/web/e2e/a.e2e.ts",
+        "apps/web/src/a.test.ts",
+        "apps/web/e2e/test-results/b.e2e.ts",
+        "apps/web/node_modules/e2e/c.ts",
+      ]) {
+        mkdirSync(path.dirname(path.join(base, file)), { recursive: true });
+        writeFileSync(path.join(base, file), sleep);
+      }
+      expect(
+        checkRepository(base, {}).map((problem) => problem.split(":")[0])
+      ).toEqual(["apps/web/e2e-pwa/helper.ts", "apps/web/e2e/a.e2e.ts"]);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 
   it("is exact for the repository: every entry matches the tree", () => {
