@@ -349,7 +349,7 @@ export function renderStaticHeadersFile(
 /** The header by which a Worker says the commit it was built from (ADR 0098, amended): the staging smoke reads it. */
 export const RELEASE_HEADER = "X-Polaris-Release";
 
-const SHORT_SHA = /^[0-9a-f]{12}$/;
+export const SHORT_SHA = /^[0-9a-f]{12}$/;
 
 /**
  * The headers that declare the release on `/health` of the web and `/robots.txt` of the catalog. Only with the

@@ -1,6 +1,5 @@
 import type { Plugin } from "vite";
-
-const SHORT_SHA = /^[0-9a-f]{12}$/;
+import { SHORT_SHA } from "./index";
 
 /** What the Worker reads: `import.meta.env.POLARIS_SERVER_RELEASE`, undefined outside a build (tests, dev). */
 export const SERVER_RELEASE_KEY = "import.meta.env.POLARIS_SERVER_RELEASE";

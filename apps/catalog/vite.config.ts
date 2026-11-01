@@ -10,7 +10,10 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
-import { serverRelease, serverReleasePlugin } from "../web/pwa/server-release";
+import {
+  serverRelease,
+  serverReleasePlugin,
+} from "@polaris/http-security/server-release";
 
 // "bare-entry" exists only for the browser tests: a Worker whose main skips src/server.ts, the
 // misconfiguration the router must refuse (catalog_nonce_missing). It is never deployed, so it

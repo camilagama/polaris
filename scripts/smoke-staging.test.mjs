@@ -67,6 +67,14 @@ const fromWorker = (status, headers = {}, body = null) =>
 
 const json = (value) => JSON.stringify(value);
 
+/** What the origin check of the Worker answers (`middleware/origin-check.ts`). */
+const forbidden = (code = "forbidden") =>
+  fromWorker(
+    403,
+    { "content-type": "application/json" },
+    json({ error: { code }, requestId: REQUEST_ID })
+  );
+
 /** The input schema of a procedure of the contract decides between 400 (invalid body) and 401 (no session). */
 function anonymousCall(procedure, init) {
   const schema = procedure["~orpc"].inputSchema;
@@ -108,7 +116,7 @@ function stagingAnswer(url, init = {}) {
     case `${origins.web}/rpc/system/ping`:
       return origin === origins.web
         ? fromWorker(200, {}, json({ json: { message: "pong" } }))
-        : fromWorker(403);
+        : forbidden();
     case `${origins.web}/rpc/organization/listMine`:
       return anonymousCall(polarisContract.organization.listMine, init);
     case `${origins.web}/rpc/organization/createInitial`:
@@ -304,13 +312,49 @@ describe("the staging smoke", () => {
     ]);
   });
 
+  it.each([
+    ["another code", () => forbidden("tenant_access_denied")],
+    ["no body", () => fromWorker(403)],
+    ["an html body", () => fromWorker(403, {}, "<html>forbidden</html>")],
+  ])(
+    "fails when the refusal is a 403 with %s, and never logs the body",
+    async (_name, refusal) => {
+      const lines = [];
+      const log = vi.spyOn(console, "log").mockImplementation((line) => {
+        lines.push(String(line));
+      });
+      try {
+        const failures = await runSmoke(
+          origins,
+          options,
+          fakeStaging({
+            [`${origins.web}/rpc/system/ping`]: (init) =>
+              new Headers(init.headers).get("origin") === origins.web
+                ? fromWorker(200, {}, json({ json: { message: "pong" } }))
+                : refusal(),
+          }),
+          noPause
+        );
+        expect(failures).toEqual([
+          "web POST /rpc/system/ping without Origin (refused): 403 403 not forbidden",
+          "web POST /rpc/system/ping from a strange origin (refused): 403 403 not forbidden",
+          "web POST /rpc/system/ping with Origin null (refused): 403 403 not forbidden",
+        ]);
+        expect(lines.join("\n")).not.toContain("tenant_access_denied");
+        expect(lines.join("\n")).not.toContain("<html>");
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
+
   it("fails when a strange origin is answered 200 while the others are refused", async () => {
     const fetchImpl = fakeStaging({
       [`${origins.web}/rpc/system/ping`]: (init) => {
         const origin = new Headers(init.headers).get("origin");
         return origin === origins.web || origin === STRANGE_ORIGIN
           ? fromWorker(200, {}, json({ json: { message: "pong" } }))
-          : fromWorker(403);
+          : forbidden();
       },
     });
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
@@ -323,7 +367,7 @@ describe("the staging smoke", () => {
       [`${origins.web}/rpc/system/ping`]: (init) =>
         new Headers(init.headers).get("origin") === origins.web
           ? fromWorker(200, {}, "<html>portal</html>")
-          : fromWorker(403),
+          : forbidden(),
     });
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
       "web POST /rpc/system/ping (the oRPC handler answers): 200 not pong",

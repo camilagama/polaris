@@ -35,7 +35,7 @@ export const CREATE_INITIAL_INPUT = {
 /** What `/api/auth-methods` must say in staging: the Google and the password sign-in, with the Turnstile key. */
 const EXPECTED_AUTH_METHODS = { emailPassword: true, google: true };
 
-/** The release a Worker declares: the first 12 characters of the commit (`pwa/server-release.ts`). */
+/** The release a Worker declares: the first 12 characters of the commit (`packages/http-security/src/server-release.ts`). */
 const releaseOf = (commit) => commit.slice(0, 12);
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -58,6 +58,14 @@ function releaseReason(response, release) {
 
 const status = (expected) => (response) =>
   response.status === expected || `not ${expected}`;
+
+/** The origin check refuses with 403 and `error.code === "forbidden"`; any other 403 is not that refusal. */
+const refusedByOrigin = (response, body) => {
+  if (response.status !== 403) {
+    return "not 403";
+  }
+  return parsed(body)?.error?.code === "forbidden" || "403 not forbidden";
+};
 
 const rpc = (body) => ({
   body: JSON.stringify(body),
@@ -147,24 +155,27 @@ export function smokeChecks({ catalog, web }, { release, shell }) {
     },
     {
       ...rpc({}),
-      expect: status(403),
+      expect: refusedByOrigin,
       name: "web POST /rpc/system/ping without Origin (refused)",
+      readBody: true,
       url: `${web}/rpc/system/ping`,
       worker: true,
     },
     {
       ...rpc({}),
-      expect: status(403),
+      expect: refusedByOrigin,
       headers: { origin: STRANGE_ORIGIN },
       name: "web POST /rpc/system/ping from a strange origin (refused)",
+      readBody: true,
       url: `${web}/rpc/system/ping`,
       worker: true,
     },
     {
       ...rpc({}),
-      expect: status(403),
+      expect: refusedByOrigin,
       headers: { origin: "null" },
       name: "web POST /rpc/system/ping with Origin null (refused)",
+      readBody: true,
       url: `${web}/rpc/system/ping`,
       worker: true,
     },

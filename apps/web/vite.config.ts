@@ -13,7 +13,10 @@ import {
   clientErrorsBuildDefine,
   sentryBuildSettings,
 } from "./pwa/sentry-build";
-import { serverRelease, serverReleasePlugin } from "./pwa/server-release";
+import {
+  serverRelease,
+  serverReleasePlugin,
+} from "@polaris/http-security/server-release";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
