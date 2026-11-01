@@ -36,7 +36,10 @@ import {
   TenantAuthorizationError,
   type TenantRequestTransaction,
 } from "../src/tenant-transaction";
-import { isClosedExportPolicyQual } from "./closed-export-policy-qual";
+import {
+  isClosedExportPolicyQual,
+  readClosedExportPolicies,
+} from "./closed-export-policy-qual";
 import { runClock, storeDay } from "./gate-clock";
 import {
   replaceFunctionAsOwner,
@@ -1338,9 +1341,9 @@ async function run() {
       ],
       "only the privacy runtime may become the reader (SET, never INHERIT), and the reader is a member of nothing"
     );
-    const policies = await ownerQuery<{ qual: string; tablename: string }>(
-      "SELECT tablename, qual, cmd FROM pg_policies WHERE $1 = ANY (roles) ORDER BY tablename",
-      [CLOSED_EXPORT_READER_ROLE]
+    const policies = await readClosedExportPolicies(
+      owner.pool,
+      CLOSED_EXPORT_READER_ROLE
     );
     assert.deepEqual(
       policies.map((policy) => policy.tablename),
@@ -1352,7 +1355,7 @@ async function run() {
         isClosedExportPolicyQual(policy.tablename, policy.qual),
         `${policy.tablename}: by the scope and nothing else, got ${policy.qual}`
       );
-      assert.equal((policy as unknown as { cmd: string }).cmd, "SELECT");
+      assert.equal(policy.cmd, "SELECT");
     }
     tests.push(
       "the reader holds SELECT on exactly the columns of EXPORT_DATASETS minus omit (has_column_privilege on every column of every table), no INSERT, UPDATE, REFERENCES, DELETE, TRUNCATE, TRIGGER or MAINTAIN and no sequence anywhere; authentication, billing, memberships, sessions, offline grants, devices, sync, the exports themselves, the closure, the purge and the audits are out of reach; it executes only its scope; it is NOLOGIN, NOINHERIT, NOBYPASSRLS, without TEMPORARY or CREATE; only the privacy runtime may become it (SET, not INHERIT) and it is a member of nothing; its policies are one SELECT per exported table, each with the whole qual equal to the scope as a subquery and nothing else (no OR, AND or other column)"
