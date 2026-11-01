@@ -80,8 +80,13 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 6. Smoke test definido e executado (BLOCK)
 
 - Critério: antes da promoção, a lista de verificações de fumaça está escrita: rota, resposta esperada e o que fazer se falhar, para cada Worker promovido. Ela é executada contra o ambiente que recebe o SHA e, depois da implantação em produção, contra produção.
-- **Proposta, pendente de decisão:** lista manual, escrita no relatório da execução e executada por uma pessoa com o perfil autorizado, porque o repositório não tem script de smoke test. A alternativa (script versionado ou verificação no CI) é decisão do time e muda este item.
-- Evidência: a lista, o resultado de cada verificação, a data e o host. Sem tokens nem dados de cliente.
+- **Decidido:** o smoke que vale é o do workflow do staging, ampliado: [`scripts/smoke-staging.mjs`](../../scripts/smoke-staging.mjs), que roda depois de cada deploy do staging, sem segredo e sem escrever dado. A lista é o `smokeChecks` do script (rota, resposta esperada e a mensagem de falha, com o que se esperava):
+  - web `/health` 200; `/` 200 com CSP; `/entrar` 200 com os cabeçalhos de isolamento (HSTS, `nosniff`, `X-Frame-Options`, COOP, Referrer-Policy) e a CSP da entrada (script do Turnstile, `frame-ancestors 'none'`); `/api/auth/get-session` 200 (503 é segredo de auth faltando);
+  - `/rpc` de leitura anônimo (`category/list`, com o Origin do web): 401 `UNAUTHORIZED` no corpo do oRPC (um 5xx é o Worker sem conseguir nem recusar; um 401 de outra camada, como WAF ou Access, não conta);
+  - `/rpc` de escrita anônimo (`category/archive`) com o Origin certo: 401 `UNAUTHORIZED`; com Origin forjado: 403 com `error.code` `forbidden` (o guarda de origem). O corpo é lido só para conferir o código, nunca impresso;
+  - catálogo `/` 200 com nonce na CSP; loja inexistente 404 (prova Worker → Hyperdrive → Neon).
+- Um 429 numa chamada de `/rpc` é o limitador por IP (o IP do runner é compartilhado): esperar um minuto e rodar de novo, sem relaxar a verificação. O script aceita só os hosts fixos do staging ([staging](./staging.md#8-verificação)). O smoke da produção usa a mesma lista, mas o script só passa a aceitar o host de produção numa mudança própria do go-live.
+- Evidência: a saída do passo `Smoke` do deploy (cada verificação com `ok` ou `FAIL` e o status), a data e o host. Sem tokens nem dados de cliente.
 
 ### 7. Critérios de rollback e responsável (BLOCK)
 
@@ -91,9 +96,9 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 8. SHA implantado conferido no host de deploy (BLOCK)
 
 - Critério: para cada Worker promovido, o SHA lido de volta no host de deploy (versão do Worker ou identificador exposto pelo deploy) é igual ao SHA candidato. A promoção só é dada como feita depois disso.
-- **Proposta, pendente de decisão:** leitura manual, por quem tem o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)), sem script. O repositório não expõe o SHA no Worker nem tem script de deploy.
-- Se o host não expõe o SHA, o item fica como dados insuficientes. Não se presume que o deploy é igual ao candidato.
-- Evidência: a leitura de volta, com o identificador e a data.
+- **Decidido:** o SHA é lido no host pela versão ativa do Worker, com o SHA na mensagem do deploy (`wrangler deploy --message "$HEAD_SHA"`). [`scripts/verify-deployed-sha.mjs`](../../scripts/verify-deployed-sha.mjs) lê, para `polaris-web-staging` e `polaris-catalog-staging`, `wrangler deployments status --json` (a implantação ativa tem de ser uma versão só, com 100% do tráfego) e `wrangler versions view <versão> --json`, e reprova se a mensagem da versão não for exatamente o `HEAD_SHA`. Roda no passo depois do deploy e antes do `Smoke`, no job que já tem o token; só lê e imprime o veredito, nunca o que a API respondeu (o stderr do wrangler é descartado: o log é público). Não há SHA exposto pelo próprio Worker: o que se prova é o que o host diz estar ativo.
+- A mensagem é o rótulo que o deploy deste job gravou na versão: prova que a versão ativa é a deste deploy, não a integridade do código. Se o host não devolve a versão ativa com a mensagem, o passo reprova e o item fica sem evidência (dados insuficientes). Não se presume que o deploy é igual ao candidato.
+- Evidência: a saída do passo (`ok <Worker>: active version is <12 primeiros do SHA>` por Worker), com a data.
 
 ### 9. Nenhum achado "bloqueia" aberto do revisor (BLOCK)
 
@@ -279,7 +284,7 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 ## Estado atual
 
 - O checklist de go-live declara que nada foi executado. Enquanto um item tocado estiver aberto, a primeira execução tende a bloquear.
-- Nenhum `package.json` do repositório tem script de deploy nem de smoke test (o `build` de `apps/admin` usa `wrangler deploy --dry-run`). Os itens 6 e 8 precisam de definição antes da primeira execução. O staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)) traz a configuração `env.staging`/`env.production` e as verificações de isolamento. O workflow de deploy e o smoke do staging vêm num PR próprio.
+- Nenhum `package.json` do repositório tem script de deploy nem de smoke test (o `build` de `apps/admin` usa `wrangler deploy --dry-run`). O staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)) traz a configuração `env.staging`/`env.production`, as verificações de isolamento, o workflow de deploy, o smoke (item 6) e a leitura do SHA no host (item 8), todos só do staging; a produção herda a lista e o procedimento no go-live.
 
 ## Decisões pendentes
 
@@ -288,7 +293,7 @@ Cada uma está marcada no texto como proposta, pendente de decisão:
 1. Severidade final de cada item, exceto 10, 14, 15, 16, 18, 19, 24 e 25, já decididos (hoje 18 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
-4. Como fazer o smoke test do item 6.
-5. Como ler o SHA no host de deploy (item 8).
+4. ~~Como fazer o smoke test do item 6~~ (decidido: o do workflow do staging, ampliado).
+5. ~~Como ler o SHA no host de deploy (item 8)~~ (decidido: versão ativa do Worker, com o SHA na mensagem do deploy).
 6. Se uma execução anterior da suíte completa em Neon (a do fim da fase) vale como evidência do item 4, e se o nome `run-AAAA-MM-DD-<SHA curto>.md` é o adotado para o relatório.
 7. Frequência do item 16 (severidade BLOCK já decidida): se basta uma prova antes do go-live e outra quando mudar a configuração `observability` ou a `compatibility_date`, ou se é por promoção.

@@ -191,7 +191,8 @@ O workflow `.github/workflows/deploy-staging.yml` só roda com a variável de re
 - `bun run verify:staging-isolation` (estática) e, depois da build de staging, `node scripts/verify-staging-isolation.mjs --built`.
 - `node scripts/verify-staging-isolation.mjs --remote`, com o token de staging e `STAGING_DATABASE_HOST`: cada Hyperdrive aponta para o host direto de staging, com caching desligado e com um login de staging que não é o dono. A leitura fica presa ao `account_id` de `env.staging` e só roda se a verificação estática passar.
 - `staging:verify-database after-migrate`: marcador, parte só de leitura do `definer-hardening`, `TEMPORARY` de `PUBLIC`, os atributos dos papéis `polaris_%_owner` e dos que um runtime alcança (com piso de contagem), a falta de aresta de saída nos `polaris_%_owner` e os logins com o grupo de cada um.
-- O smoke do workflow.
+- A versão ativa de cada Worker é o commit implantado: `node scripts/verify-deployed-sha.mjs`, com `HEAD_SHA` e o token de deploy, lê `deployments status` e `versions view` de `polaris-web-staging` e `polaris-catalog-staging` e reprova se a mensagem da versão não for o `HEAD_SHA` (release-checklist, item 8). Roda no workflow depois do deploy e antes do smoke.
+- O smoke do workflow (`node scripts/smoke-staging.mjs`, com `STAGING_WEB_URL` e `STAGING_CATALOG_URL`, sem segredo): a lista e o que cada verificação prova estão no item 6 do [release-checklist](./release-checklist.md). Também roda à mão contra o staging, com as duas URLs fixas.
 
 ## 9. Itens do release-checklist no staging
 
