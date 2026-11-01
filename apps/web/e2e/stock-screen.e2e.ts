@@ -768,7 +768,7 @@ test.describe("virada do dia da loja", () => {
       );
       await turn.fill(page, turn.quantities[1]);
       await page.getByRole("button", { exact: true, name: "Revisar" }).click();
-      await expect(page.getByText("data no futuro")).toHaveCount(0);
+      await expect(page.getByText("não pode ser futura")).toHaveCount(0);
       await page.getByRole("button", { name: turn.confirm }).click();
       await expect(page.getByText(turn.saldo)).toBeVisible();
 
