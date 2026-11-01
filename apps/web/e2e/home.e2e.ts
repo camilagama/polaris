@@ -2760,6 +2760,35 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
   });
 
+  test("loja que já vendeu, sem venda no mês nem antes: aberta sem rede a partir da cópia, o checklist não aparece", async ({
+    page,
+  }) => {
+    const server = new FakeServer({
+      days: {},
+      everSold: true,
+      goals: [],
+      soldWithoutCost: 0,
+      stock: { all: 1, unknownCost: 0, withoutStock: 0, withStock: 1 },
+    });
+    await openHome(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText(
+      "Nenhuma venda ainda"
+    );
+    await expect
+      .poll(async () => (await copyKeys(page)).length)
+      .toBeGreaterThan(0);
+    await expect(page.locator(".sync-status").first()).toContainText(SYNCED, {
+      timeout: 20_000,
+    });
+    await reopenWithoutNetwork(page, server);
+    await expect(page.getByText(CONFIRMED, { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(region(page, "Vendas em outubro")).toBeVisible();
+    await expect(region(page, "Primeiros passos")).toHaveCount(0);
+    await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
+  });
+
   for (const [hours, stale] of [
     [23, false],
     [25, true],
@@ -2866,7 +2895,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.evaluate(() => {
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith("polaris.offline.home.")) {
-          localStorage.setItem(key, '{"before":{"period":1},"hadSale":"sim"');
+          localStorage.setItem(key, '{"before":{"period":1},"goal":');
         }
       }
     });
