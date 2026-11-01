@@ -123,6 +123,19 @@ const refusalMessages: Readonly<Record<string, string>> = {
     "Não foi possível iniciar o Pix Automático com esses dados. Confira o nome, o CPF ou CNPJ e o e-mail, ou escolha o cartão.",
 };
 
+/**
+ * The 503 of a provider failure or an unverified earlier checkout, counted with its closed reason and the error's own code (never the provider's answer, a
+ * provider id or anything of the store) so a spike of one reason shows apart from the other 503s.
+ */
+function unavailableRefusal(
+  reason: string,
+  code: string | undefined,
+  cause: unknown
+): ORPCError<"SERVICE_UNAVAILABLE", { reason: string }> {
+  logger.warn("billing_unavailable_refused", { errorCode: code, reason });
+  return new ORPCError("SERVICE_UNAVAILABLE", { cause, data: { reason } });
+}
+
 function billingRpcError(
   error: unknown,
   fallback: (error: unknown) => never
@@ -153,10 +166,7 @@ function billingRpcError(
     code === undefined ? undefined : unavailableReasons.get(code);
   if (unavailableReason !== undefined) {
     // nothing of the provider's answer: the errors carry only their code
-    throw new ORPCError("SERVICE_UNAVAILABLE", {
-      cause: error,
-      data: { reason: unavailableReason },
-    });
+    throw unavailableRefusal(unavailableReason, code, error);
   }
   return fallback(error);
 }
@@ -196,10 +206,7 @@ function ownerCommandRpcError(
     });
   }
   if (error instanceof OwnerCommandProviderFailure) {
-    throw new ORPCError("SERVICE_UNAVAILABLE", {
-      cause: error,
-      data: { reason: "billing_provider_unavailable" },
-    });
+    throw unavailableRefusal("billing_provider_unavailable", error.code, error);
   }
   return billingRpcError(error, fallback);
 }

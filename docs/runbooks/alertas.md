@@ -22,6 +22,7 @@
 | [`outbox-parado`](#outbox-parado) | `scheduled_job_run` do `outbox.dispatch` | 180 min | ausência | critical | sim |
 | [`outbox-falhando`](#outbox-falhando) | `outbox_send_failed`, `outbox_event_unsendable` | 120 min | 1 | warning | não |
 | [`cobranca-reconcile`](#cobranca-reconcile) | `billing_maintenance_incomplete` e outros | 180 min | 3 | critical | sim |
+| [`cobranca-provedor-nao-confirmou`](#cobranca-provedor-nao-confirmou) | `billing_unavailable_refused` (`reason` dos dois motivos) | 180 min | 3 | warning | não |
 | [`pix-cadastros-por-loja`](#pix-cadastros-por-loja) | `billing_payer_customer_created` | 60 min | 5 | warning | não |
 | [`erros-de-banco`](#erros-de-banco) | `server_error` com `sqlState` e outros | 15 min | 3 | critical | sim |
 | [`agendador-falhando`](#agendador-falhando) | `scheduled_job_claim_failed` e outros | 180 min | 2 | warning | não |
@@ -100,6 +101,16 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 **Como confirmar.** Workers Logs: os cinco eventos, por `errorClass`/`errorCode`, `provider` e `sqlState`; veja também o `scheduled_job_run` de `billing.maintenance`. Uma só falha é retentada no tick seguinte; três em três horas é falha persistente (é o limiar).
 
 **O que fazer.** Com `sqlState` ou erro de conexão, siga [erros-de-banco](#erros-de-banco). Com erro de provedor, confira o painel de homologação ou produção do provedor (o responsável) e a assinatura do webhook. Não reprocesse pagamento à mão sem registrar: o efeito é de dinheiro e de acesso (use os comandos de cobrança do Admin). Nunca cole segredo do provedor em log ou chat.
+
+<a id="cobranca-provedor-nao-confirmou"></a>
+
+### cobranca-provedor-nao-confirmou — o provedor não confirmou o checkout ou o cancelamento antigo
+
+**O que significa.** O checkout de um dono foi recusado com 503 porque o Asaas ou a Woovi não respondeu ao que o Polaris precisa saber antes de abrir outro: se o checkout anterior foi pago (`previous_checkout_unverified`) ou se a renovação anterior foi cancelada (`previous_renewal_cancel_unverified`). Evento: `billing_unavailable_refused` (nível `warn`), um por 503 que vem de erro do provedor ou da checagem do checkout anterior (o 503 de `billing_not_configured` e o de `billing_audit_unavailable` não entram), com `reason` (o motivo que o cliente lê, de um conjunto fechado) e `errorCode` (o código do erro do Polaris), sem dado do provedor, id de loja nem dado pessoal. O limiar (3 em 180 min) é o do sinal vizinho mais parecido, [cobranca-reconcile](#cobranca-reconcile), mas só vai ao resumo diário: o 503 é o cliente tentando de novo, e o `http-5xx` já acorda no volume. O mesmo evento carrega também `billing_provider_unavailable` (provedor fora, não configurado ou resposta recusada), que o filtro deixa de fora: tire o filtro para ver todos.
+
+**Como confirmar.** Workers Logs: `event = "billing_unavailable_refused"`, agrupe por `reason` e `errorCode`. Um pico de um dos dois motivos com o `http-5xx` quieto é o provedor lento ou fora só na consulta que o motivo nomeia; compare com o painel de status do provedor e com `billing_provider_*` do [runbook de provedores](./billing-providers.md).
+
+**O que fazer.** Confira o provedor (o responsável vê o painel). Não libere checkout nem cancele renovação à mão sem confirmar no provedor: o efeito é cobrança em dobro. Quando o provedor voltar, o dono tenta de novo sozinho; se a loja insistir por horas, siga [cobranca-reconcile](#cobranca-reconcile) e o [runbook dos provedores](./billing-providers.md).
 
 <a id="pix-cadastros-por-loja"></a>
 

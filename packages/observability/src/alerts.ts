@@ -154,6 +154,20 @@ export const alertSignals = [
     windowMinutes: 180,
   },
   {
+    id: "cobranca-provedor-nao-confirmou",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["billing_unavailable_refused"],
+      where:
+        'reason in ("previous_checkout_unverified", "previous_renewal_cancel_unverified")',
+    },
+    threshold: { atLeast: 3, kind: "count" },
+    title:
+      "Provedor de cobrança não confirmou o checkout ou o cancelamento antigo",
+    windowMinutes: 180,
+  },
+  {
     id: "pix-cadastros-por-loja",
     notify: "report",
     severity: "warning",

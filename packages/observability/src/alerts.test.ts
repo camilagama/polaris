@@ -249,6 +249,25 @@ describe("alert signals", () => {
     }
   });
 
+  it("count the two billing 503s of an unconfirmed provider apart, with the threshold of the reconcile signal", () => {
+    const reconcile = alertSignals.find(
+      (candidate) => candidate.id === "cobranca-reconcile"
+    );
+    const signal = alertSignals.find(
+      (candidate) => candidate.id === "cobranca-provedor-nao-confirmou"
+    );
+
+    expect(signal?.source.events).toEqual(["billing_unavailable_refused"]);
+    expect(signal?.source.where).toContain("previous_checkout_unverified");
+    expect(signal?.source.where).toContain(
+      "previous_renewal_cancel_unverified"
+    );
+    expect(signal?.source.where).not.toContain("billing_provider_unavailable");
+    expect(signal?.threshold).toEqual(reconcile?.threshold);
+    expect(signal?.windowMinutes).toBe(reconcile?.windowMinutes);
+    expect(signal?.notify).toBe("report");
+  });
+
   it("have a positive window and a threshold that can fire", () => {
     for (const signal of alertSignals) {
       expect(signal.windowMinutes).toBeGreaterThan(0);
