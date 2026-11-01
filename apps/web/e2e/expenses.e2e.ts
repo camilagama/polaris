@@ -1111,8 +1111,44 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe n
   await expect(trigger).toBeFocused();
 });
 
+test("reabrir a grade de meses no meio da saída dela mostra o ano do mês na tela, não o da abertura anterior", async ({
+  page,
+}) => {
+  await openExpensesWatchingMonths(page);
+  const trigger = page.locator("#expense-month");
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+
+  await trigger.click();
+  await popup.getByRole("button", { name: "Próximo ano" }).click();
+  await popup
+    .getByRole("group", { name: "Meses de 2027" })
+    .getByRole("button", { name: "dezembro de 2027" })
+    .click();
+
+  // the same turn as the choice: the popup is still leaving, the month moves ahead and the trigger opens it again
+  await page.evaluate(() => {
+    const click = (selector: string) =>
+      document.querySelector<HTMLElement>(selector)?.click();
+    click('[aria-label="Próximo mês"]');
+    click("#expense-month");
+  });
+  await expect(trigger).toHaveText("Janeiro de 2028");
+  await expect(popup.getByText("2028", { exact: true })).toBeVisible();
+  await expect(
+    popup.getByRole("group", { name: "Meses de 2028" })
+  ).toBeVisible();
+});
+
 const TURN_EVE = "2026-11-01T02:50:00.000Z";
 
+const BARRIER_MONTH = "barrier";
+
+/**
+ * Opens Despesas on the eve of the turn, counting the reads of the list. `settle` replaces a fixed wait: the page
+ * runs a few turns of its message queue (where React schedules its work), then sends a marker read through the same
+ * route; reads go out in order, so every read already sent, or sent by those turns, is counted when the marker
+ * answers. The marker itself is not counted and does not reach the server.
+ */
 async function openExpensesOnTheEveOfTheTurn(page: Page) {
   await page.clock.install({ time: new Date(TURN_EVE) });
   const server = new FakeExpenseServer();
@@ -1122,21 +1158,42 @@ async function openExpensesOnTheEveOfTheTurn(page: Page) {
       const body = route.request().postDataJSON() as {
         json?: { from?: string };
       };
-      months.push(String(body.json?.from ?? "").slice(0, 7));
+      const from = String(body.json?.from ?? "");
+      if (from === BARRIER_MONTH) {
+        await route.fulfill({ body: "{}", contentType: "application/json" });
+        return;
+      }
+      months.push(from.slice(0, 7));
       await route.fallback();
     })
   );
-  return months;
+  const settle = () =>
+    page.evaluate(async (barrier) => {
+      const channel = new MessageChannel();
+      for (let turn = 0; turn < 3; turn += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: each turn of the message queue runs after the one before
+        await new Promise<void>((resolve) => {
+          channel.port1.onmessage = () => resolve();
+          channel.port2.postMessage(0);
+        });
+      }
+      await fetch("/rpc/expense/list", {
+        body: JSON.stringify({ json: { from: barrier } }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+    }, BARRIER_MONTH);
+  return { months, settle };
 }
 
 test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma única leitura da lista", async ({
   page,
 }) => {
-  const months = await openExpensesOnTheEveOfTheTurn(page);
+  const { months, settle } = await openExpensesOnTheEveOfTheTurn(page);
   const trigger = page.locator("#expense-month");
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-10");
-  await page.waitForTimeout(250);
+  await settle();
   const reads = months.length;
 
   await page.clock.fastForward("11:00");
@@ -1146,7 +1203,7 @@ test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma
 
   await page.clock.fastForward("30:00");
   await page.clock.fastForward("30:00");
-  await page.waitForTimeout(250);
+  await settle();
   await expect(trigger).toHaveText("Novembro de 2026");
   expect(months).toHaveLength(reads + 1);
 });
@@ -1154,7 +1211,7 @@ test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma
 test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a lista não é lida", async ({
   page,
 }) => {
-  const months = await openExpensesOnTheEveOfTheTurn(page);
+  const { months, settle } = await openExpensesOnTheEveOfTheTurn(page);
   const trigger = page.locator("#expense-month");
   const popup = page.getByRole("dialog", { name: "Mês de competência" });
   await page.getByRole("button", { name: "Mês anterior" }).click();
@@ -1162,14 +1219,14 @@ test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a
   await page.getByRole("button", { name: "Próximo mês" }).click();
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-10");
-  await page.waitForTimeout(250);
+  await settle();
   const reads = months.length;
 
   await page.clock.fastForward("11:00");
   await expect(trigger).toHaveText("Outubro de 2026");
   await page.clock.fastForward("30:00");
   await page.clock.fastForward("30:00");
-  await page.waitForTimeout(250);
+  await settle();
   await expect(trigger).toHaveText("Outubro de 2026");
   expect(months).toHaveLength(reads);
 
@@ -1182,11 +1239,12 @@ test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a
 test("fora da virada, o tempo andando não lê a lista de novo", async ({
   page,
 }) => {
-  const months = await openExpensesOnTheEveOfTheTurn(page);
+  const { months, settle } = await openExpensesOnTheEveOfTheTurn(page);
   await expect.poll(() => months.at(-1)).toBe("2026-10");
-  await page.waitForTimeout(250);
+  await settle();
   const reads = months.length;
   await page.clock.fastForward("05:00");
+  await settle();
   await expect(page.locator("#expense-month")).toHaveText("Outubro de 2026");
   expect(months).toHaveLength(reads);
 });

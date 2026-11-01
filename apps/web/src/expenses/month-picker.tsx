@@ -96,7 +96,7 @@ interface MonthGridProps {
 function MonthGrid({ currentMonth, month, onChoose }: MonthGridProps) {
   const [cursor, setCursor] = useState(month);
   const grid = useRef<HTMLFieldSetElement>(null);
-  // the grid is only mounted while the popover is open: the focus goes to the month on screen as it opens
+  // the grid is mounted for each opening (the key of the picker): the focus goes to the month on screen as it opens
   const focusCursor = useRef<boolean>(true);
   const { year } = parts(cursor);
 
@@ -226,6 +226,7 @@ export function MonthPicker({
   onChange,
 }: MonthPickerProps) {
   const [open, setOpen] = useState(false);
+  const [openings, setOpenings] = useState(0);
   const previous = shiftMonth(month, -1);
   const next = shiftMonth(month, 1);
   const labelId = `${id}-label`;
@@ -241,6 +242,13 @@ export function MonthPicker({
       onChange(next);
     }
   }, [next, onChange]);
+  // a popup reopened while it is still leaving keeps its grid mounted: a new key gives each opening a fresh cursor
+  const handleOpenChange = useCallback((opening: boolean) => {
+    if (opening) {
+      setOpenings((count) => count + 1);
+    }
+    setOpen(opening);
+  }, []);
   const choose = useCallback(
     (chosen: string) => {
       setOpen(false);
@@ -265,7 +273,7 @@ export function MonthPicker({
         >
           <ChevronLeftIcon aria-hidden="true" />
         </Button>
-        <Popover onOpenChange={setOpen} open={open}>
+        <Popover onOpenChange={handleOpenChange} open={open}>
           {/* the accessible name holds the text the button shows (WCAG 2.5.3): "Mês de competência, Outubro de 2026" */}
           <PopoverTrigger
             render={
@@ -288,6 +296,7 @@ export function MonthPicker({
           >
             <MonthGrid
               currentMonth={currentMonth}
+              key={openings}
               month={month}
               onChoose={choose}
             />
