@@ -18,6 +18,7 @@ export interface CatalogRelation {
 
 export interface CatalogPolicy {
   name: string;
+  permissive: boolean;
   roles: string[];
   table: string;
 }
@@ -52,6 +53,7 @@ export const SCHEMAS_SQL = `SELECT nspname AS name
 // the driver return a text array (it does not parse the `name[]` of pg_policies.roles)
 export const POLICIES_SQL = `SELECT tablename AS table_name,
        policyname AS policy_name,
+       permissive = 'PERMISSIVE' AS permissive,
        roles::text[] AS roles
   FROM pg_catalog.pg_policies
  WHERE schemaname = 'public'
@@ -67,6 +69,7 @@ export async function readCatalog(client: Client): Promise<CatalogSnapshot> {
   }>(RELATIONS_SQL);
   const schemas = await client.query<{ name: string }>(SCHEMAS_SQL);
   const policies = await client.query<{
+    permissive: boolean;
     policy_name: string;
     roles: string[];
     table_name: string;
@@ -74,6 +77,7 @@ export async function readCatalog(client: Client): Promise<CatalogSnapshot> {
   return {
     policies: policies.rows.map((row) => ({
       name: row.policy_name,
+      permissive: row.permissive,
       roles: row.roles,
       table: row.table_name,
     })),
@@ -186,13 +190,14 @@ function schemaViolations(
   return found;
 }
 
-// a policy with no TO clause is stored as {public} too; a permissive one for PUBLIC applies to every role with a privilege on the table
+// a policy with no TO clause is stored as {public} too; a permissive one for PUBLIC applies to every role with a privilege on
+// the table, while a restrictive one only narrows what the permissive ones allow
 function publicPolicyViolations(policies: CatalogPolicy[]): string[] {
   return policies
-    .filter((policy) => policy.roles.includes("public"))
+    .filter((policy) => policy.permissive && policy.roles.includes("public"))
     .map(
       (policy) =>
-        `policy ${policy.name} on public.${policy.table} is TO PUBLIC (roles: {${policy.roles.join(",")}}): name the roles it is for in the migration (TO <role>); a policy for PUBLIC applies to every role that has a privilege on the table`
+        `policy ${policy.name} on public.${policy.table} is permissive and TO PUBLIC (roles: {${policy.roles.join(",")}}): name the roles it is for in the migration (TO <role>); a policy for PUBLIC applies to every role that has a privilege on the table`
     );
 }
 

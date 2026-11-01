@@ -42,8 +42,9 @@ const view = (
 const policy = (
   tableName: string,
   name: string,
-  roles: string[]
-): CatalogPolicy => ({ name, roles, table: tableName });
+  roles: string[],
+  permissive = true
+): CatalogPolicy => ({ name, permissive, roles, table: tableName });
 
 const healthy: CatalogSnapshot = {
   policies: [policy("sale", "sale_current_tenant", ["polaris_runtime"])],
@@ -229,6 +230,15 @@ describe("the catalog verdict of the rls-forced-catalog gate", () => {
     expect(found[1]).toContain("policy second on public.sale");
   });
 
+  it("passes a restrictive policy for {public}, which only narrows access", () => {
+    expect(
+      verdict({
+        ...healthy,
+        policies: [policy("sale", "narrow", ["public"], false)],
+      })
+    ).toEqual([]);
+  });
+
   it("passes an empty policy list and policies that name only roles", () => {
     expect(verdict({ ...healthy, policies: [] })).toEqual([]);
     expect(
@@ -258,5 +268,6 @@ describe("the catalog verdict of the rls-forced-catalog gate", () => {
     expect(SCHEMAS_SQL).toContain("nspname !~ '^pg_'");
     expect(POLICIES_SQL).toContain("schemaname = 'public'");
     expect(POLICIES_SQL).toContain("roles::text[]");
+    expect(POLICIES_SQL).toContain("permissive = 'PERMISSIVE'");
   });
 });

@@ -69,8 +69,8 @@ async function proveDetection(client: Client, existingTable: string) {
       RLS_EXEMPT_SCHEMAS
     );
     const expected = [
-      `public.${planted} `,
-      `public.${existingTable} `,
+      `table public.${planted} `,
+      `table public.${existingTable} `,
       `view public.${PROBE_PREFIX}view `,
       `materialized view public.${PROBE_PREFIX}matview `,
       `schema ${PROBE_PREFIX}schema `,
@@ -79,7 +79,7 @@ async function proveDetection(client: Client, existingTable: string) {
     assert.equal(found.length, expected.length, found.join("\n"));
     for (const start of expected) {
       assert.ok(
-        found.some((line) => line.includes(start)),
+        found.some((line) => line.startsWith(start)),
         `the verdict did not name ${start}`
       );
     }
