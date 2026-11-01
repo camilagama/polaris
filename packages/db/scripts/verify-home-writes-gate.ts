@@ -12,6 +12,8 @@ import { listInventoryBalances } from "../src/inventory-repository";
 import { cancelSale } from "../src/sale-cancellation-repository";
 import { listSales } from "../src/sale-query-repository";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
+import { runClock, shiftDay } from "./gate-clock";
+import { homeWritesDays } from "./home-writes-days";
 import {
   confirmPlainSale,
   createSellableProduct,
@@ -52,29 +54,6 @@ const SETTLING_TABLES = new Set(["goals", "tenant_audit_event"]);
 
 type Stats = Map<string, { scans: number; writes: number }>;
 
-function dateFrom(day: string, days: number): string {
-  const [year, month, date] = day.split("-").map(Number);
-  const shifted = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, date ?? 1));
-  shifted.setUTCDate(shifted.getUTCDate() + days);
-  return shifted.toISOString().slice(0, 10);
-}
-
-/** The month of `today` and the days before it the Início reads (home-model.ts `homePeriods`). */
-function homePeriods(today: string) {
-  const first = `${today.slice(0, 7)}-01`;
-  const eve = dateFrom(first, -1);
-  const previousFirst = `${eve.slice(0, 7)}-01`;
-  const thirty = dateFrom(today, -29);
-  const [year, month] = today.split("-").map(Number);
-  const last = new Date(Date.UTC(year ?? 0, month ?? 1, 0))
-    .toISOString()
-    .slice(0, 10);
-  return {
-    before: { from: thirty < previousFirst ? thirty : previousFirst, to: eve },
-    month: { from: first, to: last },
-  };
-}
-
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -107,11 +86,8 @@ async function run() {
       "disposable direct connection is PostgreSQL 18 with every migration replayed from scratch"
     );
 
-    const today = (
-      await admin.pool.query<{ today: string }>(
-        "SELECT to_char((now() AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS today"
-      )
-    ).rows[0]?.today as string;
+    const days = homeWritesDays(runClock);
+    const { today } = days;
 
     const stats = async (): Promise<Stats> => {
       const result = await admin.pool.query<{
@@ -173,13 +149,19 @@ async function run() {
         cost: null,
         quantity: 0,
       });
-      await confirmPlainSale(rt, tenant, [
-        { chargedUnitPrice: "50.00", quantity: 1, variantId: sold.variantId },
-      ]);
+      await confirmPlainSale(
+        rt,
+        tenant,
+        [{ chargedUnitPrice: "50.00", quantity: 1, variantId: sold.variantId }],
+        { occurredAt: days.saleInstant }
+      );
       // a cancelled sale is still a sale: the checklist never comes back (AC-23)
-      const cancelled = await confirmPlainSale(rt, tenant, [
-        { chargedUnitPrice: "30.00", quantity: 1, variantId: sold.variantId },
-      ]);
+      const cancelled = await confirmPlainSale(
+        rt,
+        tenant,
+        [{ chargedUnitPrice: "30.00", quantity: 1, variantId: sold.variantId }],
+        { occurredAt: days.saleInstant }
+      );
       await withTenantAs(fixtures.db, tenant, "sale:cancel", (tx, identity) =>
         cancelSale(tx, identity, {
           commandId: randomUUID(),
@@ -190,7 +172,7 @@ async function run() {
       // a goal in progress that is far from its target: reading it settles nothing
       await admin.pool.query(
         "INSERT INTO public.goals (organization_id, kind, target, starts_on, ends_on) VALUES ($1, 'net_sales', 100000, $2, $3)",
-        [tenant.organizationId, dateFrom(today, -3), dateFrom(today, 20)]
+        [tenant.organizationId, shiftDay(today, -3), shiftDay(today, 20)]
       );
     } finally {
       await fixtures.pool.end();
@@ -224,7 +206,7 @@ async function run() {
           operation
         );
       try {
-        const { before, month } = homePeriods(today);
+        const { before, month } = days;
         const a = await as(
           "report:read",
           (tx, identity) =>
@@ -384,7 +366,7 @@ async function run() {
       endedGoalId = (
         await inserter.pool.query<{ id: string }>(
           "INSERT INTO public.goals (organization_id, kind, target, starts_on, ends_on) VALUES ($1, 'sale_count', 50, $2, $3) RETURNING id",
-          [tenant.organizationId, dateFrom(today, -10), dateFrom(today, -1)]
+          [tenant.organizationId, shiftDay(today, -10), shiftDay(today, -1)]
         )
       ).rows[0]?.id as string;
     } finally {
