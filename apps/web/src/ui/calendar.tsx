@@ -4,10 +4,13 @@ import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import { createContext, useContext, useEffect, useId, useRef } from "react";
 import {
   type ChevronProps,
+  DateLib,
+  type DateLibOptions,
   type DayButtonProps,
   DayPicker,
   type DayPickerProps,
   getDefaultClassNames,
+  type Modifiers,
 } from "react-day-picker";
 import { ptBR } from "react-day-picker/locale/pt-BR";
 import { cn } from "@/lib/utils";
@@ -101,6 +104,50 @@ function formatWeekdayName(weekday: Date) {
   return format(weekday, "cccccc", { locale: ptBR }).charAt(0).toUpperCase();
 }
 
+/** "início do período", "fim do período" or both; nothing for a day in the middle or for a single-day picker. */
+function rangeRole(mode: DayPickerProps["mode"], modifiers: Modifiers) {
+  if (mode !== "range" || !modifiers.selected) {
+    return null;
+  }
+  const start = Boolean(modifiers.range_start);
+  const end = Boolean(modifiers.range_end);
+  if (start && end) {
+    return "início e fim do período";
+  }
+  if (start) {
+    return "início do período";
+  }
+  if (end) {
+    return "fim do período";
+  }
+  // `range_start` and `range_end` need both ends: a day selected with no range modifier is the lone start
+  return modifiers.range_middle ? null : "início do período";
+}
+
+/** "{Hoje, }{weekday}, {d de mês de ano}{, role in the period}{, selecionado}": the role comes before the state. */
+function makeLabelDayButton(mode: DayPickerProps["mode"]) {
+  return (
+    date: Date,
+    modifiers: Modifiers,
+    options?: DateLibOptions,
+    dateLib?: DateLib
+  ) => {
+    const lib = dateLib ?? new DateLib(options);
+    const parts = [lib.format(date, "PPPP")];
+    if (modifiers.today) {
+      parts.unshift("Hoje");
+    }
+    const role = rangeRole(mode, modifiers);
+    if (role) {
+      parts.push(role);
+    }
+    if (modifiers.selected) {
+      parts.push("selecionado");
+    }
+    return parts.join(", ");
+  };
+}
+
 export function Calendar({
   className,
   classNames,
@@ -138,8 +185,6 @@ export function Calendar({
           ),
           day: cn("relative p-0 text-center", defaults.day),
           hidden: cn("invisible", defaults.hidden),
-          // a day of the month before or after is never drawn as chosen: the range shows in its own month
-          outside: cn("bg-transparent!", defaults.outside),
           month: cn("flex w-full flex-col gap-3", defaults.month),
           month_caption: cn(
             "flex h-(--cell-size) w-full items-center justify-center px-(--cell-size)",
@@ -154,6 +199,8 @@ export function Calendar({
             "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
             defaults.nav
           ),
+          // a day of the month before or after is never drawn as chosen: the range shows in its own month
+          outside: cn("bg-transparent!", defaults.outside),
           range_end: cn("rounded-r-md bg-accent", defaults.range_end),
           range_middle: cn("bg-accent", defaults.range_middle),
           range_start: cn("rounded-l-md bg-accent", defaults.range_start),
@@ -171,15 +218,16 @@ export function Calendar({
           DayButton: CalendarDayButton,
           ...components,
         }}
+        data-slot="calendar"
+        // six weeks always: the popover keeps its height from month to month
+        fixedWeeks={fixedWeeks}
         formatters={{ formatCaption, formatWeekdayName, ...formatters }}
         labels={{
+          labelDayButton: makeLabelDayButton(props.mode),
           labelNext: () => "Próximo mês",
           labelPrevious: () => "Mês anterior",
           ...labels,
         }}
-        data-slot="calendar"
-        // six weeks always: the popover keeps its height from month to month
-        fixedWeeks={fixedWeeks}
         locale={ptBR}
         showOutsideDays={showOutsideDays}
         {...props}

@@ -7,11 +7,13 @@ import { expect, test } from "@playwright/test";
  * accessible names, never classes). The names of the buttons and the error tied to the button are in
  * ui-date-pickers.e2e.ts; here: the button announces a dialog and its open state, opening moves the focus inside,
  * Escape closes and gives it back, the chosen day and today are announced, and the days of a period are checked
- * as selected (its two ends differ only by their date and by "Hoje," on today; nothing says which is the start and
- * which is the end). "Hoje" is `24/10/2026` in the gallery.
+ * as selected, and the name of a day says its role before the state: "início do período", "fim do período" or
+ * "início e fim do período" (one day, or only the start marked); a day in the middle has no role. "Hoje" is `24/10/2026` in the
+ * gallery.
  */
 const SELECTED = /, selecionado$/;
 const TODAY_PREFIX = /^Hoje, /;
+const ROLE_IN_PERIOD = /(início|fim) do período/;
 const ICON_HIDDEN = "true";
 
 async function openGallery(page: Page) {
@@ -21,8 +23,11 @@ async function openGallery(page: Page) {
   ).toBeVisible();
 }
 
+/** The name starts the button's: a day of a period also says "período," in its name. */
 const trigger = (page: Page, name: string) =>
-  page.getByRole("button", { name });
+  page.getByRole("button", {
+    name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+  });
 
 const day = (scope: Locator | Page, iso: string) =>
   scope.locator(`button[data-day="${iso}"]`);
@@ -135,7 +140,7 @@ test.describe("DatePicker, o dia no calendário", () => {
 });
 
 test.describe("DateRangePicker, os dias do período", () => {
-  test("os dias do período são selecionados, e só a data e o Hoje diferenciam os nomes das pontas", async ({
+  test("as pontas dizem o papel no período e os dias do período são selecionados", async ({
     page,
   }) => {
     await openGallery(page);
@@ -144,10 +149,10 @@ test.describe("DateRangePicker, os dias do período", () => {
     const middle = day(popup, "2026-10-10");
     const end = day(popup, "2026-10-24");
     await expect(start).toHaveAccessibleName(
-      "quinta-feira, 1 de outubro de 2026, selecionado"
+      "quinta-feira, 1 de outubro de 2026, início do período, selecionado"
     );
     await expect(end).toHaveAccessibleName(
-      "Hoje, sábado, 24 de outubro de 2026, selecionado"
+      "Hoje, sábado, 24 de outubro de 2026, fim do período, selecionado"
     );
     await Promise.all(
       [start, middle, end].map((edge) =>
@@ -157,6 +162,76 @@ test.describe("DateRangePicker, os dias do período", () => {
     await expect(cellOf(day(popup, "2026-10-25"))).not.toHaveAttribute(
       "aria-selected",
       "true"
+    );
+  });
+
+  test("um dia do meio do período não diz papel: só a data e selecionado", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openWithKeyboard(page, "Período,", "Período");
+    const middle = day(popup, "2026-10-10");
+    await expect(middle).toHaveAccessibleName(
+      "sábado, 10 de outubro de 2026, selecionado"
+    );
+    await expect(middle).not.toHaveAccessibleName(ROLE_IN_PERIOD);
+  });
+
+  test("período de um dia, pelos dois toques no mesmo dia: início e fim do período", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openWithKeyboard(
+      page,
+      "Período das vendas,",
+      "Período das vendas"
+    );
+    await day(popup, "2026-10-10").click();
+    await day(popup, "2026-10-10").click();
+    await expect(popup).toBeHidden();
+    const again = await openWithKeyboard(
+      page,
+      "Período das vendas,",
+      "Período das vendas"
+    );
+    await expect(day(again, "2026-10-10")).toHaveAccessibleName(
+      "sábado, 10 de outubro de 2026, início e fim do período, selecionado"
+    );
+  });
+
+  test("período de um dia, pelo atalho Hoje: Hoje, início e fim do período", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openWithKeyboard(
+      page,
+      "Período das vendas,",
+      "Período das vendas"
+    );
+    await popup.getByRole("button", { exact: true, name: "Hoje" }).click();
+    await expect(popup).toBeHidden();
+    const again = await openWithKeyboard(
+      page,
+      "Período das vendas,",
+      "Período das vendas"
+    );
+    await expect(day(again, "2026-10-24")).toHaveAccessibleName(
+      "Hoje, sábado, 24 de outubro de 2026, início e fim do período, selecionado"
+    );
+  });
+
+  test("com só o início marcado, o dia diz início do período e nunca fim", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openWithKeyboard(
+      page,
+      "Período das vendas,",
+      "Período das vendas"
+    );
+    await day(popup, "2026-10-10").click();
+    await expect(day(popup, "2026-10-10")).toHaveAccessibleName(
+      "sábado, 10 de outubro de 2026, início do período, selecionado"
     );
   });
 
