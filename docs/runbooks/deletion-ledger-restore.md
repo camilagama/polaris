@@ -4,7 +4,7 @@
 
 **Por quê:** um restore ressuscita o que já foi removido: um cliente anonimizado volta com nome, telefone, email e observações; uma organização purgada volta inteira. A [deletion ledger](../adr/0080-ledger-minimo-de-exclusoes.md) (`public.deletion_ledger`) é o registro mínimo (IDs opacos, tipo de registro, operação, instante) do que deve ser removido de novo. Regra de privacidade: **o restore reaplica o ledger antes de o ambiente ser reutilizado** ([privacidade](../business-rules/privacy.md)).
 
-> **Nada deste procedimento foi executado contra um ambiente real**, e não há automação: ela é da Fase 16. O restore lógico (`pg_dump`/`pg_restore`) foi ensaiado numa branch Neon descartável (31/10/2026, V12; três tentativas, só a terceira válida), e o que o ensaio achou está nos passos 2 e 2b e na conferência do passo 5. Os comandos do passo 2b (a reaplicação das ACLs, a conferência e a limpeza do preparo), **como estão escritos aqui, ainda não foram executados contra um banco**: isso vale em especial para os comandos novos do passo 2b (`pg_restore -L` com `sed`, `has_function_privilege`, o hash com `acldefault` e o `set_option`). Confira cada comando com atenção na primeira vez. A consulta de lista e a de verificação são provadas pelo gate `deletion-ledger` num banco descartável. Qualquer comando Cloudflare ou Neon segue a [política de perfis de CLI](./cli-profile-policy.md). Reaplicar altera dado: é uma ação do responsável, em ambiente já autorizado por ele.
+> **Nada deste procedimento foi executado contra um ambiente real**, e não há automação: ela é da Fase 16. O restore lógico (`pg_dump`/`pg_restore`) foi ensaiado numa branch Neon descartável (31/10/2026, V12; três tentativas, só a terceira válida), e o que o ensaio achou está nos passos 2 e 2b e na conferência do passo 5. Os comandos do passo 2b (a reaplicação das ACLs, a conferência e a limpeza do preparo), **como estão escritos aqui, ainda não foram executados contra um banco**: isso vale em especial para os comandos novos do passo 2b (`pg_restore -L` com `sed`, `has_function_privilege`, o hash com `acldefault` e o `set_option`). Confira cada comando com atenção na primeira vez. O texto anterior do passo 2b foi ensaiado numa branch Neon descartável (01/11/2026) e reprovou em três pontos (o `SET ROLE 'pg_database_owner'`, a comparação da ACL do `public` e o `rc` do `pg_restore`), que estão corrigidos aqui; **a versão corrigida ainda não foi ensaiada**. A consulta de lista e a de verificação são provadas pelo gate `deletion-ledger` num banco descartável. Qualquer comando Cloudflare ou Neon segue a [política de perfis de CLI](./cli-profile-policy.md). Reaplicar altera dado: é uma ação do responsável, em ambiente já autorizado por ele.
 
 ## Pré-requisitos de acesso
 
@@ -96,14 +96,14 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
       $grant$;
       ```
 
-      Antes dos `GRANT` acima, registre a ACL do schema `public` **da origem** (`SELECT nspacl::text FROM pg_namespace WHERE nspname = 'public';`): ela é a referência da conferência do passo 2b.
+      Antes dos `GRANT` acima, registre a ACL do schema `public` **da origem** (`SELECT array_to_string(ARRAY(SELECT x::text FROM unnest(nspacl) x ORDER BY x::text COLLATE "C"), ',') FROM pg_namespace WHERE nspname = 'public';`, ordenada: o `nspacl::text` guarda as entradas na ordem em que foram concedidas e o preparo acima muda essa ordem): ela é a referência da conferência do passo 2b.
    2. **Restaure**, com a saída de erro guardada (o `arquivo.dump` é o do `pg_dump -Fc` da origem):
 
       ```bash
       pg_restore --dbname="$PGDATABASE" --no-password arquivo.dump 2> restore.err; echo "rc=$?"
       ```
 
-      **O `rc=1` é esperado mesmo quando o restore deu certo:** o Neon recusa dois `ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin`, que são da plataforma e inofensivos. Qualquer outro erro reprova o restore (revogue o preparo, apague o banco restaurado, corrija e refaça). Confira à mão a lista de `pg_restore: error:` em `restore.err`: no ensaio foram 2, e o `Command was:` de cada uma era um `ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin …`; qualquer erro cujo comando seja outro reprova. `restore.err` pode trazer linhas de dados de cliente quando o erro é de dados: trate-o como dado sensível, não o cole em PR nem em registro (só a contagem e os comandos do `cloud_admin`) e apague-o ao terminar. O `pg_restore` também **avisa** (`warning`, sem contar como erro) quando não consegue aplicar uma ACL: não use a contagem de erros como prova das ACLs, ela não pega isso.
+      **Aceite só dois resultados:** `rc=0` com `restore.err` vazio, ou `rc=1` em que os únicos erros são os dois `ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin`, que o Neon recusa por serem da plataforma e inofensivos (nem todo projeto os recusa: o `rc` pode ser 0 sem eles). Qualquer outro erro, ou qualquer outro `rc`, reprova o restore (revogue o preparo, apague o banco restaurado, corrija e refaça). Confira à mão a lista de `pg_restore: error:` em `restore.err`: no ensaio com `rc=1` foram 2, e o `Command was:` de cada uma era um `ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin …`; qualquer erro cujo comando seja outro reprova. `restore.err` pode trazer linhas de dados de cliente quando o erro é de dados: trate-o como dado sensível, não o cole em PR nem em registro (só a contagem e os comandos do `cloud_admin`) e apague-o ao terminar. O `pg_restore` também **avisa** (`warning`, sem contar como erro) quando não consegue aplicar uma ACL: não use a contagem de erros como prova das ACLs, ela não pega isso. Nem o `restore.err` vazio prova as ACLs: no ensaio de 01/11/2026 ele ficou vazio (`rc=0`) e as funções `SECURITY DEFINER` continuaram executáveis por PUBLIC até o passo 2b.
    3. **Ainda com o preparo do item 1 ativo**, faça o passo 2b. Só depois revogue (passo 2b, item 3).
 
 2b. **Reaplicar as ACLs, conferir e limpar o preparo (restore lógico no Neon).** O `pg_restore` aplica as ACLs como o papel de login, que não é dono das funções nem tem *grant option*. O PostgreSQL só **avisa**, e o `REVOKE ALL … FROM PUBLIC` e os `GRANT EXECUTE … TO polaris_*_runtime` das funções `SECURITY DEFINER` **não são aplicados**: o restaurado fica com as funções executáveis por PUBLIC e os runtimes sem os grants, sem nenhum erro. É uma falha de permissão de função definer: não abra o ambiente com ela. Com o preparo do passo 2 ainda ativo, no banco restaurado e **antes das migrations do passo 3**:
@@ -114,11 +114,12 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
       pg_restore -l arquivo.dump | grep -E '^[0-9]+; [0-9]+ [0-9]+ ACL ' > acl.lst
       wc -l < acl.lst
       pg_restore -L acl.lst --use-set-session-authorization -f acl.sql arquivo.dump
-      sed -E -e 's/^SET SESSION AUTHORIZATION /SET ROLE /' -e 's/^RESET SESSION AUTHORIZATION;/RESET ROLE;/' acl.sql > acl-role.sql
+      sed -E -e 's/^SET SESSION AUTHORIZATION /SET ROLE /' -e 's/^RESET SESSION AUTHORIZATION;/RESET ROLE;/' -e "s/^SET ROLE 'pg_database_owner';/RESET ROLE;/" acl.sql > acl-role.sql
       grep -c 'SESSION AUTHORIZATION' acl-role.sql
+      grep -c "SET ROLE 'pg_database_owner'" acl-role.sql
       ```
 
-      O `wc` tem de dar mais que zero e o último `grep -c`, **zero**: o papel de login não tem `SET SESSION AUTHORIZATION`, e o `SET ROLE <dono>` é o que o preparo do passo 2 permite. Rode o resultado parando no primeiro erro (qualquer erro reprova):
+      O `wc` tem de dar mais que zero e cada `grep -c`, **zero**: o papel de login não tem `SET SESSION AUTHORIZATION`, e o `SET ROLE <dono>` é o que o preparo do passo 2 permite. A terceira expressão do `sed` existe porque o dump traz a ACL do schema `public` com dono `pg_database_owner`, um papel implícito para o qual o PostgreSQL recusa sempre o `SET ROLE`; o login conectado é o dono do banco restaurado e, portanto, já é membro implícito desse papel, então `RESET ROLE` aplica essa ACL com o privilégio certo. Rode o resultado parando no primeiro erro (qualquer erro reprova):
 
       ```bash
       psql --no-psqlrc --set=ON_ERROR_STOP=1 --file=acl-role.sql
@@ -184,10 +185,10 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
         FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid
        WHERE r.rolname LIKE 'polaris\_%' AND m.member = (SELECT oid FROM pg_roles WHERE rolname = current_user) AND m.set_option;
 
-      SELECT nspacl::text FROM pg_namespace WHERE nspname = 'public';
+      SELECT array_to_string(ARRAY(SELECT x::text FROM unnest(nspacl) x ORDER BY x::text COLLATE "C"), ',') FROM pg_namespace WHERE nspname = 'public';
       ```
 
-      O `set_restante` tem de ser **0** e a ACL do `public` tem de ser **igual à da origem** (a registrada no passo 2). Se a ACL divergir, não corrija à mão com outro valor: pare e acione o responsável.
+      O `set_restante` tem de ser **0** e a ACL do `public` tem de ser **igual à da origem** (a registrada no passo 2), comparando as duas ordenadas como acima: o mesmo conjunto de entradas em outra ordem não é divergência. Se a ACL divergir, não corrija à mão com outro valor: pare e acione o responsável.
 
    Isto vale para o **restore lógico**. O restore por **branch Neon** (ponto no tempo) leva papéis e ACLs junto e dispensa o preparo, a reaplicação e o `GRANT`/`REVOKE` acima, mas **ainda não foi ensaiado**: depois dele, rode a mesma conferência do item 2 (a consulta vazia, o hash contra a origem e a consulta das funções de purge) antes de seguir, e registre o resultado.
 
