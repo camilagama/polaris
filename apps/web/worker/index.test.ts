@@ -2192,9 +2192,8 @@ describe("the scheduler tick", () => {
 describe("the log environment on every entry of the Worker", () => {
   function labelled(): unknown {
     logger.info("probe");
-    return (
-      vi.mocked(console.info).mock.calls.at(-1)?.[0] as Record<string, unknown>
-    ).environment;
+    const [event] = vi.mocked(console.info).mock.calls.at(-1) ?? [];
+    return (event as Record<string, unknown>).environment;
   }
 
   beforeEach(() => {
