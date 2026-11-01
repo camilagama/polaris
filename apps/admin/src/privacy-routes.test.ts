@@ -1,5 +1,5 @@
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type AdminBindings,
   type AdminDependencies,
@@ -121,6 +121,10 @@ const openBody = {
 };
 
 describe("opening a privacy case", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("opens it for the verified operator with the response time the domain sets, never one the body names", async () => {
     const { privacy: calls, send } = setup();
     const response = await send("POST", "/api/privacy-cases", {
@@ -144,6 +148,11 @@ describe("opening a privacy case", () => {
   });
 
   it("accepts the moment it arrived, in the past only", async () => {
+    // the domain refuses a receivedAt older than a year, so the fixed instant needs a fixed "now" close to it
+    vi.useFakeTimers({
+      now: new Date("2026-10-11T12:00:00.000Z"),
+      toFake: ["Date"],
+    });
     const { privacy: calls, send } = setup();
     const ok = await send("POST", "/api/privacy-cases", {
       ...openBody,
