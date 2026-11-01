@@ -74,3 +74,69 @@ export function assertSuperuserCasesProved(
     );
   }
 }
+
+export const SUPERUSER_URL = "POLARIS_GATE_SUPERUSER_URL";
+
+export const CI_SUPERUSER_FIX =
+  "in CI, set POLARIS_GATE_SUPERUSER_URL in the gates step and create the owner without superuser (see .github/workflows/ci.yml; by hand with CI=true, runbook gate-4, step 1)";
+
+const runOnlyMarkers = [SUPERUSER_URL, AS_SUPERUSER, SUPERUSER_RUN_FOLLOWS];
+
+/**
+ * The environment a gate child inherits: the superuser URL and the run markers are the executor's to set per child, so
+ * a value exported in the shell never reaches a gate.
+ */
+export function inheritedEnvironment(
+  env: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(([name]) => !runOnlyMarkers.includes(name))
+  );
+}
+
+/**
+ * Fail-closed setup of the job's Postgres: against the local Postgres of the CI the executor needs the superuser URL
+ * and an owner that is not a superuser, so a job that loses the URL or gets a superuser owner back stops instead of
+ * running the whole suite as a superuser. Outside the CI the owner is whatever the machine has.
+ */
+export function assertCiOwnerSetup(input: {
+  hasSuperuserUrl: boolean;
+  isLocalCi: boolean;
+  ownerIsSuperuser: boolean;
+}): void {
+  if (!input.isLocalCi) {
+    return;
+  }
+  if (!input.hasSuperuserUrl) {
+    throw new Error(
+      `POLARIS_GATE_SUPERUSER_URL is required against the local Postgres of the CI${
+        input.ownerIsSuperuser ? ", and the owner is a superuser" : ""
+      }: ${CI_SUPERUSER_FIX}.`
+    );
+  }
+  if (input.ownerIsSuperuser) {
+    throw new Error(
+      `The owner of POLARIS_GATE_DATABASE_URL must not be a superuser: ${CI_SUPERUSER_FIX}.`
+    );
+  }
+}
+
+/**
+ * Runs `work`, then `cleanup`. A failure of `cleanup` never hides the failure of `work`: it goes to `onCleanupError`
+ * and the error of `work` is the one that propagates. After a successful `work`, a failure of `cleanup` propagates.
+ */
+export async function runThenCleanUp<T>(
+  work: () => Promise<T>,
+  cleanup: () => Promise<void>,
+  onCleanupError: (error: unknown) => void
+): Promise<T> {
+  let result: T;
+  try {
+    result = await work();
+  } catch (error) {
+    await cleanup().catch(onCleanupError);
+    throw error;
+  }
+  await cleanup();
+  return result;
+}

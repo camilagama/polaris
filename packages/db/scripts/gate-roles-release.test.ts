@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { withGateRole } from "./gate-roles";
+import type { Pool } from "pg";
+import { queryAsFunctionOwner, withGateRole } from "./gate-roles";
 import { sqlState } from "./sales-gate-support";
 
 const READ_ONLY = "25006";
@@ -108,5 +109,92 @@ describe("withGateRole", () => {
     );
     expect(String(error)).toMatch(STILL_HOLDS);
     expect(sqlState(error)).toBeUndefined();
+  });
+});
+
+function fakeOwnerPool(options: { canSetAlready: boolean; failWork: boolean }) {
+  const connections: Array<{ released: boolean | undefined; sql: string[] }> =
+    [];
+  const pool = {
+    connect: () => {
+      const connection: {
+        released: boolean | undefined;
+        sql: string[];
+      } = { released: undefined, sql: [] };
+      connections.push(connection);
+      return Promise.resolve({
+        query: (text: string) => {
+          connection.sql.push(text);
+          if (text.includes("AS owner")) {
+            return Promise.resolve({ rows: [{ owner: "polaris_x" }] });
+          }
+          if (text.includes("AS at_session")) {
+            return Promise.resolve({
+              rows: [{ at_session: true, can_set: options.canSetAlready }],
+            });
+          }
+          if (text.includes("AS needs_grant")) {
+            return Promise.resolve({
+              rows: [{ needs_grant: !options.canSetAlready }],
+            });
+          }
+          if (text.includes("AS can_set")) {
+            return Promise.resolve({
+              rows: [{ can_set: options.canSetAlready }],
+            });
+          }
+          if (text === "GRANT EXECUTE ON FUNCTION f() TO PUBLIC") {
+            return options.failWork
+              ? Promise.reject(pgError(NO_PRIVILEGE))
+              : Promise.resolve({ rows: [] });
+          }
+          return Promise.resolve({ rows: [] });
+        },
+        release: (destroy?: boolean) => {
+          connection.released = destroy === true;
+        },
+      });
+    },
+  };
+  return { connections, pool: pool as unknown as Pool };
+}
+
+const OWNER_STATEMENT = "GRANT EXECUTE ON FUNCTION f() TO PUBLIC";
+
+describe("queryAsFunctionOwner", () => {
+  it("revokes what it granted from a new connection when the statement fails, and the error of the statement propagates", async () => {
+    const { connections, pool } = fakeOwnerPool({
+      canSetAlready: false,
+      failWork: true,
+    });
+    const error = await failureOf(() =>
+      queryAsFunctionOwner(pool, "f()", OWNER_STATEMENT)
+    );
+    expect(sqlState(error)).toBe(NO_PRIVILEGE);
+    expect(connections).toHaveLength(2);
+    expect(connections[0]?.released).toBe(true);
+    expect(connections[1]?.sql).toEqual([
+      'REVOKE "polaris_x" FROM SESSION_USER',
+    ]);
+    expect(connections[1]?.released).toBe(false);
+  });
+
+  it("opens no second connection when it granted nothing", async () => {
+    const { connections, pool } = fakeOwnerPool({
+      canSetAlready: true,
+      failWork: true,
+    });
+    await failureOf(() => queryAsFunctionOwner(pool, "f()", OWNER_STATEMENT));
+    expect(connections).toHaveLength(1);
+  });
+
+  it("returns the connection to the pool when the statement works", async () => {
+    const { connections, pool } = fakeOwnerPool({
+      canSetAlready: false,
+      failWork: false,
+    });
+    await queryAsFunctionOwner(pool, "f()", OWNER_STATEMENT);
+    expect(connections).toHaveLength(1);
+    expect(connections[0]?.released).toBe(false);
   });
 });
