@@ -50,8 +50,6 @@ const webRoot = join(repoRoot, "apps/web");
 const ZONE = "America/Sao_Paulo";
 const LOJAS = ["vazia", "vendas", "limite", "pro"] as const;
 type Loja = (typeof LOJAS)[number];
-/** Worker secrets the offline runtime needs and the closed environment of the e2e-real does not carry. */
-const RUNTIME_SECRETS = ["OFFLINE_LEASE_SECRET", "SYNC_PAYLOAD_HASH_SECRET"];
 /** The variants of the Free plan (packages/domain/src/billing/entitlements.ts). */
 const FREE_VARIANT_LIMIT = 50;
 const LISTENER_PID = /pid=(\d+)/;
@@ -315,17 +313,6 @@ function startPreview(state: State): ChildProcess {
     // only this local preview: the top of wrangler.jsonc keeps it off, as production does today
     env.BILLING_SELF_SERVICE_ENABLED = "true";
     env.E2E_PREVIEW_VARIABLES = `${env.E2E_PREVIEW_VARIABLES},BILLING_SELF_SERVICE_ENABLED`;
-  }
-  if (state.runtime) {
-    // the keys the Worker signs the offline lease and hashes the commands of `sync.push` with, made from the secret of
-    // the run and thrown away with it. Without them a Pro store also gets "Offline indisponível neste aparelho"
-    // (issueLease answers 503) and a sale kept on the device is never accepted (sync.push answers 503)
-    for (const name of RUNTIME_SECRETS) {
-      env[name] = createHash("sha256")
-        .update(`${name}:${state.run.secret}`)
-        .digest("hex");
-    }
-    env.E2E_PREVIEW_VARIABLES = `${env.E2E_PREVIEW_VARIABLES},${RUNTIME_SECRETS.join(",")}`;
   }
   const child = spawn(
     node,
