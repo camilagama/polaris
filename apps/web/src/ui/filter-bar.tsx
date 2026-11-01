@@ -485,6 +485,16 @@ function PillEditor({
   phone,
   value,
 }: PillEditorProps) {
+  const [openings, setOpenings] = useState(0);
+  const [wasEditing, setWasEditing] = useState(isEditing);
+  // an editor reopened while its popup is still leaving stays mounted with the month and the draft of the last opening:
+  // a new key at each opening (by the menu too, which opens it without the popup's own change) gives it the first ones
+  if (wasEditing !== isEditing) {
+    setWasEditing(isEditing);
+    if (isEditing) {
+      setOpenings((count) => count + 1);
+    }
+  }
   const popoverChange = useCallback(
     (open: boolean, details: { reason: string }) =>
       onEditingChange(field, open, details.reason),
@@ -507,7 +517,12 @@ function PillEditor({
       >
         <DialogTrigger render={button}>{content}</DialogTrigger>
         <DialogContent layout="form">
-          <PhoneEditorContent field={field} onApply={commit} value={value} />
+          <PhoneEditorContent
+            field={field}
+            key={openings}
+            onApply={commit}
+            value={value}
+          />
         </DialogContent>
       </Dialog>
     );
@@ -521,7 +536,12 @@ function PillEditor({
         className={POPUP_CLASS[field.type]}
         initialFocus={field.type === "date-range" ? false : undefined}
       >
-        <EditorContent field={field} onCommit={commit} value={value} />
+        <EditorContent
+          field={field}
+          key={openings}
+          onCommit={commit}
+          value={value}
+        />
       </PopoverContent>
     </Popover>
   );
