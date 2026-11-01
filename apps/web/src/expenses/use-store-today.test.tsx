@@ -105,7 +105,7 @@ afterEach(() => {
 });
 
 describe("useStoreToday", () => {
-  it("turns to the new month at midnight of São Paulo, not of the device (UTC is already November)", () => {
+  it("turns to the day of November at midnight of São Paulo, not of the device (UTC is already November)", () => {
     setClock("2026-11-01T02:50:00Z");
     render("America/Sao_Paulo");
     expect(shown).toBe("2026-10-31");

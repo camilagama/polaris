@@ -1136,6 +1136,7 @@ test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma
   const trigger = page.locator("#expense-month");
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await page.waitForTimeout(250);
   const reads = months.length;
 
   await page.clock.fastForward("11:00");
@@ -1144,6 +1145,8 @@ test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma
   expect(months.at(-1)).toBe("2026-11");
 
   await page.clock.fastForward("30:00");
+  await page.clock.fastForward("30:00");
+  await page.waitForTimeout(250);
   await expect(trigger).toHaveText("Novembro de 2026");
   expect(months).toHaveLength(reads + 1);
 });
@@ -1165,6 +1168,8 @@ test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a
   await page.clock.fastForward("11:00");
   await expect(trigger).toHaveText("Outubro de 2026");
   await page.clock.fastForward("30:00");
+  await page.clock.fastForward("30:00");
+  await page.waitForTimeout(250);
   await expect(trigger).toHaveText("Outubro de 2026");
   expect(months).toHaveLength(reads);
 
