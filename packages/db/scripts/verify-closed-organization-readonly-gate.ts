@@ -11,7 +11,7 @@ import {
   InvalidExportRequestError,
 } from "@polaris/domain/privacy/data-export";
 import { sql } from "drizzle-orm";
-import { Client } from "pg";
+import { Client, Pool } from "pg";
 import { createDatabase } from "../src/client";
 import {
   CLOSED_EXPORT_READER_ROLE,
@@ -37,6 +37,8 @@ import {
   type TenantRequestTransaction,
 } from "../src/tenant-transaction";
 import {
+  CLOSED_EXPORT_POLICIES_SQL,
+  type ClosedExportPolicyRow,
   isClosedExportPolicyQual,
   readClosedExportPolicies,
 } from "./closed-export-policy-qual";
@@ -46,6 +48,10 @@ import {
   setLoginRole,
   withGateRole,
 } from "./gate-roles";
+import {
+  foldRoleMemberships,
+  type RoleMembershipRow,
+} from "./role-memberships";
 import {
   createProductFixture,
   createTenantFixture,
@@ -1316,7 +1322,7 @@ async function run() {
       rolsuper: false,
       temporary: false,
     });
-    const memberships = await ownerQuery<Row>(
+    const membershipGrants = await owner.pool.query<RoleMembershipRow>(
       `SELECT member.rolname AS member, granted.rolname AS granted, m.inherit_option, m.set_option, m.admin_option
          FROM pg_auth_members m
          JOIN pg_roles member ON member.oid = m.member
@@ -1328,6 +1334,7 @@ async function run() {
         ORDER BY 1, 2`,
       [CLOSED_EXPORT_READER_ROLE]
     );
+    const memberships = foldRoleMemberships(membershipGrants.rows);
     assert.deepEqual(
       memberships,
       [
@@ -1339,7 +1346,7 @@ async function run() {
           set_option: true,
         },
       ],
-      "only the privacy runtime may become the reader (SET, never INHERIT), and the reader is a member of nothing"
+      "only the privacy runtime may become the reader (SET, never INHERIT, without ADMIN, however many roles granted it), and the reader is a member of nothing"
     );
     const policies = await readClosedExportPolicies(
       owner.pool,
@@ -1357,8 +1364,67 @@ async function run() {
       );
       assert.equal(policy.cmd, "SELECT");
     }
+    const hostileSchema = `polaris_cro_hostile_${suffix}`;
+    await owner.pool.query(`CREATE SCHEMA "${hostileSchema}"`);
+    try {
+      const hostilePool = new Pool({
+        connectionString: adminUrl,
+        max: 1,
+        options: `-c search_path=${hostileSchema},pg_catalog,public`,
+      });
+      hostilePool.on("error", () => undefined);
+      try {
+        const unpinnedRead = async () =>
+          (
+            await hostilePool.query<ClosedExportPolicyRow>(
+              CLOSED_EXPORT_POLICIES_SQL,
+              [CLOSED_EXPORT_READER_ROLE]
+            )
+          ).rows;
+        const [hostilePath] = (
+          await hostilePool.query<{ search_path: string }>(
+            "SELECT current_setting('search_path') AS search_path"
+          )
+        ).rows;
+        assert.equal(
+          hostilePath?.search_path.replaceAll(" ", ""),
+          `${hostileSchema},pg_catalog,public`
+        );
+        const control = await unpinnedRead();
+        assert.equal(control.length, DATASET_TABLES.length);
+        for (const policy of control) {
+          assert.ok(
+            isClosedExportPolicyQual(policy.tablename, policy.qual),
+            `${policy.tablename}: with public on the path and no look-alike, the text is the scope's, got ${policy.qual}`
+          );
+        }
+        await owner.pool.query(
+          `CREATE FUNCTION "${hostileSchema}".closed_export_organization() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid'`
+        );
+        const unpinned = await unpinnedRead();
+        assert.equal(unpinned.length, DATASET_TABLES.length);
+        for (const policy of unpinned) {
+          assert.ok(
+            !isClosedExportPolicyQual(policy.tablename, policy.qual),
+            `${policy.tablename}: a look-alike ahead of public must change what pg_policies prints, got ${policy.qual}`
+          );
+        }
+        assert.deepEqual(
+          await readClosedExportPolicies(
+            hostilePool,
+            CLOSED_EXPORT_READER_ROLE
+          ),
+          policies,
+          "the pinned read gives the same rows under a hostile session search_path"
+        );
+      } finally {
+        await hostilePool.end();
+      }
+    } finally {
+      await owner.pool.query(`DROP SCHEMA "${hostileSchema}" CASCADE`);
+    }
     tests.push(
-      "the reader holds SELECT on exactly the columns of EXPORT_DATASETS minus omit (has_column_privilege on every column of every table), no INSERT, UPDATE, REFERENCES, DELETE, TRUNCATE, TRIGGER or MAINTAIN and no sequence anywhere; authentication, billing, memberships, sessions, offline grants, devices, sync, the exports themselves, the closure, the purge and the audits are out of reach; it executes only its scope; it is NOLOGIN, NOINHERIT, NOBYPASSRLS, without TEMPORARY or CREATE; only the privacy runtime may become it (SET, not INHERIT) and it is a member of nothing; its policies are one SELECT per exported table, each with the whole qual equal to the scope as a subquery and nothing else (no OR, AND or other column)"
+      "the reader holds SELECT on exactly the columns of EXPORT_DATASETS minus omit (has_column_privilege on every column of every table), no INSERT, UPDATE, REFERENCES, DELETE, TRUNCATE, TRIGGER or MAINTAIN and no sequence anywhere; authentication, billing, memberships, sessions, offline grants, devices, sync, the exports themselves, the closure, the purge and the audits are out of reach; it executes only its scope; it is NOLOGIN, NOINHERIT, NOBYPASSRLS, without TEMPORARY or CREATE; only the privacy runtime may become it (SET, not INHERIT) and it is a member of nothing; its policies are one SELECT per exported table, each with the whole qual equal to the scope as a subquery and nothing else (no OR, AND or other column), read the same under a hostile session search_path that holds a look-alike scope function (unpinned the text changes, pinned it does not)"
     );
 
     // ------------------------------------------------- 8. who records the file of a copy (the trigger, both sides)
