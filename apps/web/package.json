@@ -20,7 +20,6 @@
     "test:real-devices": "bun real-devices/run.ts",
     "test:visual": "bun scripts/pwa-browser-tests.ts --project=chromium-visual",
     "test:visual:update": "bun scripts/pwa-browser-tests.ts --project=chromium-visual --update-snapshots=changed",
-    "test:web:datas": "bun scripts/test-datas.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json"
   },
   "browserslist": [
