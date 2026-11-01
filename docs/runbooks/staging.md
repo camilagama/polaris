@@ -207,7 +207,7 @@ Ordem e o que cada falha quer dizer:
 | 4 | web `GET /entrar` | 200, igual ao `index.html` (fallback SPA) | `not_found_handling` mudou ou shell de outra versão. |
 | 5 | web `GET /api/auth-methods` | 200, `google` e `emailPassword` `true`, `turnstileSiteKey` não vazio | falta segredo do Google ou do Turnstile, ou a proteção de abuso desligou (seção 5). |
 | 6 | web `POST /rpc/system/ping` com `Origin` do app | 200, `pong` | roteamento de `/rpc/*`, limite de leitura ou handler oRPC. A `Origin` sai de `new URL(STAGING_WEB_URL).origin`. |
-| 7–9 | o mesmo ping sem `Origin`, com `Origin: https://origem-estranha.invalid` e com `Origin: null` | 403 | a guarda de CSRF (`origin-check`) não está no ar: **incidente de segurança**, não flake. |
+| 7–9 | o mesmo ping sem `Origin`, com `Origin: https://origem-estranha.invalid` e com `Origin: null` | 403 com `error.code` `"forbidden"` no corpo | 200, ou um 403 que não é o da guarda (corpo sem `forbidden`): a guarda de CSRF (`origin-check`) não está no ar: **incidente de segurança**, não flake. |
 | 10 | web `GET /api/auth/get-session` sem cookie | 200, corpo `null` | 503 com `X-Request-Id` (`auth_unavailable`): falta `BETTER_AUTH_SECRET` ou `BETTER_AUTH_BASE_URL`. 503 sem `X-Request-Id` (`503 no X-Request-Id`): a plataforma recusou, provavelmente 1102 num isolate frio; esta verificação se repete, porque é ela que aquece o caminho do Better Auth. |
 | 11 | catálogo `GET /` | 200, CSP com nonce | entrada do catálogo sem `src/server.ts`. |
 | 12 | catálogo `GET /robots.txt` | 200, `X-Polaris-Release` = 12 primeiros de `HEAD_SHA` | como o 1, para o catálogo. |

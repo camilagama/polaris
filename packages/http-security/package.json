@@ -7,9 +7,9 @@
     "./server-release": "./src/server-release.ts"
   },
   "scripts": {
-    "build": "tsc --noEmit",
-    "check": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc --noEmit && tsc --noEmit -p tsconfig.build-tools.json",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.build-tools.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.build-tools.json"
   },
   "devDependencies": {
     "vite": "^8.3.3"
