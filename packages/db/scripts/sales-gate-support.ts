@@ -252,16 +252,20 @@ export async function createProductFixture(
   return { productId: product.id, variantId: variant.id };
 }
 
+export function redactConnectionStrings(text: string): string {
+  return text.replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted]");
+}
+
 export function redactedFailure(error: unknown): string {
   const code = sqlState(error);
   const name = error instanceof Error ? error.name : "UnknownError";
   const message =
     error instanceof Error
-      ? error.message.replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted]")
+      ? redactConnectionStrings(error.message)
       : "Unknown gate failure.";
   const stack =
     error instanceof Error && error.stack
-      ? error.stack.replace(/postgres(?:ql)?:\/\/[^\s'"]+/gi, "[redacted]")
+      ? redactConnectionStrings(error.stack)
       : "";
   return `${name}${code ? `, ${code}` : ""}: ${message}${stack ? `\n${stack}` : ""}`;
 }

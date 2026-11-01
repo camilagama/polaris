@@ -3,6 +3,7 @@ import {
   AS_SUPERUSER,
   assertCiOwnerSetup,
   assertSuperuserCasesProved,
+  checkCiOwnerSetup,
   inheritedEnvironment,
   runMarkers,
   runsOf,
@@ -10,6 +11,7 @@ import {
   SUPERUSER_RUN_FOLLOWS,
 } from "./gate-runs";
 
+const OWNER_IS_SUPERUSER = /and the owner is a superuser/;
 const NO_RUN_AFTER = /superuser run after this one/;
 const NOT_SUPERUSER = /not connected as a superuser/;
 const CI_FIX =
@@ -138,6 +140,65 @@ describe("assertCiOwnerSetup", () => {
         ).not.toThrow();
       }
     }
+  });
+});
+
+describe("checkCiOwnerSetup", () => {
+  function probe(isSuperuser: boolean) {
+    const calls: string[] = [];
+    return {
+      calls,
+      ownerIsSuperuser: () => {
+        calls.push("isSuperuser");
+        return Promise.resolve(isSuperuser);
+      },
+    };
+  }
+
+  it("does not read the owner's flag outside the CI, with or without the URL", async () => {
+    const withUrl = probe(true);
+    const withoutUrl = probe(true);
+    await checkCiOwnerSetup({
+      hasSuperuserUrl: true,
+      isLocalCi: false,
+      ownerIsSuperuser: withUrl.ownerIsSuperuser,
+    });
+    await checkCiOwnerSetup({
+      hasSuperuserUrl: false,
+      isLocalCi: false,
+      ownerIsSuperuser: withoutUrl.ownerIsSuperuser,
+    });
+    expect([withUrl.calls, withoutUrl.calls]).toEqual([[], []]);
+  });
+
+  it("reads the flag in the CI and keeps the refusals of assertCiOwnerSetup", async () => {
+    const superuser = probe(true);
+    await expect(
+      checkCiOwnerSetup({
+        hasSuperuserUrl: true,
+        isLocalCi: true,
+        ownerIsSuperuser: superuser.ownerIsSuperuser,
+      })
+    ).rejects.toThrow(CI_FIX);
+    const missingUrl = probe(true);
+    await expect(
+      checkCiOwnerSetup({
+        hasSuperuserUrl: false,
+        isLocalCi: true,
+        ownerIsSuperuser: missingUrl.ownerIsSuperuser,
+      })
+    ).rejects.toThrow(OWNER_IS_SUPERUSER);
+    const plain = probe(false);
+    await checkCiOwnerSetup({
+      hasSuperuserUrl: true,
+      isLocalCi: true,
+      ownerIsSuperuser: plain.ownerIsSuperuser,
+    });
+    expect([superuser.calls, missingUrl.calls, plain.calls]).toEqual([
+      ["isSuperuser"],
+      ["isSuperuser"],
+      ["isSuperuser"],
+    ]);
   });
 });
 

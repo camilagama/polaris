@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { Client } from "pg";
 import { isLocalGateHost } from "./gate-hosts";
 import {
-  assertCiOwnerSetup,
+  checkCiOwnerSetup,
   type GateRun,
   inheritedEnvironment,
   runMarkers,
@@ -618,10 +618,10 @@ async function superuserTarget(input: {
   isLocalCi: boolean;
 }): Promise<string | undefined> {
   const url = process.env.POLARIS_GATE_SUPERUSER_URL;
-  assertCiOwnerSetup({
+  await checkCiOwnerSetup({
     hasSuperuserUrl: Boolean(url),
     isLocalCi: input.isLocalCi,
-    ownerIsSuperuser: await isSuperuser(input.admin),
+    ownerIsSuperuser: () => isSuperuser(input.admin),
   });
   if (!url) {
     return undefined;

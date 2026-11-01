@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { queryAsFunctionOwner, withGateRole } from "./gate-roles";
@@ -8,6 +9,10 @@ const NO_PRIVILEGE = "42501";
 const GIVE_BACK = /could not give back polaris_x/;
 const BECOME = /could not become polaris_x/;
 const STILL_HOLDS = /still holds polaris_x/;
+const STATEMENT_FAILURE = /refused \(42501\)/;
+const REVOKE_FAILURE = /could not revoke polaris_x/;
+const REDACTED_URL = /connection to \[redacted\] lost/;
+const SECRET = /s3cret|owner:/;
 
 function pgError(code: string): Error {
   return Object.assign(new Error(`refused (${code})`), { code });
@@ -112,7 +117,11 @@ describe("withGateRole", () => {
   });
 });
 
-function fakeOwnerPool(options: { canSetAlready: boolean; failWork: boolean }) {
+function fakeOwnerPool(options: {
+  canSetAlready: boolean;
+  failGiveBack?: boolean;
+  failWork: boolean;
+}) {
   const connections: Array<{ released: boolean | undefined; sql: string[] }> =
     [];
   const pool = {
@@ -142,6 +151,13 @@ function fakeOwnerPool(options: { canSetAlready: boolean; failWork: boolean }) {
             return Promise.resolve({
               rows: [{ can_set: options.canSetAlready }],
             });
+          }
+          if (options.failGiveBack && text.startsWith("REVOKE")) {
+            return Promise.reject(
+              new Error(
+                "connection to postgresql://owner:s3cret@db.internal/neondb lost"
+              )
+            );
           }
           if (text === "GRANT EXECUTE ON FUNCTION f() TO PUBLIC") {
             return options.failWork
@@ -177,6 +193,30 @@ describe("queryAsFunctionOwner", () => {
       'REVOKE "polaris_x" FROM SESSION_USER',
     ]);
     expect(connections[1]?.released).toBe(false);
+  });
+
+  it("rejects naming both failures, with no SQLSTATE and no secret, when the revoke from the new connection fails too", async () => {
+    const { connections, pool } = fakeOwnerPool({
+      canSetAlready: false,
+      failGiveBack: true,
+      failWork: true,
+    });
+    const error = await failureOf(() =>
+      queryAsFunctionOwner(pool, "f()", OWNER_STATEMENT)
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    const message = String(error);
+    expect(message).toMatch(STATEMENT_FAILURE);
+    expect(message).toMatch(REVOKE_FAILURE);
+    expect(message).toMatch(REDACTED_URL);
+    expect(message).not.toMatch(SECRET);
+    expect(inspect(error, { depth: 5 })).not.toMatch(SECRET);
+    expect(sqlState(error)).toBeUndefined();
+    expect(connections).toHaveLength(2);
+    expect(connections[0]?.released).toBe(true);
+    expect(connections[1]?.sql).toEqual([
+      'REVOKE "polaris_x" FROM SESSION_USER',
+    ]);
   });
 
   it("opens no second connection when it granted nothing", async () => {
