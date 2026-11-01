@@ -830,6 +830,12 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
     [
       "SERVICE_UNAVAILABLE",
       503,
+      { reason: "previous_checkout_unverified" },
+      "Não deu para confirmar o pagamento que você começou antes. Toque em Atualizar: se ele foi aprovado, a assinatura aparece aqui.",
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
+      503,
       { reason: "billing_not_configured" },
       "A assinatura pelo app não está disponível agora. Nada foi cobrado. Tente mais tarde.",
     ],
@@ -870,6 +876,7 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
       "billing_provider_unavailable",
       "checkout_pending_confirmation",
       "cycle_not_offered",
+      "previous_checkout_unverified",
       "renewal_cancelled_until",
       "trial_already_used",
       "trial_in_progress",

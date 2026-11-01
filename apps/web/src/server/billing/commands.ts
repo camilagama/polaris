@@ -63,6 +63,20 @@ export class BillingCommandError extends Error {
 }
 
 /**
+ * The provider could not say whether the checkout the organization had before became a subscription, so the new
+ * one is not created. Its own code, apart from `provider_unavailable`: the old checkout may have been paid with its
+ * webhook late, and the client must not tell the owner that nothing was charged.
+ */
+class PreviousCheckoutUnverifiedError extends Error {
+  readonly code = "previous_checkout_unverified";
+
+  constructor(options?: ErrorOptions) {
+    super("previous_checkout_unverified", options);
+    this.name = "PreviousCheckoutUnverifiedError";
+  }
+}
+
+/**
  * Picks the price of the Pro cycle among the active prices, with its catalog ID (recorded with the link, ADR
  * 0104); a cycle with none is not offered.
  */
@@ -155,7 +169,7 @@ export interface StartCheckoutDependencies {
  * subscription would stay alive and charge with no organization behind it, so
  * the new checkout is refused (`checkout_pending_confirmation`) and the old
  * facts are read into the inbox now. A provider that cannot answer refuses too
- * (`provider_unavailable`): the swap is never made blind. Only here a provider's
+ * (`previous_checkout_unverified`): the swap is never made blind. Only here a provider's
  * "not found" is an empty answer: it is what a checkout nobody paid looks like.
  */
 async function assertOldCheckoutMadeNoSubscription(
@@ -186,7 +200,7 @@ async function assertOldCheckoutMadeNoSubscription(
       ...ids,
     });
     // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
-    throw new ProviderUnavailableError({ cause: error });
+    throw new PreviousCheckoutUnverifiedError({ cause: error });
   }
   if (!subscribed) {
     return;

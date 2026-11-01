@@ -581,6 +581,14 @@ const CONNECTION_TEXT =
 const CHECKOUT_UNCONFIRMED_TEXT =
   "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.";
 
+/**
+ * `previous_checkout_unverified`: the provider did not answer whether the checkout the store had before was paid.
+ * That one may have been approved with its webhook late, so unlike `CHECKOUT_UNCONFIRMED_TEXT` this text never says
+ * nothing was charged; "Atualizar" reads the plan, where the subscription shows up if it was approved.
+ */
+const PREVIOUS_CHECKOUT_UNVERIFIED_TEXT =
+  "Não deu para confirmar o pagamento que você começou antes. Toque em Atualizar: se ele foi aprovado, a assinatura aparece aqui.";
+
 /** The text of each refusal of the checkout (AS-17) and of the read; the server's message where it has one. */
 export function checkoutRefusal(error: unknown): Refusal {
   if (isConnectionFailure(error)) {
@@ -654,6 +662,12 @@ export function checkoutRefusal(error: unknown): Refusal {
         reread: true,
         retry: true,
         text: CHECKOUT_UNCONFIRMED_TEXT,
+      };
+    case "previous_checkout_unverified":
+      return {
+        reread: true,
+        retry: true,
+        text: PREVIOUS_CHECKOUT_UNVERIFIED_TEXT,
       };
     case "billing_not_configured":
     case "billing_self_service_off":

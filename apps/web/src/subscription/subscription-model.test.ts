@@ -754,6 +754,13 @@ describe("checkoutRefusal", () => {
     ],
     [
       "SERVICE_UNAVAILABLE",
+      "previous_checkout_unverified",
+      true,
+      true,
+      "Não deu para confirmar o pagamento que você começou antes. Toque em Atualizar: se ele foi aprovado, a assinatura aparece aqui.",
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
       "billing_not_configured",
       false,
       false,
@@ -873,6 +880,14 @@ describe("checkoutRefusal", () => {
     ]) {
       expect(checkoutRefusal(error).text).not.toContain("não respondeu");
     }
+  });
+
+  it("does not say nothing was charged when the old checkout could not be verified", () => {
+    const refusal = checkoutRefusal(
+      rpcError("SERVICE_UNAVAILABLE", "previous_checkout_unverified")
+    );
+    expect(refusal.text).not.toContain("Nada foi cobrado");
+    expect(refusal.text).not.toBe(CHECKOUT_UNCONFIRMED);
   });
 
   it("asks to reread on an unknown reason, with no word about a charge", () => {

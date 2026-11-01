@@ -101,13 +101,14 @@ function pixPayerKeyConfigured(bindings: WorkerBindings): boolean {
   return payerKey.length >= 32 && payerKey !== bindings.BETTER_AUTH_SECRET;
 }
 
-/** The provider errors that mean "try again later", with the code the client may show. */
-const unavailableCodes: ReadonlySet<string> = new Set([
-  "billing_provider_not_configured",
-  "provider_not_found",
-  "provider_rejected",
-  "provider_response_malformed",
-  "provider_unavailable",
+/** The errors that mean "try again later", each with the reason the client may show. */
+const unavailableReasons: ReadonlyMap<string, string> = new Map([
+  ["billing_provider_not_configured", "billing_provider_unavailable"],
+  ["previous_checkout_unverified", "previous_checkout_unverified"],
+  ["provider_not_found", "billing_provider_unavailable"],
+  ["provider_rejected", "billing_provider_unavailable"],
+  ["provider_response_malformed", "billing_provider_unavailable"],
+  ["provider_unavailable", "billing_provider_unavailable"],
 ]);
 
 /** What the person reads when a refusal needs more than its code (the client may show it as it is). */
@@ -147,11 +148,13 @@ function billingRpcError(
     typeof error.code === "string"
       ? error.code
       : undefined;
-  if (code !== undefined && unavailableCodes.has(code)) {
+  const unavailableReason =
+    code === undefined ? undefined : unavailableReasons.get(code);
+  if (unavailableReason !== undefined) {
     // nothing of the provider's answer: the errors carry only their code
     throw new ORPCError("SERVICE_UNAVAILABLE", {
       cause: error,
-      data: { reason: "billing_provider_unavailable" },
+      data: { reason: unavailableReason },
     });
   }
   return fallback(error);

@@ -441,7 +441,7 @@ describe("billing.startCheckout", () => {
       fixture.client.billing.startCheckout(valid)
     ).rejects.toMatchObject({
       code: "SERVICE_UNAVAILABLE",
-      data: { reason: "billing_provider_unavailable" },
+      data: { reason: "previous_checkout_unverified" },
     });
     expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
     expect(fixture.store.attachProvider).not.toHaveBeenCalled();

@@ -455,7 +455,7 @@ describe("startCardCheckout", () => {
       ["rejected", new ProviderRejectedError(401)],
       ["malformed", new ProviderResponseMalformedError()],
     ])(
-      "a provider that is down or fails (%s) refuses with provider_unavailable, failing closed",
+      "a provider that is down or fails (%s) refuses with previous_checkout_unverified, failing closed",
       async (_name, failure) => {
         vi.spyOn(console, "warn").mockImplementation(() => undefined);
         const port = fakePort({
@@ -467,13 +467,38 @@ describe("startCardCheckout", () => {
 
         await expect(
           startCardCheckout({ now: () => now, port, store }, input)
-        ).rejects.toBeInstanceOf(ProviderUnavailableError);
+        ).rejects.toMatchObject({
+          code: "previous_checkout_unverified",
+          name: "PreviousCheckoutUnverifiedError",
+        });
 
         expect(store.attachProvider).not.toHaveBeenCalled();
         expect(port.prepareSubscription).not.toHaveBeenCalled();
         expect(store.startTrial).not.toHaveBeenCalled();
       }
     );
+
+    it("creating the new checkout failing keeps provider_unavailable, not the old checkout's reason", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const port = fakePort({
+        prepareSubscription: vi.fn(() =>
+          Promise.reject(new ProviderUnavailableError())
+        ),
+      });
+      const store = fakeStore({
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+      });
+
+      const failure = await startCardCheckout(
+        { now: () => now, port, store },
+        input
+      ).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(ProviderUnavailableError);
+      expect(failure).toMatchObject({ code: "provider_unavailable" });
+      expect(port.hasSubscription).toHaveBeenCalledTimes(1);
+      expect(store.attachProvider).not.toHaveBeenCalled();
+    });
 
     it("asks nothing when there is no link, the link has a sub_, or it is another provider's", async () => {
       vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -1269,6 +1294,42 @@ describe("startPixCheckout", () => {
       expect(port.prepareSubscription).not.toHaveBeenCalled();
       expect(store.attachProvider).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ["before the lock", 0, 0],
+      ["inside the lock", 1, 1],
+    ])(
+      "a provider that cannot answer about the old checkout %s refuses with previous_checkout_unverified",
+      async (_name, failingCall, lockCalls) => {
+        vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const oldLink = {
+          provider: "woovi",
+          providerRef: "woovi-old-ref",
+          providerSubscriptionId: null,
+        };
+        const hasSubscription = vi.fn<BillingProviderPort["hasSubscription"]>();
+        for (let call = 0; call < failingCall; call += 1) {
+          hasSubscription.mockResolvedValueOnce(false);
+        }
+        hasSubscription.mockRejectedValueOnce(new ProviderUnavailableError());
+        const port = wooviPort({ hasSubscription });
+        const store = recordingStore([], {
+          readProviderLink: vi.fn(() => Promise.resolve(oldLink)),
+        });
+
+        await expect(
+          startPix(
+            { now: () => now, port, store, ...timing(0, 3000) },
+            { ...pixInput, trial: false }
+          )
+        ).rejects.toMatchObject({ code: "previous_checkout_unverified" });
+
+        expect(hasSubscription).toHaveBeenCalledTimes(failingCall + 1);
+        expect(store.withPayerLock).toHaveBeenCalledTimes(lockCalls);
+        expect(port.prepareSubscription).not.toHaveBeenCalled();
+        expect(store.attachProvider).not.toHaveBeenCalled();
+      }
+    );
 
     it("answers checkout_in_progress when the lock times out (55P03)", async () => {
       const store = fakeStore({
