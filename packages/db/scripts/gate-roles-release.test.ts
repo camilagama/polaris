@@ -121,6 +121,7 @@ function fakeOwnerPool(options: {
   canSetAlready: boolean;
   failGiveBack?: boolean;
   failWork: boolean;
+  holdsAfterRevoke?: boolean;
 }) {
   const connections: Array<{ released: boolean | undefined; sql: string[] }> =
     [];
@@ -130,6 +131,7 @@ function fakeOwnerPool(options: {
         released: boolean | undefined;
         sql: string[];
       } = { released: undefined, sql: [] };
+      let revoked = false;
       connections.push(connection);
       return Promise.resolve({
         query: (text: string) => {
@@ -149,8 +151,17 @@ function fakeOwnerPool(options: {
           }
           if (text.includes("AS can_set")) {
             return Promise.resolve({
-              rows: [{ can_set: options.canSetAlready }],
+              rows: [
+                {
+                  can_set: revoked
+                    ? options.holdsAfterRevoke === true
+                    : options.canSetAlready,
+                },
+              ],
             });
+          }
+          if (text.startsWith("REVOKE")) {
+            revoked = true;
           }
           if (options.failGiveBack && text.startsWith("REVOKE")) {
             return Promise.reject(
@@ -191,6 +202,7 @@ describe("queryAsFunctionOwner", () => {
     expect(connections[0]?.released).toBe(true);
     expect(connections[1]?.sql).toEqual([
       'REVOKE "polaris_x" FROM SESSION_USER',
+      "SELECT pg_has_role(session_user, $1, 'SET') AS can_set",
     ]);
     expect(connections[1]?.released).toBe(false);
   });
@@ -217,6 +229,25 @@ describe("queryAsFunctionOwner", () => {
     expect(connections[1]?.sql).toEqual([
       'REVOKE "polaris_x" FROM SESSION_USER',
     ]);
+  });
+
+  it("rejects with both failures, no SQLSTATE and the connection discarded when the revoke runs but the role stays", async () => {
+    const { connections, pool } = fakeOwnerPool({
+      canSetAlready: false,
+      failWork: true,
+      holdsAfterRevoke: true,
+    });
+    const error = await failureOf(() =>
+      queryAsFunctionOwner(pool, "f()", OWNER_STATEMENT)
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    const message = String(error);
+    expect(message).toMatch(STATEMENT_FAILURE);
+    expect(message).toMatch(REVOKE_FAILURE);
+    expect(message).toMatch(STILL_HOLDS);
+    expect(sqlState(error)).toBeUndefined();
+    expect(connections).toHaveLength(2);
+    expect(connections[1]?.released).toBe(true);
   });
 
   it("opens no second connection when it granted nothing", async () => {

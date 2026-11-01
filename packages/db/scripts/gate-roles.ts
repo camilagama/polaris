@@ -225,8 +225,9 @@ export async function replaceFunctionAsOwner(
  * A statement on a function that only its owner may run (GRANT or REVOKE EXECUTE), as that owner, outside a transaction.
  * When the statement fails, the connection is discarded and the GRANT of the role this call made is revoked from a new
  * one, so the edge does not stay in the database, and the error of the statement propagates. If that revoke fails
- * too, the call rejects with an AggregateError that names both failures and carries no SQLSTATE: a caller that expects
- * a refusal of the statement must not take it for one while the grant may still be in the database.
+ * too, or runs but leaves the session able to SET to the role, the call rejects with an AggregateError that names both
+ * failures and carries no SQLSTATE: a caller that expects a refusal of the statement must not take it for one while
+ * the grant may still be in the database.
  */
 export async function queryAsFunctionOwner(
   pool: Pool,
@@ -275,10 +276,24 @@ function failureMessage(error: unknown): string {
   return redactConnectionStrings(message);
 }
 
+/**
+ * Revokes, from a new connection, the GRANT a failed `queryAsFunctionOwner` made, and checks it as `restoreSession`
+ * does: a REVOKE that runs but leaves the session able to SET to the role (the right also reaches it through another
+ * membership) is a failure, not a clean give-back. The error carries no SQLSTATE; the connection is discarded on any
+ * failure because outside a transaction nothing undoes what it did.
+ */
 async function giveBackGrant(pool: Pool, role: string): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query(`REVOKE ${quotedRole(role)} FROM SESSION_USER`);
+    const { can_set } = await firstRow<{ can_set: boolean }>(
+      client,
+      "SELECT pg_has_role(session_user, $1, 'SET') AS can_set",
+      [role]
+    );
+    if (can_set) {
+      throw new Error(`The gate still holds ${role} after its REVOKE.`);
+    }
     client.release();
   } catch (error) {
     client.release(true);
