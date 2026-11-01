@@ -67,6 +67,10 @@ Projetos que precisam de banco (Web e Catalog na T-121b, o Admin completo na T-1
 
 Hyperdrive real e pooler (o binding local é uma conexão direta), Images real, cache de borda, a fila e o cron reais da plataforma e a rede real do Cloudflare Access. Isso fica no smoke de staging e no checklist de go-live ([release-checklist](./release-checklist.md)).
 
+## Varredura de datas críticas
+
+`bun run test:datas` roda os testes de nó de `apps/admin`, `apps/catalog` e `packages/*` (menos `packages/db`) com o `Date` fixado por `POLARIS_TEST_NOW` (`scripts/vitest-relogio-fixo.setup.mjs`, usado só por `vitest.datas.config.ts`), em quatro instantes (dia 1 às 00:30 e último dia às 23:50 de São Paulo, virada do ano, 29/02/2028) e em `TZ=America/Sao_Paulo` e `TZ=UTC`. `--instante <chave>`, `--tz <fuso>` e `-- <filtro de arquivo>` reduzem a rodada. É ferramenta local, de 8 rodadas completas: o CI não a roda. Só `Date` é falseado e o relógio avança com o tempo real; um teste que fixa o próprio relógio continua mandando nele. Sem a variável, o setup não faz nada.
+
 ## Ruído esperado
 
 A suíte imprime `failed to connect to local database ... Connection refused`: é o Hyperdrive de porta fechada recusando a conexão, que é o que os testes do Admin esperam.
