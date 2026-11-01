@@ -21,17 +21,19 @@ jobs:
     name: Concurrency suite, 3 rounds
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # The gate owner is NOT a superuser, as neondb_owner on Neon and as in the
+    # "PostgreSQL 18 gates" job of ci.yml (ADR 0025, amended).
     services:
       postgres:
         image: postgres:18
         env:
-          POSTGRES_USER: neondb_owner
+          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: polaris-ci
-          POSTGRES_DB: polaris_gate
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U neondb_owner -d polaris_gate"
+          --health-cmd "pg_isready -U postgres -d postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -57,10 +59,21 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      - name: Create the gate owner and its database, as on Neon (not a superuser)
+        run: |
+          psql "postgresql://postgres:polaris-ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE neondb_owner LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS REPLICATION PASSWORD 'polaris-ci'" \
+            -c "GRANT pg_monitor, pg_signal_backend TO neondb_owner"
+          psql "postgresql://neondb_owner:polaris-ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE polaris_gate"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT rolsuper FROM pg_roles WHERE rolname = current_user" | grep -qx f
       - name: Create the runtime role that lives outside the migrations
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
       - name: Replay every migration from scratch
         run: bun run --filter @polaris/db db:migrate
       - name: Run the concurrency suite, 3 rounds per race
+        # Only this step sees the superuser URL. With it set, the executor
+        # refuses a superuser owner, so the guard holds here too.
+        env:
+          POLARIS_GATE_SUPERUSER_URL: postgresql://postgres:polaris-ci@localhost:5432/polaris_gate
         run: bun run --filter @polaris/db gates:concurrency
 
