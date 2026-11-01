@@ -621,54 +621,122 @@ for (const viewport of FORM_VIEWPORTS) {
 
 const TURN_EVE = new Date("2026-11-01T02:50:00.000Z");
 
-test("na virada do dia da loja, o painel já aberto fica como está, o próximo abre com o dia novo e o servidor recebe esse dia sem nova leitura", async ({
-  page,
-}) => {
-  await page.clock.install({ time: TURN_EVE });
-  await openStockLab(page, "claro");
-  const sent: string[] = [];
-  await page.route("**/rpc/inventory/receiveStock", (route) => {
-    sent.push(route.request().postData() ?? "");
-    return route.fallback();
-  });
-  await expect.poll(() => attentionRequests.length).toBe(2);
-  await expect.poll(() => listRequests.length).toBeGreaterThan(0);
-  const reads = listRequests.length + attentionRequests.length;
-
-  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
-  await page.getByLabel("Quantidade recebida").fill("7");
-  await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
-    "Data, 31/10/2026"
+/**
+ * Waits until what the clock jump set off has reached the network: the page's own task queue is drained (React's
+ * scheduler runs on it, and the fake clock does not stop it), then a request that only this test answers goes out
+ * behind whatever the jump started, so a read started by it would have been counted before this returns.
+ */
+async function settled(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(null);
+      })
   );
+  await page.evaluate(() => fetch("/__settled").then(() => undefined));
+}
 
-  await page.clock.fastForward("11:00");
-  await page.clock.fastForward("30:00");
-  await page.waitForTimeout(250);
-  await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
-    "Data, 31/10/2026"
-  );
-  await expect(page.getByLabel("Quantidade recebida")).toHaveValue("7");
-  expect(listRequests.length + attentionRequests.length).toBe(reads);
+const TURN_CASES = [
+  {
+    confirm: "Confirmar recebimento",
+    fill: async (page: Page, quantity: string) => {
+      await page.getByLabel("Quantidade recebida").fill(quantity);
+      await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    },
+    quantityLabel: "Quantidade recebida",
+    route: "receiveStock",
+    saldo: "Saldo: 15 unidades",
+    trigger: RECEIVE_JEANS,
+  },
+  {
+    confirm: "Confirmar contagem",
+    fill: async (page: Page, quantity: string) => {
+      await page.getByLabel("Quantidade contada").fill(quantity);
+    },
+    quantityLabel: "Quantidade contada",
+    route: "inventoryCount",
+    saldo: "Saldo: 9 unidades",
+    trigger: "Contar estoque de Calça jeans, 42",
+  },
+] as const;
 
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
-  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
-  await page.getByRole("button", { name: "Confirmar recebimento" }).click();
-  await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
-  await page.getByRole("button", { exact: true, name: "Fechar" }).click();
+/**
+ * 02:50Z is 23:50 of the day before in São Paulo and already the new day on a device in UTC: with the browser zone pinned to UTC,
+ * only the store's zone can produce the day the screen shows before the turn. On a machine in São Paulo the two
+ * would agree and the test could not tell which of them the screen followed.
+ */
+test.describe("virada do dia da loja", () => {
+  test.use({ timezoneId: "UTC" });
 
-  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
-  await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
-    "Data, 01/11/2026"
-  );
-  await page.getByLabel("Quantidade recebida").fill("4");
-  await page.getByLabel("Custo unitário (R$)").fill("12,50");
-  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
-  await expect(page.getByText("data no futuro")).toHaveCount(0);
-  await page.getByRole("button", { name: "Confirmar recebimento" }).click();
-  await expect(page.getByText("Saldo: 15 unidades")).toBeVisible();
-  expect(sent).toHaveLength(2);
-  expect(sent[0]).toContain("2026-10-31");
-  expect(sent[1]).toContain("2026-11-01");
+  for (const turn of TURN_CASES) {
+    test(`${turn.trigger.split(" ")[0]}: o painel já aberto fica como está, o próximo abre com o dia novo e o servidor recebe esse dia sem nova leitura`, async ({
+      page,
+    }) => {
+      await page.clock.install({ time: TURN_EVE });
+      await openStockLab(page, "claro");
+      await page.route("**/rpc/inventory/inventoryCount", (route) =>
+        route.fulfill(
+          rpc({
+            balance: {
+              movingAverageCost: "62.400000",
+              quantity: 9,
+              variantId: JEANS.variantId,
+              version: 2,
+            },
+            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+            replayed: false,
+          })
+        )
+      );
+      const sent: string[] = [];
+      await page.route(`**/rpc/inventory/${turn.route}`, (route) => {
+        sent.push(route.request().postData() ?? "");
+        return route.fallback();
+      });
+      await expect.poll(() => attentionRequests.length).toBe(2);
+      await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+      await page.route("**/__settled", (route) =>
+        route.fulfill({ body: "", status: 204 })
+      );
+      const reads = listRequests.length + attentionRequests.length;
+
+      await page.getByRole("button", { name: turn.trigger }).click();
+      await turn.fill(page, "7");
+      await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+        "Data, 31/10/2026"
+      );
+
+      await page.clock.fastForward("11:00");
+      await page.clock.fastForward("30:00");
+      await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+        "Data, 31/10/2026"
+      );
+      await expect(page.getByLabel(turn.quantityLabel)).toHaveValue("7");
+      await settled(page);
+      expect(listRequests.length + attentionRequests.length).toBe(reads);
+
+      await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+      await page.getByRole("button", { name: turn.confirm }).click();
+      await expect(page.getByText(turn.saldo)).toBeVisible();
+      await page.getByRole("button", { exact: true, name: "Fechar" }).click();
+
+      await page.getByRole("button", { name: turn.trigger }).click();
+      await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+        "Data, 01/11/2026"
+      );
+      await turn.fill(page, "4");
+      await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+      await expect(page.getByText("data no futuro")).toHaveCount(0);
+      await page.getByRole("button", { name: turn.confirm }).click();
+      await expect(page.getByText(turn.saldo)).toBeVisible();
+
+      expect(sent).toHaveLength(2);
+      expect(sent[0]).toContain("2026-10-31");
+      expect(sent[1]).toContain("2026-11-01");
+    });
+  }
 });
 
 test("a revisão vazia leva o foco ao primeiro campo inválido, e o campo diz o erro", async ({

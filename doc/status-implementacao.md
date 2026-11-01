@@ -2707,7 +2707,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | `inventory/inventory-page.tsx` | Em revisão | O `today` da tela passa a vir de `useStoreToday` (`expenses/use-store-today.ts`, o mesmo da Despesas: a cada minuto e ao voltar à aba, no fuso da loja; só a string `AAAA-MM-DD` fica no estado). Depois da virada, um recebimento, contagem, baixa ou informe de custo aberto em seguida nasce com o dia novo, e a data de hoje deixa de ser recusada como futura. O painel já aberto guarda o dia em que abriu e o que a pessoa digitou. A virada não lê nada do servidor; o servidor segue decidindo se a data é futura. Painel de resultado e importação ficam como estão. |
-| Provas | Em revisão | `e2e/stock-screen.e2e.ts` com `page.clock` (23:50 de 31/10 em São Paulo): o painel aberto antes fica em 31/10 com a quantidade digitada, o seguinte abre em 01/11 e o servidor recebe cada dia, e a virada não faz leitura da lista nem de "Precisa de ação"; falha com o `today` antigo. O hook segue provado em `use-store-today.test.tsx`. |
+| Provas | Em revisão | `e2e/stock-screen.e2e.ts` com `page.clock` (23:50 de 31/10 em São Paulo) e o fuso do navegador fixo em UTC, onde já é 01/11, para a prova distinguir o dia da loja do dia do aparelho, em "Receber" e em "Contar": o painel aberto antes fica em 31/10 com a quantidade digitada, o seguinte abre em 01/11 e o servidor recebe cada dia, e a virada não faz leitura da lista nem de "Precisa de ação" (conferido por uma requisição de barreira, não por espera fixa); falha com o `today` antigo. O hook segue provado em `use-store-today.test.tsx`. |
 
 ### Superfícies de prova fora do banco e da configuração (t548, D1 do fechamento do staging; migration 0108)
 
