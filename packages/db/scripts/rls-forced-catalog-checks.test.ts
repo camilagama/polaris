@@ -6,9 +6,11 @@ import {
   type RlsExemptTable,
 } from "../src/rls-exempt-tables";
 import {
+  type CatalogPolicy,
   type CatalogRelation,
   type CatalogSnapshot,
   catalogViolations,
+  POLICIES_SQL,
   RELATIONS_SQL,
   SCHEMAS_SQL,
 } from "./rls-forced-catalog-checks";
@@ -37,7 +39,14 @@ const view = (
   ...overrides,
 });
 
+const policy = (
+  tableName: string,
+  name: string,
+  roles: string[]
+): CatalogPolicy => ({ name, roles, table: tableName });
+
 const healthy: CatalogSnapshot = {
+  policies: [policy("sale", "sale_current_tenant", ["polaris_runtime"])],
   relations: [table("sale"), table("product", { kind: "p" })],
   schemas: ["drizzle"],
 };
@@ -194,6 +203,46 @@ describe("the catalog verdict of the rls-forced-catalog gate", () => {
     ).toEqual([]);
   });
 
+  it("fails a policy whose roles are {public}, and says the table and the policy", () => {
+    const found = verdict({
+      ...healthy,
+      policies: [
+        ...healthy.policies,
+        policy("expenses", "open_to_all", ["public"]),
+      ],
+    });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toContain("policy open_to_all on public.expenses");
+    expect(found[0]).toContain("TO PUBLIC");
+  });
+
+  it("fails a policy whose roles are {public,other}, in either order", () => {
+    const found = verdict({
+      ...healthy,
+      policies: [
+        policy("expenses", "first", ["public", "polaris_runtime"]),
+        policy("sale", "second", ["polaris_runtime", "public"]),
+      ],
+    });
+    expect(found).toHaveLength(2);
+    expect(found[0]).toContain("policy first on public.expenses");
+    expect(found[1]).toContain("policy second on public.sale");
+  });
+
+  it("passes an empty policy list and policies that name only roles", () => {
+    expect(verdict({ ...healthy, policies: [] })).toEqual([]);
+    expect(
+      verdict({
+        ...healthy,
+        policies: [
+          policy("sale", "a", ["polaris_runtime"]),
+          policy("sale", "b", ["polaris_runtime", "polaris_admin_runtime"]),
+          policy("sale", "c", ["publicity"]),
+        ],
+      })
+    ).toEqual([]);
+  });
+
   it("keeps the exempt lists exactly as reviewed: no table, and the drizzle schema", () => {
     expect(RLS_EXEMPT_TABLES).toEqual([]);
     expect(RLS_EXEMPT_SCHEMAS.map((entry) => entry.schema)).toEqual([
@@ -207,5 +256,7 @@ describe("the catalog verdict of the rls-forced-catalog gate", () => {
     expect(RELATIONS_SQL).toContain("security_invoker=(true|on|1|yes)");
     expect(SCHEMAS_SQL).toContain("nspname <> 'information_schema'");
     expect(SCHEMAS_SQL).toContain("nspname !~ '^pg_'");
+    expect(POLICIES_SQL).toContain("schemaname = 'public'");
+    expect(POLICIES_SQL).toContain("roles::text[]");
   });
 });

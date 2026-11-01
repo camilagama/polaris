@@ -16,7 +16,14 @@ export interface CatalogRelation {
   securityInvoker: boolean;
 }
 
+export interface CatalogPolicy {
+  name: string;
+  roles: string[];
+  table: string;
+}
+
 export interface CatalogSnapshot {
+  policies: CatalogPolicy[];
   relations: CatalogRelation[];
   schemas: string[];
 }
@@ -41,6 +48,15 @@ export const SCHEMAS_SQL = `SELECT nspname AS name
  WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname !~ '^pg_'
  ORDER BY nspname`;
 
+// every policy of public with its roles, so the verdict (not the query) decides what `{public}` means; the cast makes
+// the driver return a text array (it does not parse the `name[]` of pg_policies.roles)
+export const POLICIES_SQL = `SELECT tablename AS table_name,
+       policyname AS policy_name,
+       roles::text[] AS roles
+  FROM pg_catalog.pg_policies
+ WHERE schemaname = 'public'
+ ORDER BY tablename, policyname`;
+
 export async function readCatalog(client: Client): Promise<CatalogSnapshot> {
   const relations = await client.query<{
     forced: boolean;
@@ -50,7 +66,17 @@ export async function readCatalog(client: Client): Promise<CatalogSnapshot> {
     security_invoker: boolean;
   }>(RELATIONS_SQL);
   const schemas = await client.query<{ name: string }>(SCHEMAS_SQL);
+  const policies = await client.query<{
+    policy_name: string;
+    roles: string[];
+    table_name: string;
+  }>(POLICIES_SQL);
   return {
+    policies: policies.rows.map((row) => ({
+      name: row.policy_name,
+      roles: row.roles,
+      table: row.table_name,
+    })),
     relations: relations.rows.map((row) => ({
       forced: row.forced,
       kind: row.kind,
@@ -160,6 +186,16 @@ function schemaViolations(
   return found;
 }
 
+// a policy with no TO clause is stored as {public} too; a permissive one for PUBLIC applies to every role with a privilege on the table
+function publicPolicyViolations(policies: CatalogPolicy[]): string[] {
+  return policies
+    .filter((policy) => policy.roles.includes("public"))
+    .map(
+      (policy) =>
+        `policy ${policy.name} on public.${policy.table} is TO PUBLIC (roles: {${policy.roles.join(",")}}): name the roles it is for in the migration (TO <role>); a policy for PUBLIC applies to every role that has a privilege on the table`
+    );
+}
+
 export function catalogViolations(
   snapshot: CatalogSnapshot,
   exemptTables: readonly RlsExemptTable[],
@@ -172,5 +208,6 @@ export function catalogViolations(
       snapshot.relations.filter((relation) => !isTable(relation))
     ),
     ...schemaViolations(snapshot.schemas, exemptSchemas),
+    ...publicPolicyViolations(snapshot.policies),
   ];
 }

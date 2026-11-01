@@ -18,7 +18,9 @@ import {
  * Row security across the whole catalog of the `public` schema on a real PostgreSQL 18: every ordinary (`r`),
  * partitioned (`p`) and foreign (`f`) table has row security enabled AND forced, unless `RLS_EXEMPT_TABLES` names it with a reason; a
  * view or materialized view (`v`, `m`) of `public` has `security_invoker`; and the database has no user schema besides
- * `public` other than the ones `RLS_EXEMPT_SCHEMAS` names. The other gates each check the tables of their own subject:
+ * `public` other than the ones `RLS_EXEMPT_SCHEMAS` names; and no policy of `public` has PUBLIC among its roles (a policy
+ * for PUBLIC applies to every role with a privilege on the table, and the gates of one subject see only their tables).
+ * The other gates each check the tables of their own subject:
  * this is the one that sees a table no gate names. A stale list also fails (a table that is gone or now forced).
  *
  * Scope: only the `public` schema is read for row security. Any other user schema fails the gate until the queries of
@@ -38,7 +40,7 @@ const PROBE_PREFIX = "zz_gate_probe_";
 /**
  * The reading and the verdict, proved on this database before the real verdict: inside one transaction that is always
  * rolled back, it plants a table with no row security, a table that lost FORCE, a view and a materialized view with no
- * security_invoker (and a view that has it), and a schema, and the verdict must name each of them and nothing else.
+ * security_invoker (and a view that has it), a schema and a policy TO PUBLIC, and the verdict must name each of them and nothing else.
  */
 async function proveDetection(client: Client, existingTable: string) {
   const planted = `${PROBE_PREFIX}table`;
@@ -58,6 +60,9 @@ async function proveDetection(client: Client, existingTable: string) {
       `CREATE MATERIALIZED VIEW public.${PROBE_PREFIX}matview AS SELECT 1 AS probe`
     );
     await client.query(`CREATE SCHEMA ${PROBE_PREFIX}schema`);
+    await client.query(
+      `CREATE POLICY ${PROBE_PREFIX}policy ON public.${client.escapeIdentifier(existingTable)} AS PERMISSIVE FOR SELECT TO PUBLIC USING (true)`
+    );
     const found = catalogViolations(
       await readCatalog(client),
       RLS_EXEMPT_TABLES,
@@ -69,6 +74,7 @@ async function proveDetection(client: Client, existingTable: string) {
       `view public.${PROBE_PREFIX}view `,
       `materialized view public.${PROBE_PREFIX}matview `,
       `schema ${PROBE_PREFIX}schema `,
+      `policy ${PROBE_PREFIX}policy on public.${existingTable} `,
     ];
     assert.equal(found.length, expected.length, found.join("\n"));
     for (const start of expected) {
