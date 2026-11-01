@@ -33,7 +33,7 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
        export POLARIS_GATE_BRANCH=pr0-local-gate
        export POLARIS_GATE_DATABASE=polaris_gate
 
-   `POLARIS_GATE_BRANCH` precisa casar `^pr\d+-[a-z0-9-]+-gate$`; fora do Neon é só um rótulo. `POLARIS_GATE_SUPERUSER_URL` vai só para os gates que precisam de superusuário por desenho (`environment-marker`, `activation-funnel`, `migrations-without-superuser`); `audit-retention` e `definer-hardening` rodam duas vezes, como o dono e como o superusuário (`(superuser)` no resumo). Com ela definida, o executor recusa um `POLARIS_GATE_DATABASE_URL` cujo dono seja superusuário, e todos os outros gates rodam como no Neon ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda do dono sem superusuário).
+   `POLARIS_GATE_BRANCH` precisa casar `^pr\d+-[a-z0-9-]+-gate$`; fora do Neon é só um rótulo. `POLARIS_GATE_SUPERUSER_URL` vai só para os gates que precisam de superusuário por desenho (`environment-marker`, `activation-funnel`, `migrations-without-superuser`); `audit-retention` e `definer-hardening` rodam duas vezes, como o dono e como o superusuário (`(superuser)` no resumo). Com `CI=true` no PostgreSQL local ela é obrigatória e o executor recusa um `POLARIS_GATE_DATABASE_URL` cujo dono seja superusuário (sem a URL, a execução para com a mensagem que nomeia a correção), e todos os outros gates rodam como no Neon ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda do dono sem superusuário).
 2. Criar a role que vive fora das migrations (no Neon ela vem da `production`; aqui não existe) e aplicar as migrations do zero:
 
        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"

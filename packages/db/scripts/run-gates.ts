@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { Client } from "pg";
 import { isLocalGateHost } from "./gate-hosts";
 import {
+  assertCiOwnerSetup,
   type GateRun,
+  inheritedEnvironment,
   runMarkers,
   runsOf,
+  runThenCleanUp,
   type SuperuserNeed,
 } from "./gate-runs";
 import { connectToGateTarget, validateGateTarget } from "./gate-target";
@@ -23,10 +26,11 @@ import { connectToGateTarget, validateGateTarget } from "./gate-target";
  *   POLARIS_GATE_DATABASE_URL  direct (non-pooled) owner URL of the disposable database
  *   POLARIS_GATE_BRANCH        branch name, `prNN-...-gate`
  *   POLARIS_GATE_DATABASE      database name (default `neondb`)
- *   POLARIS_GATE_SUPERUSER_URL optional, local Postgres only: a superuser of the same database, given only to the
- *                              gates that need one (`superuser`); with it set, the owner of POLARIS_GATE_DATABASE_URL
- *                              must NOT be a superuser, so every other gate runs as on Neon, and a gate that proves
- *                              more with a superuser (`also`) runs twice, once as each
+ *   POLARIS_GATE_SUPERUSER_URL local Postgres only: a superuser of the same database, given only to the gates that
+ *                              need one (`superuser`). Required when the target is the CI's local Postgres (CI=true):
+ *                              the executor stops without it, and the owner of POLARIS_GATE_DATABASE_URL must NOT be a
+ *                              superuser, so every other gate runs as on Neon, and a gate that proves more with a
+ *                              superuser (`also`) runs twice, once as each. Outside the CI it is optional
  * The target must be on the list of hosts in gate-hosts.ts: a Neon disposable
  * endpoint, or a local Postgres when the process runs in CI (`CI=true`); any
  * other host is refused before a connection opens. Each gate script keeps its own checks; this
@@ -549,9 +553,7 @@ function runGate(
     const lines: string[] = [];
     const notes: string[] = [];
     const superuserUrl = run.asSuperuser ? context.superuserUrl : undefined;
-    // the superuser URL reaches only the run that uses it, and only as the URL of that run
-    const { POLARIS_GATE_SUPERUSER_URL: _superuserUrl, ...inherited } =
-      process.env;
+    const inherited = inheritedEnvironment(process.env);
     const child = spawn(process.execPath, [`scripts/${gate.script}`], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
@@ -616,6 +618,11 @@ async function superuserTarget(input: {
   isLocalCi: boolean;
 }): Promise<string | undefined> {
   const url = process.env.POLARIS_GATE_SUPERUSER_URL;
+  assertCiOwnerSetup({
+    hasSuperuserUrl: Boolean(url),
+    isLocalCi: input.isLocalCi,
+    ownerIsSuperuser: await isSuperuser(input.admin),
+  });
   if (!url) {
     return undefined;
   }
@@ -627,11 +634,6 @@ async function superuserTarget(input: {
   if (!input.isLocalCi || parsed.host !== input.host) {
     throw new Error(
       "POLARIS_GATE_SUPERUSER_URL is for the local Postgres of the job only, on the same host as the owner."
-    );
-  }
-  if (await isSuperuser(input.admin)) {
-    throw new Error(
-      "With POLARIS_GATE_SUPERUSER_URL set, the owner of POLARIS_GATE_DATABASE_URL must not be a superuser."
     );
   }
   const { admin } = await connectToGateTarget({
@@ -649,7 +651,37 @@ async function superuserTarget(input: {
   return url;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear script of validation, setup, sequential runs and teardown
+async function runAndReport(
+  gate: Gate,
+  context: Context,
+  run: GateRun
+): Promise<GateResult> {
+  const result = await runGate(gate, context, run);
+  const status = result.code === 0 ? "passed" : "failed";
+  console.log(`    ${status} in ${result.seconds}s`);
+  for (const note of result.notes) {
+    console.log(`    note: ${note}`);
+  }
+  if (result.code !== 0) {
+    for (const line of result.tail) {
+      console.log(`    | ${line.slice(0, 220)}`);
+    }
+  }
+  return {
+    gate: run.label,
+    ...(result.notes.length > 0 ? { notes: result.notes } : {}),
+    seconds: result.seconds,
+    status,
+  };
+}
+
+interface GateResult {
+  gate: string;
+  notes?: string[];
+  seconds: number;
+  status: string;
+}
+
 async function main() {
   const url = process.env.POLARIS_GATE_DATABASE_URL;
   const branch = process.env.POLARIS_GATE_BRANCH ?? "";
@@ -701,67 +733,54 @@ async function main() {
   }
   const login = `polaris_gate_runner_${randomBytes(6).toString("hex")}`;
   const password = randomBytes(24).toString("hex");
-  const results: Array<{
-    gate: string;
-    notes?: string[];
-    seconds: number;
-    status: string;
-  }> = [];
-  try {
-    await admin.query(
-      `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
-    );
-    await admin.query(`GRANT polaris_pr11_runtime TO "${login}"`);
-    const runtime = new URL(url);
-    runtime.username = login;
-    runtime.password = password;
-    const context: Context = {
-      branch,
-      database,
-      host: parsed.hostname,
-      runtimeLogin: login,
-      runtimeUrl: isLocalCi
-        ? runtime.toString()
-        : withVerifyFull(runtime.toString()),
-      superuserUrl,
-      url: isLocalCi ? url : withVerifyFull(url),
-    };
+  const results: GateResult[] = [];
+  await runThenCleanUp(
+    async () => {
+      await admin.query(
+        `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
+      );
+      await admin.query(`GRANT polaris_pr11_runtime TO "${login}"`);
+      const runtime = new URL(url);
+      runtime.username = login;
+      runtime.password = password;
+      const context: Context = {
+        branch,
+        database,
+        host: parsed.hostname,
+        runtimeLogin: login,
+        runtimeUrl: isLocalCi
+          ? runtime.toString()
+          : withVerifyFull(runtime.toString()),
+        superuserUrl,
+        url: isLocalCi ? url : withVerifyFull(url),
+      };
 
-    const runs = selected.flatMap((gate) =>
-      runsOf(gate.name, gate.superuser, Boolean(superuserUrl)).map((run) => ({
-        gate,
-        run,
-      }))
-    );
-    for (const { gate, run } of runs) {
-      console.log(`=== ${run.label}`);
-      // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
-      const result = await runGate(gate, context, run);
-      const status = result.code === 0 ? "passed" : "failed";
-      results.push({
-        gate: run.label,
-        ...(result.notes.length > 0 ? { notes: result.notes } : {}),
-        seconds: result.seconds,
-        status,
-      });
-      console.log(`    ${status} in ${result.seconds}s`);
-      for (const note of result.notes) {
-        console.log(`    note: ${note}`);
+      const runs = selected.flatMap((gate) =>
+        runsOf(gate.name, gate.superuser, Boolean(superuserUrl)).map((run) => ({
+          gate,
+          run,
+        }))
+      );
+      for (const { gate, run } of runs) {
+        console.log(`=== ${run.label}`);
+        // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
+        results.push(await runAndReport(gate, context, run));
       }
-      if (result.code !== 0) {
-        for (const line of result.tail) {
-          console.log(`    | ${line.slice(0, 220)}`);
-        }
+    },
+    async () => {
+      try {
+        await admin.query(`REVOKE polaris_pr11_runtime FROM "${login}"`);
+        await admin.query(`DROP ROLE IF EXISTS "${login}"`);
+      } finally {
+        await admin.end();
       }
+    },
+    (cleanupError) => {
+      console.error(
+        `Gate runner cleanup also failed: ${redact(String(cleanupError))}`
+      );
     }
-  } finally {
-    try {
-      await admin.query(`REVOKE polaris_pr11_runtime FROM "${login}"`);
-      await admin.query(`DROP ROLE IF EXISTS "${login}"`);
-    } finally {
-      await admin.end();
-    }
-  }
+  );
   console.log(JSON.stringify({ branch, database, results }, null, 2));
   if (results.some((entry) => entry.status !== "passed")) {
     process.exitCode = 1;

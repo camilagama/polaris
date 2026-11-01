@@ -1,4 +1,4 @@
-import { Client, type Pool, type QueryResult, type QueryResultRow } from "pg";
+import type { Pool, QueryResult, QueryResultRow } from "pg";
 import { sqlState } from "./sales-gate-support";
 
 /**
@@ -11,8 +11,10 @@ import { sqlState } from "./sales-gate-support";
  *
  * - `withGateRole`: the gate needs the power of the role itself (a definer probe, a write as a `*_owner`). The owner
  *   grants itself SET on the role for the duration of the work, as the migrations do, and gives it back.
- * - `runtimeConnection`: the assertion is about what the product does. The call goes through a login of the runtime
- *   group, the one the gate already created, never through the owner.
+ * - `setLoginRole`: the assertion is about what the product does, on an object whose existence the gate already
+ *   confirmed. The gate's own login of the runtime group does the SET ROLE, never the owner, and never grants.
+ *   `withGateRole` also plays the group in the mutants (the definition replaced as its owner), where the object is the
+ *   thing under test.
  */
 
 export interface GateQueryable {
@@ -156,7 +158,7 @@ async function restoreSession(
 /**
  * The login's own SET ROLE, the step the product itself takes (a runtime login to a group it may SET to). It never
  * grants: a login without the right fails here as it would in production, which is what a refusal test asserts.
- * `transaction` is SET LOCAL (ends with the transaction); `session` lasts until `resetLoginRole`.
+ * `transaction` is SET LOCAL (ends with the transaction); `session` lasts until the connection closes.
  */
 export async function setLoginRole(
   client: GateQueryable,
@@ -167,27 +169,6 @@ export async function setLoginRole(
   await client.query(
     scope === "transaction" ? `SET LOCAL ROLE ${quoted}` : `SET ROLE ${quoted}`
   );
-}
-
-export async function resetLoginRole(client: GateQueryable): Promise<void> {
-  await client.query("RESET ROLE");
-}
-
-/** One connection of a runtime login the gate created (its URL), closed after `operation`. */
-export async function runtimeConnection<T>(
-  loginUrl: string,
-  operation: (client: Client) => Promise<T>
-): Promise<T> {
-  const client = new Client({
-    connectionString: loginUrl,
-    connectionTimeoutMillis: 5000,
-  });
-  await client.connect();
-  try {
-    return await operation(client);
-  } finally {
-    await client.end();
-  }
 }
 
 /** One statement as `role` (withGateRole), in a transaction that is always rolled back. */
@@ -240,23 +221,52 @@ export async function replaceFunctionAsOwner(
   }
 }
 
-/** A statement on a function that only its owner may run (GRANT or REVOKE EXECUTE), as that owner, outside a transaction. */
+/**
+ * A statement on a function that only its owner may run (GRANT or REVOKE EXECUTE), as that owner, outside a transaction.
+ * When the statement fails, the connection is discarded and the GRANT of the role this call made is revoked from a new
+ * one, so the edge does not stay in the database; if that revoke fails too, the failure is logged.
+ */
 export async function queryAsFunctionOwner(
   pool: Pool,
   signature: string,
   statement: string
 ): Promise<void> {
   const client = await pool.connect();
+  let owner: string | undefined;
+  let granted = false;
   try {
-    const { owner } = await firstRow<{ owner: string }>(
+    ({ owner } = await firstRow<{ owner: string }>(
       client,
       "SELECT proowner::regrole::text AS owner FROM pg_proc WHERE oid = $1::regprocedure",
       [signature]
-    );
+    ));
+    ({ needs_grant: granted } = await firstRow<{ needs_grant: boolean }>(
+      client,
+      "SELECT NOT pg_has_role(session_user, $1, 'SET') AS needs_grant",
+      [owner]
+    ));
     await withGateRole(client, owner, () => client.query(statement));
     client.release();
   } catch (error) {
     // outside a transaction a failed give-back stays committed: the connection must not return to the pool
+    client.release(true);
+    if (owner && granted) {
+      await giveBackGrant(pool, owner).catch((giveBackError: unknown) => {
+        console.error(
+          `The gate could not revoke ${owner} from a new connection: ${String(giveBackError)}`
+        );
+      });
+    }
+    throw error;
+  }
+}
+
+async function giveBackGrant(pool: Pool, role: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(`REVOKE ${quotedRole(role)} FROM SESSION_USER`);
+    client.release();
+  } catch (error) {
     client.release(true);
     throw error;
   }
