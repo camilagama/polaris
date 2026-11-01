@@ -122,6 +122,24 @@ async function becomeOrThrow(
   }
 }
 
+/**
+ * A REVOKE that runs can still leave the session able to SET to the role (the right also reaches it through another
+ * membership): that is a failure of the give-back, with no SQLSTATE.
+ */
+async function assertRoleGivenBack(
+  client: GateQueryable,
+  role: string
+): Promise<void> {
+  const { can_set } = await firstRow<{ can_set: boolean }>(
+    client,
+    "SELECT pg_has_role(session_user, $1, 'SET') AS can_set",
+    [role]
+  );
+  if (can_set) {
+    throw new Error(`The gate still holds ${role} after its REVOKE.`);
+  }
+}
+
 async function restoreSession(
   client: GateQueryable,
   role: string,
@@ -133,14 +151,7 @@ async function restoreSession(
     await client.query("RESET ROLE");
     if (granted) {
       await client.query(`REVOKE ${quoted} FROM SESSION_USER`);
-      const { can_set } = await firstRow<{ can_set: boolean }>(
-        client,
-        "SELECT pg_has_role(session_user, $1, 'SET') AS can_set",
-        [role]
-      );
-      if (can_set) {
-        throw new Error(`The gate still holds ${role} after its REVOKE.`);
-      }
+      await assertRoleGivenBack(client, role);
     }
   } catch (error) {
     // an aborted transaction refuses both statements; the caller's ROLLBACK undoes the GRANT and the SET ROLE
@@ -277,23 +288,15 @@ function failureMessage(error: unknown): string {
 }
 
 /**
- * Revokes, from a new connection, the GRANT a failed `queryAsFunctionOwner` made, and checks it as `restoreSession`
- * does: a REVOKE that runs but leaves the session able to SET to the role (the right also reaches it through another
- * membership) is a failure, not a clean give-back. The error carries no SQLSTATE; the connection is discarded on any
+ * Revokes, from a new connection, the GRANT a failed `queryAsFunctionOwner` made, and checks it with
+ * `assertRoleGivenBack`, as `restoreSession` does. The error carries no SQLSTATE; the connection is discarded on any
  * failure because outside a transaction nothing undoes what it did.
  */
 async function giveBackGrant(pool: Pool, role: string): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query(`REVOKE ${quotedRole(role)} FROM SESSION_USER`);
-    const { can_set } = await firstRow<{ can_set: boolean }>(
-      client,
-      "SELECT pg_has_role(session_user, $1, 'SET') AS can_set",
-      [role]
-    );
-    if (can_set) {
-      throw new Error(`The gate still holds ${role} after its REVOKE.`);
-    }
+    await assertRoleGivenBack(client, role);
     client.release();
   } catch (error) {
     client.release(true);
