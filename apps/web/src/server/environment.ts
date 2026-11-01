@@ -62,6 +62,8 @@ export interface MediaBucketBinding {
 }
 
 export interface WorkerBindings {
+  /** `staging` or `production` (per environment in `wrangler.jsonc`); labels the `environment` of every log event. */
+  POLARIS_ENVIRONMENT?: string;
   /** The static assets of the build (`assets.binding`): the Worker answers `/assets/*` through it, 404 for a file that is not there. */
   ASSETS?: AssetsBinding;
   /** Asaas API key (secret): `$aact_hmlg_...` in staging, the production one only in production (ADR 0101). */

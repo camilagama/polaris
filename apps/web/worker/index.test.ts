@@ -5,6 +5,7 @@ import {
 } from "@polaris/domain/events/outbox";
 import { queueForEventType } from "@polaris/domain/events/queue-envelope";
 import { SCHEDULER_LANES } from "@polaris/domain/scheduling/scheduled-jobs";
+import { logger } from "@polaris/observability/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -242,6 +243,18 @@ describe("the scheduled maintenance", () => {
     expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
     expect(mocks.mediaClose).toHaveBeenCalledTimes(1);
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the events with the environment the Worker variable names", async () => {
+    mocks.reconcileStagedMedia.mockResolvedValue({ removed: 1 });
+
+    await runScheduled({ ...configured, POLARIS_ENVIRONMENT: "staging" });
+
+    const event = vi
+      .mocked(console.info)
+      .mock.calls.map(([entry]) => entry as Record<string, unknown>)
+      .find((entry) => entry.event === "media_staging_reconciliation_complete");
+    expect(event).toMatchObject({ environment: "staging" });
   });
 
   it("masks personal data and secrets in a job report that grew a field, through the real logger", async () => {
@@ -2173,5 +2186,39 @@ describe("the scheduler tick", () => {
         lane: "maintenance",
       })
     );
+  });
+});
+
+describe("the log environment on every entry of the Worker", () => {
+  function labelled(): unknown {
+    logger.info("probe");
+    const [event] = vi.mocked(console.info).mock.calls.at(-1) ?? [];
+    return (event as Record<string, unknown>).environment;
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+  });
+
+  it("takes it from the bindings of a request", async () => {
+    vi.mocked(app.fetch).mockResolvedValueOnce(new Response("ok"));
+
+    await worker.fetch(
+      new Request("https://app.example/") as never,
+      { POLARIS_ENVIRONMENT: "staging" } as never,
+      {} as ExecutionContext
+    );
+
+    expect(labelled()).toBe("staging");
+  });
+
+  it("takes it from the bindings of a queue batch", async () => {
+    await worker.queue(
+      { messages: [], queue: "polaris-default" } as never,
+      { POLARIS_ENVIRONMENT: "production" } as never
+    );
+
+    expect(labelled()).toBe("production");
   });
 });

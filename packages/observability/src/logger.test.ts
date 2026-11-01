@@ -246,4 +246,138 @@ describe("logger", () => {
 
     expect(lastCall(info).event).toBe("login [REDACTED:email]");
   });
+
+  it("keeps an id-shaped value whole under any key that is not sensitive", () => {
+    const ids = [
+      "0190f3c2-a1b7-4d5e-8f6a-7b8c9d0e1f2a",
+      "org_0190f3c2a1b74d5e8f6a7b8c9d0e1f2a",
+      "cmd-9f8e7d6c",
+      "01J8Z3K5M7N9P2Q4R6S8T0V1WX",
+      "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "ch_1234567890123456",
+      "1234567890123456",
+    ];
+
+    for (const id of ids) {
+      logger.info("ids", {
+        commandId: id,
+        organizationId: opaqueId(id),
+        reference: id,
+      });
+
+      expect(lastCall(info)).toMatchObject({
+        commandId: id,
+        organizationId: id,
+        reference: id,
+      });
+    }
+  });
+
+  it("keeps masking a key that ends in token even when the value is an opaque id", () => {
+    logger.info("tokens", {
+      csrfToken: "0190f3c2-a1b7-4d5e-8f6a-7b8c9d0e1f2a",
+      sessionToken: "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+      token: "cmd-9f8e7d6c",
+    });
+
+    expect(lastCall(info)).toMatchObject({
+      csrfToken: "[REDACTED:secret]",
+      sessionToken: "[REDACTED:secret]",
+      token: "[REDACTED:secret]",
+    });
+  });
+
+  it("masks a 16-digit number that passes the Luhn check, an accepted false positive", () => {
+    logger.info("digits", { reference: "4111111111111111" });
+
+    expect(lastCall(info).reference).toBe("[REDACTED:card]");
+  });
+
+  it("lists a reserved key forged by a cast in ignoredFields instead of dropping it silently", () => {
+    logger.info("forged", {
+      environment: "production",
+      ok: 1,
+      service: "other",
+    } as unknown as LogFields);
+
+    const event = lastCall(info);
+    expect(event).toMatchObject({
+      ignoredFields: ["environment", "service"],
+      ok: 1,
+      service: "polaris-test",
+    });
+    expect(event.environment).not.toBe("production");
+  });
+
+  it("replaces an ignoredFields value the caller sent with the names it dropped", () => {
+    logger.info("forged", {
+      ignoredFields: ["x"],
+      org_id: "org-1",
+    } as unknown as LogFields);
+
+    expect(lastCall(info).ignoredFields).toEqual(["ignoredFields", "org_id"]);
+  });
+});
+
+describe("logging environment", () => {
+  let info: Spy;
+
+  beforeEach(() => {
+    vi.resetModules();
+    info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("labels the events with the staging or production the Worker variable names", async () => {
+    const fresh = await import("./logger");
+    fresh.configureLogging({ service: "polaris-test" });
+
+    fresh.useLoggingEnvironment("staging");
+    fresh.logger.info("a");
+    expect(lastCall(info)).toMatchObject({
+      environment: "staging",
+      service: "polaris-test",
+    });
+
+    fresh.useLoggingEnvironment("production");
+    fresh.logger.info("b");
+    expect(lastCall(info)).toMatchObject({
+      environment: "production",
+      service: "polaris-test",
+    });
+  });
+
+  it("does not turn an absent or unknown variable into an environment", async () => {
+    const fresh = await import("./logger");
+    fresh.configureLogging({ service: "polaris-test" });
+    fresh.logger.info("before");
+    const initial = lastCall(info).environment;
+
+    for (const value of [undefined, "", "Staging", "prod", "development", 1]) {
+      fresh.useLoggingEnvironment(value);
+      fresh.logger.info("after");
+      expect(lastCall(info).environment).toBe(initial);
+    }
+    expect(initial).not.toBe("staging");
+    expect(initial).not.toBe("production");
+  });
+
+  it("keeps the service and the version when it reconfigures for the environment", async () => {
+    const fresh = await import("./logger");
+    fresh.configureLogging({ service: "polaris-test", version: "v1" });
+
+    fresh.useLoggingEnvironment("staging");
+    fresh.useLoggingEnvironment("staging");
+    fresh.logger.info("a");
+
+    expect(lastCall(info)).toMatchObject({
+      environment: "staging",
+      service: "polaris-test",
+      version: "v1",
+    });
+  });
 });

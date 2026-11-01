@@ -6,6 +6,8 @@
 // biome-ignore lint/style/noNamespace: the Workers types are extended by merging into the global Cloudflare namespace
 declare namespace Cloudflare {
   interface Env {
+    /** `staging` or `production` (per environment in `wrangler.jsonc`); labels the `environment` of every log event. */
+    POLARIS_ENVIRONMENT?: string;
     CATALOG_HYPERDRIVE: Hyperdrive;
     /** The origin public pages are addressed by (canonical links), e.g. https://catalogo.example. */
     CATALOG_ORIGIN: string;

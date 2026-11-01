@@ -1,4 +1,8 @@
-import { configureLogging, logger } from "@polaris/observability/logger";
+import {
+  configureLogging,
+  logger,
+  useLoggingEnvironment,
+} from "@polaris/observability/logger";
 import { readAuthAccessLog } from "@polaris/db/admin-access-log-repository";
 import {
   listOperationalIncidents,
@@ -370,6 +374,8 @@ configureLogging({ service: "polaris-admin" });
 const app = createAdminApp(dependencies, { css: adminCss, js: adminJs });
 
 export default {
-  fetch: (request: Request, env: AdminBindings, context: ExecutionContext) =>
-    app.fetch(request, env, context),
+  fetch: (request: Request, env: AdminBindings, context: ExecutionContext) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
+    return app.fetch(request, env, context);
+  },
 } satisfies ExportedHandler<AdminBindings>;
