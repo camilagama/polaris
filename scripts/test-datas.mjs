@@ -1,32 +1,34 @@
-import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { FUSOS, INSTANTES } from "./test-clock/instants.mjs";
-
 /**
  * Local sweep: runs the node suites of apps/web, apps/admin, apps/catalog and packages/* (minus packages/db) with the
  * system clock frozen (POLARIS_TEST_NOW) at critical instants, under two time zones. Not part of `bun run check` or CI.
  *
  *   bun run test:datas                      every instant, both zones
- *   bun run test:datas --instante virada-do-ano --tz UTC -- apps/web
+ *   bun run test:datas --instante virada-do-ano --tz UTC apps/web
  *
- * Everything after `--` goes to Vitest as a file filter.
+ * The first argument that is not a flag, or everything after `--`, goes to Vitest as a file filter. (`bun run` drops a leading
+ * `--`, so `bun run test:datas -- apps/web` reaches this script as `apps/web`.)
  */
+import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { FUSOS, INSTANTES } from "./test-clock/instants.mjs";
+
 export function parseArgs(argv) {
-  const separator = argv.indexOf("--");
-  const own = separator === -1 ? argv : argv.slice(0, separator);
-  const filters = separator === -1 ? [] : argv.slice(separator + 1);
-  const options = { filters, instante: null, tz: null };
-  for (let i = 0; i < own.length; i += 2) {
-    const flag = own[i];
+  const options = { filters: [], instante: null, tz: null };
+  let i = 0;
+  while (i < argv.length && argv[i] !== "--" && argv[i].startsWith("--")) {
+    const flag = argv[i];
     if (flag !== "--instante" && flag !== "--tz") {
       throw new Error(`argumento desconhecido: ${flag}`);
     }
-    const value = own[i + 1];
+    const value = argv[i + 1];
     if (value === undefined || value.startsWith("--")) {
       throw new Error(`${flag} pede um valor`);
     }
     options[flag === "--instante" ? "instante" : "tz"] = value;
+    i += 2;
   }
+  options.filters = argv.slice(argv[i] === "--" ? i + 1 : i);
   return options;
 }
 
@@ -94,7 +96,7 @@ function main() {
 
 if (
   process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
 ) {
   main();
 }

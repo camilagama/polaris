@@ -28,10 +28,8 @@ export default defineConfig({
     ],
     include: [
       "scripts/test-clock/*.test.mjs",
-      "apps/web/**/*.test.{ts,tsx}",
-      "apps/admin/**/*.test.{ts,tsx}",
-      "apps/catalog/**/*.test.{ts,tsx}",
       "packages/**/*.test.{ts,tsx}",
+      "apps/**/*.test.{ts,tsx}",
     ],
     name: "datas",
     setupFiles: [

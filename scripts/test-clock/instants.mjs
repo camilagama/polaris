@@ -1,5 +1,5 @@
 const WITH_OFFSET =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export const INSTANTES = [
   {
@@ -26,9 +26,26 @@ export const INSTANTES = [
 
 export const FUSOS = ["America/Sao_Paulo", "UTC"];
 
+function isCalendarDay(year, month, day) {
+  const check = new Date(Date.UTC(year, month - 1, day));
+  return (
+    check.getUTCFullYear() === year &&
+    check.getUTCMonth() === month - 1 &&
+    check.getUTCDate() === day
+  );
+}
+
 export function parseNow(raw) {
+  const match = WITH_OFFSET.exec(raw);
   const instant = new Date(raw);
-  if (!WITH_OFFSET.test(raw) || Number.isNaN(instant.getTime())) {
+  // Date rolls 02-30 over to 03-01 and 24:00 to the next day instead of failing, which would run the sweep at another instant.
+  const valid =
+    match !== null &&
+    !Number.isNaN(instant.getTime()) &&
+    isCalendarDay(Number(match[1]), Number(match[2]), Number(match[3])) &&
+    Number(match[4]) < 24 &&
+    Number(match[5]) < 60;
+  if (!valid) {
     throw new Error(
       `POLARIS_TEST_NOW inválido: "${raw}". Use ISO 8601 com Z ou ±hh:mm, por exemplo 2026-11-01T03:30:00Z (sem o fuso, a data seria lida no fuso do processo).`
     );

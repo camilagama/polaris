@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import datasConfig from "../../vitest.datas.config";
 import rootConfig from "../../vitest.config";
 import { FUSOS, INSTANTES, parseNow } from "./instants.mjs";
+import { freezeClock } from "./setup.mjs";
 
 const pinned = process.env.POLARIS_TEST_NOW;
 
@@ -69,6 +70,42 @@ describe("relógio congelado por POLARIS_TEST_NOW", () => {
   });
 });
 
+describe("freezeClock", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("congela só o Date: o tempo real passa e o Date fica", async () => {
+    const instant = parseNow("2026-12-01T02:50:00Z");
+    vi.useRealTimers();
+    freezeClock(instant);
+    const before = performance.now();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(performance.now() - before).toBeGreaterThanOrEqual(25);
+    expect(Date.now()).toBe(instant.getTime());
+    expect(new Date().toISOString()).toBe("2026-12-01T02:50:00.000Z");
+  });
+
+  it("deixa em paz o relógio que o teste já fixou", () => {
+    vi.useFakeTimers({
+      now: new Date("2020-01-02T03:04:05Z"),
+      toFake: ["Date"],
+    });
+    freezeClock(parseNow("2026-12-01T02:50:00Z"));
+    expect(new Date().toISOString()).toBe("2020-01-02T03:04:05.000Z");
+  });
+
+  it("o setup recusa POLARIS_TEST_NOW sem fuso ao carregar", async () => {
+    vi.stubEnv("POLARIS_TEST_NOW", "2026-11-01T03:30:00");
+    vi.resetModules();
+    await expect(import("./setup.mjs")).rejects.toThrow(
+      "POLARIS_TEST_NOW inválido"
+    );
+  });
+});
+
 describe("POLARIS_TEST_NOW", () => {
   it.each([
     "2026-11-01T03:30:00Z",
@@ -84,6 +121,10 @@ describe("POLARIS_TEST_NOW", () => {
     "2026-11-01",
     "2026-11-01 03:30:00Z",
     "2026-13-01T03:30:00Z",
+    "2026-02-30T00:00:00Z",
+    "2026-11-31T00:00:00Z",
+    "2026-11-01T24:00:00Z",
+    "2026-11-01T03:60:00Z",
     "ontem",
   ])("recusa %s", (raw) => {
     expect(() => parseNow(raw)).toThrow("POLARIS_TEST_NOW inválido");
@@ -124,13 +165,11 @@ describe("config da varredura de datas", () => {
     expect(datasConfig.resolve).toEqual(rootConfig.resolve);
   });
 
-  it("cobre apps/web, admin, catalog e packages, e mais nada além do próprio helper", () => {
+  it("inclui o que o projeto node da raiz inclui em apps e packages, mais o próprio helper", () => {
+    const rootNode = rootConfig.test?.projects?.[0].test;
     expect(datasConfig.test?.include).toEqual([
       "scripts/test-clock/*.test.mjs",
-      "apps/web/**/*.test.{ts,tsx}",
-      "apps/admin/**/*.test.{ts,tsx}",
-      "apps/catalog/**/*.test.{ts,tsx}",
-      "packages/**/*.test.{ts,tsx}",
+      ...rootNode.include.filter((glob) => !glob.startsWith("scripts/")),
     ]);
   });
 });

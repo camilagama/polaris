@@ -24,9 +24,22 @@ describe("test:datas", () => {
     ]);
   });
 
+  it("filtro sem -- na frente (o bun come o -- inicial) também vale", () => {
+    expect(parseArgs(["apps/web", "packages/billing"]).filters).toEqual([
+      "apps/web",
+      "packages/billing",
+    ]);
+    expect(parseArgs(["--tz", "UTC", "apps/web"])).toEqual({
+      filters: ["apps/web"],
+      instante: null,
+      tz: "UTC",
+    });
+    expect(parseArgs(["--", "apps/web"]).filters).toEqual(["apps/web"]);
+  });
+
   it.each([
     [["--instant", "virada-do-ano"], "argumento desconhecido: --instant"],
-    [["apps/web"], "argumento desconhecido: apps/web"],
+    [["--tz", "UTC", "--instant", "x"], "argumento desconhecido: --instant"],
     [["--tz"], "--tz pede um valor"],
     [["--tz", "--instante"], "--tz pede um valor"],
   ])("%j dá erro", (argv, message) => {
