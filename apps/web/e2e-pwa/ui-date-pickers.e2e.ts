@@ -40,9 +40,14 @@ async function openGallery(page: Page, theme: string | null = null) {
 const day = (scope: Locator | Page, iso: string) =>
   scope.locator(`button[data-day="${iso}"]`);
 
-/** The button of a picker: its accessible name starts with the label and a comma. */
+/**
+ * The button of a picker: its accessible name starts with the label and a comma. Anchored at the start because a day
+ * of a period also says "período," in its name.
+ */
 const trigger = (page: Page, name: string) =>
-  page.getByRole("button", { name });
+  page.getByRole("button", {
+    name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+  });
 
 async function openPicker(page: Page, name: string, label: string) {
   await trigger(page, name).click();

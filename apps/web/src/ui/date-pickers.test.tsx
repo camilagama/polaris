@@ -237,6 +237,70 @@ describe("Calendar", () => {
   });
 });
 
+describe("Calendar, o papel do dia no período", () => {
+  const label = (
+    selected: { from: Date | undefined; to?: Date },
+    iso: string,
+    mode: "range" | "single" = "range"
+  ) => {
+    const markup = html(
+      mode === "range" ? (
+        <Calendar
+          defaultMonth={OCTOBER_24}
+          mode="range"
+          selected={selected}
+          today={OCTOBER_24}
+        />
+      ) : (
+        <Calendar
+          defaultMonth={OCTOBER_24}
+          mode="single"
+          selected={selected.from}
+          today={OCTOBER_24}
+        />
+      )
+    );
+    return attribute(dayButton(markup, iso), "aria-label");
+  };
+  const first = parseIsoDate("2026-10-01") as Date;
+  const tenth = parseIsoDate("2026-10-10") as Date;
+
+  it("as pontas dizem o papel antes de selecionado e o meio não diz nada", () => {
+    const range = { from: first, to: OCTOBER_24 };
+    expect(label(range, "2026-10-01")).toBe(
+      "quinta-feira, 1 de outubro de 2026, início do período, selecionado"
+    );
+    expect(label(range, "2026-10-24")).toBe(
+      "Hoje, sábado, 24 de outubro de 2026, fim do período, selecionado"
+    );
+    expect(label(range, "2026-10-10")).toBe(
+      "sábado, 10 de outubro de 2026, selecionado"
+    );
+    expect(label(range, "2026-10-25")).toBe("domingo, 25 de outubro de 2026");
+  });
+
+  it("início igual ao fim: início e fim do período", () => {
+    expect(label({ from: tenth, to: tenth }, "2026-10-10")).toBe(
+      "sábado, 10 de outubro de 2026, início e fim do período, selecionado"
+    );
+    expect(label({ from: OCTOBER_24, to: OCTOBER_24 }, "2026-10-24")).toBe(
+      "Hoje, sábado, 24 de outubro de 2026, início e fim do período, selecionado"
+    );
+  });
+
+  it("só o início marcado: início do período, nunca fim", () => {
+    expect(label({ from: tenth }, "2026-10-10")).toBe(
+      "sábado, 10 de outubro de 2026, início do período, selecionado"
+    );
+  });
+
+  it("o seletor de um dia não diz papel", () => {
+    expect(label({ from: tenth }, "2026-10-10", "single")).toBe(
+      "sábado, 10 de outubro de 2026, selecionado"
+    );
+  });
+});
+
 describe("OnDemandCalendar, a espera do chunk", () => {
   // the first render of a page that has not downloaded the chunk (and the server render) is the waiting box
   const markup = html(<OnDemandCalendar mode="single" />);
