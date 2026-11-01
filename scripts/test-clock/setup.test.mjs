@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import datasConfig from "../../vitest.datas.config";
 import rootConfig from "../../vitest.config";
 import { FUSOS, INSTANTES, parseNow } from "./instants.mjs";
-import { freezeClock } from "./setup.mjs";
+import { assertTimeZone, freezeClock } from "./setup.mjs";
 
 const pinned = process.env.POLARIS_TEST_NOW;
 
@@ -99,11 +99,51 @@ describe("freezeClock", () => {
 
   it("o setup recusa POLARIS_TEST_NOW sem fuso ao carregar", async () => {
     vi.stubEnv("POLARIS_TEST_NOW", "2026-11-01T03:30:00");
+    vi.stubEnv("TZ", "America/Manaus");
     vi.resetModules();
     await expect(import("./setup.mjs")).rejects.toThrow(
       "POLARIS_TEST_NOW inválido"
     );
   });
+
+  it.each([
+    ["ausente", undefined],
+    ["vazio", ""],
+    ["inválido", "Marte/Olimpo"],
+  ])(
+    "o setup falha ao carregar com POLARIS_TEST_NOW e TZ %s, citando bun run test:datas",
+    async (_caso, tz) => {
+      vi.stubEnv("POLARIS_TEST_NOW", "2026-11-01T03:30:00Z");
+      vi.stubEnv("TZ", tz);
+      vi.resetModules();
+      await expect(import("./setup.mjs")).rejects.toThrow("bun run test:datas");
+    }
+  );
+
+  it("sem POLARIS_TEST_NOW o setup carrega mesmo sem TZ e não congela o relógio", async () => {
+    vi.stubEnv("POLARIS_TEST_NOW", undefined);
+    vi.stubEnv("TZ", undefined);
+    vi.resetModules();
+    vi.useRealTimers();
+    await import("./setup.mjs");
+    expect(vi.isFakeTimers()).toBe(false);
+  });
+});
+
+describe("assertTimeZone", () => {
+  it.each(["America/Manaus", "America/Sao_Paulo", "UTC", "Asia/Tokyo"])(
+    "aceita %s",
+    (tz) => {
+      expect(() => assertTimeZone(tz)).not.toThrow();
+    }
+  );
+
+  it.each([undefined, "", "Marte/Olimpo", ":America/Sao_Paulo"])(
+    "recusa %j",
+    (tz) => {
+      expect(() => assertTimeZone(tz)).toThrow("bun run test:datas");
+    }
+  );
 });
 
 describe("POLARIS_TEST_NOW", () => {
@@ -132,12 +172,13 @@ describe("POLARIS_TEST_NOW", () => {
 });
 
 describe("instantes da varredura", () => {
-  it("são os quatro combinados, em dois fusos", () => {
+  it("são os cinco combinados, em dois fusos", () => {
     expect(INSTANTES.map((item) => item.chave)).toEqual([
       "dia-1-0030",
       "ultimo-dia-2350",
       "virada-do-ano",
       "bissexto-1200",
+      "fim-fev-2350",
     ]);
     expect(FUSOS).toEqual(["America/Sao_Paulo", "UTC"]);
   });

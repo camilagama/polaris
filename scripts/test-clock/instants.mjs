@@ -22,6 +22,11 @@ export const INSTANTES = [
     now: "2028-02-29T15:00:00Z",
     saoPaulo: "2028-02-29 12:00",
   },
+  {
+    chave: "fim-fev-2350",
+    now: "2027-03-01T02:50:00Z",
+    saoPaulo: "2027-02-28 23:50",
+  },
 ];
 
 export const FUSOS = ["America/Sao_Paulo", "UTC"];

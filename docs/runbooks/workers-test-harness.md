@@ -69,7 +69,7 @@ Hyperdrive real e pooler (o binding local é uma conexão direta), Images real, 
 
 ## Varredura de datas críticas
 
-`bun run test:datas` roda os testes de nó com o `Date` congelado em quatro instantes e dois fusos; é ferramenta local, fora do CI. Instantes, opções e regras do relógio: [relogio-nos-testes](../testing/relogio-nos-testes.md).
+`bun run test:datas` roda os testes de nó com o `Date` congelado em cinco instantes e dois fusos; é ferramenta local, fora do CI. Instantes, opções e regras do relógio: [relogio-nos-testes](../testing/relogio-nos-testes.md).
 
 ## Ruído esperado
 
