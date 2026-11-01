@@ -14,6 +14,8 @@ import { WORKER_MARK } from "./worker-mark";
  *   of the test and held to 11 or less, half of the 22 measured then;
  * - a store with no product is taken from the sale to the form (AC-26);
  * - the open form, with its details open, holds in the width of a phone;
+ * - the panel of "Mais detalhes", controlled by the form, goes from closed to open when the screen asks (the refused
+ *   category), takes the animation classes that wait for a change of state, and closes by the trigger;
  * - from 768 px up the labels of the form stay on one line: the columns follow the width of the card.
  */
 const ORGANIZATION = {
@@ -25,6 +27,7 @@ const ORGANIZATION = {
 /** What the limit text must never say: the category, the Assinatura, archiving, the product as the unit. */
 const FORBIDDEN_IN_LIMIT_TEXT = /categoria|assinatura|arquiv|produtos/i;
 const QUANTITY_FOR_COST_TEXT = /Informe quantos você tem para guardar o custo/;
+const ANIMATE_ANY = /animate-collapsible/;
 const NEW_PRODUCT_URL = /\/products\?novo=1$/;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -492,6 +495,56 @@ test("Mais detalhes: a categoria e a descrição ficam fechadas, abrem sob pedid
   await submit(page).click();
   await expect(page.getByText("Produto “Camiseta” cadastrado.")).toBeVisible();
   expect(only(bodies).description).toBe("Algodão, corte reto.");
+});
+
+test("Mais detalhes: o painel muda de fechado para aberto quando a tela manda (categoria recusada) e volta a fechar pelo gatilho", async ({
+  page,
+}) => {
+  await openScreen(page, {
+    creates: [
+      (route) =>
+        route.fulfill(
+          rpc(
+            {
+              code: "CONFLICT",
+              data: { reason: "product_category_unavailable" },
+              defined: false,
+              message: "Conflict",
+              status: 409,
+            },
+            409
+          )
+        ),
+    ],
+  });
+  await openForm(page);
+  const details = page.getByRole("button", { name: "Mais detalhes" });
+  const panel = page.locator('[data-slot="collapsible-content"]');
+  const category = page.getByRole("combobox", {
+    exact: true,
+    name: "Categoria",
+  });
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toHaveAttribute("data-closed", "");
+  await expect(panel).not.toHaveAttribute("data-open", "");
+  await expect(panel).not.toHaveClass(ANIMATE_ANY);
+  await expect(category).toBeHidden();
+
+  // the screen, not the trigger, changes `open`: the refusal of the category
+  await page.getByLabel("Nome do produto").fill("Camiseta");
+  await submit(page).click();
+  await expect(details).toHaveAttribute("aria-expanded", "true");
+  await expect(panel).toHaveAttribute("data-open", "");
+  await expect(panel).not.toHaveAttribute("data-closed", "");
+  // both animation classes arrive together, on the first change of state; which one runs is the `data-` attribute's
+  await expect(panel).toHaveClass(ANIMATE_ANY);
+  await expect(category).toBeVisible();
+
+  await details.click();
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toHaveAttribute("data-closed", "");
+  await expect(panel).not.toHaveAttribute("data-open", "");
+  await expect(category).toBeHidden();
 });
 
 test("AC-25: do botão 'Novo produto' a um produto pronto para vender são 6 ações, menos da metade das 22 da pesquisa", async ({

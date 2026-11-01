@@ -713,6 +713,20 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it.each(["web", "catalog"])(
+    "refuses the release header on in the production of %s, and keeps it on in staging",
+    (app) => {
+      const entries = repositoryEntries();
+      const { production, staging } = entryOf(entries, app).config.env;
+      expect(staging.vars.RELEASE_HEADER_ENABLED).toBe("true");
+      expect(production.vars.RELEASE_HEADER_ENABLED).toBe("false");
+      production.vars.RELEASE_HEADER_ENABLED = "true";
+      expect(findIsolationProblems(entries)).toEqual([
+        `${app}: env.production vars.RELEASE_HEADER_ENABLED must not be "true" (the release header is on in staging only until the item 8 of the release checklist, ADR 0098)`,
+      ]);
+    }
+  );
+
   it("refuses production using the widget key of staging", () => {
     const entries = repositoryEntries();
     const { production, staging } = entryOf(entries, "web").config.env;

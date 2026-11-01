@@ -589,6 +589,65 @@ test.describe("controle: cada verificação pega a falha", () => {
     }
   });
 
+  test("5. sem reduce e no nível full, um segundo Esc enquanto o painel do celular sai fecha de uma vez, sem erro na página", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext(NARROW_MOUSE);
+    try {
+      const page = await context.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await openScreen(homeSold, page);
+      const more = page.getByRole("button", { exact: true, name: "Mais" });
+      const panel = page.getByRole("dialog", { name: "Mais" });
+      await more.click();
+      await expect(panel).toBeVisible();
+      await panel.evaluate((node: HTMLDialogElement) =>
+        Promise.all(node.getAnimations().map((item) => item.finished))
+      );
+      // what the panel was doing when each Escape arrived: read in the page, in the same task as the key, because the
+      // exit lasts 200 ms and a round trip of the test can outlast it
+      await panel.evaluate((node: HTMLDialogElement) => {
+        const seen: boolean[] = [];
+        (window as unknown as { escapes: boolean[] }).escapes = seen;
+        document.addEventListener(
+          "keydown",
+          (event) => {
+            if (event.key === "Escape") {
+              seen.push(node.hasAttribute("data-closing"));
+            }
+          },
+          true
+        );
+      });
+      await Promise.all([
+        page.keyboard.press("Escape"),
+        page.keyboard.press("Escape"),
+      ]);
+      expect(
+        await page.evaluate(
+          () => (window as unknown as { escapes: boolean[] }).escapes
+        ),
+        "o 2º Esc tem de chegar com o painel já saindo"
+      ).toEqual([false, true]);
+      await expect(panel).toBeHidden();
+      await expect(more).toBeFocused();
+      await expect(more).toHaveAttribute("aria-expanded", "false");
+      // a closed dialog is out of the role tree: `panel` no longer finds it, the attribute still does
+      expect(
+        await page
+          .locator('dialog[aria-label="Mais"]')
+          .evaluate((node: HTMLDialogElement) => ({
+            closing: node.hasAttribute("data-closing"),
+            open: node.open,
+          }))
+      ).toEqual({ closing: false, open: false });
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("5. com reduce, o painel do celular fecha de uma vez, sem animação de saída", async ({
     browser,
   }) => {

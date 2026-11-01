@@ -191,7 +191,36 @@ O workflow `.github/workflows/deploy-staging.yml` só roda com a variável de re
 - `bun run verify:staging-isolation` (estática) e, depois da build de staging, `node scripts/verify-staging-isolation.mjs --built`.
 - `node scripts/verify-staging-isolation.mjs --remote`, com o token de staging e `STAGING_DATABASE_HOST`: cada Hyperdrive aponta para o host direto de staging, com caching desligado e com um login de staging que não é o dono. A leitura fica presa ao `account_id` de `env.staging` e só roda se a verificação estática passar.
 - `staging:verify-database after-migrate`: marcador, parte só de leitura do `definer-hardening`, `TEMPORARY` de `PUBLIC`, os atributos dos papéis `polaris_%_owner` e dos que um runtime alcança (com piso de contagem), a falta de aresta de saída nos `polaris_%_owner` e os logins com o grupo de cada um.
-- O smoke do workflow.
+- O smoke do workflow ([abaixo](#smoke-do-deploy)).
+
+## Smoke do deploy
+
+O passo `Smoke` do `deploy-staging.yml` roda `node scripts/smoke-staging.mjs` logo depois dos dois `wrangler deploy`. Lê `STAGING_WEB_URL`, `STAGING_CATALOG_URL` (aceita só `https://dash.araute.app` e `https://catalogo.araute.app`), `HEAD_SHA` (40 hex minúsculos; outro valor é recusado antes de qualquer requisição) e a pasta `apps/web/dist/client` do artefato que acabou de ser publicado. Toda requisição leva `User-Agent: polaris-staging-smoke/1`, para separar o smoke nos Workers Logs. O log diz verificação, status e um motivo fixo; nunca corpo nem valor de cabeçalho (para o SHA, só "release different" ou "release absent").
+
+Ordem e o que cada falha quer dizer:
+
+| # | Verificação | Esperado | Falha quer dizer |
+| --- | --- | --- | --- |
+| 1 | web `GET /health` | 200, `X-Polaris-Release` = 12 primeiros de `HEAD_SHA`, `X-Request-Id` | Worker velho no ar (propagação, deploy que falhou, rollback) ou `RELEASE_HEADER_ENABLED` fora do `env.staging`. |
+| 2 | web `GET /` | 200, CSP, corpo igual ao `index.html` do artefato (sha256) | Static Assets de outra versão, ou algo reescrevendo o HTML na borda (ver plano B). |
+| 3 | web `GET /sw.js` | 200, igual ao `sw.js` do artefato | idem. |
+| 4 | web `GET /entrar` | 200, igual ao `index.html` (fallback SPA) | `not_found_handling` mudou ou shell de outra versão. |
+| 5 | web `GET /api/auth-methods` | 200, `google` e `emailPassword` `true`, `turnstileSiteKey` não vazio | falta segredo do Google ou do Turnstile, ou a proteção de abuso desligou (seção 5). |
+| 6 | web `POST /rpc/system/ping` com `Origin` do app | 200, `pong` | roteamento de `/rpc/*`, limite de leitura ou handler oRPC. A `Origin` sai de `new URL(STAGING_WEB_URL).origin`. |
+| 7–9 | o mesmo ping sem `Origin`, com `Origin: https://origem-estranha.invalid` e com `Origin: null` | 403 com `error.code` `"forbidden"` no corpo | 200, ou um 403 que não é o da guarda (corpo sem `forbidden`): a guarda de CSRF (`origin-check`) não está no ar: **incidente de segurança**, não flake. |
+| 10 | web `GET /api/auth/get-session` sem cookie | 200, corpo `null` | 503 com `X-Request-Id` (`auth_unavailable`): falta `BETTER_AUTH_SECRET` ou `BETTER_AUTH_BASE_URL`. 503 sem `X-Request-Id` (`503 no X-Request-Id`): a plataforma recusou, provavelmente 1102 num isolate frio; esta verificação se repete, porque é ela que aquece o caminho do Better Auth. |
+| 11 | catálogo `GET /` | 200, CSP com nonce | entrada do catálogo sem `src/server.ts`. |
+| 12 | catálogo `GET /robots.txt` | 200, `X-Polaris-Release` = 12 primeiros de `HEAD_SHA` | como o 1, para o catálogo. |
+| 13 | catálogo loja inexistente | 404 | Worker → Hyperdrive → Neon quebrado (500). |
+| 14 | web `POST /rpc/organization/listMine` anônimo | 401 | 200: leitura sem sessão respondida (**incidente**); 400/403: contrato ou Origin. |
+| 15 | web `POST /rpc/organization/createInitial` anônimo, corpo válido pelo contrato (`{ name: "smoke - nao criar", timezone }`) | 401 | idem, para o balde de escrita. Nada é criado: a recusa vem antes do handler. |
+
+- Os 401 (14 e 15) são **guarda de regressão de autenticação**: provam que o caminho autenticado monta e recusa quem não tem sessão. Não provam autorização (membership, capability, tenant), que fica com os gates e o e2e-real.
+- **Tentativas:** 3 por verificação, 10 s por requisição e 5 s de pausa; nenhuma interrompe as outras. Release diferente conta como falha e se repete (propagação logo depois do deploy). Pior caso por verificação: 3 × 10 + 2 × 5 = 40 s; **teto: 15 × 40 s = 10 min**, e o passo tem `timeout-minutes: 12`.
+- **`cpu/plataforma` (14 e 15):** as duas montam o Better Auth, que num isolate frio do Workers Free pode passar do teto de CPU (erro 1102, um 503 da Cloudflare, sem `X-Request-Id`). Por isso rodam por último, depois do get-session, e uma resposta 503 ou sem `X-Request-Id` **não se repete**: falha uma vez com o motivo `cpu/plataforma <status>`. O rótulo é largo de propósito: também cobre um 503 do próprio Worker (com `X-Request-Id`, como `auth_unavailable` ou `database_pool_error`) e uma resposta da borda sem `X-Request-Id` (429, WAF). Antes de reexecutar, confira nos Workers Logs se o Worker registrou um erro da rota nesse minuto (`auth_unavailable`, `database_pool_error`): se registrou, o 503 é do Worker e não se resolve esperando. Um Smoke vermelho só por 1102 **não é deploy faltando**: o Worker do commit está no ar, e a prova é o `/health` com o SHA (verificação 1), que vem antes. Reexecute o run mais tarde; se repetir, olhe o CPU por rota nos Workers Logs (`ROUTE_TIMING_ALL`).
+- **Plano B da comparação do shell (não implementado):** se algo passar a reescrever o `index.html` na borda (HTMLRewriter, script injetado pela Cloudflare), as verificações 2 a 4 ficam vermelhas sem deploy errado. Aí a comparação passa a ser só a lista de `/assets/*.js` referenciados pelo HTML.
+- **Rollback pelo painel:** o `/health` passa a mostrar o SHA antigo e o próximo smoke fica vermelho no 1 e no 12. É o comportamento certo; o próximo deploy corrige.
+- **Fora do smoke:** escrita com sessão (não há sessão no CI sem guardar um cookie como segredo), leitura de dado de tenant, login real, e-mail e Google. A escrita se prova no e2e-real de cada PR e, no item 6 do checklist, por um passo manual com conta Google de teste numa loja `smoke-<data>` (venda confirmada e cancelada).
 
 ## 9. Itens do release-checklist no staging
 

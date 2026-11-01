@@ -154,6 +154,9 @@
     },
     "packages/http-security": {
       "name": "@polaris/http-security",
+      "devDependencies": {
+        "vite": "^8.3.3",
+      },
     },
     "packages/observability": {
       "name": "@polaris/observability",
