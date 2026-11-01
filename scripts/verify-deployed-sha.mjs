@@ -15,8 +15,8 @@ export const STAGING_WORKERS = [
 
 const SHA = /^[0-9a-f]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const ATTEMPTS = 3;
-const WRANGLER_TIMEOUT_MS = 60_000;
+export const ATTEMPTS = 3;
+export const WRANGLER_TIMEOUT_MS = 20_000;
 
 /** A gradual rollout has no single commit. */
 function activeVersionId(deployment) {
