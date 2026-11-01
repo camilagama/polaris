@@ -1,6 +1,6 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
@@ -10,7 +10,6 @@ import { ScreenTabList } from "../app-shell/screen-tabs";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { invalidatePreviousWindow } from "../home/previous-window-copy";
 import { browserStorage } from "../lib/current-organization-model";
-import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { markPeriodSummaryStale } from "../lib/period-summary-stale";
@@ -31,6 +30,7 @@ import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
 import { type ExpenseFilters, useExpenseList } from "./use-expense-list";
 import { useFormDialog } from "./use-form-dialog";
+import { useStoreToday } from "./use-store-today";
 
 type StatusChange = "restore" | "void";
 
@@ -90,10 +90,7 @@ function focusNewWhenLost() {
  */
 export function ExpensesPage() {
   const { organization, organizationId } = useCurrentOrganization();
-  const today = useMemo(
-    () => calendarDayInTimezone(new Date(), organization.timezone),
-    [organization.timezone]
-  );
+  const today = useStoreToday(organization.timezone);
   const [view, selectView] = useExpenseView();
   const [filters, setFilters] = useState<ExpenseFilters>(() => ({
     categoryId: "",
