@@ -170,16 +170,14 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
     expect(stored(values)).toEqual({
       before: september(),
       goal: keptGoal(),
-      hadSale: false,
     });
   });
 
-  it("troca o B pelo B novo e mantém a meta e a venda já guardadas", () => {
+  it("troca o B pelo B novo e mantém a meta já guardada", () => {
     const { storage, values } = memoryStorage();
     writeHomeCopy(storage, ORG, {
       before: september(),
       goal: keptGoal(),
-      hadSale: true,
     });
     const newer = september("2026-10-16T14:00:00.000Z");
     writeHomeCopy(storage, ORG, { before: newer });
@@ -187,7 +185,6 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
     expect(stored(values)).toEqual({
       before: newer,
       goal: keptGoal(),
-      hadSale: true,
     });
   });
 
@@ -199,7 +196,6 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
     expect(stored(values)).toEqual({
       before: september(),
       goal: keptGoal({ kind: "none" }),
-      hadSale: false,
     });
   });
 
@@ -211,14 +207,18 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
     expect(stored(values).goal).toBeNull();
   });
 
-  it("uma loja que vendeu continua sendo uma loja que vendeu", () => {
+  it("regravar uma cópia antiga com hadSale não leva o campo adiante", () => {
     const { storage, values } = memoryStorage();
-    writeHomeCopy(storage, ORG, { hadSale: true });
-    writeHomeCopy(storage, ORG, { hadSale: false });
-    expect(stored(values).hadSale).toBe(true);
+    values.set(
+      KEY,
+      JSON.stringify({ before: september(), goal: null, hadSale: true })
+    );
+    writeHomeCopy(storage, ORG, { goal: keptGoal() });
 
-    writeHomeCopy(storage, ORG, { before: september() });
-    expect(stored(values).hadSale).toBe(true);
+    expect(stored(values)).toEqual({
+      before: september(),
+      goal: keptGoal(),
+    });
   });
 
   it("não grava uma cópia fora do formato nem sem armazenamento", () => {
@@ -227,7 +227,7 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
       before: { ...september(), generatedAt: "ontem" },
     });
     expect(values.size).toBe(0);
-    expect(() => writeHomeCopy(null, ORG, { hadSale: true })).not.toThrow();
+    expect(() => writeHomeCopy(null, ORG, { goal: keptGoal() })).not.toThrow();
   });
 
   it("não quebra quando o armazenamento recusa a gravação", () => {
@@ -238,15 +238,17 @@ describe("keeping the Início's copy (writeHomeCopy)", () => {
         throw new Error("quota");
       },
     };
-    expect(() => writeHomeCopy(refusing, ORG, { hadSale: true })).not.toThrow();
+    expect(() =>
+      writeHomeCopy(refusing, ORG, { goal: keptGoal() })
+    ).not.toThrow();
   });
 
   it("uma cópia guardada corrompida é refeita a partir do que chegou", () => {
     const { storage, values } = memoryStorage();
     values.set(KEY, "{not json");
-    writeHomeCopy(storage, ORG, { hadSale: true });
+    writeHomeCopy(storage, ORG, { goal: keptGoal() });
 
-    expect(stored(values)).toEqual({ before: null, goal: null, hadSale: true });
+    expect(stored(values)).toEqual({ before: null, goal: keptGoal() });
   });
 });
 
@@ -259,7 +261,6 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
   const valid = (): Record<string, unknown> => ({
     before: september(),
     goal: keptGoal(),
-    hadSale: false,
   });
 
   it("devolve o que foi gravado", () => {
@@ -267,19 +268,17 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
     writeHomeCopy(storage, ORG, {
       before: september(),
       goal: keptGoal(),
-      hadSale: true,
     });
 
     expect(readHomeCopy(storage, ORG)).toEqual({
       before: september(),
       goal: keptGoal(),
-      hadSale: true,
     });
   });
 
   it("devolve null sem cópia, sem armazenamento ou de outra organização", () => {
     const { storage } = memoryStorage();
-    writeHomeCopy(storage, ORG, { hadSale: true });
+    writeHomeCopy(storage, ORG, { goal: keptGoal() });
 
     expect(readHomeCopy(null, ORG)).toBeNull();
     expect(readHomeCopy(storage, "0199c2d0-0000-7000-8000-00000000a002")).toBe(
@@ -423,11 +422,14 @@ describe("reading the Início's copy back (readHomeCopy)", () => {
     expect(read({ ...valid(), goal: activeView() })).toBeNull();
   });
 
-  it("descarta a cópia em que hadSale não é booleano ou falta", () => {
-    expect(read({ ...valid(), hadSale: "true" })).toBeNull();
-    expect(read({ ...valid(), hadSale: 1 })).toBeNull();
-    const { hadSale: _removed, ...without } = valid();
-    expect(read(without)).toBeNull();
+  it("lê sem erro a cópia antiga, com hadSale de qualquer valor ou sem o campo", () => {
+    for (const hadSale of [true, false, "true", 1, null]) {
+      expect(read({ ...valid(), hadSale })).toMatchObject({
+        before: september(),
+        goal: keptGoal(),
+      });
+    }
+    expect(read(valid())).toEqual({ before: september(), goal: keptGoal() });
   });
 });
 
@@ -451,7 +453,6 @@ describe("the figures of the copy (copiedFigures)", () => {
     const copy: HomeCopy = {
       before: options.b === undefined ? september() : options.b,
       goal: null,
-      hadSale: false,
     };
     return { copy, storage };
   }

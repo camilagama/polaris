@@ -178,10 +178,7 @@ describe("a janela anterior do Início tirada da cópia do dia", () => {
 
   it("uma cópia do aparelho que não é um resumo não serve", () => {
     const { storage, values } = memoryStorage();
-    values.set(
-      KEY,
-      JSON.stringify({ before: { period: PERIOD }, hadSale: true })
-    );
+    values.set(KEY, JSON.stringify({ before: { period: PERIOD }, goal: null }));
 
     expect(reuse(storage)).toBeNull();
   });
@@ -260,7 +257,7 @@ describe("a cópia da janela anterior depois de uma devolução ou cancelamento 
     writeHomeCopy(storage, ORG, { before: before() });
     invalidatePreviousWindow(storage, ORG, "2026-09-12");
 
-    writeHomeCopy(storage, ORG, { hadSale: true });
+    writeHomeCopy(storage, ORG, { goal: null });
     expect(reuse(storage)).toBeNull();
 
     writeHomeCopy(storage, ORG, { before: before() });

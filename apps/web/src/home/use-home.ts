@@ -521,9 +521,6 @@ export function useHome(
             const change: Partial<HomeCopy> = reusedBefore
               ? {}
               : { before: ready.before };
-            if (!noSaleCounted(ready.month, ready.before)) {
-              change.hadSale = true;
-            }
             writeHomeCopy(storage, organizationId, change);
           });
           setMidnightAt(
@@ -566,11 +563,6 @@ export function useHome(
         );
         const data = read === "sold" ? null : read;
         tellFirstSteps(organizationId, data, current());
-        if (read === "sold" && current()) {
-          keepCopy(reads.report && !copyRefused.current, (storage) =>
-            writeHomeCopy(storage, organizationId, { hadSale: true })
-          );
-        }
         settle(ticket, "checklist", { block: { data, status: "ready" } });
       } catch (error) {
         // not knowing whether the store sold, the figures stand with their empty states
@@ -583,7 +575,7 @@ export function useHome(
         );
       }
     },
-    [organizationId, reads.inventory, reads.report, reads.sales, settle]
+    [organizationId, reads.inventory, reads.sales, settle]
   );
 
   const loadGoals = useCallback(
