@@ -8,8 +8,8 @@ import { expect, test } from "@playwright/test";
  * ui-date-pickers.e2e.ts; here: the button announces a dialog and its open state, opening moves the focus inside,
  * Escape closes and gives it back, the chosen day and today are announced, and the days of a period are checked
  * as selected, and the name of a day says its role before the state: "início do período", "fim do período" or
- * "início e fim do período" (one day, or only the start marked); a day in the middle has no role. "Hoje" is `24/10/2026` in the
- * gallery.
+ * "início e fim do período" (one day); with only the start marked it is "início do período"; a day in the middle has
+ * no role. "Hoje" is `24/10/2026` in the gallery.
  */
 const SELECTED = /, selecionado$/;
 const TODAY_PREFIX = /^Hoje, /;
