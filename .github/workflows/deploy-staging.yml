@@ -306,6 +306,8 @@ jobs:
       # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
+        # 15 checks; worst case 13 x (3 tries of 10 s + 2 pauses of 5 s) + 2 x 10 s, about 9 min (design t607, patch A)
+        timeout-minutes: 12
         env:
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
           STAGING_CATALOG_URL: ${{ vars.STAGING_CATALOG_URL }}
