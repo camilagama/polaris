@@ -10,6 +10,7 @@ import {
   type OwnerCommandRecord,
 } from "@polaris/db/billing-store";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
+import { logger } from "@polaris/observability/logger";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -712,6 +713,7 @@ describe("the audit of the request is written after the billing, with the type o
   it.each(COMMANDS)(
     "answers SERVICE_UNAVAILABLE billing_provider_unavailable when the provider fails (%s), audited as accepted",
     async (command, record) => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
       const fixture = setup({ portFails: true, record });
 
       if (command === "requestRefund") {
@@ -724,6 +726,16 @@ describe("the audit of the request is written after the billing, with the type o
         code: "SERVICE_UNAVAILABLE",
         data: { reason: "billing_provider_unavailable" },
       });
+      const counted = warn.mock.calls
+        .filter(([event]) => event === "billing_unavailable_refused")
+        .map(([, fields]) => fields);
+      warn.mockRestore();
+      expect(counted).toEqual([
+        {
+          errorCode: "provider_unavailable",
+          reason: "billing_provider_unavailable",
+        },
+      ]);
 
       const accepted = {
         cancelRenewal: "billing.owner_renewal_cancel_requested",

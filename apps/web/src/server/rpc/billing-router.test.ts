@@ -5,6 +5,7 @@ import {
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
+import { logger } from "@polaris/observability/logger";
 import { RejectedBillingEventError } from "@polaris/domain/billing/subscription-state";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
@@ -425,7 +426,14 @@ describe("billing.startCheckout", () => {
     expect(fixture.store.recordEvent).toHaveBeenCalledTimes(1);
   });
 
+  /** The fields of every `billing_unavailable_refused` the logger got, whatever else it warns about. */
+  const refusalsCounted = (warn: { mock: { calls: unknown[][] } }) =>
+    warn.mock.calls
+      .filter(([event]) => event === "billing_unavailable_refused")
+      .map(([, fields]) => fields);
+
   it("answers service unavailable when the provider cannot say whether the old checkout was paid", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const fixture = setup({
       portOverrides: {
         hasSubscription: vi.fn(() =>
@@ -443,11 +451,19 @@ describe("billing.startCheckout", () => {
       code: "SERVICE_UNAVAILABLE",
       data: { reason: "previous_checkout_unverified" },
     });
+    expect(refusalsCounted(warn)).toEqual([
+      {
+        errorCode: "previous_checkout_unverified",
+        reason: "previous_checkout_unverified",
+      },
+    ]);
+    warn.mockRestore();
     expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
     expect(fixture.store.attachProvider).not.toHaveBeenCalled();
   });
 
   it("answers service unavailable with its own reason when the provider cannot cancel the old renewal", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const fixture = setup({
       portOverrides: {
         cancelRenewal: vi.fn(() => Promise.reject(new Error("socket hang up"))),
@@ -468,11 +484,19 @@ describe("billing.startCheckout", () => {
       code: "SERVICE_UNAVAILABLE",
       data: { reason: "previous_renewal_cancel_unverified" },
     });
+    expect(refusalsCounted(warn)).toEqual([
+      {
+        errorCode: "previous_renewal_cancel_unverified",
+        reason: "previous_renewal_cancel_unverified",
+      },
+    ]);
+    warn.mockRestore();
     expect(fixture.port.prepareSubscription).not.toHaveBeenCalled();
     expect(fixture.store.attachProvider).not.toHaveBeenCalled();
   });
 
   it("answers service unavailable, with no word of the provider, when the provider cannot be reached", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const fixture = setup({
       portOverrides: {
         prepareSubscription: vi.fn(() =>
@@ -489,6 +513,13 @@ describe("billing.startCheckout", () => {
       code: "SERVICE_UNAVAILABLE",
       data: { reason: "billing_provider_unavailable" },
     });
+    expect(refusalsCounted(warn)).toEqual([
+      {
+        errorCode: "provider_unavailable",
+        reason: "billing_provider_unavailable",
+      },
+    ]);
+    warn.mockRestore();
     expect(fixture.store.close).toHaveBeenCalledTimes(1);
   });
 
