@@ -764,7 +764,7 @@ describe("checkoutRefusal", () => {
       "previous_renewal_cancel_unverified",
       true,
       false,
-      "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
+      "A assinatura nova não começou. Não deu para confirmar o encerramento da anterior: toque em Atualizar para ver o plano antes de tentar de novo.",
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -903,7 +903,9 @@ describe("checkoutRefusal", () => {
     );
     expect(refusal.text).not.toContain("Nada foi cobrado");
     expect(refusal.text).not.toBe(CHECKOUT_UNCONFIRMED);
+    expect(refusal.text).not.toContain("o cancelamento");
     expect(refusal.reread).toBe(true);
+    expect(refusal.retry).toBe(false);
   });
 
   it("asks to reread on an unknown reason, with no word about a charge", () => {

@@ -592,10 +592,11 @@ const PREVIOUS_CHECKOUT_UNVERIFIED_TEXT =
 /**
  * `previous_renewal_cancel_unverified`: the provider did not confirm the cancellation of the renewal of the old
  * subscription. It may have been made with the answer lost, so the text never says nothing changed; "Atualizar"
- * reads the plan before trying again.
+ * reads the plan before trying again. The new subscription is never created before this step, so saying it did not
+ * start is safe; the old renewal may still be alive, so the text avoids "Nada foi cobrado" and a direct retry.
  */
 const PREVIOUS_RENEWAL_CANCEL_UNVERIFIED_TEXT =
-  "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.";
+  "A assinatura nova não começou. Não deu para confirmar o encerramento da anterior: toque em Atualizar para ver o plano antes de tentar de novo.";
 
 /** The text of each refusal of the checkout (AS-17) and of the read; the server's message where it has one. */
 export function checkoutRefusal(error: unknown): Refusal {

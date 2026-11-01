@@ -837,7 +837,7 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
       "SERVICE_UNAVAILABLE",
       503,
       { reason: "previous_renewal_cancel_unverified" },
-      "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
+      "A assinatura nova não começou. Não deu para confirmar o encerramento da anterior: toque em Atualizar para ver o plano antes de tentar de novo.",
     ],
     [
       "SERVICE_UNAVAILABLE",
