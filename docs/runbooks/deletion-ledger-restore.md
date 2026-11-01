@@ -146,7 +146,25 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
          AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e');
       ```
 
-      Se a lista não voltar vazia ou o hash divergir, **pare**: não abra o ambiente, refaça o item 1 (a reaplicação é idempotente) e, persistindo, trate como incidente. A consulta de donos do passo 2 não serve para isso. A conferência cobre as funções, onde está o risco do `SECURITY DEFINER`. A reaplicação do item 1 reaplica **todas** as ACLs do dump (tabelas, sequências e schemas), que esta conferência não compara. Se quiser comparar as tabelas, normalize o `relacl` com `acldefault('r', relowner)` antes de comparar: no ensaio a única diferença foi `legal_acceptance_contract_end` (na origem, ACL explícita igual ao padrão do dono; no restaurado, nula), sem efeito.
+      A lista vazia e o hash já cobrem, por serem genéricos, as funções de purge `count_purges_held_back()` (0088) e `count_purges_stalled_without_progress(integer, integer)` (0110): são `SECURITY DEFINER` do `public`, e o hash compara dono e ACL de cada uma. Elas são o que o job de privacidade chama sem ter privilégio nenhum em `organization_purges`, então confira também, **à parte e com a expectativa escrita**, esta consulta no restaurado (a linha de uma função que o banco ainda não tem vem com `NULL` nas três colunas):
+
+      ```sql
+      SELECT f.nome AS funcao,
+             pg_get_userbyid(p.proowner) AS dono,
+             has_function_privilege('public', p.oid, 'EXECUTE') AS exec_public,
+             (SELECT string_agg(r.rolname, ',' ORDER BY r.rolname)
+                FROM pg_roles r
+               WHERE r.rolname LIKE 'polaris\_%\_runtime'
+                 AND has_function_privilege(r.rolname, p.oid, 'EXECUTE')) AS runtimes_com_execute
+        FROM unnest(ARRAY['public.count_purges_held_back()',
+                          'public.count_purges_stalled_without_progress(integer, integer)']) AS f(nome)
+        LEFT JOIN pg_proc p ON p.oid = to_regprocedure(f.nome)
+       ORDER BY f.nome COLLATE "C";
+      ```
+
+      Para cada função o esperado é: `dono` = `polaris_purge_owner`, `exec_public` = `false` e `runtimes_com_execute` = `polaris_privacy_runtime` (só ele). Antes do passo 3, um backup anterior à 0110 traz só a `count_purges_held_back` (e um anterior à 0088, nenhuma das duas), e a linha da função que falta vem com `NULL`; com as migrations até a 0110 aplicadas (pelo passo 3 ou por já estarem no backup, no passo 5), as **duas** têm de estar como acima, sem `NULL`. Outro dono, `exec_public` `true` ou mais um papel em `runtimes_com_execute` reprova, como a lista que não volta vazia.
+
+      Se a lista não voltar vazia, o hash divergir ou a consulta das funções de purge fugir do esperado, **pare**: não abra o ambiente, refaça o item 1 (a reaplicação é idempotente) e, persistindo, trate como incidente. A consulta de donos do passo 2 não serve para isso. A conferência cobre as funções, onde está o risco do `SECURITY DEFINER`. A reaplicação do item 1 reaplica **todas** as ACLs do dump (tabelas, sequências e schemas), que esta conferência não compara. Se quiser comparar as tabelas, normalize o `relacl` com `acldefault('r', relowner)` antes de comparar: no ensaio a única diferença foi `legal_acceptance_contract_end` (na origem, ACL explícita igual ao padrão do dono; no restaurado, nula), sem efeito.
    3. **Revogue o preparo** (só depois dos itens 1 e 2) e confira:
 
       ```sql
@@ -171,7 +189,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
       O `set_restante` tem de ser **0** e a ACL do `public` tem de ser **igual à da origem** (a registrada no passo 2). Se a ACL divergir, não corrija à mão com outro valor: pare e acione o responsável.
 
-   Isto vale para o **restore lógico**. O restore por **branch Neon** (ponto no tempo) leva papéis e ACLs junto e dispensa o preparo, a reaplicação e o `GRANT`/`REVOKE` acima, mas **ainda não foi ensaiado**: depois dele, rode a mesma conferência do item 2 (a consulta vazia e o hash contra a origem) antes de seguir, e registre o resultado.
+   Isto vale para o **restore lógico**. O restore por **branch Neon** (ponto no tempo) leva papéis e ACLs junto e dispensa o preparo, a reaplicação e o `GRANT`/`REVOKE` acima, mas **ainda não foi ensaiado**: depois dele, rode a mesma conferência do item 2 (a consulta vazia, o hash contra a origem e a consulta das funções de purge) antes de seguir, e registre o resultado.
 
 3. **Aplicar as migrations pendentes** no ambiente restaurado, se o backup for anterior à tabela ou a alguma migration (sem `public.deletion_ledger` os passos seguintes falham). **Carregar os tombstones da lista** que ainda não existirem (`INSERT` pelo dono do banco, **com lista de colunas**, copiando da lista, linha a linha, `organization_id`, `entity_type`, `entity_id`, `operation`, `privacy_case_id` e o `recorded_at` original, senão o instante vira o do ambiente restaurado; o índice único recusa repetição, então `ON CONFLICT DO NOTHING` é seguro):
 
@@ -213,13 +231,13 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
       AND o.status <> 'purged';
    ```
 
-   Vazia significa: nenhum cliente com tombstone continua com dado pessoal, e nenhuma organização com tombstone de purge está fora de `purged` (a linha da organização fica como marca de remoção, então a consulta confere o estado, não a existência). **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Rode de novo, nesse ponto (as migrations do passo 3 criam e mudam funções), a consulta das funções `SECURITY DEFINER` executáveis por PUBLIC do passo 2b: tem de voltar **vazia**. Num restore lógico no Neon, o passo 5 não fecha sem ela. Registre o resultado (sem IDs) e o instante.
+   Vazia significa: nenhum cliente com tombstone continua com dado pessoal, e nenhuma organização com tombstone de purge está fora de `purged` (a linha da organização fica como marca de remoção, então a consulta confere o estado, não a existência). **Só vale se o passo 3 foi feito:** confira também que `SELECT count(*) FROM public.deletion_ledger` no ambiente restaurado é **no mínimo** o número de linhas da lista do passo 1 mais os tombstones que já vieram no backup (sem o passo 3, a consulta passa vazia sem provar nada sobre as exclusões posteriores ao backup). Rode de novo, nesse ponto (as migrations do passo 3 criam e mudam funções), a consulta das funções `SECURITY DEFINER` executáveis por PUBLIC do passo 2b: tem de voltar **vazia**; e a consulta das funções de purge (`count_purges_held_back` e `count_purges_stalled_without_progress`) do mesmo item: as duas linhas com `polaris_purge_owner`, `exec_public` falso e só `polaris_privacy_runtime` em `runtimes_com_execute`, sem `NULL`. Num restore lógico no Neon, o passo 5 não fecha sem elas. Registre o resultado (sem IDs) e o instante.
 
-   **Confira também que o isolamento entre lojas sobreviveu (RLS).** O `pg_restore` pode terminar sem erro e deixar uma tabela sem RLS forçado, uma política a menos ou um papel com `BYPASSRLS`; nesses casos uma loja passaria a ler os dados de outra. Rode as três consultas abaixo no ambiente restaurado e, as duas primeiras, também na origem, na mesma sessão com `SET search_path = pg_catalog;` (o texto das políticas depende do `search_path`). As migrations do passo 3 criam tabelas e políticas, então a linha de base muda conforme elas tenham ou não sido aplicadas: se o passo 3 **não** aplicou migration, compare com os valores da origem no instante do `pg_dump` (ou da origem, se ela não recebeu migration depois); se aplicou, rode as consultas 1 e 2 também no restaurado **antes do passo 3** (junto do hash das ACLs do passo 2b) e compare esses valores com os da origem no instante do `pg_dump`, e no passo 5 compare com um banco descartável migrado até o mesmo ponto. Nenhuma consulta usa URI, host ou segredo; a conexão é a do dono do banco, lida do ambiente, como no passo 2. Estas conferências não são cobertas pelo gate `deletion-ledger` e ainda não foram ensaiadas contra um restaurado.
+   **Confira também que o isolamento entre lojas sobreviveu (RLS).** O `pg_restore` pode terminar sem erro e deixar uma tabela sem RLS forçado, uma política a menos ou um papel com `BYPASSRLS`; nesses casos uma loja passaria a ler os dados de outra. Rode as três consultas abaixo no ambiente restaurado e, as duas primeiras, também na referência, na mesma sessão com `SET search_path = pg_catalog;` (o texto das políticas depende do `search_path`). As migrations do passo 3 criam tabelas e políticas, então a linha de base muda conforme elas tenham ou não sido aplicadas: se o passo 3 **não** aplicou migration, compare com os valores da origem no instante do `pg_dump` (ou da origem, se ela não recebeu migration depois); se aplicou, rode as consultas 1 e 2 também no restaurado **antes do passo 3** (junto do hash das ACLs do passo 2b) e compare esses valores com os da origem no instante do `pg_dump`, e no passo 5 compare com um banco descartável migrado até o mesmo ponto. **A referência da comparação** (a origem ou esse banco descartável) vale para as consultas 1, 1b e 2: sem migration no passo 3, é a origem; com migration no passo 3, é o banco descartável onde as mesmas migrations foram aplicadas, e não a origem, que não as tem. Nenhuma consulta usa URI, host ou segredo; a conexão é a do dono do banco, lida do ambiente, como no passo 2. Estas conferências não são cobertas pelo gate `deletion-ledger` e ainda não foram ensaiadas contra um restaurado.
 
-   **Escopo das consultas 1 e 2:** cobrem só o schema `public` e as tabelas `r` (comuns) e `p` (particionadas). Hoje não há outro schema de loja nem tabela particionada (conferido nas migrations em 31/10/2026); se surgir tabela de loja em outro schema, estenda as consultas antes de confiar na conferência.
+   **Escopo das consultas 1 e 2:** cobrem só o schema `public` e as tabelas `r` (comuns) e `p` (particionadas). Hoje não há outro schema de loja, tabela particionada nem visão (conferido nas migrations em 31/10/2026); se surgir um deles (outro schema, tabela particionada ou visão), estenda as consultas antes de confiar na conferência. A visão pede atenção própria: uma visão ou visão materializada (`relkind` `v` ou `m`) sem `security_invoker` lê como o dono da visão, e não como quem consulta, e por isso ignora o RLS das tabelas de baixo para o chamador (na visão materializada, que é um retrato gravado pelo dono e não aceita `security_invoker`, o RLS nunca vale para quem a lê). Nenhuma das consultas 1 e 2 enxerga esses objetos.
 
-   1. **Tabelas do `public` com RLS ligado e forçado.** A contagem e o hash (nome qualificado da tabela, `relrowsecurity` e `relforcerowsecurity`) têm de ser **iguais aos da origem**. O hash compara tabela a tabela e pega a tabela que perdeu o RLS forçado (ou a que apareceu ou sumiu) mesmo quando os totais coincidem; `com_rls_forcado` dá o resumo para ler o resultado. Esta consulta compara origem com restaurado e sozinha não diz se a origem está saudável. O gate `rls-forced-catalog` prova no CI (num PostgreSQL novo, só com as migrations; não roda na Neon) que as migrations criam um catálogo saudável: toda tabela do `public` com RLS forçado, salvo a lista versionada `RLS_EXEMPT_TABLES` em `packages/db/src/rls-exempt-tables.ts` (hoje sem tabela), visão com `security_invoker` e nenhum schema de usuário além de `public` e `drizzle`. Isso não prova que esta origem esteja assim. Para a origem, leia a própria consulta 1: `com_rls_forcado` tem de ser igual a `tabelas` (menos as entradas de `RLS_EXEMPT_TABLES`, hoje nenhuma):
+   1. **Tabelas do `public` com RLS ligado e forçado.** A contagem e o hash (nome qualificado da tabela, `relrowsecurity` e `relforcerowsecurity`) têm de ser **iguais aos da referência**. O hash compara tabela a tabela e pega a tabela que perdeu o RLS forçado (ou a que apareceu ou sumiu) mesmo quando os totais coincidem; `com_rls_forcado` dá o resumo para ler o resultado. Esta consulta compara a referência com o restaurado e sozinha não diz se a referência é saudável. O gate `rls-forced-catalog` prova no CI (num PostgreSQL novo, só com as migrations; não roda na Neon) que as migrations criam um catálogo saudável: toda tabela do `public` com RLS forçado, salvo a lista versionada `RLS_EXEMPT_TABLES` em `packages/db/src/rls-exempt-tables.ts` (hoje sem tabela), visão com `security_invoker` e nenhum schema de usuário além de `public` e `drizzle`. Isso não prova que esta origem esteja assim. Para a origem, leia a própria consulta 1: `com_rls_forcado` tem de ser igual a `tabelas` (menos as entradas de `RLS_EXEMPT_TABLES`, hoje nenhuma):
 
       ```sql
       SELECT count(*) AS tabelas,
@@ -243,18 +261,18 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
        ORDER BY n.nspname COLLATE "C", c.relname COLLATE "C";
       ```
 
-      Primeiro comando com as variáveis `PG*` da origem, o segundo com as do restaurado (cada ponta no seu terminal ou `env` próprio); depois compare:
+      A **referência** é a mesma da comparação da consulta 1 que divergiu (ver acima): sem migration no passo 3, a origem; com migration no passo 3, o banco descartável onde as mesmas migrations foram aplicadas (a comparação feita antes do passo 3 continua sendo contra a origem). Primeiro comando com as variáveis `PG*` da referência, o segundo com as do restaurado (cada ponta no seu terminal ou `env` próprio); depois compare:
 
       ```sh
-      psql --no-psqlrc --quiet -At --set=ON_ERROR_STOP=1 -f consulta-1b.sql > origem.txt
+      psql --no-psqlrc --quiet -At --set=ON_ERROR_STOP=1 -f consulta-1b.sql > referencia.txt
       psql --no-psqlrc --quiet -At --set=ON_ERROR_STOP=1 -f consulta-1b.sql > restaurado.txt
-      wc -l origem.txt restaurado.txt
-      diff origem.txt restaurado.txt
+      wc -l referencia.txt restaurado.txt
+      diff referencia.txt restaurado.txt
       ```
 
-      As duas saídas têm de ter linhas (o `wc -l` bate com a contagem da consulta 1 de cada ponta). `diff` vazio com a consulta 1 divergente não prova que ela errou: as duas saídas vieram da mesma conexão, ou uma conexão falhou e deixou o arquivo vazio ou parcial. Refaça antes de concluir qualquer coisa. No `diff`, `<` é a origem e `>` é o restaurado: uma linha só `<` é tabela que sumiu no restaurado, uma só `>` é tabela a mais, e o par `<` e `>` com o mesmo nome é `relrowsecurity` ou `relforcerowsecurity` diferente (`t` ou `f`, separados por `|`, por exemplo `< public.tabela|t|t` e `> public.tabela|t|f`). Achar a tabela não libera nada: a divergência da consulta 1 continua sendo motivo para o passo 5 não fechar, conforme o parágrafo ao fim da lista.
+      As duas saídas têm de ter linhas (o `wc -l` bate com a contagem da consulta 1 de cada ponta). `diff` vazio com a consulta 1 divergente não prova que ela errou: as duas saídas vieram da mesma conexão, ou uma conexão falhou e deixou o arquivo vazio ou parcial. Refaça antes de concluir qualquer coisa. No `diff`, `<` é a referência e `>` é o restaurado: uma linha só `<` é tabela que sumiu no restaurado, uma só `>` é tabela a mais, e o par `<` e `>` com o mesmo nome é `relrowsecurity` ou `relforcerowsecurity` diferente (`t` ou `f`, separados por `|`, por exemplo `< public.tabela|t|t` e `> public.tabela|t|f`). Achar a tabela não libera nada: a divergência da consulta 1 continua sendo motivo para o passo 5 não fechar, conforme o parágrafo ao fim da lista.
 
-   2. **Políticas do `public`.** A contagem e o hash (tabela, nome, permissiva ou restritiva, papéis, comando, `USING` e `WITH CHECK`) têm de ser **iguais aos da origem**. O hash pega a política trocada ou ampliada (por exemplo, passada a `PUBLIC`), que a contagem não pega:
+   2. **Políticas do `public`.** A contagem e o hash (tabela, nome, permissiva ou restritiva, papéis, comando, `USING` e `WITH CHECK`) têm de ser **iguais aos da referência**. O hash pega a política trocada ou ampliada (por exemplo, passada a `PUBLIC`), que a contagem não pega:
 
       ```sql
       SELECT count(*) AS politicas,
@@ -275,7 +293,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
        ORDER BY 1;
       ```
 
-   Se qualquer uma divergir da origem (itens 1 e 2) ou não voltar vazia (item 3), **o passo 5 não fecha**: não abra o ambiente, não corrija à mão com outro valor, refaça o restore ou pare e acione o responsável, e trate como incidente de isolamento entre lojas. Registre os resultados (só números, hash e a lista vazia, sem IDs) e o instante.
+   Se qualquer uma divergir da referência (itens 1 e 2) ou não voltar vazia (item 3), **o passo 5 não fecha**: não abra o ambiente, não corrija à mão com outro valor, refaça o restore ou pare e acione o responsável, e trate como incidente de isolamento entre lojas. Registre os resultados (só números, hash e a lista vazia, sem IDs) e o instante.
 6. **Só então** reabrir o ambiente (Workers, cron, sincronização). Aparelhos que sincronizaram com o ambiente anterior podem estar à frente do restaurado: é um limite geral do restore, tratado na Fase 16.
 
 ### Reaplicar um purge de organização

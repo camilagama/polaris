@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   assertAllowedGateUrl,
   isLocalGateHost,
@@ -175,6 +175,25 @@ const inheritedNames = new Set([
   "XDG_CACHE_HOME",
 ]);
 
+const OFFLINE_RUNTIME_SECRETS = [
+  "OFFLINE_LEASE_SECRET",
+  "SYNC_PAYLOAD_HASH_SECRET",
+] as const;
+
+/**
+ * The keys the Worker signs the offline lease and hashes the commands of `sync.push` with: made from the run's secret
+ * and thrown away with it. Without them `sync.push` answers 503 before any authorization, and `offline.issueLease`
+ * cannot sign, so only the preview that has them can prove what those two refuse.
+ */
+function offlineRuntimeSecrets(run: RunEnvironment): Record<string, string> {
+  return Object.fromEntries(
+    OFFLINE_RUNTIME_SECRETS.map((name) => [
+      name,
+      createHash("sha256").update(`${name}:${run.secret}`).digest("hex"),
+    ])
+  );
+}
+
 /**
  * The closed environment of a preview (as the Gate 2 harness does): the inherited basics, the run's secret, the
  * seven connection strings and the switch of the offline runtime. No `CLOUDFLARE_ENV`: the build and the preview
@@ -204,6 +223,7 @@ export function previewEnvironment(
     VITE_CLIENT_ERRORS_ENABLED: "true",
     VITE_CONFIG_NATIVE_IGNORE_WARNING: "true",
     VITE_OFFLINE_RUNTIME_ENABLED: offlineRuntime ? "true" : "false",
+    ...(offlineRuntime ? offlineRuntimeSecrets(run) : {}),
     ...Object.fromEntries(
       HYPERDRIVE_BINDINGS.map((binding) => [
         hyperdriveVariable(binding),
