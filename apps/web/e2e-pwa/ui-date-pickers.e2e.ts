@@ -552,6 +552,65 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+test.describe("reaberto no meio da saída, a 1280 px", () => {
+  test.use({ viewport: { height: 800, width: 1280 } });
+
+  /**
+   * A choice that closes the popup, then a click on the button one turn of the page later (React has applied the
+   * close by then). Resolves to whether the popup was still on screen, leaving, when the button was clicked: its exit
+   * lasts 100 ms at the full motion level and is instant below it, where the test would prove nothing.
+   */
+  const chooseAndReopen = (page: Page, prefix: string, choice: string) =>
+    page.evaluate(
+      async ({ choiceName, labelPrefix }) => {
+        const chosen = [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-slot="popover-content"] button'
+          ),
+        ].find((button) => button.textContent?.trim() === choiceName);
+        chosen?.click();
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+        const leaving =
+          document.querySelector('[data-slot="popover-content"]') !== null;
+        document
+          .querySelector<HTMLElement>(`button[aria-label^="${labelPrefix}"]`)
+          ?.click();
+        return leaving;
+      },
+      { choiceName: choice, labelPrefix: prefix }
+    );
+
+  test("data única: o calendário reaberto durante a saída abre no mês da data, não no que ficou na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(page, "Data da despesa,", "Data da despesa");
+    await popup.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(popup.getByText("Novembro de 2026")).toBeVisible();
+
+    expect(await chooseAndReopen(page, "Data da despesa,", "Hoje")).toBe(true);
+    await expect(trigger(page, "Data da despesa,")).toHaveText("24/10/2026");
+    await expect(popup.getByText("Outubro de 2026")).toBeVisible();
+    await expect(popup.getByText("Novembro de 2026")).toBeHidden();
+  });
+
+  test("período: o painel reaberto durante a saída abre no mês do período, não no que ficou na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(page, "Período,", "Período");
+    await popup.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(popup.getByText("Novembro de 2026")).toBeVisible();
+
+    expect(await chooseAndReopen(page, "Período,", "Hoje")).toBe(true);
+    await expect(trigger(page, "Período,")).toHaveText("24/10/2026");
+    await expect(popup.getByText("Setembro de 2026")).toBeVisible();
+    await expect(popup.getByText("Novembro de 2026")).toBeHidden();
+  });
+});
+
 test.describe("a 320 px, com toque", () => {
   test.use({
     hasTouch: true,

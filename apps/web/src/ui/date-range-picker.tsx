@@ -217,6 +217,7 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   const value = validRange(valueProp);
   const [open, setOpen] = useState(false);
+  const [openings, setOpenings] = useState(0);
   const errorId = useId();
   const today = todayOr(todayProp);
   // the accessible name holds the text the button shows (WCAG 2.5.3): "Período, 01/10 a 24/10"
@@ -230,9 +231,18 @@ export function DateRangePicker({
     [onValueChange]
   );
 
+  // a popup reopened while it is still leaving keeps its panel mounted: a new key gives each opening a fresh draft and
+  // its first month
+  const handleOpenChange = useCallback((opening: boolean) => {
+    if (opening) {
+      setOpenings((count) => count + 1);
+    }
+    setOpen(opening);
+  }, []);
+
   return (
     <div className={cn("grid gap-1.5", className)}>
-      <Popover onOpenChange={setOpen} open={open}>
+      <Popover onOpenChange={handleOpenChange} open={open}>
         <PopoverTrigger
           render={
             <Button
@@ -265,7 +275,12 @@ export function DateRangePicker({
           className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-hidden p-2"
           initialFocus={false}
         >
-          <DateRangePanel onCommit={commit} today={today} value={value} />
+          <DateRangePanel
+            key={openings}
+            onCommit={commit}
+            today={today}
+            value={value}
+          />
         </PopoverContent>
       </Popover>
       <FieldError id={errorId}>{error}</FieldError>
