@@ -44,6 +44,11 @@ import { categories } from "../src/schema/category";
 import { products } from "../src/schema/product";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
 import { becomeGateRole } from "./gate-roles";
+import {
+  RUNNER_LOGIN_GRANTS_SQL,
+  type RunnerLoginGrantRow,
+  runnerLoginState,
+} from "./runner-login-grant";
 import { deleteOrganizationsWithAudit } from "./teardown-support";
 
 const gateDatabase =
@@ -539,28 +544,16 @@ async function main() {
       ]
     );
 
-    const runnerState = await adminPool.query<{
-      bypassRls: boolean;
-      canLogin: boolean;
-      createDb: boolean;
-      createRole: boolean;
-      inherit: boolean;
-      replication: boolean;
-      set: boolean;
-      superuser: boolean;
-    }>(
-      'SELECT r.rolcanlogin AS "canLogin", r.rolbypassrls AS "bypassRls", ' +
-        'r.rolsuper AS superuser, r.rolcreatedb AS "createDb", r.rolcreaterole AS "createRole", ' +
-        'r.rolreplication AS replication, m.inherit_option AS inherit, m.set_option AS "set" ' +
-        "FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid " +
-        "WHERE r.rolname = $1 AND m.roleid = (SELECT oid FROM pg_roles WHERE rolname = $2) " +
-        "AND m.admin_option = false",
+    const runnerGrants = await adminPool.query<RunnerLoginGrantRow>(
+      RUNNER_LOGIN_GRANTS_SQL,
       [runnerLogin, runtimeRole]
     );
+    const runnerState = runnerLoginState(runnerGrants.rows);
     assert.deepEqual(
-      runnerState.rows,
+      runnerState,
       [
         {
+          admin: false,
           bypassRls: false,
           canLogin: true,
           createDb: false,
@@ -571,7 +564,7 @@ async function main() {
           superuser: false,
         },
       ],
-      "the gate runner's own login is the environment's runtime login: LOGIN, no SUPERUSER, BYPASSRLS, CREATEDB, CREATEROLE or REPLICATION, member of the runtime group with INHERIT and SET"
+      "the gate runner's own login is the environment's runtime login: LOGIN, no SUPERUSER, BYPASSRLS, CREATEDB, CREATEROLE or REPLICATION, member of the runtime group with INHERIT and SET, without ADMIN (however many roles granted it)"
     );
 
     const rls = await adminPool.query<{
