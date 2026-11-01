@@ -28,8 +28,11 @@ function parseArgs(argv) {
   for (let i = 0; i < own.length; i += 2) {
     const flag = own[i];
     const value = own[i + 1];
-    if (value === undefined || !["--instante", "--tz"].includes(flag)) {
+    if (!["--instante", "--tz"].includes(flag)) {
       throw new Error(`argumento desconhecido: ${flag}`);
+    }
+    if (value === undefined) {
+      throw new Error(`${flag} pede um valor`);
     }
     options[flag === "--instante" ? "instante" : "tz"] = value;
   }
@@ -68,6 +71,9 @@ function main() {
         stdio: "inherit",
       }
     );
+    if (run.error) {
+      console.error(`vitest não iniciou: ${run.error.message}`);
+    }
     results.push({ instante: instante.chave, status: run.status, tz });
   }
   console.log("\nResumo");

@@ -3,7 +3,7 @@ import { beforeEach, vi } from "vitest";
 const raw = process.env.POLARIS_TEST_NOW;
 
 /**
- * Pins `Date` to the instant in POLARIS_TEST_NOW (an ISO string with an offset, e.g. `2026-11-01T03:30:00Z`) so a suite
+ * Pins `Date` to the instant in POLARIS_TEST_NOW (an ISO string; give the offset, e.g. `2026-11-01T03:30:00Z`, because without one the date is read in the process time zone) so a suite
  * can be run as if it started at a critical moment (first minute of a month, year turn, leap day).
  * Without the variable this file does nothing.
  *
