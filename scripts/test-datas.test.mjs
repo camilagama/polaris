@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseArgs, selectRuns } from "./test-datas.mjs";
 
 describe("test:datas", () => {
-  it("sem opção, roda os quatro instantes nos dois fusos", () => {
-    expect(selectRuns(parseArgs([]))).toHaveLength(8);
+  it("sem opção, roda os cinco instantes nos dois fusos", () => {
+    expect(selectRuns(parseArgs([]))).toHaveLength(10);
   });
 
   it("--instante e --tz recortam, e o que vem depois de -- é filtro do Vitest", () => {

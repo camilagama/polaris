@@ -79,6 +79,41 @@ describe("DatePicker", () => {
   });
 });
 
+describe("DatePicker, o erro e a ajuda da tela", () => {
+  it("o erro vem antes da ajuda no aria-describedby; sem erro, só a ajuda", () => {
+    const withError = BUTTON.exec(
+      html(
+        <DatePicker
+          describedBy="ajuda-data"
+          error
+          label="Vencimento"
+          onValueChange={noop}
+          value={null}
+        />
+      )
+    )?.[0];
+    const [errorId, help] = (
+      attribute(withError ?? "", "aria-describedby") ?? ""
+    ).split(" ");
+    expect(errorId).toBeTruthy();
+    expect(help).toBe("ajuda-data");
+    const withoutError = BUTTON.exec(
+      html(
+        <DatePicker
+          describedBy="ajuda-data"
+          label="Vencimento"
+          onValueChange={noop}
+          value={null}
+        />
+      )
+    )?.[0];
+    expect(attribute(withoutError ?? "", "aria-describedby")).toBe(
+      "ajuda-data"
+    );
+    expect(attribute(withoutError ?? "", "aria-invalid")).toBeUndefined();
+  });
+});
+
 describe("DateRangePicker", () => {
   it("vazio: Escolher período", () => {
     const markup = html(
@@ -92,6 +127,40 @@ describe("DateRangePicker", () => {
     expect(attribute(BUTTON.exec(markup)?.[0] ?? "", "aria-label")).toBe(
       "Período, Escolher período"
     );
+  });
+
+  it("erro: ligado ao botão pelo aria-invalid e pelo aria-describedby, antes da ajuda da tela", () => {
+    const markup = html(
+      <DateRangePicker
+        describedBy="ajuda-periodo"
+        error="Escolha o período"
+        label="Período"
+        onValueChange={noop}
+        value={null}
+      />
+    );
+    const button = BUTTON.exec(markup)?.[0] ?? "";
+    expect(attribute(button, "aria-invalid")).toBe("true");
+    const [errorId, help] = (attribute(button, "aria-describedby") ?? "").split(
+      " "
+    );
+    expect(help).toBe("ajuda-periodo");
+    const error = new RegExp(`<div[^>]*\\sid="${errorId}"[^>]*>`).exec(
+      markup
+    )?.[0];
+    expect(error && attribute(error, "role")).toBe("alert");
+    expect(markup).toContain("Escolha o período");
+  });
+
+  it("sem erro: nem aria-invalid nem aria-describedby no botão", () => {
+    const button =
+      BUTTON.exec(
+        html(
+          <DateRangePicker label="Período" onValueChange={noop} value={null} />
+        )
+      )?.[0] ?? "";
+    expect(attribute(button, "aria-invalid")).toBeUndefined();
+    expect(attribute(button, "aria-describedby")).toBeUndefined();
   });
 
   it("um campo só: 01/10 a 24/10, e um dia só com o ano", () => {
