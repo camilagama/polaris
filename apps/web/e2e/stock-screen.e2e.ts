@@ -644,6 +644,18 @@ async function settled(page: Page) {
   await settledRound(page);
 }
 
+const jeansBalanceReply = (quantity: number) =>
+  rpc({
+    balance: {
+      movingAverageCost: "62.400000",
+      quantity,
+      variantId: JEANS.variantId,
+      version: 2,
+    },
+    movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+    replayed: false,
+  });
+
 const TURN_CASES = [
   {
     confirm: "Confirmar recebimento",
@@ -653,6 +665,16 @@ const TURN_CASES = [
     },
     quantities: ["7", "4"],
     quantityLabel: "Quantidade recebida",
+    reply: rpc({
+      balance: {
+        movingAverageCost: "12.500000",
+        quantity: 15,
+        variantId: JEANS.variantId,
+        version: 2,
+      },
+      movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+      replayed: false,
+    }),
     route: "receiveStock",
     saldo: "Saldo: 15 unidades",
     trigger: RECEIVE_JEANS,
@@ -664,6 +686,7 @@ const TURN_CASES = [
     },
     quantities: ["7", "4"],
     quantityLabel: "Quantidade contada",
+    reply: jeansBalanceReply(9),
     route: "inventoryCount",
     saldo: "Saldo: 9 unidades",
     trigger: "Contar estoque de Calça jeans, 42",
@@ -679,6 +702,7 @@ const TURN_CASES = [
     },
     quantities: ["1", "1"],
     quantityLabel: "Quantidade a baixar",
+    reply: jeansBalanceReply(2),
     route: "writeOffStock",
     saldo: "Saldo: 2 unidades",
     trigger: WRITE_OFF_JEANS,
@@ -699,38 +723,23 @@ test.describe("virada do dia da loja", () => {
     }) => {
       await page.clock.install({ time: TURN_EVE });
       await openStockLab(page, "claro");
-      await page.route("**/rpc/inventory/inventoryCount", (route) =>
-        route.fulfill(
-          rpc({
-            balance: {
-              movingAverageCost: "62.400000",
-              quantity: 9,
-              variantId: JEANS.variantId,
-              version: 2,
-            },
-            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
-            replayed: false,
-          })
-        )
-      );
-      await page.route("**/rpc/inventory/writeOffStock", (route) =>
-        route.fulfill(
-          rpc({
-            balance: {
-              movingAverageCost: "62.400000",
-              quantity: 2,
-              variantId: JEANS.variantId,
-              version: 2,
-            },
-            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
-            replayed: false,
-          })
-        )
-      );
       const sent: string[] = [];
+      const foreign: string[] = [];
+      await page.route(
+        (url) => {
+          const [, name] = url.pathname.split("/rpc/inventory/");
+          return (
+            name !== undefined && name !== "listBalances" && name !== turn.route
+          );
+        },
+        (route) => {
+          foreign.push(route.request().url());
+          return route.abort();
+        }
+      );
       await page.route(`**/rpc/inventory/${turn.route}`, (route) => {
         sent.push(route.request().postData() ?? "");
-        return route.fallback();
+        return route.fulfill(turn.reply);
       });
       await expect.poll(() => attentionRequests.length).toBe(2);
       await expect.poll(() => listRequests.length).toBeGreaterThan(0);
@@ -772,6 +781,7 @@ test.describe("virada do dia da loja", () => {
       await page.getByRole("button", { name: turn.confirm }).click();
       await expect(page.getByText(turn.saldo)).toBeVisible();
 
+      expect(foreign).toEqual([]);
       expect(sent).toHaveLength(2);
       expect(sent.map((body) => JSON.parse(body).json.occurredOn)).toEqual([
         "2026-10-31",
