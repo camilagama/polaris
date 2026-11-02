@@ -93,9 +93,13 @@ describe("the list of customers", () => {
     expect(html).toContain("Ana Lima");
     expect(html).toContain("(11) 90000-0001 · ana@exemplo.com");
     expect(html).not.toContain("Prefere o WhatsApp.");
-    expect(html).toContain("Ativo");
     expect(html).not.toContain("Atualizado em");
     expect(html).toContain('data-customer-id="');
+  });
+
+  it("não repete o selo Ativo em cada linha da aba Ativos", () => {
+    const html = render({ customers: [customer(1, "Ana Lima")] });
+    expect(html).not.toContain("Ativo");
   });
 
   it("says Arquivado in words on an archived customer", () => {

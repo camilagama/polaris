@@ -85,7 +85,7 @@ describe("the attention panel", () => {
 
   it("says so when nothing needs attention", () => {
     const html = render({ items: [], waitingBehind: 0 });
-    expect(html).toContain("Nada precisa de atenção");
+    expect(html).toContain("Nenhum registro recusado neste aparelho");
     expect(html).not.toContain("<button");
   });
 

@@ -88,7 +88,7 @@ test("voltando a rede, tentar de novo envia a fila e conclui a saída", async ({
   await click(page, "Conferir dados", "0 operações guardadas");
 });
 
-test("uma recusa do servidor bloqueia a saída e oferece ver o que precisa de atenção", async ({
+test("uma recusa do servidor bloqueia a saída e oferece ver Pendências", async ({
   page,
 }) => {
   await openLab(page, `user-${crypto.randomUUID()}`);
@@ -98,9 +98,7 @@ test("uma recusa do servidor bloqueia a saída e oferece ver o que precisa de at
 
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toContainText("O servidor recusou operações");
-  await page
-    .getByRole("button", { name: "Ver o que precisa de atenção" })
-    .click();
+  await page.getByRole("button", { name: "Ver Pendências" }).click();
   await expect(page.getByTestId("message")).toContainText("Atenção:");
   await click(page, "Conferir dados", "2 operações guardadas");
 });

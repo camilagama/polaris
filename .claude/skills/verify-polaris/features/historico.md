@@ -6,7 +6,7 @@ O Histórico (`/sales/history`) lista as vendas da loja com filtros por período
 
 - `historico-lista` a lista `list "Vendas"`, cada venda um link com data, situação, cliente, método e total.
 - `historico-vazio` loja sem venda: "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui."
-- `historico-filtros` o `search "Filtrar vendas"` com o botão "Filtrar"; sem resultado: "Nenhuma venda encontrada com estes filtros. Tire ou ajuste os filtros."
+- `historico-filtros` o `search "Filtrar vendas"` com o botão "Filtrar"; sem resultado: "Nenhuma venda encontrada com estes filtros." e o botão "Limpar filtros"
 - `historico-detalhe` o detalhe com as regiões "Venda", "Itens", "Devolução", "Cancelar venda" e "Cliente da venda".
 - `venda-devolver` devolução parcial, com o que volta ao estoque.
 - `venda-cancelar` cancelamento inteiro (o estoque volta).

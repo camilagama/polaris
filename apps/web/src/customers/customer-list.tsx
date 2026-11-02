@@ -227,9 +227,11 @@ function CustomerRow({
             <p className="font-medium [overflow-wrap:anywhere]">
               {customer.name}
             </p>
-            <Badge variant={badgeVariant}>
-              {customerStatusLabel(customer)}
-            </Badge>
+            {customer.status === "active" && !isAnonymized ? null : (
+              <Badge variant={badgeVariant}>
+                {customerStatusLabel(customer)}
+              </Badge>
+            )}
             {shownState ? (
               <Badge
                 data-sync-state={shownState.state}
