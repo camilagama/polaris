@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { exactCountProblems, walkFiles } from "./exact-count-list.mjs";
 
 const INSIDE_CLONE = /dentro do clone do repositório/;
@@ -69,6 +69,7 @@ describe("walkFiles", () => {
     return base;
   };
   afterEach(() => {
+    vi.unstubAllEnvs();
     for (const dir of dirs.splice(0)) {
       rmSync(dir, { force: true, recursive: true });
     }
@@ -124,6 +125,20 @@ describe("walkFiles", () => {
   it("fails with what to do outside a git repository", () => {
     const base = temp();
     touch(base, ["a.ts"]);
+    vi.stubEnv("GIT_CEILING_DIRECTORIES", path.dirname(base));
     expect(() => walkFiles(base, () => true)).toThrow(INSIDE_CLONE);
+  });
+
+  it("ignores a GIT_DIR that points at another repository", () => {
+    const base = temp();
+    const other = temp();
+    git(base, "init", "-q");
+    git(other, "init", "-q");
+    touch(base, ["mine.ts"]);
+    touch(other, ["theirs.ts"]);
+    git(base, "add", ".");
+    git(other, "add", ".");
+    vi.stubEnv("GIT_DIR", path.join(other, ".git"));
+    expect(walkFiles(base, () => true)).toEqual(["mine.ts"]);
   });
 });

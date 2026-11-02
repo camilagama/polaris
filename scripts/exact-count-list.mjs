@@ -55,10 +55,14 @@ export function walkFiles(base, keep) {
   const listed = spawnSync("git", ["ls-files", "-z", "--cached"], {
     cwd: base,
     encoding: "utf8",
+    env: gitEnvironment(),
     maxBuffer: 256 * 1024 * 1024,
   });
   if (listed.error || listed.status !== 0) {
-    const reason = listed.error?.message ?? listed.stderr.trim();
+    const reason =
+      listed.error?.message ||
+      listed.stderr.trim() ||
+      `saiu com status ${listed.status}`;
     throw new Error(
       `Não consegui listar os arquivos versionados em ${base} com "git ls-files": ${reason}. Rode a verificação dentro do clone do repositório, com o git instalado.`
     );
@@ -75,6 +79,22 @@ export function walkFiles(base, keep) {
     )
     .filter((relative) => keep(relative) && isRegularFile(base, relative))
     .sort();
+}
+
+const REPOSITORY_SELECTORS = [
+  "GIT_COMMON_DIR",
+  "GIT_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_WORK_TREE",
+];
+
+/** The environment without the variables a hook or rebase sets to point git at another repository. */
+export function gitEnvironment() {
+  const env = { ...process.env };
+  for (const name of REPOSITORY_SELECTORS) {
+    delete env[name];
+  }
+  return env;
 }
 
 function isRegularFile(base, relative) {
