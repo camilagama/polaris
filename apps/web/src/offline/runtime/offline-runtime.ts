@@ -20,6 +20,7 @@ import {
 import { restorePendingCustomers } from "../customer-create";
 import type { LogoutWorkspace } from "../logout-guard";
 import type { LocalNamespace } from "../namespace";
+import type { OutboxCommand } from "../outbox/command";
 import type { Outbox } from "../outbox/outbox";
 import { restorePendingProducts } from "../product-create";
 import type { LocalVariantReader } from "../sale-confirm";
@@ -408,6 +409,8 @@ export class OfflineRuntime {
   private userId: string | null = null;
   private deviceId: string | null = null;
   private lease: string | null = null;
+  /** The commands refused for an older lease after which the server issued a lease for this device: not asked again. */
+  private readonly provenAfterRefusal = new Set<string>();
   private inFlight: Promise<void> | null = null;
   /** The start in progress, so a drop asked meanwhile acts on what it opens and is not undone by it. */
   private startRun: Promise<void> | null = null;
@@ -1993,7 +1996,8 @@ export class OfflineRuntime {
       });
       if (
         summary.rejected > 0 &&
-        summary.blockedBy?.rejection?.code === AUTHORIZATION_REVOKED
+        summary.blockedBy?.rejection?.code === AUTHORIZATION_REVOKED &&
+        !(await this.refusalIsOfAnOldLease(run, summary.blockedBy, lease))
       ) {
         this.lastOutcome = "answered";
         await this.dropLocalCopy(run, { forgetDevice: true });
@@ -2041,6 +2045,54 @@ export class OfflineRuntime {
   /** Read at the time of the question: `trySend` may ask while the run is awaiting something else. */
   private isPullCutRequested(): boolean {
     return this.pullCutRequested;
+  }
+
+  /**
+   * A command refused as `authorization_revoked` carries the lease it was made under, and the server says the same
+   * for any lease that ended (the store was closed and reopened, the device was revoked). Only the lease of this very
+   * sync dying proves the device is no longer valid. For an older one, a lease the server issues right now (never the
+   * cached one standing in) proves it: the store is active, the epoch is current and the device is alive. True when
+   * the refusal was only the command's old lease and the copy stays; false when the copy and the device must go.
+   * Asked once per command and runtime: the grant that was issued is not repeated on every refusal.
+   */
+  private async refusalIsOfAnOldLease(
+    run: RunScope,
+    blocked: OutboxCommand,
+    current: string
+  ): Promise<boolean> {
+    if (blocked.lease === current) {
+      return false;
+    }
+    if (this.provenAfterRefusal.has(blocked.commandId)) {
+      return true;
+    }
+    const { deviceId, organizationId } = this;
+    if (!(deviceId && organizationId)) {
+      return false;
+    }
+    let issued: string;
+    try {
+      issued = await this.issueLease(
+        { deviceId, organizationId, userId: run.userId },
+        { expired: false, usable: null }
+      );
+    } catch (error) {
+      if (
+        isLegalAcceptanceRefusal(error) ||
+        isClosedRefusal(error) ||
+        isSessionRefusal(error) ||
+        !isDefiniteRpcRejection(error)
+      ) {
+        // the sync's own failure handling: it pauses, drops for the refusal it knows, or keeps everything with no answer
+        throw error;
+      }
+      return false;
+    }
+    if (!this.adoptLease(run, issued)) {
+      return true; // another organization opened meanwhile: nothing here to drop
+    }
+    this.provenAfterRefusal.add(blocked.commandId);
+    return true;
   }
 
   /** The pull (or the first bootstrap) after the push: accepted or dropped commands, then the others' changes. */
