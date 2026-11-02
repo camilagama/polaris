@@ -4,6 +4,7 @@ import {
   describeMediaFailure,
   imageActionAvailability,
   imageActionLabel,
+  isMediaItemGone,
   isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
   movedAssetOrder,
@@ -229,6 +230,13 @@ describe("describeMediaFailure", () => {
     expect(
       describeMediaFailure("remove", http("not_found", 404))
     ).toMatchObject({ reloadList: true });
+  });
+
+  it("tells a vanished item from other refusals that also reload the list", () => {
+    expect(isMediaItemGone(http("not_found", 404))).toBe(true);
+    expect(isMediaItemGone(http("invalid_media_order"))).toBe(false);
+    expect(isMediaItemGone(http("product_media_limit"))).toBe(false);
+    expect(isMediaItemGone(new TypeError("Failed to fetch"))).toBe(false);
   });
 
   it("explains permission and session failures", () => {

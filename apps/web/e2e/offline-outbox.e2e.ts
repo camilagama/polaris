@@ -4,6 +4,8 @@ import { expect, test } from "@playwright/test";
 
 const rejectedPattern = /rejected:stock_insufficient/;
 const wipeRefusedPattern = /PendingCommandsError/;
+const wipeSettledPattern = /^(ok|PendingCommandsError)$/;
+const raceLinePattern = /([a-z-]+)=([A-Za-z]+)\/(\d+)/g;
 const persistentPattern = /granted|denied|unsupported/;
 
 async function openLab(page: Page) {
@@ -196,4 +198,95 @@ test("duas abas do mesmo usuário compartilham a fila e cada comando é enviado 
   await click(second, "Enviar", "Enviar: ok");
   await expect(list(second)).toHaveCount(1);
   await expect(list(second).nth(0)).toContainText("2:sending");
+});
+
+test("a limpeza da fila numa aba não apaga a venda que a outra aba faz depois", async ({
+  context,
+}) => {
+  const user = `user-${crypto.randomUUID()}`;
+  const leaving = await context.newPage();
+  const selling = await context.newPage();
+  await openLab(leaving);
+  await useNamespace(leaving, user);
+  await click(leaving, "Abrir", "Abrir: ok");
+  await openLab(selling);
+  await useNamespace(selling, user);
+  await click(selling, "Abrir", "Abrir: ok");
+
+  // "Sair" in the first tab: its store closes, then the queue is wiped while the second tab keeps its connection
+  await click(leaving, "Apagar", "Apagar:");
+  await click(selling, "Enfileirar", "Enfileirar: ok");
+  await expect(list(selling)).toHaveCount(1);
+  await selling.close();
+
+  const fresh = await context.newPage();
+  await openLab(fresh);
+  await useNamespace(fresh, user);
+  await click(fresh, "Abrir", "Abrir: ok");
+  await expect(list(fresh)).toHaveCount(1);
+  await expect(leaving.getByTestId("message")).toHaveText(
+    "Apagar: ok (0 descartados)"
+  );
+});
+
+test("limpeza e venda em duas conexões, nas duas ordens e juntas: a venda fica ou a limpeza recusa", async ({
+  page,
+}) => {
+  await openLab(page);
+  await useNamespace(page, `user-${crypto.randomUUID()}`);
+  await click(page, "Corrida limpeza × venda", "Corrida:");
+  const message = (await page.getByTestId("message").textContent()) ?? "";
+  const results = Object.fromEntries(
+    [...message.matchAll(raceLinePattern)].map(([, order, wiped, left]) => [
+      order,
+      { left: Number(left), wiped },
+    ])
+  );
+  expect(results).toEqual({
+    "juntas-limpeza": {
+      left: 1,
+      wiped: expect.stringMatching(wipeSettledPattern),
+    },
+    "juntas-venda": {
+      left: 1,
+      wiped: expect.stringMatching(wipeSettledPattern),
+    },
+    "limpeza-antes": { left: 1, wiped: "ok" },
+    "venda-antes": { left: 1, wiped: "PendingCommandsError" },
+  });
+});
+
+test("fila no disco: um outbox esvaziado fica como banco vazio e não conta, e perguntar não cria banco", async ({
+  page,
+}) => {
+  await openLab(page);
+  await useNamespace(page, `user-${crypto.randomUUID()}`);
+  await click(page, "Fila no disco", "Fila no disco: ok (não, 0 bancos)");
+  await click(page, "Enfileirar", "Enfileirar: ok");
+  await click(page, "Fila no disco", "Fila no disco: ok (sim, 1 bancos)");
+  await click(page, "Apagar descartando", "1 descartados");
+  await click(page, "Fila no disco", "Fila no disco: ok (não, 1 bancos)");
+
+  // a name listed but gone by the time it is opened (another tab deleted it): counted as empty, never recreated
+  await page.evaluate(() => {
+    const real = IDBFactory.prototype.databases;
+    (window as unknown as { realDatabases: typeof real }).realDatabases = real;
+    IDBFactory.prototype.databases = async function databases(
+      this: IDBFactory
+    ) {
+      return [
+        ...(await real.call(this)),
+        { name: "polaris-outbox-sumiu", version: 1 },
+      ];
+    };
+  });
+  await click(page, "Fila no disco", "Fila no disco: ok (não, 2 bancos)");
+  expect(
+    await page.evaluate(async () => {
+      const { realDatabases } = window as unknown as {
+        realDatabases: IDBFactory["databases"];
+      };
+      return (await realDatabases.call(indexedDB)).map(({ name }) => name);
+    })
+  ).not.toContain("polaris-outbox-sumiu");
 });

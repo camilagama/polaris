@@ -802,17 +802,17 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
 
     const callsBefore = [...server.procedures];
     await page.evaluate(() => {
-      const counted = window as unknown as { outboxDeletes: number };
-      counted.outboxDeletes = 0;
-      const real = IDBFactory.prototype.deleteDatabase;
-      IDBFactory.prototype.deleteDatabase = function deleteDatabase(
-        this: IDBFactory,
-        name: string
-      ) {
-        if (name.startsWith("polaris-outbox-")) {
-          counted.outboxDeletes += 1;
+      const counted = window as unknown as { outboxClears: number };
+      counted.outboxClears = 0;
+      const real = IDBObjectStore.prototype.clear;
+      IDBObjectStore.prototype.clear = function clear(this: IDBObjectStore) {
+        if (
+          this.name === "commands" &&
+          this.transaction.db.name.startsWith("polaris-outbox-")
+        ) {
+          counted.outboxClears += 1;
         }
-        return real.call(this, name);
+        return real.call(this);
       };
     });
     await discardOpener(page).click();
@@ -847,7 +847,7 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
     );
     expect(
       await page.evaluate(
-        () => (window as unknown as { outboxDeletes: number }).outboxDeletes
+        () => (window as unknown as { outboxClears: number }).outboxClears
       )
     ).toBe(1);
     expect(server.procedures).toEqual(callsBefore);
@@ -866,19 +866,12 @@ test.describe("descartar o que não foi enviado, no painel da loja encerrada", (
       AFTER_WINDOW
     );
     await page.evaluate(() => {
-      const real = IDBFactory.prototype.deleteDatabase;
-      IDBFactory.prototype.deleteDatabase = function deleteDatabase(
-        this: IDBFactory,
-        name: string
-      ) {
-        if (name.startsWith("polaris-outbox-")) {
-          const failing: { error: DOMException; onerror?: () => void } = {
-            error: new DOMException("falhou", "UnknownError"),
-          };
-          setTimeout(() => failing.onerror?.(), 0);
-          return failing as unknown as IDBOpenDBRequest;
+      const real = IDBObjectStore.prototype.clear;
+      IDBObjectStore.prototype.clear = function clear(this: IDBObjectStore) {
+        if (this.transaction.db.name.startsWith("polaris-outbox-")) {
+          throw new DOMException("falhou", "UnknownError");
         }
-        return real.call(this, name);
+        return real.call(this);
       };
     });
 

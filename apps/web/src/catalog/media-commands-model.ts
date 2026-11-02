@@ -185,6 +185,11 @@ export function isMediaLegalAcceptanceRequired(error: unknown): boolean {
   );
 }
 
+/** True when the server says the product or the image no longer exists (the item is gone, not just the list stale). */
+export function isMediaItemGone(error: unknown): boolean {
+  return error instanceof MediaUploadHttpError && error.code === "not_found";
+}
+
 function codeMessage(code: string): MediaFailure | null {
   switch (code) {
     case "legal_acceptance_required":
