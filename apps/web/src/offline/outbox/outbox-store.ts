@@ -1,6 +1,6 @@
 import type { LocalNamespace } from "../namespace";
 import {
-  deleteOutboxDatabase,
+  clearOutboxDatabase,
   IndexedDbOutboxStorage,
   outboxDatabaseName,
 } from "./indexeddb-storage";
@@ -45,26 +45,24 @@ export async function openOutboxStore(
 }
 
 /**
- * Deletes the outbox of a namespace (logout, leaving an organization). It never
+ * Empties the outbox of a namespace (logout, leaving an organization). It never
  * discards queued commands silently: with any left it throws
  * `PendingCommandsError` unless the caller passes the explicit discard flag the
- * person chose in the interface.
+ * person chose in the interface. Counting and clearing are one IndexedDB
+ * transaction, so a command another tab queues lands either before it (and is
+ * counted) or after it (and stays); the database is never deleted.
  */
 export async function wipeOutboxStore(
   namespace: LocalNamespace,
   options: { discardPending: boolean }
 ): Promise<{ discarded: number }> {
-  const name = outboxDatabaseName(namespace.key);
-  const storage = await IndexedDbOutboxStorage.open(name);
-  let pending = 0;
-  try {
-    pending = (await storage.transaction((tx) => tx.all())).length;
-    if (pending > 0 && !options.discardPending) {
-      throw new PendingCommandsError(pending);
+  const discarded = await clearOutboxDatabase(
+    outboxDatabaseName(namespace.key),
+    (pending) => {
+      if (pending > 0 && !options.discardPending) {
+        throw new PendingCommandsError(pending);
+      }
     }
-  } finally {
-    storage.close();
-  }
-  await deleteOutboxDatabase(name);
-  return { discarded: pending };
+  );
+  return { discarded };
 }

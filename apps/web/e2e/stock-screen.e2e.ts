@@ -149,20 +149,6 @@ async function openStockLab(
     const entries = all ? [SHIRT, JEANS, MUG] : [SHIRT, JEANS];
     return route.fulfill(rpc({ entries, nextCursor: null }));
   });
-  await page.route("**/rpc/inventory/receiveStock", (route) =>
-    route.fulfill(
-      rpc({
-        balance: {
-          movingAverageCost: "12.500000",
-          quantity: 15,
-          variantId: JEANS.variantId,
-          version: 2,
-        },
-        movement: { createdAt: "2026-10-15T15:00:01.000Z" },
-        replayed: false,
-      })
-    )
-  );
   await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=stock${search}`);
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
@@ -177,7 +163,26 @@ async function openStockLab(
   await expect(page.getByText(count, { exact: true })).toBeVisible();
 }
 
+const RECEIVE_REPLY = {
+  balance: {
+    movingAverageCost: "12.500000",
+    quantity: 15,
+    variantId: JEANS.variantId,
+    version: 2,
+  },
+  movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+  replayed: false,
+};
+
+/** Only a test that confirms a receipt arms this: any other test that reaches receiveStock gets no success answer. */
+async function answerReceiveStock(page: Page) {
+  await page.route("**/rpc/inventory/receiveStock", (route) =>
+    route.fulfill(rpc(RECEIVE_REPLY))
+  );
+}
+
 async function useEveryControl(page: Page) {
+  await answerReceiveStock(page);
   // the filters: the balance, the archived products (the mug has no balance and is archived) and the search
   const filter = page.getByRole("tablist", { name: "Filtrar por saldo" });
   await filter.getByRole("tab", { name: "Sem saldo" }).click();
@@ -587,6 +592,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.clock.setFixedTime(FIXED_NOW);
     await openStockLab(page, "claro");
+    await answerReceiveStock(page);
     const sent: string[] = [];
     await page.route("**/rpc/inventory/receiveStock", (route) => {
       sent.push(route.request().postData() ?? "");
@@ -659,6 +665,7 @@ const TURN_CASES = [
     },
     quantities: ["7", "4"],
     quantityLabel: "Quantidade recebida",
+    reply: RECEIVE_REPLY,
     route: "receiveStock",
     saldo: "Saldo: 15 unidades",
     trigger: RECEIVE_JEANS,
@@ -725,12 +732,9 @@ test.describe("virada do dia da loja", () => {
     }) => {
       await page.clock.install({ time: TURN_EVE });
       await openStockLab(page, "claro");
-      if ("reply" in turn) {
-        const { reply } = turn;
-        await page.route(`**/rpc/inventory/${turn.route}`, (route) =>
-          route.fulfill(rpc(reply))
-        );
-      }
+      await page.route(`**/rpc/inventory/${turn.route}`, (route) =>
+        route.fulfill(rpc(turn.reply))
+      );
       const unexpected: string[] = [];
       await Promise.all(
         TURN_ROUTES.filter((other) => other !== turn.route).map((other) =>
@@ -785,8 +789,9 @@ test.describe("virada do dia da loja", () => {
       await page.getByRole("button", { name: turn.confirm }).click();
       await expect(page.getByText(turn.saldo)).toBeVisible();
 
+      // settled bounds the wait (two hops); a poll on [] passes at the first sample, so reading it right away is the same check
       await settled(page);
-      await expect.poll(() => unexpected).toEqual([]);
+      expect(unexpected).toEqual([]);
       expect(sent).toHaveLength(2);
       expect(sent.map((body) => JSON.parse(body).json.occurredOn)).toEqual([
         "2026-10-31",

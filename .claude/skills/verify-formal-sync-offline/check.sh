@@ -69,12 +69,13 @@ fi
 
 # cenário|resultado esperado: "ok", ou o invariante violado e o número de estados
 # do contraexemplo mínimo (Invariante@N), que o TLC acha em largura
-expected='atual|NoLostSale@6
+expected='atual|ok
 atual-so-duplicidade|ok
 uma-aba|ok
 duas-abas-sem-limpeza|ok
 quebrada-sem-idempotencia|NoDoubleSale@9
 quebrada-recuperacao-apaga|NoLostSale@4
+quebrada-limpeza-dividida|NoLostSale@5
 sanidade-caminho-feliz|HappyPathUnreachable@6'
 
 failed=0

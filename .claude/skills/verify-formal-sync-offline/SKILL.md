@@ -22,19 +22,22 @@ Baixa uma vez, com sha256 conferido, o TLC 1.7.4 e, sem Java 11+ no `PATH` nem e
 
 | Cenário | O que mostra | Esperado |
 | --- | --- | --- |
-| `atual` | o desenho de hoje, duas abas, com a limpeza | **NoLostSale violado** em 6 estados: o achado F1 abaixo |
+| `atual` | o desenho de hoje, duas abas, com a limpeza por transação | ok (o achado F1, abaixo, está corrigido) |
 | `atual-so-duplicidade` | só NoDoubleSale, três abas, com a limpeza | ok |
 | `uma-aba` | o desenho de hoje com uma aba | ok |
 | `duas-abas-sem-limpeza` | duas abas sem o Sair nem a sessão recusada | ok |
 | `quebrada-sem-idempotencia` | o servidor sem a busca em `sync_commands` e sem o índice único | NoDoubleSale violado (9 estados) |
 | `quebrada-recuperacao-apaga` | `recoverInterrupted` apagando o que estava "enviando" | NoLostSale violado (4 estados) |
+| `quebrada-limpeza-dividida` | a limpeza contando numa transação e limpando noutra (`WipeAtomic = FALSE`) | NoLostSale violado (5 estados): a venda da outra aba entre as duas some |
 | `sanidade-caminho-feliz` | a venda consegue entrar e sair da fila | o invariante de sanidade violado (6 estados); se passar, o modelo ficou vazio |
 
-`Invariante@N` no script é o invariante violado e o número de estados do contraexemplo mínimo (o TLC busca em largura). Conferir o N do `atual` faz uma perda nova, mais curta que F1, aparecer como diferença em vez de se esconder atrás do achado conhecido; uma perda nova mais longa que F1 nesse cenário não aparece, mas aparece em `uma-aba` ou em `duas-abas-sem-limpeza` quando não depende da limpeza.
+`Invariante@N` no script é o invariante violado e o número de estados do contraexemplo mínimo (o TLC busca em largura). Com `atual` em ok, qualquer perda nova nesse cenário aparece como diferença.
 
-## Achado em aberto: F1, a limpeza da fila apaga uma venda da outra aba
+## Achado F1 (corrigido): a limpeza da fila apagava uma venda da outra aba
 
-O TLC acha no código de hoje (`atual`), e o Chromium reproduz com o código real (`outbox-store.ts` empacotado, duas páginas no mesmo contexto: sem o Sair a aba nova vê 1 comando; com o Sair, 0):
+**Correção:** `wipeOutboxStore` não apaga mais o banco. `clearOutboxDatabase` (`apps/web/src/offline/outbox/indexeddb-storage.ts`) conta os comandos e limpa todos os object stores numa só transação readwrite; com comando na fila e sem `discardPending`, a transação aborta e sobe `PendingCommandsError`. Sem `deleteDatabase`, nada fica pendente esperando a conexão de outra aba fechar, e uma venda de outra aba cai antes da transação (é contada e a limpeza recusa) ou depois (fica na fila). O banco esvaziado fica no aparelho; `anyOutboxOnDisk` conta comandos em vez de nomes, sem criar banco. No modelo, `WipeStart` (o `closeStores`) e `WipeClear` (a transação) substituem `WipeCount`, `WipeDelete` e `DeleteCompletes`; a variante `quebrada-limpeza-dividida` mostra que separar contar de limpar volta a perder a venda. Provas no navegador: `apps/web/e2e/offline-outbox.e2e.ts` (o par de abas abaixo e a corrida em duas conexões).
+
+O caminho de antes, que o TLC achava no cenário `atual`, e o Chromium reproduz com o código real (`outbox-store.ts` empacotado, duas páginas no mesmo contexto: sem o Sair a aba nova vê 1 comando; com o Sair, 0):
 
 1. Abas A e B da mesma loja e usuário, as duas com o outbox aberto (`openOutboxStore`). Fila vazia.
 2. Em A começa a limpeza da fila, por um de dois caminhos:
@@ -45,12 +48,10 @@ O TLC acha no código de hoje (`atual`), e o Chromium reproduz com o código rea
 5. A conexão de B fecha. No caminho do Sair, quando B fecha ou recarrega a aba. No da sessão recusada, também sozinha: B recebe a mesma recusa, `dropCopyNow` vê a venda na fila, decide guardar a fila (só `wipeCollections`), mas antes já chamou `closeStores`.
 6. O navegador conclui o `deleteDatabase`: a venda some sem ter entrado no servidor, sem aviso em B.
 
-Quando F1 for corrigido, mude o modelo para descrever a correção (por exemplo, `WipeDelete` que não deixa pedido pendente, ou `MakeSale` que não escreve com o pedido pendente), rode, confirme `atual` sem violação e troque o esperado de `atual` para `ok` no `check.sh` e nesta tabela.
-
 ## O que está provado, e sob que limites
 
 - `NoDoubleSale` vale em todas as ordens com até **três abas**, uma venda, um pedido por aba a caminho e pedidos de abas fechadas que ainda chegam ao servidor.
-- `NoLostSale` vale com **uma aba**, e com duas abas sem a limpeza da fila; com duas abas e a limpeza, quebra (F1).
+- `NoLostSale` vale com até **duas abas**, com e sem a limpeza da fila (com a limpeza por transação; a limpeza que conta e limpa em transações separadas quebra).
 - Cada propriedade foi vista falhando numa variante quebrada (tabela acima).
 
 Fora do modelo, de propósito:
@@ -68,11 +69,11 @@ O modelo é mais permissivo que o código em dois pontos, de propósito (o que p
 - as abas sincronizam ao mesmo tempo; no app, `RuntimeDependencies.exclusive` (`navigator.locks`, `ifAvailable`) deixa uma aba por vez. Não restrinja o modelo a isso: a trava é por navegador e some sem Web Locks;
 - `net` é um conjunto, então dois pedidos de abas fechadas (`Gone`) a caminho viram um. Com a busca em `sync_commands`, o segundo só repetiria a resposta gravada; na variante sem idempotência a duplicidade já aparece com abas vivas.
 
-Suposições: `runSyncCommand` é um passo atômico porque segura `pg_advisory_xact_lock` por (loja, commandId) antes de ler `sync_commands`, grava o resultado na mesma transação do savepoint da venda e o índice único `sync_commands_organization_command_unique` está por trás; cada método do `Outbox` é uma transação do IndexedDB; o IndexedDB segue a especificação (`deleteDatabase` espera as conexões fecharem; `open` espera atrás de um `deleteDatabase` pendente).
+Suposições: `runSyncCommand` é um passo atômico porque segura `pg_advisory_xact_lock` por (loja, commandId) antes de ler `sync_commands`, grava o resultado na mesma transação do savepoint da venda e o índice único `sync_commands_organization_command_unique` está por trás; cada método do `Outbox` é uma transação do IndexedDB; o IndexedDB segue a especificação (transações readwrite sobre os mesmos object stores, de conexões diferentes, não se intercalam; um `abort` não grava nada); nenhum código do app chama `deleteDatabase` num `polaris-outbox-*`.
 
 ## Cobertura e sincronia
 
-Confirmado contra o código no commit **`190e3f417cf206a1519fb100f4690bbf31ea3972`**. Ação do modelo → código:
+Confirmado contra o código no commit **`662891ab`** (`origin/main`, sem mudança no código coberto desde `190e3f417cf206a1519fb100f4690bbf31ea3972`) mais a limpeza por transação (`clearOutboxDatabase`, ações `WipeStart` e `WipeClear`). Ação do modelo → código:
 
 | Ação em `SyncOffline.tla` | Código |
 | --- | --- |
@@ -84,12 +85,14 @@ Confirmado contra o código no commit **`190e3f417cf206a1519fb100f4690bbf31ea397
 | `ClientApply` | `sync-runner.ts` `applyResults` / `putBack` → `Outbox.acknowledge`, `Outbox.reject`, `Outbox.retry` |
 | `PersonRetries`, `PersonDiscards` | `Outbox.retry`, `Outbox.discard` (tela de atenção) |
 | `TabCloses`, `TabOpens` | fechar ou abrir a aba; `OfflineRuntime.closeStores` (`apps/web/src/offline/runtime/offline-runtime.ts`); `apps/web/src/offline/outbox/outbox-store.ts` `openOutboxStore` |
-| `WipeCount`, `WipeDelete`, `DeleteCompletes` | `apps/web/src/offline/logout-purge.ts` `purgeNamespace` → `outbox-store.ts` `wipeOutboxStore` → `apps/web/src/offline/outbox/indexeddb-storage.ts` `deleteOutboxDatabase`; chamados por `LogoutWorkspace.purge` e `OfflineRuntime.dropCopyNow` |
+| `WipeStart` | `OfflineRuntime.closeStores` no começo de `LogoutWorkspace.purge` e de `OfflineRuntime.dropCopyNow` |
+| `WipeClear` | `apps/web/src/offline/logout-purge.ts` `purgeNamespace` → `outbox-store.ts` `wipeOutboxStore` → `apps/web/src/offline/outbox/indexeddb-storage.ts` `clearOutboxDatabase` (uma transação) |
+| `WipeCountApart`, `WipeClearApart` | só a variante quebrada `quebrada-limpeza-dividida`; nenhum código |
 
 Para ver se uma mudança toca o que está verificado:
 
 ```sh
-git diff --stat 190e3f417cf206a1519fb100f4690bbf31ea3972 -- apps/web/src/offline/outbox apps/web/src/offline/sync-runner.ts apps/web/src/offline/logout-purge.ts apps/web/src/offline/runtime/offline-runtime.ts apps/web/src/server/sync/push.ts packages/db/src/sync-command-repository.ts packages/db/src/schema/sync-command.ts
+git diff --stat 662891ab -- apps/web/src/offline/outbox apps/web/src/offline/sync-runner.ts apps/web/src/offline/logout-purge.ts apps/web/src/offline/runtime/offline-runtime.ts apps/web/src/server/sync/push.ts packages/db/src/sync-command-repository.ts packages/db/src/schema/sync-command.ts
 ```
 
 Avance o commit acima só depois de conferir, ação por ação, que o modelo ainda descreve o código no commit novo.

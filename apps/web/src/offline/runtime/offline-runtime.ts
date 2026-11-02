@@ -597,8 +597,8 @@ export class OfflineRuntime {
   }
 
   /**
-   * Throws away what this device still holds for one closed organization: its queue (with the idempotency marks, which
-   * go with the database) and its collections, for the signed-in user only. Other organizations' queues, the lease of
+   * Throws away what this device still holds for one closed organization: its queue (emptied with the idempotency marks;
+   * the empty database stays) and its collections, for the signed-in user only. Other organizations' queues, the lease of
    * anything else, the device and the remembered user stay. Nothing here sends: a closed store never takes a command
    * again. The caller reads the queue afterwards: only the disk says what is left.
    */

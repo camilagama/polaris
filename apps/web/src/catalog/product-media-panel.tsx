@@ -44,6 +44,7 @@ import {
 } from "../subscription/limit-help";
 import {
   describeMediaFailure,
+  isMediaItemGone,
   isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
   type MediaFailure,
@@ -701,7 +702,9 @@ export function ProductMediaPanel({
         loadAssets(true);
       } catch (cause: unknown) {
         failCommand("remove", cause);
-        focusRequest.current = { assetId, fallbacks: [kind], type: "item" };
+        focusRequest.current = isMediaItemGone(cause)
+          ? { type: "heading" }
+          : { assetId, fallbacks: [kind], type: "item" };
       } finally {
         commandLock.current = false;
         setConfirm(null);
