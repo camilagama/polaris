@@ -241,7 +241,7 @@ describe("the form of a refused sale", () => {
       [
         entry({
           quantity: 0,
-          values: [{ optionName: "Tamanho", optionValueName: "G" }],
+          values: [{ optionName: "size", optionValueName: "G" }],
           variantId: MUG,
         }),
       ],
