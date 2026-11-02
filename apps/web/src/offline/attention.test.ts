@@ -354,8 +354,10 @@ describe("resolving an item", () => {
     expect(item.facts).toBe(
       `R$ 20,00 · feita em ${formatInstant(now.toISOString())}`
     );
-    expect(item.detail).toContain("não é enviado sozinho");
-    expect(item.detail).toContain("registre-a de novo");
+    expect(item.detail).toBe(
+      "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda ainda valer, registre a venda de novo e depois descarte esta. Se o seu acesso mudou, confira em Revisar acesso e plano."
+    );
+    expect(item.detail).not.toContain("não o recebeu");
     expect(item.detail).not.toContain("se o acesso não voltar");
     expect(item.actions).toEqual(["review_account", "discard"]);
   });
@@ -380,7 +382,9 @@ describe("resolving an item", () => {
     await refuse(queued.commandId, "authorization_revoked");
     const item = await itemOf(outbox);
     expect(item.facts).toBeNull();
-    expect(item.detail).toContain("refaça o registro");
+    expect(item.detail).toBe(
+      "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, faça o registro de novo e depois descarte este. Se o seu acesso mudou, confira em Revisar acesso e plano."
+    );
   });
 
   it("says what a discard loses, per kind", () => {
