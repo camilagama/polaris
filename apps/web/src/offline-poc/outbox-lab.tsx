@@ -3,6 +3,10 @@ import { type ChangeEvent, useCallback, useRef, useState } from "react";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { localNamespace } from "../offline/namespace";
 import type { OutboxCommand } from "../offline/outbox/command";
+import {
+  clearOutboxDatabase,
+  outboxDatabaseName,
+} from "../offline/outbox/indexeddb-storage";
 import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import {
   type OutboxStore,
@@ -51,6 +55,44 @@ const RACE_ORDERS = [
   "juntas-limpeza",
   "juntas-venda",
 ] as const;
+
+const FOREIGN_STORES = ["meta", "extra"] as const;
+
+function createForeignOutbox(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const opening = indexedDB.open(name, 1);
+    opening.onupgradeneeded = () => {
+      const database = opening.result;
+      for (const store of FOREIGN_STORES) {
+        database.createObjectStore(store).put("sobra", "chave");
+      }
+    };
+    opening.onsuccess = () => {
+      opening.result.close();
+      resolve();
+    };
+    opening.onerror = () => reject(opening.error);
+  });
+}
+
+function countForeignStores(name: string): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const opening = indexedDB.open(name);
+    opening.onerror = () => reject(opening.error);
+    opening.onsuccess = () => {
+      const database = opening.result;
+      const tx = database.transaction([...FOREIGN_STORES], "readonly");
+      const counts = FOREIGN_STORES.map((store) =>
+        tx.objectStore(store).count()
+      );
+      tx.oncomplete = () => {
+        database.close();
+        resolve(counts.map((counting) => counting.result));
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
 
 function describeCommand(command: OutboxCommand): string {
   const reason = command.rejection ? `:${command.rejection.code}` : "";
@@ -273,6 +315,18 @@ export function OutboxLab() {
       }),
     [run]
   );
+  const handleForeignWipe = useCallback(
+    () =>
+      run("Banco sem comandos", async () => {
+        const name = outboxDatabaseName(`sem-comandos-${crypto.randomUUID()}`);
+        await createForeignOutbox(name);
+        const before = await countForeignStores(name);
+        const wiped = await clearOutboxDatabase(name, () => undefined);
+        const after = await countForeignStores(name);
+        return `comandos=${wiped} antes=${before.join(",")} depois=${after.join(",")}`;
+      }),
+    [run]
+  );
   const handleWipeSafely = useCallback(() => handleWipe(false), [handleWipe]);
   const handleWipeDiscarding = useCallback(
     () => handleWipe(true),
@@ -352,6 +406,9 @@ export function OutboxLab() {
         </button>
         <button onClick={handleOnDisk} type="button">
           Fila no disco
+        </button>
+        <button onClick={handleForeignWipe} type="button">
+          Banco sem comandos
         </button>
         <button onClick={handleRace} type="button">
           Corrida limpeza × venda
