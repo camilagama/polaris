@@ -1,4 +1,5 @@
-import { readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { lstatSync } from "node:fs";
 import path from "node:path";
 import { IGNORED_FOLDERS } from "./verify-no-history-comments.mjs";
 
@@ -45,24 +46,41 @@ export function exactCountProblems({ found, allowed, what, advice, listFile }) {
   return problems;
 }
 
-/** Every file under `base` whose relative path passes `keep`, skipping dependencies and build output. */
+/**
+ * Every file git knows under `base` (tracked or added to the index) whose relative path passes
+ * `keep`, skipping dependencies and build output. Reading the disk instead would count a file that
+ * exists only on this machine, so the check would fail here and pass in CI.
+ */
 export function walkFiles(base, keep) {
-  const files = [];
-  const visit = (directory) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (!IGNORED_FOLDERS.has(entry.name)) {
-          visit(absolute);
-        }
-        continue;
-      }
-      const relative = path.relative(base, absolute).split(path.sep).join("/");
-      if (entry.isFile() && keep(relative)) {
-        files.push(relative);
-      }
-    }
-  };
-  visit(base);
-  return files.sort();
+  const listed = spawnSync("git", ["ls-files", "-z", "--cached"], {
+    cwd: base,
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  if (listed.error || listed.status !== 0) {
+    const reason = listed.error?.message ?? listed.stderr.trim();
+    throw new Error(
+      `Não consegui listar os arquivos versionados em ${base} com "git ls-files": ${reason}. Rode a verificação dentro do clone do repositório, com o git instalado.`
+    );
+  }
+  return listed.stdout
+    .split("\0")
+    .filter((relative) => relative !== "")
+    .filter(
+      (relative) =>
+        !relative
+          .split("/")
+          .slice(0, -1)
+          .some((folder) => IGNORED_FOLDERS.has(folder))
+    )
+    .filter((relative) => keep(relative) && isRegularFile(base, relative))
+    .sort();
+}
+
+function isRegularFile(base, relative) {
+  try {
+    return lstatSync(path.join(base, relative)).isFile();
+  } catch {
+    return false;
+  }
 }
