@@ -290,3 +290,14 @@ test("fila no disco: um outbox esvaziado fica como banco vazio e não conta, e p
     })
   ).not.toContain("polaris-outbox-sumiu");
 });
+
+test("a limpeza de um banco sem o store de comandos devolve 0 e esvazia os outros stores", async ({
+  page,
+}) => {
+  await openLab(page);
+  await click(
+    page,
+    "Banco sem comandos",
+    "Banco sem comandos: ok (comandos=0 antes=1,1 depois=0,0)"
+  );
+});
