@@ -76,13 +76,18 @@ class Server {
   revokeAnswer: RevokeAnswer = "ok";
   /** Whether `sync.push` reaches the server or fails on the network. */
   pushReaches: boolean;
-  pushAccepted = 0;
+  /** The operations the server accepted, by id: a resend of one it already has is a replay, not another operation. */
+  private readonly acceptedIds = new Set<string>();
   private serial = 100;
   /** The browsers signed in, by context; a sign-out (or a revocation that ends the session) takes one out. */
   private readonly sessions = new Map<BrowserContext, string | null>();
 
   constructor() {
     this.pushReaches = true;
+  }
+
+  get pushAccepted() {
+    return this.acceptedIds.size;
   }
 
   signIn(context: BrowserContext) {
@@ -275,18 +280,18 @@ class Server {
         commands: { commandId: string }[];
       };
       this.log.push("push");
-      this.pushAccepted += commands.length;
-      await route.fulfill(
-        json({
-          results: commands.map(({ commandId }) => ({
-            code: null,
-            commandId,
-            replayed: false,
-            result: null,
-            status: "accepted",
-          })),
-        })
-      );
+      const results = commands.map(({ commandId }) => {
+        const replayed = this.acceptedIds.has(commandId);
+        this.acceptedIds.add(commandId);
+        return {
+          code: null,
+          commandId,
+          replayed,
+          result: null,
+          status: "accepted",
+        };
+      });
+      await route.fulfill(json({ results }));
     });
   }
 }
@@ -669,7 +674,8 @@ test("outro aparelho continua: depois do Sair de A, o envio de B é aceito", asy
     await expect(chip(b)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
-    expect(server.pushAccepted).toBe(1);
+    // the page that reloads may resend what the old one had already sent: the same id arrives twice, as a replay
+    await expect.poll(() => server.pushAccepted).toBe(1);
   } finally {
     await contextA.close();
     await contextB.close();

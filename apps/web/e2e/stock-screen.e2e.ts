@@ -644,6 +644,12 @@ async function settled(page: Page) {
   await settledRound(page);
 }
 
+const TURN_ROUTES = [
+  "receiveStock",
+  "inventoryCount",
+  "writeOffStock",
+] as const;
+
 const TURN_CASES = [
   {
     confirm: "Confirmar recebimento",
@@ -664,6 +670,16 @@ const TURN_CASES = [
     },
     quantities: ["7", "4"],
     quantityLabel: "Quantidade contada",
+    reply: {
+      balance: {
+        movingAverageCost: "62.400000",
+        quantity: 9,
+        variantId: JEANS.variantId,
+        version: 2,
+      },
+      movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+      replayed: false,
+    },
     route: "inventoryCount",
     saldo: "Saldo: 9 unidades",
     trigger: "Contar estoque de Calça jeans, 42",
@@ -679,6 +695,16 @@ const TURN_CASES = [
     },
     quantities: ["1", "1"],
     quantityLabel: "Quantidade a baixar",
+    reply: {
+      balance: {
+        movingAverageCost: "62.400000",
+        quantity: 2,
+        variantId: JEANS.variantId,
+        version: 2,
+      },
+      movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+      replayed: false,
+    },
     route: "writeOffStock",
     saldo: "Saldo: 2 unidades",
     trigger: WRITE_OFF_JEANS,
@@ -699,31 +725,18 @@ test.describe("virada do dia da loja", () => {
     }) => {
       await page.clock.install({ time: TURN_EVE });
       await openStockLab(page, "claro");
-      await page.route("**/rpc/inventory/inventoryCount", (route) =>
-        route.fulfill(
-          rpc({
-            balance: {
-              movingAverageCost: "62.400000",
-              quantity: 9,
-              variantId: JEANS.variantId,
-              version: 2,
-            },
-            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
-            replayed: false,
-          })
-        )
-      );
-      await page.route("**/rpc/inventory/writeOffStock", (route) =>
-        route.fulfill(
-          rpc({
-            balance: {
-              movingAverageCost: "62.400000",
-              quantity: 2,
-              variantId: JEANS.variantId,
-              version: 2,
-            },
-            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
-            replayed: false,
+      if ("reply" in turn) {
+        const { reply } = turn;
+        await page.route(`**/rpc/inventory/${turn.route}`, (route) =>
+          route.fulfill(rpc(reply))
+        );
+      }
+      const unexpected: string[] = [];
+      await Promise.all(
+        TURN_ROUTES.filter((other) => other !== turn.route).map((other) =>
+          page.route(`**/rpc/inventory/${other}`, (route) => {
+            unexpected.push(other);
+            return route.abort();
           })
         )
       );
@@ -772,6 +785,8 @@ test.describe("virada do dia da loja", () => {
       await page.getByRole("button", { name: turn.confirm }).click();
       await expect(page.getByText(turn.saldo)).toBeVisible();
 
+      await settled(page);
+      await expect.poll(() => unexpected).toEqual([]);
       expect(sent).toHaveLength(2);
       expect(sent.map((body) => JSON.parse(body).json.occurredOn)).toEqual([
         "2026-10-31",
