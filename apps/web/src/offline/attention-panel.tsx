@@ -18,6 +18,14 @@ import {
   type AttentionSummary,
   discardWarning,
 } from "./attention";
+import { type RedoLineProblem, redoProblemText } from "./sale-redo";
+
+export interface RedoProblem {
+  commandId: string;
+  /** The lines that stopped the form from being filled; empty when the message says it all. */
+  lines: readonly RedoLineProblem[];
+  message: string;
+}
 
 /**
  * The panel of operations that need attention (plan PR58). It lists what the
@@ -35,13 +43,17 @@ export interface AttentionPanelProps {
   /** Shown when the last attempt to resolve an item failed. */
   errorMessage?: string | null;
   onDiscard: (item: AttentionItem) => void;
+  onRedo?: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
   onReviewAccount: (item: AttentionItem) => void;
+  /** Why "Refazer esta venda" did not open Vender, shown in the card of that sale. */
+  redoProblem?: RedoProblem | null;
   summary: AttentionSummary;
 }
 
 const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
+  redo_sale: "Refazer esta venda",
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
   retry: "Tentar novamente",
@@ -54,6 +66,11 @@ const ACCOUNT_CAUSES: ReadonlySet<AttentionItem["cause"]> = new Set([
   "entitlement_changed",
   "session_changed",
 ]);
+
+const actionLabel = (action: AttentionAction, item: AttentionItem) =>
+  action === "discard" && item.redone
+    ? "Descartar a venda recusada…"
+    : ACTION_LABEL[action];
 
 const isResubmission = (action: AttentionAction) =>
   action === "resubmit" ||
@@ -102,7 +119,7 @@ interface ActionButtonProps {
 function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
   const act = useCallback(() => onAct(action), [action, onAct]);
   let variant: "default" | "destructive" | "outline" = "outline";
-  if (isResubmission(action)) {
+  if (isResubmission(action) || action === "redo_sale") {
     variant = "default";
   } else if (action === "discard") {
     variant = "destructive";
@@ -115,7 +132,7 @@ function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
       type="button"
       variant={variant}
     >
-      {ACTION_LABEL[action]}
+      {actionLabel(action, item)}
     </Button>
   );
 }
@@ -124,16 +141,20 @@ interface ItemCardProps {
   busy: boolean;
   item: AttentionItem;
   onDiscard: (item: AttentionItem) => void;
+  onRedo: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
   onReviewAccount: (item: AttentionItem) => void;
+  redoProblem: RedoProblem | null;
 }
 
 function ItemCard({
   busy,
   item,
   onDiscard,
+  onRedo,
   onResubmit,
   onReviewAccount,
+  redoProblem,
 }: ItemCardProps) {
   const [confirming, setConfirming] = useState(false);
   const confirmRef = useRef<HTMLDivElement>(null);
@@ -153,13 +174,15 @@ function ItemCard({
     (action: AttentionAction) => {
       if (action === "discard") {
         setConfirming(true);
+      } else if (action === "redo_sale") {
+        onRedo(item);
       } else if (isResubmission(action)) {
         onResubmit(item);
       } else {
         onReviewAccount(item);
       }
     },
-    [item, onResubmit, onReviewAccount]
+    [item, onRedo, onResubmit, onReviewAccount]
   );
   const keep = useCallback(() => {
     focusDiscardAgain.current = true;
@@ -196,6 +219,26 @@ function ItemCard({
         <p className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
           Código: {item.code}
         </p>
+        {redoProblem ? (
+          <Alert variant="destructive">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription className="grid gap-2">
+              <p>{redoProblem.message}</p>
+              {redoProblem.lines.length > 0 ? (
+                <ul className="grid list-disc gap-1 pl-5">
+                  {redoProblem.lines.map((line) => (
+                    <li
+                      className="[overflow-wrap:anywhere]"
+                      key={`${line.kind}:${line.label}`}
+                    >
+                      {redoProblemText(line)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {confirming ? (
           <div
             aria-label={`Descartar ${item.title}`}
@@ -246,12 +289,16 @@ export function refusedText(summary: AttentionSummary): string {
     : text;
 }
 
+const noRedo = () => undefined;
+
 export function AttentionPanel({
   busyCommandId = null,
   errorMessage = null,
   onDiscard,
+  onRedo = noRedo,
   onResubmit,
   onReviewAccount,
+  redoProblem = null,
   summary,
 }: AttentionPanelProps) {
   if (summary.items.length === 0) {
@@ -279,8 +326,12 @@ export function AttentionPanel({
             item={item}
             key={item.commandId}
             onDiscard={onDiscard}
+            onRedo={onRedo}
             onResubmit={onResubmit}
             onReviewAccount={onReviewAccount}
+            redoProblem={
+              redoProblem?.commandId === item.commandId ? redoProblem : null
+            }
           />
         ))}
       </ul>

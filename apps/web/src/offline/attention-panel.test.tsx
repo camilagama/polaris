@@ -17,6 +17,7 @@ const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
   detail: "O estoque do servidor não cobre esta venda.",
   facts: null,
   kind: "sale",
+  redone: false,
   title: "Venda de 2 itens",
   ...overrides,
 });
@@ -139,6 +140,66 @@ describe("the attention panel", () => {
     expect(html).not.toContain("O servidor recusou");
     expect(html.match(/Reenviar venda/g)).toHaveLength(1);
     expect(html.match(/Descartar…/g)).toHaveLength(2);
+  });
+
+  it("offers Refazer esta venda in the primary action, then the discard, for a sale refused by authorization", () => {
+    const html = render({
+      items: [
+        item({
+          actions: ["redo_sale", "review_account", "discard"],
+          cause: "authorization_revoked",
+          code: "authorization_revoked",
+        }),
+      ],
+      waitingBehind: 0,
+    });
+    expect(html).toContain("Refazer esta venda");
+    expect(html.indexOf("Refazer esta venda")).toBeLessThan(
+      html.indexOf("Descartar…")
+    );
+  });
+
+  it("says Descartar a venda recusada, and no redo, once the sale was redone", () => {
+    const html = render({
+      items: [
+        item({
+          actions: ["discard"],
+          cause: "authorization_revoked",
+          code: "authorization_revoked",
+          redone: true,
+        }),
+      ],
+      waitingBehind: 0,
+    });
+    expect(html).toContain("Descartar a venda recusada…");
+    expect(html).not.toContain("Refazer esta venda");
+  });
+
+  it("says what stopped the redo, line by line, in an alert of the card of that sale only", () => {
+    const refused = item({
+      actions: ["redo_sale", "discard"],
+      cause: "authorization_revoked",
+      code: "authorization_revoked",
+    });
+    const other = item({
+      actions: ["discard"],
+      commandId: "0199c2d0-0000-7000-8000-000000000199",
+    });
+    const html = render(
+      { items: [refused, other], waitingBehind: 0 },
+      {
+        redoProblem: {
+          commandId: refused.commandId,
+          lines: [
+            { available: 1, kind: "short", label: "Caneca", requested: 3 },
+          ],
+          message: "Não preenchi a venda.",
+        },
+      }
+    );
+    expect(html.match(/role="alert"/g)).toHaveLength(1);
+    expect(html).toContain("Não preenchi a venda.");
+    expect(html).toContain("Caneca: a venda tinha 3 un. e o saldo é 1.");
   });
 
   it("offers an account review, not a retry, for a refusal about the account", () => {

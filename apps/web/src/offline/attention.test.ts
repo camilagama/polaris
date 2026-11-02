@@ -355,11 +355,68 @@ describe("resolving an item", () => {
       `R$ 20,00 · feita em ${formatInstant(now.toISOString())}`
     );
     expect(item.detail).toBe(
-      "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda ainda valer, registre a venda de novo e depois descarte esta. Se o seu acesso mudou, confira em Revisar acesso e plano."
+      "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda aconteceu, use Refazer esta venda: Vender abre com os itens, os preços e o pagamento desta venda, e ao confirmar entra uma venda nova. Só depois de confirmar, descarte esta. Se o seu acesso mudou, confira em Revisar acesso e plano."
     );
     expect(item.detail).not.toContain("não o recebeu");
     expect(item.detail).not.toContain("se o acesso não voltar");
-    expect(item.actions).toEqual(["review_account", "discard"]);
+    expect(item.actions).toEqual(["redo_sale", "review_account", "discard"]);
+    expect(item.redone).toBe(false);
+    expect(item.detail).not.toContain("registre a venda de novo e depois");
+  });
+
+  it("offers only the discard of the refused sale, said as such, once the new sale exists", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "authorization_revoked");
+
+    const [item] = buildAttention(
+      await outbox.snapshot(),
+      new Set([refused.commandId])
+    ).items;
+
+    expect(item?.redone).toBe(true);
+    expect(item?.actions).toEqual(["discard"]);
+    expect(item?.detail).toContain("Você já refez esta venda");
+    expect(discardWarning(item as AttentionItem)).toContain(
+      "A venda refeita já está registrada ou guardada e não muda"
+    );
+  });
+
+  it("offers no redo for a sale refused for another account code, nor for a product", async () => {
+    const { outbox, product, refuse, sale } = await setup();
+    const wrong = await sale();
+    await refuse(wrong.commandId, "wrong_device");
+    expect((await itemOf(outbox)).actions).toEqual([
+      "review_account",
+      "discard",
+    ]);
+    await outbox.discard(wrong.commandId);
+
+    const queued = await product("Camiseta", "CAM");
+    await refuse(queued.commandId, "authorization_revoked");
+    expect((await itemOf(outbox)).actions).toEqual([
+      "review_account",
+      "discard",
+    ]);
+  });
+
+  it("tells, before a discard of a sale refused for authorization, to redo it first", () => {
+    const base: AttentionItem = {
+      actions: ["redo_sale", "discard"],
+      blocksQueue: true,
+      cause: "authorization_revoked",
+      code: "authorization_revoked",
+      commandId: uuid(1),
+      detail: "",
+      facts: null,
+      kind: "sale",
+      redone: false,
+      title: "",
+    };
+    expect(discardWarning(base)).toContain("use Refazer esta venda antes");
+    expect(discardWarning({ ...base, code: "wrong_device" })).not.toContain(
+      "Refazer"
+    );
   });
 
   it("keeps the value out of refusals that are not authorization_revoked, and the old words for the other account codes", async () => {
@@ -383,7 +440,7 @@ describe("resolving an item", () => {
     const item = await itemOf(outbox);
     expect(item.facts).toBeNull();
     expect(item.detail).toBe(
-      "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, faça o registro de novo e depois descarte este. Se o seu acesso mudou, confira em Revisar acesso e plano."
+      "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, anote o que ele tinha, descarte este e faça o registro de novo. Se o seu acesso mudou, confira em Revisar acesso e plano."
     );
   });
 
@@ -396,6 +453,7 @@ describe("resolving an item", () => {
       commandId: uuid(1),
       detail: "",
       facts: null,
+      redone: false,
       title: "",
     } as const;
     for (const kind of [

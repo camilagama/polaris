@@ -33,6 +33,12 @@ import {
   localStockEntries,
   readLocalCatalog,
 } from "../offline/local-stock-entries";
+import { REDO_DONE_NOTICE, REDO_OPENED_NOTICE } from "../offline/sale-redo";
+import {
+  finishSaleRedo,
+  isOpenRedoDraft,
+  readSaleRedos,
+} from "../offline/sale-redo-storage";
 import type {
   OfflineRuntime,
   RuntimeContext,
@@ -375,7 +381,13 @@ export function SalePage() {
 
   useEffect(() => {
     // set after the mount, so the live region is in the tree before the notice arrives and it is announced
-    setDraftNotice(draftReadMessage(draftRead));
+    const redoNotice = isOpenRedoDraft(
+      readSaleRedos(browserStorage(), organizationId),
+      restoredDraft?.startedAt ?? null
+    )
+      ? REDO_OPENED_NOTICE
+      : null;
+    setDraftNotice(draftReadMessage(draftRead) ?? redoNotice);
     const readIds = restoredDraft ? draftVariantIds(restoredDraft.form) : [];
     if (readIds.length === 0) {
       return;
@@ -413,14 +425,14 @@ export function SalePage() {
               outcomeUnknown
             ).form
         );
-        setDraftNotice(message);
+        setDraftNotice(redoNotice ? `${redoNotice} ${message}` : message);
       })
       .catch(() => undefined);
     return () => {
       mounted = false;
     };
     // once, for the cart that came back with the mount
-  }, [draftRead, readLines, restoredAttempt, restoredDraft]);
+  }, [draftRead, organizationId, readLines, restoredAttempt, restoredDraft]);
 
   const activeProfiles = useMemo(
     () => (catalog.profiles.status === "ready" ? catalog.profiles.value : []),
@@ -573,6 +585,7 @@ export function SalePage() {
       device: { runtime: OfflineRuntime; stores: RuntimeContext } | null
     ) => {
       const sentCommandId = attemptRef.current?.commandId ?? null;
+      const sentDraftStartedAt = draftStartedAt.current;
       rememberAttempt(outcome.attempt, outcome.submission.phase === "locked");
       if (outcome.prices) {
         const remembered = mergeLastPrices(
@@ -586,7 +599,15 @@ export function SalePage() {
       if (outcome.completed) {
         // also when the person left Vender while it was sent: a recorded sale never comes back as a draft
         forgetDraft();
-        setDraftNotice(null);
+        const redone =
+          sentCommandId !== null &&
+          finishSaleRedo(
+            browserStorage(),
+            organizationId,
+            sentDraftStartedAt,
+            sentCommandId
+          );
+        setDraftNotice(redone ? REDO_DONE_NOTICE : null);
         if (sentCommandId) {
           announceSaleSettled(organizationId, sentCommandId);
         }

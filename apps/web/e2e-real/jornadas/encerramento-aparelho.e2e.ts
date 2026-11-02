@@ -5,11 +5,13 @@ import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { cents, numericCents, saleTotals } from "../oracle";
 import { confirmSale, fillSale } from "../pages/venda";
-import { seedProduct, seedStock } from "../seed";
+import { nextCommandId, seedProduct, seedStock } from "../seed";
 
 const ZONE = "America/Sao_Paulo";
 const CLOSED_PANEL = /\/loja-encerrada\?loja=/;
 const REOPENED = /\/\?reaberta=1$/;
+const ATTENTION_URL = /\/attention$/;
+const DISCARD_SALE_DIALOG = /Descartar Venda de 1 item/;
 const MUG = /Caneca/;
 const LIST_CLOSED = "/rpc/organization/listClosed";
 const LIST_MINE = "/rpc/organization/listMine";
@@ -107,10 +109,10 @@ const syncChip = (page: Page) => page.getByRole("status");
  * The device side of the closure: a sale kept on the device without internet survives the closure
  * made elsewhere, the device says the store is closed and leads to its panel, and once the closure is undone the
  * kept sale is refused for good (the grant it carries was revoked by the closure), stays readable in Pendências and
- * entering it again records it exactly once. Offline is the browser context's own (`setOffline`): the preview, the
+ * "Refazer esta venda" records it again exactly once, the refused one being discarded only after the new one exists. Offline is the browser context's own (`setOffline`): the preview, the
  * service worker, the outbox and the server are the real ones.
  */
-test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encerramento, o aviso leva ao painel e, desfeito, ela fica recusada em Pendências e refazê-la entra uma vez", async ({
+test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encerramento, o aviso leva ao painel e, desfeito, ela fica recusada em Pendências e refazê-la entra uma vez, com o descarte só depois", async ({
   browser,
   sql,
 }, testInfo) => {
@@ -257,23 +259,80 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   await expect(refusedSale).toContainText("feita em");
   await expect(refusedSale).toContainText("O servidor recusou esta venda");
   await expect(refusedSale).toContainText("Ela não é enviada sozinha");
-  await expect(refusedSale).toContainText("registre a venda de novo");
+  await expect(refusedSale).toContainText(
+    "use Refazer esta venda: Vender abre com os itens"
+  );
+  await expect(refusedSale).toContainText(
+    "Só depois de confirmar, descarte esta"
+  );
+  await expect(refusedSale).not.toContainText("registre a venda de novo");
   await expect(refusedSale).not.toContainText("não o recebeu");
   await expect(refusedSale).not.toContainText("se o acesso não voltar");
   await expect(
     page.getByText("1 registro recusado", { exact: false })
   ).toBeVisible();
 
-  // doing the sale again, once the refused one is discarded, enters it exactly once
-  await refusedSale.getByRole("button", { name: "Descartar…" }).click();
-  await page.getByRole("button", { name: "Confirmar descarte" }).click();
-  await expect.poll(() => outbox(page), { timeout: 15_000 }).toEqual([]);
-  await page.goto("/sales");
-  await fillSale(
-    page,
-    [{ charged: "35,00", option: MUG, quantity: SOLD, search: "Caneca" }],
-    []
+  // AC-3: with the stock short (units taken away elsewhere), the card says what is missing and Vender is not filled
+  await rpc.inventory.writeOffStock({
+    commandId: nextCommandId(),
+    commandVersion: 1,
+    occurredOn: localDate(runT0(), ZONE),
+    organizationId,
+    quantity: STOCK - 1,
+    reasonCode: "damaged",
+    variantId: product.variantId,
+  });
+  await refusedSale.getByRole("button", { name: "Refazer esta venda" }).click();
+  const missing = refusedSale.getByRole("alert");
+  await expect(missing).toContainText("Não preenchi a venda em Vender");
+  await expect(missing).toContainText(
+    `Caneca: a venda tinha ${SOLD} un. e o saldo é 1.`
   );
+  await expect(page).toHaveURL(ATTENTION_URL);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(sessionStorage).filter((name) =>
+        name.startsWith("polaris.sale.draft")
+      )
+    ),
+    "no draft was written"
+  ).toEqual([]);
+  expect(await outbox(page), "the refused sale is still there").toEqual([
+    { ...kept[0], status: "rejected" },
+  ]);
+  await seedStock(
+    rpc,
+    organizationId,
+    product.variantId,
+    STOCK - 1,
+    "12.00",
+    localDate(runT0(), ZONE)
+  );
+
+  // AC-2: "Refazer esta venda" opens Vender with the sale filled, and nothing is removed or sent by opening it
+  await refusedSale.getByRole("button", { name: "Refazer esta venda" }).click();
+  await page.waitForURL("**/sales");
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Nova venda" })
+  ).toBeVisible();
+  await expect(
+    page.getByText("Você está refazendo uma venda recusada")
+  ).toBeVisible();
+  const line = page.getByRole("group", { exact: true, name: "Item 1" });
+  await expect(line.getByLabel("Quantidade")).toHaveValue(String(SOLD));
+  await expect(line.getByLabel("Preço cobrado")).toHaveValue("35,00");
+  await expect(line).toContainText("Caneca");
+  await expect(
+    page
+      .getByRole("radiogroup", { name: "Método de pagamento" })
+      .getByRole("radio", { name: "Dinheiro" })
+  ).toBeChecked();
+  expect(await outbox(page), "opening Vender removes nothing").toEqual([
+    { ...kept[0], status: "rejected" },
+  ]);
+  expect((await books(sql, organizationId, product.variantId))?.sales).toBe(0);
+
+  // AC-1: confirming records ONE new sale (a double tap included); the refused command is not sent again
   await confirmSale(page);
   const expected = saleTotals(
     [{ chargedCents: cents("35.00"), quantity: SOLD }],
@@ -286,11 +345,47 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
     sales: 1,
   });
   expect(numericCents(after?.total as string)).toBe(expected.total);
+  const commands = await sql.query<{ code: string | null; status: string }>(
+    "SELECT outcome_code AS code, outcome_status AS status FROM sync_commands WHERE organization_id = $1",
+    [organizationId]
+  );
+  expect(
+    commands.rows,
+    "the refused command stays refused, and only it"
+  ).toEqual([{ code: "authorization_revoked", status: "rejected" }]);
+  expect(await outbox(page), "nothing was removed before the new sale").toEqual(
+    [{ ...kept[0], status: "rejected" }]
+  );
+  await expect(
+    page.getByText("Venda refeita. A venda recusada continua em Pendências")
+  ).toBeVisible();
+
+  // only now the card offers to discard the refused sale, and there is no second redo
+  await page.goto("/attention");
+  const redone = page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { name: "Venda de 1 item" }),
+  });
+  await expect(redone).toContainText("Você já refez esta venda", {
+    timeout: 30_000,
+  });
+  await expect(
+    redone.getByRole("button", { name: "Refazer esta venda" })
+  ).toHaveCount(0);
+  await redone
+    .getByRole("button", { name: "Descartar a venda recusada…" })
+    .click();
+  await expect(
+    page.getByRole("alertdialog", { name: DISCARD_SALE_DIALOG })
+  ).toContainText("A venda refeita já está registrada ou guardada e não muda");
+  await page.getByRole("button", { name: "Confirmar descarte" }).click();
+  await expect.poll(() => outbox(page), { timeout: 15_000 }).toEqual([]);
   await expect(
     syncChip(page).filter({ hasText: "Tudo sincronizado" })
   ).toBeVisible({ timeout: 30_000 });
+
+  // the refused sale never became a sale: one sale, one movement, the stock taken once
+  expect(await books(sql, organizationId, product.variantId)).toEqual(after);
   expect((await books(sql, organizationId, product.variantId))?.sales).toBe(1);
-  expect(await outbox(page)).toEqual([]);
 });
 
 /** AC-4 (AC-10 of the closure): an account whose only store is closed opens on the panel of that store. */

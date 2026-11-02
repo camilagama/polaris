@@ -61,6 +61,7 @@ describe("the logout dialog", () => {
               detail: "x",
               facts: null,
               kind: "product",
+              redone: false,
               title: "Produto",
             },
           ],

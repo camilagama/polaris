@@ -1,5 +1,18 @@
+import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useState } from "react";
+import { navigateInApp } from "../../app-shell/address";
 import { PageLoading } from "../../app-shell/page-loading";
+import { useCurrentOrganization } from "../../lib/current-organization";
+import { browserStorage } from "../../lib/current-organization-model";
+import { orpcClient } from "../../lib/orpc";
+import { readWithRetry } from "../../lib/read-with-retry";
+import { sessionStorageOrNull } from "../../sales/sale-attempt-storage";
+import { readSaleDraft, writeSaleDraft } from "../../sales/sale-draft-storage";
+import {
+  chunkIds,
+  lineBalancesRequest,
+} from "../../sales/sale-variant-picker-model";
+import type { Outbox } from "../outbox/outbox";
 import {
   type AttentionItem,
   type AttentionSummary,
@@ -11,7 +24,24 @@ import {
   AttentionFrame,
   AttentionPanel,
   AttentionStateCard,
+  type RedoProblem,
 } from "../attention-panel";
+import {
+  buildRedoDraft,
+  REDO_ALREADY_MESSAGE,
+  REDO_BLOCKED_MESSAGE,
+  REDO_BUSY_MESSAGE,
+  REDO_FAILED_MESSAGE,
+  REDO_OFFLINE_MESSAGE,
+  REDO_UNREADABLE_MESSAGE,
+  variantIdsOf,
+} from "../sale-redo";
+import {
+  pruneSaleRedos,
+  readSaleRedos,
+  redoneCommandIds,
+  startSaleRedo,
+} from "../sale-redo-storage";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -20,10 +50,117 @@ import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
  * that clears or refuses something is reflected at once.
  */
 const EMPTY: AttentionSummary = { items: [], waitingBehind: 0 };
+const SALE_PATH = "/sales";
+const newId = () => crypto.randomUUID();
+
+/** The catalog and balance of each variant of the refused sale, as the server has them now. */
+async function readLineEntries(
+  organizationId: string,
+  variantIds: readonly string[]
+): Promise<InventoryBalanceEntryReadModel[]> {
+  const pages = await Promise.all(
+    chunkIds(variantIds).map((chunk) =>
+      readWithRetry(() =>
+        orpcClient.inventory.listBalances(
+          lineBalancesRequest(organizationId, chunk)
+        )
+      )
+    )
+  );
+  return pages.flatMap((page) => page.entries);
+}
+
+/** What the tab already holds in Vender: nothing, the redo of this refused sale, or another sale in progress. */
+function openDraftOf(
+  refusedCommandId: string,
+  organizationId: string,
+  timezone: string | null
+): "mine" | "none" | "other" {
+  const draft = readSaleDraft(
+    sessionStorageOrNull(),
+    organizationId,
+    new Date(),
+    timezone
+  );
+  if (draft.kind !== "restored") {
+    return "none";
+  }
+  const mine = readSaleRedos(browserStorage(), organizationId).some(
+    (redo) =>
+      redo.refusedCommandId === refusedCommandId &&
+      redo.redoneCommandId === null &&
+      redo.startedAt === draft.draft.startedAt
+  );
+  return mine ? "mine" : "other";
+}
+
+type RedoOutcome = "opened" | { lines?: RedoProblem["lines"]; message: string };
+
+/**
+ * Fills the draft of Vender with a refused sale, once the server confirms that every line can be sold as it was.
+ * Nothing is removed from the queue; "opened" says Vender may be shown.
+ */
+async function redoSale(
+  refusedCommandId: string,
+  outbox: Outbox,
+  organizationId: string,
+  timezone: string | null
+): Promise<RedoOutcome> {
+  const { commands } = await outbox.snapshot();
+  const command = commands.find(
+    (candidate) => candidate.commandId === refusedCommandId
+  );
+  if (!command) {
+    return { message: REDO_FAILED_MESSAGE };
+  }
+  const open = openDraftOf(refusedCommandId, organizationId, timezone);
+  if (open !== "none") {
+    return open === "mine" ? "opened" : { message: REDO_BUSY_MESSAGE };
+  }
+  let entries: InventoryBalanceEntryReadModel[];
+  try {
+    entries = await readLineEntries(organizationId, variantIdsOf(command));
+  } catch {
+    return { message: REDO_OFFLINE_MESSAGE };
+  }
+  const built = buildRedoDraft(command, entries, newId);
+  if (built.kind === "unreadable") {
+    return { message: REDO_UNREADABLE_MESSAGE };
+  }
+  if (built.kind === "blocked") {
+    return { lines: built.problems, message: REDO_BLOCKED_MESSAGE };
+  }
+  const startedAt = new Date().toISOString();
+  if (
+    !startSaleRedo(
+      browserStorage(),
+      organizationId,
+      refusedCommandId,
+      startedAt
+    )
+  ) {
+    return { message: REDO_ALREADY_MESSAGE };
+  }
+  writeSaleDraft(sessionStorageOrNull(), organizationId, {
+    form: built.form,
+    startedAt,
+  });
+  const written = readSaleDraft(
+    sessionStorageOrNull(),
+    organizationId,
+    new Date(),
+    timezone
+  );
+  return written.kind === "restored"
+    ? "opened"
+    : { message: REDO_FAILED_MESSAGE };
+}
 
 export function AttentionPage() {
   const runtime = useOfflineRuntime();
   const snapshot = useRuntimeSnapshot();
+  const { organization, organizationId } = useCurrentOrganization();
+  const [redoProblem, setRedoProblem] = useState<RedoProblem | null>(null);
   const [summary, setSummary] = useState<AttentionSummary>(EMPTY);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +177,20 @@ export function AttentionPage() {
       .snapshot()
       .then((queue) => {
         if (current) {
-          setSummary(buildAttention(queue));
+          pruneSaleRedos(
+            browserStorage(),
+            organizationId,
+            new Set(queue.commands.map((command) => command.commandId))
+          );
+          setSummary(
+            buildAttention(
+              queue,
+              redoneCommandIds(
+                readSaleRedos(browserStorage(), organizationId),
+                queue.commands
+              )
+            )
+          );
         }
       })
       .catch(() => undefined);
@@ -48,7 +198,7 @@ export function AttentionPage() {
       current = false;
     };
     // the figures change whenever the queue does
-  }, [runtime, counts]);
+  }, [runtime, counts, organizationId]);
 
   const resolve = useCallback(
     async (item: AttentionItem, work: () => Promise<void>, message: string) => {
@@ -93,6 +243,37 @@ export function AttentionPage() {
     },
     [resolve, runtime]
   );
+  const handleRedo = useCallback(
+    (item: AttentionItem) => {
+      const context = runtime?.context();
+      if (!context) {
+        return;
+      }
+      setRedoProblem(null);
+      setError(null);
+      setBusy(item.commandId);
+      redoSale(
+        item.commandId,
+        context.outbox,
+        organizationId,
+        organization.timezone
+      )
+        .catch((): RedoOutcome => ({ message: REDO_FAILED_MESSAGE }))
+        .then((outcome) => {
+          if (outcome === "opened") {
+            navigateInApp(SALE_PATH);
+          } else {
+            setRedoProblem({
+              commandId: item.commandId,
+              lines: outcome.lines ?? [],
+              message: outcome.message,
+            });
+          }
+        })
+        .finally(() => setBusy(null));
+    },
+    [organization.timezone, organizationId, runtime]
+  );
   const handleReviewAccount = useCallback(
     () =>
       setError(
@@ -127,8 +308,10 @@ export function AttentionPage() {
       busyCommandId={busy}
       errorMessage={error}
       onDiscard={handleDiscard}
+      onRedo={handleRedo}
       onResubmit={handleResubmit}
       onReviewAccount={handleReviewAccount}
+      redoProblem={redoProblem}
       summary={summary}
     />
   );
