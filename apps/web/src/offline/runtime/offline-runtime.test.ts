@@ -1808,7 +1808,7 @@ describe("a session the server refuses", () => {
       expect(runtime.getSnapshot().sessionRefused).toBe(true);
     });
 
-    it("a different lease and no answer to the new lease: the copy stays, the sync ends as no answer, and the next refusal asks again", async () => {
+    it("a different lease and no answer to the new lease: the copy stays, no failure is told, and the next refusal asks again", async () => {
       const { runtime, w } = await refusedUnderOldLease();
       const issued = w.calls.issueLease;
       const pulls = w.calls.pull;
@@ -1829,6 +1829,79 @@ describe("a session the server refuses", () => {
       expect(w.calls.issueLease).toBe(issued + 2);
       expect(w.wiped).toEqual([]);
       expect(w.calls.pull).toBe(pulls + 1);
+    });
+
+    it("a different lease and a refusal that is not about the device (a bad request): nothing is dropped, the sync fails and says so", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const pulls = w.calls.pull;
+      w.failures.issueLease.push(
+        Object.assign(new Error("bad_request"), { code: "BAD_REQUEST" })
+      );
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.wiped).toEqual([]);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
+      expect(w.calls.pull).toBe(pulls);
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "ready",
+        reason: "sync_failed",
+        sessionRefused: false,
+      });
+    });
+
+    it("a different lease and the server refusing the account (forbidden): the copy goes as for a refused session", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      w.failures.issueLease.push(
+        Object.assign(new Error("forbidden"), { code: "FORBIDDEN" })
+      );
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.wiped).toEqual([`${userId}-${organizationId}`]);
+      expect(runtime.context()).toBeNull();
+      expect(runtime.getSnapshot().sessionRefused).toBe(true);
+    });
+
+    it("a different lease while another organization opens during the push: no lease is asked for the new organization and its copy is untouched", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const issued = w.calls.issueLease;
+      const pushes = w.calls.push;
+      let release: () => void = () => undefined;
+      w.gates.push = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      w.failures.rejectCode = "authorization_revoked";
+      const sync = runtime.syncNow();
+      await vi.waitFor(() => expect(w.calls.push).toBe(pushes + 1));
+      await runtime.start("org-2");
+      const afterStart = w.calls.issueLease;
+      release();
+      await sync;
+
+      expect(afterStart).toBe(issued + 1); // org-2's own lease
+      expect(w.calls.issueLease).toBe(afterStart);
+      expect(w.wiped).toEqual([]);
+      expect(runtime.context()?.organizationId).toBe("org-2");
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "ready",
+        reason: null,
+        sessionRefused: false,
+      });
+    });
+
+    it("a lease issued for the command is only the proof while it stands: once the lease changes, the next refusal asks again", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const issued = w.calls.issueLease;
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+      expect(w.calls.issueLease).toBe(issued + 1);
+
+      w.advance(65); // 7 hours left: the next sync renews the lease
+      await sendAgain(w, runtime);
+
+      expect(w.calls.issueLease).toBe(issued + 3); // the renewal and the new proof
+      expect(w.wiped).toEqual([]);
     });
 
     it("a different lease asks the server once per command: the same command refused again does not issue another grant", async () => {
