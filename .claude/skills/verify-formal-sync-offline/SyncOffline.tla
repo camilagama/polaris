@@ -17,11 +17,13 @@ CONSTANTS
     Tabs,            \* as abas abertas no navegador
     Idempotency,     \* "lookup": como o código; "none": variante quebrada
     RecoverDeletes,  \* FALSE: como o código; TRUE: variante quebrada
-    WipeEnabled      \* TRUE: como o código; FALSE: sem "Sair" nem sessão recusada
+    WipeEnabled,     \* TRUE: como o código; FALSE: sem "Sair" nem sessão recusada
+    WipeAtomic       \* TRUE: como o código; FALSE: variante quebrada, contar e limpar em duas transações
 
 ASSUME Idempotency \in {"lookup", "none"}
 ASSUME RecoverDeletes \in BOOLEAN
 ASSUME WipeEnabled \in BOOLEAN
+ASSUME WipeAtomic \in BOOLEAN
 
 Gone == "gone"   \* pedido de uma aba que fechou: a resposta não chega a ninguém
 
@@ -35,10 +37,10 @@ VARIABLES
     resp,       \* resp[t]: "none" | "accepted" | "rejected" | "failed"
     record,     \* sync_commands: "none" | "accepted" | "rejected"
     applied,    \* quantas vezes o servidor aplicou a venda
-    wipe,       \* wipe[t]: "idle" | "counted" (wipeOutboxStore entre contar e apagar)
-    delPending  \* indexedDB.deleteDatabase pedido e esperando as conexões fecharem
+    wipe        \* wipe[t]: "idle" | "closed" (closeStores feito, a limpeza ainda não)
+                \*   | "counted" (só na variante quebrada: contou zero, ainda não limpou)
 
-vars == <<made, discarded, entry, conn, run, net, resp, record, applied, wipe, delPending>>
+vars == <<made, discarded, entry, conn, run, net, resp, record, applied, wipe>>
 
 Init ==
     /\ made = FALSE
@@ -51,16 +53,15 @@ Init ==
     /\ record = "none"
     /\ applied = 0
     /\ wipe = [t \in Tabs |-> "idle"]
-    /\ delPending = FALSE
 
 (* apps/web/src/offline/outbox/outbox.ts Outbox.enqueue, chamado pela venda *)
 (* (apps/web/src/offline/sale-confirm.ts). Uma transação do IndexedDB. Uma  *)
-(* conexão já aberta ainda escreve com um deleteDatabase esperando.         *)
+(* conexão já aberta ainda escreve enquanto outra aba limpa a fila.          *)
 MakeSale(t) ==
     /\ conn[t] /\ ~made /\ wipe[t] = "idle"
     /\ made' = TRUE
     /\ entry' = "pending"
-    /\ UNCHANGED <<discarded, conn, run, net, resp, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<discarded, conn, run, net, resp, record, applied, wipe>>
 
 (* apps/web/src/offline/sync-runner.ts syncOutbox -> outbox.recoverInterrupted *)
 (* (outbox.ts): todo syncOutbox começa devolvendo "sending" para "pending".    *)
@@ -68,7 +69,7 @@ Recover(t) ==
     /\ conn[t] /\ run[t] = "idle" /\ wipe[t] = "idle"
     /\ entry = "sending"
     /\ entry' = IF RecoverDeletes THEN "none" ELSE "pending"
-    /\ UNCHANGED <<made, discarded, conn, run, net, resp, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, conn, run, net, resp, record, applied, wipe>>
 
 (* sync-runner.ts sendBatch -> outbox.markSending (outbox.ts). *)
 MarkSending(t) ==
@@ -76,7 +77,7 @@ MarkSending(t) ==
     /\ entry = "pending"
     /\ entry' = "sending"
     /\ run' = [run EXCEPT ![t] = "marked"]
-    /\ UNCHANGED <<made, discarded, conn, net, resp, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, conn, net, resp, record, applied, wipe>>
 
 (* sync-runner.ts sendBatch -> push (sync.push sai pela rede). *)
 Send(t) ==
@@ -84,7 +85,7 @@ Send(t) ==
     /\ t \notin net
     /\ run' = [run EXCEPT ![t] = "sent"]
     /\ net' = net \cup {t}
-    /\ UNCHANGED <<made, discarded, entry, conn, resp, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, entry, conn, resp, record, applied, wipe>>
 
 (* apps/web/src/server/sync/push.ts pushOne -> withTenant ->                  *)
 (* packages/db/src/sync-command-repository.ts runSyncCommand. Um passo só:    *)
@@ -112,7 +113,7 @@ ServerHandle(r) ==
          ELSE \E o \in {"accepted", "rejected", "notStored"} :
                 /\ Outcome(o)
                 /\ Reply(r, IF o = "notStored" THEN "rejected" ELSE o)
-    /\ UNCHANGED <<made, discarded, entry, conn, run, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, entry, conn, run, wipe>>
 
 (* O pedido não chega, o servidor erra e desfaz a transação, ou a resposta se *)
 (* perde: para a aba, push lança erro (sync-runner.ts sendBatch, catch).       *)
@@ -120,12 +121,12 @@ RequestFails(r) ==
     /\ r \in net
     /\ net' = net \ {r}
     /\ Reply(r, "failed")
-    /\ UNCHANGED <<made, discarded, entry, conn, run, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, entry, conn, run, record, applied, wipe>>
 
 AnswerLost(t) ==
     /\ resp[t] \in {"accepted", "rejected"}
     /\ resp' = [resp EXCEPT ![t] = "failed"]
-    /\ UNCHANGED <<made, discarded, entry, conn, run, net, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, entry, conn, run, net, record, applied, wipe>>
 
 (* sync-runner.ts applyResults / putBack: acknowledge, reject ou retry, cada  *)
 (* um uma transação do outbox; num estado inesperado o método lança          *)
@@ -138,20 +139,20 @@ ClientApply(t) ==
                   [] OTHER -> entry
     /\ run' = [run EXCEPT ![t] = "idle"]
     /\ resp' = [resp EXCEPT ![t] = "none"]
-    /\ UNCHANGED <<made, discarded, conn, net, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, conn, net, record, applied, wipe>>
 
 (* A pessoa toca "tentar de novo" na tela de atenção: outbox.retry. *)
 PersonRetries(t) ==
     /\ conn[t] /\ wipe[t] = "idle" /\ entry = "rejected"
     /\ entry' = "pending"
-    /\ UNCHANGED <<made, discarded, conn, run, net, resp, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, conn, run, net, resp, record, applied, wipe>>
 
 (* A pessoa escolhe descartar a venda recusada: outbox.discard. *)
 PersonDiscards(t) ==
     /\ conn[t] /\ wipe[t] = "idle" /\ entry = "rejected"
     /\ entry' = "none"
     /\ discarded' = TRUE
-    /\ UNCHANGED <<made, conn, run, net, resp, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, conn, run, net, resp, record, applied, wipe>>
 
 (* A conexão do outbox desta aba fecha: a aba fecha, recarrega ou morre, ou  *)
 (* o runtime chama OfflineRuntime.closeStores (offline-runtime.ts), como na  *)
@@ -164,53 +165,59 @@ TabCloses(t) ==
     /\ resp' = [resp EXCEPT ![t] = "none"]
     /\ net' = IF t \in net THEN (net \ {t}) \cup {Gone} ELSE net
     /\ wipe' = [wipe EXCEPT ![t] = "idle"]
-    /\ UNCHANGED <<made, discarded, entry, record, applied, delPending>>
+    /\ UNCHANGED <<made, discarded, entry, record, applied>>
 
 (* A aba abre: apps/web/src/offline/outbox/outbox-store.ts openOutboxStore. *)
-(* indexedDB.open espera atrás de um deleteDatabase pendente.               *)
 TabOpens(t) ==
-    /\ ~conn[t] /\ ~delPending /\ wipe[t] = "idle"
+    /\ ~conn[t] /\ wipe[t] = "idle"
     /\ conn' = [conn EXCEPT ![t] = TRUE]
-    /\ UNCHANGED <<made, discarded, entry, run, net, resp, record, applied, wipe, delPending>>
+    /\ UNCHANGED <<made, discarded, entry, run, net, resp, record, applied, wipe>>
 
 (* "Sair" (apps/web/src/offline/logout-guard.ts, LogoutWorkspace.purge em     *)
 (* apps/web/src/offline/runtime/offline-runtime.ts) ou a sessão recusada      *)
-(* (OfflineRuntime.dropCopyNow): closeStores fecha a conexão desta aba e      *)
-(* apps/web/src/offline/logout-purge.ts purgeNamespace -> outbox-store.ts      *)
-(* wipeOutboxStore conta os comandos numa transação; com algum, recusa        *)
-(* (PendingCommandsError, discardPending: false).                             *)
-WipeCount(t) ==
+(* (OfflineRuntime.dropCopyNow): closeStores fecha a conexão desta aba.       *)
+WipeStart(t) ==
     /\ WipeEnabled
-    /\ conn[t] /\ run[t] = "idle" /\ wipe[t] = "idle" /\ ~delPending
+    /\ conn[t] /\ run[t] = "idle" /\ wipe[t] = "idle"
     /\ conn' = [conn EXCEPT ![t] = FALSE]
-    /\ wipe' = [wipe EXCEPT ![t] = IF entry = "none" THEN "counted" ELSE "idle"]
-    /\ UNCHANGED <<made, discarded, entry, run, net, resp, record, applied, delPending>>
+    /\ wipe' = [wipe EXCEPT ![t] = "closed"]
+    /\ UNCHANGED <<made, discarded, entry, run, net, resp, record, applied>>
 
-(* wipeOutboxStore -> indexeddb-storage.ts deleteOutboxDatabase. Com outra   *)
-(* conexão aberta o pedido dispara "blocked" e a promessa rejeita, mas o     *)
-(* pedido não é cancelado: o banco é apagado quando a última conexão fechar. *)
-WipeDelete(t) ==
-    /\ wipe[t] = "counted"
+(* apps/web/src/offline/logout-purge.ts purgeNamespace -> outbox-store.ts     *)
+(* wipeOutboxStore -> indexeddb-storage.ts clearOutboxDatabase: UMA transação  *)
+(* readwrite conta os comandos e, sem nenhum, limpa todos os object stores;   *)
+(* com algum, aborta sem limpar (PendingCommandsError, discardPending: false). *)
+(* O banco nunca é apagado (sem deleteDatabase), então nada fica pendente     *)
+(* esperando a conexão da outra aba fechar. A fila vazia limpa continua vazia. *)
+WipeClear(t) ==
+    /\ WipeAtomic
+    /\ wipe[t] = "closed"
     /\ wipe' = [wipe EXCEPT ![t] = "idle"]
-    /\ delPending' = TRUE
     /\ UNCHANGED <<made, discarded, entry, conn, run, net, resp, record, applied>>
 
-(* O navegador conclui o deleteDatabase quando nenhuma conexão está aberta. *)
-DeleteCompletes ==
-    /\ delPending /\ \A t \in Tabs : ~conn[t]
-    /\ delPending' = FALSE
+(* Variante quebrada (WipeAtomic = FALSE): conta numa transação e limpa noutra; *)
+(* uma venda da outra aba entre as duas some.                                 *)
+WipeCountApart(t) ==
+    /\ ~WipeAtomic
+    /\ wipe[t] = "closed"
+    /\ wipe' = [wipe EXCEPT ![t] = IF entry = "none" THEN "counted" ELSE "idle"]
+    /\ UNCHANGED <<made, discarded, entry, conn, run, net, resp, record, applied>>
+
+WipeClearApart(t) ==
+    /\ wipe[t] = "counted"
+    /\ wipe' = [wipe EXCEPT ![t] = "idle"]
     /\ entry' = "none"
-    /\ UNCHANGED <<made, discarded, conn, run, net, resp, record, applied, wipe>>
+    /\ UNCHANGED <<made, discarded, conn, run, net, resp, record, applied>>
 
 Next ==
     \/ \E t \in Tabs :
           \/ MakeSale(t) \/ Recover(t) \/ MarkSending(t) \/ Send(t)
           \/ AnswerLost(t) \/ ClientApply(t) \/ PersonRetries(t)
           \/ PersonDiscards(t) \/ TabCloses(t) \/ TabOpens(t)
-          \/ WipeCount(t) \/ WipeDelete(t)
+          \/ WipeStart(t) \/ WipeClear(t)
+          \/ WipeCountApart(t) \/ WipeClearApart(t)
     \/ \E r \in Tabs \cup {Gone} : ServerHandle(r)
     \/ \E r \in Tabs \cup {Gone} : RequestFails(r)
-    \/ DeleteCompletes
 
 Spec == Init /\ [][Next]_vars
 

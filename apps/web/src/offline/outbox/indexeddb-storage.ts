@@ -120,14 +120,89 @@ export class IndexedDbOutboxStorage implements OutboxStorage {
   }
 }
 
-/** Removes the whole outbox database of a namespace. Close it first. */
-export function deleteOutboxDatabase(name: string): Promise<void> {
+/**
+ * Opens an outbox database only if it already exists. Opening a missing one
+ * would create it; aborting the upgrade transaction leaves nothing behind.
+ */
+function openExistingOutbox(name: string): Promise<IDBDatabase | null> {
   return new Promise((resolve, reject) => {
-    const deleting = indexedDB.deleteDatabase(name);
-    deleting.onsuccess = () => resolve();
-    deleting.onerror = () =>
-      reject(deleting.error ?? new Error("indexeddb_delete_failed"));
-    deleting.onblocked = () =>
-      reject(new OutboxStorageUnavailableError("O outbox está em uso."));
+    let missing = false;
+    const opening = indexedDB.open(name);
+    opening.onupgradeneeded = () => {
+      missing = true;
+      opening.transaction?.abort();
+    };
+    opening.onsuccess = () => resolve(opening.result);
+    opening.onerror = (event) => {
+      if (missing) {
+        event.preventDefault();
+        resolve(null);
+        return;
+      }
+      reject(
+        new OutboxStorageUnavailableError(
+          opening.error?.message ?? "Falha ao abrir o outbox."
+        )
+      );
+    };
   });
+}
+
+/** How many commands an outbox database holds; 0 when it does not exist, which it never creates. */
+export async function countOutboxCommands(name: string): Promise<number> {
+  const database = await openExistingOutbox(name);
+  if (!database) {
+    return 0;
+  }
+  try {
+    return await request(
+      database.transaction(COMMANDS, "readonly").objectStore(COMMANDS).count()
+    );
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Empties every store of an outbox database in ONE readwrite transaction, after
+ * `allow` saw the command count read inside it; if `allow` throws, the
+ * transaction aborts and nothing is cleared. The database itself stays: a
+ * `deleteDatabase` blocked by another tab's connection is not cancelled, and
+ * would later remove what that tab queued in the meantime.
+ */
+export async function clearOutboxDatabase(
+  name: string,
+  allow: (count: number) => void
+): Promise<number> {
+  const database = await openExistingOutbox(name);
+  if (!database) {
+    allow(0);
+    return 0;
+  }
+  try {
+    return await new Promise<number>((resolve, reject) => {
+      const stores = [...database.objectStoreNames];
+      const idb = database.transaction(stores, "readwrite");
+      let count = 0;
+      let refusal: unknown = null;
+      idb.oncomplete = () => resolve(count);
+      idb.onabort = () =>
+        reject(refusal ?? idb.error ?? new Error("indexeddb_aborted"));
+      const counting = idb.objectStore(COMMANDS).count();
+      counting.onsuccess = () => {
+        count = counting.result;
+        try {
+          allow(count);
+          for (const store of stores) {
+            idb.objectStore(store).clear();
+          }
+        } catch (error) {
+          refusal = error;
+          idb.abort();
+        }
+      };
+    });
+  } finally {
+    database.close();
+  }
 }
