@@ -273,6 +273,19 @@ function totalDueOf(payload: OfflineSalePayload): string | null {
   }
 }
 
+/** The value and the moment of a sale the device holds, for the panel of refusals; null if the command is not a readable sale. */
+export function refusedSaleFacts(
+  command: OutboxCommand
+): { occurredAt: string; totalDue: string | null } | null {
+  if (command.type !== SALE_CONFIRM || !isSalePayload(command.payload)) {
+    return null;
+  }
+  return {
+    occurredAt: command.payload.occurredAt,
+    totalDue: totalDueOf(command.payload),
+  };
+}
+
 function stateOf(command: OutboxCommand): PendingSale["state"] {
   if (command.status === "pending") {
     return "pending";

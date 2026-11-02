@@ -19,6 +19,7 @@ const ITEMS: AttentionItem[] = [
     commandId: "0199c2d0-0000-7000-8000-000000000101",
     detail:
       "O estoque do servidor não cobre esta venda. Confira o estoque e reenvie, ou descarte e refaça a venda.",
+    facts: null,
     kind: "sale",
     title: "Venda de 2 itens",
   },
@@ -29,6 +30,7 @@ const ITEMS: AttentionItem[] = [
     code: "sku_conflict",
     commandId: "0199c2d0-0000-7000-8000-000000000102",
     detail: "Outro produto já usa este SKU. Descarte e cadastre de novo.",
+    facts: null,
     kind: "product",
     title: "Produto Camiseta Básica de algodão com um nome bem comprido",
   },
@@ -40,6 +42,7 @@ const ITEMS: AttentionItem[] = [
     commandId: "0199c2d0-0000-7000-8000-000000000103",
     detail:
       "O plano desta organização mudou e não inclui mais esta operação. Revise o acesso e o plano.",
+    facts: null,
     kind: "stock",
     title: "Entrada de estoque",
   },

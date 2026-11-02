@@ -603,7 +603,7 @@ const OTHER_STORE = "0199c2d0-0000-7000-8000-00000000a002";
 const PANEL = `/loja-encerrada?loja=${ORGANIZATION.id}`;
 const AFTER_WINDOW = { ...CLOSED, canRecover: false, phase: "closed" };
 const WINDOW_TEXT =
-  "2 operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas serão enviadas de novo.";
+  "2 operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas não serão enviadas sozinhas: ficam em Pendências e precisam ser refeitas.";
 const AFTER_TEXT =
   "2 operações deste aparelho ficaram sem confirmação do servidor e não serão mais enviadas: esta loja não volta. O que o servidor não confirmou não entra na cópia dos seus dados.";
 const DISCARD_BUTTON = "Descartar o que não foi enviado…";

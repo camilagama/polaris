@@ -15,6 +15,7 @@ const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
   code: "insufficient_stock",
   commandId: "0199c2d0-0000-7000-8000-000000000101",
   detail: "O estoque do servidor não cobre esta venda.",
+  facts: null,
   kind: "sale",
   title: "Venda de 2 itens",
   ...overrides,
@@ -36,6 +37,27 @@ function render(
 }
 
 describe("the attention panel", () => {
+  it("shows what a refused sale was, above the explanation, when the item has facts", () => {
+    const html = render({
+      items: [
+        item({
+          actions: ["review_account", "discard"],
+          cause: "authorization_revoked",
+          code: "authorization_revoked",
+          facts: "R$ 20,00 · feita em 14/10/2026 09:30",
+        }),
+      ],
+      waitingBehind: 0,
+    });
+    expect(html).toContain("R$ 20,00 · feita em 14/10/2026 09:30");
+    expect(html.indexOf("R$ 20,00 · feita em 14/10/2026 09:30")).toBeLessThan(
+      html.indexOf("O estoque do servidor")
+    );
+    expect(render({ items: [item()], waitingBehind: 0 })).not.toContain(
+      "feita em"
+    );
+  });
+
   it("is the page of the screen: one h1 with the title, with or without items", () => {
     for (const summary of [
       { items: [], waitingBehind: 0 },
