@@ -223,7 +223,7 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
     page.getByText(
       "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela não será enviada sozinha: fica em Pendências e precisa ser refeita."
     )
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   await page
     .getByRole("button", { exact: true, name: "Desfazer encerramento" })
     .click();

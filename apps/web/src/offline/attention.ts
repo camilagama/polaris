@@ -162,7 +162,7 @@ function revokedDetail(kind: AttentionItem["kind"]): string {
     kind === "sale"
       ? "Se a venda ainda valer, registre-a de novo e depois descarte esta."
       : "Se ainda valer, refaça o registro e depois descarte este.";
-  return `Este registro foi feito com uma permissão deste aparelho que foi cancelada depois, por exemplo quando a loja é encerrada e reaberta. O servidor não o recebeu e ele não é enviado sozinho. ${redo}`;
+  return `Este registro foi feito com uma permissão que o servidor já não aceita: ela foi cancelada depois de criada (por exemplo, quando a loja é encerrada e reaberta) ou o acesso deste aparelho ou desta conta mudou. O servidor não o recebeu e ele não é enviado sozinho. Confira o acesso em Revisar acesso e plano. ${redo}`;
 }
 
 function factsOf(command: OutboxCommand, code: string): string | null {
