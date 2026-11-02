@@ -155,6 +155,9 @@ export async function countOutboxCommands(name: string): Promise<number> {
     return 0;
   }
   try {
+    if (!database.objectStoreNames.contains(COMMANDS)) {
+      return 0;
+    }
     return await request(
       database.transaction(COMMANDS, "readonly").objectStore(COMMANDS).count()
     );
@@ -179,9 +182,13 @@ export async function clearOutboxDatabase(
     allow(0);
     return 0;
   }
+  const stores = [...database.objectStoreNames];
   try {
+    if (!stores.includes(COMMANDS)) {
+      allow(0);
+      return 0;
+    }
     return await new Promise<number>((resolve, reject) => {
-      const stores = [...database.objectStoreNames];
       const idb = database.transaction(stores, "readwrite");
       let count = 0;
       let refusal: unknown = null;

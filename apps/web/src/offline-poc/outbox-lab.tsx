@@ -2,8 +2,8 @@ import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { type ChangeEvent, useCallback, useRef, useState } from "react";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import { localNamespace } from "../offline/namespace";
-import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import type { OutboxCommand } from "../offline/outbox/command";
+import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import {
   type OutboxStore,
   openOutboxStore,
@@ -216,8 +216,9 @@ export function OutboxLab() {
     () =>
       run("Corrida", async () => {
         const lines: string[] = [];
+        const round = crypto.randomUUID().slice(0, 8);
         for (const order of RACE_ORDERS) {
-          const raceOrganization = `${organizationId}-${order}`;
+          const raceOrganization = `${organizationId}-${order}-${round}`;
           // biome-ignore lint/performance/noAwaitInLoops: each order on its own namespace, one after the other
           const namespace = await localNamespace(userId, raceOrganization);
           const seller = await openOutboxStore(namespace, DEVICE_ID);
