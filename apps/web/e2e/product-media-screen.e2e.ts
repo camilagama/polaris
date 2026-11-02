@@ -271,6 +271,48 @@ test("remover com recusa definitiva diz que a lista foi recarregada e leva o foc
   ).toBeFocused();
 });
 
+async function confirmReplace(page: Page) {
+  await page.getByRole("button", { name: "Substituir imagem 2" }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Remover e escolher outra" })
+    .click();
+}
+
+test("substituir uma imagem que já não existe diz que a lista foi recarregada e leva o foco ao título da lista", async ({
+  page,
+}) => {
+  await openMediaPanel(page, { lists: [list(2), list(1)], remove: REFUSED });
+  await confirmReplace(page);
+  await expect(page.getByRole("alert")).toHaveText(REFUSAL_TEXT);
+  await expect(page.getByText("Imagem 1 de 1")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Imagens associadas" })
+  ).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "Escolher imagem" })
+  ).not.toBeFocused();
+  await expect(page.getByText("A imagem anterior foi removida.")).toHaveCount(
+    0
+  );
+});
+
+test("substituir com sucesso remove a imagem e leva o foco ao botão de escolher o arquivo", async ({
+  page,
+}) => {
+  await openMediaPanel(page, {
+    lists: [list(2), list(1)],
+    remove: (route) =>
+      route.fulfill(api({ removed: true, requestId: REQUEST_ID })),
+  });
+  await confirmReplace(page);
+  await expect(page.getByText("A imagem anterior foi removida.")).toBeVisible();
+  await expect(page.getByText("Imagem 1 de 1")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Escolher imagem" })
+  ).toBeFocused();
+});
+
 test("mover com recusa definitiva diz que a lista foi recarregada e o foco fica no botão que foi usado", async ({
   page,
 }) => {
