@@ -189,6 +189,9 @@ function ItemCard({
             Este registro está parando a fila: o que vem depois espera por ele.
           </p>
         ) : null}
+        {item.facts ? (
+          <p className="font-medium [overflow-wrap:anywhere]">{item.facts}</p>
+        ) : null}
         <p className="[overflow-wrap:anywhere]">{item.detail}</p>
         <p className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
           Código: {item.code}

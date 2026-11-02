@@ -1,5 +1,6 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it } from "vitest";
+import { formatInstant } from "../lib/format";
 import { signOfflineLease } from "../lib/offline-lease-token";
 import {
   type AttentionItem,
@@ -343,6 +344,45 @@ describe("resolving an item", () => {
     expect(after.commands[0]?.status).toBe("pending");
   });
 
+  it("says a sale refused as authorization_revoked was lost for good, with its value and date, and never says the access may come back", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "authorization_revoked");
+
+    const item = await itemOf(outbox);
+
+    expect(item.facts).toBe(
+      `R$ 20,00 · feita em ${formatInstant(now.toISOString())}`
+    );
+    expect(item.detail).toContain("não é enviado sozinho");
+    expect(item.detail).toContain("registre-a de novo");
+    expect(item.detail).not.toContain("se o acesso não voltar");
+    expect(item.actions).toEqual(["review_account", "discard"]);
+  });
+
+  it("keeps the value out of refusals that are not authorization_revoked, and the old words for the other account codes", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const stock = await sale();
+    await refuse(stock.commandId, "insufficient_stock");
+    expect((await itemOf(outbox)).facts).toBeNull();
+    await outbox.discard(stock.commandId);
+
+    const wrong = await sale();
+    await refuse(wrong.commandId, "wrong_device");
+    const item = await itemOf(outbox);
+    expect(item.facts).toBeNull();
+    expect(item.detail).toContain("se o acesso não voltar");
+  });
+
+  it("says a refused non-sale as redo-it, without facts", async () => {
+    const { outbox, product, refuse } = await setup();
+    const queued = await product("Camiseta", "CAM");
+    await refuse(queued.commandId, "authorization_revoked");
+    const item = await itemOf(outbox);
+    expect(item.facts).toBeNull();
+    expect(item.detail).toContain("refaça o registro");
+  });
+
   it("says what a discard loses, per kind", () => {
     const base = {
       actions: ["discard"],
@@ -351,6 +391,7 @@ describe("resolving an item", () => {
       code: "x",
       commandId: uuid(1),
       detail: "",
+      facts: null,
       title: "",
     } as const;
     for (const kind of [

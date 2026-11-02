@@ -4,7 +4,7 @@ import type { BrowserContext, Page } from "@playwright/test";
 import { localDate } from "../calendar";
 import { expect, openJourney, runT0, test } from "../fixtures";
 import { cents, numericCents, saleTotals } from "../oracle";
-import { fillSale } from "../pages/venda";
+import { confirmSale, fillSale } from "../pages/venda";
 import { seedProduct, seedStock } from "../seed";
 
 const ZONE = "America/Sao_Paulo";
@@ -106,10 +106,11 @@ const syncChip = (page: Page) => page.getByRole("status");
 /**
  * The device side of the closure: a sale kept on the device without internet survives the closure
  * made elsewhere, the device says the store is closed and leads to its panel, and once the closure is undone the
- * kept sale reaches the server exactly once. Offline is the browser context's own (`setOffline`): the preview, the
+ * kept sale is refused for good (the grant it carries was revoked by the closure), stays readable in Pendências and
+ * entering it again records it exactly once. Offline is the browser context's own (`setOffline`): the preview, the
  * service worker, the outbox and the server are the real ones.
  */
-test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encerramento, o aviso leva ao painel e, desfeito, a venda chega uma vez", async ({
+test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encerramento, o aviso leva ao painel e, desfeito, ela fica recusada em Pendências e refazê-la entra uma vez", async ({
   browser,
   sql,
 }, testInfo) => {
@@ -217,16 +218,61 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   await expect(page.getByText(SESSION_ENDED)).toHaveCount(0);
   expect(await outbox(page), "the panel keeps the queue").toEqual(kept);
 
-  // AC-3: undone inside the window, the kept sale reaches the server once, and the queue empties
+  // AC-4: before touching "Desfazer", the panel says the kept sale is not sent by itself
+  await expect(
+    page.getByText(
+      "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela não será enviada sozinha: fica em Pendências e precisa ser refeita."
+    )
+  ).toBeVisible();
   await page
     .getByRole("button", { exact: true, name: "Desfazer encerramento" })
     .click();
-  await page
-    .getByRole("dialog", { name: "Desfazer o encerramento?" })
-    .getByRole("button", { name: "Sim, desfazer" })
-    .click();
+  const undo = page.getByRole("dialog", { name: "Desfazer o encerramento?" });
+  await expect(undo).toContainText(
+    "não é enviado sozinho: fica em Pendências e precisa ser refeito"
+  );
+  await undo.getByRole("button", { name: "Sim, desfazer" }).click();
   await page.waitForURL(REOPENED);
-  await expect.poll(() => outbox(page), { timeout: 30_000 }).toEqual([]);
+
+  // AC-3: the grant the sale carries was revoked by the closure and does not come back: the server refuses it for good
+  await expect
+    .poll(() => outbox(page), { timeout: 30_000 })
+    .toEqual([{ ...kept[0], status: "rejected" }]);
+  const refused = await sql.query<{ code: string; status: string }>(
+    "SELECT outcome_code AS code, outcome_status AS status FROM sync_commands WHERE organization_id = $1 AND command_id = $2",
+    [organizationId, kept[0]?.commandId]
+  );
+  expect(refused.rows, "one refusal, recorded once").toEqual([
+    { code: "authorization_revoked", status: "rejected" },
+  ]);
+  expect(await books(sql, organizationId, product.variantId)).toEqual(before);
+
+  // the sale stays visible in Pendências, with its value and date, and without promising the access back
+  await page.goto("/attention");
+  const refusedSale = page.getByRole("listitem").filter({
+    has: page.getByRole("heading", { name: "Venda de 1 item" }),
+  });
+  await expect(refusedSale).toBeVisible({ timeout: 30_000 });
+  await expect(refusedSale).toContainText("R$ 70,00");
+  await expect(refusedSale).toContainText("feita em");
+  await expect(refusedSale).toContainText("não é enviado sozinho");
+  await expect(refusedSale).toContainText("registre-a de novo");
+  await expect(refusedSale).not.toContainText("se o acesso não voltar");
+  await expect(
+    page.getByText("1 registro recusado", { exact: false })
+  ).toBeVisible();
+
+  // doing the sale again, once the refused one is discarded, enters it exactly once
+  await refusedSale.getByRole("button", { name: "Descartar…" }).click();
+  await page.getByRole("button", { name: "Confirmar descarte" }).click();
+  await expect.poll(() => outbox(page), { timeout: 15_000 }).toEqual([]);
+  await page.goto("/sales");
+  await fillSale(
+    page,
+    [{ charged: "35,00", option: MUG, quantity: SOLD, search: "Caneca" }],
+    []
+  );
+  await confirmSale(page);
   const expected = saleTotals(
     [{ chargedCents: cents("35.00"), quantity: SOLD }],
     []
@@ -238,18 +284,11 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
     sales: 1,
   });
   expect(numericCents(after?.total as string)).toBe(expected.total);
-  const [{ commands } = { commands: 0 }] = (
-    await sql.query<{ commands: number }>(
-      "SELECT count(*)::int AS commands FROM sync_commands WHERE organization_id = $1 AND command_id = $2",
-      [organizationId, kept[0]?.commandId]
-    )
-  ).rows;
-  expect(commands, "the kept command, recorded once").toBe(1);
-  // the app's background sync, a moment later, sends nothing more
   await expect(
     syncChip(page).filter({ hasText: "Tudo sincronizado" })
   ).toBeVisible({ timeout: 30_000 });
   expect((await books(sql, organizationId, product.variantId))?.sales).toBe(1);
+  expect(await outbox(page)).toEqual([]);
 });
 
 /** AC-4 (AC-10 of the closure): an account whose only store is closed opens on the panel of that store. */

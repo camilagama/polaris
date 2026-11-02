@@ -106,10 +106,10 @@ describe("o que o cartão diz da fila (AC-1, AC-4)", () => {
     });
     expect(view).toEqual({ kind: "window", text: windowText(2) });
     expect(windowText(2)).toBe(
-      "2 operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas serão enviadas de novo."
+      "2 operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas não serão enviadas sozinhas: ficam em Pendências e precisam ser refeitas."
     );
     expect(windowText(1)).toBe(
-      "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela será enviada de novo."
+      "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela não será enviada sozinha: fica em Pendências e precisa ser refeita."
     );
   });
 
