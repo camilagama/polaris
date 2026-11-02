@@ -6,6 +6,9 @@
 const BEFORE_THE_RULE =
   "anterior à checagem; ao mexer neste teste, troque a espera pelo sinal que ela aguardava";
 
+const ONE_TURN_AFTER_THE_CLICK =
+  "o tempo é o comportamento testado: olha a tela um turno depois do clique, quando a saída animada ainda está montada; um sinal de que ela saiu provaria o contrário";
+
 export const BLIND_WAITS_LIST = {
   "apps/web/e2e-pwa/lazy-retry.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/motion-level.e2e.ts": { count: 3, reason: BEFORE_THE_RULE },
@@ -24,9 +27,13 @@ export const BLIND_WAITS_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e-pwa/ui-filter-bar.e2e.ts": {
+  "apps/web/e2e-pwa/ui-filter-bar-dialog.e2e.ts": {
     count: 1,
-    reason: BEFORE_THE_RULE,
+    reason: ONE_TURN_AFTER_THE_CLICK,
+  },
+  "apps/web/e2e-pwa/ui-filter-bar.e2e.ts": {
+    count: 2,
+    reason: ONE_TURN_AFTER_THE_CLICK,
   },
   "apps/web/e2e-pwa/ui-guardrails.e2e.ts": {
     count: 1,
