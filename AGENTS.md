@@ -60,6 +60,20 @@ doc/doc-inicial.md é material de origem; doc/plano-inicial.md rege a sequência
 - Entregar só com o CI do head verde, inclusive CodeQL e e2e-real. Se ficar vermelho, ler o log e corrigir na causa.
 - O PR diz só o que foi rodado e visto. Não afirmar que um check não executado passou; dizer o que só roda no CI (PostgreSQL 18, navegador).
 
+### Regras que uma checagem garante
+
+Erros que voltaram de revisão em mais de um PR e que agora reprovam no `bun run check` e no CI (pelo `bun run test`, que roda o `.test.mjs` de cada uma). Onde a `main` já tinha o padrão, a checagem guarda uma lista exata por arquivo: só reprova o que acrescenta, e quem tira um uso baixa a lista no mesmo PR.
+
+| Regra | Checagem |
+| --- | --- |
+| Teste de navegador espera um sinal, não um tempo (`waitForTimeout`, `new Promise` com `setTimeout`) | `scripts/verify-no-blind-waits.mjs` (lista em `verify-no-blind-waits.list.mjs`) |
+| Teste fixa o relógio em vez de ler `Date.now()`/`new Date()` | `scripts/verify-test-clock.mjs` (fora dos gates de `packages/db/scripts`, que têm `gate-loose-clock.test.ts`) |
+| Override do `package.json` tem linha com motivo e "Remover quando" em `docs/runbooks/dependency-audit.md`, e sai junto com ela | `scripts/verify-dependency-overrides.mjs` |
+| Arquivo renomeado ou apagado não deixa caminho velho nos documentos | `scripts/verify-doc-paths.mjs` (lista em `verify-doc-paths.list.mjs`) |
+| `when` do journal da migration crescente e não futuro | `scripts/verify-migration-compat.mjs` |
+| Gate sem relógio solto | `packages/db/scripts/gate-loose-clock.test.ts` |
+| Comentário sem histórico | `scripts/verify-no-history-comments.mjs` |
+
 ## Fluxo de trabalho
 
 - **Branch e PR:** uma tarefa é uma branch (`feat/` funcionalidade nova, `fix/` correção de bug, `chore/` manutenção que não cabe nos demais, `docs/` só documentação, `test/` só testes, `perf/` desempenho sem mudar comportamento, `ci/` verificação e automação do CI, `ui/` telas e estilo, `obs/` observabilidade e logs, ou `codex/`, como `codex/prNN-nome`; fora da lista só `evidencias/*`, branch órfã só com capturas e provas, sem PR, e `piloto/`, experimento cujo PR não se mescla) e um PR, aberto pronto para revisão (não rascunho), com base `main`. Não fazer push na `main` nem force-push em branch de outra pessoa.
