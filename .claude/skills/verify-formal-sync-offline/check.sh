@@ -20,7 +20,11 @@ sha256() {
 fetch() {
   url=$1 dest=$2 sum=$3
   if [ -f "$dest" ] && [ "$(sha256 "$dest")" = "$sum" ]; then return 0; fi
-  curl -fsSL -o "$dest.part" "$url"
+  curl -fsSL --retry 3 --max-time 600 -o "$dest.part" "$url" || {
+    rm -f "$dest.part"
+    echo "falha ao baixar $url" >&2
+    exit 2
+  }
   if [ "$(sha256 "$dest.part")" != "$sum" ]; then
     rm -f "$dest.part"
     echo "checksum diferente para $url" >&2
@@ -33,10 +37,15 @@ jar=$cache/tla2tools-$tla_version.jar
 fetch "https://github.com/tlaplus/tlaplus/releases/download/v$tla_version/tla2tools.jar" "$jar" "$tla_sha"
 
 java_ok() {
-  "$1" -version 2>&1 | sed -n '1s/.*version "\([0-9]*\).*/\1/p' | awk '{ exit !($1 >= 11) }'
+  "$1" -version 2>&1 | grep -m 1 'version "' | sed 's/.*version "\([0-9]*\).*/\1/' |
+    awk '{ v = $1 } END { exit !(v != "" && v + 0 >= 11) }'
 }
 
 java=${JAVA:-}
+if [ -n "$java" ] && ! java_ok "$java"; then
+  echo "JAVA=$java não é um Java 11 ou mais novo" >&2
+  exit 2
+fi
 if [ -z "$java" ] && command -v java >/dev/null 2>&1 && java_ok java; then java=java; fi
 if [ -z "$java" ]; then
   case "$(uname -s)-$(uname -m)" in
@@ -79,7 +88,7 @@ for line in $expected; do
   if grep -q "Model checking completed. No error has been found." "$log"; then
     got=ok
   else
-    got=$(sed -n 's/^Error: Invariant \([A-Za-z]*\) is violated\.$/\1/p' "$log" | head -n 1)
+    got=$(sed -n 's/^Error: Invariant \([A-Za-z0-9_]*\) is violated\.$/\1/p' "$log" | head -n 1)
     if [ -n "$got" ]; then
       got=$got@$(grep -c '^State [0-9]*:' "$log" || true)
     else

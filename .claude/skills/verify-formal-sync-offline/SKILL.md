@@ -34,14 +34,16 @@ Baixa uma vez, com sha256 conferido, o TLC 1.7.4 e, sem Java 11+ no `PATH` nem e
 
 ## Achado em aberto: F1, a limpeza da fila apaga uma venda da outra aba
 
-O TLC acha no código de hoje (`atual`), e o Chromium reproduz com o código real:
+O TLC acha no código de hoje (`atual`), e o Chromium reproduz com o código real (`outbox-store.ts` empacotado, duas páginas no mesmo contexto: sem o Sair a aba nova vê 1 comando; com o Sair, 0):
 
-1. Abas A e B da mesma loja e usuário, as duas com o outbox aberto (`openOutboxStore`).
-2. Em A, "Sair" com a fila vazia (ou a sessão recusada, `OfflineRuntime.dropCopyNow`): `closeStores` fecha a conexão de A; `purgeNamespace` → `wipeOutboxStore` conta 0 comandos.
-3. `deleteOutboxDatabase` pede `indexedDB.deleteDatabase`. B ainda tem a conexão aberta: o pedido dispara `blocked` e a promessa rejeita ("O outbox está em uso."), mas **o pedido não é cancelado**: o navegador apaga o banco quando a última conexão fechar. Ninguém trata `versionchange`.
-4. Em B, a pessoa faz uma venda offline: `Outbox.enqueue` grava na fila (a conexão aberta ainda escreve).
-5. A conexão de B fecha: a aba fecha ou recarrega, ou o runtime de B chama `closeStores` (B também recebe a sessão recusada: `dropCopyNow` vê a fila com a venda, guarda a fila e chama `closeStores`).
-6. O navegador conclui o `deleteDatabase`: a venda some sem ter entrado no servidor.
+1. Abas A e B da mesma loja e usuário, as duas com o outbox aberto (`openOutboxStore`). Fila vazia.
+2. Em A começa a limpeza da fila, por um de dois caminhos:
+   - **Sair** (`LogoutWorkspace.purge`): `closeStores` fecha a conexão de A; `purgeNamespace` → `wipeOutboxStore` conta 0 comandos.
+   - **Sessão recusada** (`OfflineRuntime.dropCopyNow` com a fila vazia): o mesmo `closeStores` e o mesmo `purge` com `discardPending: false`.
+3. `deleteOutboxDatabase` pede `indexedDB.deleteDatabase`. B ainda tem a conexão aberta: o pedido dispara `blocked` e a promessa rejeita ("O outbox está em uso."), mas **o pedido não é cancelado**: o navegador apaga o banco quando a última conexão fechar. Ninguém trata `versionchange`. O que a pessoa vê em A: no Sair, a limpeza falha (`purgeNamespace` propaga o erro, `wipeLocalStore` nem roda) e ela continua logada, porque a sessão só termina com a limpeza pronta (`logout-guard.ts`); na sessão recusada, A mostra `purge_failed`.
+4. Em B, a pessoa faz uma venda offline: `Outbox.enqueue` grava na fila (a conexão aberta ainda escreve) e B mostra a venda pendente.
+5. A conexão de B fecha. No caminho do Sair, quando B fecha ou recarrega a aba. No da sessão recusada, também sozinha: B recebe a mesma recusa, `dropCopyNow` vê a venda na fila, decide guardar a fila (só `wipeCollections`), mas antes já chamou `closeStores`.
+6. O navegador conclui o `deleteDatabase`: a venda some sem ter entrado no servidor, sem aviso em B.
 
 Quando F1 for corrigido, mude o modelo para descrever a correção (por exemplo, `WipeDelete` que não deixa pedido pendente, ou `MakeSale` que não escreve com o pedido pendente), rode, confirme `atual` sem violação e troque o esperado de `atual` para `ok` no `check.sh` e nesta tabela.
 
@@ -58,7 +60,13 @@ Fora do modelo, de propósito:
 - a retenção de 90 dias de `sync_commands` e `command_too_old` (não há job que apague registros hoje);
 - o conteúdo da recusa, a lease (assinatura, época, janela), o plano e as capacidades: no modelo são só "recusa gravada" e "recusa não gravada";
 - o banco de coleções locais (SQLite/OPFS) e o pull;
-- liveness (a venda chegar um dia): só segurança.
+- liveness (a venda chegar um dia): só segurança;
+- os descartes de propósito, que tiram a venda da fila sem ela entrar e não contam como perda: "Sair e descartar" (`logout-guard.ts`, `discardPending: true`), `discardClosedQueue` da loja encerrada (`offline-runtime.ts`) e o `customer.update` de um cliente anonimizado, que o `sync-runner` descarta por privacidade (`dropsContent`). No modelo só há `PersonDiscards` de uma venda recusada e a limpeza com `discardPending: false`.
+
+O modelo é mais permissivo que o código em dois pontos, de propósito (o que passa nele passa no código):
+
+- as abas sincronizam ao mesmo tempo; no app, `RuntimeDependencies.exclusive` (`navigator.locks`, `ifAvailable`) deixa uma aba por vez. Não restrinja o modelo a isso: a trava é por navegador e some sem Web Locks;
+- `net` é um conjunto, então dois pedidos de abas fechadas (`Gone`) a caminho viram um. Com a busca em `sync_commands`, o segundo só repetiria a resposta gravada; na variante sem idempotência a duplicidade já aparece com abas vivas.
 
 Suposições: `runSyncCommand` é um passo atômico porque segura `pg_advisory_xact_lock` por (loja, commandId) antes de ler `sync_commands`, grava o resultado na mesma transação do savepoint da venda e o índice único `sync_commands_organization_command_unique` está por trás; cada método do `Outbox` é uma transação do IndexedDB; o IndexedDB segue a especificação (`deleteDatabase` espera as conexões fecharem; `open` espera atrás de um `deleteDatabase` pendente).
 
