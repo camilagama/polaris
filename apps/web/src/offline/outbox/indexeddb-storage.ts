@@ -168,7 +168,9 @@ export async function countOutboxCommands(name: string): Promise<number> {
 
 /**
  * Empties every store of an outbox database in ONE readwrite transaction, after
- * `allow` saw the command count read inside it; if `allow` throws, the
+ * `allow` saw the command count read inside it (0 when the database has no
+ * `commands` store, which is still emptied: a foreign or newer-version layout
+ * must not keep data behind a wipe); if `allow` throws, the
  * transaction aborts and nothing is cleared. The database itself stays: a
  * `deleteDatabase` blocked by another tab's connection is not cancelled, and
  * would later remove what that tab queued in the meantime.
@@ -184,10 +186,11 @@ export async function clearOutboxDatabase(
   }
   const stores = [...database.objectStoreNames];
   try {
-    if (!stores.includes(COMMANDS)) {
+    if (stores.length === 0) {
       allow(0);
       return 0;
     }
+    const hasCommands = stores.includes(COMMANDS);
     return await new Promise<number>((resolve, reject) => {
       const idb = database.transaction(stores, "readwrite");
       let count = 0;
@@ -195,9 +198,7 @@ export async function clearOutboxDatabase(
       idb.oncomplete = () => resolve(count);
       idb.onabort = () =>
         reject(refusal ?? idb.error ?? new Error("indexeddb_aborted"));
-      const counting = idb.objectStore(COMMANDS).count();
-      counting.onsuccess = () => {
-        count = counting.result;
+      const clearAll = () => {
         try {
           allow(count);
           for (const store of stores) {
@@ -207,6 +208,15 @@ export async function clearOutboxDatabase(
           refusal = error;
           idb.abort();
         }
+      };
+      if (!hasCommands) {
+        clearAll();
+        return;
+      }
+      const counting = idb.objectStore(COMMANDS).count();
+      counting.onsuccess = () => {
+        count = counting.result;
+        clearAll();
       };
     });
   } finally {

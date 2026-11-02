@@ -11,7 +11,10 @@ import { walkFiles } from "./exact-count-list.mjs";
  * runbook (same package, same version, same parent), with a non-empty reason and "Remover quando";
  * a row whose override is gone fails too. Bun reads `overrides` and `resolutions` only from the root
  * `package.json`, so either key in a workspace `package.json` fails: it would look like a fix and do
- * nothing.
+ * nothing. The value of an override must also be a version of the registry (exact or a semver
+ * range): a git URL, tarball URL, `file:`, `link:`, `workspace:`, `npm:` alias or `$dependency`
+ * reference swaps where the package comes from, and the row of documentation would be the only
+ * thing between it and the install.
  */
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -22,6 +25,55 @@ const tableRow = /^\|(.+)\|\s*$/;
 const separatorRow = /^\|[\s:|-]+\|\s*$/;
 const overrideCell = /`([^`:]+):\s*([^`]+)`/;
 const parentCell = /só sob `([^`]+)`/;
+
+const PART = String.raw`(?:\d+|[xX*])`;
+const WHITESPACE = /\s+/;
+const OPERATOR_GAP = /([<>]=?|=|\^|~>?)\s+/g;
+const COMPARATOR = new RegExp(
+  String.raw`^(?:[<>]=?|=|\^|~)?v?${PART}(?:\.${PART}){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`
+);
+
+/** True for an exact version or a semver range (`^1.2.3`, `>=1 <2`, `1.2.3 - 2.0.0`, `a || b`). */
+export function isRegistryVersion(value) {
+  if (typeof value !== "string" || value.trim() === "") {
+    return false;
+  }
+  return value.split("||").every((set) => {
+    const tokens = set.replace(OPERATOR_GAP, "$1").trim().split(WHITESPACE);
+    return tokens.every(
+      (token, index) =>
+        COMPARATOR.test(token) ||
+        (token === "-" && index > 0 && index < tokens.length - 1)
+    );
+  });
+}
+
+const GIT_SOURCE = /^(?:git(?:\+[a-z]+)?|github|gitlab|bitbucket|gist):/i;
+const URL_SOURCE = /^https?:/i;
+const LOCAL_SOURCE = /^(?:file|link|workspace|portal|patch):/i;
+const ALIAS_SOURCE = /^npm:/i;
+
+const sourceKind = (value) => {
+  if (typeof value !== "string") {
+    return "um valor que não é texto";
+  }
+  if (GIT_SOURCE.test(value)) {
+    return "repositório git";
+  }
+  if (URL_SOURCE.test(value)) {
+    return "endereço de tarball";
+  }
+  if (LOCAL_SOURCE.test(value)) {
+    return "caminho local ou do workspace";
+  }
+  if (ALIAS_SOURCE.test(value)) {
+    return "alias para outro pacote";
+  }
+  if (value.startsWith("$")) {
+    return "referência a dependência direta";
+  }
+  return "valor que não é versão nem intervalo semver";
+};
 
 const keyOf = (name, version, parent) =>
   parent ? `${name}@${version} só sob ${parent}` : `${name}@${version}`;
@@ -103,8 +155,36 @@ export function documentedOverrides(markdown) {
   return { problems, rows };
 }
 
+function* overrideValues(entries, field, trail = []) {
+  for (const [name, value] of Object.entries(entries ?? {})) {
+    if (value !== null && typeof value === "object") {
+      yield* overrideValues(value, field, [...trail, name]);
+    } else {
+      yield [[...trail, name].join(" > "), value, field];
+    }
+  }
+}
+
+export function sourceProblems(packageJson) {
+  const problems = [];
+  const values = ["overrides", "resolutions"].flatMap((field) => [
+    ...overrideValues(packageJson[field], field),
+  ]);
+  for (const [name, value, field] of values) {
+    if (!isRegistryVersion(value)) {
+      problems.push(
+        `package.json: o ${field === "overrides" ? "override" : "resolution"} de ${name} (${JSON.stringify(value)}) é ${sourceKind(value)}, não versão do registro. ` +
+          "Override só fixa versão exata ou intervalo semver do registro npm: outra origem troca de onde o código vem, e a linha de motivo na tabela seria o único freio. " +
+          "Use a versão publicada que corrige o aviso; se o código precisa vir de outro lugar, é decisão do responsável, não um override."
+      );
+    }
+  }
+  return problems;
+}
+
 export function overrideProblems({ rootPackage, runbook, workspacePackages }) {
   const { rows, problems } = documentedOverrides(runbook);
+  problems.push(...sourceProblems(rootPackage));
   const keys = overrideKeys(rootPackage);
   for (const key of keys) {
     if (!rows.has(key)) {

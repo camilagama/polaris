@@ -158,11 +158,10 @@ function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
 const REVOKED_CODE = "authorization_revoked";
 
 function revokedDetail(kind: AttentionItem["kind"]): string {
-  const redo =
-    kind === "sale"
-      ? "Se a venda ainda valer, registre-a de novo e depois descarte esta."
-      : "Se ainda valer, refaça o registro e depois descarte este.";
-  return `Este registro foi feito com uma permissão que o servidor já não aceita: ela foi cancelada depois de criada (por exemplo, quando a loja é encerrada e reaberta) ou o acesso deste aparelho ou desta conta mudou. O servidor não o recebeu e ele não é enviado sozinho. Confira o acesso em Revisar acesso e plano. ${redo}`;
+  if (kind === "sale") {
+    return "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda ainda valer, registre a venda de novo e depois descarte esta. Se o seu acesso mudou, confira em Revisar acesso e plano.";
+  }
+  return "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, faça o registro de novo e depois descarte este. Se o seu acesso mudou, confira em Revisar acesso e plano.";
 }
 
 function factsOf(command: OutboxCommand, code: string): string | null {

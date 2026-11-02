@@ -271,8 +271,10 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   await expect(refusedSale).toBeVisible({ timeout: 30_000 });
   await expect(refusedSale).toContainText("R$ 70,00");
   await expect(refusedSale).toContainText("feita em");
-  await expect(refusedSale).toContainText("não é enviado sozinho");
-  await expect(refusedSale).toContainText("registre-a de novo");
+  await expect(refusedSale).toContainText("O servidor recusou esta venda");
+  await expect(refusedSale).toContainText("Ela não é enviada sozinha");
+  await expect(refusedSale).toContainText("registre a venda de novo");
+  await expect(refusedSale).not.toContainText("não o recebeu");
   await expect(refusedSale).not.toContainText("se o acesso não voltar");
   await expect(
     page.getByText("1 registro recusado", { exact: false })

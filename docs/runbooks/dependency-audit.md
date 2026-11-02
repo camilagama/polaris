@@ -44,7 +44,7 @@ Histórico: de 27/10/2026 (t434) até a subida do `better-auth` para a 1.7.12 (t
 
 ## Overrides vigentes
 
-Todo override ativo do `package.json` raiz fica nesta tabela, com motivo, data e condição de remoção. Override novo ou removido muda a tabela no mesmo PR; na revisão de cada exceção acima, conferir também se a condição de remoção destas linhas já vale (`bun pm why <pacote>` mostra quem ainda fixa a versão antiga).
+Todo override ativo do `package.json` raiz fica nesta tabela, com motivo, data e condição de remoção. O valor do override é sempre versão exata ou intervalo semver do registro npm: git (`git+https:`, `github:`), endereço de tarball, `file:`, `link:`, `workspace:`, alias `npm:outro@…` e referência `$pacote` reprovam em `scripts/verify-dependency-overrides.mjs`, que só lê arquivos (o `package.json` e este runbook), sem rede nem execução. Se o código precisa vir de outra origem, é decisão do responsável, não um override. Override novo ou removido muda a tabela no mesmo PR; na revisão de cada exceção acima, conferir também se a condição de remoção destas linhas já vale (`bun pm why <pacote>` mostra quem ainda fixa a versão antiga).
 
 | Override | Desde | Motivo | Remover quando |
 | --- | --- | --- | --- |

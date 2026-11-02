@@ -68,7 +68,7 @@ Erros que voltaram de revisão em mais de um PR e que agora reprovam no `bun run
 | --- | --- |
 | Teste de navegador espera um sinal, não um tempo (`waitForTimeout`, `new Promise` com `setTimeout`) | `scripts/verify-no-blind-waits.mjs` (lista em `verify-no-blind-waits.list.mjs`) |
 | Teste fixa o relógio em vez de ler `Date.now()`/`new Date()` | `scripts/verify-test-clock.mjs` (fora dos gates de `packages/db/scripts`, que têm `gate-loose-clock.test.ts`) |
-| Override do `package.json` tem linha com motivo e "Remover quando" em `docs/runbooks/dependency-audit.md`, e sai junto com ela | `scripts/verify-dependency-overrides.mjs` |
+| Override do `package.json` tem linha com motivo e "Remover quando" em `docs/runbooks/dependency-audit.md`, e sai junto com ela; o valor é versão exata ou intervalo semver do registro (nunca git, URL, `file:`, `link:`, `workspace:`, alias `npm:` ou `$pacote`) | `scripts/verify-dependency-overrides.mjs` |
 | Arquivo renomeado ou apagado não deixa caminho velho nos documentos | `scripts/verify-doc-paths.mjs` (lista em `verify-doc-paths.list.mjs`) |
 | `when` do journal da migration crescente e não futuro | `scripts/verify-migration-compat.mjs` |
 | Gate sem relógio solto | `packages/db/scripts/gate-loose-clock.test.ts` |
