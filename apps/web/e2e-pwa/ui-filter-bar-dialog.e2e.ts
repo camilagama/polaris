@@ -347,6 +347,58 @@ test.describe("a 360 px", () => {
   });
 });
 
+test.describe("reaberto no meio da saída, a 360 px com mouse", () => {
+  test.use({ hasTouch: false, isMobile: false, viewport: PHONE });
+
+  test("o Dialog do Período reaberto durante a saída abre no mês e no rascunho do filtro, não nos que ficaram na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const open = await openPill(page, "Período");
+    await open.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(open.getByText("Novembro de 2026")).toBeVisible();
+    await shortcut(open, "Hoje").click();
+    await expect(shortcut(open, "Hoje")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+
+    // Cancelar, then one turn of the page later the pill again: at the full level (a narrow window with a mouse) the
+    // Dialog leaves in 220 ms and is still mounted
+    const leaving = await page.evaluate(async () => {
+      const cancelButton = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-slot="dialog-content"] button'
+        ),
+      ].find((button) => button.textContent?.trim() === "Cancelar");
+      cancelButton?.click();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      const stillThere =
+        document.querySelector('[data-slot="dialog-content"]') !== null;
+      document
+        .querySelector<HTMLElement>(
+          'search[aria-label="Filtrar vendas"] button[aria-label^="Período: "]'
+        )
+        ?.click();
+      return stillThere;
+    });
+    expect(leaving).toBe(true);
+    const again = editor(page, "Período");
+    await expect(again.getByText("Outubro de 2026")).toBeVisible();
+    await expect(again.getByText("Novembro de 2026")).toBeHidden();
+    await expect(shortcut(again, "Este mês")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(shortcut(again, "Hoje")).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+  });
+});
+
 test.describe("a 1280 px", () => {
   test.use({ viewport: DESKTOP });
 
