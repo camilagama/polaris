@@ -59,6 +59,7 @@ describe("the logout dialog", () => {
               code: "sku_conflict",
               commandId: "0199c2d0-0000-7000-8000-000000000101",
               detail: "x",
+              facts: null,
               kind: "product",
               title: "Produto",
             },

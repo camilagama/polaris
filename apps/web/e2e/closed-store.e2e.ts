@@ -630,7 +630,7 @@ test.describe("desfazer o encerramento em duas etapas (AC-8, AC-9, AC-10)", () =
     await undoButton(page).click();
     await expect(undoDialog(page)).toBeVisible();
     await expect(undoDialog(page)).toContainText(
-      "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado continua esperando."
+      "A loja volta a funcionar agora. Os aparelhos vão pedir de novo a permissão para usar sem internet quando abrirem com conexão. O que estava guardado neles e não foi enviado não é enviado sozinho: fica em Pendências e precisa ser refeito."
     );
     await expect(confirmUndo(page)).toBeVisible();
     await undoDialog(page).getByRole("button", { name: "Voltar" }).click();
