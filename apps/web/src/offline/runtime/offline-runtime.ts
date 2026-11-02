@@ -1039,6 +1039,7 @@ export class OfflineRuntime {
   }
 
   private forgetLease() {
+    this.provenAfterRefusal.clear();
     if (this.userId && this.organizationId) {
       this.dependencies.keyValues.remove(
         leaseKey(this.userId, this.organizationId)
