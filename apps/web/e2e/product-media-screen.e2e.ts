@@ -255,13 +255,9 @@ const REFUSED = (route: Route) =>
 const REFUSAL_TEXT =
   "Este produto ou esta imagem não foi encontrado. Recarregamos a lista.";
 
-test("remover com recusa definitiva diz que a lista foi recarregada e não deixa o foco se perder", async ({
+test("remover com recusa definitiva diz que a lista foi recarregada e leva o foco ao título da lista", async ({
   page,
 }) => {
-  test.fail(
-    true,
-    "defeito de produto: a imagem sai da lista recarregada e o foco cai no body"
-  );
   await openMediaPanel(page, { lists: [list(2), list(1)], remove: REFUSED });
   await page.getByRole("button", { name: "Remover imagem 2" }).click();
   await page
