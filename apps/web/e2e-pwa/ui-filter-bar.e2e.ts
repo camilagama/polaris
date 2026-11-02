@@ -631,6 +631,53 @@ for (const width of [360, 320]) {
   });
 }
 
+test.describe("reaberto no meio da saída, a 1280 px", () => {
+  test.use({ viewport: { height: 800, width: 1280 } });
+
+  /**
+   * The shortcut "Hoje" applies and closes the popup; one turn of the page later (React has applied the close) the pill
+   * is clicked again. Resolves to whether the popup was still on screen, leaving: its exit lasts 100 ms at the full
+   * motion level, and below it the test would prove nothing.
+   */
+  const applyAndReopen = (page: Page) =>
+    page.evaluate(async () => {
+      const shortcut = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-slot="popover-content"] button'
+        ),
+      ].find((button) => button.textContent?.trim() === "Hoje");
+      shortcut?.click();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      const leaving =
+        document.querySelector('[data-slot="popover-content"]') !== null;
+      document
+        .querySelector<HTMLElement>(
+          'search[aria-label="Filtrar vendas"] button[aria-label^="Período: "]'
+        )
+        ?.click();
+      return leaving;
+    });
+
+  test("o painel do Período reaberto durante a saída abre no mês do filtro, não no que ficou na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    await pill(page, "Período").click();
+    const open = editor(page, "Período");
+    await open.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(open.getByText("Novembro de 2026")).toBeVisible();
+
+    expect(await applyAndReopen(page)).toBe(true);
+    await expect(pill(page, "Período")).toHaveAccessibleName(
+      "Período: 24/10/2026, editar"
+    );
+    await expect(open.getByText("Setembro de 2026")).toBeVisible();
+    await expect(open.getByText("Novembro de 2026")).toBeHidden();
+  });
+});
+
 /** The animations of the page have ended (a menu or an editor still fading in has a color between two): axe reads it then. */
 const settled = (page: Page) =>
   page.evaluate(() =>
