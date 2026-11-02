@@ -250,6 +250,62 @@ test("remover pergunta antes, diz o que acontece e o que fica, e depois leva o f
   );
 });
 
+const REFUSED = (route: Route) =>
+  route.fulfill(api({ error: { code: "not_found" } }, 404));
+const REFUSAL_TEXT =
+  "Este produto ou esta imagem não foi encontrado. Recarregamos a lista.";
+
+test("remover com recusa definitiva diz que a lista foi recarregada e leva o foco ao título da lista", async ({
+  page,
+}) => {
+  await openMediaPanel(page, { lists: [list(2), list(1)], remove: REFUSED });
+  await page.getByRole("button", { name: "Remover imagem 2" }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Remover imagem" })
+    .click();
+  await expect(page.getByRole("alert")).toHaveText(REFUSAL_TEXT);
+  await expect(page.getByText("Imagem 1 de 1")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Imagens associadas" })
+  ).toBeFocused();
+});
+
+test("mover com recusa definitiva diz que a lista foi recarregada e o foco fica no botão que foi usado", async ({
+  page,
+}) => {
+  await openMediaPanel(page, { lists: [list(3), list(2)], reorder: REFUSED });
+  await page
+    .getByRole("button", { name: "Mover imagem 1 para depois" })
+    .click();
+  await expect(page.getByRole("alert")).toHaveText(REFUSAL_TEXT);
+  await expect(page.getByText("Imagem 1 de 2")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mover imagem 1 para depois" })
+  ).toBeFocused();
+});
+
+test("remover sem internet anuncia o resultado incerto como alerta, mantém a lista e deixa o foco no botão de remover", async ({
+  page,
+}) => {
+  await openMediaPanel(page, {
+    lists: [list(2)],
+    remove: (route) => route.abort("internetdisconnected"),
+  });
+  await page.getByRole("button", { name: "Remover imagem 2" }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Remover imagem" })
+    .click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Sem internet. Tente de novo quando a conexão voltar; repetir é seguro."
+  );
+  await expect(page.getByText("Imagem 1 de 2")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Remover imagem 2" })
+  ).toBeFocused();
+});
+
 test("a lista de imagens que não carrega diz o motivo e oferece 'Tentar novamente', nunca o vazio", async ({
   page,
 }) => {
