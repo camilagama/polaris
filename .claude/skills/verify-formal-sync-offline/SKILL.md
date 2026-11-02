@@ -101,8 +101,16 @@ Avance o commit acima só depois de conferir, ação por ação, que o modelo ai
 
 1. Leia a ação do modelo que representa o que mudou (tabela acima) e faça o modelo dizer o que o código diz agora. Um passo atômico do modelo tem de ser atômico no código (uma transação do IndexedDB, uma transação do PostgreSQL); se a mudança partir um passo em dois, parta a ação.
 2. Rode `check.sh`.
-3. Uma diferença é um bug no código ou um erro de modelo. Leia o contraexemplo com a skill `/statechart` do pstack (ela conta o caminho mínimo em palavras e desenha o gráfico) e refaça o caminho no código real, um passo por ação: num teste com o `Outbox` e o `MemoryOutboxStorage`, ou no navegador quando o IndexedDB importa (F1 foi refeito no Chromium com o Playwright, empacotando `outbox-store.ts` com `bun build --target browser` e abrindo duas páginas no mesmo contexto). Se o caminho não acontece no código, o modelo está errado: corrija o modelo, não o esperado.
+3. Uma diferença é um bug no código ou um erro de modelo. Leia o contraexemplo (o bloco `State 1 … State N` de `<cenário>.out`, na pasta que o `check.sh` imprime) assim, sem ferramenta além do próprio arquivo:
+   - **Estado inicial**: `State 1` diz como o mundo começa (por exemplo, duas abas com o outbox aberto, fila vazia, nada aplicado no servidor). Confira que isso é um começo possível no app.
+   - **Passos**: cada `State k` traz o nome da ação do modelo (`<WipeCount …>`, `<MakeSale …>`) e as variáveis depois dela. Compare com o `State` anterior e diga em uma frase o que mudou (só o que mudou; o resto é repetição). Traduza o nome da ação para o código pela tabela de cobertura acima.
+   - **Estado final**: o último `State` é o primeiro em que o invariante deixa de valer. Leia a fórmula violada no `.tla` e diga com palavras o que o estado mostra (em F1: a venda foi feita, não foi descartada, a fila está sem entrada e o servidor aplicou 0 vezes).
+   - **A guarda que falta**: pergunte, passo a passo, o que no código deveria ter impedido o passo suspeito e não impediu (em F1: nada impede `Outbox.enqueue` de gravar com um `deleteDatabase` ainda pendente, e `deleteOutboxDatabase` rejeita em `blocked` mas deixa o pedido vivo). Se a guarda existe no código e falta só no modelo, o erro é do modelo.
+
+   Depois refaça o caminho no código real, um passo por ação: num teste com o `Outbox` e o `MemoryOutboxStorage`, ou no navegador quando o IndexedDB importa (F1 foi refeito no Chromium com o Playwright, empacotando `outbox-store.ts` com `bun build --target browser` e abrindo duas páginas no mesmo contexto). Se o caminho não acontece no código, o modelo está errado: corrija o modelo, não o esperado.
 4. Nunca enfraqueça `NoDoubleSale` nem `NoLostSale` para passar; um bug achado vira relato com o caminho nos nomes do código.
 5. Mudou o comportamento de propósito: atualize o modelo, o esperado no `check.sh`, a tabela de cenários e o commit de sincronia no mesmo PR.
 
-Para trazer o modelo de volta ao código depois de mudanças que não o conferiram, use `/maintain-formal-verification-skill` do pstack.
+Para trazer o modelo de volta ao código depois de mudanças que não o conferiram, para cada arquivo que o `git diff --stat` acima mostrar, ache a ação na tabela de cobertura e refaça os passos 1, 2, 3 e 5, respeitando o 4; só então avance o commit de sincronia.
+
+Opcional, só se existirem no seu ambiente (não fazem parte deste repositório; vêm do pstack, de Lauren Tan, em `cursor/plugins`, pasta `pstack`; podem aparecer como `pstack-statechart` e `pstack-maintain-formal-verification-skill`): `/statechart` conta o caminho mínimo de um contraexemplo em palavras e o desenha, e `/maintain-formal-verification-skill` guia a volta do modelo ao código. Nenhum passo acima depende delas.
