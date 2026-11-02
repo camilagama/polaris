@@ -164,6 +164,7 @@ describe("fuso efetivo do processo", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     vi.resetModules();
     if (originalTz === undefined) {
       Reflect.deleteProperty(process.env, "TZ");
@@ -179,16 +180,46 @@ describe("fuso efetivo do processo", () => {
     return import("./setup.mjs");
   }
 
-  // Node resolves a lowercase TZ to no zone at all and a +03:00 offset to the machine zone (an IANA name), so neither can equal the requested zone whatever the machine is.
-  it.each([
-    ["minúsculas", "america/manaus"],
-    ["deslocamento", "+03:00"],
-  ])(
-    "o setup falha ao carregar com TZ em %s, que o Intl aceita e o processo não usa",
-    async (_caso, tz) => {
-      await expect(loadSetup(tz)).rejects.toThrow("bun run test:datas");
-    }
-  );
+  function pinEffectiveZone(effective) {
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    const proxy = new Proxy(RealDateTimeFormat, {
+      apply: (target, _thisArg, args) => {
+        const formatter = Reflect.construct(target, args);
+        if (args[1]?.timeZone !== undefined) {
+          return formatter;
+        }
+        const resolved = formatter.resolvedOptions();
+        formatter.resolvedOptions = () => ({
+          ...resolved,
+          timeZone: effective,
+        });
+        return formatter;
+      },
+    });
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(proxy);
+  }
+
+  // Node resolves a lowercase TZ to no zone at all, so the process falls back to the machine zone; on a machine in Manaus that fallback would equal the requested zone. The effective zone is pinned to a different one so the refusal does not depend on where the suite runs.
+  it("o setup falha ao carregar com TZ em minúsculas quando o processo cai em outro fuso que não o pedido", async () => {
+    pinEffectiveZone("America/Sao_Paulo");
+    const failure = loadSetup("america/manaus");
+    await expect(failure).rejects.toThrow(
+      'TZ="america/manaus" pede America/Manaus, mas o processo usa "America/Sao_Paulo"'
+    );
+    await expect(failure).rejects.toThrow("bun run test:datas");
+  });
+
+  it("com o fuso efetivo igual ao pedido, o setup carrega mesmo com TZ em minúsculas: a recusa vem da diferença entre os fusos", async () => {
+    pinEffectiveZone("America/Manaus");
+    await loadSetup("america/manaus");
+    expect(vi.isFakeTimers()).toBe(true);
+  });
+
+  // A +03:00 offset never resolves to an IANA name, so it cannot equal the process zone on any machine.
+  it("o setup falha ao carregar com TZ em deslocamento, que o Intl aceita e o processo não usa", async () => {
+    await expect(loadSetup("+03:00")).rejects.toThrow("mas o processo usa");
+    await expect(loadSetup("+03:00")).rejects.toThrow("bun run test:datas");
+  });
 
   it("o setup carrega com TZ=America/Manaus, que o processo usa de fato", async () => {
     await loadSetup("America/Manaus");
