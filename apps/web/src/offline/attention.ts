@@ -1,10 +1,15 @@
+import { formatBrlAmount, formatInstant } from "../lib/format";
 import type { LocalWriter } from "./bootstrap";
 import { discardPendingCustomer } from "./customer-create";
 import { discardPendingCustomerUpdate } from "./customer-update";
 import type { OutboxCommand } from "./outbox/command";
 import type { Outbox, OutboxSnapshot } from "./outbox/outbox";
 import { discardPendingProduct } from "./product-create";
-import { discardPendingSale, resubmitRejectedSale } from "./sale-confirm";
+import {
+  discardPendingSale,
+  refusedSaleFacts,
+  resubmitRejectedSale,
+} from "./sale-confirm";
 import { discardPendingStock } from "./stock-commands";
 
 /**
@@ -49,6 +54,8 @@ export interface AttentionItem {
   commandId: string;
   /** What the person can do about it, in plain words. */
   detail: string;
+  /** What the refused operation was (value and date of a sale), so it can be redone; null when the title says it all. */
+  facts: string | null;
   kind: "customer" | "customer_update" | "product" | "sale" | "stock";
   title: string;
 }
@@ -148,7 +155,36 @@ function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
   return typeof quantity === "number" ? `${label}: ${quantity}` : label;
 }
 
-function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
+const REVOKED_CODE = "authorization_revoked";
+
+function revokedDetail(kind: AttentionItem["kind"]): string {
+  const redo =
+    kind === "sale"
+      ? "Se a venda ainda valer, registre-a de novo e depois descarte esta."
+      : "Se ainda valer, refaça o registro e depois descarte este.";
+  return `Este registro foi feito com uma permissão que o servidor já não aceita: ela foi cancelada depois de criada (por exemplo, quando a loja é encerrada e reaberta) ou o acesso deste aparelho ou desta conta mudou. O servidor não o recebeu e ele não é enviado sozinho. Confira o acesso em Revisar acesso e plano. ${redo}`;
+}
+
+function factsOf(command: OutboxCommand, code: string): string | null {
+  if (code !== REVOKED_CODE || command.type !== "sale.confirm") {
+    return null;
+  }
+  const sale = refusedSaleFacts(command);
+  if (!sale) {
+    return null;
+  }
+  const parts = [
+    sale.totalDue ? formatBrlAmount(sale.totalDue) : null,
+    `feita em ${formatInstant(sale.occurredAt)}`,
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+function detailOf(
+  cause: AttentionCause,
+  kind: AttentionItem["kind"],
+  code: string
+): string {
   switch (cause) {
     case "insufficient_stock":
       return kind === "sale"
@@ -182,6 +218,9 @@ function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
     case "session_changed":
       return "Este registro foi feito por outra conta e foi enviado com uma conta diferente, então o servidor não o recebeu. Nada foi perdido: entre com a conta que o criou e use Tentar novamente.";
     case "authorization_revoked":
+      if (code === REVOKED_CODE) {
+        return revokedDetail(kind);
+      }
       return "O acesso deste aparelho ou desta conta mudou: foi removido, revogado ou expirou. Entre de novo com uma conta autorizada; se o acesso não voltar, este registro não poderá ser enviado.";
     default:
       return "O servidor recusou este registro. Descarte-o e refaça a operação com os dados atuais.";
@@ -227,7 +266,8 @@ export function buildAttention(snapshot: OutboxSnapshot): AttentionSummary {
         cause,
         code,
         commandId: command.commandId,
-        detail: detailOf(cause, kind),
+        detail: detailOf(cause, kind, code),
+        facts: factsOf(command, code),
         kind,
         title: titleOf(command, kind),
       },

@@ -76,8 +76,8 @@ function operations(count: number): string {
 
 export function windowText(total: number): string {
   return total === 1
-    ? "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela será enviada de novo."
-    : `${total} operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas serão enviadas de novo.`;
+    ? "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela não será enviada sozinha: fica em Pendências e precisa ser refeita."
+    : `${total} operações deste aparelho ainda não foram confirmadas pelo servidor. Se você desfizer o encerramento, elas não serão enviadas sozinhas: ficam em Pendências e precisam ser refeitas.`;
 }
 
 function afterText(total: number): string {
