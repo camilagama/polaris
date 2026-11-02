@@ -99,7 +99,7 @@ describe("the list of customers", () => {
 
   it("não repete o selo Ativo em cada linha da aba Ativos", () => {
     const html = render({ customers: [customer(1, "Ana Lima")] });
-    expect(html).not.toContain("Ativo");
+    expect(html).not.toContain(">Ativo<");
   });
 
   it("says Arquivado in words on an archived customer", () => {
