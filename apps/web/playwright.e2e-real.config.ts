@@ -71,8 +71,11 @@ export default defineConfig({
         "harness/relogio.e2e.ts",
         "harness/chave-do-runtime.e2e.ts",
       ],
-      // the closure journey needs the preview with the lease and sync keys (the runtime one)
-      testIgnore: "jornadas/encerramento.e2e.ts",
+      // the closure journeys need the preview with the lease and sync keys (the runtime one)
+      testIgnore: [
+        "jornadas/encerramento.e2e.ts",
+        "jornadas/encerramento-aparelho.e2e.ts",
+      ],
       use: { ...desktop, baseURL: origin("online") },
     },
     {
@@ -82,6 +85,7 @@ export default defineConfig({
         "jornadas/cliente.e2e.ts",
         "jornadas/venda.e2e.ts",
         "jornadas/encerramento.e2e.ts",
+        "jornadas/encerramento-aparelho.e2e.ts",
         "harness/chave-do-runtime.e2e.ts",
       ],
       use: { ...desktop, baseURL: origin("runtime-ligado") },
