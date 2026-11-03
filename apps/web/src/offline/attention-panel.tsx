@@ -19,6 +19,14 @@ import {
   type AttentionSummary,
   discardWarning,
 } from "./attention";
+import { type RedoLineProblem, redoProblemText } from "./sale-redo";
+
+export interface RedoProblem {
+  commandId: string;
+  /** The lines that stopped the form from being filled; empty when the message says it all. */
+  lines: readonly RedoLineProblem[];
+  message: string;
+}
 
 /**
  * The panel of operations that need attention (plan PR58). It lists what the
@@ -36,10 +44,13 @@ export interface AttentionPanelProps {
   /** What the last attempt to resolve an item said, drawn inside the card of that item. */
   error?: AttentionError | null;
   onDiscard: (item: AttentionItem) => void;
+  onRedo?: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
   /** What the sign-out has to say (its failure, the work it would lose), under the list. */
   notices?: ReactNode;
   onSignInAgain: (item: AttentionItem) => void;
+  /** Why "Refazer esta venda" did not open Vender, shown in the card of that sale. */
+  redoProblem?: RedoProblem | null;
   /** A sign-out is under way: "Sair e entrar de novo" is off in every card. */
   signingOut?: boolean;
   summary: AttentionSummary;
@@ -52,6 +63,7 @@ export interface AttentionError {
 
 const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
+  redo_sale: "Refazer esta venda",
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
   retry: "Tentar novamente",
@@ -67,6 +79,11 @@ const ACCOUNT_CAUSES: ReadonlySet<AttentionItem["cause"]> = new Set([
   "entitlement_changed",
   "session_changed",
 ]);
+
+const actionLabel = (action: AttentionAction, item: AttentionItem) =>
+  action === "discard" && item.redone
+    ? "Descartar a venda recusada…"
+    : ACTION_LABEL[action];
 
 const isResubmission = (action: AttentionAction) =>
   action === "resubmit" ||
@@ -141,7 +158,7 @@ function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
     );
   }
   let variant: "default" | "destructive" | "outline" = "outline";
-  if (isResubmission(action)) {
+  if (isResubmission(action) || action === "redo_sale") {
     variant = "default";
   } else if (action === "discard") {
     variant = "destructive";
@@ -154,7 +171,7 @@ function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
       type="button"
       variant={variant}
     >
-      {ACTION_LABEL[action]}
+      {actionLabel(action, item)}
     </Button>
   );
 }
@@ -164,8 +181,10 @@ interface ItemCardProps {
   errorMessage: string | null;
   item: AttentionItem;
   onDiscard: (item: AttentionItem) => void;
+  onRedo: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
   onSignInAgain: (item: AttentionItem) => void;
+  redoProblem: RedoProblem | null;
   signingOut: boolean;
 }
 
@@ -174,8 +193,10 @@ function ItemCard({
   errorMessage,
   item,
   onDiscard,
+  onRedo,
   onResubmit,
   onSignInAgain,
+  redoProblem,
   signingOut,
 }: ItemCardProps) {
   const [confirming, setConfirming] = useState(false);
@@ -196,13 +217,15 @@ function ItemCard({
     (action: AttentionAction) => {
       if (action === "discard") {
         setConfirming(true);
+      } else if (action === "redo_sale") {
+        onRedo(item);
       } else if (isResubmission(action)) {
         onResubmit(item);
       } else {
         onSignInAgain(item);
       }
     },
-    [item, onResubmit, onSignInAgain]
+    [item, onRedo, onResubmit, onSignInAgain]
   );
   const keep = useCallback(() => {
     focusDiscardAgain.current = true;
@@ -278,6 +301,26 @@ function ItemCard({
             <AlertDescription>{errorMessage}</AlertDescription>
           </Alert>
         ) : null}
+        {redoProblem ? (
+          <Alert variant="destructive">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription className="grid gap-2">
+              <p>{redoProblem.message}</p>
+              {redoProblem.lines.length > 0 ? (
+                <ul className="grid list-disc gap-1 pl-5">
+                  {redoProblem.lines.map((line) => (
+                    <li
+                      className="[overflow-wrap:anywhere]"
+                      key={`${line.kind}:${line.label}`}
+                    >
+                      {redoProblemText(line)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
       </Card>
     </li>
   );
@@ -292,13 +335,17 @@ export function refusedText(summary: AttentionSummary): string {
     : text;
 }
 
+const noRedo = () => undefined;
+
 export function AttentionPanel({
   busyCommandId = null,
   error = null,
   notices = null,
   onDiscard,
+  onRedo = noRedo,
   onResubmit,
   onSignInAgain,
+  redoProblem = null,
   signingOut = false,
   summary,
 }: AttentionPanelProps) {
@@ -326,8 +373,12 @@ export function AttentionPanel({
             item={item}
             key={item.commandId}
             onDiscard={onDiscard}
+            onRedo={onRedo}
             onResubmit={onResubmit}
             onSignInAgain={onSignInAgain}
+            redoProblem={
+              redoProblem?.commandId === item.commandId ? redoProblem : null
+            }
             signingOut={signingOut}
           />
         ))}

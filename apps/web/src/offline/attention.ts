@@ -40,6 +40,7 @@ type AttentionCause =
 
 export type AttentionAction =
   | "discard"
+  | "redo_sale"
   | "resubmit"
   | "resubmit_without_profile"
   | "retry"
@@ -56,6 +57,8 @@ export interface AttentionItem {
   /** What the person can do about it, in plain words. */
   detail: string;
   kind: "customer" | "customer_update" | "product" | "sale" | "stock";
+  /** True when the sale was redone: a new sale was confirmed or kept, and this refused one can go. */
+  redone: boolean;
   title: string;
 }
 
@@ -169,16 +172,23 @@ const REVOKED_CODE = "authorization_revoked";
 
 function revokedDetail(kind: AttentionItem["kind"]): string {
   if (kind === "sale") {
-    return "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda ainda valer, registre a venda de novo e depois descarte esta. Se o seu acesso mudou, use Sair e entrar de novo.";
+    return "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta. Se o seu acesso mudou, use Sair e entrar de novo.";
   }
-  return "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, faça o registro de novo e depois descarte este. Se o seu acesso mudou, use Sair e entrar de novo.";
+  return "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, anote o que ele tinha, descarte este e faça o registro de novo. Se o seu acesso mudou, use Sair e entrar de novo.";
 }
+
+const REDONE_DETAIL =
+  "Você já refez esta venda: a venda nova foi confirmada ou guardada neste aparelho. Esta, recusada, pode ser descartada sem perder nada.";
 
 function detailOf(
   cause: AttentionCause,
   kind: AttentionItem["kind"],
-  code: string
+  code: string,
+  redone: boolean
 ): string {
+  if (redone && kind === "sale" && code === REVOKED_CODE) {
+    return REDONE_DETAIL;
+  }
   switch (cause) {
     case "insufficient_stock":
       return kind === "sale"
@@ -223,7 +233,8 @@ function detailOf(
 
 function actionsFor(
   cause: AttentionCause,
-  kind: AttentionItem["kind"]
+  kind: AttentionItem["kind"],
+  options: { code: string; redone: boolean }
 ): AttentionAction[] {
   if (cause === "entitlement_changed") {
     // the refusal is not stored: once the plan allows it, the same command goes through
@@ -234,6 +245,11 @@ function actionsFor(
     return ["sign_in_again", "retry"];
   }
   if (cause === "authorization_revoked") {
+    if (kind === "sale" && options.code === REVOKED_CODE) {
+      return options.redone
+        ? ["discard"]
+        : ["redo_sale", "sign_in_again", "discard"];
+    }
     return ["sign_in_again", "discard"];
   }
   if (
@@ -247,8 +263,14 @@ function actionsFor(
     : ["discard"];
 }
 
-/** Turns the outbox into what the attention panel shows. */
-export function buildAttention(snapshot: OutboxSnapshot): AttentionSummary {
+/**
+ * Turns the outbox into what the attention panel shows. `redone` holds the refused sales that already have their new
+ * sale (the link Vender keeps), so the card offers to discard the refused one instead of redoing it twice.
+ */
+export function buildAttention(
+  snapshot: OutboxSnapshot,
+  redone: ReadonlySet<string> = new Set()
+): AttentionSummary {
   const items = snapshot.commands.flatMap((command) => {
     const kind = kindOf(command);
     if (command.status !== "rejected" || kind === null) {
@@ -256,15 +278,17 @@ export function buildAttention(snapshot: OutboxSnapshot): AttentionSummary {
     }
     const code = command.rejection?.code ?? "rejected";
     const cause = causeOf(code);
+    const isRedone = kind === "sale" && redone.has(command.commandId);
     return [
       {
-        actions: actionsFor(cause, kind),
+        actions: actionsFor(cause, kind, { code, redone: isRedone }),
         blocksQueue: snapshot.blockedBy?.commandId === command.commandId,
         cause,
         code,
         commandId: command.commandId,
-        detail: detailOf(cause, kind, code),
+        detail: detailOf(cause, kind, code, isRedone),
         kind,
+        redone: isRedone,
         title: titleOf(command, kind),
       },
     ];
@@ -287,7 +311,12 @@ export function buildAttention(snapshot: OutboxSnapshot): AttentionSummary {
 export function discardWarning(item: AttentionItem): string {
   switch (item.kind) {
     case "sale":
-      return "A venda será apagada deste aparelho e não será registrada. Confirme só se ela não aconteceu.";
+      if (item.redone) {
+        return "Esta venda recusada será apagada deste aparelho. A venda refeita já está registrada ou guardada e não muda.";
+      }
+      return item.code === REVOKED_CODE
+        ? "A venda será apagada deste aparelho e não será registrada. Se ela aconteceu, use Refazer esta venda antes: depois do descarte os itens não ficam guardados. Confirme só se ela não aconteceu."
+        : "A venda será apagada deste aparelho e não será registrada. Confirme só se ela não aconteceu.";
     case "product":
       return "O produto e o estoque de abertura digitados serão apagados deste aparelho.";
     case "customer":
