@@ -8,7 +8,7 @@ import { stockStates } from "./ui-stock-states";
 /**
  * "Precisa de ação" on Estoque and Pendências, and the texts of Estoque: each link of the strip applies its filter
  * without leaving the screen; the strip is not there with nothing to do or without a connection; the help in the title
- * opens by click; the movement panel says the date of the last movement online and the device's balance offline; axe
+ * opens by click; the movement panel opened in a row does not repeat the balance the row says, and says the date of the last movement in the review online; axe
  * finds nothing on either screen.
  */
 const JEANS_PANEL = /^Saldo atual: 3 · custo médio R\$ 62,40$/;
@@ -155,12 +155,15 @@ test.describe("Estoque, Precisa de ação", () => {
     ).toBeVisible();
   });
 
-  test("o painel diz o saldo e o custo, e a data do último movimento vem na revisão", async ({
+  test("o painel dentro do cartão não repete o saldo e o custo, e a data do último movimento vem na revisão", async ({
     page,
   }) => {
     await stockStates.list(page);
     await page.getByRole("button", { name: RECEIVE_JEANS }).click();
-    await expect(page.getByText(JEANS_PANEL)).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Receber estoque" })
+    ).toBeVisible();
+    await expect(page.getByText(JEANS_PANEL)).toHaveCount(0);
     await expect(page.getByText(LAST_MOVEMENT)).toHaveCount(0);
     await page.getByLabel("Custo unitário (R$)").fill("12,50");
     await page.getByRole("button", { exact: true, name: "Revisar" }).click();
@@ -170,7 +173,7 @@ test.describe("Estoque, Precisa de ação", () => {
     await expect(page.getByText(LAST_MOVEMENT_DATE)).toBeVisible();
   });
 
-  test("sem conexão o painel diz o saldo do aparelho e o aviso é o curto", async ({
+  test("sem conexão o painel dentro do cartão não repete o saldo do aparelho e o aviso é o curto", async ({
     page,
   }) => {
     await stockStates.offline(page);
@@ -180,7 +183,10 @@ test.describe("Estoque, Precisa de ação", () => {
       )
     ).toBeVisible();
     await page.getByRole("button", { name: RECEIVE_SHIRT }).first().click();
-    await expect(page.getByText(DEVICE_PANEL)).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Receber estoque" })
+    ).toBeVisible();
+    await expect(page.getByText(DEVICE_PANEL)).toHaveCount(0);
     await expect(page.getByText(LAST_MOVEMENT)).toHaveCount(0);
   });
 

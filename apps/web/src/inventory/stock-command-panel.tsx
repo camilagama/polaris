@@ -82,7 +82,7 @@ interface StockCommandPanelProps {
   onReloadList: () => void;
   /** The receive panel is blocked by the unknown cost of the units on hand: open the cost panel in its place. */
   onInformCost?: ((target: StockTarget) => void) | undefined;
-  /** Opened above the list (the link from the sale): the line under the title names the variant, since no row does. */
+  /** Opened above the list (the link from the sale): no row above says the variant or its balance, so the line under the title does. Inside a row the row already says both and the line is left out. */
   standalone?: boolean | undefined;
   target: StockTarget;
   today: string;
@@ -457,11 +457,11 @@ export function StockCommandPanel({
         <h3 className="text-section" id={`${prefix}-title`}>
           {labels.title}
         </h3>
-        <p className="text-muted-foreground text-support">
-          {standalone
-            ? `${state.target.productName} · ${state.target.variantText}. ${balanceText}`
-            : balanceText}
-        </p>
+        {standalone ? (
+          <p className="text-muted-foreground text-support">
+            {`${state.target.productName} · ${state.target.variantText}. ${balanceText}`}
+          </p>
+        ) : null}
       </div>
       {state.target.archived ? (
         <Alert role="note" variant="warning">
