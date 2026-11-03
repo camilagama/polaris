@@ -1566,6 +1566,29 @@ test.describe("Ajuda e contato", () => {
     ).toBeVisible();
   });
 
+  test("no primeiro acesso com o runtime ligado, o Sair que falha mantém o aviso de dados apagados", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page, []);
+    await page.route("**/api/auth/sign-out", (route) =>
+      route.fulfill({
+        body: "{}",
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 500,
+      })
+    );
+    await page.goto("/");
+    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Os dados deste aparelho foram apagados, mas não foi possível encerrar a sessão. Recarregue a página."
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Abra a sua loja" })
+    ).toBeVisible();
+  });
+
   test("com a leitura das lojas falhando, a Ajuda abre e as outras páginas mostram o erro", async ({
     page,
   }) => {

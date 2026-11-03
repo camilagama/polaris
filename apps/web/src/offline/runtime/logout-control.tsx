@@ -14,8 +14,10 @@ import {
 } from "./logout-flow";
 import type { OfflineRuntime } from "./offline-runtime";
 import {
+  endsOnlySession,
   logoutDependencies,
   plainLogoutDependencies,
+  signOutFailedMessage,
 } from "./logout-dependencies";
 import { useOfflineRuntime } from "./runtime-context";
 
@@ -53,7 +55,7 @@ function dependenciesFor(
     revoke: revokeCurrentDevice,
     signOut: signOutOnServer,
   };
-  return !runtime && endsWithoutRuntime
+  return endsOnlySession(runtime, endsWithoutRuntime)
     ? Promise.resolve(plainLogoutDependencies(effects))
     : logoutDependencies(runtime, effects);
 }
@@ -112,7 +114,7 @@ export function useLogout(
         } else if (result.status === "sign_out_failed") {
           setBlocked(null);
           setMessage(
-            "Os dados deste aparelho foram apagados, mas não foi possível encerrar a sessão. Recarregue a página."
+            signOutFailedMessage(endsOnlySession(runtime, endsWithoutRuntime))
           );
         }
       } catch {
@@ -121,7 +123,7 @@ export function useLogout(
         setBusy(false);
       }
     },
-    [dependencies]
+    [dependencies, endsWithoutRuntime, runtime]
   );
 
   const handleLogout = useCallback(() => {
