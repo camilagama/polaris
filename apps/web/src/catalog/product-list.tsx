@@ -87,7 +87,6 @@ function ProductMenu({
         render={
           <Button
             aria-label={`Mais ações para ${product.name}`}
-            className="relative z-10"
             disabled={pending}
             size="icon"
             variant="ghost"
@@ -164,71 +163,87 @@ function ProductRow({
   const pendingLabel = pendingLabelFor(pendingAction, product.id);
   const handleOpen = useCallback(() => onEdit(product), [onEdit, product]);
   const reasonId = `product-locked-${product.id}`;
+  const supportId = `product-support-${product.id}`;
   // the reason is in the row for a product not confirmed yet, and in the notice at the top without a connection
-  let describedBy: string | undefined;
+  let reason: string | undefined;
   if (lockedReason !== null) {
-    describedBy = syncState ? reasonId : OFFLINE_NOTICE_ID;
+    reason = syncState ? reasonId : OFFLINE_NOTICE_ID;
   }
+  const hasExtras = Boolean(syncState || pendingLabel);
   return (
     <li
-      className={`flex items-center gap-3 px-3 py-2.5 md:px-4 ${OPENABLE_ROW_CLASS}`}
+      className={`grid px-3 md:px-4 ${OPENABLE_ROW_CLASS}`}
       data-product-id={product.id}
     >
-      <span
-        aria-hidden="true"
-        className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
-      >
-        {productInitials(product.name)}
-      </span>
-      <div className="grid min-w-0 flex-1 gap-0.5">
+      <div className="flex items-center gap-3">
         <RowOpenButton
-          action="Editar"
-          describedBy={describedBy}
+          describedBy={[supportId, reason].filter(Boolean).join(" ")}
           locked={lockedReason !== null || pending}
-          name={product.name}
           onOpen={handleOpen}
-        />
-        <p className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]">
-          {supportLine(categoryName, product.description)}
-        </p>
-        {syncState ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
-            <Badge
-              data-sync-state={syncState.state}
-              role="status"
-              variant={
-                syncState.state === "rejected" ? "destructive" : "outline"
-              }
+        >
+          <span
+            aria-hidden="true"
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
+          >
+            {productInitials(product.name)}
+          </span>
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <span className="font-medium [overflow-wrap:anywhere]">
+              <span className="sr-only">Editar </span>
+              {product.name}
+            </span>
+            <span
+              aria-hidden="true"
+              className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]"
+              id={supportId}
             >
-              {syncStateLabel(syncState)}
-            </Badge>
-            {syncState.state === "rejected" ? (
-              <a
-                className="focus-ring touch-hit relative z-10 rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-                href="/attention"
-              >
-                Resolver em Pendências
-              </a>
-            ) : null}
-          </div>
-        ) : null}
-        {syncState && lockedReason ? (
-          <p className="text-muted-foreground text-support" id={reasonId}>
-            {lockedReason}
-          </p>
-        ) : null}
-        {pendingLabel ? (
-          <p className="text-muted-foreground text-support" role="status">
-            {pendingLabel}
-          </p>
-        ) : null}
+              {supportLine(categoryName, product.description)}
+            </span>
+          </span>
+        </RowOpenButton>
+        <ProductMenu
+          {...actions}
+          locked={lockedReason !== null}
+          pending={pending}
+          product={product}
+        />
       </div>
-      <ProductMenu
-        {...actions}
-        locked={lockedReason !== null}
-        pending={pending}
-        product={product}
-      />
+      {hasExtras ? (
+        // under the text of the row, out of its button: a status and a link are their own parts
+        <div className="grid gap-0.5 pb-2.5 pl-12">
+          {syncState ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Badge
+                data-sync-state={syncState.state}
+                role="status"
+                variant={
+                  syncState.state === "rejected" ? "destructive" : "outline"
+                }
+              >
+                {syncStateLabel(syncState)}
+              </Badge>
+              {syncState.state === "rejected" ? (
+                <a
+                  className="focus-ring touch-hit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
+                  href="/attention"
+                >
+                  Resolver em Pendências
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+          {syncState && lockedReason ? (
+            <p className="text-muted-foreground text-support" id={reasonId}>
+              {lockedReason}
+            </p>
+          ) : null}
+          {pendingLabel ? (
+            <p className="text-muted-foreground text-support" role="status">
+              {pendingLabel}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   );
 }

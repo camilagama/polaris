@@ -32,7 +32,7 @@ const customer = (
 });
 
 const ROW_BUTTON_ANA =
-  /<button[^>]*data-row-open=""[^>]*><span class="sr-only">Editar <\/span>Ana Lima<\/button>/;
+  /<button[^>]*data-row-open=""[^>]*>(?:(?!<\/button>).)*<span class="sr-only">Editar <\/span>Ana Lima<\/span>/s;
 const ROW_BUTTON_TAG = /<button[^>]*data-row-open=""[^>]*>/;
 /** A button that opens before the one before it closed. */
 const BUTTON_IN_BUTTON = /<button(?:(?!<\/button>).)*<button/s;
@@ -110,7 +110,9 @@ describe("the list of customers", () => {
     });
     const tag = ROW_BUTTON_TAG.exec(html)?.[0] ?? "missing";
     expect(tag).toContain('aria-disabled="true"');
-    expect(tag).toContain(`aria-describedby="customer-locked-${ana.id}"`);
+    expect(tag).toContain(
+      `aria-describedby="customer-support-${ana.id} customer-locked-${ana.id}"`
+    );
     expect(html).toContain(`id="customer-locked-${ana.id}"`);
 
     const gone = render({
@@ -121,6 +123,21 @@ describe("the list of customers", () => {
       ],
     });
     expect(gone).not.toContain("data-row-open");
+  });
+
+  it("describes the row button by its state badge and its contacts, both drawn with those ids", () => {
+    const bia = customer(2, "Bia Souza", {
+      archivedAt: "2026-10-14T12:00:00.000Z",
+      email: "bia@exemplo.com",
+      status: "archived",
+    });
+    const html = render({ customers: [bia], status: "archived" });
+    const tag = ROW_BUTTON_TAG.exec(html)?.[0] ?? "missing";
+    expect(tag).toContain(
+      `aria-describedby="customer-state-${bia.id} customer-support-${bia.id}"`
+    );
+    expect(html).toContain(`id="customer-state-${bia.id}"`);
+    expect(html).toContain(`id="customer-support-${bia.id}"`);
   });
 
   it("draws the name, the contacts and the state in words, and leaves the notes and the date to the editor", () => {

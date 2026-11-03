@@ -68,7 +68,6 @@ function CustomerMenu({
         render={
           <Button
             aria-label={`Mais ações para ${customer.name}`}
-            className="relative z-10"
             disabled={pending}
             size="icon"
             variant="ghost"
@@ -111,7 +110,7 @@ function AnonymizeConfirm({
   onConfirm,
 }: AnonymizeConfirmProps) {
   return (
-    <fieldset className="relative z-10 grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+    <fieldset className="mb-2.5 grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
       <legend className="sr-only">
         Confirmar a anonimização de {customer.name}
       </legend>
@@ -159,34 +158,160 @@ function pendingLabelFor(
   return null;
 }
 
-interface CustomerNameProps {
+interface CustomerMainProps {
+  /** The phone and the e-mail, as the row writes them. */
+  contacts: string;
   customer: CustomerReadModel;
   locked: boolean;
   lockedReasonId: string | undefined;
   onEdit: (customer: CustomerReadModel) => void;
 }
 
-/** The name opens the customer's form; an anonymized customer cannot be edited, so its name is only text. */
-function CustomerName({
+/**
+ * The circle, the name with its state and the contacts. They open the customer's form, as one button; an
+ * anonymized customer cannot be edited, so they are only text.
+ */
+function CustomerMain({
+  contacts,
   customer,
   locked,
   lockedReasonId,
   onEdit,
-}: CustomerNameProps) {
+}: CustomerMainProps) {
   const handleOpen = useCallback(() => onEdit(customer), [customer, onEdit]);
-  if (customer.anonymizedAt !== null) {
+  const isAnonymized = customer.anonymizedAt !== null;
+  const supportId = `customer-support-${customer.id}`;
+  const stateId = `customer-state-${customer.id}`;
+  // the active tab already says "Ativo": the badge is for the other states
+  const hasStateBadge = customer.status !== "active" || isAnonymized;
+  const content = (
+    <>
+      <span
+        aria-hidden="true"
+        className="grid size-9 shrink-0 place-items-center self-start rounded-full bg-muted font-medium text-muted-foreground text-xs"
+      >
+        {productInitials(customer.name)}
+      </span>
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-medium [overflow-wrap:anywhere]">
+            {isAnonymized ? null : <span className="sr-only">Editar </span>}
+            {customer.name}
+          </span>
+          {hasStateBadge ? (
+            <Badge
+              aria-hidden={isAnonymized ? undefined : true}
+              id={stateId}
+              variant={
+                customer.status === "archived" && !isAnonymized
+                  ? "warning"
+                  : "outline"
+              }
+            >
+              {customerStatusLabel(customer)}
+            </Badge>
+          ) : null}
+        </span>
+        {contacts ? (
+          <span
+            aria-hidden={isAnonymized ? undefined : true}
+            className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]"
+            id={supportId}
+          >
+            {contacts}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+  if (isAnonymized) {
     return (
-      <p className="font-medium [overflow-wrap:anywhere]">{customer.name}</p>
+      <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
+        {content}
+      </div>
     );
   }
   return (
     <RowOpenButton
-      action="Editar"
-      describedBy={lockedReasonId}
+      describedBy={
+        [
+          hasStateBadge ? stateId : undefined,
+          contacts ? supportId : undefined,
+          lockedReasonId,
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
       locked={locked}
-      name={customer.name}
       onOpen={handleOpen}
-    />
+    >
+      {content}
+    </RowOpenButton>
+  );
+}
+
+interface CustomerRowNotesProps {
+  isAnonymized: boolean;
+  lockedReason: string | null;
+  pendingLabel: string | null;
+  reasonId: string;
+  shownState: PendingCustomer | PendingCustomerUpdate | undefined;
+  /** The waiting command is the creation (not an edit): it names the badge. */
+  unconfirmedCreation: boolean;
+}
+
+/** Under the row, out of its button: the state of the send, the way to Pendências, the reasons and what runs. */
+function CustomerRowNotes({
+  isAnonymized,
+  lockedReason,
+  pendingLabel,
+  reasonId,
+  shownState,
+  unconfirmedCreation,
+}: CustomerRowNotesProps) {
+  if (!(shownState || lockedReason || isAnonymized || pendingLabel)) {
+    return null;
+  }
+  return (
+    <div className="grid gap-0.5 pb-2.5 pl-12">
+      {shownState ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Badge
+            data-sync-state={shownState.state}
+            role="status"
+            variant={
+              shownState.state === "rejected" ? "destructive" : "outline"
+            }
+          >
+            {syncStateLabel(shownState, !unconfirmedCreation)}
+          </Badge>
+          {shownState.state === "rejected" ? (
+            <a
+              className="focus-ring touch-hit w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
+              href="/attention"
+            >
+              Resolver em Pendências
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+      {lockedReason ? (
+        <p className="text-muted-foreground text-support" id={reasonId}>
+          {lockedReason}
+        </p>
+      ) : null}
+      {isAnonymized ? (
+        <p className="text-muted-foreground text-support">
+          Dados pessoais removidos: não dá para editar nem restaurar; as vendas
+          dele não mudam.
+        </p>
+      ) : null}
+      {pendingLabel ? (
+        <p className="text-muted-foreground text-support" role="status">
+          {pendingLabel}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -235,77 +360,19 @@ function CustomerRow({
     onAnonymize(customer);
   }, [customer, onAnonymize]);
 
-  let badgeVariant: "outline" | "warning" = "outline";
-  if (customer.status === "archived" && !isAnonymized) {
-    badgeVariant = "warning";
-  }
   return (
     <li
-      className={`grid gap-3 px-3 py-2.5 md:px-4 ${isAnonymized ? "" : OPENABLE_ROW_CLASS}`}
+      className={`grid px-3 md:px-4 ${isAnonymized ? "" : OPENABLE_ROW_CLASS}`}
       data-customer-id={customer.id}
     >
       <div className="flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="grid size-9 shrink-0 place-items-center self-start rounded-full bg-muted font-medium text-muted-foreground text-xs"
-        >
-          {productInitials(customer.name)}
-        </span>
-        <div className="grid min-w-0 flex-1 gap-0.5">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <CustomerName
-              customer={customer}
-              lockedReasonId={lockedReason ? reasonId : undefined}
-              locked={lockedReason !== null || isPending}
-              onEdit={onEdit}
-            />
-            {customer.status === "active" && !isAnonymized ? null : (
-              <Badge variant={badgeVariant}>
-                {customerStatusLabel(customer)}
-              </Badge>
-            )}
-            {shownState ? (
-              <Badge
-                data-sync-state={shownState.state}
-                role="status"
-                variant={
-                  shownState.state === "rejected" ? "destructive" : "outline"
-                }
-              >
-                {syncStateLabel(shownState, !syncState)}
-              </Badge>
-            ) : null}
-          </div>
-          {contacts ? (
-            <p className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]">
-              {contacts}
-            </p>
-          ) : null}
-          {shownState?.state === "rejected" ? (
-            <a
-              className="focus-ring touch-hit relative z-10 w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-              href="/attention"
-            >
-              Resolver em Pendências
-            </a>
-          ) : null}
-          {lockedReason ? (
-            <p className="text-muted-foreground text-support" id={reasonId}>
-              {lockedReason}
-            </p>
-          ) : null}
-          {isAnonymized ? (
-            <p className="text-muted-foreground text-support">
-              Dados pessoais removidos: não dá para editar nem restaurar; as
-              vendas dele não mudam.
-            </p>
-          ) : null}
-          {pendingLabel ? (
-            <p className="text-muted-foreground text-support" role="status">
-              {pendingLabel}
-            </p>
-          ) : null}
-        </div>
+        <CustomerMain
+          contacts={contacts}
+          customer={customer}
+          locked={lockedReason !== null || isPending}
+          lockedReasonId={lockedReason ? reasonId : undefined}
+          onEdit={onEdit}
+        />
         {isAnonymized ? null : (
           <CustomerMenu
             customer={customer}
@@ -317,6 +384,14 @@ function CustomerRow({
           />
         )}
       </div>
+      <CustomerRowNotes
+        isAnonymized={isAnonymized}
+        lockedReason={lockedReason}
+        pendingLabel={pendingLabel}
+        reasonId={reasonId}
+        shownState={shownState}
+        unconfirmedCreation={Boolean(syncState)}
+      />
       {confirming ? (
         <AnonymizeConfirm
           customer={customer}

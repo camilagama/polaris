@@ -153,25 +153,28 @@ export function LoadMoreButton({
 }
 
 interface RowOpenButtonProps {
-  /** Read before the name, only by the screen reader: "Editar" makes "Editar Ana Lima". */
-  action: string;
-  /** The element that says why the row does not open, when it is locked. */
+  /**
+   * The visible content of the row it opens: the circle, the name and the support line. Only the name is the
+   * button's name ("Editar " comes first, for the screen reader alone); the circle and the support line are
+   * `aria-hidden`, and the support line comes back as the description (`describedBy`).
+   */
+  children: ReactNode;
+  /** The elements that describe the row (the support line) and, locked, the one that says why it does not open. */
   describedBy?: string | undefined;
   locked: boolean;
-  name: string;
   onOpen: () => void;
 }
 
 /**
- * The name of a row as the button that opens it, stretched over the whole row (the `li` is `relative`): tapping
- * anywhere on the row opens the item, while the menu and the links of the row stay their own controls beside it,
+ * The part of a row that opens the item: a real button with the circle, the name and the support line, as tall as
+ * the row and as wide as everything but the menu, so its own box is the touch area and draws the 3 px ring. What
+ * acts or announces on its own (the menu, the link to Pendências, a status) stays out of it, beside or below,
  * never inside a button. Locked, it stays focusable and says why (`aria-disabled` with the reason).
  */
 export function RowOpenButton({
-  action,
+  children,
   describedBy,
   locked,
-  name,
   onOpen,
 }: RowOpenButtonProps) {
   const handleClick = useCallback(() => {
@@ -181,19 +184,18 @@ export function RowOpenButton({
   }, [locked, onOpen]);
   return (
     <button
-      aria-describedby={locked ? describedBy : undefined}
+      aria-describedby={describedBy}
       aria-disabled={locked || undefined}
-      className="w-fit cursor-pointer text-left font-medium outline-none [overflow-wrap:anywhere] after:absolute after:inset-0 after:rounded-[inherit] after:content-[''] focus-visible:after:outline-3 focus-visible:after:outline-ring focus-visible:after:-outline-offset-3 aria-disabled:cursor-default"
+      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md py-2.5 text-left focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-solid focus-visible:-outline-offset-3 aria-disabled:cursor-default"
       data-row-open=""
       onClick={handleClick}
       type="button"
     >
-      <span className="sr-only">{action} </span>
-      {name}
+      {children}
     </button>
   );
 }
 
-/** The row of a list that opens by a `RowOpenButton`: the ground of the stretched button, and the hover of an open row. */
+/** A row that opens by a `RowOpenButton`: the hover of the whole row while the button under the pointer opens. */
 export const OPENABLE_ROW_CLASS =
-  "relative has-[[data-row-open]:not([aria-disabled]):hover]:bg-muted/50";
+  "has-[[data-row-open]:not([aria-disabled]):hover]:bg-muted/50";
