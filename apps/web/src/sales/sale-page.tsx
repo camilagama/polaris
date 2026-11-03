@@ -33,19 +33,20 @@ import {
   localStockEntries,
   readLocalCatalog,
 } from "../offline/local-stock-entries";
+import type { NamespaceKey } from "../offline/namespace";
+import type {
+  OfflineRuntime,
+  RuntimeContext,
+} from "../offline/runtime/offline-runtime";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
+import { isSessionOver } from "../offline/runtime/session-ended";
+import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { REDO_DONE_NOTICE, REDO_OPENED_NOTICE } from "../offline/sale-redo";
 import {
   finishSaleRedo,
   isOpenRedoDraft,
   readSaleRedos,
 } from "../offline/sale-redo-storage";
-import type {
-  OfflineRuntime,
-  RuntimeContext,
-} from "../offline/runtime/offline-runtime";
-import { isSessionOver } from "../offline/runtime/session-ended";
-import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { confirmOnServer } from "./confirm-on-server";
 import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import { firstSaleIdOf } from "./first-sale-id";
@@ -183,13 +184,13 @@ function draftReadMessage(read: SaleDraftRead): string | null {
 }
 
 function openRedoNotice(
-  redoKey: string | null,
-  restoredDraft: { startedAt: string } | null
+  redoKey: NamespaceKey | null,
+  draft: { startedAt: string | null } | null
 ): string | null {
   return redoKey !== null &&
     isOpenRedoDraft(
       readSaleRedos(browserStorage(), redoKey),
-      restoredDraft?.startedAt ?? null
+      draft?.startedAt ?? null
     )
     ? REDO_OPENED_NOTICE
     : null;
@@ -200,8 +201,20 @@ export function SalePage() {
   const workspace = useLocalWorkspace(organizationId);
   const runtime = useOfflineRuntime();
   const redoKey = runtime?.namespaceKey(organizationId) ?? null;
+  // the namespace closes and opens again while the runtime restarts; the page keeps the key it had for this store
+  const knownRedoKey = useRef<{
+    key: NamespaceKey;
+    organizationId: string;
+  } | null>(null);
+  if (redoKey) {
+    knownRedoKey.current = { key: redoKey, organizationId };
+  }
   const redoKeyRef = useRef(redoKey);
-  redoKeyRef.current = redoKey;
+  redoKeyRef.current =
+    redoKey ??
+    (knownRedoKey.current?.organizationId === organizationId
+      ? knownRedoKey.current.key
+      : null);
   const canAdjustStock = hasCapabilityForRole(
     organization.role,
     "inventory:adjust"
@@ -438,7 +451,8 @@ export function SalePage() {
               outcomeUnknown
             ).form
         );
-        setDraftNotice(redoNotice ? `${redoNotice} ${message}` : message);
+        const redoNoticeNow = openRedoNotice(redoKeyRef.current, restoredDraft);
+        setDraftNotice(redoNoticeNow ? `${redoNoticeNow} ${message}` : message);
       })
       .catch(() => undefined);
     return () => {
@@ -449,11 +463,13 @@ export function SalePage() {
 
   useEffect(() => {
     // the queue namespace may open after the page did: the redo it names is only known from then on
-    const redoNotice = openRedoNotice(redoKey, restoredDraft);
+    const redoNotice = openRedoNotice(redoKey, {
+      startedAt: draftStartedAt.current,
+    });
     if (redoNotice) {
       setDraftNotice((current) => current ?? redoNotice);
     }
-  }, [redoKey, restoredDraft]);
+  }, [redoKey]);
 
   const activeProfiles = useMemo(
     () => (catalog.profiles.status === "ready" ? catalog.profiles.value : []),

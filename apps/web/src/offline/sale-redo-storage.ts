@@ -1,4 +1,5 @@
 import type { PreferenceStorage } from "../lib/current-organization-model";
+import type { NamespaceKey } from "./namespace";
 
 /**
  * The link between a sale the server refused and the new sale that redoes it. It lives in `localStorage`, not in
@@ -19,7 +20,8 @@ export interface SaleRedo {
   startedAt: string;
 }
 
-const key = (namespaceKey: string) => `${SALE_REDO_KEY_PREFIX}${namespaceKey}`;
+const key = (namespaceKey: NamespaceKey) =>
+  `${SALE_REDO_KEY_PREFIX}${namespaceKey}`;
 
 const isText = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= 64;
@@ -38,7 +40,7 @@ function isRedo(value: unknown): value is SaleRedo {
 
 export function readSaleRedos(
   storage: PreferenceStorage | null,
-  namespaceKey: string
+  namespaceKey: NamespaceKey
 ): SaleRedo[] {
   try {
     const text = storage?.getItem(key(namespaceKey));
@@ -51,7 +53,7 @@ export function readSaleRedos(
 
 function write(
   storage: PreferenceStorage | null,
-  namespaceKey: string,
+  namespaceKey: NamespaceKey,
   redos: readonly SaleRedo[]
 ): void {
   try {
@@ -85,7 +87,7 @@ export function isOpenRedoDraft(
  */
 export function startSaleRedo(
   storage: PreferenceStorage | null,
-  namespaceKey: string,
+  namespaceKey: NamespaceKey,
   refusedCommandId: string,
   startedAt: string
 ): boolean {
@@ -112,7 +114,7 @@ export function startSaleRedo(
  */
 export function finishSaleRedo(
   storage: PreferenceStorage | null,
-  namespaceKey: string,
+  namespaceKey: NamespaceKey,
   startedAt: string | null,
   redoneCommandId: string
 ): boolean {
@@ -138,7 +140,7 @@ export function finishSaleRedo(
 /** Forgets the entries whose refused command is no longer in the queue (it was discarded). */
 export function pruneSaleRedos(
   storage: PreferenceStorage | null,
-  namespaceKey: string,
+  namespaceKey: NamespaceKey,
   queuedCommandIds: ReadonlySet<string>
 ): void {
   const redos = readSaleRedos(storage, namespaceKey);

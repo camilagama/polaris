@@ -19,7 +19,7 @@ import {
 } from "../bootstrap";
 import { restorePendingCustomers } from "../customer-create";
 import type { LogoutWorkspace } from "../logout-guard";
-import type { LocalNamespace } from "../namespace";
+import type { LocalNamespace, NamespaceKey } from "../namespace";
 import type { OutboxCommand } from "../outbox/command";
 import type { Outbox } from "../outbox/outbox";
 import { restorePendingProducts } from "../product-create";
@@ -455,9 +455,9 @@ export class OfflineRuntime {
    * open for `organizationId`. State kept in the browser about the queue of this user (not about the organization)
    * is keyed by it.
    */
-  namespaceKey(organizationId: string): string | null {
+  namespaceKey(organizationId: string): NamespaceKey | null {
     return this.namespace?.organizationId === organizationId
-      ? this.namespace.key
+      ? (this.namespace.key as NamespaceKey)
       : null;
   }
 

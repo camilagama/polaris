@@ -12,7 +12,6 @@ import {
   chunkIds,
   lineBalancesRequest,
 } from "../../sales/sale-variant-picker-model";
-import type { Outbox } from "../outbox/outbox";
 import {
   type AttentionItem,
   type AttentionSummary,
@@ -26,6 +25,8 @@ import {
   AttentionStateCard,
   type RedoProblem,
 } from "../attention-panel";
+import type { NamespaceKey } from "../namespace";
+import type { Outbox } from "../outbox/outbox";
 import {
   buildRedoDraft,
   REDO_ALREADY_MESSAGE,
@@ -74,7 +75,7 @@ async function readLineEntries(
 function openDraftOf(
   refusedCommandId: string,
   organizationId: string,
-  namespaceKey: string,
+  namespaceKey: NamespaceKey,
   timezone: string | null
 ): "mine" | "none" | "other" {
   const draft = readSaleDraft(
@@ -105,7 +106,7 @@ async function redoSale(
   refusedCommandId: string,
   outbox: Outbox,
   organizationId: string,
-  namespaceKey: string,
+  namespaceKey: NamespaceKey,
   timezone: string | null
 ): Promise<RedoOutcome> {
   const { commands } = await outbox.snapshot();

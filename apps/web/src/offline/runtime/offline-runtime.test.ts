@@ -9,6 +9,7 @@ import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
 import { createOfflineProduct } from "../product-create";
 import { FakeCatalogServer, FakeWriter } from "../test-support";
+import { logoutDependencies } from "./logout-dependencies";
 import {
   type DataChannel,
   type KeyValueStore,
@@ -19,7 +20,6 @@ import {
   type RuntimeDependencies,
   SessionUnreachableError,
 } from "./offline-runtime";
-import { logoutDependencies } from "./logout-dependencies";
 import { syncStatusLabel } from "./sync-status";
 
 const key = { id: "k1", secret: "s".repeat(40) };
@@ -313,6 +313,7 @@ function world(options: { leaseHours?: number } = {}) {
     },
     calls,
     closed,
+    disk,
     failures,
     /** Fires every live timer that is due by the clock, as the browser would. */
     fireDueTimers: () => {
@@ -327,7 +328,6 @@ function world(options: { leaseHours?: number } = {}) {
         }
       }
     },
-    disk,
     gates,
     keyValues,
     labels,
