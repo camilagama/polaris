@@ -127,7 +127,7 @@ export function LogoutDialog({
                 type="button"
                 variant="outline"
               >
-                Ver o que precisa de atenção
+                Ver Pendências
               </Button>
             ) : null}
             <Button
