@@ -110,7 +110,7 @@ for (const viewport of VIEWPORTS) {
       expect(csp.violations()).toEqual([]);
     });
 
-    test("tamanhos: pílula de 36 px com mouse e de 44 px no toque, o X de 36 px com mouse e de 48 px no toque", async ({
+    test("tamanhos: pílula de 36 px com mouse e de 44 px no toque, o X de 36 px com mouse e de 44 px no toque", async ({
       page,
     }) => {
       await openGallery(page);
@@ -120,8 +120,8 @@ for (const viewport of VIEWPORTS) {
       );
       expect(outer.height).toBeCloseTo(size, 0);
       const x = await box(remover(page, "Período"));
-      // 48 px wide with touch: its 48 px area then does not reach into the button of the pill
-      expect(x.width).toBeCloseTo((await isTouch(page)) ? 48 : 36, 0);
+      // 44 px wide with touch: its 44 px area then does not reach into the button of the pill
+      expect(x.width).toBeCloseTo((await isTouch(page)) ? 44 : 36, 0);
       const filtrar = await box(addButton(page));
       expect(filtrar.height).toBeCloseTo((await isTouch(page)) ? 36 : 32, 0);
     });

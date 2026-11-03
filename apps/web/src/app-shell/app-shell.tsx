@@ -186,7 +186,7 @@ function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
       >
         <SelectTrigger
           aria-labelledby="app-organization-label"
-          className="w-full min-w-0 data-[size=default]:touch:h-12"
+          className="w-full min-w-0"
           id="app-organization"
           ref={trigger}
         >

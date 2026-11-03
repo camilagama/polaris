@@ -83,7 +83,7 @@ function NewSale({ offlineText }: { offlineText: string | null }) {
     <div className="grid w-full gap-1.5 sm:w-auto sm:justify-items-end">
       <a
         aria-describedby={offlineText ? "home-new-sale-offline" : undefined}
-        className={cn(buttonVariants({ size: "lg" }), "w-full sm:w-auto")}
+        className={cn(buttonVariants({ size: "xl" }), "w-full sm:w-auto")}
         href="/sales"
       >
         <PlusIcon aria-hidden="true" data-icon="inline-start" />

@@ -71,7 +71,7 @@ export function ReasonFields({
               ? "Observação (obrigatória para “Outro”)"
               : "Observação (opcional)"}
           </FieldLabel>
-          <InputGroup className="h-auto items-stretch">
+          <InputGroup className="h-auto touch:h-auto items-stretch">
             <InputGroupTextarea
               aria-describedby={describedBy(noteId, errors.note, noteCounter)}
               aria-invalid={errors.note ? true : undefined}

@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 
 /**
  * The markup of the Tabs (ADR 0103, amendment "Gráficos"): the roles Base UI gives them and the three rules of
- * the project in the classes (list height, 48 px touch area, 3 px focus). The browser checks
+ * the project in the classes (list height, 44 px touch area, 3 px focus). The browser checks
  * (e2e-pwa/ui-charts.e2e.ts) measure the heights, the touch area and the focus in the gallery.
  */
 const html = (node: React.ReactNode) => renderToStaticMarkup(node);

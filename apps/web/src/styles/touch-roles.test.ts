@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { cn } from "@/lib/utils";
@@ -74,5 +75,98 @@ describe("touch area", () => {
       "utf8"
     );
     expect(calendar).toContain("before:content-none!");
+  });
+});
+
+const SRC = fileURLToPath(new URL("..", import.meta.url));
+const SOURCE_FILE = /\.tsx?$/;
+const TEST_FILE = /\.test\.tsx?$/;
+const MIN_HEIGHT = /min-h-/;
+
+/** Every `.ts`/`.tsx` of `src/` that is not a test, as paths under `src/`. */
+function sourceFiles(directory = ""): string[] {
+  return readdirSync(join(SRC, directory), { withFileTypes: true }).flatMap(
+    (entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return sourceFiles(path);
+      }
+      return SOURCE_FILE.test(entry.name) && !TEST_FILE.test(entry.name)
+        ? [path]
+        : [];
+    }
+  );
+}
+
+/** A size of 48 px with touch: `h`, `w`, `size`, `min-` and `max-` of `-12`, `-[48px]` or `-[3rem]`, under any other variant, with or without `!`. */
+const TOUCH_48 =
+  /touch:(?:[^\s"'`:]+:)*!?(?:min-|max-)?(?:h|w|size)-(?:12|\[(?:48px|3rem)\])!?(?![\w.[])/;
+
+describe("no 48 px with touch", () => {
+  it("the matcher sees the forms that leaked before and lets 44 through", () => {
+    for (const leaked of [
+      "touch:h-12",
+      "touch:min-h-12",
+      "touch:size-12",
+      "touch:w-12",
+      "data-[size=default]:touch:h-12",
+      "touch:group-data-[collapsible=icon]:size-12",
+      "touch:data-[size=default]:h-12",
+      "touch:has-[>[data-align=inline-end]]:h-12",
+      "touch:[&_svg]:size-12",
+      "touch:aria-[invalid=true]:h-12",
+      "touch:!h-12",
+      "touch:h-12!",
+      "touch:max-h-12",
+      "touch:h-[48px]",
+      "touch:min-h-[3rem]",
+    ]) {
+      expect(TOUCH_48.test(`flex ${leaked} items-center`), leaked).toBe(true);
+    }
+    for (const fine of [
+      "touch:h-11",
+      "touch:min-h-11",
+      "touch:size-11",
+      "touch:h-120",
+      "touch:h-[44px]",
+      "touch:data-[size=default]:h-11",
+    ]) {
+      expect(TOUCH_48.test(`flex ${fine} items-center`), fine).toBe(false);
+    }
+  });
+
+  it("no file of src/ writes one", () => {
+    const files = sourceFiles();
+    expect(files.length).toBeGreaterThan(100);
+    const found = files.filter((file) =>
+      TOUCH_48.test(readFileSync(join(SRC, file), "utf8"))
+    );
+    expect(found).toEqual([]);
+  });
+});
+
+describe("fields and the main action on touch", () => {
+  const ui = (name: string) => readFileSync(join(SRC, "ui", name), "utf8");
+
+  it("the text field and the select are 44 px with touch, the multi-line group is not", () => {
+    expect(ui("input-group.tsx")).toContain("h-ctl-md touch:h-11");
+    expect(ui("select.tsx")).toContain("data-[size=default]:touch:h-11");
+    expect(cn("h-ctl-md touch:h-11", "h-auto touch:h-auto items-stretch")).toBe(
+      "h-auto touch:h-auto items-stretch"
+    );
+    for (const file of [
+      "inventory/stock-panel-fields.tsx",
+      "sales/sale-reason-fields.tsx",
+    ]) {
+      expect(readFileSync(join(SRC, file), "utf8")).toContain(
+        "h-auto touch:h-auto items-stretch"
+      );
+    }
+  });
+
+  it("the plain button stays 36 px with touch and takes no minimum height", () => {
+    expect(buttonVariants({ size: "default" })).toContain("h-ctl-md");
+    expect(buttonVariants({ size: "default" })).not.toMatch(MIN_HEIGHT);
+    expect(buttonVariants({ size: "default" })).toContain("touch-hit");
   });
 });
