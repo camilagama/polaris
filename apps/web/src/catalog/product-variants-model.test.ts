@@ -1,15 +1,22 @@
 import type { ProductVariantOptionName } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { planRoom } from "../subscription/limit-help-model";
 import {
+  ALL_COMBINATIONS_PRESENT,
+  addAllCombinations,
+  addAllCombinationsLabel,
   clearDefaultSkuLabel,
+  combinationCap,
   clearedDefaultSkuNotice,
   duplicateSkuMessage,
   emptyConfigurationDraft,
   isConfigurationDraftEmpty,
   isDuplicateSkuError,
   MAX_VARIANTS,
+  missingCombinations,
   optionLabel,
   optionValuesError,
+  overCapMessage,
   parseOptionValues,
   productOptionValues,
   selectedOptionNames,
@@ -420,6 +427,183 @@ describe("the SKU the warning's button erases", () => {
   it("the notice after the action names it too", () => {
     expect(clearedDefaultSkuNotice("ABC-123")).toBe(
       'SKU "ABC-123" apagado da variante padrão.'
+    );
+  });
+});
+
+describe("Adicionar todas as combinações", () => {
+  const colorAndSize: ProductVariantOptionName[] = ["color", "size"];
+  const values = productOptionValues({
+    color: "Preta\nBranca\nAzul",
+    model: "",
+    size: "P\nM\nG\nGG",
+  });
+  const productCap = combinationCap(null);
+
+  it("lists the cartesian product in the order of the options and of the lines", () => {
+    const missing = missingCombinations(colorAndSize, values, []);
+    expect(missing).toHaveLength(12);
+    expect(missing.slice(0, 5).map((variant) => variant.values)).toEqual([
+      { color: "Preta", size: "P" },
+      { color: "Preta", size: "M" },
+      { color: "Preta", size: "G" },
+      { color: "Preta", size: "GG" },
+      { color: "Branca", size: "P" },
+    ]);
+  });
+
+  it("follows the fixed order of the options, not the order they were ticked", () => {
+    const names = selectedOptionNames(["size", "model", "color"]);
+    const missing = missingCombinations(
+      names,
+      productOptionValues({ color: "Azul", model: "Slim\nReta", size: "M" }),
+      []
+    );
+    expect(missing.map((variant) => variant.values)).toEqual([
+      { color: "Azul", model: "Slim", size: "M" },
+      { color: "Azul", model: "Reta", size: "M" },
+    ]);
+  });
+
+  it("skips the combinations the list already has, in any case and with spaces", () => {
+    const existing = [
+      { values: { color: "preta", size: " m " } },
+      { values: { color: "Azul", size: "GG" } },
+    ];
+    const result = addAllCombinations(
+      colorAndSize,
+      values,
+      existing,
+      productCap
+    );
+    expect(result.kind).toBe("added");
+    if (result.kind !== "added") {
+      return;
+    }
+    expect(result.variants).toHaveLength(12);
+    expect(result.variants.slice(0, 2)).toEqual(existing);
+    const keys = result.variants.map((variant) =>
+      `${variant.values.color}|${variant.values.size}`.toLowerCase().trim()
+    );
+    expect(keys).not.toContain("preta|m");
+    expect(
+      validateVariantDrafts(
+        colorAndSize,
+        values,
+        result.variants.map((variant, index) =>
+          index === 0 ? { values: { color: "Preta", size: "M" } } : variant
+        )
+      ).canSubmit
+    ).toBe(true);
+  });
+
+  it("keeps a row still missing a value and adds every combination after it", () => {
+    const result = addAllCombinations(
+      colorAndSize,
+      values,
+      [{ values: { color: "Preta", size: "" } }],
+      productCap
+    );
+    expect(result.kind === "added" && result.variants.length).toBe(13);
+  });
+
+  it("says when every combination is already in the list", () => {
+    const all = missingCombinations(colorAndSize, values, []);
+    expect(addAllCombinations(colorAndSize, values, all, productCap)).toEqual({
+      kind: "nothing_new",
+    });
+    expect(ALL_COMBINATIONS_PRESENT).toBe(
+      "Todas as combinações já estão na lista."
+    );
+  });
+
+  it("adds nothing past the product's limit of 50, not even the ones that fit (AC-1)", () => {
+    const many = productOptionValues({
+      color: Array.from({ length: 6 }, (_, index) => `Cor ${index}`).join("\n"),
+      model: "",
+      size: Array.from({ length: 9 }, (_, index) => `T${index}`).join("\n"),
+    });
+    const existing = [{ values: { color: "Cor 0", size: "T0" } }];
+    const result = addAllCombinations(colorAndSize, many, existing, productCap);
+    expect(result).toEqual({
+      cap: { max: MAX_VARIANTS, source: "product" },
+      kind: "over_cap",
+      total: 54,
+    });
+    expect(overCapMessage(54, productCap)).toBe(
+      "Seriam 54 combinações e o limite é 50 por produto. Nenhuma foi adicionada."
+    );
+  });
+
+  it("fits exactly at the cap", () => {
+    const fifty = productOptionValues({
+      color: Array.from({ length: 5 }, (_, index) => `Cor ${index}`).join("\n"),
+      model: "",
+      size: Array.from({ length: 10 }, (_, index) => `T${index}`).join("\n"),
+    });
+    const result = addAllCombinations(colorAndSize, fifty, [], productCap);
+    expect(result.kind === "added" && result.variants.length).toBe(50);
+  });
+
+  it("caps by the room of the plan, counting the default variant the configuration replaces", () => {
+    const plan = (variants: number | null, used: number) =>
+      combinationCap(
+        planRoom({
+          limits: { goals: 1, images: 50, variants },
+          usage: { goals: 0, images: 0, variants: used },
+        })
+      );
+    expect(plan(50, 40)).toEqual({ max: 11, source: "plan" });
+    expect(plan(50, 50)).toEqual({ max: 1, source: "plan" });
+    expect(plan(50, 70)).toEqual({ max: 1, source: "plan" });
+    expect(plan(2000, 10)).toEqual({ max: MAX_VARIANTS, source: "product" });
+    expect(plan(50, 1)).toEqual({ max: MAX_VARIANTS, source: "product" });
+    expect(plan(50, 2)).toEqual({ max: 49, source: "plan" });
+    expect(plan(null, 900)).toEqual({ max: MAX_VARIANTS, source: "product" });
+    expect(combinationCap(null)).toEqual({
+      max: MAX_VARIANTS,
+      source: "product",
+    });
+
+    const cap = plan(50, 40);
+    const result = addAllCombinations(colorAndSize, values, [], cap);
+    expect(result).toEqual({ cap, kind: "over_cap", total: 12 });
+    expect(overCapMessage(12, cap)).toBe(
+      "Seriam 12 combinações e seu plano deixa este produto com até 11. Nenhuma foi adicionada."
+    );
+  });
+
+  it("only returns a new draft: the list it was given is not changed (nothing is saved before Salvar)", () => {
+    const existing = [{ values: { color: "Preta", size: "P" } }];
+    const frozen = Object.freeze([...existing]);
+    const result = addAllCombinations(
+      colorAndSize,
+      values,
+      frozen as never,
+      productCap
+    );
+    expect(frozen).toEqual(existing);
+    expect(result.kind === "added" && result.variants).not.toBe(frozen);
+  });
+
+  it("names the count it adds on the button", () => {
+    expect(addAllCombinationsLabel(12)).toBe(
+      "Adicionar todas as combinações (12)"
+    );
+    expect(addAllCombinationsLabel(0)).toBe("Adicionar todas as combinações");
+  });
+
+  it("has nothing to list without a ready option", () => {
+    expect(missingCombinations([], values, [])).toEqual([]);
+    expect(
+      validateVariantDrafts(
+        ["color"],
+        productOptionValues({ color: "Azul\nazul", model: "", size: "" }),
+        []
+      ).canGenerate
+    ).toBe(false);
+    expect(validateVariantDrafts(colorAndSize, values, []).canGenerate).toBe(
+      true
     );
   });
 });

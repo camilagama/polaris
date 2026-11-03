@@ -1920,3 +1920,116 @@ test("o produto que sai da lista com o diálogo aberto fecha o diálogo, sem vir
     0
   );
 });
+
+const ADD_ALL_COMBINATIONS = /^Adicionar todas as combinações/;
+const REMOVE_COMBINATION = /^Remover combinação/;
+
+test("variantes: 'Adicionar todas as combinações' põe 12 linhas no rascunho em um toque, nada é enviado antes de 'Salvar variantes', e acima de 50 não acrescenta nenhuma", async ({
+  page,
+}) => {
+  const sent: { variants: { values: Record<string, string> }[] }[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/configureVariants": (route) => {
+        const body = route.request().postDataJSON();
+        sent.push(body.json ?? body);
+        const variants = (body.json ?? body).variants as {
+          values: Record<string, string>;
+        }[];
+        return route.fulfill(
+          rpc({
+            configuration: {
+              ...CONFIGURATION,
+              configured: true,
+              productVersion: 2,
+              variants: variants.map((variant, index) => ({
+                id: id(40 + index),
+                isDefault: false,
+                listPrice: null,
+                sku: null,
+                values: Object.entries(variant.values).map(
+                  ([optionName, optionValueName]) => ({
+                    optionName,
+                    optionValueName,
+                  })
+                ),
+                version: 1,
+              })),
+            },
+            product: { ...product(1, "Camiseta do teste"), version: 2 },
+          })
+        );
+      },
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await page.getByRole("checkbox", { name: "Tamanho" }).click();
+  const colors = page.getByLabel("Valores de Cor");
+  const sizes = page.getByLabel("Valores de Tamanho");
+  const addAll = page.getByRole("button", {
+    name: ADD_ALL_COMBINATIONS,
+  });
+
+  await test.step("acima de 50 (6 × 9 = 54): nada entra, diz quantas e o limite", async () => {
+    await colors.fill(
+      Array.from({ length: 6 }, (_, n) => `Cor ${n}`).join("\n")
+    );
+    await sizes.fill(Array.from({ length: 9 }, (_, n) => `T${n}`).join("\n"));
+    await expect(addAll).toHaveText("Adicionar todas as combinações (54)");
+    await addAll.click();
+    await expect(
+      page.getByText(
+        "Seriam 54 combinações e o limite é 50 por produto. Nenhuma foi adicionada."
+      )
+    ).toBeVisible();
+    await expect(
+      page.getByText("Nenhuma combinação adicionada.")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: REMOVE_COMBINATION })
+    ).toHaveCount(0);
+  });
+
+  await test.step("3 cores × 4 tamanhos: um toque para as 12 (AC-3), só no rascunho", async () => {
+    await colors.fill("Preta\nBranca\nAzul");
+    await sizes.fill("P\nM\nG\nGG");
+    await expect(
+      page.getByText("Seriam 54 combinações", { exact: false })
+    ).toHaveCount(0);
+    await addAll.click();
+    await expect(
+      page.getByRole("button", { name: "Remover combinação 12" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Remover combinação 13" })
+    ).toHaveCount(0);
+    await expect(addAll).toHaveText("Adicionar todas as combinações");
+    expect(sent).toEqual([]);
+  });
+
+  await test.step("outro toque não repete nenhuma", async () => {
+    await addAll.click();
+    await expect(
+      page.getByText("Todas as combinações já estão na lista.")
+    ).toBeVisible();
+    expect(sent).toEqual([]);
+  });
+
+  await test.step("'Salvar variantes' envia as 12 (o segundo toque do AC-3)", async () => {
+    await page.getByRole("button", { name: "Salvar variantes" }).click();
+    await expect(
+      page.getByText("Variantes configuradas e salvas.")
+    ).toBeVisible();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.variants).toHaveLength(12);
+    expect(sent[0]?.variants[0]?.values).toEqual({ color: "Preta", size: "P" });
+    expect(sent[0]?.variants[11]?.values).toEqual({
+      color: "Azul",
+      size: "GG",
+    });
+  });
+});

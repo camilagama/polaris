@@ -196,6 +196,7 @@ export function validateVariantDrafts(
       hasTooLongOptionValue(optionValues[name]) ||
       hasRepeatedOptionValue(optionValues[name])
   );
+  const optionsAreReady = optionNames.length > 0 && invalidOptions.length === 0;
   const completeVariants = variants.every((variant) => {
     const keys = Object.keys(variant.values).filter((name) =>
       optionNames.includes(name as ProductVariantOptionName)
@@ -210,10 +211,8 @@ export function validateVariantDrafts(
   });
   // a row still missing a value repeats nothing: only rows with every value chosen are compared
   const combinationKeys = variants.flatMap((variant) => {
-    const chosen = optionNames.map((name) =>
-      (variant.values[name] ?? "").trim().toLowerCase()
-    );
-    return chosen.every(Boolean) ? [JSON.stringify(chosen)] : [];
+    const key = combinationKey(optionNames, variant.values);
+    return key === null ? [] : [key];
   });
   const combinationsAreUnique =
     new Set(combinationKeys).size === combinationKeys.length;
@@ -223,10 +222,8 @@ export function validateVariantDrafts(
     tooLongOptions: optionNames.filter((name) =>
       hasTooLongOptionValue(optionValues[name])
     ),
-    canAdd:
-      optionNames.length > 0 &&
-      invalidOptions.length === 0 &&
-      variants.length < MAX_VARIANTS,
+    canAdd: optionsAreReady && variants.length < MAX_VARIANTS,
+    canGenerate: optionsAreReady,
     canSubmit:
       optionNames.length > 0 &&
       invalidOptions.length === 0 &&
@@ -237,6 +234,102 @@ export function validateVariantDrafts(
     combinationsAreUnique,
     invalidOptions,
   };
+}
+
+function combinationKey(
+  optionNames: ProductVariantOptionName[],
+  values: VariantDraft["values"]
+): string | null {
+  const chosen = optionNames.map((name) =>
+    (values[name] ?? "").trim().toLowerCase()
+  );
+  return chosen.every(Boolean) ? JSON.stringify(chosen) : null;
+}
+
+/**
+ * Every combination of the typed values (the cartesian product, in the order of the options and of the lines) that the
+ * list does not have yet: a row with the same values, in any case, is not repeated.
+ */
+export function missingCombinations(
+  optionNames: ProductVariantOptionName[],
+  optionValues: Record<ProductVariantOptionName, string[]>,
+  variants: VariantDraft[]
+): VariantDraft[] {
+  if (optionNames.length === 0) {
+    return [];
+  }
+  let combinations: VariantDraft["values"][] = [{}];
+  for (const name of optionNames) {
+    combinations = combinations.flatMap((values) =>
+      optionValues[name].map((value) => ({ ...values, [name]: value }))
+    );
+  }
+  const present = new Set(
+    variants.flatMap((variant) => {
+      const key = combinationKey(optionNames, variant.values);
+      return key === null ? [] : [key];
+    })
+  );
+  return combinations
+    .filter((values) => !present.has(combinationKey(optionNames, values) ?? ""))
+    .map((values) => ({ values }));
+}
+
+export interface CombinationCap {
+  max: number;
+  source: "plan" | "product";
+}
+
+/** The configuration replaces the default variant, which the plan's usage already counts. */
+const REPLACED_DEFAULT_VARIANT = 1;
+
+export function combinationCap(planRoom: number | null): CombinationCap {
+  if (
+    planRoom === null ||
+    planRoom + REPLACED_DEFAULT_VARIANT >= MAX_VARIANTS
+  ) {
+    return { max: MAX_VARIANTS, source: "product" };
+  }
+  return { max: planRoom + REPLACED_DEFAULT_VARIANT, source: "plan" };
+}
+
+export type AllCombinationsResult =
+  | { kind: "added"; variants: VariantDraft[] }
+  | { kind: "nothing_new" }
+  | { cap: CombinationCap; kind: "over_cap"; total: number };
+
+export function addAllCombinations(
+  optionNames: ProductVariantOptionName[],
+  optionValues: Record<ProductVariantOptionName, string[]>,
+  variants: VariantDraft[],
+  cap: CombinationCap
+): AllCombinationsResult {
+  const missing = missingCombinations(optionNames, optionValues, variants);
+  if (missing.length === 0) {
+    return { kind: "nothing_new" };
+  }
+  const total = variants.length + missing.length;
+  if (total > cap.max) {
+    return { cap, kind: "over_cap", total };
+  }
+  return { kind: "added", variants: [...variants, ...missing] };
+}
+
+export const ALL_COMBINATIONS_PRESENT =
+  "Todas as combinações já estão na lista.";
+
+export function overCapMessage(total: number, cap: CombinationCap): string {
+  const limit =
+    cap.source === "product"
+      ? `o limite é ${cap.max} por produto`
+      : `seu plano deixa este produto com até ${cap.max}`;
+  return `Seriam ${total} combinações e ${limit}. Nenhuma foi adicionada.`;
+}
+
+export function addAllCombinationsLabel(missing: number): string {
+  return missing > 0
+    ? `Adicionar todas as combinações (${missing})`
+    : "Adicionar todas as combinações";
 }
 
 /** The plan's active-variant limit refused the configuration (L1 of the corte 1.6): the limit, never "the product changed". */

@@ -4,6 +4,7 @@ import type {
   ProductVariantOptionName,
 } from "@polaris/contracts";
 import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
+import ListPlusIcon from "lucide-react/dist/esm/icons/list-plus";
 import {
   type FormEvent,
   useCallback,
@@ -17,6 +18,8 @@ import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { FieldLegend, FieldSet } from "@/ui/field";
 import { Label } from "@/ui/label";
+import { canManageBilling } from "../lib/billing-access";
+import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
@@ -27,18 +30,29 @@ import {
   useLimitFocus,
   useLimitHelp,
 } from "../subscription/limit-help";
-import { isLimitReached } from "../subscription/limit-help-model";
+import {
+  isLimitReached,
+  type LimitHelpView,
+  limitHelpFor,
+  planRoom,
+} from "../subscription/limit-help-model";
 import { ProductTextAreaField } from "./product-fields";
 import {
+  ALL_COMBINATIONS_PRESENT,
+  addAllCombinations,
+  addAllCombinationsLabel,
   clearDefaultSkuLabel,
+  combinationCap,
   clearedDefaultSkuNotice,
   emptyConfigurationDraft,
   isConfigurationDraftEmpty,
   MAX_VARIANTS,
+  missingCombinations,
   optionChoices,
   optionLabel,
   optionValueLengthError,
   optionValuesError,
+  overCapMessage,
   productOptionValues,
   selectedOptionNames,
   type VariantConfigurationDraft,
@@ -178,6 +192,124 @@ function CombinationRow({
   );
 }
 
+interface AllCombinationsNoticeView {
+  help: LimitHelpView | null;
+  over: boolean;
+  text: string;
+}
+
+function AllCombinationsNotice({
+  notice,
+}: {
+  notice: AllCombinationsNoticeView | null;
+}) {
+  if (notice === null) {
+    return null;
+  }
+  return (
+    <Alert variant={notice.over ? "warning" : "default"}>
+      <AlertDescription>
+        {notice.text}
+        <LimitHelp help={notice.help} shown={notice.help !== null} />
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+type PlanView = Awaited<ReturnType<typeof orpcClient.billing.readPlan>>;
+
+async function readPlanIfAllowed(
+  canManage: boolean,
+  organizationId: string
+): Promise<PlanView | null> {
+  if (!canManage) {
+    return null;
+  }
+  try {
+    return await orpcClient.billing.readPlan({ organizationId });
+  } catch {
+    return null;
+  }
+}
+
+/** The plan is read at the tap: its room may have changed since the dialog opened. */
+function useAllCombinations(input: {
+  busy: boolean;
+  canGenerate: boolean;
+  onAdded: (variants: VariantDraft[]) => void;
+  optionNames: ProductVariantOptionName[];
+  optionValues: Record<ProductVariantOptionName, string[]>;
+  organizationId: string;
+  variants: VariantDraft[];
+}) {
+  const {
+    busy,
+    canGenerate,
+    onAdded,
+    optionNames,
+    optionValues,
+    organizationId,
+    variants,
+  } = input;
+  const { billingSelfService, organization } = useCurrentOrganization();
+  const [isReadingPlan, setIsReadingPlan] = useState(false);
+  const [notice, setNotice] = useState<AllCombinationsNoticeView | null>(null);
+  const missing = canGenerate
+    ? missingCombinations(optionNames, optionValues, variants).length
+    : 0;
+  const clearNotice = useCallback(() => setNotice(null), []);
+  const add = useCallback(async () => {
+    if (!canGenerate || busy || isReadingPlan) {
+      return;
+    }
+    setNotice(null);
+    const canManage = canManageBilling(billingSelfService, organization.role);
+    setIsReadingPlan(canManage);
+    const plan = await readPlanIfAllowed(canManage, organizationId);
+    setIsReadingPlan(false);
+    const cap = combinationCap(planRoom(plan));
+    const result = addAllCombinations(optionNames, optionValues, variants, cap);
+    if (result.kind === "added") {
+      onAdded(result.variants);
+    } else if (result.kind === "nothing_new") {
+      setNotice({ help: null, over: false, text: ALL_COMBINATIONS_PRESENT });
+    } else {
+      setNotice({
+        help:
+          cap.source === "plan"
+            ? limitHelpFor({
+                billingSelfService,
+                canManageBilling: canManage,
+                plan,
+                subject: "variants",
+              })
+            : null,
+        over: true,
+        text: overCapMessage(result.total, result.cap),
+      });
+    }
+  }, [
+    billingSelfService,
+    busy,
+    canGenerate,
+    isReadingPlan,
+    onAdded,
+    optionNames,
+    optionValues,
+    organization.role,
+    organizationId,
+    variants,
+  ]);
+  return {
+    add,
+    busy: busy || isReadingPlan,
+    canAdd: canGenerate && !busy && !isReadingPlan,
+    clearNotice,
+    missing,
+    notice,
+  };
+}
+
 interface ConfigurationFormProps {
   configuration: ProductVariantConfigurationReadModel;
   /** What was typed before the dialog closed by Esc, × or the step back; `null` starts empty. */
@@ -252,6 +384,21 @@ export function ProductVariantConfigurationForm({
   const optionNames = selectedOptionNames(selectedOptions);
   const optionValues = productOptionValues(valueLines);
   const validation = validateVariantDrafts(optionNames, optionValues, variants);
+  const handleAllCombinationsAdded = useCallback((next: VariantDraft[]) => {
+    setVariants(next);
+    setSaveError(null);
+  }, []);
+  const allCombinations = useAllCombinations({
+    busy: isPending,
+    canGenerate: validation.canGenerate,
+    onAdded: handleAllCombinationsAdded,
+    optionNames,
+    optionValues,
+    organizationId,
+    variants,
+  });
+  const { busy, clearNotice: clearGenerateNotice } = allCombinations;
+
   // a value over its limit keeps the save reachable and off, reading the message of each field that has one
   const tooLongReason =
     validation.tooLongOptions.length > 0
@@ -287,16 +434,18 @@ export function ProductVariantConfigurationForm({
       );
       setSaveError(null);
       setClearedNotice(null);
+      clearGenerateNotice();
     },
-    []
+    [clearGenerateNotice]
   );
 
   const handleValueLinesChange = useCallback(
     (name: ProductVariantOptionName, value: string) => {
       setValueLines((current) => ({ ...current, [name]: value }));
       setSaveError(null);
+      clearGenerateNotice();
     },
-    []
+    [clearGenerateNotice]
   );
 
   const handleAddCombination = useCallback(() => {
@@ -309,7 +458,8 @@ export function ProductVariantConfigurationForm({
     }
     setVariants((current) => [...current, { values }]);
     setSaveError(null);
-  }, [optionNames, validation.canAdd]);
+    clearGenerateNotice();
+  }, [clearGenerateNotice, optionNames, validation.canAdd]);
 
   const handleValueChange = useCallback(
     (index: number, name: ProductVariantOptionName, value: string) => {
@@ -322,16 +472,21 @@ export function ProductVariantConfigurationForm({
         })
       );
       setSaveError(null);
+      clearGenerateNotice();
     },
-    []
+    [clearGenerateNotice]
   );
 
-  const handleRemoveCombination = useCallback((index: number) => {
-    setVariants((current) =>
-      current.filter((_, variantIndex) => variantIndex !== index)
-    );
-    setSaveError(null);
-  }, []);
+  const handleRemoveCombination = useCallback(
+    (index: number) => {
+      setVariants((current) =>
+        current.filter((_, variantIndex) => variantIndex !== index)
+      );
+      setSaveError(null);
+      clearGenerateNotice();
+    },
+    [clearGenerateNotice]
+  );
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -440,8 +595,8 @@ export function ProductVariantConfigurationForm({
       <div className="grid gap-0.5">
         <h3 className="text-section">Opções e combinações</h3>
         <p className="text-muted-foreground text-support">
-          Escolha as opções e cadastre cada combinação vendável; nenhuma é
-          criada sozinha.
+          Escolha as opções e cadastre as combinações vendáveis, uma a uma ou
+          todas de uma vez; nada é salvo antes de "Salvar variantes".
         </p>
       </div>
       {defaultVariantHasSku && selectedOptions.length > 0 ? (
@@ -451,7 +606,7 @@ export function ProductVariantConfigurationForm({
             configuração a substitui.
             <Button
               className="h-auto min-h-ctl-sm whitespace-normal py-1.5 text-start [overflow-wrap:anywhere]"
-              disabled={isPending}
+              disabled={busy}
               onClick={handleClearDefaultSku}
               size="sm"
               type="button"
@@ -479,7 +634,7 @@ export function ProductVariantConfigurationForm({
           {optionChoices.map(([name, label]) => (
             <OptionCheckbox
               checked={selectedOptions.includes(name)}
-              disabled={isPending}
+              disabled={busy}
               key={name}
               label={label}
               name={name}
@@ -493,7 +648,7 @@ export function ProductVariantConfigurationForm({
         <div className="grid gap-4 min-[30rem]:grid-cols-2">
           {optionNames.map((name) => (
             <OptionValuesField
-              disabled={isPending}
+              disabled={busy}
               key={name}
               lines={valueLines[name]}
               name={name}
@@ -524,7 +679,7 @@ export function ProductVariantConfigurationForm({
           {variants.map((variant, index) => (
             <CombinationRow
               index={index}
-              isPending={isPending}
+              isPending={busy}
               // combinations have no identity before they are saved: the position is the key
               key={index}
               onRemove={handleRemoveCombination}
@@ -549,6 +704,7 @@ export function ProductVariantConfigurationForm({
           </AlertDescription>
         </Alert>
       ) : null}
+      <AllCombinationsNotice notice={allCombinations.notice} />
       {saveError ? (
         <Alert ref={saveErrorRef} tabIndex={-1} variant="destructive">
           <AlertDescription>
@@ -563,7 +719,7 @@ export function ProductVariantConfigurationForm({
 
       <div className="flex flex-col gap-3 min-[30rem]:flex-row min-[30rem]:justify-end">
         <Button
-          disabled={!validation.canAdd || isPending}
+          disabled={!validation.canAdd || busy}
           onClick={handleAddCombination}
           type="button"
           variant="outline"
@@ -572,11 +728,20 @@ export function ProductVariantConfigurationForm({
           Adicionar combinação
         </Button>
         <Button
+          disabled={!allCombinations.canAdd}
+          onClick={allCombinations.add}
+          type="button"
+          variant="outline"
+        >
+          <ListPlusIcon aria-hidden="true" data-icon="inline-start" />
+          {addAllCombinationsLabel(allCombinations.missing)}
+        </Button>
+        <Button
           aria-describedby={tooLongReason}
           aria-disabled={tooLongReason ? true : undefined}
           disabled={
             !tooLongReason &&
-            (!validation.canSubmit || defaultVariantHasSku || isPending)
+            (!validation.canSubmit || defaultVariantHasSku || busy)
           }
           type="submit"
         >
