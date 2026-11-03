@@ -269,16 +269,56 @@ describe("the map of the weeks shown (rhythmView)", () => {
     values["2026-10-17"] = ["100.05", 2];
     values["2026-10-19"] = ["10.00", 1];
     const view = rhythmView(daysWith(values), RHYTHM_WEEKS);
-    // 25 Saturdays up to `24/10` (`31/10` is to come): (2500.05 / 25) = 100.002 → 100.00
+    // the last 13 weeks start on Sunday `02/08`: 12 Saturdays up to `24/10`, (1200.05 / 12) = 100.004 → 100.00
     expect(view.weekdays.means[6]).toBe("100.00");
-    // 25 Mondays shown, `04/05` to `19/10` (`26/10` is to come): 10 / 25 = 0.40
-    expect(view.weekdays.means[1]).toBe("0.40");
+    // 12 Mondays, `03/08` to `19/10`: 10 / 12 = 0.83
+    expect(view.weekdays.means[1]).toBe("0.83");
     expect(view.weekdays.best).toBe(6);
+    // the map still counts its own 26 weeks
     expect(view.soldWeeks).toBe(25);
+    expect(view.weekdays.soldWeeks).toBe(12);
     expect(rhythmInsight(view)).toEqual({
       kind: "weekday",
-      text: "Sábado é o seu melhor dia da semana: média de R$ 100,00.",
+      text: "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00.",
     });
+  });
+
+  it("the best weekday and the means are the same on the phone's 13 weeks and on the 26 of the desktop", () => {
+    // before the last 13 weeks every Monday sold a lot; in them, Saturdays lead
+    const values: Record<string, [string, number]> = {};
+    for (let date = "2026-05-04"; date <= TODAY; date = addDays(date, 7)) {
+      values[date] = [date < "2026-08-02" ? "900.00" : "20.00", 3];
+    }
+    for (let date = "2026-08-08"; date <= TODAY; date = addDays(date, 7)) {
+      values[date] = ["100.00", 2];
+    }
+    const phone = rhythmView(daysWith(values), 13);
+    const desktop = rhythmView(daysWith(values), RHYTHM_WEEKS);
+    expect(desktop.weekdays).toEqual(phone.weekdays);
+    expect(rhythmInsight(desktop)).toEqual(rhythmInsight(phone));
+    expect(rhythmInsight(phone)).toEqual({
+      kind: "weekday",
+      text: "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00.",
+    });
+    // the map itself keeps its own number of weeks
+    expect(phone.cells).toHaveLength(91);
+    expect(desktop.cells).toHaveLength(182);
+  });
+
+  it("weeks of sales before the last 13 do not count for the sentence", () => {
+    const values: Record<string, [string, number]> = {};
+    for (
+      let date = "2026-05-09";
+      date <= "2026-07-25";
+      date = addDays(date, 7)
+    ) {
+      values[date] = ["300.00", 3];
+    }
+    values["2026-10-17"] = ["50.00", 1];
+    const view = rhythmView(daysWith(values), RHYTHM_WEEKS);
+    expect(view.soldWeeks).toBeGreaterThan(4);
+    expect(view.weekdays.soldWeeks).toBe(1);
+    expect(rhythmInsight(view).kind).toBe("few");
   });
 
   it("with few weeks of sales the sentence says the map fills up, with the days that sold", () => {

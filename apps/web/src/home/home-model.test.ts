@@ -6,6 +6,7 @@ import {
   checklistLink,
   checklistNext,
   copyStanding,
+  endedInPastMonth,
   goalDaysLeftText,
   copyLine,
   goalPeriodShort,
@@ -18,6 +19,7 @@ import {
   msUntilNextMidnight,
   newSaleOfflineText,
   offlineGoal,
+  pastGoalSummary,
   pickGoal,
   shouldRefreshOnReturn,
   storeToday,
@@ -504,7 +506,7 @@ describe("offlineGoal (§ 7.3)", () => {
     });
     expect(
       offlineGoal({ goal: settled, kind: "settled" }, "2026-10-15", zone)
-    ).toEqual({ goal: settled, kind: "settled" });
+    ).toEqual({ currentMonth: "Outubro", goal: settled, kind: "settled" });
     expect(
       offlineGoal({ goal: settled, kind: "settled" }, "2026-10-22", zone)
     ).toEqual({ kind: "online-only" });
@@ -768,5 +770,71 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
         today
       )
     ).toEqual({ kind: "no_sales" });
+  });
+});
+
+describe("a goal of a month already over (the Início of the next month)", () => {
+  const zone = "America/Sao_Paulo";
+  const october = goal({
+    achievedValue: "166619.00",
+    endsOn: "2026-10-31",
+    settledAt: "2026-11-01T03:05:00.000Z",
+    startsOn: "2026-10-01",
+    status: "missed",
+    target: "200000.00",
+  });
+
+  it.each([
+    ["on the last day of the month", "2026-10-31", false],
+    ["on the 1st of the next", "2026-11-01", true],
+    ["on the 2nd, no goal of the month yet", "2026-11-02", true],
+    ["a goal that ends in the current month", "2026-10-02", false],
+  ])("endedInPastMonth, %s", (_label, today, past) => {
+    expect(endedInPastMonth(october, today)).toBe(past);
+  });
+
+  it("says what the past month reached, with its name and whether it was met", () => {
+    expect(pastGoalSummary(october)).toBe(
+      "Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida)"
+    );
+    expect(pastGoalSummary({ ...october, status: "completed" })).toBe(
+      "Outubro: R$ 166.619,00 de R$ 200.000,00 (atingida)"
+    );
+    expect(pastGoalSummary({ ...october, achievedValue: null })).toBe(
+      "Outubro: meta não atingida"
+    );
+    expect(
+      pastGoalSummary({
+        ...october,
+        achievedValue: "1200",
+        kind: "sale_count",
+        target: "1500",
+      })
+    ).toBe("Outubro: 1.200 de 1.500 (não atingida)");
+  });
+
+  it("a goal that did not cover the month says its period, not the month", () => {
+    expect(pastGoalSummary({ ...october, startsOn: "2026-10-25" })).toBe(
+      "25 a 31/10: R$ 166.619,00 de R$ 200.000,00 (não atingida)"
+    );
+  });
+
+  it("the settled goal is still the one picked on the 2nd, and offline carries the month of today", () => {
+    expect(pickGoal([october], "2026-11-02", zone)).toEqual({
+      goal: october,
+      kind: "settled",
+    });
+    expect(
+      offlineGoal({ goal: october, kind: "settled" }, "2026-11-02", zone)
+    ).toEqual({ currentMonth: "Novembro", goal: october, kind: "settled" });
+    const thisMonth = goal({
+      endsOn: "2026-11-01",
+      settledAt: "2026-11-02T03:05:00.000Z",
+      startsOn: "2026-11-01",
+      status: "completed",
+    });
+    expect(
+      offlineGoal({ goal: thisMonth, kind: "settled" }, "2026-11-02", zone)
+    ).toEqual({ goal: thisMonth, kind: "settled" });
   });
 });
