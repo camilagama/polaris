@@ -15,7 +15,7 @@ import {
   ActionFeedback,
   LoadErrorNotice,
 } from "../catalog/products-page-parts";
-import { shownListCount } from "../catalog/list-page-model";
+import { countLineShown, shownListCount } from "../catalog/list-page-model";
 import { ListCountLine, StatusNav } from "../catalog/screen-parts";
 import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -660,7 +660,7 @@ export function CustomersPage() {
         value={status}
       />
       <ListCountLine
-        loading={isLoading}
+        shown={countLineShown(isLoading, listIsShown, customers.length)}
         text={shownListCount(
           listIsShown,
           foundCustomers.length,

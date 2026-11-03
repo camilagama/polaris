@@ -234,6 +234,9 @@ describe("the search of the customers", () => {
     expect(names("1198765")).toEqual(["Beatriz Souza"]);
     expect(names("3000-12")).toEqual(["João Araújo"]);
     expect(names("213000")).toEqual(["João Araújo"]);
+    // pasted with the country code
+    expect(names("+55 (11) 98765-4321")).toEqual(["Beatriz Souza"]);
+    expect(names("5521 3000-1234")).toEqual(["João Araújo"]);
   });
 
   it("reads a text with letters as a name, not as the digits of a phone", () => {

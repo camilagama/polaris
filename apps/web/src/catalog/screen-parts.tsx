@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
+import { focusLater } from "../lib/focus";
 import { LIST_PAGE_SIZE, type ListPage, listPage } from "./list-page-model";
 
 /* The parts the list screens share (Categorias, Clientes, Produtos, Despesas, Estoque): the state choice under the
@@ -88,17 +89,18 @@ export function useListPage<T>(
 }
 
 /**
- * The count above a list ("1.248 produtos"), read before the rows. While the list loads the line is there and
- * empty, so the rows do not move when the number arrives; with no text and nothing loading it takes no room.
+ * The count above a list ("1.248 produtos"), read before the rows. The line stays while the list loads and while a
+ * search finds nothing, empty, so the rows do not move when the number arrives and the live region is already
+ * there to announce it; it takes no room only when the list has no row at all (`shown` false).
  */
 export function ListCountLine({
-  loading,
+  shown,
   text,
 }: {
-  loading: boolean;
+  shown: boolean;
   text: string | null;
 }) {
-  if (!(loading || text)) {
+  if (!shown) {
     return null;
   }
   return (
@@ -106,17 +108,42 @@ export function ListCountLine({
       aria-live="polite"
       className="min-h-5 text-muted-foreground text-support"
     >
-      {loading ? null : text}
+      {text}
     </p>
   );
 }
 
-/** Below a list with more rows than drawn: the same button as the Estoque, here with no wait (the rows are on hand). */
-export function LoadMoreButton({ onClick }: { onClick: () => void }) {
+interface LoadMoreButtonProps {
+  /** The `aria-label` of the list the button feeds: the focus goes to the first new row in it. */
+  listLabel: string;
+  onClick: () => void;
+  /** How many rows are drawn before the click: the index of the first new one. */
+  shown: number;
+}
+
+/**
+ * Below a list with more rows than drawn: the same button as the Estoque, here with no wait (the rows are on hand).
+ * The focus moves to the first control of the first new row: the keyboard goes on reading where the list grew, and
+ * on the last page, when the button leaves the page, the focus does not fall to the body.
+ */
+export function LoadMoreButton({
+  listLabel,
+  onClick,
+  shown,
+}: LoadMoreButtonProps) {
+  const handleClick = useCallback(() => {
+    onClick();
+    focusLater(() => {
+      const rows = document.querySelectorAll(
+        `ul[aria-label="${listLabel}"] > li`
+      );
+      rows[shown]?.querySelector<HTMLElement>("button, a[href]")?.focus();
+    });
+  }, [listLabel, onClick, shown]);
   return (
     <Button
       className="justify-self-start"
-      onClick={onClick}
+      onClick={handleClick}
       type="button"
       variant="outline"
     >

@@ -41,6 +41,12 @@ export function formatCustomerPhone(phone: string): string {
 
 const NOT_DIGIT = /\D/g;
 const PHONE_TYPED = /^[\d\s().+-]+$/;
+/** "55" before a DDD and 8 or 9 digits: a phone pasted with the country code, kept here without it. */
+const BRAZIL_PREFIXED = /^55(\d{10,11})$/;
+
+function withoutCountryCode(digits: string): string {
+  return BRAZIL_PREFIXED.exec(digits)?.[1] ?? digits;
+}
 
 /**
  * The customers whose name, phone or e-mail has the typed text (an empty text keeps them all), in the order they
@@ -56,7 +62,7 @@ export function filterCustomers<
   }
   // only a query typed as a phone compares digits: "Loja 2" is a name, not the phone digit 2
   const digits = PHONE_TYPED.test(query.trim())
-    ? query.replace(NOT_DIGIT, "")
+    ? withoutCountryCode(query.replace(NOT_DIGIT, ""))
     : "";
   return customers.filter(
     (customer) =>

@@ -530,7 +530,13 @@ export function ProductsCard(props: ProductsCardProps) {
             })}
           </ul>
         ) : null}
-        {page.hasMore ? <LoadMoreButton onClick={page.loadMore} /> : null}
+        {page.hasMore ? (
+          <LoadMoreButton
+            listLabel="Produtos do catálogo"
+            onClick={page.loadMore}
+            shown={page.items.length}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );

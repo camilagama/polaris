@@ -982,6 +982,12 @@ test("Catálogo público: 50 produtos de cada vez com 'Carregar mais', a contage
   await expect(toggles).toHaveCount(50);
   await page.getByRole("button", { name: "Carregar mais" }).click();
   await expect(toggles).toHaveCount(100);
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "Peça 0051" })
+      .getByRole("button", { name: "Mostrar no catálogo" })
+  ).toBeFocused();
 
   const search = page.getByLabel("Buscar produto");
   await search.fill("peça 0007");

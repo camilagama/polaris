@@ -52,7 +52,7 @@ import {
   ProductSearch,
   ProductsHeader,
 } from "./products-page-parts";
-import { shownListCount } from "./list-page-model";
+import { countLineShown, shownListCount } from "./list-page-model";
 import {
   ListCountLine,
   LoadMoreButton,
@@ -856,7 +856,7 @@ export function ProductsPage() {
           value={status}
         />
         <ListCountLine
-          loading={isLoading}
+          shown={countLineShown(isLoading, listIsShown, products.length)}
           text={shownListCount(
             listIsShown,
             visibleProducts.length,
@@ -888,7 +888,11 @@ export function ProductsPage() {
           />
         )}
         {listIsShown && page.hasMore ? (
-          <LoadMoreButton onClick={page.loadMore} />
+          <LoadMoreButton
+            listLabel="Produtos"
+            onClick={page.loadMore}
+            shown={page.items.length}
+          />
         ) : null}
       </div>
     </div>

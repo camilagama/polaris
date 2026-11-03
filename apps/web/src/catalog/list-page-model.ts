@@ -13,10 +13,15 @@ export function listPage<T>(items: readonly T[], size: number): ListPage<T> {
   return { hasMore: items.length > size, items: items.slice(0, size) };
 }
 
-/**
- * The count above a list: "1.248 produtos" with no search, "37 de 1.248 produtos" with one. The total is what the
- * state has before the search, never how many rows are drawn: "Carregar mais" does not change it.
- */
+/** Whether the count line has its place: while the list loads, and while it has rows (even if a search hides them). */
+export function countLineShown(
+  isLoading: boolean,
+  listIsShown: boolean,
+  total: number
+): boolean {
+  return isLoading || (listIsShown && total > 0);
+}
+
 /** The count of a list that is on screen with rows, or null (loading, error, empty or no result say it themselves). */
 export function shownListCount(
   listIsShown: boolean,
@@ -30,6 +35,10 @@ export function shownListCount(
     : null;
 }
 
+/**
+ * The count above a list: "1.248 produtos" with no search, "37 de 1.248 produtos" with one. The total is what the
+ * state has before the search, never how many rows are drawn: "Carregar mais" does not change it.
+ */
 export function listCountText(
   found: number,
   total: number,

@@ -749,6 +749,8 @@ test("lista longa: 50 de cada vez com 'Carregar mais', o total no alto com milha
   const more = page.getByRole("button", { name: "Carregar mais" });
   await more.click();
   await expect(page.locator(ROW_NAMES)).toHaveCount(100);
+  // the keyboard goes on from the first new row
+  await expect(rowOf(page, "Peça 0051")).toBeFocused();
   await expect(rowOf(page, "Peça 0100")).toBeVisible();
   await expect(count).toBeVisible();
 
@@ -763,6 +765,8 @@ test("lista longa: 50 de cada vez com 'Carregar mais', o total no alto com milha
   await more.click();
   await expect(page.locator(ROW_NAMES)).toHaveCount(100);
   await expect(more).toHaveCount(0);
+  // the button left with the last page: the focus is on the first new row, not on the body
+  await expect(rowOf(page, "Peça 1150")).toBeFocused();
   await search.fill("");
   await expect(page.locator(ROW_NAMES)).toHaveCount(50);
 });
