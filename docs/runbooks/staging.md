@@ -103,7 +103,7 @@ O staging é um ambiente fixo na conta Cloudflare atual, com dados **só sintét
 
 ## 3. Preencher a configuração (PR do responsável ou do dev)
 
-Feito em 22/10 (t203): trocados os `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs (`BETTER_AUTH_BASE_URL`, `https://dash.araute.app` desde 22/10, e `CATALOG_ORIGIN`, `https://catalogo.araute.app` desde 23/10, antes em `workers.dev`). O `env.staging` do Admin tem o `account_id`, o Custom Domain, as variáveis `ACCESS_*` e os dois Hyperdrive desde 03/11 (seção 3c). `bun run verify:staging-isolation` tem de passar; com placeholder ele falha e o workflow não implanta. Um recurso novo ou recriado repete este passo.
+Feito em 22/10 (t203): trocados os `PLACEHOLDER-…` de `env.staging` nos três `wrangler.jsonc`: o `account_id` da conta atual (não é segredo), os IDs das 8 configurações Hyperdrive e as URLs (`BETTER_AUTH_BASE_URL`, `https://dash.araute.app` desde 22/10, e `CATALOG_ORIGIN`, `https://catalogo.araute.app` desde 23/10, antes em `workers.dev`). O `env.staging` do Admin tem o `account_id`, as variáveis `ACCESS_*` e os dois Hyperdrive desde 03/11 (seção 3c). `bun run verify:staging-isolation` tem de passar; com placeholder ele falha e o workflow não implanta. Um recurso novo ou recriado repete este passo.
 
 ## 3a. Domínio do web: `dash.araute.app` (responsável)
 
@@ -142,13 +142,15 @@ Decisão do usuário de 03/11/2026 ([ADR 0097](../adr/0097-staging-fixo-e-produc
 - Login `polaris_staging_admin`, membro só de `polaris_admin_runtime`, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, `CONNECTION LIMIT 5`, `statement_timeout` `10s`, `lock_timeout` `3s` e `idle_in_transaction_session_timeout` `15s` (no login, não no grupo; seção 1).
 - Hyperdrive `polaris-staging-admin` (caching desligado) no binding `ADMIN_HYPERDRIVE`; `ADMIN_BILLING_HYPERDRIVE` usa a `polaris-staging-billing` do web (a divisão que a verificação aceita, ADR 0073). A conta fica com 10 das 10 configurações do Free.
 
-**O que o repositório garante:** o Custom Domain é declarado no `env.staging` do `apps/admin/wrangler.jsonc` (diferente das seções 3a e 3b) e `wrangler deploy --env staging` o cria ou mantém. `bun run verify:staging-isolation` reprova `workers_dev` ou `preview_urls` ligados, rota que não seja exatamente uma, objeto `{ "pattern": "admin.araute.app", "custom_domain": true }`, Access ausente, malformado ou igual ao da produção, e `ADMIN_HYPERDRIVE` ausente ou com ID de outro binding do staging. O smoke de cada deploy prova que o Access está na frente (verificações 14 e 15, abaixo).
+**O que o repositório garante:** o `env.staging` do `apps/admin/wrangler.jsonc` não declara `routes`, como o web e o catálogo (seções 3a e 3b): o token do CI não tem permissão de zona em `araute.app`, e um `routes`/`custom_domain` faria o `wrangler deploy` chamar a API de domínios e falhar depois do web e do catálogo. `bun run verify:staging-isolation` reprova `workers_dev` ou `preview_urls` ligados, **qualquer** rota (`route` ou `routes`), Access ausente, malformado ou igual ao da produção, e `ADMIN_HYPERDRIVE` ausente ou com ID de outro binding do staging. O smoke de cada deploy prova que o Access está na frente (verificações 14 e 15, abaixo).
 
-**Ordem:** a aplicação do Access no hostname tem de existir **antes** do primeiro deploy do Admin. O deploy que cria o Custom Domain publica o hostname; sem Access na frente, a API ainda recusa (o Worker verifica o token), mas o `/health` e o 401 ficariam visíveis.
+**Custom Domain (passo manual, feito uma vez pelo responsável, depois do primeiro deploy):** painel **Workers & Pages → `polaris-admin-staging` → Settings → Domains & Routes → Add → Custom Domain → `admin.araute.app`** (ou `PUT /accounts/<conta>/workers/domains`, como na seção 3a). Sem curinga a mexer: vale o que a seção 3a diz do `*.araute.app`. Até esse passo, o Admin não responde em endereço nenhum (`workers_dev` desligado), e o smoke (verificações 14 e 15) fica vermelho: o primeiro deploy do Admin fica assim de propósito, e o smoke é reexecutado depois do passo.
 
-**Token do CI, antes do primeiro deploy do Admin:** um Custom Domain no config faz o `wrangler deploy` do Admin conferir e manter o domínio na zona `araute.app`, e o token do Environment `staging` (seção 6) não tinha permissão de zona. Decida e ajuste antes de ligar o deploy do Admin, não com o deploy vermelho: a permissão a acrescentar é a mínima que a documentação do Wrangler pede para Custom Domains, presa à zona `araute.app` (rotas de Workers e leitura da zona); nunca edição de DNS ou da zona, nem todas as zonas. Se preferir manter o token sem zona, a alternativa é criar o Custom Domain à mão, como nas seções 3a e 3b, e tirar a rota do config (o que pede mudar a verificação de isolamento de volta para "sem rota"). Sem a permissão, o passo de deploy fica vermelho no Admin depois de o web e o catálogo já terem sido publicados e conferidos (`verify-deployed-sha` roda antes do deploy do Admin), e o Smoke não roda.
+**Ordem:** a aplicação do Access no hostname tem de existir **antes** de ligar o Custom Domain. Ligado o domínio sem Access na frente, a API ainda recusa (o Worker verifica o token), mas o `/health` e o 401 ficariam visíveis.
 
-**Primeiro deploy:** o Custom Domain nasce no próprio deploy (DNS e certificado novos), e as 3 tentativas do smoke (cerca de 40 s) podem não bastar: se só as verificações 14 e 15 ficarem vermelhas com erro de rede ou 5xx, espere alguns minutos e reexecute o run.
+**Token do CI:** não ganha permissão nova por causa do Admin (decisão de 03/11/2026): sem `routes` no config, o `wrangler deploy` do Admin não toca a zona `araute.app`, e o token do Environment `staging` (seção 6) segue sem permissão de zona. Quem liga o Custom Domain é o responsável, com a própria conta.
+
+**Primeiro deploy:** o Custom Domain nasce no passo manual acima (DNS e certificado novos), não no deploy. Depois dele, o certificado pode levar alguns minutos: se só as verificações 14 e 15 ficarem vermelhas com erro de rede ou 5xx, espere e reexecute o run.
 
 **Nunca use o `workers.dev`.** O endereço `polaris-admin-staging.<conta>.workers.dev` fica desligado (`workers_dev: false`) e nunca deve ser ligado, nem para testar: ele contornaria o Access, e o Worker passaria a ser a única barreira. Para um teste, entre pelo `https://admin.araute.app`.
 
@@ -159,7 +161,7 @@ Decisão do usuário de 03/11/2026 ([ADR 0097](../adr/0097-staging-fixo-e-produc
 3. Com o dono e a URL direta do banco de staging: `INSERT INTO public.platform_principals (issuer, subject, role, email_snapshot) VALUES ('https://polaris-staging.cloudflareaccess.com', '<sub>', 'platform_owner', '<e-mail>');`. Desativar: `UPDATE public.platform_principals SET status = 'disabled' WHERE id = '<id>';`. Um principal do staging não vale na produção.
 4. Conferir: `GET https://admin.araute.app/api/whoami` com a sessão responde o principal; sem login, o Access redireciona para `polaris-staging.cloudflareaccess.com` (o smoke confere isto a cada deploy).
 
-**Tirar o Admin do ar:** para cortar o acesso na hora, tire as pessoas da política do Access ou desative os principais (passo 3). Para tirar o hostname, retire o Custom Domain no painel **e** abra um PR que tire a rota do `env.staging` e o deploy do Admin do workflow: só o painel não basta, porque o próximo deploy recria o domínio a partir do config.
+**Tirar o Admin do ar:** para cortar o acesso na hora, tire as pessoas da política do Access ou desative os principais (passo 3). Para tirar o hostname, retire o Custom Domain no painel: como o config não declara o domínio, o próximo deploy não o recria.
 
 ## 4. Cliente OAuth do Google (responsável)
 
@@ -208,8 +210,8 @@ Trocar só o segredo (suspeita de vazamento, rotina): no painel, no widget `pola
 ## 6. GitHub (responsável)
 
 - Environment `staging`, com os segredos `CLOUDFLARE_API_TOKEN` (restrito à conta atual em "Account Resources", com validade curta e permissões mínimas: Workers Scripts Edit, Queues Edit e Hyperdrive Read, este só para a verificação `--remote`; sem R2; a lista final é conferida no primeiro deploy. O token alcança qualquer Worker e fila da conta, e por isso a conta atual não guarda nada de produção) e `STAGING_MIGRATOR_DATABASE_URL` (dono, URL direta).
-- Variáveis do Environment, que não são segredo: `CLOUDFLARE_ACCOUNT_ID`, `STAGING_DATABASE_HOST` (o host do projeto `polaris-staging`), `STAGING_WEB_URL` e `STAGING_CATALOG_URL`. O endereço do Admin (`STAGING_ADMIN_URL`, `https://admin.araute.app`) fica escrito no passo do smoke, porque o host é fixado pelo config do Admin.
-- O Custom Domain do Admin está no config (seção 3c): se o primeiro deploy do Admin falhar por permissão, o token precisa da permissão mínima de rotas de Workers na zona `araute.app`.
+- Variáveis do Environment, que não são segredo: `CLOUDFLARE_ACCOUNT_ID`, `STAGING_DATABASE_HOST` (o host do projeto `polaris-staging`), `STAGING_WEB_URL` e `STAGING_CATALOG_URL`. O endereço do Admin (`STAGING_ADMIN_URL`, `https://admin.araute.app`) fica escrito no passo do smoke, porque o host é o do Custom Domain ligado à mão (seção 3c), que o config do Admin não declara.
+- O Custom Domain do Admin é ligado à mão (seção 3c), como o do web e o do catálogo: o token não precisa de permissão de zona.
 - A restrição de branch do Environment **não** protege num `workflow_run`: o controle é o `if` do job do workflow.
 
 ## 7. Ligar o deploy automático (responsável)

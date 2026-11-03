@@ -15,9 +15,9 @@ import { parseJsonc } from "./verify-staging-isolation.mjs";
  * the keys they may not: a key nobody thought of fails here and gets a review of this guard. Whether the real Access
  * application stands in front of the real hostname cannot be proved here: that is the go-live checklist
  * (docs/runbooks/README.md, item of the Admin, a blocking item).
- * Staging is the one exception to "no route": its only key beyond production's is `routes`, and it must be exactly
- * the Custom Domain of the staging Access application (amendment to ADR 0097); the rest of the staging rules, the
- * Access team and audience apart from production's included, are in verify-staging-isolation.mjs.
+ * The hostname of staging (admin.araute.app) is attached by hand as a Custom Domain, like the web's and the catalog's
+ * (amendment to ADR 0097), so staging has no route either; the rest of the staging rules, the Access team and
+ * audience apart from production's included, are in verify-staging-isolation.mjs.
  */
 const config = parseJsonc(
   readFileSync(
@@ -49,7 +49,6 @@ const ALLOWED_KEYS = {
     "name",
     "observability",
     "preview_urls",
-    "routes",
     "vars",
     "workers_dev",
   ],
@@ -71,7 +70,6 @@ const ALLOWED_KEYS = {
  * The one module rule (corte admin-tela-v1, D-2): the page's script and sheet built by `build:ui` are embedded as text.
  * Any other rule could make a file into code the Worker runs, so the rule is checked whole.
  */
-const STAGING_ROUTES = [{ custom_domain: true, pattern: "admin.araute.app" }];
 const PAGE_TEXT_RULES = [
   { fallthrough: false, globs: ["**/ui/generated/*.txt"], type: "Text" },
 ];
@@ -137,13 +135,6 @@ function allProblems(wrangler) {
         wrangler.env?.[name] ?? {},
         ALLOWED_KEYS[name]
       )
-    );
-  }
-  if (
-    sortedJson(wrangler.env?.staging?.routes) !== sortedJson(STAGING_ROUTES)
-  ) {
-    problems.push(
-      "env.staging: the only route is the Custom Domain admin.araute.app"
     );
   }
   return problems;
@@ -254,15 +245,10 @@ describe("admin Worker production guard (wrangler file)", () => {
     it.each([
       ["a pattern route", ["x/*"]],
       [
-        "a second route",
-        [...STAGING_ROUTES, { custom_domain: true, pattern: "x.araute.app" }],
+        "the Custom Domain of its own host",
+        [{ custom_domain: true, pattern: "admin.araute.app" }],
       ],
       ["another host", [{ custom_domain: true, pattern: "x.araute.app" }]],
-      [
-        "a route that is not a Custom Domain",
-        [{ pattern: "admin.araute.app" }],
-      ],
-      ["no route", undefined],
     ])("refuses %s in staging", (_name, routes) => {
       expect(
         allProblems({
@@ -273,7 +259,7 @@ describe("admin Worker production guard (wrangler file)", () => {
           },
         })
       ).toEqual([
-        "env.staging: the only route is the Custom Domain admin.araute.app",
+        "env.staging: the key routes is not one the guard knows (routes, assets, alias, build, triggers, services... need a review of this guard)",
       ]);
     });
 
@@ -285,8 +271,10 @@ describe("admin Worker production guard (wrangler file)", () => {
             ...config.env,
             staging: { ...config.env.staging, route: "admin.araute.app/*" },
           },
-        }).length
-      ).toBeGreaterThan(0);
+        })
+      ).toEqual([
+        "env.staging: the key route is not one the guard knows (routes, assets, alias, build, triggers, services... need a review of this guard)",
+      ]);
     });
   });
 });

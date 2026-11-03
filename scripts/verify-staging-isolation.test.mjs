@@ -139,7 +139,7 @@ describe("the staging isolation check", () => {
       "web: env.staging: kv_namespaces is not used by staging",
       "web: env.staging: services is not used by staging",
       "web: env.staging: vars.BETTER_AUTH_BASE_URL must be exactly https://dash.araute.app",
-      "web: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
+      "web: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)",
     ]);
   });
 
@@ -230,7 +230,7 @@ describe("the staging isolation check", () => {
       { custom_domain: true, pattern: "catalogo.araute.app" },
     ];
     expect(findIsolationProblems(entries)).toEqual([
-      "catalog: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
+      "catalog: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)",
     ]);
   });
 
@@ -763,13 +763,13 @@ describe("the staging isolation check", () => {
   describe("the Admin of staging, exposed only behind Access", () => {
     const adminOf = (entries) => entryOf(entries, "admin").config.env;
     const ROUTE =
-      'admin: env.staging: the Admin has exactly one route, { "pattern": "admin.araute.app", "custom_domain": true }';
+      "admin: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)";
 
-    it("passes on the repository config: one Custom Domain, the staging team and audience, its own Hyperdrive", () => {
+    it("passes on the repository config: no route, the staging team and audience, its own Hyperdrive", () => {
+      expect(findIsolationProblems(repositoryEntries())).toEqual([]);
       const { staging } = adminOf(repositoryEntries());
-      expect(staging.routes).toEqual([
-        { custom_domain: true, pattern: "admin.araute.app" },
-      ]);
+      expect(staging.routes).toBeUndefined();
+      expect(staging.route).toBeUndefined();
       expect(staging.workers_dev).toBe(false);
       expect(staging.preview_urls).toBe(false);
     });
@@ -824,20 +824,11 @@ describe("the staging isolation check", () => {
     });
 
     it.each([
-      ["no route", (staging) => Reflect.deleteProperty(staging, "routes")],
       [
-        "a second route",
-        (staging) =>
-          staging.routes.push({
-            custom_domain: true,
-            pattern: "admin2.araute.app",
-          }),
-      ],
-      [
-        "a route that is not a Custom Domain",
+        "the Custom Domain of its own host",
         (staging) => {
           staging.routes = [
-            { pattern: "admin.araute.app/*", zone_name: "araute.app" },
+            { custom_domain: true, pattern: "admin.araute.app" },
           ];
         },
       ],
@@ -846,6 +837,14 @@ describe("the staging isolation check", () => {
         (staging) => {
           staging.routes = [
             { custom_domain: true, pattern: "admin.example.com" },
+          ];
+        },
+      ],
+      [
+        "a zone route",
+        (staging) => {
+          staging.routes = [
+            { pattern: "admin.araute.app/*", zone_name: "araute.app" },
           ];
         },
       ],
@@ -862,16 +861,9 @@ describe("the staging isolation check", () => {
         },
       ],
       [
-        "a `route` beside the `routes`",
+        "a `route`",
         (staging) => {
           staging.route = "admin.araute.app/*";
-        },
-      ],
-      [
-        "only a `route`",
-        (staging) => {
-          staging.routes = undefined;
-          staging.route = { custom_domain: true, pattern: "admin.araute.app" };
         },
       ],
     ])("refuses %s", (_label, change) => {

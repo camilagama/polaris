@@ -14,8 +14,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
  * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
- * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, a
- *   route other than exactly one Custom Domain at admin.araute.app, an Access team or audience missing, malformed
+ * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, any
+ *   route (its Custom Domain at admin.araute.app is created outside the config), an Access team or audience missing, malformed
  *   or equal to production's, or an ADMIN_HYPERDRIVE missing or shared with another binding of staging;
  * - any block (top level, staging, production or the build) still declares a switch of the database proof routes
  *   (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`): those routes and tables left the app (ADR 0027).
@@ -40,8 +40,8 @@ const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // follows the same design at its own host (amendment to ADR 0097).
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
 export const STAGING_CATALOG_ORIGIN = "https://catalogo.araute.app";
-// The Admin of staging is published at this host as a Custom Domain declared in its own config, behind the Access
-// application of the staging team (amendments to ADR 0097 and ADR 0070).
+// The Admin of staging is published at this host as a Custom Domain created outside the config, like the web and
+// the catalog, behind the Access application of the staging team (amendments to ADR 0097 and ADR 0070).
 export const STAGING_ADMIN_HOST = "admin.araute.app";
 const ACCESS_TEAM_DOMAIN =
   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/;
@@ -294,15 +294,14 @@ function checkStagingBlock(app, where, staging, production, problems) {
   checkStagingExposure(app, where, staging, production, problems);
 }
 
-/** Where each Worker of staging answers: the web and the catalog at the Custom Domains managed outside the config, the Admin behind Access. */
+/** Where each Worker of staging answers: the web, the catalog and the Admin at Custom Domains managed outside the config, the Admin also behind Access. */
 function checkStagingExposure(app, where, staging, production, problems) {
   if (app === "admin") {
     checkAdminBehindAccess(where, staging, production, problems);
-    return;
   }
   if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
     problems.push(
-      `${where}: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)`
+      `${where}: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)`
     );
   }
   if (app === "web" && staging.workers_dev !== false) {
@@ -446,29 +445,8 @@ function isEmptyBinding(value) {
   return false;
 }
 
-/** Exactly one route: a Custom Domain at the Admin's host, with no path or wildcard. */
-function checkAdminRoute(where, staging, problems) {
-  const routes = staging.route === undefined ? [] : [staging.route];
-  routes.push(...(Array.isArray(staging.routes) ? staging.routes : []));
-  const [route] = routes;
-  if (
-    routes.length !== 1 ||
-    !Array.isArray(staging.routes) ||
-    typeof route !== "object" ||
-    route === null ||
-    route.custom_domain !== true ||
-    route.pattern !== STAGING_ADMIN_HOST ||
-    route.zone_id !== undefined ||
-    route.zone_name !== undefined
-  ) {
-    problems.push(
-      `${where}: the Admin has exactly one route, { "pattern": "${STAGING_ADMIN_HOST}", "custom_domain": true }`
-    );
-  }
-}
-
 /**
- * Exposed only behind Access: the one Custom Domain is the hostname of the Access application, nothing else reaches
+ * Exposed only behind Access: its hostname is attached by hand (no route in the config) and is the one of the Access application, nothing else reaches
  * the Worker, and the Worker verifies tokens of the staging team and application, never production's.
  */
 function checkAdminBehindAccess(where, staging, production, problems) {
@@ -477,7 +455,6 @@ function checkAdminBehindAccess(where, staging, production, problems) {
       `${where}: workers_dev must be false (the Admin is reached only through Access at ${STAGING_ADMIN_HOST})`
     );
   }
-  checkAdminRoute(where, staging, problems);
   const team = staging.vars?.ACCESS_TEAM_DOMAIN;
   if (typeof team !== "string" || !ACCESS_TEAM_DOMAIN.test(team)) {
     problems.push(

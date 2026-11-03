@@ -52,8 +52,10 @@
   ],
   "env": {
     // Exposed only behind the Access application of the staging team (amendments to ADR 0097 and ADR 0070):
-    // the one hostname is a Custom Domain declared here, workers.dev and previews stay off, so no address
-    // reaches the Worker without passing through Access. The Worker still verifies the token itself.
+    // no route is declared here. The hostname admin.araute.app is attached by hand as a Custom Domain, because
+    // the token of the CI has no permission on the zone (the web and the catalog work the same way), and it
+    // sits behind the staging Access application. workers_dev and previews stay off, so no other address
+    // reaches the Worker. The Worker still verifies the token itself.
     // ADMIN_HYPERDRIVE logs in as polaris_staging_admin (member of polaris_admin_runtime only); the billing
     // configuration is the one of the web, shared on purpose (ADR 0073). Caching is off in both.
     "staging": {
@@ -61,7 +63,6 @@
       "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
       "workers_dev": false,
       "preview_urls": false,
-      "routes": [{ "pattern": "admin.araute.app", "custom_domain": true }],
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
         "ACCESS_TEAM_DOMAIN": "polaris-staging.cloudflareaccess.com",
