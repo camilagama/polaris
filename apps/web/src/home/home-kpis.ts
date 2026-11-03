@@ -228,8 +228,9 @@ export function todaySeries(
 
 /**
  * "Vendas hoje" for a day: its net sales and count against the mean of the 4 same weekdays before it (§ 3 item 2),
- * which is steadier than "last Sunday". With no sale on the 4, or when one of the 4 is not in the series read (a day
- * early in the 30), it draws no chip and the note says there were no sales before; today before its first sale draws no chip
+ * which is steadier than "last Sunday". It draws no chip, and the note says why: no sale on the 4 ("sem vendas antes"),
+ * one of the 4 not in the series read, a day early in the 30 ("sem dados para comparar"), or sales whose net sum on the 4
+ * is zero or below, with returns ("sem média para comparar"); today before its first sale draws no chip
  * either ("−100%" of a day that has not started).
  */
 export function dayReading(
@@ -245,14 +246,15 @@ export function dayReading(
   const against = `média ${weekday.of} 4 ${weekday.long} anteriores`;
   let delta: Delta | null = null;
   let compare = "";
-  // the weekday stays named on the card: with nothing before it to compare, the note says so instead of going away
+  // the weekday stays named on the card: when there is nothing to compare, the note says why, one text per cause
   let note: string | null =
-    `vs. média ${weekday.of} ${weekday.plural}: sem vendas antes`;
+    `vs. média ${weekday.of} ${weekday.plural}: sem dados para comparar`;
   if (previous.every((item) => item !== undefined)) {
     const known = previous as Day[];
     const sold = known.reduce((total, item) => total + item.salesCount, 0);
     const sum = known.reduce((total, item) => total + cents(item.netSales), 0n);
     if (sold === 0) {
+      note = `vs. média ${weekday.of} ${weekday.plural}: sem vendas antes`;
       compare = ` Sem venda ${weekday.in} 4 ${weekday.long} anteriores, não há comparação.`;
     } else {
       // the mean of the 4 is sum / 4: the day against it is (4 × day − sum) / sum
@@ -263,6 +265,9 @@ export function dayReading(
       if (delta || open) {
         note = `vs. média ${weekday.of} ${weekday.plural}`;
         compare = ` Compara com a ${against}.`;
+      } else {
+        // sales happened, but returns left the 4 days at zero or below: there is no base for a percent
+        note = `vs. média ${weekday.of} ${weekday.plural}: sem média para comparar`;
       }
     }
   }
