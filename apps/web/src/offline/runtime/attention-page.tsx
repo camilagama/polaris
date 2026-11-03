@@ -1,11 +1,12 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { navigateInApp } from "../../app-shell/address";
 import { PageLoading } from "../../app-shell/page-loading";
 import { useCurrentOrganization } from "../../lib/current-organization";
 import { browserStorage } from "../../lib/current-organization-model";
 import { orpcClient } from "../../lib/orpc";
 import { readWithRetry } from "../../lib/read-with-retry";
+import { signInPath } from "../../lib/sign-in-path";
 import { sessionStorageOrNull } from "../../sales/sale-attempt-storage";
 import { readSaleDraft, writeSaleDraft } from "../../sales/sale-draft-storage";
 import {
@@ -20,10 +21,12 @@ import {
   resubmitAttentionItem,
 } from "../attention";
 import {
+  type AttentionError,
   AttentionFrame,
   AttentionPanel,
   AttentionStateCard,
   type RedoProblem,
+  signInAgainButtonId,
 } from "../attention-panel";
 import type { NamespaceKey } from "../namespace";
 import type { Outbox } from "../outbox/outbox";
@@ -43,6 +46,7 @@ import {
   redoneCommandIds,
   startSaleRedo,
 } from "../sale-redo-storage";
+import { LogoutNotices, useLogout } from "./logout-control";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -159,6 +163,9 @@ async function redoSale(
     : { message: REDO_FAILED_MESSAGE };
 }
 
+/** "Sair e entrar de novo": the queue is protected first, then the sign-in screen brings the person back here. */
+const SIGN_IN_AGAIN = signInPath({ reason: "saiu", returnTo: "/attention" });
+
 export function AttentionPage() {
   const runtime = useOfflineRuntime();
   const snapshot = useRuntimeSnapshot();
@@ -166,7 +173,8 @@ export function AttentionPage() {
   const [redoProblem, setRedoProblem] = useState<RedoProblem | null>(null);
   const [summary, setSummary] = useState<AttentionSummary>(EMPTY);
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AttentionError | null>(null);
+  const logout = useLogout(SIGN_IN_AGAIN);
 
   const counts = snapshot?.counts;
   useEffect(() => {
@@ -213,7 +221,7 @@ export function AttentionPage() {
         await runtime?.refreshCounts();
         runtime?.syncNow().catch(() => undefined);
       } catch {
-        setError(message);
+        setError({ commandId: item.commandId, message });
       } finally {
         setBusy(null);
       }
@@ -280,13 +288,27 @@ export function AttentionPage() {
     },
     [organization.timezone, organizationId, runtime]
   );
-  const handleReviewAccount = useCallback(
-    () =>
-      setError(
-        "Abra o menu e use Sair para entrar de novo com uma conta autorizada. O que está na fila fica guardado neste aparelho até lá."
-      ),
-    []
+  const { blocked, start: startLogout } = logout;
+  const signInFrom = useRef<string | null>(null);
+  const wasBlocked = useRef<boolean>(false);
+  const handleSignInAgain = useCallback(
+    (item: AttentionItem) => {
+      signInFrom.current = item.commandId;
+      setError(null);
+      startLogout();
+    },
+    [startLogout]
   );
+  // the panel that said what the sign-out would lose is gone once the person keeps the session: the focus goes back to
+  // the button that asked
+  useEffect(() => {
+    if (blocked) {
+      wasBlocked.current = true;
+    } else if (wasBlocked.current && signInFrom.current) {
+      wasBlocked.current = false;
+      document.getElementById(signInAgainButtonId(signInFrom.current))?.focus();
+    }
+  }, [blocked]);
 
   if (!(runtime && snapshot)) {
     return (
@@ -312,12 +334,14 @@ export function AttentionPage() {
   return (
     <AttentionPanel
       busyCommandId={busy}
-      errorMessage={error}
+      error={error}
+      notices={<LogoutNotices inAttentionPage logout={logout} />}
       onDiscard={handleDiscard}
       onRedo={handleRedo}
       onResubmit={handleResubmit}
-      onReviewAccount={handleReviewAccount}
+      onSignInAgain={handleSignInAgain}
       redoProblem={redoProblem}
+      signingOut={logout.busy}
       summary={summary}
     />
   );

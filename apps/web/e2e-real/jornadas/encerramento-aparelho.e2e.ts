@@ -7,11 +7,12 @@ import { cents, numericCents, saleTotals } from "../oracle";
 import { confirmSale, fillSale } from "../pages/venda";
 import { nextCommandId, seedProduct, seedStock } from "../seed";
 
+const REFUSED_SALE_TITLE = /^Venda de R\$ 70,00 · \d{2}\/\d{2} \d{2}:\d{2}$/;
 const ZONE = "America/Sao_Paulo";
 const CLOSED_PANEL = /\/loja-encerrada\?loja=/;
 const REOPENED = /\/\?reaberta=1$/;
 const ATTENTION_URL = /\/attention$/;
-const DISCARD_SALE_DIALOG = /Descartar Venda de 1 item/;
+const DISCARD_SALE_DIALOG = /Descartar Venda de R\$ 70,00/;
 const MUG = /Caneca/;
 const LIST_CLOSED = "/rpc/organization/listClosed";
 const LIST_MINE = "/rpc/organization/listMine";
@@ -268,11 +269,12 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   // the sale stays visible in Pendências, with its value and date, and without promising the access back
   await page.goto("/attention");
   const refusedSale = page.getByRole("listitem").filter({
-    has: page.getByRole("heading", { name: "Venda de 1 item" }),
+    has: page.getByRole("heading", {
+      name: REFUSED_SALE_TITLE,
+    }),
   });
   await expect(refusedSale).toBeVisible({ timeout: 30_000 });
   await expect(refusedSale).toContainText("R$ 70,00");
-  await expect(refusedSale).toContainText("feita em");
   await expect(refusedSale).toContainText("O servidor recusou esta venda");
   await expect(refusedSale).toContainText("Ela não é enviada sozinha");
   await expect(refusedSale).toContainText(
@@ -376,7 +378,7 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   // only now the card offers to discard the refused sale, and there is no second redo
   await page.goto("/attention");
   const redone = page.getByRole("listitem").filter({
-    has: page.getByRole("heading", { name: "Venda de 1 item" }),
+    has: page.getByRole("heading", { name: REFUSED_SALE_TITLE }),
   });
   await expect(redone).toContainText("Você já refez esta venda", {
     timeout: 30_000,

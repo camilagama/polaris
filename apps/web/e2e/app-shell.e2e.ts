@@ -39,6 +39,7 @@ const HOUR = 3_600_000;
 const DARK = /\bdark\b/;
 /** A count of days, which the trial at the foot of the menu never says (AS-3, AC-12). */
 const DAYS = /\d+ dias?\b/;
+const ENTRAR = /\/entrar(\?.*)?$/;
 const LEFT_TO_START = /\/(entrar\?motivo=saiu.*)?$/;
 const DEVICE = {
   createdAt: "2026-10-01T12:00:00.000Z",
@@ -1531,6 +1532,60 @@ test.describe("Ajuda e contato", () => {
     await page.goto("/products");
     await expect(
       page.getByRole("heading", { name: "Abra a sua loja" })
+    ).toBeVisible();
+  });
+
+  test("no primeiro acesso a conta aparece com o Sair, e Sair encerra a sessão", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const state = await serve(page, []);
+    // without the session the server refuses the read, as it does: the app then goes to the sign-in screen
+    await page.route("**/rpc/organization/listMine", (route) =>
+      state.signOutCalls > 0
+        ? route.fulfill({
+            ...json({ code: "UNAUTHORIZED", defined: false, status: 401 }),
+            status: 401,
+          })
+        : route.fallback()
+    );
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Abra a sua loja" })
+    ).toBeVisible();
+    await expect(
+      page.getByText(`Entrou como ${EMAIL}. Não é você?`)
+    ).toBeVisible();
+    const leave = page.getByRole("button", { exact: true, name: "Sair" });
+    await expect(leave).toBeVisible();
+    await leave.click();
+    await expect.poll(() => state.signOutCalls).toBe(1);
+    await expect(page).toHaveURL(ENTRAR);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Entrar" })
+    ).toBeVisible();
+  });
+
+  test("no primeiro acesso com o runtime ligado, o Sair que falha mantém o aviso de dados apagados", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page, []);
+    await page.route("**/api/auth/sign-out", (route) =>
+      route.fulfill({
+        body: "{}",
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 500,
+      })
+    );
+    await page.goto("/");
+    await page.getByRole("button", { exact: true, name: "Sair" }).click();
+    await expect(page.getByRole("alert")).toHaveText(
+      "Os dados deste aparelho foram apagados, mas não foi possível encerrar a sessão. Recarregue a página."
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Abra a sua loja" })
     ).toBeVisible();
   });
 

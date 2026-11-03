@@ -222,7 +222,7 @@ export const attentionStates = {
   /** The last attempt to resolve an item failed: the message, and the discard asking for its confirmation. */
   async discarding(page: Page) {
     await startLab(page, "screen=attention&state=error");
-    await page.getByText("Venda de 2 itens").waitFor();
+    await page.getByText("Venda de R$ 20,00 · 14/10 09:30").waitFor();
     await page.getByRole("button", { name: "Descartar…" }).first().click();
     await page.getByRole("button", { name: "Confirmar descarte" }).waitFor();
     await showScreenAlone(page);
@@ -230,16 +230,14 @@ export const attentionStates = {
   /** Nothing was refused. */
   async empty(page: Page) {
     await openNoticeLab(page, "screen=attention&state=empty", () =>
-      page
-        .getByText("Nenhum registro recusado neste aparelho.", { exact: false })
-        .waitFor()
+      page.getByText("Nenhuma pendência de envio.", { exact: false }).waitFor()
     );
   },
 
   /** A refused sale holding the queue, a refused product and an account change. */
   async items(page: Page) {
     await openNoticeLab(page, "screen=attention", () =>
-      page.getByText("Venda de 2 itens").waitFor()
+      page.getByText("Venda de R$ 20,00 · 14/10 09:30").waitFor()
     );
   },
 };

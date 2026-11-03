@@ -166,10 +166,29 @@ test.describe("Pendências, Precisa de ação", () => {
   }) => {
     await attentionStates.items(page);
     await expect(strip(page)).toContainText(
-      "Precisa de ação3 registros recusados · 2 na fila atrás deles"
+      "Precisa de ação4 registros recusados · 2 na fila atrás deles"
     );
-    await expect(page.getByText("O servidor recusou")).toHaveCount(0);
+    // only the refusal of the access says "O servidor recusou", by design; no card repeats a raw server message
+    await expect(page.getByText("O servidor recusou")).toHaveCount(1);
     expect(await axeFaults(page)).toEqual([]);
+  });
+
+  test("o erro da tentativa fica abaixo da confirmação e abaixo das ações, para o botão não descer", async ({
+    page,
+  }) => {
+    await attentionStates.discarding(page);
+    const card = page.getByRole("listitem").first();
+    const failure = card.getByRole("alert");
+    await expect(failure).toContainText("Não foi possível reenviar");
+    const top = async (locator: typeof failure) =>
+      (await locator.boundingBox())?.y ?? Number.NaN;
+    const confirmation = card.getByRole("alertdialog");
+    expect(await top(failure)).toBeGreaterThan(await top(confirmation));
+
+    await card.getByRole("button", { name: "Manter" }).click();
+    const resubmit = card.getByRole("button", { name: "Reenviar venda" });
+    await expect(resubmit).toBeVisible();
+    expect(await top(failure)).toBeGreaterThan(await top(resubmit));
   });
 
   test("sem pendências não há faixa", async ({ page }) => {

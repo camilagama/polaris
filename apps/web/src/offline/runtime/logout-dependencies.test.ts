@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LogoutWorkspace } from "../logout-guard";
 import type { Outbox } from "../outbox/outbox";
-import { logoutDependencies } from "./logout-dependencies";
+import {
+  endsOnlySession,
+  logoutDependencies,
+  plainLogoutDependencies,
+  signOutFailedMessage,
+} from "./logout-dependencies";
 import { startLogout } from "./logout-flow";
 
 const DEVICE_ID = "0199c2d0-0000-7000-8000-0000000000d1";
@@ -100,5 +105,82 @@ describe("the dependencies of the protected logout", () => {
     });
     expect(result.status).toBe("blocked");
     expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe("the logout of a device with no offline runtime", () => {
+  it("ends the session and leaves, with no queue to protect and no device to revoke", async () => {
+    const leave = vi.fn();
+    const revoke = vi.fn(() => Promise.resolve({ endedCurrentSession: false }));
+    const signOut = vi.fn(() => Promise.resolve());
+    const result = await startLogout(
+      plainLogoutDependencies({ leave, revoke, signOut })
+    );
+    expect(result.status).toBe("signed_out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(leave).toHaveBeenCalledTimes(1);
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it("stays on the page when the session could not be ended", async () => {
+    const leave = vi.fn();
+    const result = await startLogout(
+      plainLogoutDependencies({
+        leave,
+        revoke: effects.revoke,
+        signOut: () => Promise.reject(new Error("sign_out_failed")),
+      })
+    );
+    expect(result.status).toBe("sign_out_failed");
+    expect(leave).not.toHaveBeenCalled();
+  });
+});
+
+describe("what a failed sign-out says", () => {
+  const failing = {
+    ...effects,
+    signOut: () => Promise.reject(new Error("sign_out_failed")),
+  };
+
+  async function failedMessage(
+    runtime: ReturnType<typeof runtimeWith> | null,
+    endsWithoutRuntime: boolean
+  ) {
+    const deps = endsOnlySession(runtime, endsWithoutRuntime)
+      ? plainLogoutDependencies(failing)
+      : await logoutDependencies(runtime, failing);
+    expect(deps).not.toBeNull();
+    if (!deps) {
+      throw new Error("no dependencies");
+    }
+    const result = await startLogout(deps);
+    expect(result.status).toBe("sign_out_failed");
+    return signOutFailedMessage(endsOnlySession(runtime, endsWithoutRuntime));
+  }
+
+  it("without a runtime nothing was erased, so the message does not say it was", async () => {
+    const message = await failedMessage(null, true);
+    expect(message).not.toContain("apagados");
+    expect(message).toBe(
+      "Não foi possível sair. Confira a internet e tente de novo."
+    );
+  });
+
+  it("with the runtime the message keeps saying the device was cleared", async () => {
+    const message = await failedMessage(
+      runtimeWith({ readable: true, workspaces: [] }),
+      true
+    );
+    expect(message).toBe(
+      "Os dados deste aparelho foram apagados, mas não foi possível encerrar a sessão. Recarregue a página."
+    );
+  });
+
+  it("only the screen that asked for a way out without runtime takes the plain path", () => {
+    const runtime = runtimeWith({ readable: true, workspaces: [] });
+    expect(endsOnlySession(null, true)).toBe(true);
+    expect(endsOnlySession(null, false)).toBe(false);
+    expect(endsOnlySession(runtime, true)).toBe(false);
+    expect(endsOnlySession(runtime, false)).toBe(false);
   });
 });
