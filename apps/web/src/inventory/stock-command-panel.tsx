@@ -205,8 +205,17 @@ export function StockCommandPanel({
   const prefix = `stock-${target.variantId}-${action}`;
   const focus = useCallback(
     (field: StockFieldName | null) => {
-      if (field !== null) {
-        document.getElementById(stockFieldId(prefix, field))?.focus();
+      if (field === null) {
+        return;
+      }
+      const element = document.getElementById(stockFieldId(prefix, field));
+      element?.focus();
+      // a quantity that opens as 1 is replaced by typing, not appended to
+      if (
+        element instanceof HTMLInputElement &&
+        element.inputMode === "numeric"
+      ) {
+        element.select();
       }
     },
     [prefix]
@@ -297,15 +306,9 @@ export function StockCommandPanel({
         local.runtime.syncNow().catch(() => undefined);
       } catch (error) {
         setState((current) => stockQueueFailed(current, error));
-        if (
-          error instanceof Error &&
-          error.name === "InsufficientLocalStockError"
-        ) {
-          focusLater(() => focus("quantity"));
-        }
       }
     },
-    [focus, local]
+    [local]
   );
 
   const afterFailure = useCallback(

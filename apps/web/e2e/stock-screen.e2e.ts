@@ -894,6 +894,17 @@ test.describe("virada do dia da loja", () => {
   }
 });
 
+test("a quantidade que abre em 1 vem selecionada: digitar troca o valor em vez de somar", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  const quantity = page.getByLabel("Quantidade recebida");
+  await expect(quantity).toBeFocused();
+  await page.keyboard.type("5");
+  await expect(quantity).toHaveValue("5");
+});
+
 test("a revisão vazia leva o foco ao primeiro campo inválido, e o campo diz o erro", async ({
   page,
 }) => {

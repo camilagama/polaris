@@ -789,6 +789,8 @@ export function stockConsequence(action: StockAction): string {
 export interface StockFailure {
   /** The balance the field message quotes was read again (until then, and if the read fails, it says so without a number). */
   balanceRead: boolean;
+  /** The quantity read is not the one the panel showed: a version conflict can leave it the same. */
+  balanceMoved: boolean;
   /** The attempt cannot be resent as is: the next confirm gets a fresh one. */
   discardAttempt: boolean;
   /** The field the refusal is about: the message sits there, not in the alert at the foot of the panel. */
@@ -920,6 +922,7 @@ function stockFailure(
   } = {}
 ): StockFailure {
   return {
+    balanceMoved: false,
     balanceRead: false,
     discardAttempt: options.discardAttempt ?? false,
     field: options.field ?? null,
@@ -1151,7 +1154,7 @@ export function stockFieldRefusal(
   return {
     field: failure.field,
     message: failure.balanceRead
-      ? (balanceReadMessage(state, failure.reason) ?? failure.message)
+      ? (balanceReadMessage(state, failure) ?? failure.message)
       : failure.message,
   };
 }
@@ -1159,29 +1162,37 @@ export function stockFieldRefusal(
 /** What a field refusal says once the balance is read: the number is the new one. */
 function balanceReadMessage(
   state: StockCommandState,
-  reason: string | null
+  failure: StockFailure
 ): string | null {
   const balance = formatQuantity(state.target.quantity);
-  if (reason === "insufficient_stock") {
+  if (failure.reason === "insufficient_stock") {
     return `O servidor recusou: o saldo agora é ${balance}. Reduza a quantidade.`;
   }
-  if (reason === "inventory_version_conflict") {
-    return state.action === "cost"
-      ? `O saldo no sistema mudou para ${balance}. Confira o custo e confirme de novo.`
-      : `O saldo no sistema mudou para ${balance}. Confira a quantidade contada e confirme de novo.`;
+  if (failure.reason === "inventory_version_conflict") {
+    const what = state.action === "cost" ? "o custo" : "a quantidade contada";
+    return failure.balanceMoved
+      ? `O saldo no sistema mudou para ${balance}. Confira ${what} e confirme de novo.`
+      : `Houve outro movimento nesta variante. O saldo no sistema é ${balance}. Confira ${what} e confirme de novo.`;
   }
   return null;
 }
 
 /** The balance came back: a refusal about a field quotes it from now on. */
-function markBalanceRead(state: StockCommandState): StockCommandState {
+function markBalanceRead(
+  state: StockCommandState,
+  quantity: number
+): StockCommandState {
   const { submission } = state;
   return submission.phase === "failed" && submission.failure.field !== null
     ? {
         ...state,
         submission: {
           ...submission,
-          failure: { ...submission.failure, balanceRead: true },
+          failure: {
+            ...submission.failure,
+            balanceMoved: quantity !== state.target.quantity,
+            balanceRead: true,
+          },
         },
       }
     : state;
@@ -1224,7 +1235,7 @@ export function retargetStock(
     return state;
   }
   return {
-    ...markBalanceRead(state),
+    ...markBalanceRead(state, balance.quantity),
     step: state.submission.phase === "locked" ? state.step : "editing",
     target: retarget(state.target, balance),
   };

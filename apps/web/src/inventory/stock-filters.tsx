@@ -64,6 +64,7 @@ export function StockFiltersButton({
       </PopoverTrigger>
       <PopoverContent
         align="end"
+        aria-label="Filtros"
         className="w-80 max-w-[calc(100vw-2rem)] gap-3 p-3"
       >
         <StatusNav

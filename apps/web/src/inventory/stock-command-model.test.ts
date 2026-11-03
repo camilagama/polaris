@@ -1253,6 +1253,27 @@ describe("informing the cost of units on hand (the cost panel)", () => {
     ).toBeNull();
   });
 
+  it("does not say the balance changed when a version conflict leaves it the same", () => {
+    const sent = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("count", countFields)),
+    });
+    const failed = stockFailed(sent.state, {
+      code: "CONFLICT",
+      data: { reason: "inventory_version_conflict" },
+    });
+    const read = retargetStock(failed, {
+      movingAverageCost: "10.000000",
+      quantity: target.quantity,
+      variantId,
+      version: 9,
+    });
+    expect(stockFieldRefusal(read)?.message).toBe(
+      `Houve outro movimento nesta variante. O saldo no sistema é ${target.quantity}. Confira a quantidade contada e confirme de novo.`
+    );
+  });
+
   it("says the cost conflict on the cost field, with the balance read now", () => {
     const sent = prepareStockSubmission({
       createId: ids(),
