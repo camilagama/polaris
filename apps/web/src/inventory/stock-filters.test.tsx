@@ -19,12 +19,12 @@ function markup(filters: StockFilters) {
 describe("the filters of the list", () => {
   it("counts the criteria that narrow the list, and not the search", () => {
     expect(activeStockFilters(defaultStockFilters)).toBe(0);
-    expect(activeStockFilters({ ...defaultStockFilters, query: "camiseta" })).toBe(
-      0
-    );
-    expect(activeStockFilters({ ...defaultStockFilters, stock: "with_stock" })).toBe(
-      1
-    );
+    expect(
+      activeStockFilters({ ...defaultStockFilters, query: "camiseta" })
+    ).toBe(0);
+    expect(
+      activeStockFilters({ ...defaultStockFilters, stock: "with_stock" })
+    ).toBe(1);
     expect(
       activeStockFilters({
         includeArchived: true,

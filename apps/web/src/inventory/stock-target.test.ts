@@ -89,7 +89,9 @@ describe("targetMovementText", () => {
   });
 
   it("says no date it does not have", () => {
-    expect(targetMovementText(target({ updatedAt: undefined }), NOW)).toBeNull();
+    expect(
+      targetMovementText(target({ updatedAt: undefined }), NOW)
+    ).toBeNull();
     expect(
       targetMovementText(target({ updatedAt: "not a date" }), NOW)
     ).toBeNull();

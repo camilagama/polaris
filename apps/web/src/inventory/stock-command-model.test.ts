@@ -1281,11 +1281,11 @@ describe("informing the cost of units on hand (the cost panel)", () => {
   });
 
   it("puts the last movement in the summary of the review, and not when the device does not have it", () => {
-    const body = validateStockDraft(
+    const { body } = validateStockDraft(
       filled("receive", receiveFields).draft,
       { ...target, updatedAt: "2026-10-14T12:00:00.000Z" },
       today
-    ).body;
+    );
     if (body === null) {
       throw new Error("the draft is valid");
     }

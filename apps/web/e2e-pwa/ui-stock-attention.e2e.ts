@@ -17,11 +17,12 @@ const RECEIVE_JEANS = /^Receber estoque de Calça jeans/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
 const DEVICE_PANEL = /Saldo do aparelho: \d+ · custo médio só com conexão/;
 const LAST_MOVEMENT = /último movimento/;
+const FILTERS_BUTTON = /^Filtros/;
 const strip = (page: Page) => page.locator('[data-slot="action-strip"]');
 
 /** The balance tabs, "Sem custo" and "Incluir arquivados" are inside the "Filtros" button: its popup opens unless it already is. */
 async function openFilters(page: Page) {
-  const button = page.getByRole("button", { name: /^Filtros/ });
+  const button = page.getByRole("button", { name: FILTERS_BUTTON });
   if ((await button.getAttribute("aria-expanded")) !== "true") {
     await button.click();
   }
@@ -52,8 +53,9 @@ test.describe("Estoque, Precisa de ação", () => {
     ).toBeVisible();
     await expect(rows.getByRole("listitem")).toHaveCount(1);
     await expect(rows).toContainText("Boné aba reta");
-    await expect(page.getByRole("checkbox", { name: "Sem custo" })).not
-      .toBeChecked();
+    await expect(
+      page.getByRole("checkbox", { name: "Sem custo" })
+    ).not.toBeChecked();
     await page.keyboard.press("Escape");
 
     await strip(page).getByRole("link", { name: "1 sem custo" }).click();

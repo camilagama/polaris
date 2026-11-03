@@ -35,6 +35,7 @@ import {
   STOCK_FIELD_ORDER,
   type StockAction,
   type StockCall,
+  type StockCommandState,
   type StockFailure,
   type StockFieldName,
   type StockResult,
@@ -158,6 +159,23 @@ function Actions({
       ) : null}
     </div>
   );
+}
+
+/**
+ * After the commit that shows the refusal: while the request was in flight the fieldset was off, and a field cannot
+ * take focus until it is on again.
+ */
+function useFocusRefusedField(
+  submission: StockCommandState["submission"],
+  focus: (field: StockFieldName | null) => void
+) {
+  const refusedField =
+    submission.phase === "failed" ? submission.failure.field : null;
+  useEffect(() => {
+    if (refusedField !== null) {
+      focus(refusedField);
+    }
+  }, [focus, refusedField]);
 }
 
 /**
@@ -381,14 +399,7 @@ export function StockCommandPanel({
   const confirming = state.step === "confirming" || locked;
   const submitting = submission.phase === "submitting";
   const blocked = block !== null;
-  const refusedField =
-    submission.phase === "failed" ? submission.failure.field : null;
-  useEffect(() => {
-    // After the commit: while the request was in flight the fieldset was off and a field cannot take focus.
-    if (refusedField !== null) {
-      focus(refusedField);
-    }
-  }, [focus, refusedField]);
+  useFocusRefusedField(submission, focus);
   useEffect(() => {
     // The balance read after a refusal can leave nothing to act on: the field turns off, so focus moves to the panel.
     if (blocked) {

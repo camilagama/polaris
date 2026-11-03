@@ -14,6 +14,10 @@ const INFORM_SHIRT = "Informar custo de Camiseta do teste · Azul";
 const INFORM_ANY = /^Informar custo/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
 const COST_FIELD = "Custo de cada unidade (R$)";
+const SHIRT_CONFLICT =
+  /O saldo no sistema mudou para 4\. Confira o custo e confirme de novo\./;
+const JEANS_CONFLICT =
+  /O saldo no sistema mudou para 12\. Confira a quantidade contada e confirme de novo\./;
 const SHIRT_VARIANT = "0199c2d0-0000-7000-8000-0000000000b1";
 const JEANS_VARIANT = "0199c2d0-0000-7000-8000-0000000000b2";
 
@@ -186,9 +190,7 @@ test.describe("Estoque, Informar custo", () => {
     await page.getByRole("button", { name: "Confirmar custo" }).click();
     const costField = page.getByLabel(COST_FIELD);
     await expect(costField).toBeFocused();
-    await expect(costField).toHaveAccessibleDescription(
-      /O saldo no sistema mudou para 4\. Confira o custo e confirme de novo\./
-    );
+    await expect(costField).toHaveAccessibleDescription(SHIRT_CONFLICT);
     await expect(
       page.getByText("Para as 4 unidades que você tem agora.")
     ).toBeVisible();
@@ -228,9 +230,7 @@ test.describe("Estoque, Informar custo", () => {
     const counted = page.getByLabel("Quantidade contada");
     await expect(counted).toBeFocused();
     await expect(counted).toHaveAttribute("aria-invalid", "true");
-    await expect(counted).toHaveAccessibleDescription(
-      /O saldo no sistema mudou para 12\. Confira a quantidade contada e confirme de novo\./
-    );
+    await expect(counted).toHaveAccessibleDescription(JEANS_CONFLICT);
     await expect(page.getByText("Saldo no sistema: 12 unidades")).toBeVisible();
   });
 

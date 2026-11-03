@@ -266,6 +266,7 @@ for (const theme of THEMES) {
   });
 }
 
+const FILTERS_BUTTON = /^Filtros/;
 const stockFilter = (page: Page, name: string) =>
   page
     .getByRole("tablist", { name: "Filtrar por saldo" })
@@ -275,7 +276,7 @@ const unknownCostFilter = (page: Page) =>
 
 /** The balance tabs, "Sem custo" and "Incluir arquivados" are inside the "Filtros" button: its popup opens unless it already is. */
 async function openFilters(page: Page) {
-  const button = page.getByRole("button", { name: /^Filtros/ });
+  const button = page.getByRole("button", { name: FILTERS_BUTTON });
   if ((await button.getAttribute("aria-expanded")) !== "true") {
     await button.click();
   }
@@ -549,7 +550,7 @@ for (const width of [360, 320]) {
     });
     const search = await page.getByLabel("Buscar no estoque").boundingBox();
     const button = await page
-      .getByRole("button", { name: /^Filtros/ })
+      .getByRole("button", { name: FILTERS_BUTTON })
       .boundingBox();
     expect(search).not.toBeNull();
     expect(button).not.toBeNull();
