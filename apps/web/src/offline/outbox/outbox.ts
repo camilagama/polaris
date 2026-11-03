@@ -24,7 +24,11 @@ export interface OutboxTransaction {
   all: () => Promise<OutboxCommand[]>;
   delete: (commandId: string) => Promise<void>;
   get: (commandId: string) => Promise<OutboxCommand | undefined>;
-  /** The next local sequence number; never reused, even after deletions. */
+  /**
+   * The next local sequence number; never reused during the life of the queue,
+   * even after deletions. Clearing the outbox resets the counter: the server never
+   * sees `seq` (idempotency is by `commandId`), it only orders one database.
+   */
   nextSeq: () => Promise<number>;
   put: (command: OutboxCommand) => Promise<void>;
 }
