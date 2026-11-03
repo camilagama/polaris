@@ -19,11 +19,7 @@ import {
 } from "./logout-dependencies";
 import { useOfflineRuntime } from "./runtime-context";
 
-/**
- * "Sair" (ADR 0039): protects the queue, then ends the session. It only exists
- * while the offline runtime is on, because that is when a device holds work no
- * one else has.
- */
+/** Ends the session on the server: it is the sign-out that clears the cookie. */
 async function signOutOnServer(): Promise<void> {
   // through the connection: a portal's 200 (no Worker mark) never passes for a cleared cookie
   const response = await browserConnection.fetch("/api/auth/sign-out", {
@@ -264,6 +260,10 @@ function OwnLogoutControl({
   return <LogoutButton logout={logout} onAttention={onAttention} />;
 }
 
+/**
+ * "Sair" (ADR 0039) protects the queue, then ends the session. The button only exists while the offline runtime is on,
+ * because that is when a device holds work no one else has; the first access offers its own (`endsWithoutRuntime`).
+ */
 function LogoutButton({
   logout,
   onAttention,
