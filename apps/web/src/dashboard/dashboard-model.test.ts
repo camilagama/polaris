@@ -12,6 +12,7 @@ import {
   type PeriodChain,
   type PeriodQuality,
   qualityMessages,
+  qualitySummary,
   qualityView,
 } from "./dashboard-model";
 
@@ -222,6 +223,47 @@ describe("qualityView", () => {
     expect(view.title).toBe("Estimativa incompleta");
     expect(view.messages).toHaveLength(1);
     expect(isIncompleteEstimate(partial)).toBe(true);
+  });
+});
+
+describe("qualitySummary", () => {
+  const partial = (overrides: Partial<PeriodQuality>): PeriodQuality => ({
+    ...completeQuality,
+    level: "partial",
+    ...overrides,
+  });
+
+  it("counts what is missing in one sentence, with the thousands grouped", () => {
+    expect(
+      qualitySummary(
+        partial({
+          itemLinesWithUnknownCost: 262,
+          missing: ["unknown_cost", "unknown_processing_fee"],
+          processingFeesUnknown: 1272,
+        })
+      )
+    ).toBe(
+      "Estimativa incompleta: 262 itens sem custo e 1.272 vendas sem taxa."
+    );
+  });
+
+  it("says one in the singular and lists three as a, b e c", () => {
+    expect(
+      qualitySummary(
+        partial({
+          itemLinesWithUnknownCost: 1,
+          missing: ["unknown_cost", "unknown_anticipation_fee", "no_expenses"],
+          anticipationFeesUnknown: 2,
+        })
+      )
+    ).toBe(
+      "Estimativa incompleta: 1 item sem custo, 2 vendas com antecipação sem taxa e nenhuma despesa registrada."
+    );
+  });
+
+  it("is null with nothing countable, so the screen falls back to the title", () => {
+    expect(qualitySummary(partial({ missing: ["no_sales"] }))).toBeNull();
+    expect(qualitySummary(completeQuality)).toBeNull();
   });
 });
 

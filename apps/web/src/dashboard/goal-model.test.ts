@@ -51,9 +51,7 @@ function draft(overrides: Partial<GoalDraft> = {}): GoalDraft {
 describe("labels", () => {
   it("names each measure and each status", () => {
     expect(goalKindLabel("net_sales")).toBe("Vendas líquidas");
-    expect(goalKindLabel("operating_result")).toBe(
-      "Resultado operacional estimado"
-    );
+    expect(goalKindLabel("operating_result")).toBe("Resultado estimado");
     expect(goalKindLabel("sale_count")).toBe("Número de vendas");
     expect(goalStatusLabel("active")).toBe("Em andamento");
     expect(goalStatusLabel("completed")).toBe("Concluída");

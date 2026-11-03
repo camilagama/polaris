@@ -129,6 +129,8 @@ export function HeroValue({
 
 /** The change of a card: green when it went up, neutral when it went down or stayed (selling less is not an error). */
 export interface KpiDelta {
+  /** What the change is against, said short beside it: "vs. setembro". */
+  against?: string;
   /** What the change is against, for the name of the chip: "em relação a 1 a 23/09". */
   basis?: string;
   money: boolean;
@@ -205,6 +207,11 @@ export function DeltaChip({ delta }: { delta: KpiDelta }) {
         <Icon aria-hidden="true" className="size-3" strokeWidth={2.5} />
       ) : null}
       {chipText(delta)}
+      {delta.against ? (
+        <span className="ml-1 font-normal" data-kpi-delta-against="">
+          {delta.against}
+        </span>
+      ) : null}
     </span>
   );
 }

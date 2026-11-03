@@ -2542,7 +2542,9 @@ test.describe("janela anterior do Início: uma despesa neste aparelho", () => {
     await page
       .getByRole("button", { name: "Anular despesa Conta de luz" })
       .click();
-    await expect(page.getByText("Despesa anulada.")).toBeVisible();
+    await expect(
+      page.getByText("Despesa “Conta de luz” anulada.")
+    ).toBeVisible();
   };
   const seeded = (competenceOn: string) => {
     const server = new FakeServer(SOLD);
