@@ -121,13 +121,20 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
  */
 export function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
   return (
-    <section aria-labelledby="sale-preview-title" className="grid gap-2">
-      <h3 className="font-medium" id="sale-preview-title">
-        Prévia de taxas e prazo
-      </h3>
-      <p className="text-muted-foreground text-support">
-        O servidor recalcula ao confirmar.
-      </p>
+    <section
+      aria-labelledby={preview ? "sale-preview-title" : undefined}
+      className="grid gap-2"
+    >
+      {preview ? (
+        <>
+          <h3 className="font-medium" id="sale-preview-title">
+            Prévia de taxas e prazo
+          </h3>
+          <p className="text-muted-foreground text-support">
+            O servidor recalcula ao confirmar.
+          </p>
+        </>
+      ) : null}
       <div aria-atomic="true" aria-live="polite" className="grid">
         {preview ? (
           <dl className="grid gap-2 text-support">
@@ -164,11 +171,7 @@ export function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
               }
             />
           </dl>
-        ) : (
-          <p className="text-muted-foreground text-support">
-            Complete itens, pagamento e perfil para ver a prévia.
-          </p>
-        )}
+        ) : null}
       </div>
     </section>
   );
@@ -386,9 +389,6 @@ export function SummaryPanel({
                   value={row.value}
                 />
               ))}
-              {rows.length === 1 ? (
-                <LeaderRow label="Ajustes" value="nenhum" />
-              ) : null}
             </dl>
           ) : (
             <p className="text-muted-foreground text-support">
@@ -396,14 +396,18 @@ export function SummaryPanel({
             </p>
           )}
           <FieldError>{errors[formFieldKeys.totals]}</FieldError>
-          <dl className="grid gap-2 text-support">
-            <DetailRow
-              label="Data e hora da venda"
-              value={evaluation.dateText}
-            />
-            <DetailRow label="Pagamento" value={evaluation.methodText} />
-            {/* with the preview, the profile is its first line */}
-            {evaluation.feePreview ? null : (
+          {/* only what was chosen: a typed date, the method, the profile (with the preview, its first line) */}
+          <dl className="grid gap-2 text-support empty:hidden">
+            {evaluation.occurredAtOverride === null ? null : (
+              <DetailRow
+                label="Data e hora da venda"
+                value={evaluation.dateText}
+              />
+            )}
+            {evaluation.methodChosen ? (
+              <DetailRow label="Pagamento" value={evaluation.methodText} />
+            ) : null}
+            {evaluation.feePreview || !evaluation.profileChosen ? null : (
               <DetailRow
                 label="Perfil de pagamento"
                 value={evaluation.profileText}

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   balanceOfEntry,
   chunkIds,
-  clearedItemChanges,
   itemChangesForEntry,
   lineBalancesRequest,
   PICKER_RESULT_LIMIT,
@@ -165,11 +164,6 @@ describe("choosing a variant", () => {
       label: "Camiseta Polaris · Azul / M",
       productId: chosen.productId,
       variantId: chosen.variantId,
-    });
-    expect(clearedItemChanges).toEqual({
-      label: "",
-      productId: "",
-      variantId: "",
     });
   });
 

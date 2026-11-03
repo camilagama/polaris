@@ -33,6 +33,7 @@ import {
   formatBrlAmount,
   formatCalendarDate,
   formatInstant,
+  formatQuantity,
 } from "../lib/format";
 import {
   isLegalAcceptanceRefusal,
@@ -297,11 +298,63 @@ export function createBlankSaleForm(createId: () => string): SaleFormState {
 }
 
 /**
- * Whether the person put anything on the sale: a chosen variant, a changed quantity or price, an
- * adjustment, a payment or profile choice, or a date. A blank form, and the offline mode's own
- * "dated now", are not work. The cart counts even when it was built only by taps and selections.
+ * What the screen fills in on a new sale for the person: the method and profile of the last sale on this device, or
+ * "Sem perfil" in a store without an active profile (last-payment-model.ts). Empty fields are no preset.
  */
-export function isSaleFormDirty(form: SaleFormState): boolean {
+export interface SalePreset {
+  method: SaleMethod | "";
+  profileChoice: string;
+  /** The version the remembered profile was used with; null with no profile or "Sem perfil". */
+  profileVersion: number | null;
+}
+
+export const NO_SALE_PRESET: SalePreset = {
+  method: "",
+  profileChoice: "",
+  profileVersion: null,
+};
+
+/**
+ * Fills in the preset only where the person has not chosen: a method or a profile already on the form, or a profile
+ * cleared with a notice to read, stay as they are.
+ */
+export function applySalePreset(
+  form: SaleFormState,
+  preset: SalePreset
+): SaleFormState {
+  const fillMethod = form.payment.method === "" && preset.method !== "";
+  const fillProfile =
+    form.profile.choice === "" &&
+    form.profile.reviewNotice === null &&
+    preset.profileChoice !== "";
+  if (!(fillMethod || fillProfile)) {
+    return form;
+  }
+  return {
+    ...form,
+    payment: fillMethod
+      ? selectPaymentMethod(form, preset.method).payment
+      : form.payment,
+    profile: fillProfile
+      ? {
+          choice: preset.profileChoice,
+          reviewNotice: null,
+          seenVersion: preset.profileVersion,
+        }
+      : form.profile,
+  };
+}
+
+/**
+ * Whether the person put anything on the sale: a chosen variant, a changed quantity or price, an
+ * adjustment, a payment or profile choice, or a date. A blank form, what the screen chose for the person (the
+ * preset), and the offline mode's own "dated now", are not work. The cart counts even when it was built only by taps
+ * and selections.
+ */
+export function isSaleFormDirty(
+  form: SaleFormState,
+  preset: SalePreset = NO_SALE_PRESET
+): boolean {
   const blank = createItemDraft("");
   const itemChanged = (item: ItemDraft) =>
     item.variantId !== "" ||
@@ -313,11 +366,12 @@ export function isSaleFormDirty(form: SaleFormState): boolean {
     form.items.some(itemChanged) ||
     form.adjustments.length > 0 ||
     form.occurredAtLocal !== "" ||
-    form.payment.method !== "" ||
+    (form.payment.method !== preset.method && form.payment.method !== "") ||
     form.payment.installmentPlan !== "" ||
     form.payment.installments !== "" ||
     form.payment.anticipationRequested ||
-    form.profile.choice !== ""
+    (form.profile.choice !== preset.profileChoice &&
+      form.profile.choice !== "")
   );
 }
 
@@ -789,6 +843,16 @@ export function stockView(
   };
 }
 
+/**
+ * The balance on the line of the chosen variant, short ("Saldo 6") when it is just a number; a zero balance, a
+ * failed read or a read under way keep the whole sentence, which says what to do.
+ */
+export function stockLineText(view: StockView): string {
+  return view.tone === "ok" && view.quantity !== null
+    ? `Saldo ${formatQuantity(view.quantity)}`
+    : view.text;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Fee preview                                                                */
 /* -------------------------------------------------------------------------- */
@@ -935,6 +999,55 @@ export const adjustmentFieldKey = (draftId: string) =>
   `adjustment:${draftId}:value`;
 export const SALE_DATE_HINT =
   "Vazio é agora. Aceita até 30 dias atrás; nada no futuro.";
+
+/** Said where the date would be, without a connection: the device records the sale at the moment it is kept. */
+export const OFFLINE_SALE_DATE_NOTE =
+  "Sem internet, a venda fica com a data e a hora de agora: uma data digitada não fica guardada.";
+
+/**
+ * The date of the sale is typed in two fields (the day on the DatePicker, the time as text) and kept in the form as
+ * one `AAAA-MM-DDTHH:MM` text; a half-typed one keeps the half that exists, which the evaluation refuses.
+ */
+export function splitSaleDate(local: string): { day: string; time: string } {
+  const at = local.indexOf("T");
+  return at < 0
+    ? { day: local, time: "" }
+    : { day: local.slice(0, at), time: local.slice(at + 1) };
+}
+
+export function joinSaleDate(day: string, time: string): string {
+  const cleanDay = day.trim();
+  const cleanTime = time.trim();
+  return cleanDay === "" && cleanTime === "" ? "" : `${cleanDay}T${cleanTime}`;
+}
+
+/** The time a day starts with when the person picks it before typing one: the device's hour and minute now. */
+export function timeOfDay(now: Date): string {
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${two(now.getHours())}:${two(now.getMinutes())}`;
+}
+
+/**
+ * The closed line of the date and adjustments: "Agora · Sem ajuste", "02/11/2026 14:30 · 1 ajuste". Without a
+ * connection the date is always now (a typed one is not kept).
+ */
+export function saleExtrasSummary(
+  form: SaleFormState,
+  offline: boolean
+): string {
+  const { day, time } = splitSaleDate(form.occurredAtLocal);
+  const [year, month, date] = day.split("-");
+  const dateText =
+    offline || form.occurredAtLocal === ""
+      ? "Agora"
+      : [year && month && date ? `${date}/${month}/${year}` : day, time]
+          .filter((part) => part !== "")
+          .join(" ");
+  const count = form.adjustments.length;
+  const adjustmentsText =
+    count === 0 ? "Sem ajuste" : `${count} ${count === 1 ? "ajuste" : "ajustes"}`;
+  return `${dateText} · ${adjustmentsText}`;
+}
 
 const localDateTimePattern =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
@@ -1511,9 +1624,13 @@ export interface SaleEvaluation {
   feePreview: FeePreview | null;
   /** Every problem, including fields that are just not filled in yet. */
   issueCount: number;
+  /** Whether a method is chosen: the summary shows only what is. */
+  methodChosen: boolean;
   methodText: string;
   /** ISO instant chosen by the operator; null means now at attempt creation. */
   occurredAtOverride: string | null;
+  /** Whether a profile (or "Sem perfil") is chosen. */
+  profileChosen: boolean;
   profileText: string;
   stockWarnings: Record<string, string>;
   summary: SaleSummary | null;
@@ -1636,8 +1753,10 @@ export function evaluateSaleForm(
     errors: visibleErrors(issues, options.showRequired),
     feePreview,
     issueCount: issues.length,
+    methodChosen: form.payment.method !== "",
     methodText: methodSummary(form.payment),
     occurredAtOverride: date.occurredAt,
+    profileChosen: form.profile.choice !== "",
     profileText: profileSummary(form.profile, resolution),
     stockWarnings: items ? stockWarnings(items, context.stock) : {},
     summary,

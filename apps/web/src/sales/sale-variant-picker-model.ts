@@ -130,6 +130,24 @@ export function pickerView(
   };
 }
 
+/**
+ * The suggestions open only while the person is at the search: the field in focus or with text typed. A sale screen
+ * that just opened shows the field alone, and nothing under it moves when the suggestions arrive.
+ */
+export function pickerMayOpen(focused: boolean, text: string): boolean {
+  return focused || text.trim() !== "";
+}
+
+/**
+ * A store with nothing to sell says so under the field, without waiting for a touch: it is the state of the store,
+ * not a suggestion. A search with no match is said inside the suggestions.
+ */
+export function storeHasNothingToSell(
+  view: PickerView
+): view is Extract<PickerView, { kind: "empty" }> & { href: string } {
+  return view.kind === "empty" && view.href !== null;
+}
+
 export function pickerErrorMessage(error: unknown): string {
   return readErrorMessage(error, "as variantes");
 }
@@ -156,12 +174,6 @@ export function balanceOfEntry(
     version: entry.version,
   };
 }
-
-/** Clearing the choice brings the search back; the quantity is kept. */
-export const clearedItemChanges: Pick<
-  ItemDraft,
-  "label" | "productId" | "variantId"
-> = { label: "", productId: "", variantId: "" };
 
 const GONE_MESSAGE =
   "Esta variante não aparece mais entre os produtos ativos. Troque a variante ou remova o item.";

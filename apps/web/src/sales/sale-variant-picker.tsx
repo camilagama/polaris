@@ -1,26 +1,35 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import SearchIcon from "lucide-react/dist/esm/icons/search";
 import {
-  type ChangeEvent,
   type KeyboardEvent,
-  type MouseEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
-import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxFooter,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/ui/combobox";
+import { Field, FieldError, FieldLabel } from "@/ui/field";
+import { InputGroup, InputGroupAddon } from "@/ui/input-group";
 import { orpcClient } from "../lib/orpc";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import { NewProductLink } from "./sale-fields";
 import type { Loadable } from "./sale-form-model";
 import {
+  type PickerOption,
   pickerErrorMessage,
+  pickerMayOpen,
   pickerView,
+  storeHasNothingToSell,
   variantSearchRequest,
 } from "./sale-variant-picker-model";
 
@@ -83,28 +92,45 @@ function useVariantSearch(
 }
 
 interface VariantSearchProps {
+  /** Focus the field when it appears: the person asked to change the variant. */
+  autoFocus?: boolean | undefined;
   error: string | undefined;
   /** Prefix of the element ids of this line. */
   id: string;
   /** Searches this device's collections instead of the server (no connection). */
   localSearch?: LocalSearch | undefined;
+  /** Leaving the search without a choice (Escape, a touch outside, the focus going away) while changing a variant. */
+  onCancel?: (() => void) | undefined;
   onPick: (entry: InventoryBalanceEntryReadModel) => void;
   organizationId: string;
+  /** The variant already on the line: marked (`aria-selected`, check) in the suggestions. */
+  selectedVariantId?: string | undefined;
 }
 
+const DISMISS_REASONS = new Set(["escape-key", "focus-out", "outside-press"]);
+const TYPING_REASONS = new Set(["clear-press", "input-change", "input-clear"]);
+const optionLabel = (option: PickerOption) => option.label;
+const sameOption = (left: PickerOption, right: PickerOption) =>
+  left.id === right.id;
+
 /**
- * Search-and-choose list of sellable variants. Every result is a real button
- * (at least 44 px tall), so it works with keyboard, screen readers and touch.
- * Enter picks the first match instead of submitting the sale.
+ * Search-and-choose of sellable variants. The suggestions open in a popup anchored to the field (Base UI Combobox),
+ * only with the field in focus or with text, so nothing of the form moves when they arrive. The arrows move through
+ * them, Enter chooses the highlighted one (the first, while typing) and never submits the sale, Escape closes them.
  */
 export function VariantSearch({
+  autoFocus,
   error,
   id,
   localSearch,
+  onCancel,
   onPick,
   organizationId,
+  selectedVariantId,
 }: VariantSearchProps) {
   const [text, setText] = useState("");
+  const [focused, setFocused] = useState(Boolean(autoFocus));
+  const [dismissed, setDismissed] = useState(false);
   const { load, retry } = useVariantSearch(organizationId, text, localSearch);
   const view = pickerView(
     load,
@@ -112,122 +138,147 @@ export function VariantSearch({
     text
   );
   const options = view.kind === "ready" ? view.options : [];
-  const inputRef = useRef<HTMLInputElement>(null);
+  const selected =
+    options.find((option) => option.id === selectedVariantId) ?? null;
+  const nothingToSell = storeHasNothingToSell(view);
+  const open = !(nothingToSell || dismissed) && pickerMayOpen(focused, text);
+  const groupRef = useRef<HTMLDivElement>(null);
   const searchId = `${id}-search`;
-  const listId = `${id}-results`;
   const errorId = `${id}-error`;
 
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => setText(event.target.value),
+  const handleInputValue = useCallback(
+    (value: string, details: { reason: string }) => {
+      if (TYPING_REASONS.has(details.reason)) {
+        setText(value);
+        setDismissed(false);
+      }
+    },
     []
   );
-  const handlePick = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      const { variantId } = event.currentTarget.dataset;
-      const option = options.find((candidate) => candidate.id === variantId);
+  const handleValue = useCallback(
+    (option: PickerOption | null) => {
       if (option) {
         onPick(option.entry);
       }
     },
-    [onPick, options]
+    [onPick]
   );
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key !== "Enter") {
+  const handleOpenChange = useCallback(
+    (next: boolean, details: { reason: string }) => {
+      if (next) {
+        setDismissed(false);
         return;
       }
-      // Enter must never submit the whole sale from a search box.
-      event.preventDefault();
-      const [first] = options;
-      if (first && text.trim() !== "") {
-        onPick(first.entry);
+      setDismissed(true);
+      if (onCancel && DISMISS_REASONS.has(details.reason)) {
+        onCancel();
       }
     },
-    [onPick, options, text]
+    [onCancel]
+  );
+  const handleFocus = useCallback(() => {
+    setFocused(true);
+    setDismissed(false);
+  }, []);
+  const handleBlur = useCallback(() => setFocused(false), []);
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        // Enter must never submit the whole sale from a search box; with an option highlighted, Base UI chooses it.
+        event.preventDefault();
+      }
+      if (event.key === "Escape" && !open && onCancel) {
+        onCancel();
+      }
+    },
+    [onCancel, open]
   );
 
   return (
     <Field data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={searchId}>Produto ou variante</FieldLabel>
-      <InputGroup>
-        <InputGroupAddon>
-          <SearchIcon aria-hidden="true" />
-        </InputGroupAddon>
-        <InputGroupInput
-          aria-controls={listId}
-          aria-describedby={error ? errorId : undefined}
-          aria-invalid={error ? true : undefined}
-          autoComplete="off"
-          // the search is cheap to type again: it does not hold the swap of the build (pwa/swap-guard.ts)
-          data-swap-ignore=""
-          id={searchId}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Buscar por nome, variante ou SKU"
-          ref={inputRef}
-          type="search"
-          value={text}
-        />
-      </InputGroup>
+      <Combobox
+        autoHighlight
+        filter={null}
+        inputValue={text}
+        isItemEqualToValue={sameOption}
+        items={options}
+        itemToStringLabel={optionLabel}
+        onInputValueChange={handleInputValue}
+        onOpenChange={handleOpenChange}
+        onValueChange={handleValue}
+        open={open}
+        value={selected}
+      >
+        <InputGroup ref={groupRef}>
+          <InputGroupAddon>
+            <SearchIcon aria-hidden="true" />
+          </InputGroupAddon>
+          <ComboboxInput
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? true : undefined}
+            autoComplete="off"
+            // biome-ignore lint/a11y/noAutofocus: only after "Trocar", which the person just pressed on this line
+            autoFocus={autoFocus}
+            // the search is cheap to type again: it does not hold the swap of the build (pwa/swap-guard.ts)
+            data-swap-ignore=""
+            id={searchId}
+            onBlur={handleBlur}
+            onFocus={handleFocus}
+            onKeyDown={handleKeyDown}
+            placeholder="Buscar por nome, variante ou SKU"
+            type="search"
+          />
+        </InputGroup>
+        <ComboboxContent
+          anchor={groupRef}
+          aria-busy={view.kind === "loading" || undefined}
+        >
+          <ComboboxEmpty>
+            {view.kind === "loading" ? view.message : null}
+            {view.kind === "empty" ? view.message : null}
+            {view.kind === "error" ? (
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-destructive">
+                {view.message}
+                <Button onClick={retry} size="sm" type="button" variant="link">
+                  Tentar novamente
+                </Button>
+              </span>
+            ) : null}
+          </ComboboxEmpty>
+          <ComboboxList aria-label="Variantes encontradas">
+            {(option: PickerOption) => (
+              <ComboboxItem key={option.id} value={option}>
+                <span className="font-medium [overflow-wrap:anywhere]">
+                  {option.label}
+                </span>
+                <span
+                  className={cn(
+                    "text-support",
+                    option.tone === "warning"
+                      ? "text-warning"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  {option.detail}
+                </span>
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+          {view.kind === "ready" && view.hint ? (
+            <ComboboxFooter>{view.hint}</ComboboxFooter>
+          ) : null}
+        </ComboboxContent>
+      </Combobox>
       <p aria-live="polite" className="sr-only" role="status">
-        {view.kind === "ready" ? view.status : ""}
+        {open && view.kind === "ready" ? view.status : ""}
       </p>
       <FieldError id={errorId}>{error}</FieldError>
-      {view.kind === "loading" ? (
-        <p className="text-muted-foreground text-support" role="status">
-          {view.message}
-        </p>
-      ) : null}
-      {view.kind === "error" ? (
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {view.message}
-            <Button onClick={retry} size="sm" type="button" variant="link">
-              Tentar novamente
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      {view.kind === "empty" ? (
+      {nothingToSell ? (
         <div className="grid justify-items-start gap-3">
           <p className="text-muted-foreground text-support">{view.message}</p>
-          {view.href ? <NewProductLink href={view.href} /> : null}
+          <NewProductLink href={view.href} />
         </div>
-      ) : null}
-      {view.kind === "ready" ? (
-        <>
-          <ul
-            aria-label="Variantes encontradas"
-            className="grid max-h-88 gap-1.5 overflow-y-auto"
-            id={listId}
-          >
-            {view.options.map((option) => (
-              <li key={option.id}>
-                <button
-                  className="focus-ring grid min-h-11 w-full gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left motion-full:transition-colors hover:border-input hover:bg-accent"
-                  data-variant-id={option.id}
-                  onClick={handlePick}
-                  type="button"
-                >
-                  <span className="font-medium [overflow-wrap:anywhere]">
-                    {option.label}
-                  </span>
-                  <span
-                    className={cn(
-                      "text-support",
-                      option.tone === "warning"
-                        ? "text-warning"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    {option.detail}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          {view.hint ? <FieldDescription>{view.hint}</FieldDescription> : null}
-        </>
       ) : null}
     </Field>
   );
