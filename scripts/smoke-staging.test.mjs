@@ -737,6 +737,24 @@ describe("the staging smoke", () => {
         "admin /health without sign-in (redirected to Access): 302 redirect outside the Access team",
       ]);
     }
+    // the right team, but not the login of the application of this hostname
+    for (const path of [
+      "/cdn-cgi/access/login",
+      "/cdn-cgi/access/login/other.araute.app",
+      "/cdn-cgi/access/login/admin.araute.app/x",
+      "/",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      const failures = await failing({
+        [health]: () =>
+          answer(302, {
+            location: `https://${STAGING_ACCESS_TEAM}${path}?kid=x`,
+          }),
+      });
+      expect(failures).toEqual([
+        "admin /health without sign-in (redirected to Access): 302 redirect to another Access page",
+      ]);
+    }
   });
 
   it("never follows the redirect of Access", async () => {

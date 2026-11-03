@@ -22,8 +22,9 @@ const REQUEST_ID =
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const RELEASE_HEADER = "x-polaris-release";
 
-/** The Access team of staging: an anonymous request to the Admin is sent to its login. */
+/** The Access team of staging: an anonymous request to the Admin is sent to the login of its application. */
 export const STAGING_ACCESS_TEAM = "polaris-staging.cloudflareaccess.com";
+const ACCESS_LOGIN_PATH = "/cdn-cgi/access/login/admin.araute.app";
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
 /** Sent on every request, so the requests of the smoke are told apart in the logs of the Workers. */
@@ -89,10 +90,15 @@ const sentToAccess = (response) => {
   }
   try {
     const location = new URL(response.headers.get("location") ?? "");
+    if (
+      location.protocol !== "https:" ||
+      location.host !== STAGING_ACCESS_TEAM
+    ) {
+      return "redirect outside the Access team";
+    }
     return (
-      (location.protocol === "https:" &&
-        location.host === STAGING_ACCESS_TEAM) ||
-      "redirect outside the Access team"
+      location.pathname === ACCESS_LOGIN_PATH ||
+      "redirect to another Access page"
     );
   } catch {
     return "redirect outside the Access team";
