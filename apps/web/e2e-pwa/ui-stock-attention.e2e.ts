@@ -8,16 +8,28 @@ import { stockStates } from "./ui-stock-states";
 /**
  * "Precisa de ação" on Estoque and Pendências, and the texts of Estoque: each link of the strip applies its filter
  * without leaving the screen; the strip is not there with nothing to do or without a connection; the help in the title
- * opens by click; the movement panel says the date of the last movement online and the device's balance offline; axe
+ * opens by click; the movement panel opened in a row does not repeat the balance the row says, and says the date of the last movement in the review online; axe
  * finds nothing on either screen.
  */
-const JEANS_PANEL =
-  /Saldo atual: 3 · custo médio R\$ 62,40 · último movimento \d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}/;
+const JEANS_PANEL = /^Saldo atual: 3 · custo médio R\$ 62,40$/;
+const LAST_MOVEMENT_DATE = /^\d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}$/;
 const RECEIVE_JEANS = /^Receber estoque de Calça jeans/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
 const DEVICE_PANEL = /Saldo do aparelho: \d+ · custo médio só com conexão/;
 const LAST_MOVEMENT = /último movimento/;
+const FILTERS_BUTTON = /^Filtros/;
 const strip = (page: Page) => page.locator('[data-slot="action-strip"]');
+
+/** The balance tabs, "Sem custo" and "Incluir arquivados" are inside the "Filtros" button: its popup opens unless it already is. */
+async function openFilters(page: Page) {
+  const button = page.getByRole("button", { name: FILTERS_BUTTON });
+  if ((await button.getAttribute("aria-expanded")) !== "true") {
+    await button.click();
+  }
+  await expect(
+    page.getByRole("tablist", { name: "Filtrar por saldo" })
+  ).toBeVisible();
+}
 
 test.describe("Estoque, Precisa de ação", () => {
   test("a faixa diz os números e cada link aplica o seu filtro", async ({
@@ -33,21 +45,27 @@ test.describe("Estoque, Precisa de ação", () => {
       .getByRole("link", { name: "1 variante sem saldo" })
       .click();
     await expect(
+      page.getByRole("button", { name: "Filtros, 1 ativo" })
+    ).toBeVisible();
+    await openFilters(page);
+    await expect(
       page.getByRole("tab", { name: "Sem saldo", selected: true })
     ).toBeVisible();
     await expect(rows.getByRole("listitem")).toHaveCount(1);
     await expect(rows).toContainText("Boné aba reta");
     await expect(
-      page.getByRole("button", { name: "Sem custo" })
-    ).toHaveAttribute("aria-pressed", "false");
+      page.getByRole("checkbox", { name: "Sem custo" })
+    ).not.toBeChecked();
+    await page.keyboard.press("Escape");
 
     await strip(page).getByRole("link", { name: "1 sem custo" }).click();
+    await openFilters(page);
     await expect(
       page.getByRole("tab", { name: "Todas", selected: true })
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Sem custo" })
-    ).toHaveAttribute("aria-pressed", "true");
+      page.getByRole("checkbox", { name: "Sem custo" })
+    ).toBeChecked();
     await expect(rows.getByRole("listitem")).toHaveCount(1);
     await expect(rows).toContainText("Camiseta do teste");
     // the strip counts the store, not the list: it stays while a filter is on
@@ -61,11 +79,14 @@ test.describe("Estoque, Precisa de ação", () => {
   }) => {
     await stockStates.list(page);
     await page.getByLabel("Buscar no estoque").fill("jeans");
+    await openFilters(page);
     await page.getByRole("checkbox", { name: "Incluir arquivados" }).click();
+    await page.keyboard.press("Escape");
     await strip(page)
       .getByRole("link", { name: "1 variante sem saldo" })
       .click();
     await expect(page.getByLabel("Buscar no estoque")).toHaveValue("");
+    await openFilters(page);
     await expect(
       page.getByRole("checkbox", { name: "Incluir arquivados" })
     ).not.toBeChecked();
@@ -128,18 +149,31 @@ test.describe("Estoque, Precisa de ação", () => {
       page.getByRole("button", { name: "Carregar mais" })
     ).toBeVisible();
     await expect(page.getByText("Atualizado", { exact: true })).toHaveCount(0);
+    await openFilters(page);
     await expect(
       page.getByRole("checkbox", { name: "Incluir arquivados" })
     ).toBeVisible();
   });
 
-  test("o painel diz a data do último movimento", async ({ page }) => {
+  test("o painel dentro do cartão não repete o saldo e o custo, e a data do último movimento vem na revisão", async ({
+    page,
+  }) => {
     await stockStates.list(page);
     await page.getByRole("button", { name: RECEIVE_JEANS }).click();
-    await expect(page.getByText(JEANS_PANEL)).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Receber estoque" })
+    ).toBeVisible();
+    await expect(page.getByText(JEANS_PANEL)).toHaveCount(0);
+    await expect(page.getByText(LAST_MOVEMENT)).toHaveCount(0);
+    await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+    await expect(
+      page.getByText("Último movimento", { exact: true })
+    ).toBeVisible();
+    await expect(page.getByText(LAST_MOVEMENT_DATE)).toBeVisible();
   });
 
-  test("sem conexão o painel diz o saldo do aparelho e o aviso é o curto", async ({
+  test("sem conexão o painel dentro do cartão não repete o saldo do aparelho e o aviso é o curto", async ({
     page,
   }) => {
     await stockStates.offline(page);
@@ -149,7 +183,10 @@ test.describe("Estoque, Precisa de ação", () => {
       )
     ).toBeVisible();
     await page.getByRole("button", { name: RECEIVE_SHIRT }).first().click();
-    await expect(page.getByText(DEVICE_PANEL)).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Receber estoque" })
+    ).toBeVisible();
+    await expect(page.getByText(DEVICE_PANEL)).toHaveCount(0);
     await expect(page.getByText(LAST_MOVEMENT)).toHaveCount(0);
   });
 

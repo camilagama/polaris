@@ -5,6 +5,7 @@ import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
   customerErrorMessage,
   customerStatusLabel,
+  filterCustomers,
   formatCustomerPhone,
   hasCustomerContact,
   isCustomerListStatus,
@@ -201,5 +202,45 @@ describe("customerErrorMessage com o 503 de uma escrita", () => {
     ).toBe(
       "A lista de clientes está temporariamente indisponível. Tente novamente."
     );
+  });
+});
+
+describe("the search of the customers", () => {
+  const people = [
+    { email: "bia@exemplo.com", name: "Beatriz Souza", phone: "11987654321" },
+    { email: null, name: "João Araújo", phone: "(21) 3000-1234" },
+    { email: "loja2@exemplo.com", name: "Loja 2", phone: null },
+  ];
+  const names = (query: string) =>
+    filterCustomers(people, query).map((person) => person.name);
+
+  it("keeps everyone, in order, with no text", () => {
+    expect(names("")).toEqual(["Beatriz Souza", "João Araújo", "Loja 2"]);
+    expect(names("   ")).toHaveLength(3);
+  });
+
+  it("finds by name without accents or case", () => {
+    expect(names("joao ARAUJO")).toEqual(["João Araújo"]);
+    expect(names("souz")).toEqual(["Beatriz Souza"]);
+  });
+
+  it("finds by e-mail", () => {
+    expect(names("BIA@")).toEqual(["Beatriz Souza"]);
+    expect(names("exemplo.com")).toEqual(["Beatriz Souza", "Loja 2"]);
+  });
+
+  it("finds by phone with or without the marks, on either side", () => {
+    expect(names("(11) 98765")).toEqual(["Beatriz Souza"]);
+    expect(names("1198765")).toEqual(["Beatriz Souza"]);
+    expect(names("3000-12")).toEqual(["João Araújo"]);
+    expect(names("213000")).toEqual(["João Araújo"]);
+    // pasted with the country code
+    expect(names("+55 (11) 98765-4321")).toEqual(["Beatriz Souza"]);
+    expect(names("5521 3000-1234")).toEqual(["João Araújo"]);
+  });
+
+  it("reads a text with letters as a name, not as the digits of a phone", () => {
+    expect(names("Loja 2")).toEqual(["Loja 2"]);
+    expect(names("nada 1")).toEqual([]);
   });
 });

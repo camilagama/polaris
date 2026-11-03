@@ -158,7 +158,7 @@ describe("receive validation", () => {
   });
 
   it("requires the unit cost and the quantity", () => {
-    const issues = issuesOf(filled("receive", {}));
+    const issues = issuesOf(filled("receive", { quantity: "" }));
     expect(issues.map((issue) => [issue.field, issue.empty])).toEqual([
       ["quantity", true],
       ["unitCost", true],
@@ -692,7 +692,7 @@ describe("submission and idempotency", () => {
     const fresh = discardLockedStock(asking);
     expect(fresh).not.toBeNull();
     expect(fresh?.attempt).toBeNull();
-    expect(fresh?.draft).toMatchObject({ quantity: "" });
+    expect(fresh?.draft).toMatchObject({ quantity: "1" });
     expect(fresh?.submission.phase).toBe("idle");
   });
 
@@ -817,7 +817,7 @@ describe("mapStockError", () => {
     ["NOT_FOUND", "product_not_found", "não existe mais", { reloadList: true }],
     ["BAD_REQUEST", "invalid_unit_cost", "6 casas decimais", {}],
     ["BAD_REQUEST", "inventory_cost_limit", "18 dígitos", {}],
-    ["BAD_REQUEST", "invalid_inventory_count_input", "valoração", {}],
+    ["BAD_REQUEST", "invalid_inventory_count_input", "O custo só vale", {}],
     ["BAD_REQUEST", "invalid_receive_stock_input", "validação", {}],
     ["BAD_REQUEST", "invalid_write_off_stock_input", "validação", {}],
     ["BAD_REQUEST", "invalid_stock_movement", "validação", {}],
@@ -1004,9 +1004,10 @@ describe("isStockDraftChanged (the sign that the session notice warns about)", (
     expect(
       isStockDraftChanged(filled("count", { physicalQuantity: "7" }))
     ).toBe(true);
-    expect(isStockDraftChanged(filled("receive", { quantity: "" }))).toBe(
+    expect(isStockDraftChanged(filled("receive", { quantity: "1" }))).toBe(
       false
     );
+    expect(isStockDraftChanged(filled("receive", { quantity: "" }))).toBe(true);
   });
 
   it("does not count a command that is already done", () => {
@@ -1190,6 +1191,134 @@ describe("informing the cost of units on hand (the cost panel)", () => {
         "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
       refreshBalance: true,
     });
+  });
+
+  it("starts the quantity of a receipt and of a write-off at 1, and the count empty", () => {
+    expect(startStockCommand("receive", target, today).draft).toMatchObject({
+      quantity: "1",
+    });
+    expect(startStockCommand("write_off", target, today).draft).toMatchObject({
+      quantity: "1",
+    });
+    expect(startStockCommand("count", target, today).draft).toMatchObject({
+      physicalQuantity: "",
+    });
+    expect(
+      isStockDraftChanged(startStockCommand("write_off", target, today))
+    ).toBe(false);
+  });
+
+  it("reviews a write-off of one unit with only the reason filled in", () => {
+    const state = editStockField(
+      startStockCommand("write_off", target, today),
+      "reasonCode",
+      "lost"
+    );
+    expect(reviewStock(state).step).toBe("confirming");
+  });
+
+  it("says the count conflict on the counted quantity, with the balance read now", () => {
+    const sent = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("count", countFields)),
+    });
+    const failed = stockFailed(sent.state, {
+      code: "CONFLICT",
+      data: { reason: "inventory_version_conflict" },
+    });
+    expect(failed.submission).toMatchObject({
+      failure: { balanceRead: false, field: "physicalQuantity" },
+      phase: "failed",
+    });
+    expect(stockFieldRefusal(failed)).toEqual({
+      field: "physicalQuantity",
+      message:
+        "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
+    });
+    const read = retargetStock(failed, {
+      movingAverageCost: "10.000000",
+      quantity: 12,
+      variantId,
+      version: 9,
+    });
+    expect(stockFieldRefusal(read)).toEqual({
+      field: "physicalQuantity",
+      message:
+        "O saldo no sistema mudou para 12. Confira a quantidade contada e confirme de novo.",
+    });
+    expect(read.step).toBe("editing");
+    expect(
+      stockFieldRefusal(editStockField(read, "physicalQuantity", "11"))
+    ).toBeNull();
+  });
+
+  it("does not say the balance changed when a version conflict leaves it the same", () => {
+    const sent = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("count", countFields)),
+    });
+    const failed = stockFailed(sent.state, {
+      code: "CONFLICT",
+      data: { reason: "inventory_version_conflict" },
+    });
+    const read = retargetStock(failed, {
+      movingAverageCost: "10.000000",
+      quantity: target.quantity,
+      variantId,
+      version: 9,
+    });
+    expect(stockFieldRefusal(read)?.message).toBe(
+      `Houve outro movimento nesta variante. O saldo no sistema é ${target.quantity}. Confira a quantidade contada e confirme de novo.`
+    );
+  });
+
+  it("says the cost conflict on the cost field, with the balance read now", () => {
+    const sent = prepareStockSubmission({
+      createId: ids(),
+      organizationId,
+      state: confirming(filled("cost", costFields, unknownCostTarget)),
+    });
+    const failed = stockFailed(sent.state, {
+      code: "CONFLICT",
+      data: { reason: "inventory_version_conflict" },
+    });
+    expect(stockFieldRefusal(failed)).toMatchObject({
+      field: "valuationUnitCost",
+    });
+    const read = retargetStock(failed, {
+      movingAverageCost: null,
+      quantity: 12,
+      variantId,
+      version: 9,
+    });
+    expect(stockFieldRefusal(read)).toEqual({
+      field: "valuationUnitCost",
+      message:
+        "O saldo no sistema mudou para 12. Confira o custo e confirme de novo.",
+    });
+    expect(stockFieldRefusal(read)?.message).not.toMatch(COST_PATH_JARGON);
+  });
+
+  it("puts the last movement in the summary of the review, and not when the device does not have it", () => {
+    const { body } = validateStockDraft(
+      filled("receive", receiveFields).draft,
+      { ...target, updatedAt: "2026-10-14T12:00:00.000Z" },
+      today
+    );
+    if (body === null) {
+      throw new Error("the draft is valid");
+    }
+    const labels = (updatedAt: string | null | undefined) =>
+      stockSummary(body, { ...target, updatedAt }).map((line) => line.label);
+    expect(labels("2026-10-14T12:00:00.000Z")).toContain("Último movimento");
+    expect(
+      stockSummary(body, { ...target, updatedAt: null }).find(
+        (line) => line.label === "Último movimento"
+      )?.value
+    ).toBe("sem movimentos");
+    expect(labels(undefined)).not.toContain("Último movimento");
   });
 
   it("is blocked once the cost is known, the balance is 0, or there is no connection", () => {

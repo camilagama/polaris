@@ -411,6 +411,7 @@ export const stockStates = {
   async receiveErrors(page: Page) {
     await openList(page);
     await openCommand(page, "Receber", "Calça jeans");
+    await page.getByLabel("Quantidade recebida").fill("");
     await review(page).click();
     await page.getByText("Informe a quantidade recebida.").waitFor();
     await showScreenAlone(page);

@@ -5,6 +5,7 @@ import {
   type StockTarget,
   stockTarget,
   targetBalanceText,
+  targetMovementText,
 } from "./stock-target";
 
 const NOW = new Date(2026, 9, 29, 12, 0);
@@ -26,67 +27,77 @@ function target(overrides: Partial<StockTarget> = {}): StockTarget {
 }
 
 describe("targetBalanceText", () => {
-  it("says the balance, the average cost and the last movement", () => {
-    expect(targetBalanceText(target(), NOW)).toBe(
-      "Saldo atual: 5 · custo médio R$ 62,40 · último movimento 14/10 09:00"
-    );
-  });
-
-  it("writes the year of a movement from another year", () => {
-    expect(
-      targetBalanceText(
-        target({ updatedAt: new Date(2025, 9, 14, 9, 0).toISOString() }),
-        NOW
-      )
-    ).toBe(
-      "Saldo atual: 5 · custo médio R$ 62,40 · último movimento 14/10/2025 09:00"
-    );
-  });
-
-  it("writes the year across New Year's Eve, by the device's own calendar", () => {
-    const afterMidnight = new Date(2026, 0, 1, 0, 30);
-    expect(
-      targetBalanceText(
-        target({ updatedAt: new Date(2025, 11, 31, 23, 30).toISOString() }),
-        afterMidnight
-      )
-    ).toContain("último movimento 31/12/2025 23:30");
-    expect(
-      targetBalanceText(
-        target({ updatedAt: new Date(2026, 0, 1, 0, 10).toISOString() }),
-        afterMidnight
-      )
-    ).toContain("último movimento 01/01 00:10");
-  });
-
-  it("says an unknown cost and a variant that never moved", () => {
-    expect(
-      targetBalanceText(
-        target({ movingAverageCost: null, updatedAt: null }),
-        NOW
-      )
-    ).toBe("Saldo atual: 5 · custo médio desconhecido · sem movimentos");
-  });
-
-  it("says no date it does not have", () => {
-    expect(targetBalanceText(target({ updatedAt: undefined }), NOW)).toBe(
-      "Saldo atual: 5 · custo médio R$ 62,40"
-    );
-    expect(targetBalanceText(target({ updatedAt: "not a date" }), NOW)).toBe(
+  it("says the balance and the average cost, and not the movement", () => {
+    expect(targetBalanceText(target())).toBe(
       "Saldo atual: 5 · custo médio R$ 62,40"
     );
   });
 
-  it("is the device's balance without a connection, with no cost and no date", () => {
-    expect(targetBalanceText(target({ costUnavailable: true }), NOW)).toBe(
+  it("says an unknown cost", () => {
+    expect(targetBalanceText(target({ movingAverageCost: null }))).toBe(
+      "Saldo atual: 5 · custo médio desconhecido"
+    );
+  });
+
+  it("is the device's balance without a connection, with no cost", () => {
+    expect(targetBalanceText(target({ costUnavailable: true }))).toBe(
       "Saldo do aparelho: 5 · custo médio só com conexão"
     );
   });
 
   it("thousands in the balance", () => {
-    expect(targetBalanceText(target({ quantity: 1234 }), NOW)).toContain(
+    expect(targetBalanceText(target({ quantity: 1234 }))).toContain(
       "Saldo atual: 1.234 ·"
     );
+  });
+});
+
+describe("targetMovementText", () => {
+  it("says the day, month and time of the last movement", () => {
+    expect(targetMovementText(target(), NOW)).toBe("14/10 09:00");
+  });
+
+  it("writes the year of a movement from another year", () => {
+    expect(
+      targetMovementText(
+        target({ updatedAt: new Date(2025, 9, 14, 9, 0).toISOString() }),
+        NOW
+      )
+    ).toBe("14/10/2025 09:00");
+  });
+
+  it("writes the year across New Year's Eve, by the device's own calendar", () => {
+    const afterMidnight = new Date(2026, 0, 1, 0, 30);
+    expect(
+      targetMovementText(
+        target({ updatedAt: new Date(2025, 11, 31, 23, 30).toISOString() }),
+        afterMidnight
+      )
+    ).toBe("31/12/2025 23:30");
+    expect(
+      targetMovementText(
+        target({ updatedAt: new Date(2026, 0, 1, 0, 10).toISOString() }),
+        afterMidnight
+      )
+    ).toBe("01/01 00:10");
+  });
+
+  it("says a variant that never moved", () => {
+    expect(targetMovementText(target({ updatedAt: null }), NOW)).toBe(
+      "sem movimentos"
+    );
+  });
+
+  it("says no date it does not have", () => {
+    expect(
+      targetMovementText(target({ updatedAt: undefined }), NOW)
+    ).toBeNull();
+    expect(
+      targetMovementText(target({ updatedAt: "not a date" }), NOW)
+    ).toBeNull();
+    expect(
+      targetMovementText(target({ costUnavailable: true }), NOW)
+    ).toBeNull();
   });
 });
 

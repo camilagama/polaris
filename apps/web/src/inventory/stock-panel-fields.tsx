@@ -192,10 +192,10 @@ export function EditFields({
           {valuationApplies(target) ? (
             <TextField
               error={errors.valuationUnitCost}
-              hint="Opcional. Estabelece o custo desta variante, hoje desconhecido; só vale com quantidade contada maior que zero."
+              hint="Opcional. Vale só se a quantidade contada for maior que zero."
               id={id("valuationUnitCost")}
               inputMode="decimal"
-              label="Custo unitário para valoração (R$)"
+              label="Custo de cada unidade (R$)"
               maxLength={26}
               onChange={handleValuation}
               placeholder="Ex.: 12,50"

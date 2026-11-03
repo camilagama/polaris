@@ -14,12 +14,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
-import { Checkbox } from "@/ui/checkbox";
-import { Field, FieldLabel } from "@/ui/field";
 import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
-import { StatusNav } from "../catalog/screen-parts";
 import { useStoreToday } from "../expenses/use-store-today";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
@@ -33,7 +30,6 @@ import {
   triggerId,
 } from "./stock-row-actions";
 import {
-  STOCK_FILTERS,
   type StockFilter,
   type StockRow,
   stockCountText,
@@ -43,6 +39,7 @@ import {
   type StockAttentionLink,
 } from "./stock-list-model";
 import { LINK, StockActionStrip } from "./stock-action-strip";
+import { StockFiltersButton } from "./stock-filters";
 import { type StockTarget, stockTarget } from "./stock-target";
 import { useStockAttention } from "./use-stock-attention";
 import { useStockEntryLink } from "./use-stock-entry-link";
@@ -278,8 +275,8 @@ export function InventoryPage() {
     [setFilters]
   );
   const handleUnknownCost = useCallback(
-    () => setFilters({ unknownCost: !filters.unknownCost }),
-    [filters.unknownCost, setFilters]
+    (checked: boolean) => setFilters({ unknownCost: checked }),
+    [setFilters]
   );
   const handleFilter = useCallback(
     (stock: StockFilter) => setFilters({ stock }),
@@ -371,51 +368,42 @@ export function InventoryPage() {
       ) : null}
 
       <search aria-label="Filtrar estoque" className="grid gap-3">
-        <SearchField
-          className="md:max-w-md"
-          label="Buscar no estoque"
-          onValueChange={handleQuery}
-          placeholder="Produto, variante ou SKU"
-          value={filters.query}
-        />
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-          <StatusNav
-            label="Filtrar por saldo"
-            onSelect={handleFilter}
-            options={STOCK_FILTERS}
-            value={filters.stock}
+        <div className="flex items-center gap-2">
+          <SearchField
+            className="min-w-0 flex-1 md:max-w-md"
+            label="Buscar no estoque"
+            onValueChange={handleQuery}
+            placeholder="Produto, variante ou SKU"
+            value={filters.query}
           />
-          <Button
-            aria-pressed={filters.unknownCost}
-            className="aria-pressed:border-foreground/70 aria-pressed:bg-secondary aria-pressed:font-semibold"
-            onClick={handleUnknownCost}
-            type="button"
-            variant="outline"
-          >
-            Sem custo
-          </Button>
-          <Field className="min-h-ctl-md w-auto" orientation="horizontal">
-            <Checkbox
-              checked={filters.includeArchived}
-              id="stock-archived"
-              onCheckedChange={handleArchived}
-            />
-            <FieldLabel htmlFor="stock-archived">Incluir arquivados</FieldLabel>
-          </Field>
-          <Button onClick={handleReload} type="button" variant="ghost">
-            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-            Atualizar
-          </Button>
+          <StockFiltersButton
+            filters={filters}
+            onArchived={handleArchived}
+            onStock={handleFilter}
+            onUnknownCost={handleUnknownCost}
+          />
         </div>
       </search>
 
-      <p
-        aria-live="polite"
-        className="min-h-5 text-muted-foreground text-support"
-        role="status"
-      >
-        {countText ?? " "}
-      </p>
+      <div className="flex min-h-ctl-sm items-center justify-between gap-3">
+        <p
+          aria-live="polite"
+          className="min-w-0 text-muted-foreground text-support"
+          role="status"
+        >
+          {countText ?? " "}
+        </p>
+        <Button
+          className="shrink-0"
+          onClick={handleReload}
+          size="sm"
+          type="button"
+          variant="link"
+        >
+          <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
+          Atualizar
+        </Button>
+      </div>
 
       {view.kind === "ready" ? (
         // always there, so the list does not drop a line when a panel opens
@@ -439,6 +427,7 @@ export function InventoryPage() {
               onInformCost={handleInformCost}
               onReloadList={reload}
               organizationId={organizationId}
+              standalone
               target={open.target}
               today={today}
             />

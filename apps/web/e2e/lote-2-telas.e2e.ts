@@ -690,13 +690,86 @@ test("Clientes: a linha não traz observações nem a data, e o editor traz a da
   await expect(row).toContainText("11 91234-5678 · ana@exemplo.com");
   await expect(row).not.toContainText("Prefere o WhatsApp.");
   await expect(row).not.toContainText("Atualizado em");
-  await page.getByRole("button", { name: "Mais ações para Ana Lima" }).click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  // the row itself opens the edit
+  await page
+    .getByRole("button", { exact: true, name: "Editar Ana Lima" })
+    .click();
   const dialog = page.getByRole("dialog", { name: "Editar cliente" });
   await expect(dialog).toContainText("Atualizado em 14 de out. de 2026");
   await expect(dialog.getByLabel("Observações")).toHaveValue(
     "Prefere o WhatsApp."
   );
+});
+
+test("Clientes: a busca acha por nome sem acento, por telefone com ou sem máscara e por e-mail, e diz quando nada casa", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({
+      customers: [
+        customer(1, "Beatriz Souza", {
+          email: "bia@exemplo.com",
+          phone: "11987654321",
+        }),
+        customer(2, "João Araújo", { phone: "21 3000-1234" }),
+        customer(3, "Carla Dias", { email: "carla@loja.com", phone: null }),
+      ],
+    }),
+  });
+  const rows = page.locator("[data-customer-id]");
+  await expect(page.getByText("3 clientes", { exact: true })).toBeVisible();
+  const search = page.getByLabel("Buscar cliente");
+  await search.fill("JOAO araujo");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("João Araújo");
+  await expect(page.getByText("1 de 3 clientes")).toBeVisible();
+  await search.fill("(11) 98765");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Beatriz Souza");
+  await search.fill("213000");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("João Araújo");
+  await search.fill("carla@");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Carla Dias");
+  await search.fill("zé");
+  await expect(page.getByText("Nenhum cliente com “zé”.")).toBeVisible();
+  await expect(rows).toHaveCount(0);
+  await page.getByRole("button", { name: "Limpar busca" }).click();
+  await expect(rows).toHaveCount(3);
+});
+
+test("Clientes: a linha abre o cliente pelo clique ou pelo Enter, sem 'Editar' no menu, e o foco volta à linha", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({ customers: [customer(1, "Ana Lima")] }),
+  });
+  const open = page.getByRole("button", {
+    exact: true,
+    name: "Editar Ana Lima",
+  });
+  await page.getByRole("button", { name: "Mais ações para Ana Lima" }).click();
+  await expect(page.getByRole("menuitem", { name: "Arquivar" })).toBeVisible();
+  await expect(
+    page.getByRole("menuitem", { exact: true, name: "Editar" })
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+
+  // a tap on the contact line, away from the name, opens the row too (by the point: the line itself is under the
+  // stretched button, which is what takes the tap)
+  const contact = await page.getByText("11 91234-5678").boundingBox();
+  if (!contact) {
+    throw new Error("contact line not drawn");
+  }
+  await page.mouse.click(contact.x + 4, contact.y + contact.height / 2);
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancelar edição" }).click();
+  await expect(open).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
 });
 
 test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
@@ -880,6 +953,55 @@ test("Catálogo público: a leitura que falha diz o motivo, não mostra o formul
   await alert.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(page.getByLabel("Nome público")).toBeVisible();
   expect(reads).toBe(4);
+});
+
+test("Catálogo público: 50 produtos de cada vez com 'Carregar mais', a contagem com milhar e a busca de Produtos", async ({
+  page,
+}) => {
+  const many = Array.from({ length: 1248 }, (_, index) => ({
+    archivedAt: null,
+    categoryId: null,
+    createdAt: DAY,
+    deletedAt: null,
+    description: null,
+    id: `0199c2d0-0000-7000-8000-${String(index).padStart(12, "0")}`,
+    name: `Peça ${String(index + 1).padStart(4, "0")}`,
+    organizationId: ORGANIZATION.id,
+    status: "active",
+    updatedAt: DAY,
+    version: 1,
+  }));
+  await openScreen(page, "/public-catalog", "Catálogo público", {
+    "product/list": reply({ products: many }),
+    "publicCatalog/setup": reply(SETUP),
+  });
+  const toggles = page.getByRole("button", { name: "Mostrar no catálogo" });
+  await expect(
+    page.getByText("0 de 1.248 produtos ativos escolhidos")
+  ).toBeVisible();
+  await expect(toggles).toHaveCount(50);
+  await page.getByRole("button", { name: "Carregar mais" }).click();
+  await expect(toggles).toHaveCount(100);
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "Peça 0051" })
+      .getByRole("button", { name: "Mostrar no catálogo" })
+  ).toBeFocused();
+
+  const search = page.getByLabel("Buscar produto");
+  await search.fill("peça 0007");
+  await expect(toggles).toHaveCount(1);
+  await expect(
+    page.getByText("1 de 1.248 produtos", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Carregar mais" })).toHaveCount(
+    0
+  );
+  await search.fill("tenis");
+  await expect(page.getByText("Nenhum produto com “tenis”.")).toBeVisible();
+  await search.fill("");
+  await expect(toggles).toHaveCount(50);
 });
 
 test("Catálogo público a 320 px: nada transborda com o endereço de teste longo, o erro do campo e a lista de produtos", async ({

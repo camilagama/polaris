@@ -4,7 +4,7 @@ Clientes (`/customers`) é a lista de clientes da loja (ativos e arquivados) e o
 
 ## Sub-features
 
-- `clientes-lista` a lista e as abas "Ativos" e "Arquivados" (`tablist "Estado dos clientes"`).
+- `clientes-lista` a lista e as abas "Ativos" e "Arquivados" (`tablist "Estado dos clientes"`); a linha é o botão "Editar <nome>" (`[data-row-open]`, abre o formulário) e "Mais ações para <nome>" fica ao lado. Acima das abas, `searchbox "Buscar cliente"` (nome, telefone ou e-mail); sem resultado, "Nenhum cliente com “…”".
 - `clientes-vazio` "Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”."
 - `cliente-criar` Dialog "Novo cliente": "Nome", "Telefone", "Email", "Observações"; "Cadastrar cliente".
 - `cliente-duplicado` telefone ou e-mail já usado: "Encontramos possíveis clientes existentes. Revise antes de criar um novo.", com "Criar mesmo assim" e "Usar existente: <nome>".

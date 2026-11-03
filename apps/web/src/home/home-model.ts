@@ -1,7 +1,7 @@
 import type { GoalReadModel, PeriodSummaryReadModel } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { Money } from "@polaris/domain/money/money";
-import { groupGoals } from "../dashboard/goal-model";
+import { formatGoalValue, groupGoals } from "../dashboard/goal-model";
 import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
@@ -271,6 +271,36 @@ export function pickGoal(
       storeToday(goal.settledAt, timezone) >= since
   );
   return recent ? { goal: recent, kind: "settled" } : { kind: "none" };
+}
+
+/** Whether a goal ended in a month before the one of `today`: what it reached is the past month's, not this month's. */
+export function endedInPastMonth(
+  goal: Pick<GoalReadModel, "endsOn">,
+  today: string
+): boolean {
+  return goal.endsOn < firstOfMonth(today);
+}
+
+/**
+ * "Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida)": the line under the invitation to set this month's goal. A
+ * goal that began on the 1st is the month's and is named by it; one with any other period says its period
+ * ("25 a 31/10"), because the month would claim more than the goal measured.
+ */
+export function pastGoalSummary(
+  goal: Pick<
+    GoalReadModel,
+    "achievedValue" | "endsOn" | "kind" | "startsOn" | "status" | "target"
+  >
+): string {
+  const outcome = goal.status === "completed" ? "atingida" : "não atingida";
+  const label =
+    goal.startsOn === firstOfMonth(goal.endsOn)
+      ? monthTitle(goal.endsOn)
+      : goalPeriodShort(goal);
+  if (goal.achievedValue === null) {
+    return `${label}: meta ${outcome}`;
+  }
+  return `${label}: ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)} (${outcome})`;
 }
 
 /** "1 a 31/10" within a month, "26/09 a 25/10" across two, "25/10" for one day: a period written the short way. */
@@ -645,7 +675,12 @@ export function copyLine(
 /** The goal of the card without a connection (§ 7.3, emenda (ii) do ADR 0056). */
 export type OfflineGoal =
   | { ended: boolean; goal: GoalReadModel; kind: "active" }
-  | { goal: GoalReadModel; kind: "settled" }
+  | {
+      /** The month of `today` ("Novembro") when the goal is from a month already over; absent otherwise. */
+      currentMonth?: string;
+      goal: GoalReadModel;
+      kind: "settled";
+    }
   | { kind: "online-only" };
 
 /**
@@ -672,7 +707,12 @@ export function offlineGoal(
   if (view.kind === "settled") {
     // the same 7 days as with a connection, counted from today
     const kept = pickGoal([view.goal], today, timezone);
-    return kept.kind === "settled" ? kept : { kind: "online-only" };
+    if (kept.kind !== "settled") {
+      return { kind: "online-only" };
+    }
+    return endedInPastMonth(kept.goal, today)
+      ? { ...kept, currentMonth: monthTitle(today) }
+      : kept;
   }
   return { kind: "online-only" };
 }

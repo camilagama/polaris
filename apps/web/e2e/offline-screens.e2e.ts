@@ -75,6 +75,21 @@ async function closeMenu(page: Page) {
   await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
 }
 
+/** The name of a row, which opens the form of the customer or the product; locked, it says so by `aria-disabled`. */
+const rowButton = (page: Page, name: string) =>
+  page.getByRole("button", { exact: true, name: `Editar ${name}` });
+
+/** Says whether the row opens the edit: off is `aria-disabled`, focusable, with its reason. */
+async function expectRowOpens(
+  page: Page,
+  name: string,
+  state: "disabled" | "enabled"
+) {
+  await (state === "enabled"
+    ? expect(rowButton(page, name)).not.toHaveAttribute("aria-disabled")
+    : expect(rowButton(page, name)).toHaveAttribute("aria-disabled", "true"));
+}
+
 /** Opens the menu of the row, says whether the item is on, and closes it. */
 async function expectCustomerItem(
   page: Page,
@@ -122,7 +137,7 @@ test("sem rede, cadastra e lista do aparelho, bloqueia a edição, e numa segund
     page.getByText("Cliente “Bia Souza” salvo neste aparelho.")
   ).toBeVisible();
   await expect(card(page, "Bia Souza")).toContainText("Aguardando envio");
-  await expectCustomerItem(page, "Bia Souza", "Editar", "disabled");
+  await expectRowOpens(page, "Bia Souza", "disabled");
   await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
   await expect(page.getByTestId("server-records")).toHaveText("0");
 
@@ -167,7 +182,7 @@ test("voltando a rede, envia o que ficou guardado e confirma os clientes", async
   await expect(
     card(page, "Duda Reis").locator("[data-sync-state]")
   ).toHaveCount(0, { timeout: 20_000 });
-  await expectCustomerItem(page, "Duda Reis", "Editar", "enabled");
+  await expectRowOpens(page, "Duda Reis", "enabled");
 });
 
 async function registerConfirmed(page: Page, name: string, phone: string) {
@@ -181,7 +196,7 @@ async function registerConfirmed(page: Page, name: string, phone: string) {
 }
 
 async function editName(page: Page, from: string, to: string) {
-  await (await customerMenuItem(page, from, "Editar")).click();
+  await rowButton(page, from).click();
   await page.locator("#customer-name").fill(to);
   await page.getByRole("button", { name: "Salvar alterações" }).click();
   // the form is a dialog that fades out; what comes next (a menu, the lab controls) waits for it to be gone
@@ -200,7 +215,7 @@ test("sem rede, edita um cliente já confirmado, vê a alteração à vista e o 
   await expect(page.getByText("Alteração salva neste aparelho.")).toBeVisible();
   const edited = card(page, "Eva Costa Lima");
   await expect(edited).toContainText("Alteração aguardando envio");
-  await expectCustomerItem(page, "Eva Costa Lima", "Editar", "disabled");
+  await expectRowOpens(page, "Eva Costa Lima", "disabled");
   await expectCustomerItem(page, "Eva Costa Lima", "Arquivar", "disabled");
   await expect(chip(page)).toContainText("Sem conexão · 1 operação guardada");
 
@@ -210,7 +225,7 @@ test("sem rede, edita um cliente já confirmado, vê a alteração à vista e o 
   });
   await expect(edited.locator("[data-sync-state]")).toHaveCount(0);
   await expect(edited).toBeVisible();
-  await expectCustomerItem(page, "Eva Costa Lima", "Editar", "enabled");
+  await expectRowOpens(page, "Eva Costa Lima", "enabled");
 });
 
 test("sem rede, arquivar, restaurar e anonimizar seguem bloqueados, mas editar não", async ({
@@ -221,7 +236,7 @@ test("sem rede, arquivar, restaurar e anonimizar seguem bloqueados, mas editar n
   await registerConfirmed(page, "Gil Alves", "11900000006");
 
   await page.getByLabel("Rede disponível").uncheck();
-  await expectCustomerItem(page, "Gil Alves", "Editar", "enabled");
+  await expectRowOpens(page, "Gil Alves", "enabled");
   await expectCustomerItem(page, "Gil Alves", "Arquivar", "disabled");
   await expectCustomerItem(page, "Gil Alves", "Anonimizar", "disabled");
   // said once, at the top, and not in every row
@@ -299,7 +314,11 @@ test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, 
   // the server's row (the other device's edit) is what the card shows, not the refused one
   await expect(refused).toContainText("(outro aparelho)");
   await expect(refused).not.toContainText("Filho");
-  await expectCustomerItem(page, "Hugo Neri", "Editar", "disabled");
+  // the row carries the server's name now ("Hugo Neri (outro aparelho)"): read its button inside the card
+  await expect(refused.locator("[data-row-open]")).toHaveAttribute(
+    "aria-disabled",
+    "true"
+  );
 });
 
 const productRow = (page: Page, name: string) =>
@@ -365,10 +384,8 @@ test.describe("produtos", () => {
     await expect(bag).toContainText(
       "Disponível depois que o servidor confirmar"
     );
+    await expectRowOpens(page, "Bolsa Couro", "disabled");
     await openMenu(page, "Bolsa Couro");
-    await expect(
-      page.getByRole("menuitem", { exact: true, name: "Editar" })
-    ).toBeDisabled();
     await expect(
       page.getByRole("menuitem", { exact: true, name: "Variantes" })
     ).toBeDisabled();
@@ -403,9 +420,10 @@ test.describe("produtos", () => {
     await expect(
       productRow(page, "Calça Jeans").locator("[data-sync-state]")
     ).toHaveCount(0, { timeout: 20_000 });
+    await expectRowOpens(page, "Calça Jeans", "enabled");
     await openMenu(page, "Calça Jeans");
     await expect(
-      page.getByRole("menuitem", { exact: true, name: "Editar" })
+      page.getByRole("menuitem", { exact: true, name: "Variantes" })
     ).toBeEnabled();
   });
 });

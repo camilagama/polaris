@@ -19,8 +19,11 @@ import {
   type GoalProjection,
   type GoalView,
   goalDaysLeftText,
+  endedInPastMonth,
   goalPeriodShort,
+  monthTitle,
   type OfflineGoal,
+  pastGoalSummary,
 } from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import type { Block } from "./use-home";
@@ -242,6 +245,58 @@ function EndedGoal({ goal }: { goal: GoalReadModel }) {
   );
 }
 
+/**
+ * The goal of a month that is over, read in the next one: the card is about the month now, which has no goal yet, and
+ * the past one is one line under it (a "Não atingida" badge of a closed month would read as this month's state).
+ */
+function PastMonthGoal({
+  goal,
+  online = true,
+}: {
+  goal: GoalReadModel;
+  online?: boolean;
+}) {
+  return (
+    <>
+      <p className="font-medium">Sem meta ainda</p>
+      {online ? (
+        <a
+          className={cn(buttonVariants({ variant: "outline" }), "w-fit")}
+          href="/dashboard?meta=nova"
+        >
+          Definir meta
+        </a>
+      ) : null}
+      <p className="text-muted-foreground text-support tabular-nums">
+        <MoneyText text={pastGoalSummary(goal)} />
+      </p>
+    </>
+  );
+}
+
+/** The store's today when the goal settled is of a month already over: the month the card is about now; else null. */
+function pastMonthOf(view: GoalView, today: string | null): string | null {
+  return view.kind === "settled" && today && endedInPastMonth(view.goal, today)
+    ? today
+    : null;
+}
+
+function SettledOrPast({
+  goal,
+  pastMonth,
+}: {
+  goal: GoalReadModel;
+  pastMonth: boolean;
+}) {
+  return pastMonth ? (
+    <PastMonthGoal goal={goal} />
+  ) : (
+    <SettledGoal goal={goal} />
+  );
+}
+
+const monthGoalTitle = (month: string) => `Meta de ${month.toLowerCase()}`;
+
 function SettledGoal({
   goal,
   online = true,
@@ -310,10 +365,11 @@ export function GoalBlock({
       </HomeBlock>
     );
   }
+  const pastMonth = pastMonthOf(view, today);
   return (
     <HomeBlock
       id="home-goal"
-      title="Meta"
+      title={pastMonth ? monthGoalTitle(monthTitle(pastMonth)) : "Meta"}
       {...(view.kind === "active" && projection
         ? { help: { about: "Meta", text: PROJECTION_HELP } }
         : {})}
@@ -326,7 +382,9 @@ export function GoalBlock({
           projection={projection}
         />
       ) : null}
-      {view.kind === "settled" ? <SettledGoal goal={view.goal} /> : null}
+      {view.kind === "settled" ? (
+        <SettledOrPast goal={view.goal} pastMonth={pastMonth !== null} />
+      ) : null}
       {view.kind === "none" ? <NoGoal /> : null}
     </HomeBlock>
   );
@@ -338,6 +396,7 @@ export function GoalBlock({
  */
 export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
   let content: React.ReactNode;
+  let title = "Meta";
   switch (goal.kind) {
     case "active":
       content = goal.ended ? (
@@ -347,13 +406,18 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       );
       break;
     case "settled":
-      content = <SettledGoal goal={goal.goal} online={false} />;
+      if (goal.currentMonth) {
+        title = monthGoalTitle(goal.currentMonth);
+        content = <PastMonthGoal goal={goal.goal} online={false} />;
+      } else {
+        content = <SettledGoal goal={goal.goal} online={false} />;
+      }
       break;
     default:
       content = <p className="text-muted-foreground">Metas só com conexão.</p>;
   }
   return (
-    <HomeBlock id="home-goal" title="Meta">
+    <HomeBlock id="home-goal" title={title}>
       {content}
     </HomeBlock>
   );

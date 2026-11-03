@@ -423,11 +423,11 @@ async function customersFlow(
     "Conferir: tudo sincronizado e a edição liberada",
     async () => {
       await waitForText(browser, "Tudo sincronizado");
-      // the actions of a customer are in the menu of its row
-      await click(browser, "button[aria-label='Mais ações para Bia Souza']");
-      const edit = await browser.$("[role='menuitem']*=Editar");
+      // the row of a customer is the button that opens its edit; locked, it says so by aria-disabled
+      const edit = await browser.$("button[data-row-open]*=Bia Souza");
+      await edit.waitForExist();
       if ((await edit.getAttribute("aria-disabled")) === "true") {
-        throw new Error("o item de editar continua desabilitado");
+        throw new Error("a linha do cliente continua sem abrir a edição");
       }
     }
   );

@@ -24,6 +24,12 @@ import {
 export const RHYTHM_WEEKS = 26;
 export const RHYTHM_WEEKS_PHONE = 13;
 
+/**
+ * The weeks the mean by weekday and the best weekday are read over, whatever the width of the map: a store has one
+ * best weekday, not one per screen. The sentence says the window.
+ */
+const WEEKDAY_WINDOW_WEEKS = 13;
+
 /** Under this many weeks with a sale the map says it is still filling up, and the weekday sentence waits. */
 const FEW_WEEKS = 4;
 
@@ -178,8 +184,16 @@ export interface RhythmView {
   thresholds: [string, string, string] | null;
   /** The index of today. */
   today: number;
-  /** The mean of net sales by weekday (Sunday first) over the days shown, and the best weekday (null when none sold). */
-  weekdays: { best: number | null; means: string[] };
+  /**
+   * The mean of net sales by weekday (Sunday first) over the last `WEEKDAY_WINDOW_WEEKS` weeks (not the weeks of the
+   * map), the best weekday (null when none sold) and the weeks with a sale inside that window.
+   */
+  weekdays: {
+    best: number | null;
+    means: string[];
+    soldDays: number;
+    soldWeeks: number;
+  };
   weeks: number;
 }
 
@@ -217,6 +231,39 @@ function levelOf(
   return (1 + tops.filter((top) => cents > top).length) as RhythmCell["level"];
 }
 
+/** The mean by weekday over the days of the last `WEEKDAY_WINDOW_WEEKS` weeks, from the Sunday that opens them. */
+function weekdayMeans(days: readonly RhythmDay[]): RhythmView["weekdays"] {
+  const today = days.at(-1)?.date ?? "";
+  const start = rhythmStart(today, WEEKDAY_WINDOW_WEEKS);
+  const sums = Array.from({ length: 7 }, () => 0n);
+  const counts = Array.from({ length: 7 }, () => 0n);
+  const sold = new Set<number>();
+  let soldDays = 0;
+  for (const day of days) {
+    if (day.date < start) {
+      continue;
+    }
+    const weekday = weekdayOf(day.date);
+    sums[weekday] = (sums[weekday] ?? 0n) + centsOf(day.netSales);
+    counts[weekday] = (counts[weekday] ?? 0n) + 1n;
+    if (day.salesCount > 0) {
+      soldDays += 1;
+      sold.add(Math.floor(daysBetween(start, day.date) / 7));
+    }
+  }
+  const means = sums.map((sum, weekday) => {
+    const count = counts[weekday] ?? 0n;
+    return count > 0n ? divideHalfUp(sum, count) : 0n;
+  });
+  let best: number | null = null;
+  means.forEach((mean, weekday) => {
+    if (mean > 0n && (best === null || mean > (means[best] ?? 0n))) {
+      best = weekday;
+    }
+  });
+  return { best, means: means.map(moneyOf), soldDays, soldWeeks: sold.size };
+}
+
 /** The map of the last `weeks` weeks of `days` (which end on today, as `rhythmDays` returns them). */
 export function rhythmView(
   days: readonly RhythmDay[],
@@ -242,8 +289,6 @@ export function rhythmView(
   });
   let best: number | null = null;
   let bestCents = 0n;
-  const sums = Array.from({ length: 7 }, () => 0n);
-  const counts = Array.from({ length: 7 }, () => 0n);
   const soldWeeks = new Set<number>();
   let soldDays = 0;
   cells.forEach((cell, index) => {
@@ -259,23 +304,8 @@ export function rhythmView(
       soldDays += 1;
       soldWeeks.add(Math.floor(index / 7));
     }
-    const weekday = index % 7;
-    sums[weekday] = (sums[weekday] ?? 0n) + cents;
-    counts[weekday] = (counts[weekday] ?? 0n) + 1n;
   });
-  const means = sums.map((sum, weekday) => {
-    const count = counts[weekday] ?? 0n;
-    return count > 0n ? divideHalfUp(sum, count) : 0n;
-  });
-  let bestWeekday: number | null = null;
-  means.forEach((mean, weekday) => {
-    if (
-      mean > 0n &&
-      (bestWeekday === null || mean > (means[bestWeekday] ?? 0n))
-    ) {
-      bestWeekday = weekday;
-    }
-  });
+  const weekdays = weekdayMeans(days);
   return {
     best,
     cells,
@@ -285,7 +315,7 @@ export function rhythmView(
       ? [moneyOf(tops[0]), moneyOf(tops[1]), moneyOf(tops[2])]
       : null,
     today: shown.length - 1,
-    weekdays: { best: bestWeekday, means: means.map(moneyOf) },
+    weekdays,
     weeks,
   };
 }
@@ -334,8 +364,13 @@ export function rhythmReadingText(reading: RhythmReading): string {
     .join(" · ");
 }
 
-function soldDaysText(count: number): string {
+function soldDaysCount(count: number): string {
   return `${formatQuantity(count)} ${count === 1 ? "dia" : "dias"} com venda`;
+}
+
+/** The count always names its window: the map and the weekday means do not span the same weeks. */
+function soldDaysText(count: number, weeks: number): string {
+  return `${soldDaysCount(count)} nas últimas ${weeks} semanas`;
 }
 
 /**
@@ -351,7 +386,7 @@ export function rhythmSummary(view: RhythmView): string {
   if (!best?.netSales) {
     return `${head}: nenhum dia com venda.`;
   }
-  return `${head}: ${soldDaysText(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} Os números estão em Ver os números.`;
+  return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} Os números estão em Ver os números.`;
 }
 
 /** Under the legend: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */
@@ -372,16 +407,16 @@ export function rhythmInsight(
 ):
   | { kind: "few"; text: string; detail: string }
   | { kind: "weekday"; text: string } {
-  const { best, means } = view.weekdays;
-  if (view.soldWeeks < FEW_WEEKS || best === null) {
+  const { best, means, soldDays, soldWeeks } = view.weekdays;
+  if (soldWeeks < FEW_WEEKS || best === null) {
     return {
-      detail: `${soldDaysText(view.soldDays)} até agora.`,
+      detail: `${soldDaysText(soldDays, WEEKDAY_WINDOW_WEEKS)}.`,
       kind: "few",
       text: "Poucas semanas de vendas ainda: o mapa enche conforme você vende.",
     };
   }
   return {
     kind: "weekday",
-    text: `${WEEKDAYS[best]} é o seu melhor dia da semana: média de ${formatBrlAmount(means[best] ?? "0.00")}.`,
+    text: `${WEEKDAYS[best]} é o seu melhor dia da semana nas últimas ${WEEKDAY_WINDOW_WEEKS} semanas: média de ${formatBrlAmount(means[best] ?? "0.00")}.`,
   };
 }
