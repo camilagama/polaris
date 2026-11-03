@@ -220,7 +220,7 @@ describe("dayReading (Vendas hoje)", () => {
     });
     const reading = dayReading(before, month, TODAY, TODAY);
     expect(reading.delta).toBeNull();
-    expect(reading.note).toBeNull();
+    expect(reading.note).toBe("vs. média dos domingos: sem vendas antes");
     expect(reading.help).toBe(
       "Vendas líquidas de hoje. Sem venda nos 4 domingos anteriores, não há comparação."
     );
@@ -232,18 +232,70 @@ describe("dayReading (Vendas hoje)", () => {
       "2026-10-23"
     );
     expect(friday.delta).toBeNull();
-    expect(friday.note).toBeNull();
+    expect(friday.note).toBe("vs. média das sextas: sem vendas antes");
     expect(friday.help).toBe(
       "Vendas líquidas de hoje. Sem venda nas 4 sextas-feiras anteriores, não há comparação."
     );
   });
 
-  it("says nothing when one of the 4 weekdays is not in the series", () => {
+  it("names the weekday with its own article when there were no sales before", () => {
+    const before = days("2026-09-01", "2026-09-30");
+    const month = days("2026-10-01", "2026-10-31");
+    const notes = [
+      "2026-10-18",
+      "2026-10-19",
+      "2026-10-20",
+      "2026-10-21",
+      "2026-10-22",
+      "2026-10-23",
+      "2026-10-24",
+    ].map((day) => dayReading(before, month, day, day).note);
+    expect(notes).toEqual([
+      "vs. média dos domingos: sem vendas antes",
+      "vs. média das segundas: sem vendas antes",
+      "vs. média das terças: sem vendas antes",
+      "vs. média das quartas: sem vendas antes",
+      "vs. média das quintas: sem vendas antes",
+      "vs. média das sextas: sem vendas antes",
+      "vs. média dos sábados: sem vendas antes",
+    ]);
+  });
+
+  it("says there is no data to compare when one of the 4 weekdays is not in the series", () => {
     const { before, month } = build();
     const short = before.filter((day) => day.date !== "2026-09-27");
     const reading = dayReading(short, month, TODAY, TODAY);
     expect(reading.delta).toBeNull();
-    expect(reading.note).toBeNull();
+    expect(reading.note).toBe(
+      "vs. média dos domingos: sem dados para comparar"
+    );
+    expect(reading.help).toBe("Vendas líquidas de hoje.");
+  });
+
+  it("says there is no data to compare for a day early in the 30, with the article of its weekday", () => {
+    const reading = dayReading(
+      days("2026-10-01", "2026-10-31"),
+      [],
+      "2026-10-20",
+      "2026-10-20"
+    );
+    expect(reading.delta).toBeNull();
+    expect(reading.note).toBe("vs. média das terças: sem dados para comparar");
+  });
+
+  it("says there is no mean to compare when the 4 weekdays sold but net to zero or below", () => {
+    const { before, month } = build({
+      "2026-09-27": ["50.00", 2],
+      "2026-10-04": ["-50.00", 1],
+      "2026-10-11": ["0.00", 0],
+      "2026-10-18": ["-10.00", 1],
+    });
+    const reading = dayReading(before, month, "2026-10-25", "2026-10-26");
+    expect(reading.delta).toBeNull();
+    expect(reading.note).toBe(
+      "vs. média dos domingos: sem média para comparar"
+    );
+    expect(reading.help).toBe("Vendas líquidas de dom, 25/10.");
   });
 
   it("says there is no sale yet today, and no sale on another day", () => {
@@ -798,5 +850,96 @@ describe("the texts of the (i) of the cards", () => {
     for (const text of texts) {
       expect(helpTipTextProblem(text), text).toBeNull();
     }
+  });
+});
+
+describe("a period still open with no sale draws no chip", () => {
+  // Monday `02/11/2026`: the 2nd day of the month, and the day has not sold yet
+  const MONDAY = "2026-11-02";
+  const octoberAll = days("2026-10-01", "2026-10-31", () => ({
+    netSales: "20.00",
+    salesCount: 1,
+  }));
+  const novemberNoSale = days("2026-11-01", MONDAY);
+  const noSaleCards = {
+    netSales: "0.00",
+    operatingResult: "0.00",
+    salesCount: 0,
+    ticket: null,
+  };
+
+  it("Vendas hoje: no −100,0% of a day that has not started, and the base stays named", () => {
+    const reading = dayReading(octoberAll, novemberNoSale, MONDAY, MONDAY);
+    expect(reading.delta).toBeNull();
+    expect(reading.count).toBe("Nenhuma venda ainda");
+    expect(reading.note).toBe("vs. média das segundas");
+    expect(reading.help).toBe(
+      "Vendas líquidas de hoje. Compara com a média das 4 segundas-feiras anteriores."
+    );
+  });
+
+  it("a day already gone with no sale still compares with its base", () => {
+    const reading = dayReading(
+      octoberAll,
+      novemberNoSale,
+      "2026-11-01",
+      MONDAY
+    );
+    expect(reading.delta).toMatchObject({ text: "-100,0%", trend: "down" });
+    expect(reading.count).toBe("Nenhuma venda");
+  });
+
+  it("Vendas do mês at rest on the 2nd with no sale: no chip, 'Nenhuma venda ainda'", () => {
+    const { sales } = monthKpis(
+      octoberAll,
+      novemberNoSale,
+      MONDAY,
+      noSaleCards,
+      costs
+    ).read(null);
+    expect(sales.delta).toBeNull();
+    expect(sales.count).toBe("Nenhuma venda ainda");
+    expect(sales.value).toBe("0.00");
+  });
+
+  it("the month with one sale compares again, and a month already read at its 1st day is closed, not open", () => {
+    const sold = days("2026-11-01", MONDAY, (date) =>
+      date === MONDAY ? { netSales: "10.00", salesCount: 1 } : undefined
+    );
+    const kpis = monthKpis(
+      octoberAll,
+      sold,
+      MONDAY,
+      { ...noSaleCards, netSales: "10.00", salesCount: 1, ticket: "10.00" },
+      costs
+    );
+    expect(kpis.read(null).sales.delta?.trend).toBe("down");
+    expect(kpis.read(0).sales.delta?.text).toBe("-100,0%");
+    expect(kpis.read(0).sales.count).toBe("Sem vendas no período");
+  });
+});
+
+describe("Ticket médio never denies sales that were made", () => {
+  it("with sales and no ticket sent, says it is unavailable, not that there were no sales", () => {
+    const { ticket } = monthKpis(
+      september(),
+      october(),
+      TODAY,
+      { ...cards, salesCount: 16, ticket: null },
+      costs
+    ).read(null);
+    expect(ticket.value).toBeNull();
+    expect(ticket.count).toBe("Ticket indisponível agora");
+  });
+
+  it("with no sale at all, says there were none", () => {
+    const { ticket } = monthKpis(
+      september(),
+      days("2026-10-01", "2026-10-31"),
+      TODAY,
+      { ...cards, netSales: "0.00", salesCount: 0, ticket: null },
+      costs
+    ).read(null);
+    expect(ticket.count).toBe("Sem vendas no período");
   });
 });

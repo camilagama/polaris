@@ -253,7 +253,7 @@ function MonthCards({
               spark: spark(
                 kpis.series.result,
                 resultNegative ? "var(--destructive)" : "var(--chart-result)",
-                "range"
+                kpis.series.result.some((value) => value < 0) ? "range" : "zero"
               ),
             }
           : {})}

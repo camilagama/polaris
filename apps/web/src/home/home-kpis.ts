@@ -228,8 +228,10 @@ export function todaySeries(
 
 /**
  * "Vendas hoje" for a day: its net sales and count against the mean of the 4 same weekdays before it (§ 3 item 2),
- * which is steadier than "last Sunday". With no sale on the 4, it says so and draws no chip; when one of the 4 is not
- * in the series read (a day early in the 30), it says nothing.
+ * which is steadier than "last Sunday". It draws no chip, and the note says why: no sale on the 4 ("sem vendas antes"),
+ * one of the 4 not in the series read, a day early in the 30 ("sem dados para comparar"), or sales whose net sum on the 4
+ * is zero or below, with returns ("sem média para comparar"); today before its first sale draws no chip
+ * either ("−100%" of a day that has not started).
  */
 export function dayReading(
   before: readonly Day[],
@@ -243,21 +245,29 @@ export function dayReading(
   const weekday = weekdayOf(day);
   const against = `média ${weekday.of} 4 ${weekday.long} anteriores`;
   let delta: Delta | null = null;
-  let note: string | null = null;
   let compare = "";
+  // the weekday stays named on the card: when there is nothing to compare, the note says why, one text per cause
+  let note: string | null =
+    `vs. média ${weekday.of} ${weekday.plural}: sem dados para comparar`;
   if (previous.every((item) => item !== undefined)) {
     const known = previous as Day[];
     const sold = known.reduce((total, item) => total + item.salesCount, 0);
     const sum = known.reduce((total, item) => total + cents(item.netSales), 0n);
     if (sold === 0) {
+      note = `vs. média ${weekday.of} ${weekday.plural}: sem vendas antes`;
       compare = ` Sem venda ${weekday.in} 4 ${weekday.long} anteriores, não há comparação.`;
     } else {
       // the mean of the 4 is sum / 4: the day against it is (4 × day − sum) / sum
       // the base is in sight on the card ("vs. média das sextas"): the chip needs no name that says it again
-      delta = percentDelta(cents(entry.netSales) * 4n, sum);
-      if (delta) {
+      // a day that has not sold yet is not "−100%" of its base: the day is still open
+      const open = day === today && entry.salesCount === 0;
+      delta = open ? null : percentDelta(cents(entry.netSales) * 4n, sum);
+      if (delta || open) {
         note = `vs. média ${weekday.of} ${weekday.plural}`;
         compare = ` Compara com a ${against}.`;
+      } else {
+        // sales happened, but returns left the 4 days at zero or below: there is no base for a percent
+        note = `vs. média ${weekday.of} ${weekday.plural}: sem média para comparar`;
       }
     }
   }
@@ -366,16 +376,18 @@ function salesReading({
   range,
   sum,
 }: ReadContext): KpiReading {
-  const delta = previous
-    ? percentDelta(sum.net, previous.net, `em relação a ${previousRange}`)
-    : null;
+  const count = atRest ? cards.salesCount : sum.count;
+  // the month still open with no sale is not "−100%" of the last one: "Nenhuma venda ainda" says it
+  const delta =
+    previous && !(atRest && count === 0)
+      ? percentDelta(sum.net, previous.net, `em relação a ${previousRange}`)
+      : null;
   let compare = "";
   if (delta) {
     compare = ` Compara com ${previousRange}.`;
   } else if (previous && previous.count === 0) {
     compare = ` Sem vendas de ${previousRange}, não há comparação.`;
   }
-  const count = atRest ? cards.salesCount : sum.count;
   return {
     count: count === 0 ? noSalesText(atRest) : salesCountText(count),
     date: range,
@@ -436,6 +448,11 @@ function resultReading({
   };
 }
 
+/** "Sem vendas no período" only when none was made: with sales and no ticket sent, the card does not deny them. */
+function noTicketText(count: number): string {
+  return count === 0 ? "Sem vendas no período" : "Ticket indisponível agora";
+}
+
 const ticketOf = (sum: Cumulative | undefined): bigint | null =>
   sum && sum.count > 0 ? divideHalfUp(sum.net, BigInt(sum.count)) : null;
 
@@ -459,7 +476,8 @@ function ticketReading({
   }
   return {
     // nothing under the number at rest: what it is and what it compares with are in the (i)
-    count: value === null ? "Sem vendas no período" : "",
+    count:
+      value === null ? noTicketText(atRest ? cards.salesCount : sum.count) : "",
     date: range,
     delta,
     help: ticketHelp(range, delta ? previousRange : null),
