@@ -13,6 +13,7 @@ import {
   isConfigurationDraftEmpty,
   isDuplicateSkuError,
   MAX_VARIANTS,
+  missingCombinationCount,
   missingCombinations,
   optionLabel,
   optionValuesError,
@@ -584,6 +585,33 @@ describe("Adicionar todas as combinações", () => {
     );
     expect(frozen).toEqual(existing);
     expect(result.kind === "added" && result.variants).not.toBe(frozen);
+  });
+
+  it("counts without listing: a million combinations pasted are counted, refused and never built", () => {
+    const hundred = Array.from({ length: 100 }, (_, n) => `V${n}`).join("\n");
+    const huge = productOptionValues({
+      color: hundred,
+      model: hundred,
+      size: hundred,
+    });
+    const all = selectedOptionNames(["color", "model", "size"]);
+    expect(missingCombinationCount(all, huge, [])).toBe(1_000_000);
+    expect(addAllCombinations(all, huge, [], productCap)).toEqual({
+      cap: productCap,
+      kind: "over_cap",
+      total: 1_000_000,
+    });
+  });
+
+  it("counts a listed row only when its values are among the typed ones, in any case", () => {
+    expect(
+      missingCombinationCount(colorAndSize, values, [
+        { values: { color: "PRETA", size: "gg" } },
+        // a value that left the textarea: the row is not one of the combinations
+        { values: { color: "Verde", size: "P" } },
+        { values: { color: "Azul", size: "" } },
+      ])
+    ).toBe(11);
   });
 
   it("names the count it adds on the button", () => {

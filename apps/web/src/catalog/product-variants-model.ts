@@ -250,6 +250,44 @@ function combinationKey(
  * Every combination of the typed values (the cartesian product, in the order of the options and of the lines) that the
  * list does not have yet: a row with the same values, in any case, is not repeated.
  */
+function presentKeys(
+  optionNames: ProductVariantOptionName[],
+  variants: VariantDraft[]
+): Set<string> {
+  return new Set(
+    variants.flatMap((variant) => {
+      const key = combinationKey(optionNames, variant.values);
+      return key === null ? [] : [key];
+    })
+  );
+}
+
+/**
+ * How many combinations "Adicionar todas" would add, counted without listing them: the values can be pasted by the
+ * hundred, and the product of three options of 100 lines is a million rows.
+ */
+export function missingCombinationCount(
+  optionNames: ProductVariantOptionName[],
+  optionValues: Record<ProductVariantOptionName, string[]>,
+  variants: VariantDraft[]
+): number {
+  if (optionNames.length === 0) {
+    return 0;
+  }
+  const typed = optionNames.map(
+    (name) => new Set(optionValues[name].map((value) => value.toLowerCase()))
+  );
+  const total = typed.reduce((product, values) => product * values.size, 1);
+  let alreadyListed = 0;
+  for (const key of presentKeys(optionNames, variants)) {
+    const chosen: string[] = JSON.parse(key);
+    if (chosen.every((value, index) => typed[index]?.has(value))) {
+      alreadyListed += 1;
+    }
+  }
+  return total - alreadyListed;
+}
+
 export function missingCombinations(
   optionNames: ProductVariantOptionName[],
   optionValues: Record<ProductVariantOptionName, string[]>,
@@ -264,12 +302,7 @@ export function missingCombinations(
       optionValues[name].map((value) => ({ ...values, [name]: value }))
     );
   }
-  const present = new Set(
-    variants.flatMap((variant) => {
-      const key = combinationKey(optionNames, variant.values);
-      return key === null ? [] : [key];
-    })
-  );
+  const present = presentKeys(optionNames, variants);
   return combinations
     .filter((values) => !present.has(combinationKey(optionNames, values) ?? ""))
     .map((values) => ({ values }));
@@ -304,15 +337,21 @@ export function addAllCombinations(
   variants: VariantDraft[],
   cap: CombinationCap
 ): AllCombinationsResult {
-  const missing = missingCombinations(optionNames, optionValues, variants);
-  if (missing.length === 0) {
+  const missing = missingCombinationCount(optionNames, optionValues, variants);
+  if (missing === 0) {
     return { kind: "nothing_new" };
   }
-  const total = variants.length + missing.length;
+  const total = variants.length + missing;
   if (total > cap.max) {
     return { cap, kind: "over_cap", total };
   }
-  return { kind: "added", variants: [...variants, ...missing] };
+  return {
+    kind: "added",
+    variants: [
+      ...variants,
+      ...missingCombinations(optionNames, optionValues, variants),
+    ],
+  };
 }
 
 export const ALL_COMBINATIONS_PRESENT =

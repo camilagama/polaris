@@ -47,7 +47,7 @@ import {
   emptyConfigurationDraft,
   isConfigurationDraftEmpty,
   MAX_VARIANTS,
-  missingCombinations,
+  missingCombinationCount,
   optionChoices,
   optionLabel,
   optionValueLengthError,
@@ -216,6 +216,9 @@ function AllCombinationsNotice({
   );
 }
 
+/** A read that hangs falls back to the product's limit, as a failed one: the form waits for it with every field off. */
+const PLAN_READ_TIMEOUT_MS = 5000;
+
 type PlanView = Awaited<ReturnType<typeof orpcClient.billing.readPlan>>;
 
 async function readPlanIfAllowed(
@@ -226,7 +229,10 @@ async function readPlanIfAllowed(
     return null;
   }
   try {
-    return await orpcClient.billing.readPlan({ organizationId });
+    return await orpcClient.billing.readPlan(
+      { organizationId },
+      { signal: AbortSignal.timeout(PLAN_READ_TIMEOUT_MS) }
+    );
   } catch {
     return null;
   }
@@ -255,7 +261,7 @@ function useAllCombinations(input: {
   const [isReadingPlan, setIsReadingPlan] = useState(false);
   const [notice, setNotice] = useState<AllCombinationsNoticeView | null>(null);
   const missing = canGenerate
-    ? missingCombinations(optionNames, optionValues, variants).length
+    ? missingCombinationCount(optionNames, optionValues, variants)
     : 0;
   const clearNotice = useCallback(() => setNotice(null), []);
   const add = useCallback(async () => {
@@ -303,7 +309,8 @@ function useAllCombinations(input: {
   return {
     add,
     busy: busy || isReadingPlan,
-    canAdd: canGenerate && !busy && !isReadingPlan,
+    // on during the read, so the focus stays on the button; a second tap is ignored by `add`
+    canAdd: canGenerate && !busy,
     clearNotice,
     missing,
     notice,
