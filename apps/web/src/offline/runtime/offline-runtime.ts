@@ -19,7 +19,7 @@ import {
 } from "../bootstrap";
 import { restorePendingCustomers } from "../customer-create";
 import type { LogoutWorkspace } from "../logout-guard";
-import type { LocalNamespace } from "../namespace";
+import type { LocalNamespace, NamespaceKey } from "../namespace";
 import type { OutboxCommand } from "../outbox/command";
 import type { Outbox } from "../outbox/outbox";
 import { restorePendingProducts } from "../product-create";
@@ -449,6 +449,17 @@ export class OfflineRuntime {
       this.listeners.delete(listener);
     };
   };
+
+  /**
+   * The key of the open namespace (the hash of user and organization that names the queue), or null while none is
+   * open for `organizationId`. State kept in the browser about the queue of this user (not about the organization)
+   * is keyed by it.
+   */
+  namespaceKey(organizationId: string): NamespaceKey | null {
+    return this.namespace?.organizationId === organizationId
+      ? (this.namespace.key as NamespaceKey)
+      : null;
+  }
 
   /** What a screen needs to queue a command, or null when the runtime is not ready. */
   context(): RuntimeContext | null {

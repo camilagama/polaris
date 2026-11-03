@@ -33,12 +33,20 @@ import {
   localStockEntries,
   readLocalCatalog,
 } from "../offline/local-stock-entries";
+import type { NamespaceKey } from "../offline/namespace";
 import type {
   OfflineRuntime,
   RuntimeContext,
 } from "../offline/runtime/offline-runtime";
+import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { isSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { REDO_DONE_NOTICE, REDO_OPENED_NOTICE } from "../offline/sale-redo";
+import {
+  finishSaleRedo,
+  isOpenRedoDraft,
+  readSaleRedos,
+} from "../offline/sale-redo-storage";
 import { confirmOnServer } from "./confirm-on-server";
 import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
 import { firstSaleIdOf } from "./first-sale-id";
@@ -175,9 +183,38 @@ function draftReadMessage(read: SaleDraftRead): string | null {
   return read.kind === "unreadable" ? DRAFT_UNREADABLE_MESSAGE : null;
 }
 
+function openRedoNotice(
+  redoKey: NamespaceKey | null,
+  draft: { startedAt: string | null } | null
+): string | null {
+  return redoKey !== null &&
+    isOpenRedoDraft(
+      readSaleRedos(browserStorage(), redoKey),
+      draft?.startedAt ?? null
+    )
+    ? REDO_OPENED_NOTICE
+    : null;
+}
+
 export function SalePage() {
   const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
+  const runtime = useOfflineRuntime();
+  const redoKey = runtime?.namespaceKey(organizationId) ?? null;
+  // the namespace closes and opens again while the runtime restarts; the page keeps the key it had for this store
+  const knownRedoKey = useRef<{
+    key: NamespaceKey;
+    organizationId: string;
+  } | null>(null);
+  if (redoKey) {
+    knownRedoKey.current = { key: redoKey, organizationId };
+  }
+  const redoKeyRef = useRef(redoKey);
+  redoKeyRef.current =
+    redoKey ??
+    (knownRedoKey.current?.organizationId === organizationId
+      ? knownRedoKey.current.key
+      : null);
   const canAdjustStock = hasCapabilityForRole(
     organization.role,
     "inventory:adjust"
@@ -375,7 +412,8 @@ export function SalePage() {
 
   useEffect(() => {
     // set after the mount, so the live region is in the tree before the notice arrives and it is announced
-    setDraftNotice(draftReadMessage(draftRead));
+    const redoNotice = openRedoNotice(redoKeyRef.current, restoredDraft);
+    setDraftNotice(draftReadMessage(draftRead) ?? redoNotice);
     const readIds = restoredDraft ? draftVariantIds(restoredDraft.form) : [];
     if (readIds.length === 0) {
       return;
@@ -413,14 +451,25 @@ export function SalePage() {
               outcomeUnknown
             ).form
         );
-        setDraftNotice(message);
+        const redoNoticeNow = openRedoNotice(redoKeyRef.current, restoredDraft);
+        setDraftNotice(redoNoticeNow ? `${redoNoticeNow} ${message}` : message);
       })
       .catch(() => undefined);
     return () => {
       mounted = false;
     };
     // once, for the cart that came back with the mount
-  }, [draftRead, readLines, restoredAttempt, restoredDraft]);
+  }, [draftRead, organizationId, readLines, restoredAttempt, restoredDraft]);
+
+  useEffect(() => {
+    // the queue namespace may open after the page did: the redo it names is only known from then on
+    const redoNotice = openRedoNotice(redoKey, {
+      startedAt: draftStartedAt.current,
+    });
+    if (redoNotice) {
+      setDraftNotice((current) => current ?? redoNotice);
+    }
+  }, [redoKey]);
 
   const activeProfiles = useMemo(
     () => (catalog.profiles.status === "ready" ? catalog.profiles.value : []),
@@ -573,6 +622,7 @@ export function SalePage() {
       device: { runtime: OfflineRuntime; stores: RuntimeContext } | null
     ) => {
       const sentCommandId = attemptRef.current?.commandId ?? null;
+      const sentDraftStartedAt = draftStartedAt.current;
       rememberAttempt(outcome.attempt, outcome.submission.phase === "locked");
       if (outcome.prices) {
         const remembered = mergeLastPrices(
@@ -586,7 +636,16 @@ export function SalePage() {
       if (outcome.completed) {
         // also when the person left Vender while it was sent: a recorded sale never comes back as a draft
         forgetDraft();
-        setDraftNotice(null);
+        const redone =
+          sentCommandId !== null &&
+          redoKeyRef.current !== null &&
+          finishSaleRedo(
+            browserStorage(),
+            redoKeyRef.current,
+            sentDraftStartedAt,
+            sentCommandId
+          );
+        setDraftNotice(redone ? REDO_DONE_NOTICE : null);
         if (sentCommandId) {
           announceSaleSettled(organizationId, sentCommandId);
         }
