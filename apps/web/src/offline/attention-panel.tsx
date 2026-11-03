@@ -9,9 +9,10 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { ActionStrip } from "../app-shell/action-strip";
+import { tabHref } from "../app-shell/navigation-model";
 import {
   type AttentionAction,
   type AttentionItem,
@@ -32,12 +33,21 @@ import {
 export interface AttentionPanelProps {
   /** The command being resolved right now, if any (its buttons are disabled). */
   busyCommandId?: string | null;
-  /** Shown when the last attempt to resolve an item failed. */
-  errorMessage?: string | null;
+  /** What the last attempt to resolve an item said, drawn inside the card of that item. */
+  error?: AttentionError | null;
   onDiscard: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
-  onReviewAccount: (item: AttentionItem) => void;
+  /** What the sign-out has to say (its failure, the work it would lose), under the list. */
+  notices?: ReactNode;
+  onSignInAgain: (item: AttentionItem) => void;
+  /** A sign-out is under way: "Sair e entrar de novo" is off in every card. */
+  signingOut?: boolean;
   summary: AttentionSummary;
+}
+
+export interface AttentionError {
+  commandId: string;
+  message: string;
 }
 
 const ACTION_LABEL: Record<AttentionAction, string> = {
@@ -45,8 +55,11 @@ const ACTION_LABEL: Record<AttentionAction, string> = {
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
   retry: "Tentar novamente",
-  review_account: "Revisar acesso e plano",
+  open_subscription: "Ver Assinatura",
+  sign_in_again: "Sair e entrar de novo",
 };
+
+const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
 /** The causes about the account or the plan, not about the data: they are said in the error tone. */
 const ACCOUNT_CAUSES: ReadonlySet<AttentionItem["cause"]> = new Set([
@@ -62,6 +75,22 @@ const isResubmission = (action: AttentionAction) =>
 
 const discardButtonId = (item: AttentionItem) =>
   `attention-discard-${item.commandId}`;
+
+/** The button that starts a sign-out: the focus comes back to it when the sign-out is not done. */
+export const signInAgainButtonId = (commandId: string) =>
+  `attention-sign-in-${commandId}`;
+
+function buttonIdOf(
+  action: AttentionAction,
+  item: AttentionItem
+): string | undefined {
+  if (action === "discard") {
+    return discardButtonId(item);
+  }
+  return action === "sign_in_again"
+    ? signInAgainButtonId(item.commandId)
+    : undefined;
+}
 
 /** The frame of the page of attention: the title, then what the page has to say. */
 export function AttentionFrame({ children }: { children: ReactNode }) {
@@ -101,6 +130,16 @@ interface ActionButtonProps {
 
 function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
   const act = useCallback(() => onAct(action), [action, onAct]);
+  if (action === "open_subscription") {
+    return (
+      <a
+        className={buttonVariants({ variant: "outline" })}
+        href={SUBSCRIPTION_HREF}
+      >
+        {ACTION_LABEL[action]}
+      </a>
+    );
+  }
   let variant: "default" | "destructive" | "outline" = "outline";
   if (isResubmission(action)) {
     variant = "default";
@@ -110,7 +149,7 @@ function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
   return (
     <Button
       disabled={busy}
-      id={action === "discard" ? discardButtonId(item) : undefined}
+      id={buttonIdOf(action, item)}
       onClick={act}
       type="button"
       variant={variant}
@@ -122,18 +161,22 @@ function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
 
 interface ItemCardProps {
   busy: boolean;
+  errorMessage: string | null;
   item: AttentionItem;
   onDiscard: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
-  onReviewAccount: (item: AttentionItem) => void;
+  onSignInAgain: (item: AttentionItem) => void;
+  signingOut: boolean;
 }
 
 function ItemCard({
   busy,
+  errorMessage,
   item,
   onDiscard,
   onResubmit,
-  onReviewAccount,
+  onSignInAgain,
+  signingOut,
 }: ItemCardProps) {
   const [confirming, setConfirming] = useState(false);
   const confirmRef = useRef<HTMLDivElement>(null);
@@ -156,10 +199,10 @@ function ItemCard({
       } else if (isResubmission(action)) {
         onResubmit(item);
       } else {
-        onReviewAccount(item);
+        onSignInAgain(item);
       }
     },
-    [item, onResubmit, onReviewAccount]
+    [item, onResubmit, onSignInAgain]
   );
   const keep = useCallback(() => {
     focusDiscardAgain.current = true;
@@ -189,13 +232,16 @@ function ItemCard({
             Este registro está parando a fila: o que vem depois espera por ele.
           </p>
         ) : null}
-        {item.facts ? (
-          <p className="font-medium [overflow-wrap:anywhere]">{item.facts}</p>
-        ) : null}
         <p className="[overflow-wrap:anywhere]">{item.detail}</p>
         <p className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
           Código: {item.code}
         </p>
+        {errorMessage ? (
+          <Alert variant="destructive">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        ) : null}
         {confirming ? (
           <div
             aria-label={`Descartar ${item.title}`}
@@ -224,7 +270,7 @@ function ItemCard({
             {item.actions.map((action) => (
               <ActionButton
                 action={action}
-                busy={busy}
+                busy={busy || (action === "sign_in_again" && signingOut)}
                 item={item}
                 key={action}
                 onAct={act}
@@ -248,43 +294,45 @@ export function refusedText(summary: AttentionSummary): string {
 
 export function AttentionPanel({
   busyCommandId = null,
-  errorMessage = null,
+  error = null,
+  notices = null,
   onDiscard,
   onResubmit,
-  onReviewAccount,
+  onSignInAgain,
+  signingOut = false,
   summary,
 }: AttentionPanelProps) {
   if (summary.items.length === 0) {
     return (
       <AttentionFrame>
         <AttentionStateCard>
-          Nenhum registro recusado neste aparelho. Tudo o que foi feito sem
-          internet foi aceito.
+          Nenhuma pendência de envio. Tudo o que foi feito sem internet foi
+          aceito.
         </AttentionStateCard>
+        {notices}
       </AttentionFrame>
     );
   }
   return (
     <AttentionFrame>
       <ActionStrip>{refusedText(summary)}</ActionStrip>
-      {errorMessage ? (
-        <Alert variant="destructive">
-          <CircleAlertIcon aria-hidden="true" />
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      ) : null}
       <ul className="grid gap-3">
         {summary.items.map((item) => (
           <ItemCard
             busy={busyCommandId === item.commandId}
+            errorMessage={
+              error?.commandId === item.commandId ? error.message : null
+            }
             item={item}
             key={item.commandId}
             onDiscard={onDiscard}
             onResubmit={onResubmit}
-            onReviewAccount={onReviewAccount}
+            onSignInAgain={onSignInAgain}
+            signingOut={signingOut}
           />
         ))}
       </ul>
+      {notices}
     </AttentionFrame>
   );
 }

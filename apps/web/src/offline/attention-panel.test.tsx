@@ -5,8 +5,10 @@ import {
   AttentionPanel,
   type AttentionPanelProps,
   refusedText,
+  signInAgainButtonId,
 } from "./attention-panel";
 
+const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
 const none = () => undefined;
 const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
   actions: ["resubmit", "discard"],
@@ -15,7 +17,6 @@ const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
   code: "insufficient_stock",
   commandId: "0199c2d0-0000-7000-8000-000000000101",
   detail: "O estoque do servidor não cobre esta venda.",
-  facts: null,
   kind: "sale",
   title: "Venda de 2 itens",
   ...overrides,
@@ -29,7 +30,7 @@ function render(
     <AttentionPanel
       onDiscard={none}
       onResubmit={none}
-      onReviewAccount={none}
+      onSignInAgain={none}
       summary={summary}
       {...extra}
     />
@@ -37,27 +38,6 @@ function render(
 }
 
 describe("the attention panel", () => {
-  it("shows what a refused sale was, above the explanation, when the item has facts", () => {
-    const html = render({
-      items: [
-        item({
-          actions: ["review_account", "discard"],
-          cause: "authorization_revoked",
-          code: "authorization_revoked",
-          facts: "R$ 20,00 · feita em 14/10/2026 09:30",
-        }),
-      ],
-      waitingBehind: 0,
-    });
-    expect(html).toContain("R$ 20,00 · feita em 14/10/2026 09:30");
-    expect(html.indexOf("R$ 20,00 · feita em 14/10/2026 09:30")).toBeLessThan(
-      html.indexOf("O estoque do servidor")
-    );
-    expect(render({ items: [item()], waitingBehind: 0 })).not.toContain(
-      "feita em"
-    );
-  });
-
   it("is the page of the screen: one h1 with the title, with or without items", () => {
     for (const summary of [
       { items: [], waitingBehind: 0 },
@@ -85,7 +65,7 @@ describe("the attention panel", () => {
 
   it("says so when nothing needs attention", () => {
     const html = render({ items: [], waitingBehind: 0 });
-    expect(html).toContain("Nenhum registro recusado neste aparelho");
+    expect(html).toContain("Nenhuma pendência de envio");
     expect(html).not.toContain("<button");
   });
 
@@ -141,20 +121,49 @@ describe("the attention panel", () => {
     expect(html.match(/Descartar…/g)).toHaveLength(2);
   });
 
-  it("offers an account review, not a retry, for a refusal about the account", () => {
+  it("takes a plan refusal to Assinatura with a real link, not to a button that does nothing", () => {
     const html = render({
       items: [
         item({
-          actions: ["review_account"],
+          actions: ["open_subscription", "retry"],
           cause: "entitlement_changed",
           code: "entitlement_changed",
         }),
       ],
       waitingBehind: 0,
     });
-    expect(html).toContain("Revisar acesso e plano");
-    expect(html).not.toContain("Reenviar");
+    expect(html).toContain('href="/configuracoes?aba=assinatura"');
+    expect(html).toContain("Ver Assinatura");
+    expect(html).not.toContain("Revisar acesso e plano");
     expect(html).not.toContain("Descartar");
+  });
+
+  it("offers signing in again, not a retry, for a refusal about the session or the access", () => {
+    const html = render({
+      items: [
+        item({
+          actions: ["sign_in_again", "discard"],
+          cause: "authorization_revoked",
+          code: "authorization_revoked",
+        }),
+      ],
+      waitingBehind: 0,
+    });
+    expect(html).toContain("Sair e entrar de novo");
+    expect(html).not.toContain("Tentar novamente");
+    expect(html).not.toContain("Reenviar");
+  });
+
+  it("turns signing in again off while the sign-out runs", () => {
+    const html = render(
+      {
+        items: [item({ actions: ["sign_in_again", "discard"] })],
+        waitingBehind: 0,
+      },
+      { signingOut: true }
+    );
+    expect(html.match(/ disabled=""/g)).toHaveLength(1);
+    expect(html).toMatch(SIGN_IN_AGAIN_OFF);
   });
 
   it("has no control that forces the synchronization", () => {
@@ -167,15 +176,58 @@ describe("the attention panel", () => {
     expect(html).not.toContain("sincronizar mesmo assim");
   });
 
-  it("disables the buttons of the item being resolved and shows a failure", () => {
+  it("disables the buttons of the item being resolved and shows its failure inside its card", () => {
+    const first = "0199c2d0-0000-7000-8000-000000000101";
+    const second = "0199c2d0-0000-7000-8000-000000000102";
     const html = render(
-      { items: [item()], waitingBehind: 0 },
       {
-        busyCommandId: "0199c2d0-0000-7000-8000-000000000101",
-        errorMessage: "Não foi possível descartar.",
+        items: [
+          item({ commandId: first }),
+          item({ commandId: second, title: "Venda de R$ 5,00 · 01/11 10:00" }),
+        ],
+        waitingBehind: 0,
+      },
+      {
+        busyCommandId: first,
+        error: { commandId: first, message: "Não foi possível descartar." },
       }
     );
-    expect(html).toContain("Não foi possível descartar.");
+    const cards = html.split("<li ").slice(1);
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toContain("Não foi possível descartar.");
+    expect(cards[1]).not.toContain("Não foi possível descartar.");
+    expect(html.indexOf("Não foi possível descartar.")).toBeGreaterThan(
+      html.indexOf("Código: insufficient_stock")
+    );
+    expect(html.indexOf("Não foi possível descartar.")).toBeLessThan(
+      html.indexOf("Reenviar venda")
+    );
     expect(html.match(/ disabled=""/g)).toHaveLength(2);
+  });
+
+  it("keeps what the sign-out says under the list, and under the empty card too", () => {
+    const notices = <p>Os dados deste aparelho foram apagados.</p>;
+    expect(
+      render({ items: [item()], waitingBehind: 0 }, { notices })
+    ).toContain("Os dados deste aparelho foram apagados.");
+    expect(render({ items: [], waitingBehind: 0 }, { notices })).toContain(
+      "Os dados deste aparelho foram apagados."
+    );
+  });
+
+  it("gives the sign-in button an id of its card, where the focus returns when the person stays", () => {
+    const html = render({
+      items: [item({ actions: ["sign_in_again", "discard"] })],
+      waitingBehind: 0,
+    });
+    expect(html).toContain(
+      `id="${signInAgainButtonId("0199c2d0-0000-7000-8000-000000000101")}"`
+    );
+  });
+
+  it("says the list is empty in terms of sending, so it does not contradict the stock warnings", () => {
+    const html = render({ items: [], waitingBehind: 0 });
+    expect(html).toContain("Nenhuma pendência de envio.");
+    expect(html).not.toContain("Nada precisa de atenção");
   });
 });
