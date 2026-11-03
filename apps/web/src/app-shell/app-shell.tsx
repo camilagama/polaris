@@ -880,7 +880,9 @@ export function AppShell({
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
         <ShellChip onlineOnly={onlineOnly} />
         <main
-          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14"
+          // at least the height of the screen under the phone's header: while a page loads, the footer stays below the
+          // fold instead of showing in the middle and jumping out when the content arrives
+          className="mx-auto min-h-[calc(100svh-var(--app-header,0rem))] w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14"
           id="conteudo"
           // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
           tabIndex={-1}
