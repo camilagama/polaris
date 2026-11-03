@@ -328,9 +328,32 @@ describe("the map of the weeks shown (rhythmView)", () => {
     );
     expect(view.soldWeeks).toBe(1);
     expect(rhythmInsight(view)).toEqual({
-      detail: "2 dias com venda até agora.",
+      detail: "2 dias com venda nas últimas 13 semanas.",
       kind: "few",
       text: "Poucas semanas de vendas ainda: o mapa enche conforme você vende.",
+    });
+  });
+});
+
+describe("the sold-days count names its window", () => {
+  it("a sale inside the 26 weeks and outside the last 13 does not make the two counts contradict", () => {
+    const view = rhythmView(
+      daysWith({
+        "2026-05-09": ["300.00", 3],
+        "2026-05-16": ["300.00", 3],
+        "2026-10-17": ["50.00", 1],
+      }),
+      RHYTHM_WEEKS
+    );
+    expect(view.soldDays).toBe(3);
+    expect(view.weekdays.soldDays).toBe(1);
+    expect(rhythmSummary(view)).toContain(
+      "Vendas por dia nas últimas 26 semanas: 3 dias com venda."
+    );
+    const insight = rhythmInsight(view);
+    expect(insight.kind).toBe("few");
+    expect(insight).toMatchObject({
+      detail: "1 dia com venda nas últimas 13 semanas.",
     });
   });
 });

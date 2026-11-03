@@ -3207,7 +3207,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     // 3 weeks with a sale: the map says it is filling up
     await expect(map).toContainText(
-      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 6 dias com venda até agora."
+      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 6 dias com venda nas últimas 13 semanas."
     );
     await expect(map).toContainText("Média por dia da semana");
     // beside Mais vendidos, under the chart, in the left 2/3

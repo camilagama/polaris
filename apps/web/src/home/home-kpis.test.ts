@@ -220,7 +220,7 @@ describe("dayReading (Vendas hoje)", () => {
     });
     const reading = dayReading(before, month, TODAY, TODAY);
     expect(reading.delta).toBeNull();
-    expect(reading.note).toBe("vs. média dos domingos: sem base");
+    expect(reading.note).toBe("vs. média dos domingos: sem vendas antes");
     expect(reading.help).toBe(
       "Vendas líquidas de hoje. Sem venda nos 4 domingos anteriores, não há comparação."
     );
@@ -232,10 +232,33 @@ describe("dayReading (Vendas hoje)", () => {
       "2026-10-23"
     );
     expect(friday.delta).toBeNull();
-    expect(friday.note).toBe("vs. média das sextas: sem base");
+    expect(friday.note).toBe("vs. média das sextas: sem vendas antes");
     expect(friday.help).toBe(
       "Vendas líquidas de hoje. Sem venda nas 4 sextas-feiras anteriores, não há comparação."
     );
+  });
+
+  it("names the weekday with its own article when there were no sales before", () => {
+    const before = days("2026-09-01", "2026-09-30");
+    const month = days("2026-10-01", "2026-10-31");
+    const notes = [
+      "2026-10-18",
+      "2026-10-19",
+      "2026-10-20",
+      "2026-10-21",
+      "2026-10-22",
+      "2026-10-23",
+      "2026-10-24",
+    ].map((day) => dayReading(before, month, day, day).note);
+    expect(notes).toEqual([
+      "vs. média dos domingos: sem vendas antes",
+      "vs. média das segundas: sem vendas antes",
+      "vs. média das terças: sem vendas antes",
+      "vs. média das quartas: sem vendas antes",
+      "vs. média das quintas: sem vendas antes",
+      "vs. média das sextas: sem vendas antes",
+      "vs. média dos sábados: sem vendas antes",
+    ]);
   });
 
   it("says nothing when one of the 4 weekdays is not in the series", () => {
@@ -243,7 +266,7 @@ describe("dayReading (Vendas hoje)", () => {
     const short = before.filter((day) => day.date !== "2026-09-27");
     const reading = dayReading(short, month, TODAY, TODAY);
     expect(reading.delta).toBeNull();
-    expect(reading.note).toBe("vs. média dos domingos: sem base");
+    expect(reading.note).toBe("vs. média dos domingos: sem vendas antes");
   });
 
   it("says there is no sale yet today, and no sale on another day", () => {

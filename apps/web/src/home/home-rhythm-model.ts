@@ -364,8 +364,13 @@ export function rhythmReadingText(reading: RhythmReading): string {
     .join(" · ");
 }
 
-function soldDaysText(count: number): string {
+function soldDaysCount(count: number): string {
   return `${formatQuantity(count)} ${count === 1 ? "dia" : "dias"} com venda`;
+}
+
+/** The count always names its window: the map and the weekday means do not span the same weeks. */
+function soldDaysText(count: number, weeks: number): string {
+  return `${soldDaysCount(count)} nas últimas ${weeks} semanas`;
 }
 
 /**
@@ -381,7 +386,7 @@ export function rhythmSummary(view: RhythmView): string {
   if (!best?.netSales) {
     return `${head}: nenhum dia com venda.`;
   }
-  return `${head}: ${soldDaysText(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} Os números estão em Ver os números.`;
+  return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} Os números estão em Ver os números.`;
 }
 
 /** Under the legend: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */
@@ -405,7 +410,7 @@ export function rhythmInsight(
   const { best, means, soldDays, soldWeeks } = view.weekdays;
   if (soldWeeks < FEW_WEEKS || best === null) {
     return {
-      detail: `${soldDaysText(soldDays)} até agora.`,
+      detail: `${soldDaysText(soldDays, WEEKDAY_WINDOW_WEEKS)}.`,
       kind: "few",
       text: "Poucas semanas de vendas ainda: o mapa enche conforme você vende.",
     };

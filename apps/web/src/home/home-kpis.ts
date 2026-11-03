@@ -229,7 +229,7 @@ export function todaySeries(
 /**
  * "Vendas hoje" for a day: its net sales and count against the mean of the 4 same weekdays before it (§ 3 item 2),
  * which is steadier than "last Sunday". With no sale on the 4, or when one of the 4 is not in the series read (a day
- * early in the 30), it draws no chip and the note says there is no base; today before its first sale draws no chip
+ * early in the 30), it draws no chip and the note says there were no sales before; today before its first sale draws no chip
  * either ("−100%" of a day that has not started).
  */
 export function dayReading(
@@ -245,9 +245,9 @@ export function dayReading(
   const against = `média ${weekday.of} 4 ${weekday.long} anteriores`;
   let delta: Delta | null = null;
   let compare = "";
-  // the base stays named on the card: with none to compare, the note says so instead of going away
+  // the weekday stays named on the card: with nothing before it to compare, the note says so instead of going away
   let note: string | null =
-    `vs. média ${weekday.of} ${weekday.plural}: sem base`;
+    `vs. média ${weekday.of} ${weekday.plural}: sem vendas antes`;
   if (previous.every((item) => item !== undefined)) {
     const known = previous as Day[];
     const sold = known.reduce((total, item) => total + item.salesCount, 0);
