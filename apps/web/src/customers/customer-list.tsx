@@ -14,7 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { productInitials } from "../catalog/product-search-model";
-import { ListNotice } from "../catalog/screen-parts";
+import {
+  ListNotice,
+  OPENABLE_ROW_CLASS,
+  RowOpenButton,
+} from "../catalog/screen-parts";
 import type { PendingCustomer } from "../offline/customer-create";
 import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
@@ -33,28 +37,23 @@ interface RowActions {
   onRestore: (customer: CustomerReadModel) => void;
 }
 
-interface CustomerMenuProps extends Omit<RowActions, "onAnonymize"> {
+interface CustomerMenuProps extends Omit<RowActions, "onAnonymize" | "onEdit"> {
   customer: CustomerReadModel;
   /** Archive, restore and anonymize wait for the server: not confirmed yet, or no connection. */
   lifecycleLocked: boolean;
-  /** Editing waits only for the server to confirm what is already waiting. */
-  locked: boolean;
   onAskAnonymize: () => void;
   pending: boolean;
 }
 
-/** The actions of one customer that was not anonymized. */
+/** The actions of one customer that was not anonymized, besides editing it (the row itself opens it). */
 function CustomerMenu({
   customer,
   lifecycleLocked,
-  locked,
   onArchive,
   onAskAnonymize,
-  onEdit,
   onRestore,
   pending,
 }: CustomerMenuProps) {
-  const handleEdit = useCallback(() => onEdit(customer), [customer, onEdit]);
   const handleArchive = useCallback(
     () => onArchive(customer),
     [customer, onArchive]
@@ -78,9 +77,6 @@ function CustomerMenu({
         <MoreHorizontalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuItem disabled={locked} onClick={handleEdit}>
-          Editar
-        </DropdownMenuItem>
         {customer.status === "active" ? (
           <DropdownMenuItem disabled={lifecycleLocked} onClick={handleArchive}>
             Arquivar
@@ -114,7 +110,7 @@ function AnonymizeConfirm({
   onConfirm,
 }: AnonymizeConfirmProps) {
   return (
-    <fieldset className="grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+    <fieldset className="mb-2.5 grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
       <legend className="sr-only">
         Confirmar a anonimização de {customer.name}
       </legend>
@@ -162,6 +158,163 @@ function pendingLabelFor(
   return null;
 }
 
+interface CustomerMainProps {
+  /** The phone and the e-mail, as the row writes them. */
+  contacts: string;
+  customer: CustomerReadModel;
+  locked: boolean;
+  lockedReasonId: string | undefined;
+  onEdit: (customer: CustomerReadModel) => void;
+}
+
+/**
+ * The circle, the name with its state and the contacts. They open the customer's form, as one button; an
+ * anonymized customer cannot be edited, so they are only text.
+ */
+function CustomerMain({
+  contacts,
+  customer,
+  locked,
+  lockedReasonId,
+  onEdit,
+}: CustomerMainProps) {
+  const handleOpen = useCallback(() => onEdit(customer), [customer, onEdit]);
+  const isAnonymized = customer.anonymizedAt !== null;
+  const supportId = `customer-support-${customer.id}`;
+  const stateId = `customer-state-${customer.id}`;
+  // the active tab already says "Ativo": the badge is for the other states
+  const hasStateBadge = customer.status !== "active" || isAnonymized;
+  const content = (
+    <>
+      <span
+        aria-hidden="true"
+        className="grid size-9 shrink-0 place-items-center self-start rounded-full bg-muted font-medium text-muted-foreground text-xs"
+      >
+        {productInitials(customer.name)}
+      </span>
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-medium [overflow-wrap:anywhere]">
+            {isAnonymized ? null : <span className="sr-only">Editar </span>}
+            {customer.name}
+          </span>
+          {hasStateBadge ? (
+            <Badge
+              aria-hidden={isAnonymized ? undefined : true}
+              id={stateId}
+              variant={
+                customer.status === "archived" && !isAnonymized
+                  ? "warning"
+                  : "outline"
+              }
+            >
+              {customerStatusLabel(customer)}
+            </Badge>
+          ) : null}
+        </span>
+        {contacts ? (
+          <span
+            aria-hidden={isAnonymized ? undefined : true}
+            className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]"
+            id={supportId}
+          >
+            {contacts}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+  if (isAnonymized) {
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-3 py-2.5">
+        {content}
+      </div>
+    );
+  }
+  return (
+    <RowOpenButton
+      describedBy={
+        [
+          hasStateBadge ? stateId : undefined,
+          contacts ? supportId : undefined,
+          lockedReasonId,
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      locked={locked}
+      onOpen={handleOpen}
+    >
+      {content}
+    </RowOpenButton>
+  );
+}
+
+interface CustomerRowNotesProps {
+  isAnonymized: boolean;
+  lockedReason: string | null;
+  pendingLabel: string | null;
+  reasonId: string;
+  shownState: PendingCustomer | PendingCustomerUpdate | undefined;
+  /** The waiting command is the creation (not an edit): it names the badge. */
+  unconfirmedCreation: boolean;
+}
+
+/** Under the row, out of its button: the state of the send, the way to Pendências, the reasons and what runs. */
+function CustomerRowNotes({
+  isAnonymized,
+  lockedReason,
+  pendingLabel,
+  reasonId,
+  shownState,
+  unconfirmedCreation,
+}: CustomerRowNotesProps) {
+  if (!(shownState || lockedReason || isAnonymized || pendingLabel)) {
+    return null;
+  }
+  return (
+    <div className="grid gap-0.5 pb-2.5 pl-12">
+      {shownState ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Badge
+            data-sync-state={shownState.state}
+            role="status"
+            variant={
+              shownState.state === "rejected" ? "destructive" : "outline"
+            }
+          >
+            {syncStateLabel(shownState, !unconfirmedCreation)}
+          </Badge>
+          {shownState.state === "rejected" ? (
+            <a
+              className="focus-ring touch-hit w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
+              href="/attention"
+            >
+              Resolver em Pendências
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+      {lockedReason ? (
+        <p className="text-muted-foreground text-support" id={reasonId}>
+          {lockedReason}
+        </p>
+      ) : null}
+      {isAnonymized ? (
+        <p className="text-muted-foreground text-support">
+          Dados pessoais removidos: não dá para editar nem restaurar; as vendas
+          dele não mudam.
+        </p>
+      ) : null}
+      {pendingLabel ? (
+        <p className="text-muted-foreground text-support" role="status">
+          {pendingLabel}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 interface CustomerRowProps extends RowActions {
   customer: CustomerReadModel;
   /** The server cannot be reached: the actions that need it are off, and the notice at the top says why. */
@@ -199,6 +352,7 @@ function CustomerRow({
     .filter(Boolean)
     .join(" · ");
 
+  const reasonId = `customer-locked-${customer.id}`;
   const handleAsk = useCallback(() => setConfirming(true), []);
   const handleCancel = useCallback(() => setConfirming(false), []);
   const handleConfirm = useCallback(() => {
@@ -206,85 +360,38 @@ function CustomerRow({
     onAnonymize(customer);
   }, [customer, onAnonymize]);
 
-  let badgeVariant: "outline" | "warning" = "outline";
-  if (customer.status === "archived" && !isAnonymized) {
-    badgeVariant = "warning";
-  }
   return (
     <li
-      className="grid gap-3 px-3 py-2.5 md:px-4"
+      className={`grid px-3 md:px-4 ${isAnonymized ? "" : OPENABLE_ROW_CLASS}`}
       data-customer-id={customer.id}
     >
       <div className="flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="grid size-9 shrink-0 place-items-center self-start rounded-full bg-muted font-medium text-muted-foreground text-xs"
-        >
-          {productInitials(customer.name)}
-        </span>
-        <div className="grid min-w-0 flex-1 gap-0.5">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="font-medium [overflow-wrap:anywhere]">
-              {customer.name}
-            </p>
-            {customer.status === "active" && !isAnonymized ? null : (
-              <Badge variant={badgeVariant}>
-                {customerStatusLabel(customer)}
-              </Badge>
-            )}
-            {shownState ? (
-              <Badge
-                data-sync-state={shownState.state}
-                role="status"
-                variant={
-                  shownState.state === "rejected" ? "destructive" : "outline"
-                }
-              >
-                {syncStateLabel(shownState, !syncState)}
-              </Badge>
-            ) : null}
-          </div>
-          {contacts ? (
-            <p className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]">
-              {contacts}
-            </p>
-          ) : null}
-          {shownState?.state === "rejected" ? (
-            <a
-              className="focus-ring touch-hit w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-              href="/attention"
-            >
-              Resolver em Pendências
-            </a>
-          ) : null}
-          {lockedReason ? (
-            <p className="text-muted-foreground text-support">{lockedReason}</p>
-          ) : null}
-          {isAnonymized ? (
-            <p className="text-muted-foreground text-support">
-              Dados pessoais removidos: não dá para editar nem restaurar; as
-              vendas dele não mudam.
-            </p>
-          ) : null}
-          {pendingLabel ? (
-            <p className="text-muted-foreground text-support" role="status">
-              {pendingLabel}
-            </p>
-          ) : null}
-        </div>
+        <CustomerMain
+          contacts={contacts}
+          customer={customer}
+          locked={lockedReason !== null || isPending}
+          lockedReasonId={lockedReason ? reasonId : undefined}
+          onEdit={onEdit}
+        />
         {isAnonymized ? null : (
           <CustomerMenu
             customer={customer}
             lifecycleLocked={isOffline || lockedReason !== null}
-            locked={lockedReason !== null}
             onArchive={onArchive}
             onAskAnonymize={handleAsk}
-            onEdit={onEdit}
             onRestore={onRestore}
             pending={isPending}
           />
         )}
       </div>
+      <CustomerRowNotes
+        isAnonymized={isAnonymized}
+        lockedReason={lockedReason}
+        pendingLabel={pendingLabel}
+        reasonId={reasonId}
+        shownState={shownState}
+        unconfirmedCreation={Boolean(syncState)}
+      />
       {confirming ? (
         <AnonymizeConfirm
           customer={customer}
@@ -298,6 +405,7 @@ function CustomerRow({
 }
 
 interface CustomerListProps extends RowActions {
+  /** The customers that match the search. */
   customers: CustomerReadModel[];
   isLoading: boolean;
   /** Working from this device's collections while the connection is down. */
@@ -305,9 +413,13 @@ interface CustomerListProps extends RowActions {
   /** The button of the empty list: the form is not on the page, it opens from here. */
   onNew: (event: MouseEvent<HTMLButtonElement>) => void;
   pendingAction: string | null;
+  /** The typed search; empty when none. */
+  query: string;
   status: CustomerListStatus;
   /** Customers created on this device that the server has not confirmed yet. */
   syncStates: ReadonlyMap<string, PendingCustomer>;
+  /** How many customers the status has, before the search. */
+  total: number;
   /** Edits made on this device that the server has not confirmed yet. */
   updateStates: ReadonlyMap<string, PendingCustomerUpdate>;
 }
@@ -318,8 +430,10 @@ export function CustomerList({
   isOffline,
   onNew,
   pendingAction,
+  query,
   status,
   syncStates,
+  total,
   updateStates,
   ...actions
 }: CustomerListProps) {
@@ -332,7 +446,7 @@ export function CustomerList({
       </ListNotice>
     );
   }
-  if (customers.length === 0) {
+  if (total === 0) {
     return (
       <ListNotice>
         {status === "active" ? (
@@ -356,6 +470,15 @@ export function CustomerList({
         ) : (
           <p className="text-muted-foreground">Nenhum cliente arquivado.</p>
         )}
+      </ListNotice>
+    );
+  }
+  if (customers.length === 0) {
+    return (
+      <ListNotice>
+        <p className="text-muted-foreground" role="status">
+          Nenhum cliente com “{query.trim()}”.
+        </p>
       </ListNotice>
     );
   }

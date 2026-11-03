@@ -157,6 +157,9 @@ const statusTab = (page: Page, name: string) =>
 
 const menuOf = (page: Page, name: string) =>
   page.getByRole("button", { name: `Mais ações para ${name}` });
+/** The row of a product, which opens it on Dados ("Editar" is not in the menu: the row is). */
+const rowOf = (page: Page, name: string) =>
+  page.getByRole("button", { exact: true, name: `Editar ${name}` });
 
 test("as abas Ativos e Arquivados: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
   page,
@@ -173,10 +176,14 @@ test("as abas Ativos e Arquivados: setas trocam de aba, Tab sai do grupo e o lei
 });
 
 async function useEveryControl(page: Page) {
-  // the menu of a row, and the form of an edit with its category
+  // the menu of a row has no "Editar" (the row opens the product), and the form of an edit with its category
   await menuOf(page, "Camiseta do teste").click();
   await expect(page.getByRole("menuitem", { name: "Imagens" })).toBeVisible();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await expect(
+    page.getByRole("menuitem", { exact: true, name: "Editar" })
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await rowOf(page, "Camiseta do teste").click();
   const name = page.getByLabel("Nome do produto");
   await expect(name).toHaveValue("Camiseta do teste");
   await expect(name).toBeFocused();
@@ -193,8 +200,8 @@ async function useEveryControl(page: Page) {
   await expect(category).toContainText("Acessórios");
   await page.getByLabel("Descrição").fill("Algodão, corte reto, azul.");
   await page.getByRole("button", { name: "Cancelar" }).click();
-  // closing the form gives the focus back to the menu of the product that was edited
-  await expect(menuOf(page, "Camiseta do teste")).toBeFocused();
+  // closing the form gives the focus back to the row of the product that was edited
+  await expect(rowOf(page, "Camiseta do teste")).toBeFocused();
 
   // the variants: the options, the values and a combination
   await menuOf(page, "Camiseta do teste").click();
@@ -718,6 +725,90 @@ test("a busca ignora maiúsculas e acentos, diz quando nada casa e o número aco
   await expect(page.getByText("3 produtos")).toBeVisible();
 });
 
+const ROW_NAMES = "[data-product-id] [data-row-open]";
+
+test("lista longa: 50 de cada vez com 'Carregar mais', o total no alto com milhar, e a busca volta a uma página", async ({
+  page,
+}) => {
+  const many = Array.from({ length: 1248 }, (_, index) =>
+    product(index + 1, `Peça ${String(index + 1).padStart(4, "0")}`)
+  );
+  await openServerScreen(page, { lists: [answer(many)] });
+  const count = page.getByText("1.248 produtos", { exact: true });
+  await expect(count).toBeVisible();
+  // the count is above the list, read before the rows
+  const list = page.getByRole("list", { name: "Produtos" });
+  const [countBox, listBox] = await Promise.all([
+    count.boundingBox(),
+    list.boundingBox(),
+  ]);
+  expect(countBox?.y ?? 0).toBeLessThan(listBox?.y ?? 0);
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+  await expect(menuOf(page, "Peça 0051")).toHaveCount(0);
+
+  const more = page.getByRole("button", { name: "Carregar mais" });
+  await more.click();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(100);
+  // the keyboard goes on from the first new row
+  await expect(rowOf(page, "Peça 0051")).toBeFocused();
+  await expect(rowOf(page, "Peça 0100")).toBeVisible();
+  await expect(count).toBeVisible();
+
+  // a search starts again from one page, and so does clearing it
+  const search = page.getByLabel("Buscar produto");
+  await search.fill("peça 1");
+  await expect(page.getByText("249 de 1.248 produtos")).toBeVisible();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+  await search.fill("peça 11");
+  await expect(page.getByText("100 de 1.248 produtos")).toBeVisible();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+  await more.click();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(100);
+  await expect(more).toHaveCount(0);
+  // the button left with the last page: the focus is on the first new row, not on the body
+  await expect(rowOf(page, "Peça 1150")).toBeFocused();
+  await search.fill("");
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+});
+
+test("a linha abre o produto: clique em qualquer ponto dela ou Enter no nome, e o foco volta à linha", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [
+      answer([product(1, "Camiseta do teste"), product(2, "Calça jeans")]),
+    ],
+    others: variantsOf,
+  });
+  const row = page.locator(`[data-product-id="${id(22)}"]`);
+  // the far side of the row, away from the name: the stretched button takes it
+  const box = await row.boundingBox();
+  const menuBox = await menuOf(page, "Calça jeans").boundingBox();
+  if (!(box && menuBox)) {
+    throw new Error("row not drawn");
+  }
+  await page.mouse.click(menuBox.x - 24, box.y + box.height / 2);
+  const dialog = page.getByRole("dialog", { name: "Calça jeans" });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByLabel("Nome do produto")).toBeFocused();
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
+  await expect(rowOf(page, "Calça jeans")).toBeFocused();
+
+  // the keyboard: Tab goes from the row to its menu, Enter on the row opens it
+  await page.keyboard.press("Tab");
+  await expect(menuOf(page, "Calça jeans")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(rowOf(page, "Calça jeans")).toBeFocused();
+
+  // the menu keeps its own place on the row: it opens the menu, not the product
+  await menuOf(page, "Calça jeans").click();
+  await expect(page.getByRole("menuitem", { name: "Variantes" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("o nome é obrigatório: o erro fica no campo, o foco volta a ele e nada é enviado", async ({
   page,
 }) => {
@@ -1016,8 +1107,7 @@ test("editar: o formulário abre com os dados, salva pelo servidor com a versão
       },
     },
   });
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await expect(page.getByLabel("Descrição")).toHaveValue("Azul");
   await page.getByLabel("Nome do produto").fill("Camiseta nova");
   await page.getByRole("button", { name: "Salvar alterações" }).click();
@@ -1553,8 +1643,7 @@ test("as abas do produto: nome de cada aba e do painel, setas trocam de aba e Ta
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
   await openProductsLab(page);
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
   await expect(
     dialog.getByRole("tablist", { name: "Partes do produto" })
@@ -1578,8 +1667,7 @@ test("trocar de aba não perde o rascunho de nenhuma aba e não cria passo no hi
   onlyDesktop(testInfo.project.name);
   await openProductsLab(page);
   const steps = await page.evaluate(() => window.history.length);
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
   await page.getByLabel("Nome do produto").fill("Camiseta azul");
   await dialog.getByRole("tab", { name: "Variantes" }).click();
@@ -1626,8 +1714,7 @@ test("erro numa aba que não está à vista: salvar abre a aba Dados marcada, co
       },
     },
   });
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
   await page.getByLabel("Nome do produto").fill("");
   await dialog.getByRole("tab", { name: "Variantes" }).click();
@@ -1697,8 +1784,7 @@ test("no celular, o voltar fecha o produto e guarda o rascunho; Cancelar o desca
     others: variantsOf,
   });
   const address = page.url();
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await page.getByLabel("Nome do produto").fill("Camiseta guardada");
   // the tabs change in place: the step back closes the dialog, it does not walk back through the tabs
   await page.getByRole("tab", { name: "Variantes" }).click();
@@ -1706,17 +1792,15 @@ test("no celular, o voltar fecha o produto e guarda o rascunho; Cancelar o desca
   await page.goBack();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(page.url()).toBe(address);
-  await expect(menuOf(page, "Camiseta do teste")).toBeFocused();
+  await expect(rowOf(page, "Camiseta do teste")).toBeFocused();
 
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await expect(page.getByLabel("Nome do produto")).toHaveValue(
     "Camiseta guardada"
   );
   await page.getByRole("button", { name: "Cancelar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await expect(page.getByLabel("Nome do produto")).toHaveValue(
     "Camiseta do teste"
   );
@@ -1821,8 +1905,7 @@ test("o produto que sai da lista com o diálogo aberto fecha o diálogo, sem vir
         ),
     },
   });
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await page.getByLabel("Nome do produto").fill("Camiseta mudada");
   // archived elsewhere: the next read of the list no longer has it ("Atualizar variantes" reads the list again)
   catalog.products = [];

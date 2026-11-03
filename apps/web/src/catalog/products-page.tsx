@@ -52,7 +52,13 @@ import {
   ProductSearch,
   ProductsHeader,
 } from "./products-page-parts";
-import { StatusNav } from "./screen-parts";
+import { countLineShown, shownListCount } from "./list-page-model";
+import {
+  ListCountLine,
+  LoadMoreButton,
+  StatusNav,
+  useListPage,
+} from "./screen-parts";
 import { useProductsData } from "./use-products-data";
 import { useProductsLink } from "./use-products-link";
 
@@ -127,12 +133,7 @@ async function createFromDraft(
   );
 }
 
-function countTextFor(shown: number, total: number, query: string): string {
-  if (query.trim() !== "") {
-    return `${shown} de ${total}`;
-  }
-  return `${total} ${total === 1 ? "produto" : "produtos"}`;
-}
+const PRODUCT_NOUN = ["produto", "produtos"] as const;
 
 /**
  * An action's error comes first; the failed read of the address's product is said only once the list is shown, so
@@ -424,11 +425,12 @@ export function ProductsPage() {
         current?.productId === product?.id ? current : null
       );
       keptRef.current = null;
-      // back to where the person was: the menu of the product, or the button that opens a new one
+      // back to where the person was: the row (Dados), the row's menu (Variantes, Imagens) or the new button
+      const opener = tab === "dados" ? "[data-row-open]" : "[aria-haspopup]";
       originRef.current = () =>
         product
           ? (rootRef.current?.querySelector<HTMLElement>(
-              `[data-product-id="${product.id}"] [aria-haspopup]`
+              `[data-product-id="${product.id}"] ${opener}`
             ) ?? newButtonRef.current)
           : newButtonRef.current;
       setDialogProductId(product?.id ?? null);
@@ -761,6 +763,7 @@ export function ProductsPage() {
     [organizationId]
   );
   const visibleProducts = filterByName(products, query);
+  const page = useListPage(visibleProducts, `${status}\n${query}`);
   const isOffline = workspace !== null && !workspace.online;
   const listIsShown = !(isLoading || loadError);
   const feedbackError = linkFeedbackError(
@@ -852,6 +855,16 @@ export function ProductsPage() {
           options={PRODUCT_STATUS_OPTIONS}
           value={status}
         />
+        <ListCountLine
+          shown={countLineShown(isLoading, listIsShown, products.length)}
+          text={shownListCount(
+            listIsShown,
+            visibleProducts.length,
+            products.length,
+            query,
+            PRODUCT_NOUN
+          )}
+        />
 
         {loadError ? (
           <LoadErrorNotice message={loadError} onRetry={handleRetryList} />
@@ -867,17 +880,19 @@ export function ProductsPage() {
             onNew={handleNew}
             onRestore={handleRestoreProduct}
             pendingAction={pendingAction}
-            products={visibleProducts}
+            products={page.items}
             query={query}
             status={status}
             syncStates={syncStates}
             total={products.length}
           />
         )}
-        {listIsShown && visibleProducts.length > 0 ? (
-          <p aria-live="polite" className="text-muted-foreground text-support">
-            {countTextFor(visibleProducts.length, products.length, query)}
-          </p>
+        {listIsShown && page.hasMore ? (
+          <LoadMoreButton
+            listLabel="Produtos"
+            onClick={page.loadMore}
+            shown={page.items.length}
+          />
         ) : null}
       </div>
     </div>

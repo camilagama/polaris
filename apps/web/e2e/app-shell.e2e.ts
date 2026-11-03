@@ -1460,14 +1460,20 @@ test.describe("Ajuda e contato", () => {
       exact: true,
       name: "Configurações",
     });
-    // an ordinary item of the sheet, the same as the destinations above it (`SidebarMenuButton`)
-    const [itemBox, siblingBox] = await Promise.all([
-      item.boundingBox(),
-      sibling.boundingBox(),
-    ]);
-    expect(itemBox?.height ?? 0).toBeGreaterThanOrEqual(32);
-    expect(itemBox?.height).toBe(siblingBox?.height);
-    expect(itemBox?.width).toBe(siblingBox?.width);
+    // an ordinary item of the sheet, the same as the destinations above it (`SidebarMenuButton`); measured once the
+    // sheet has settled: while it enters, the two boxes can differ by a fraction of a pixel
+    const sizes = async () => {
+      const [itemBox, siblingBox] = await Promise.all([
+        item.boundingBox(),
+        sibling.boundingBox(),
+      ]);
+      return {
+        height: itemBox?.height === siblingBox?.height,
+        tall: (itemBox?.height ?? 0) >= 32,
+        width: itemBox?.width === siblingBox?.width,
+      };
+    };
+    await expect.poll(sizes).toEqual({ height: true, tall: true, width: true });
   });
 
   test("no desktop, o terceiro link ao lado dos legais abre Ajuda, na lateral aberta e na recolhida", async ({

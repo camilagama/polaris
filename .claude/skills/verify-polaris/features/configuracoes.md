@@ -5,7 +5,7 @@ Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez: Form
 ## Sub-features
 
 - `formas-de-receber` perfis de pagamento: "Novo perfil", `region "Perfis cadastrados"`, "Incluir arquivados"; vazio: "Nenhum perfil cadastrado".
-- `catalogo-publico` perfil público e produtos do catálogo; no Free: "Seu plano não inclui o catálogo público…" e "Salvar perfil" desligado.
+- `catalogo-publico` perfil público e produtos do catálogo (busca "Buscar produto" e 50 de cada vez com "Carregar mais"); no Free: "Seu plano não inclui o catálogo público…" e "Salvar perfil" desligado.
 - `aparelhos` os aparelhos do modo offline e a revogação.
 - `assinatura` o plano e o uso ("Plano Free", barras "Variantes: N de 50", "Imagens: N de 50", "Metas em andamento: N de 1").
 - `senha` troca de senha (atrás da flag de senha).
