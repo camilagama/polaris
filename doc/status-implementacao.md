@@ -2771,3 +2771,10 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Filtros | Em revisão | `stock-filters.tsx`: busca e o botão "Filtros" (`Popover`, com o número de filtros ativos) na mesma linha; abas de saldo, "Sem custo" (caixa) e "Incluir arquivados" dentro dele; "Atualizar" virou botão de link na linha da contagem. |
 | Textos do painel | Em revisão | O painel aberto dentro da linha não tem linha sob o título (a linha da lista, logo acima, já diz o saldo e o custo); o painel do link da venda, sem linha acima, leva sob o título produto, variante, saldo e custo; a data do último movimento vai para o resumo da revisão; "Custo unitário para valoração (R$)" virou "Custo de cada unidade (R$)" com a dica "Opcional. Vale só se a quantidade contada for maior que zero."; "Feche o painel aberto para usar os botões." cabe em uma linha a 360 px. |
 | Provas | Em revisão | Unidade: `stock-command-model.test.ts` (valor inicial, conflito no campo, resumo), `stock-target.test.ts`; navegador: `e2e/stock-screen.e2e.ts` e `e2e-pwa/ui-stock-attention.e2e.ts`. As baselines de `estoque-lista`, `estoque-vazio` e `estoque-erro` mudam com a barra de filtros. |
+
+### Vender sem custo na lista e devolução sem desfazer (t703)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Custo fora da lista de variantes | Em revisão | `pickerOptions` não escreve mais "custo médio" na opção (com ou sem custo, com ou sem saldo, com conexão ou pela cópia do aparelho); a linha "Custo médio" do item escolhido, o Estoque e os Produtos não mudam. Prova: `sale-variant-picker.test.tsx` (`VariantOptionList`) e `sale-variant-picker-model.test.ts`. |
+| Devolução não se desfaz | Em revisão | O aviso "Confirme a devolução" termina a linha do estoque com "Isso não poderá ser desfeito.", como o do cancelamento (`ReturnReviewNotice`). Prova: `sale-return-review-notice.test.tsx`. |
