@@ -44,7 +44,7 @@ describe("the logout dialog", () => {
     expect(html).toContain("Ficar conectado");
     expect(html).toContain("Descartar e sair…");
     expect(html).not.toContain("Confirmar");
-    expect(html).not.toContain("Ver o que precisa de atenção");
+    expect(html).not.toContain("Ver Pendências");
   });
 
   it("offers the attention panel only when the server refused something", () => {
@@ -70,7 +70,7 @@ describe("the logout dialog", () => {
       }),
     ]);
     expect(html).toContain("O servidor recusou operações");
-    expect(html).toContain("Ver o que precisa de atenção");
+    expect(html).toContain("Ver Pendências");
   });
 
   it("adds up several workspaces and has no way to log out anyway", () => {

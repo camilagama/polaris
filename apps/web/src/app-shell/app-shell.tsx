@@ -879,8 +879,10 @@ export function AppShell({
       />
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
         <ShellChip onlineOnly={onlineOnly} />
+        {/* on the phone the content is at least as tall as the window minus the header (3rem): the legal links in the
+            footer start at the fold, under the fixed bottom bar, and do not paint under "Carregando…" to be pushed down */}
         <main
-          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14"
+          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_3rem))]"
           id="conteudo"
           // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
           tabIndex={-1}
