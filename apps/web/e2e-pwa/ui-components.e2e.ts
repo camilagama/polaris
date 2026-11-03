@@ -221,7 +221,7 @@ test("com toque, radio, caixa de seleção, botões do contador e campo com R$ t
   }
 });
 
-test("tamanho por papel: comum 32/36, ação principal 36/44, grupo de 24 px a 8 px um do outro, campo 32/36 e o principal 44 no toque", async ({
+test("tamanho por papel: comum 32/36, ação principal 36/44, grupo de 24 px a 8 px um do outro, campo 32/44", async ({
   isMobile,
   page,
 }) => {
@@ -261,11 +261,8 @@ test("tamanho por papel: comum 32/36, ação principal 36/44, grupo de 24 px a 8
     .evaluate((element) => getComputedStyle(element, "::before").content);
   expect(pseudo).toBe("none");
   const fields = roles.locator("[data-slot=input-group]");
+  expect(await fields.count()).toBe(1);
   expect((await boxOf(fields.nth(0))).height).toBeCloseTo(
-    isMobile ? 36 : 32,
-    1
-  );
-  expect((await boxOf(fields.nth(1))).height).toBeCloseTo(
     isMobile ? 44 : 32,
     1
   );

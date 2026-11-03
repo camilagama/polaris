@@ -21,6 +21,17 @@
   font-display: swap;
 }
 
+/* Arial scaled to Geist's metrics until Geist arrives, so the swap moves nothing; the numbers and how they were measured
+   are in the same face of apps/web/src/styles/index.css. No Arial: the face is skipped. */
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("ArialMT");
+  size-adjust: 103.19%;
+  ascent-override: 97.39%;
+  descent-override: 28.59%;
+  line-gap-override: 0%;
+}
+
 :root {
   --radius-md: 0.55rem; /* controle */
   --radius-lg: 0.65rem; /* bloco */
@@ -55,7 +66,8 @@ html {
 body {
   margin: 0;
   font-family:
-    "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    "Geist", "Geist Fallback", system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
   font-size: 0.875rem;
   font-feature-settings: "cv11", "ss01";
   font-synthesis-weight: none;

@@ -225,7 +225,11 @@ export function PeriodPicker({
               </FieldError>
             ) : null}
           </Field>
-          <Button className="sm:mt-[1.625rem]" size="sm" type="submit">
+          <Button
+            className="touch:h-ctl-xl sm:mt-[1.625rem]"
+            size="sm"
+            type="submit"
+          >
             Ver período
           </Button>
         </form>

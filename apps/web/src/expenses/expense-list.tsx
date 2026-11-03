@@ -166,7 +166,7 @@ function ExpenseCard({
         >
           {formatBrlAmount(expense.amount)}
         </p>
-        <div className="flex gap-2">
+        <div className="flex gap-2 touch:gap-3">
           {voided ? (
             <Button
               {...connectionControlProps(online)}

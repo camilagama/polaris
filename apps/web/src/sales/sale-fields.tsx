@@ -312,6 +312,7 @@ export function QuantityStepper({
       <ButtonGroup role="none">
         <Button
           aria-label="Menos uma unidade"
+          className="touch:size-11"
           disabled={less === null}
           onClick={handleLess}
           size="icon"
@@ -335,6 +336,7 @@ export function QuantityStepper({
         </InputGroup>
         <Button
           aria-label="Mais uma unidade"
+          className="touch:size-11"
           disabled={more === null}
           onClick={handleMore}
           size="icon"

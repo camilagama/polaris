@@ -293,6 +293,10 @@ O usuário decidiu que a regra fixa de "36 px visíveis e 48 de área de toque e
 - `touch-hit`, `touch-hit-field` e a área de caixa e rádio passam de 48 para 44 px. Em grupo a área deixa de ser obrigatória: o contêiner leva `data-target-group` e a verificação 2 do e2e exige 24 px e 8 px de espaço, em vez de 44 px.
 - O calendário perde a exceção de dois dias vizinhos: o dia é a própria área (sem `touch-hit`), os dias se encostam e as áreas não se sobrepõem. Nenhuma outra tela muda de tamanho nesta emenda (só a área invisível encolhe); as outras adotam os papéis nos lotes delas.
 
+## Emenda: campo de 44 px no toque e fim das sobras de 48 (t694, 03/11/2026)
+
+A auditoria de UI de 02/11 mediu campos de 34 px e itens de 48 px que sobraram da regra antiga. O usuário manteve 44 px para a ação principal e passou o campo de texto e o seletor a 44 px no toque (`touch:h-11` no `InputGroup` e no `Select`; a caixa de texto de várias linhas segue `h-auto`). O controle comum não muda: 36 px visíveis no toque, com área de 44 px por `touch-hit`. Os itens do menu lateral, da folha "Mais", do seletor de loja, do aceite e do sumário dos textos legais passam de 48 para 44 px, e a coluna recolhida usa os mesmos 44 px. Desktop (ponteiro fino) não muda.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.

@@ -267,11 +267,11 @@ describe("a barra, na primeira pintura", () => {
     }
   });
 
-  it("a pílula tem 44 px de altura no toque (36 px no mouse) e o X 48 px de largura no toque, para a área dele não entrar na do botão ao lado", () => {
+  it("a pílula tem 44 px de altura no toque (36 px no mouse) e o X 44 px de largura no toque, para a área dele não entrar na do botão ao lado", () => {
     const markup = html([PERIOD]);
     expect(markup).toContain("h-9");
     expect(markup).toContain("touch:h-11");
-    expect(markup).toContain("touch:w-12");
+    expect(markup).toContain("touch:w-11");
   });
 
   it("Limpar tudo só com duas ou mais pílulas", () => {
