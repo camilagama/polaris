@@ -15,6 +15,8 @@ const DISCARD_SALE_DIALOG = /Descartar Venda de 1 item/;
 const MUG = /Caneca/;
 const LIST_CLOSED = "/rpc/organization/listClosed";
 const LIST_MINE = "/rpc/organization/listMine";
+const BOOTSTRAP_PAGE = "/rpc/sync/bootstrapPage";
+const DEVICE_KEY = "polaris.offline.device";
 const SESSION_ENDED = /Sua sessão acabou|sessão expirou/;
 const STOCK = 10;
 const SOLD = 2;
@@ -104,6 +106,9 @@ async function books(sql: Sql, organizationId: string, variantId: string) {
 }
 
 const syncChip = (page: Page) => page.getByRole("status");
+
+const deviceId = (page: Page) =>
+  page.evaluate((key) => localStorage.getItem(key), DEVICE_KEY);
 
 /**
  * The device side of the closure: a sale kept on the device without internet survives the closure
@@ -226,6 +231,9 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
       "1 operação deste aparelho ainda não foi confirmada pelo servidor. Se você desfizer o encerramento, ela não será enviada sozinha: fica em Pendências e precisa ser refeita."
     )
   ).toBeVisible({ timeout: 30_000 });
+  const device = await deviceId(page);
+  expect(device, "the device is registered").not.toBeNull();
+  const pagesBeforeUndo = calls(BOOTSTRAP_PAGE);
   await page
     .getByRole("button", { exact: true, name: "Desfazer encerramento" })
     .click();
@@ -247,6 +255,14 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   expect(refused.rows, "one refusal, recorded once").toEqual([
     { code: "authorization_revoked", status: "rejected" },
   ]);
+
+  // the refusal is of the lease the sale was made under; the one the server issued after the undo is the device's, so
+  // the device stays and the copy is read again from the server instead of being dropped for good
+  await expect
+    .poll(() => calls(BOOTSTRAP_PAGE), { timeout: 30_000 })
+    .toBeGreaterThan(pagesBeforeUndo);
+  expect(await deviceId(page), "the device is not forgotten").toBe(device);
+  await expect(page.getByText(SESSION_ENDED)).toHaveCount(0);
   expect(await books(sql, organizationId, product.variantId)).toEqual(before);
 
   // the sale stays visible in Pendências, with its value and date, and without promising the access back

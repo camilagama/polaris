@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { trackTree } from "./track-tree.mjs";
 import { TEST_CLOCK_LIST } from "./verify-test-clock.list.mjs";
 import {
   ADVICE,
@@ -97,11 +98,12 @@ describe("the list", () => {
         mkdirSync(path.dirname(path.join(base, file)), { recursive: true });
         writeFileSync(path.join(base, file), read);
       }
+      trackTree(base);
       expect(
         checkRepository(base, {}).map((problem) => problem.split(":")[0])
       ).toEqual(["apps/web/e2e-pwa/helper.ts", "apps/web/src/a.test.ts"]);
     } finally {
-      rmSync(base, { recursive: true, force: true });
+      rmSync(base, { force: true, recursive: true });
     }
   });
 

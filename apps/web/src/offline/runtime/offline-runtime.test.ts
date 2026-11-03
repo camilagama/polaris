@@ -1742,6 +1742,202 @@ describe("a session the server refuses", () => {
     expect(w.wiped).toHaveLength(1);
   });
 
+  describe("a command refused as authorization_revoked under a lease older than the one of the sync", () => {
+    const leaseKeyOf = `polaris.offline.lease.${userId}.${organizationId}`;
+
+    /** The command is queued under the first lease; the app starts again and works under a new one. */
+    async function refusedUnderOldLease() {
+      const w = world();
+      const first = w.make();
+      await first.start(organizationId);
+      await queueProduct(first, "Camiseta", 1);
+      const oldLease = w.keyValues.read(leaseKeyOf);
+      await first.stop();
+      w.advance(1);
+      w.keyValues.remove(leaseKeyOf); // what a closure and its undo leave: no usable lease cached
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      expect(w.keyValues.read(leaseKeyOf)).not.toBe(oldLease);
+      return { runtime, w };
+    }
+
+    async function commandIdOf(w: ReturnType<typeof world>) {
+      const stored = w.stores.get(`${userId}-${organizationId}`);
+      return (await stored?.outbox.snapshot())?.commands[0]?.commandId ?? "";
+    }
+
+    async function sendAgain(
+      w: ReturnType<typeof world>,
+      runtime: OfflineRuntime
+    ) {
+      const stored = w.stores.get(`${userId}-${organizationId}`);
+      await stored?.outbox.retry(await commandIdOf(w));
+      await runtime.syncNow();
+    }
+
+    it("the lease of the command is the lease of the sync: the lease that died is the current one, so the copy and the device go with no new lease asked", async () => {
+      const w = world();
+      const runtime = w.make();
+      await runtime.start(organizationId);
+      await queueProduct(runtime, "Camiseta", 1);
+      const issued = w.calls.issueLease;
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.calls.issueLease).toBe(issued);
+      expect(w.wiped).toEqual([`${userId}-${organizationId}`]);
+      expect(w.keyValues.read("polaris.offline.device")).toBeNull();
+      expect(runtime.getSnapshot().sessionRefused).toBe(true);
+    });
+
+    it("a different lease and the server issuing a new one for the device: the copy and the device stay and the pull goes on", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const issued = w.calls.issueLease;
+      const pulls = w.calls.pull;
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.calls.issueLease).toBe(issued + 1);
+      expect(w.wiped).toEqual([]);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
+      expect(w.calls.pull).toBe(pulls + 1);
+      expect(runtime.context()).not.toBeNull();
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "ready",
+        reason: null,
+        sessionRefused: false,
+      });
+      expect(runtime.getSnapshot().counts.rejected).toBe(1);
+      expect(w.keyValues.read(leaseKeyOf)).not.toBeNull();
+    });
+
+    it("a different lease and the server refusing the device: the copy and the device go, as for the lease that died", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      w.failures.issueLease.push(
+        Object.assign(new Error("device_revoked"), { code: "CONFLICT" })
+      );
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.wiped).toEqual([`${userId}-${organizationId}`]);
+      expect(w.keyValues.read("polaris.offline.device")).toBeNull();
+      expect(w.keyValues.read(leaseKeyOf)).toBeNull();
+      expect(runtime.context()).toBeNull();
+      expect(runtime.getSnapshot().sessionRefused).toBe(true);
+    });
+
+    it("a different lease and no answer to the new lease: the copy stays, no failure is told, and the next refusal asks again", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const issued = w.calls.issueLease;
+      const pulls = w.calls.pull;
+      w.failures.issueLease.push(new TypeError("Failed to fetch"));
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.wiped).toEqual([]);
+      expect(w.calls.pull).toBe(pulls);
+      expect(runtime.context()).not.toBeNull();
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "ready",
+        reason: null,
+        sessionRefused: false,
+      });
+
+      await sendAgain(w, runtime);
+      expect(w.calls.issueLease).toBe(issued + 2);
+      expect(w.wiped).toEqual([]);
+      expect(w.calls.pull).toBe(pulls + 1);
+    });
+
+    it("a different lease and a refusal that is not about the device (a bad request): nothing is dropped, the sync fails and says so", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const pulls = w.calls.pull;
+      w.failures.issueLease.push(
+        Object.assign(new Error("bad_request"), { code: "BAD_REQUEST" })
+      );
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.wiped).toEqual([]);
+      expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
+      expect(w.calls.pull).toBe(pulls);
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "ready",
+        reason: "sync_failed",
+        sessionRefused: false,
+      });
+    });
+
+    it("a different lease and the server refusing the account (forbidden): the copy goes as for a refused session", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      w.failures.issueLease.push(
+        Object.assign(new Error("forbidden"), { code: "FORBIDDEN" })
+      );
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+
+      expect(w.wiped).toEqual([`${userId}-${organizationId}`]);
+      expect(runtime.context()).toBeNull();
+      expect(runtime.getSnapshot().sessionRefused).toBe(true);
+    });
+
+    it("a different lease while another organization opens during the push: no lease is asked for the new organization and its copy is untouched", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const issued = w.calls.issueLease;
+      const pushes = w.calls.push;
+      let release: () => void = () => undefined;
+      w.gates.push = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      w.failures.rejectCode = "authorization_revoked";
+      const sync = runtime.syncNow();
+      await vi.waitFor(() => expect(w.calls.push).toBe(pushes + 1));
+      await runtime.start("org-2");
+      const afterStart = w.calls.issueLease;
+      release();
+      await sync;
+
+      expect(afterStart).toBe(issued + 1); // org-2's own lease
+      expect(w.calls.issueLease).toBe(afterStart);
+      expect(w.wiped).toEqual([]);
+      expect(runtime.context()?.organizationId).toBe("org-2");
+      expect(runtime.getSnapshot()).toMatchObject({
+        phase: "ready",
+        reason: null,
+        sessionRefused: false,
+      });
+    });
+
+    it("a lease issued for the command is only the proof while it stands: once the lease changes, the next refusal asks again", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const issued = w.calls.issueLease;
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+      expect(w.calls.issueLease).toBe(issued + 1);
+
+      w.advance(65); // 7 hours left: the next sync renews the lease
+      await sendAgain(w, runtime);
+
+      expect(w.calls.issueLease).toBe(issued + 3); // the renewal and the new proof
+      expect(w.wiped).toEqual([]);
+    });
+
+    it("a different lease asks the server once per command: the same command refused again does not issue another grant", async () => {
+      const { runtime, w } = await refusedUnderOldLease();
+      const issued = w.calls.issueLease;
+      w.failures.rejectCode = "authorization_revoked";
+      await runtime.syncNow();
+      expect(w.calls.issueLease).toBe(issued + 1);
+
+      await sendAgain(w, runtime);
+      await sendAgain(w, runtime);
+
+      expect(w.calls.issueLease).toBe(issued + 1);
+      expect(w.wiped).toEqual([]);
+      expect(runtime.getSnapshot().counts.rejected).toBe(1);
+    });
+  });
+
   it("a late refusal from an old run does not touch the organization opened after it", async () => {
     const w = world();
     const runtime = w.make();

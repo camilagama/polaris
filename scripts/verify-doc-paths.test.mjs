@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { trackTree } from "./track-tree.mjs";
 import { DOC_PATHS_LIST } from "./verify-doc-paths.list.mjs";
 import {
   ADVICE,
@@ -65,6 +66,7 @@ describe("missingPaths", () => {
         mkdirSync(path.dirname(path.join(base, file)), { recursive: true });
         writeFileSync(path.join(base, file), text);
       }
+      trackTree(base);
       return run(base);
     } finally {
       rmSync(base, { force: true, recursive: true });
