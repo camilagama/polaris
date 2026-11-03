@@ -357,6 +357,7 @@ describe("filters", () => {
 
   it("explains an empty result differently when filters are active", () => {
     expect(historyView(loaded([]), filters)).toMatchObject({
+      clearFilters: false,
       href: "/sales",
       kind: "empty",
     });
@@ -364,7 +365,11 @@ describe("filters", () => {
       ...filters,
       status: "cancelled",
     });
-    expect(filtered).toMatchObject({ href: null, kind: "empty" });
+    expect(filtered).toMatchObject({
+      clearFilters: true,
+      href: null,
+      kind: "empty",
+    });
     expect("message" in filtered && filtered.message).toContain("filtros");
   });
 });

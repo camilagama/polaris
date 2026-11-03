@@ -63,7 +63,7 @@
 /* Seus dados in Configurações: the request and the list of copies, which the closed store's panel uses too. */
 @source "../data-export/{data-export-page,data-export-list,data-export-cards}.tsx";
 /* The sales history, the sale detail with its return, cancellation and customer panels, and the customer page (v5.1). */
-@source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
+@source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-empty,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
 @source "../sales/{sale-return-panel,sale-return-table,sale-cancel-panel,sale-operation-actions,sale-reason-fields,operation-failure-notice,sale-customer-panel,sale-id-missing}.tsx";
 
 /*
@@ -125,13 +125,10 @@
 }
 
 /* Below 760 px the shell has the bar of destinations fixed at the bottom (52 px and the safe area): the content
-   ends above it, a sticky bar of a screen sits on it (`--app-bottom-bar`) and what gets the focus scrolls above it.
-   `--app-header` is the height of the sticky header on top (`h-12` of `MobileHeader`): the content is at least the
-   screen minus that header, so the footer under it starts below the fold. */
+   ends above it, a sticky bar of a screen sits on it (`--app-bottom-bar`) and what gets the focus scrolls above it. */
 @layer base {
   @media (max-width: 759.98px) {
     :root:has([data-bottom-bar]) {
-      --app-header: 3rem;
       --app-bottom-bar: calc(3.25rem + env(safe-area-inset-bottom));
       scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
     }

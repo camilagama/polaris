@@ -29,7 +29,9 @@ test("uma venda recusada por estoque aparece, bloqueia a fila e sobrevive a reca
 }) => {
   const user = `user-${crypto.randomUUID()}`;
   await openLab(page, user);
-  await expect(page.getByText("Nada precisa de atenção")).toBeVisible();
+  await expect(
+    page.getByText("Nenhum registro recusado neste aparelho")
+  ).toBeVisible();
 
   await click(page, "Criar venda recusada por estoque", "Venda recusada: ok");
   await click(page, "Criar venda na fila", "Venda na fila: ok");
@@ -62,7 +64,9 @@ test("reenviar a venda a troca por um comando novo e libera a fila", async ({
   await expect(page.getByTestId("message")).toContainText("Reenviar: ok", {
     timeout: 15_000,
   });
-  await expect(page.getByText("Nada precisa de atenção")).toBeVisible();
+  await expect(
+    page.getByText("Nenhum registro recusado neste aparelho")
+  ).toBeVisible();
 });
 
 test("descartar pede confirmação, diz o que se perde e remove o registro", async ({
@@ -89,7 +93,9 @@ test("descartar pede confirmação, diz o que se perde e remove o registro", asy
   await expect(page.getByTestId("message")).toContainText("Descartar: ok", {
     timeout: 15_000,
   });
-  await expect(page.getByText("Nada precisa de atenção")).toBeVisible();
+  await expect(
+    page.getByText("Nenhum registro recusado neste aparelho")
+  ).toBeVisible();
 });
 
 test("uma mudança de direito leva à revisão da conta, sem reenviar nem descartar", async ({

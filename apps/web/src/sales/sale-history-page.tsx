@@ -1,6 +1,6 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import type { ReactNode } from "react";
+import { useCallback } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -8,9 +8,14 @@ import { Skeleton } from "@/ui/skeleton";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { SavedSalesCard } from "./offline-sale-panels";
+import { HistoryEmptyCard } from "./sale-history-empty";
 import { HistoryFiltersBar } from "./sale-history-filters";
 import { SaleHistoryList } from "./sale-history-list";
-import { historyView, loadMoreView } from "./sale-history-model";
+import {
+  emptyHistoryFilters,
+  historyView,
+  loadMoreView,
+} from "./sale-history-model";
 import { useSaleHistory } from "./use-sale-history";
 
 function OfflineHistoryNotice() {
@@ -28,15 +33,6 @@ function OfflineHistoryNotice() {
 }
 
 const LOADING_ROWS = [0, 1, 2];
-
-/** A line of text in a card, for empty: the same card the products and the stock use. */
-function StateCard({ children }: { children: ReactNode }) {
-  return (
-    <Card className="items-center px-(--card-spacing) text-center">
-      <p className="text-muted-foreground">{children}</p>
-    </Card>
-  );
-}
 
 /** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
 function LoadingCard({ message }: { message: string }) {
@@ -67,6 +63,10 @@ export function SaleHistoryPage() {
     offlineWorkspace
   );
   const view = historyView(state, filters);
+  const handleClearFilters = useCallback(
+    () => setFilters(emptyHistoryFilters),
+    [setFilters]
+  );
   const more = loadMoreView(state);
 
   return (
@@ -92,20 +92,7 @@ export function SaleHistoryPage() {
         </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <StateCard>
-          {view.message}
-          {view.href ? (
-            <>
-              {" "}
-              <a
-                className="touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
-                href={view.href}
-              >
-                Registrar uma venda
-              </a>
-            </>
-          ) : null}
-        </StateCard>
+        <HistoryEmptyCard onClearFilters={handleClearFilters} view={view} />
       ) : null}
       {view.kind === "ready" ? (
         <SaleHistoryList offline={offline} rows={view.rows} />

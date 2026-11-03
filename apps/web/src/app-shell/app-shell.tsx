@@ -509,7 +509,6 @@ function BottomBar({ navId }: { navId: NavId | null }) {
 /** The top of the phone: the brand and the state chip with its short text, on one line (U-07); the theme is in "Mais". */
 function MobileHeader({ onlineOnly }: { onlineOnly: boolean }) {
   return (
-    // h-12 is `--app-header` of src/styles/index.css, which the content's minimum height subtracts
     <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-2 border-b bg-background/90 pr-2 pl-(--gutter) text-foreground backdrop-blur md:hidden">
       <a
         className="touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold tracking-tight"
@@ -880,10 +879,10 @@ export function AppShell({
       />
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
         <ShellChip onlineOnly={onlineOnly} />
+        {/* on the phone the content is at least as tall as the window minus the header (3rem): the legal links in the
+            footer start at the fold, under the fixed bottom bar, and do not paint under "Carregando…" to be pushed down */}
         <main
-          // on the phone, at least the height of the screen under its header: while a page loads, the footer stays below
-          // the fold instead of showing in the middle and jumping out when the content arrives
-          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[calc(100svh_-_var(--app-header,0rem))]"
+          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_3rem))]"
           id="conteudo"
           // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
           tabIndex={-1}
