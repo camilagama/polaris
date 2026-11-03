@@ -13,7 +13,10 @@ import {
   startLogout,
 } from "./logout-flow";
 import type { OfflineRuntime } from "./offline-runtime";
-import { logoutDependencies } from "./logout-dependencies";
+import {
+  logoutDependencies,
+  plainLogoutDependencies,
+} from "./logout-dependencies";
 import { useOfflineRuntime } from "./runtime-context";
 
 /**
@@ -46,13 +49,25 @@ async function revokeCurrentDevice(
 
 function dependenciesFor(
   runtime: OfflineRuntime | null,
-  destination: LeavePath
+  destination: LeavePath,
+  endsWithoutRuntime: boolean
 ) {
-  return logoutDependencies(runtime, {
+  const effects = {
     leave: () => leaveAfterSignOut(destination),
     revoke: revokeCurrentDevice,
     signOut: signOutOnServer,
-  });
+  };
+  return !runtime && endsWithoutRuntime
+    ? Promise.resolve(plainLogoutDependencies(effects))
+    : logoutDependencies(runtime, effects);
+}
+
+interface LogoutOptions {
+  /**
+   * Without the offline runtime the control hides (there is no work of the device to protect). A screen that
+   * must always offer a way out (the first access) sets this: the session then just ends.
+   */
+  endsWithoutRuntime?: boolean | undefined;
 }
 
 /**
@@ -60,15 +75,18 @@ function dependenciesFor(
  * to go to the sign-in screen (its "Entrar de novo" while the session is still
  * alive). Same guard, same dialog, only the destination changes.
  */
-export function useLogout(destination: LeavePath) {
+export function useLogout(
+  destination: LeavePath,
+  { endsWithoutRuntime = false }: LogoutOptions = {}
+) {
   const runtime = useOfflineRuntime();
   const [blocked, setBlocked] = useState<BlockedWorkspace[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const dependencies = useCallback(
-    () => dependenciesFor(runtime, destination),
-    [destination, runtime]
+    () => dependenciesFor(runtime, destination, endsWithoutRuntime),
+    [destination, endsWithoutRuntime, runtime]
   );
 
   const run = useCallback(

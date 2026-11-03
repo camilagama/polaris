@@ -9,16 +9,18 @@ import {
 import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { documentTitle } from "../app-shell/navigation-model";
+import { useSignedInEmail } from "../app-shell/signed-in-email";
 import { orpcClient } from "../lib/orpc";
 import { SIGN_IN_AGAIN_BUTTON } from "../lib/session-ended-text";
 import { signInPath } from "../lib/sign-in-path";
 import { useHoldSwap } from "../lib/unsent-work";
-import { LogoutControl } from "../offline/runtime/logout-control";
+import { LogoutNotices, useLogout } from "../offline/runtime/logout-control";
 import { SelectField } from "../sales/sale-fields";
 import {
   EntryAlert,
   EntryLinkButton,
   EntryScreen,
+  INLINE_LINK,
   SubmitButton,
 } from "../sign-in/entry-ui";
 import {
@@ -40,10 +42,44 @@ interface OrganizationSetupProps {
 }
 
 /**
+ * Whose account this is and the way out of it, under the card. "Sair" is there with the offline runtime on or off:
+ * the person who signed in with the wrong account would otherwise open the store in it.
+ */
+function SignedInAs() {
+  const email = useSignedInEmail();
+  const logout = useLogout("/", { endsWithoutRuntime: true });
+  return (
+    <div className="grid gap-2">
+      <p className="m-0 text-muted-foreground text-support">
+        {email ? (
+          <>
+            Entrou como{" "}
+            <span className="break-all text-foreground">{email}</span>. Não é
+            você?{" "}
+          </>
+        ) : (
+          "Não é a sua conta? "
+        )}
+        <button
+          className={INLINE_LINK}
+          disabled={logout.busy}
+          onClick={logout.start}
+          type="button"
+        >
+          Sair
+        </button>
+        .
+      </p>
+      <LogoutNotices logout={logout} />
+    </div>
+  );
+}
+
+/**
  * First access: the signed-in user has no organization yet. Opening is
  * idempotent: an existing organization is opened without changing its data.
- * It stands alone, with no menu (there is nothing to go to yet) and "Sair" under the card, so a person who
- * signed in with the wrong account can leave.
+ * It stands alone, with no menu (there is nothing to go to yet) and "Entrou como … Sair" in the card, so a person
+ * who signed in with the wrong account can see it and leave.
  */
 export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
   const [name, setName] = useState("");
@@ -164,7 +200,7 @@ export function OrganizationSetup({ onOpened }: OrganizationSetupProps) {
           Abrir loja
         </SubmitButton>
       </form>
-      <LogoutControl />
+      <SignedInAs />
     </EntryScreen>
   );
 }

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LogoutWorkspace } from "../logout-guard";
 import type { Outbox } from "../outbox/outbox";
-import { logoutDependencies } from "./logout-dependencies";
+import {
+  logoutDependencies,
+  plainLogoutDependencies,
+} from "./logout-dependencies";
 import { startLogout } from "./logout-flow";
 
 const DEVICE_ID = "0199c2d0-0000-7000-8000-0000000000d1";
@@ -100,5 +103,33 @@ describe("the dependencies of the protected logout", () => {
     });
     expect(result.status).toBe("blocked");
     expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe("the logout of a device with no offline runtime", () => {
+  it("ends the session and leaves, with no queue to protect and no device to revoke", async () => {
+    const leave = vi.fn();
+    const revoke = vi.fn(() => Promise.resolve({ endedCurrentSession: false }));
+    const signOut = vi.fn(() => Promise.resolve());
+    const result = await startLogout(
+      plainLogoutDependencies({ leave, revoke, signOut })
+    );
+    expect(result.status).toBe("signed_out");
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(leave).toHaveBeenCalledTimes(1);
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it("stays on the page when the session could not be ended", async () => {
+    const leave = vi.fn();
+    const result = await startLogout(
+      plainLogoutDependencies({
+        leave,
+        revoke: effects.revoke,
+        signOut: () => Promise.reject(new Error("sign_out_failed")),
+      })
+    );
+    expect(result.status).toBe("sign_out_failed");
+    expect(leave).not.toHaveBeenCalled();
   });
 });

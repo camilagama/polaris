@@ -42,3 +42,23 @@ export async function logoutDependencies(
     workspaces,
   };
 }
+
+/**
+ * The logout of a device with no offline runtime (the build flag is off): no queue, copy or registered device
+ * exists here, so there is nothing to protect and nothing to revoke; the session just ends.
+ */
+export function plainLogoutDependencies(
+  effects: LogoutEffects
+): LogoutFlowDependencies {
+  return {
+    device: {
+      forget: () => undefined,
+      id: null,
+      isOnline: () => navigator.onLine,
+      revoke: effects.revoke,
+    },
+    leave: effects.leave,
+    signOut: effects.signOut,
+    workspaces: [],
+  };
+}
