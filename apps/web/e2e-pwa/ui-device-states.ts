@@ -230,7 +230,9 @@ export const attentionStates = {
   /** Nothing was refused. */
   async empty(page: Page) {
     await openNoticeLab(page, "screen=attention&state=empty", () =>
-      page.getByText("Nada precisa de atenção.", { exact: false }).waitFor()
+      page
+        .getByText("Nenhum registro recusado neste aparelho.", { exact: false })
+        .waitFor()
     );
   },
 

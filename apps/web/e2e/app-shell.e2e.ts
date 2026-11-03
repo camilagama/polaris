@@ -1650,3 +1650,36 @@ test.describe("Ajuda e contato", () => {
     ).toEqual([]);
   });
 });
+
+test.describe("o rodapé legal não pula enquanto a tela carrega", () => {
+  test("no celular o conteúdo ocupa a janela e os links legais começam na dobra", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    const main = await page.locator("main#conteudo").boundingBox();
+    const terms = await page
+      .getByRole("contentinfo")
+      .getByRole("link", { exact: true, name: "Termos de Uso" })
+      .boundingBox();
+    // the header is 48 px: the content fills the rest of the window, so the footer is under the fold
+    expect((main?.y ?? 0) + (main?.height ?? 0)).toBeGreaterThanOrEqual(740);
+    expect(terms?.y ?? 0).toBeGreaterThanOrEqual(740);
+  });
+
+  test("a 1280 px não há altura mínima: o rodapé fica na lateral", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await page.goto("/ajuda");
+    await expectHelpPage(page);
+    expect(
+      await page
+        .locator("main#conteudo")
+        .evaluate((main) => getComputedStyle(main).minHeight)
+    ).toBe("auto");
+  });
+});

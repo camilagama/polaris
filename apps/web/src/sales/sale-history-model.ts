@@ -282,7 +282,12 @@ export function historyRows(state: HistoryState): HistoryRow[] {
 export type HistoryView =
   | { kind: "loading"; message: string }
   | { kind: "error"; message: string }
-  | { href: string | null; kind: "empty"; message: string }
+  | {
+      clearFilters: boolean;
+      href: string | null;
+      kind: "empty";
+      message: string;
+    }
   | { kind: "ready"; rows: HistoryRow[] };
 
 export function historyView(
@@ -301,12 +306,13 @@ export function historyView(
   if (state.sales.length === 0) {
     return activeFilterCount(filters) > 0
       ? {
+          clearFilters: true,
           href: null,
           kind: "empty",
-          message:
-            "Nenhuma venda encontrada com estes filtros. Tire ou ajuste os filtros.",
+          message: "Nenhuma venda encontrada com estes filtros.",
         }
       : {
+          clearFilters: false,
           href: "/sales",
           kind: "empty",
           message:
