@@ -143,6 +143,8 @@ interface LogoutNoticesProps {
    * again: the answer may arrive after the person closed it.
    */
   onAttention?: (() => void) | undefined;
+  /** On the page of attention, where "Ver Pendências" would go nowhere. */
+  inAttentionPage?: boolean | undefined;
 }
 
 /**
@@ -150,7 +152,11 @@ interface LogoutNoticesProps {
  * It lives with the hook, never inside a menu that closes on the click: the answer
  * may come after the menu has closed, and a logout that failed must never be silent.
  */
-export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
+export function LogoutNotices({
+  logout,
+  onAttention,
+  inAttentionPage = false,
+}: LogoutNoticesProps) {
   const { blocked, busy, message } = logout;
   const blockedRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLParagraphElement>(null);
@@ -195,7 +201,7 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
             onCancel={logout.cancel}
             onDiscard={logout.discard}
             onRetry={logout.start}
-            onShowAttention={logout.showAttention}
+            onShowAttention={inAttentionPage ? undefined : logout.showAttention}
           />
         </div>
       ) : null}
