@@ -29,6 +29,12 @@ A Fase 9 cria o Admin: a aplicação de quem opera o Polaris (não de um cliente
 - **Como.** Toda escrita sai do `api.ts` da tela com `content-type: application/json`, `redirect: "manual"` e a origem que o navegador põe sozinho em `Origin` (a regra da emenda anterior); nenhum dado vai na URL além do que a rota já pede. A sessão do Access vencida continua a dar "recarregue a página", sem seguir o redirecionamento.
 - **`dom.el` recusa** atributo `on*`, `style` e os `src…` que não são um URL (`srcdoc`, `srcset`), qualquer que seja o valor. `src`, `action` e `formaction` também são recusados sempre: a lista de atributos da página só tem `href`, e o `href` só aceita um caminho do próprio Admin (`/…`, sem `//`, barra invertida, espaço, caractere de controle, `%` nem segmento `.` ou `..`, e fora de `/api`, em qualquer caixa). Nenhum esquema é aceito hoje.
 
+### Emenda de 03/11/2026: o Admin no staging, com Access próprio
+
+- **Um Access por ambiente.** O staging tem o seu time do Access (`polaris-staging.cloudflareaccess.com`) e a sua aplicação (hostname `admin.araute.app`, só os operadores, MFA obrigatório, sessão de 1 h). O `env.staging` do Worker leva o time e a audiência dessa aplicação; a produção terá os seus, na outra conta. Como o Worker exige emissor e audiência exatos, um token de um ambiente não abre o outro, e a verificação de isolamento reprova o staging com o time ou a audiência da produção ([ADR 0097](0097-staging-fixo-e-producao-em-conta-separada.md), emenda de 03/11/2026).
+- **Nada muda no Worker.** A verificação do token, a falha fechada e o `/health` sem login são os desta decisão. O único hostname é o Custom Domain do `wrangler.jsonc`; `workers_dev` e as prévias seguem desligados, e a verificação de isolamento os confere.
+- **Principais por ambiente.** O emissor do token do staging é `https://polaris-staging.cloudflareaccess.com` e o `sub` é o desse time: um principal cadastrado no staging não existe na produção, e o cadastro de cada ambiente é feito pelo dono do banco daquele ambiente, com o `iss` e o `sub` do token ([runbook do staging](../runbooks/staging.md#3c-admin-adminarauteapp-só-atrás-do-access-responsável)).
+
 ## Consequências
 
 - Roubar o acesso ao Admin exige um login do Access válido **e** uma linha em `platform_principals` para aquele subject; trocar o e-mail no provedor de identidade não leva a nada.

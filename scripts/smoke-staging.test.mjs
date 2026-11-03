@@ -23,11 +23,13 @@ import {
   STAGING_FIXED_HOST,
   STRANGE_ORIGIN,
   send,
+  STAGING_ACCESS_TEAM,
   smokeChecks,
   USER_AGENT,
 } from "./smoke-staging.mjs";
 
 const origins = {
+  admin: "https://admin.araute.app",
   catalog: "https://catalogo.araute.app",
   web: "https://dash.araute.app",
 };
@@ -44,6 +46,12 @@ const AUTH_METHODS = {
 };
 
 const noPause = () => Promise.resolve();
+
+/** What Access answers to a request without its cookie: a redirect to the login of the team. */
+const toAccessLogin = (path) =>
+  answer(302, {
+    location: `https://${STAGING_ACCESS_TEAM}/cdn-cgi/access/login/admin.araute.app?kid=x&redirect_url=${encodeURIComponent(path)}`,
+  });
 
 let buildDir = "";
 let options = { buildDir: "", commit: COMMIT };
@@ -127,6 +135,10 @@ function stagingAnswer(url, init = {}) {
       });
     case `${origins.catalog}/robots.txt`:
       return answer(200, { "x-polaris-release": RELEASE }, "User-agent: *\n");
+    case `${origins.admin}/health`:
+      return toAccessLogin("/health");
+    case `${origins.admin}/api/whoami`:
+      return toAccessLogin("/api/whoami");
     default:
       return answer(404);
   }
@@ -153,10 +165,10 @@ describe("the staging smoke", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes when every check answers as expected, with fifteen checks", async () => {
+  it("passes when every check answers as expected, with seventeen checks", async () => {
     const fetchImpl = vi.fn(fakeStaging());
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(15);
+    expect(fetchImpl).toHaveBeenCalledTimes(17);
   });
 
   it("runs the anonymous /rpc calls that build Better Auth last, after the get-session", () => {
@@ -164,7 +176,7 @@ describe("the staging smoke", () => {
       release: RELEASE,
       shell: { index: "", serviceWorker: "" },
     }).map((check) => check.url);
-    expect(names).toHaveLength(15);
+    expect(names).toHaveLength(17);
     expect(names.slice(-2)).toEqual([
       `${origins.web}/rpc/organization/listMine`,
       `${origins.web}/rpc/organization/createInitial`,
@@ -422,8 +434,8 @@ describe("the staging smoke", () => {
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
       "web /api/auth/get-session (auth configured, no session): 503 not 200",
     ]);
-    // fourteen checks pass at once, the failing one is tried three times
-    expect(fetchImpl).toHaveBeenCalledTimes(17);
+    // sixteen checks pass at once, the failing one is tried three times
+    expect(fetchImpl).toHaveBeenCalledTimes(19);
     expect(
       await runSmoke(
         origins,
@@ -653,13 +665,13 @@ describe("the staging smoke", () => {
   });
 
   it("fails loudly for a key with no fixed host or message, naming the key", async () => {
-    expect(refusalOf("admin")).toContain("admin:");
+    expect(refusalOf("pdv")).toContain("pdv:");
     for (const key of ["constructor", "toString", "__proto__"]) {
       expect(refusalOf(key)).toContain("no staging host is accepted");
     }
     const fetchImpl = vi.fn();
     const failures = await runSmoke(
-      { ...origins, admin: "https://admin.araute.app" },
+      { ...origins, pdv: "https://pdv.araute.app" },
       options,
       fetchImpl,
       noPause
@@ -672,9 +684,89 @@ describe("the staging smoke", () => {
       noPause
     );
     expect(inherited[0]).toContain("constructor: no staging host");
-    expect(failures[0].startsWith("admin: no staging host is accepted")).toBe(
+    expect(failures[0].startsWith("pdv: no staging host is accepted")).toBe(
       true
     );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("fails when the Admin is reached without sign-in, or Access sends it elsewhere", async () => {
+    const health = `${origins.admin}/health`;
+    const whoami = `${origins.admin}/api/whoami`;
+    const failing = (override) =>
+      runSmoke(origins, options, fakeStaging(override), noPause);
+    expect(
+      await failing({
+        [health]: () => fromWorker(200, { "x-polaris-release": RELEASE }),
+        [whoami]: () => fromWorker(403),
+      })
+    ).toEqual([
+      "admin /health without sign-in (redirected to Access): 200 not a redirect to Access",
+      "admin /api/whoami without sign-in (redirected to Access): 403 not a redirect to Access",
+    ]);
+    // a redirect of the Worker itself (it carries its marks) is not Access in front of it
+    expect(
+      await failing({
+        [health]: () =>
+          fromWorker(302, {
+            location: `https://${STAGING_ACCESS_TEAM}/cdn-cgi/access/login`,
+          }),
+        [whoami]: () =>
+          answer(302, {
+            location: `https://${STAGING_ACCESS_TEAM}/cdn-cgi/access/login`,
+            "x-polaris-release": RELEASE,
+          }),
+      })
+    ).toEqual([
+      "admin /health without sign-in (redirected to Access): 302 answered by the Worker",
+      "admin /api/whoami without sign-in (redirected to Access): 302 answered by the Worker",
+    ]);
+    for (const location of [
+      "https://polaris.cloudflareaccess.com/cdn-cgi/access/login",
+      `http://${STAGING_ACCESS_TEAM}/cdn-cgi/access/login`,
+      `https://${STAGING_ACCESS_TEAM}.evil.example/`,
+      "https://admin.araute.app/entrar",
+      "/cdn-cgi/access/login",
+      "",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      const failures = await failing({
+        [health]: () => answer(302, location ? { location } : {}),
+      });
+      expect(failures).toEqual([
+        "admin /health without sign-in (redirected to Access): 302 redirect outside the Access team",
+      ]);
+    }
+  });
+
+  it("never follows the redirect of Access", async () => {
+    const redirects = [];
+    const fetchImpl = (url, init) => {
+      if (url.startsWith(origins.admin)) {
+        redirects.push(init.redirect);
+      }
+      return fakeStaging()(url, init);
+    };
+    expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
+    expect(redirects).toEqual(["manual", "manual"]);
+  });
+
+  it("refuses an Admin origin other than https://admin.araute.app, before any request", async () => {
+    const fetchImpl = vi.fn();
+    for (const admin of [
+      undefined,
+      "https://polaris-admin-staging.example.workers.dev",
+      "http://admin.araute.app",
+      "https://admin.araute.app/api",
+      "https://dash.araute.app",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: each case on its own, for a clear failure
+      expect(await runSmoke({ ...origins, admin }, options, fetchImpl)).toEqual(
+        [
+          "admin: the staging Admin only accepts https://admin.araute.app, without a path",
+        ]
+      );
+    }
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

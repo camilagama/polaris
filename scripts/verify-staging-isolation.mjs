@@ -14,7 +14,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
  * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
- * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database);
+ * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, a
+ *   route other than exactly one Custom Domain at admin.araute.app, an Access team or audience missing, malformed
+ *   or equal to production's, or an ADMIN_HYPERDRIVE missing or shared with another binding of staging;
  * - any block (top level, staging, production or the build) still declares a switch of the database proof routes
  *   (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`): those routes and tables left the app (ADR 0027).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
@@ -38,6 +40,12 @@ const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // follows the same design at its own host (amendment to ADR 0097).
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
 export const STAGING_CATALOG_ORIGIN = "https://catalogo.araute.app";
+// The Admin of staging is published at this host as a Custom Domain declared in its own config, behind the Access
+// application of the staging team (amendments to ADR 0097 and ADR 0070).
+export const STAGING_ADMIN_HOST = "admin.araute.app";
+const ACCESS_TEAM_DOMAIN =
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/;
+const ACCESS_AUDIENCE = /^[0-9a-f]{64}$/;
 const STAGING_FIXED_ORIGIN = {
   BETTER_AUTH_BASE_URL: STAGING_WEB_ORIGIN,
   CATALOG_ORIGIN: STAGING_CATALOG_ORIGIN,
@@ -237,17 +245,10 @@ function checkTopLevel(app, config, problems) {
   }
 }
 
-function checkParity(
-  app,
-  top,
-  environment,
-  envName,
-  problems,
-  { allowMissing = [] } = {}
-) {
+function checkParity(app, top, environment, envName, problems) {
   const present = new Set(bindingNames(environment));
   for (const name of bindingNames(top)) {
-    if (!(present.has(name) || allowMissing.includes(name))) {
+    if (!present.has(name)) {
       problems.push(
         `${app}: env.${envName} lacks ${name} (bindings are not inherited)`
       );
@@ -256,7 +257,7 @@ function checkParity(
 }
 
 /** The checks that hold for the staging block in the source and for the built wrangler.json alike. */
-function checkStagingBlock(app, where, staging, problems) {
+function checkStagingBlock(app, where, staging, production, problems) {
   if (!STAGING_SUFFIX.test(staging.name ?? "")) {
     problems.push(
       `${where}: name "${staging.name}" must end in -staging, or the deploy would publish another Worker`
@@ -290,6 +291,20 @@ function checkStagingBlock(app, where, staging, problems) {
     checkStagingEmail(where, staging, problems);
     checkStagingAbuseProtection(where, staging, problems);
   }
+  checkStagingExposure(app, where, staging, production, problems);
+}
+
+/** Where each Worker of staging answers: the web and the catalog at the Custom Domains managed outside the config, the Admin behind Access. */
+function checkStagingExposure(app, where, staging, production, problems) {
+  if (app === "admin") {
+    checkAdminBehindAccess(where, staging, production, problems);
+    return;
+  }
+  if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
+    problems.push(
+      `${where}: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)`
+    );
+  }
   if (app === "web" && staging.workers_dev !== false) {
     problems.push(
       `${where}: workers_dev must be false (the origin check accepts only ${STAGING_WEB_ORIGIN})`
@@ -299,9 +314,6 @@ function checkStagingBlock(app, where, staging, problems) {
     problems.push(
       `${where}: workers_dev must be false (the catalog is served only at ${STAGING_CATALOG_ORIGIN})`
     );
-  }
-  if (app === "admin") {
-    checkAdminNotExposed(where, staging, problems);
   }
 }
 
@@ -405,11 +417,6 @@ function checkStagingResources(where, staging, problems) {
       problems.push(`${where}: ${kind} is not used by staging`);
     }
   }
-  if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
-    problems.push(
-      `${where}: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)`
-    );
-  }
   for (const [name, rule] of Object.entries(STAGING_URLS)) {
     const value = staging.vars?.[name];
     if (
@@ -439,18 +446,60 @@ function isEmptyBinding(value) {
   return false;
 }
 
-/** Not exposed: no public hostname, no Access (every API request is refused) and no database. */
-function checkAdminNotExposed(where, staging, problems) {
-  if (staging.workers_dev !== false) {
+/** Exactly one route: a Custom Domain at the Admin's host, with no path or wildcard. */
+function checkAdminRoute(where, staging, problems) {
+  const routes = staging.route === undefined ? [] : [staging.route];
+  routes.push(...(Array.isArray(staging.routes) ? staging.routes : []));
+  const [route] = routes;
+  if (
+    routes.length !== 1 ||
+    !Array.isArray(staging.routes) ||
+    typeof route !== "object" ||
+    route === null ||
+    route.custom_domain !== true ||
+    route.pattern !== STAGING_ADMIN_HOST ||
+    route.zone_id !== undefined ||
+    route.zone_name !== undefined
+  ) {
     problems.push(
-      `${where}: the Admin is not exposed in staging (workers_dev must be false)`
+      `${where}: the Admin has exactly one route, { "pattern": "${STAGING_ADMIN_HOST}", "custom_domain": true }`
     );
   }
-  if (staging.vars?.ACCESS_TEAM_DOMAIN || staging.vars?.ACCESS_AUDIENCE) {
-    problems.push(`${where}: the Admin has no Access application in staging`);
+}
+
+/**
+ * Exposed only behind Access: the one Custom Domain is the hostname of the Access application, nothing else reaches
+ * the Worker, and the Worker verifies tokens of the staging team and application, never production's.
+ */
+function checkAdminBehindAccess(where, staging, production, problems) {
+  if (staging.workers_dev !== false) {
+    problems.push(
+      `${where}: workers_dev must be false (the Admin is reached only through Access at ${STAGING_ADMIN_HOST})`
+    );
   }
-  if ((staging.hyperdrive ?? []).length > 0) {
-    problems.push(`${where}: the Admin has no database binding in staging`);
+  checkAdminRoute(where, staging, problems);
+  const team = staging.vars?.ACCESS_TEAM_DOMAIN;
+  if (typeof team !== "string" || !ACCESS_TEAM_DOMAIN.test(team)) {
+    problems.push(
+      `${where}: vars.ACCESS_TEAM_DOMAIN must be the <team>.cloudflareaccess.com of the staging Access team`
+    );
+  } else if (team === production?.vars?.ACCESS_TEAM_DOMAIN) {
+    problems.push(
+      `${where}: vars.ACCESS_TEAM_DOMAIN must not be the Access team of production`
+    );
+  }
+  const audience = staging.vars?.ACCESS_AUDIENCE;
+  if (typeof audience !== "string" || !ACCESS_AUDIENCE.test(audience)) {
+    problems.push(
+      `${where}: vars.ACCESS_AUDIENCE must be the 64-hex audience tag of the staging Access application`
+    );
+  } else if (audience === production?.vars?.ACCESS_AUDIENCE) {
+    problems.push(
+      `${where}: vars.ACCESS_AUDIENCE must not be the audience of production`
+    );
+  }
+  if (!bindingsOf(staging).hyperdrive.has("ADMIN_HYPERDRIVE")) {
+    problems.push(`${where}: the Admin needs ADMIN_HYPERDRIVE in staging`);
   }
 }
 
@@ -559,19 +608,17 @@ export function findIsolationProblems(entries) {
       continue;
     }
     checkProductionBlock(app, production, staging, problems);
-    checkParity(app, config, staging, "staging", problems, {
-      // the Admin is not exposed in staging: it keeps no database binding
-      allowMissing:
-        app === "admin"
-          ? bindingNames(config).filter((name) =>
-              name.startsWith("hyperdrive:")
-            )
-          : [],
-    });
+    checkParity(app, config, staging, "staging", problems);
     checkParity(app, config, production, "production", problems);
-    checkStagingBlock(app, `${app}: env.staging`, staging, problems);
+    checkStagingBlock(
+      app,
+      `${app}: env.staging`,
+      staging,
+      production,
+      problems
+    );
     if (built !== undefined) {
-      checkBuilt(app, staging, built, problems);
+      checkBuilt(app, staging, production, built, problems);
     }
   }
   checkCrossEnvironment(entries, problems);
@@ -583,9 +630,12 @@ export function findIsolationProblems(entries) {
 // that merely contains it (`foo.dash.araute.app`, `dash.araute.app.example.com`) is not the host of staging; a
 // trailing dot is the same name, and the case does not matter.
 const HOSTS_OF_STAGING = [
-  ...Object.values(STAGING_FIXED_ORIGIN).map((origin) =>
-    new URL(origin).hostname.replaceAll(".", String.raw`\.`)
-  ),
+  ...[
+    ...Object.values(STAGING_FIXED_ORIGIN).map(
+      (origin) => new URL(origin).hostname
+    ),
+    STAGING_ADMIN_HOST,
+  ].map((host) => host.replaceAll(".", String.raw`\.`)),
   String.raw`polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev`,
 ];
 const STAGING_HOST_IN_TEXT = new RegExp(
@@ -612,9 +662,12 @@ function productionRoutes(production) {
 // The hosts a route pattern must not reach: the fixed hosts of staging and the workers.dev of each staging Worker.
 // The account's subdomain is not in the config: the sample takes the one the pattern names (a `*` stands for any),
 // so `*.<account>.workers.dev/*` is caught whatever the account is.
-const STAGING_FIXED_HOSTS = Object.values(STAGING_FIXED_ORIGIN).map(
-  (origin) => new URL(origin).hostname
-);
+const STAGING_FIXED_HOSTS = [
+  ...Object.values(STAGING_FIXED_ORIGIN).map(
+    (origin) => new URL(origin).hostname
+  ),
+  STAGING_ADMIN_HOST,
+];
 const TRAILING_DOT = /\.$/;
 const PORT = /:[0-9*]*$/;
 const REGEX_SPECIAL = /[.+?^${}()|[\]\\-]/g;
@@ -735,14 +788,20 @@ function checkProductionBlock(app, production, staging, problems) {
 }
 
 /** The wrangler.json the staging build generated: the file the deploy follows. */
-function checkBuilt(app, staging, built, problems) {
+function checkBuilt(app, staging, production, built, problems) {
   if (built === null) {
     problems.push(
       `${app}: no staging build found (run the build with CLOUDFLARE_ENV=staging first)`
     );
     return;
   }
-  checkStagingBlock(app, `${app}: built wrangler.json`, built, problems);
+  checkStagingBlock(
+    app,
+    `${app}: built wrangler.json`,
+    built,
+    production,
+    problems
+  );
   if (
     built.targetEnvironment !== undefined &&
     built.targetEnvironment !== "staging"
@@ -862,7 +921,7 @@ function main() {
     const config = parseJsonc(
       readFileSync(resolve(appDir, "wrangler.jsonc"), "utf8")
     );
-    // the Admin is not deployed to staging and is not built by Vite: its source block is what counts
+    // the Admin is not built by Vite: `wrangler deploy --env staging` reads its source block, which is what counts
     const built =
       args.has("--built") && app !== "admin" ? readBuilt(appDir) : undefined;
     return { app, appDir, built, config };

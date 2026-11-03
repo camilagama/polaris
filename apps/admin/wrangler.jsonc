@@ -1,9 +1,8 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   // The top level is for local development only: the Hyperdrive id is `local-only`, so a deploy that
-  // forgets `--env` fails. What is deployed lives in `env.production` (ADR 0097). `env.staging` exists
-  // for parity and for the isolation check, but the Admin is not exposed in staging: no route, no
-  // workers.dev, no Access variables and no database binding, so even an invocation fails closed.
+  // forgets `--env` fails. What is deployed lives in `env.staging` and `env.production` (ADR 0097), each
+  // behind its own Access application.
   "name": "polaris-admin-local",
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat"],
@@ -52,15 +51,21 @@
     }
   ],
   "env": {
-    // Not exposed (ADR 0097): the staging workflow does not deploy it, and if it were deployed it would
-    // have no public hostname, no ACCESS_* variables (every API request is refused) and no database.
+    // Exposed only behind the Access application of the staging team (amendments to ADR 0097 and ADR 0070):
+    // the one hostname is a Custom Domain declared here, workers.dev and previews stay off, so no address
+    // reaches the Worker without passing through Access. The Worker still verifies the token itself.
+    // ADMIN_HYPERDRIVE logs in as polaris_staging_admin (member of polaris_admin_runtime only); the billing
+    // configuration is the one of the web, shared on purpose (ADR 0073). Caching is off in both.
     "staging": {
       "name": "polaris-admin-staging",
       "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
       "workers_dev": false,
       "preview_urls": false,
+      "routes": [{ "pattern": "admin.araute.app", "custom_domain": true }],
       "vars": {
-        "POLARIS_ENVIRONMENT": "staging"
+        "POLARIS_ENVIRONMENT": "staging",
+        "ACCESS_TEAM_DOMAIN": "polaris-staging.cloudflareaccess.com",
+        "ACCESS_AUDIENCE": "8e08707bd1989a6e4f8cc738b5c9fddd2c589fa235613d22c7bcca60a485a4ca"
       },
       "observability": {
         "enabled": true,
@@ -70,7 +75,17 @@
           "invocation_logs": false
         },
         "traces": { "enabled": true, "head_sampling_rate": 1 }
-      }
+      },
+      "hyperdrive": [
+        {
+          "binding": "ADMIN_HYPERDRIVE",
+          "id": "819b2703a2a74f98a2d7ae3c59c22504"
+        },
+        {
+          "binding": "ADMIN_BILLING_HYPERDRIVE",
+          "id": "04fc6cc95ba8442cb3d516baf5b94614"
+        }
+      ]
     },
     // The go-live (Phase 15, PR133), in another account, behind its own Access application.
     "production": {
