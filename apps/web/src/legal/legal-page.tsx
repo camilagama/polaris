@@ -17,7 +17,7 @@ import {
 
 /*
  * The text of a legal page on the scale of the reading column (v5.1): h1 24/32 (the frame), h2 17/24 at 600, body
- * 14/20 (16/24 with touch), tables that become one card per row below 640 px, a summary of links with a 48 px
+ * 14/20 (16/24 with touch), tables that become one card per row below 640 px, a summary of links with a 44 px
  * touch area, "O essencial" and the warnings in an `Alert`.
  */
 const INLINE_LINK =
@@ -244,7 +244,7 @@ export function LegalDocumentView({ document, text }: LegalDocumentViewProps) {
               heading ? (
                 <li key={heading.id}>
                   <a
-                    className={`${INLINE_LINK} touch-hit flex min-h-8 touch:min-h-12 items-center`}
+                    className={`${INLINE_LINK} touch-hit flex min-h-8 touch:min-h-11 items-center`}
                     href={`#${heading.id}`}
                   >
                     {heading.text}

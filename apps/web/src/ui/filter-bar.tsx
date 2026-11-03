@@ -442,6 +442,7 @@ function PhoneEditorContent({
         <Button
           aria-describedby={half ? statusId : undefined}
           aria-disabled={half || undefined}
+          size="xl"
           type="submit"
         >
           Aplicar
@@ -650,7 +651,7 @@ function FilterPill({
       )}
       <button
         aria-label={removeLabel(field)}
-        className="touch-hit focus-ring grid touch:w-12 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
+        className="touch-hit focus-ring grid touch:w-11 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
         onClick={remove}
         type="button"
       >
