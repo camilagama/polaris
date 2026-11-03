@@ -184,6 +184,7 @@ async function answerReceiveStock(page: Page) {
 async function useEveryControl(page: Page) {
   await answerReceiveStock(page);
   // the filters: the balance, the archived products (the mug has no balance and is archived) and the search
+  await openFilters(page);
   const filter = page.getByRole("tablist", { name: "Filtrar por saldo" });
   await filter.getByRole("tab", { name: "Sem saldo" }).click();
   await expect(filter.getByRole("tab", { name: "Sem saldo" })).toHaveAttribute(
@@ -208,8 +209,9 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: RECEIVE_JEANS }).click();
   const quantity = page.getByLabel("Quantidade recebida");
   await expect(quantity).toBeFocused();
-  await page.getByRole("button", { name: "Mais uma unidade" }).click();
   await expect(quantity).toHaveValue("1");
+  await page.getByRole("button", { name: "Mais uma unidade" }).click();
+  await expect(quantity).toHaveValue("2");
   await quantity.fill("10");
   await page.getByLabel("Custo unitário (R$)").fill("12,50");
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
@@ -269,7 +271,18 @@ const stockFilter = (page: Page, name: string) =>
     .getByRole("tablist", { name: "Filtrar por saldo" })
     .getByRole("tab", { name });
 const unknownCostFilter = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Sem custo" });
+  page.getByRole("checkbox", { name: "Sem custo" });
+
+/** The balance tabs, "Sem custo" and "Incluir arquivados" are inside the "Filtros" button: its popup opens unless it already is. */
+async function openFilters(page: Page) {
+  const button = page.getByRole("button", { name: /^Filtros/ });
+  if ((await button.getAttribute("aria-expanded")) !== "true") {
+    await button.click();
+  }
+  await expect(
+    page.getByRole("tablist", { name: "Filtrar por saldo" })
+  ).toBeVisible();
+}
 
 test("as abas de saldo: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
   page,
@@ -279,6 +292,7 @@ test("as abas de saldo: setas trocam de aba, Tab sai do grupo e o leitor de tela
     "o teclado é o do desktop"
   );
   await openStockLab(page, "claro");
+  await openFilters(page);
   await expectTabsKeyboard(page, "Filtrar por saldo", ["Todas", "Com saldo"]);
   // the arrows chose the tab: the list was asked again with the filter, and back to the plain one
   await expect.poll(() => listRequests.at(-1) ?? "").toContain('"stock":"all"');
@@ -304,7 +318,11 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
     count: "1 variante",
     search: "&filtro=sem-custo",
   });
-  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Filtros, 1 ativo" })
+  ).toBeVisible();
+  await openFilters(page);
+  await expect(unknownCostFilter(page)).toBeChecked();
   await expect(stockFilter(page, "Todas")).toHaveAttribute(
     "aria-selected",
     "true"
@@ -316,10 +334,8 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
   expect(listRequests[0]).toContain('"stock":"all"');
   // turning it off goes back to the plain list
   await unknownCostFilter(page).click();
-  await expect(unknownCostFilter(page)).toHaveAttribute(
-    "aria-pressed",
-    "false"
-  );
+  await expect(unknownCostFilter(page)).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Filtros" })).toBeVisible();
   await expect(page.getByText("2 variantes")).toBeVisible();
   expect(listRequests.at(-1)).not.toContain('"cost"');
 });
@@ -337,11 +353,13 @@ test("a faixa Precisa de ação conta a loja em duas leituras de 100 e não muda
   expect(
     attentionRequests.every((body) => body.includes('"productStatus":"active"'))
   ).toBe(true);
+  await openFilters(page);
   await stockFilter(page, "Sem saldo").click();
   await expect(page.getByText("0 variantes", { exact: true })).toBeVisible();
   await expect(strip).toContainText("1 variante sem custo");
   await strip.getByRole("link", { name: "1 variante sem custo" }).click();
-  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await openFilters(page);
+  await expect(unknownCostFilter(page)).toBeChecked();
   expect(attentionRequests).toHaveLength(2);
 });
 
@@ -352,12 +370,13 @@ test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
     count: "1 variante",
     search: "&filtro=sem-custo",
   });
+  await openFilters(page);
   await stockFilter(page, "Sem saldo").click();
   await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
     "aria-selected",
     "true"
   );
-  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(unknownCostFilter(page)).toBeChecked();
   await expect
     .poll(() => listRequests.at(-1) ?? "")
     .toContain('"stock":"without_stock"');
@@ -365,7 +384,7 @@ test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
 });
 
 const MUG_PANEL =
-  /Caneca esmaltada · Sem opções\. Saldo atual: 0 · custo médio desconhecido · último movimento \d{2}\/\d{2}(\/\d{4})? \d{2}:\d{2}/;
+  /Caneca esmaltada · Sem opções\. Saldo atual: 0 · custo médio desconhecido$/;
 const COUNT_LINE = /^\d+ variantes?/;
 
 test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só carrega com conexão", async ({
@@ -378,7 +397,8 @@ test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só c
   // the lab's own checkbox takes the network away; the screen then works from the device
   await page.getByLabel("Rede disponível").uncheck();
   await expect(page.getByText("Sem conexão.")).toBeVisible();
-  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await openFilters(page);
+  await expect(unknownCostFilter(page)).toBeChecked();
   await expect(
     page.getByText(
       "Sem internet. A lista de variantes sem custo só carrega com conexão."
@@ -399,14 +419,12 @@ test("?filtro=sem-saldo abre a lista sem saldo, e a lista vazia diz que todas t�
     count: "0 variantes",
     search: "&filtro=sem-saldo",
   });
+  await openFilters(page);
   await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
     "aria-selected",
     "true"
   );
-  await expect(unknownCostFilter(page)).toHaveAttribute(
-    "aria-pressed",
-    "false"
-  );
+  await expect(unknownCostFilter(page)).not.toBeChecked();
   expect(listRequests[0]).toContain('"stock":"without_stock"');
   expect(listRequests[0]).not.toContain('"cost"');
   await expect(page.getByText("Todas as variantes têm saldo.")).toBeVisible();
@@ -504,14 +522,12 @@ for (const value of [
     await openStockLab(page, "claro", {
       search: `&filtro=${encodeURIComponent(value)}`,
     });
+    await openFilters(page);
     await expect(stockFilter(page, "Todas")).toHaveAttribute(
       "aria-selected",
       "true"
     );
-    await expect(unknownCostFilter(page)).toHaveAttribute(
-      "aria-pressed",
-      "false"
-    );
+    await expect(unknownCostFilter(page)).not.toBeChecked();
     expect(listRequests[0]).not.toContain('"cost"');
     expect(listRequests[0]).toContain('"stock":"all"');
     if (value !== "") {
@@ -523,7 +539,7 @@ for (const value of [
 }
 
 for (const width of [360, 320]) {
-  test(`as abas do saldo e o botão 'Sem custo' têm a mesma altura e cabem em ${width} px, com a lista e com o painel aberto`, async ({
+  test(`a busca e o botão 'Filtros' cabem em ${width} px na mesma linha, o popup dos filtros não passa da janela, e o painel aberto também`, async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width });
@@ -531,27 +547,33 @@ for (const width of [360, 320]) {
       count: "1 variante",
       search: "&filtro=sem-custo",
     });
-    const measured = await page.evaluate(() => {
+    const search = await page.getByLabel("Buscar no estoque").boundingBox();
+    const button = await page
+      .getByRole("button", { name: /^Filtros/ })
+      .boundingBox();
+    expect(search).not.toBeNull();
+    expect(button).not.toBeNull();
+    expect(Math.abs((search?.y ?? 0) - (button?.y ?? 99))).toBeLessThan(8);
+    expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(width);
+    await openFilters(page);
+    const popup = await page.evaluate(() => {
       const group = document.querySelector('[aria-label="Filtrar por saldo"]');
-      const own = [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "Sem custo"
-      );
-      const tabs = group?.querySelectorAll('[role="tab"]') ?? [];
-      const boxes = [group, own].map((item) => item?.getBoundingClientRect());
+      const tabs = [...(group?.querySelectorAll('[role="tab"]') ?? [])];
+      const popupBox = group
+        ?.closest('[data-slot="popover-content"]')
+        ?.getBoundingClientRect();
       return {
-        heights: boxes.map((box) => Math.round(box?.height ?? 0)),
-        past: [
-          ...boxes,
-          ...[...tabs].map((tab) => tab.getBoundingClientRect()),
-        ].filter(
-          (box) => (box?.right ?? Number.POSITIVE_INFINITY) > window.innerWidth
-        ).length,
+        past: [group, ...tabs]
+          .map((item) => item?.getBoundingClientRect().right ?? 0)
+          .filter((right) => right > window.innerWidth + 0.5).length,
+        popupRight: popupBox?.right ?? Number.POSITIVE_INFINITY,
         tabs: tabs.length,
       };
     });
-    expect(measured.tabs).toBe(3);
-    expect(measured.past).toBe(0);
-    expect(new Set(measured.heights).size).toBe(1);
+    expect(popup.tabs).toBe(3);
+    expect(popup.past).toBe(0);
+    expect(popup.popupRight).toBeLessThanOrEqual(width);
+    await page.keyboard.press("Escape");
     // the state that opens from the filtered list: a panel on the row, nothing goes past the window
     // from a variant with units and no cost the way forward is to inform the cost
     await page.getByRole("button", { name: INFORM_SHIRT }).click();
@@ -876,12 +898,14 @@ test("a revisão vazia leva o foco ao primeiro campo inválido, e o campo diz o 
 }) => {
   await openStockLab(page, "claro");
   await page.getByRole("button", { name: RECEIVE_JEANS }).click();
-  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   const quantity = page.getByLabel("Quantidade recebida");
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("");
+  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   await expect(quantity).toBeFocused();
   await expect(quantity).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByText("Informe a quantidade recebida.")).toBeVisible();
-  // the − is off while the field is empty, and the + starts at 1
+  // the − is off while the field is empty
   await expect(
     page.getByRole("button", { name: "Menos uma unidade" })
   ).toBeDisabled();

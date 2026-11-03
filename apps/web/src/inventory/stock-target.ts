@@ -95,6 +95,8 @@ const movementYearFormatter = new Intl.DateTimeFormat("pt-BR", {
   year: "numeric",
 });
 
+const NEVER_MOVED = "sem movimentos";
+
 /** Day, month and time in the device's time zone; the year only when it is not the current one. */
 function movementInstantText(value: string, now: Date): string | null {
   const date = new Date(value);
@@ -112,13 +114,10 @@ function movementInstantText(value: string, now: Date): string | null {
 }
 
 /**
- * The line under the title of the movement panel: balance, average cost and the instant of the last movement.
- * Without a connection the balance is the device's, and the cost and the instant are not on it.
+ * The line under the title of the movement panel: balance and average cost. Without a connection the balance is the
+ * device's and the cost is not on it. The instant of the last movement is in the summary of the review.
  */
-export function targetBalanceText(
-  target: StockTarget,
-  now: Date = new Date()
-): string {
+export function targetBalanceText(target: StockTarget): string {
   if (target.costUnavailable) {
     return `Saldo do aparelho: ${formatQuantity(target.quantity)} · custo médio só com conexão`;
   }
@@ -126,16 +125,21 @@ export function targetBalanceText(
     target.movingAverageCost === null
       ? "custo médio desconhecido"
       : `custo médio ${formatBrlAmount(target.movingAverageCost)}`;
-  const parts = [`Saldo atual: ${formatQuantity(target.quantity)}`, cost];
-  if (target.updatedAt === null) {
-    parts.push("sem movimentos");
-  } else if (target.updatedAt !== undefined) {
-    const moved = movementInstantText(target.updatedAt, now);
-    if (moved !== null) {
-      parts.push(`último movimento ${moved}`);
-    }
+  return `Saldo atual: ${formatQuantity(target.quantity)} · ${cost}`;
+}
+
+/** The instant of the last movement, "sem movimentos" for a variant that never moved, null when the device does not have it. */
+export function targetMovementText(
+  target: StockTarget,
+  now: Date = new Date()
+): string | null {
+  if (target.costUnavailable || target.updatedAt === undefined) {
+    return null;
   }
-  return parts.join(" · ");
+  if (target.updatedAt === null) {
+    return NEVER_MOVED;
+  }
+  return movementInstantText(target.updatedAt, now);
 }
 
 /** Average cost for display; an unknown cost is never shown as zero. */

@@ -81,6 +81,8 @@ interface StockCommandPanelProps {
   onReloadList: () => void;
   /** The receive panel is blocked by the unknown cost of the units on hand: open the cost panel in its place. */
   onInformCost?: ((target: StockTarget) => void) | undefined;
+  /** Opened above the list (the link from the sale): the line under the title names the variant, since no row does. */
+  standalone?: boolean | undefined;
   target: StockTarget;
   today: string;
 }
@@ -171,6 +173,7 @@ export function StockCommandPanel({
   onInformCost,
   onReloadList,
   organizationId,
+  standalone = false,
   target,
   today,
 }: StockCommandPanelProps) {
@@ -289,10 +292,6 @@ export function StockCommandPanel({
 
   const afterFailure = useCallback(
     (failure: StockFailure) => {
-      if (failure.field !== null) {
-        const { field } = failure;
-        focusLater(() => focus(field));
-      }
       if (failure.refreshBalance) {
         refreshBalance().catch(() => undefined);
       }
@@ -300,7 +299,7 @@ export function StockCommandPanel({
         onReloadList();
       }
     },
-    [focus, onReloadList, refreshBalance]
+    [onReloadList, refreshBalance]
   );
 
   const handleConfirm = useCallback(async () => {
@@ -364,6 +363,7 @@ export function StockCommandPanel({
   );
 
   const block = stockActionBlock(action, state.target);
+  const balanceText = targetBalanceText(state.target);
   const informCost =
     onInformCost && !local && receiveNeedsCost(action, state.target);
   const issues = visibleStockIssues(state);
@@ -381,6 +381,14 @@ export function StockCommandPanel({
   const confirming = state.step === "confirming" || locked;
   const submitting = submission.phase === "submitting";
   const blocked = block !== null;
+  const refusedField =
+    submission.phase === "failed" ? submission.failure.field : null;
+  useEffect(() => {
+    // After the commit: while the request was in flight the fieldset was off and a field cannot take focus.
+    if (refusedField !== null) {
+      focus(refusedField);
+    }
+  }, [focus, refusedField]);
   useEffect(() => {
     // The balance read after a refusal can leave nothing to act on: the field turns off, so focus moves to the panel.
     if (blocked) {
@@ -436,8 +444,9 @@ export function StockCommandPanel({
           {labels.title}
         </h3>
         <p className="text-muted-foreground text-support">
-          {state.target.productName} · {state.target.variantText}.{" "}
-          {targetBalanceText(state.target)}
+          {standalone
+            ? `${state.target.productName} · ${state.target.variantText}. ${balanceText}`
+            : balanceText}
         </p>
       </div>
       {state.target.archived ? (

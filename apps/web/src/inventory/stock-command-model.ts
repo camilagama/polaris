@@ -29,6 +29,7 @@ import {
   costText,
   retarget,
   type StockTarget,
+  targetMovementText,
   unitsText,
 } from "./stock-target";
 
@@ -161,7 +162,7 @@ export const STOCK_FIELD_ORDER: Readonly<
 function initialStockDraft(action: StockAction, today: string): StockDraft {
   switch (action) {
     case "receive":
-      return { action, occurredOn: today, quantity: "", unitCost: "" };
+      return { action, occurredOn: today, quantity: "1", unitCost: "" };
     case "cost":
       return { action, valuationUnitCost: "" };
     case "count":
@@ -175,7 +176,7 @@ function initialStockDraft(action: StockAction, today: string): StockDraft {
       return {
         action,
         occurredOn: today,
-        quantity: "",
+        quantity: "1",
         reasonCode: "",
         reasonNote: "",
       };
@@ -510,7 +511,7 @@ function validateCount(
       issue(
         issues,
         "valuationUnitCost",
-        "A valoração só vale quando a quantidade contada é maior que zero."
+        "O custo só vale com quantidade contada maior que zero."
       );
       valuation = null;
     }
@@ -697,6 +698,10 @@ export function stockSummary(
       value: `${target.productName} · ${target.variantText}`,
     },
   ];
+  const moved = targetMovementText(target);
+  if (moved !== null) {
+    lines.push({ label: "Último movimento", value: moved });
+  }
   if (body.action === "receive") {
     lines.push(
       { label: "Quantidade recebida", value: signedUnits(body.quantity) },
@@ -848,6 +853,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "inventory_version_conflict",
     {
       discardAttempt: true,
+      field: "physicalQuantity",
       message:
         "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
       refreshBalance: true,
@@ -882,7 +888,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "invalid_inventory_count_input",
     {
       message:
-        "A contagem foi recusada. A valoração só vale com saldo sem custo conhecido e quantidade contada maior que zero.",
+        "A contagem foi recusada. O custo só vale com saldo sem custo conhecido e quantidade contada maior que zero.",
     },
   ],
   ["invalid_receive_stock_input", { message: invalidDataMessage }],
@@ -955,6 +961,7 @@ const costReasonOutcomes = new Map<string, ReasonOutcome>([
     "inventory_version_conflict",
     {
       discardAttempt: true,
+      field: "valuationUnitCost",
       message:
         "O saldo mudou depois que você abriu o painel. Atualizamos o saldo: revise e confirme o custo de novo.",
       refreshBalance: true,
@@ -1143,11 +1150,27 @@ export function stockFieldRefusal(
   }
   return {
     field: failure.field,
-    message:
-      failure.reason === "insufficient_stock" && failure.balanceRead
-        ? `O servidor recusou: o saldo agora é ${formatQuantity(state.target.quantity)}. Reduza a quantidade.`
-        : failure.message,
+    message: failure.balanceRead
+      ? (balanceReadMessage(state, failure.reason) ?? failure.message)
+      : failure.message,
   };
+}
+
+/** What a field refusal says once the balance is read: the number is the new one. */
+function balanceReadMessage(
+  state: StockCommandState,
+  reason: string | null
+): string | null {
+  const balance = formatQuantity(state.target.quantity);
+  if (reason === "insufficient_stock") {
+    return `O servidor recusou: o saldo agora é ${balance}. Reduza a quantidade.`;
+  }
+  if (reason === "inventory_version_conflict") {
+    return state.action === "cost"
+      ? `O saldo no sistema mudou para ${balance}. Confira o custo e confirme de novo.`
+      : `O saldo no sistema mudou para ${balance}. Confira a quantidade contada e confirme de novo.`;
+  }
+  return null;
 }
 
 /** The balance came back: a refusal about a field quotes it from now on. */

@@ -2761,3 +2761,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Ação principal | Em revisão | `Button size="xl"` (44 no toque, 36 no mouse) nos botões da entrada, "Nova venda" do Início, "Confirmar venda" (resumo e barra fixa), "Aplicar" da barra de filtros e "Ver período" do Resultado. O botão comum fica em 36 px com área de 44 (`touch-hit`). |
 | Sobras de 48 px | Em revisão | Lateral, folha "Mais", seletor de loja, aceite, sumário dos textos legais e o X da pílula de filtro passam a 44 px; o teste reprova qualquer `touch:*-12` novo em `src/`. |
 | Medida de alvos | Em revisão | A verificação 2 do e2e (`ui-guardrails`) segue sem falha em 320 e 360 px; não achou sobreposição nas abas 7/30 do Início nem nas ações de Metas (as áreas de 44 px só crescem na vertical), só o espaço entre "Editar" e "Anular" das Despesas passou a 12 px. |
+
+### Estoque mais rápido (t698)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Quantidade | Em revisão | O recebimento e a baixa abrem com 1 (`initialStockDraft`); a contagem abre vazia, porque 0 é resposta válida. O rascunho "1" não conta como trabalho pendente (`isStockDraftChanged` compara com o inicial). |
+| Conflito da contagem | Em revisão | `inventory_version_conflict` ganha o campo (`physicalQuantity` na contagem, `valuationUnitCost` no painel Informar custo): a mensagem fica junto dele e recebe o foco; com o saldo relido diz "O saldo no sistema mudou para 12. Confira a quantidade contada e confirme de novo." |
+| Filtros | Em revisão | `stock-filters.tsx`: busca e o botão "Filtros" (`Popover`, com o número de filtros ativos) na mesma linha; abas de saldo, "Sem custo" (caixa) e "Incluir arquivados" dentro dele; "Atualizar" virou botão de link na linha da contagem. |
+| Textos do painel | Em revisão | A linha sob o título do painel em linha diz só "Saldo atual: 5 · custo médio …" (o painel do link da venda mantém produto e variante); a data do último movimento vai para o resumo da revisão; "Custo unitário para valoração (R$)" virou "Custo de cada unidade (R$)" com a dica "Opcional. Vale só se a quantidade contada for maior que zero."; "Feche o painel aberto para usar os botões." cabe em uma linha a 360 px. |
+| Provas | Em revisão | Unidade: `stock-command-model.test.ts` (valor inicial, conflito no campo, resumo), `stock-target.test.ts`; navegador: `e2e/stock-screen.e2e.ts` e `e2e-pwa/ui-stock-attention.e2e.ts`. As baselines de `estoque-lista`, `estoque-vazio` e `estoque-erro` mudam com a barra de filtros. |
