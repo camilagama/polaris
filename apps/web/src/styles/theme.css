@@ -240,8 +240,8 @@
 
 @theme {
   --font-sans:
-    "Geist Variable", "Geist", ui-sans-serif, system-ui, "Segoe UI", Roboto,
-    sans-serif;
+    "Geist Variable", "Geist", "Geist Fallback", ui-sans-serif, system-ui,
+    "Segoe UI", Roboto, sans-serif;
   --font-heading: var(--font-sans);
   --font-mono:
     "Geist Mono Variable", "Geist Mono", ui-monospace, "Cascadia Mono", Menlo,
