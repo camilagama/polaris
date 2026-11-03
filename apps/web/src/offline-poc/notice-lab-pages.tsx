@@ -20,7 +20,7 @@ const ITEMS: AttentionItem[] = [
     code: "insufficient_stock",
     commandId: "0199c2d0-0000-7000-8000-000000000101",
     detail:
-      "O estoque do servidor não cobre esta venda: outro aparelho mexeu nele enquanto este estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu.",
+      "O estoque do servidor não cobre esta venda: o saldo mudou enquanto este aparelho estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu.",
     kind: "sale",
     title: "Venda de R$ 20,00 · 14/10 09:30",
   },

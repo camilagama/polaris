@@ -182,7 +182,7 @@ function detailOf(
   switch (cause) {
     case "insufficient_stock":
       return kind === "sale"
-        ? "O estoque do servidor não cobre esta venda: outro aparelho mexeu nele enquanto este estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu."
+        ? "O estoque do servidor não cobre esta venda: o saldo mudou enquanto este aparelho estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu."
         : "O estoque do servidor é menor do que este aparelho mostrava, então a baixa não foi registrada. Confira o saldo atual, registre de novo se ainda fizer sentido e descarte esta.";
     case "version_conflict":
       return kind === "customer_update"

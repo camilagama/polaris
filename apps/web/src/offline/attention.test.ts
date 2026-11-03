@@ -177,7 +177,9 @@ describe("the attention summary", () => {
       kind: "sale",
       title: `Venda de R$ 20,00 · ${formatShortInstant(now.toISOString())}`,
     });
-    expect(summary.items[0]?.detail).toContain("estoque");
+    expect(summary.items[0]?.detail).toBe(
+      "O estoque do servidor não cobre esta venda: o saldo mudou enquanto este aparelho estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu."
+    );
   });
 
   it("covers the causes of the plan, each with its own words and actions", async () => {

@@ -199,8 +199,11 @@ describe("the attention panel", () => {
     expect(html.indexOf("Não foi possível descartar.")).toBeGreaterThan(
       html.indexOf("Código: insufficient_stock")
     );
-    expect(html.indexOf("Não foi possível descartar.")).toBeLessThan(
+    expect(html.indexOf("Não foi possível descartar.")).toBeGreaterThan(
       html.indexOf("Reenviar venda")
+    );
+    expect(html.indexOf("Não foi possível descartar.")).toBeGreaterThan(
+      html.indexOf("Descartar…")
     );
     expect(html.match(/ disabled=""/g)).toHaveLength(2);
   });

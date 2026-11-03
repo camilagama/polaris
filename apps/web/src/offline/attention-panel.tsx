@@ -236,12 +236,6 @@ function ItemCard({
         <p className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
           Código: {item.code}
         </p>
-        {errorMessage ? (
-          <Alert variant="destructive">
-            <CircleAlertIcon aria-hidden="true" />
-            <AlertDescription>{errorMessage}</AlertDescription>
-          </Alert>
-        ) : null}
         {confirming ? (
           <div
             aria-label={`Descartar ${item.title}`}
@@ -278,6 +272,12 @@ function ItemCard({
             ))}
           </div>
         )}
+        {errorMessage ? (
+          <Alert variant="destructive">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        ) : null}
       </Card>
     </li>
   );
