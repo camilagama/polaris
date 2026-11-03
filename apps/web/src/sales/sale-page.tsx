@@ -110,6 +110,7 @@ import {
   formForOfflineSale,
   type ItemDraft,
   idleSubmission,
+  type Loadable,
   isFormLocked,
   isSaleFormDirty,
   MAX_SALE_ITEMS,
@@ -161,6 +162,29 @@ type LocalSearch = (query: string) => Promise<{
 
 function optionsOf(view: CatalogView | null): readonly ChoiceOption[] {
   return view?.kind === "ready" ? view.options : [];
+}
+
+function activeCount(
+  profiles: Loadable<readonly PaymentProfileReadModel[]>
+): number | null {
+  return profiles.status === "ready"
+    ? profiles.value.filter((profile) => profile.status === "active").length
+    : null;
+}
+
+/** Under the methods: the single payment, and that the method came from the last sale while it is unchanged. */
+function methodHint(
+  remembered: RememberedPayment | null,
+  form: SaleFormState,
+  preset: SalePreset
+): string {
+  const same =
+    remembered !== null &&
+    form.payment.method !== "" &&
+    form.payment.method === preset.method;
+  return same
+    ? `Igual à última venda neste aparelho. ${SINGLE_PAYMENT_TEXT}`
+    : SINGLE_PAYMENT_TEXT;
 }
 
 /** The single payment of the sale, said under the methods. */
@@ -231,8 +255,8 @@ export function SalePage() {
   const [lastPrices, setLastPrices] = useState<RememberedPrices>(() =>
     readLastPrices(browserStorage(), organizationId)
   );
-  const [lastPayment, setLastPayment] = useState<RememberedPayment | null>(
-    () => readLastPayment(browserStorage(), organizationId)
+  const [lastPayment, setLastPayment] = useState<RememberedPayment | null>(() =>
+    readLastPayment(browserStorage(), organizationId)
   );
   const [draftRead] = useState<SaleDraftRead>(() =>
     readSaleDraft(
@@ -263,6 +287,24 @@ export function SalePage() {
   formRef.current = form;
   // what the screen chose for the person (last sale's payment, "Sem perfil" without profiles): not work
   const presetRef = useRef<SalePreset>(salePresetFrom(lastPayment, null));
+  const lastPaymentRef = useRef(lastPayment);
+  lastPaymentRef.current = lastPayment;
+  const activeProfileCountRef = useRef<number | null>(null);
+  /** The payment of the sale just recorded becomes the start of the next one; returns that start. */
+  const rememberSentPayment = useCallback((): SalePreset => {
+    // the form is still the one that was sent (locked while in flight)
+    const sent = paymentOfSentForm(formRef.current);
+    if (sent) {
+      writeLastPayment(browserStorage(), organizationId, sent);
+      setLastPayment(sent);
+    }
+    const next = salePresetFrom(
+      sent ?? lastPaymentRef.current,
+      activeProfileCountRef.current
+    );
+    presetRef.current = next;
+    return next;
+  }, [organizationId]);
   const blankForm = useCallback(
     (preset: SalePreset = presetRef.current) =>
       applySalePreset(createBlankSaleForm(newId), preset),
@@ -499,14 +541,8 @@ export function SalePage() {
     [catalog.profiles]
   );
   const profilesState = profilesView(catalog.profiles);
-  const activeProfileCount =
-    catalog.profiles.status === "ready"
-      ? activeProfiles.filter((profile) => profile.status === "active").length
-      : null;
-  const activeProfileCountRef = useRef(activeProfileCount);
+  const activeProfileCount = activeCount(catalog.profiles);
   activeProfileCountRef.current = activeProfileCount;
-  const lastPaymentRef = useRef(lastPayment);
-  lastPaymentRef.current = lastPayment;
   const preset = useMemo(
     () => salePresetFrom(lastPayment, activeProfileCount),
     [activeProfileCount, lastPayment]
@@ -690,18 +726,7 @@ export function SalePage() {
       if (!outcome.completed) {
         return;
       }
-      // the form is still the one that was sent (locked while in flight): its payment is the next sale's start
-      const sent = paymentOfSentForm(formRef.current);
-      if (sent) {
-        writeLastPayment(browserStorage(), organizationId, sent);
-        setLastPayment(sent);
-      }
-      const nextPreset = salePresetFrom(
-        sent ?? lastPaymentRef.current,
-        activeProfileCountRef.current
-      );
-      presetRef.current = nextPreset;
-      const blank = blankForm(nextPreset);
+      const blank = blankForm(rememberSentPayment());
       // by the mode the screen is in now
       setForm(offline ? formForOfflineSale(blank) : blank);
       setShowRequired(false);
@@ -715,6 +740,7 @@ export function SalePage() {
     },
     [
       blankForm,
+      rememberSentPayment,
       forgetDraft,
       lastPrices,
       offline,
@@ -1049,13 +1075,7 @@ export function SalePage() {
             onRetry={handleRefresh}
             profileOptions={profileOptions}
             profilesView={profilesState}
-            singlePaymentText={
-              lastPayment !== null &&
-              form.payment.method !== "" &&
-              form.payment.method === preset.method
-                ? `Igual à última venda neste aparelho. ${SINGLE_PAYMENT_TEXT}`
-                : SINGLE_PAYMENT_TEXT
-            }
+            singlePaymentText={methodHint(lastPayment, form, preset)}
           />
         </div>
         <SummaryPanel

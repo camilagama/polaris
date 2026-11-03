@@ -103,9 +103,9 @@ async function openSale(page: Page) {
 async function buildCart(page: Page) {
   const item = itemOne(page);
   await item.getByLabel("Produto ou variante").fill("cam");
-  await item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: SHIRT_OPTION })
+  await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: SHIRT_OPTION })
     .click();
   await item.getByRole("button", { name: "Mais uma unidade" }).click();
   await page
@@ -125,9 +125,9 @@ async function buildCart(page: Page) {
 async function buildCreditCart(page: Page) {
   const item = itemOne(page);
   await item.getByLabel("Produto ou variante").fill("cam");
-  await item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: SHIRT_OPTION })
+  await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: SHIRT_OPTION })
     .click();
   await item.getByRole("button", { name: "Mais uma unidade" }).click();
   await page
@@ -159,7 +159,9 @@ async function goHome(page: Page) {
 }
 
 async function expectCart(page: Page) {
-  await expect(itemOne(page).getByText("Camiseta do teste")).toBeVisible();
+  await expect(
+    itemOne(page).getByText("Camiseta do teste").first()
+  ).toBeVisible();
   await expect(itemOne(page).getByLabel("Quantidade")).toHaveValue("2");
   await expect(
     page
@@ -171,10 +173,10 @@ async function expectCart(page: Page) {
   ).toBeVisible();
 }
 
-/** The first line is empty again: the search with nothing typed, one unit. */
+/** The first line is empty again: the search with nothing typed, and no quantity before a variant is chosen. */
 async function expectBlankLine(page: Page) {
   await expect(itemOne(page).getByLabel("Produto ou variante")).toHaveValue("");
-  await expect(itemOne(page).getByLabel("Quantidade")).toHaveValue("1");
+  await expect(itemOne(page).getByLabel("Quantidade")).toHaveCount(0);
 }
 
 const storageKeys = (page: Page, which: "localStorage" | "sessionStorage") =>
@@ -290,7 +292,9 @@ test("AC-7: Limpar venda pede confirmação com itens, e sem itens limpa em um t
   await expect(dialog).toContainText("Isso tira o item da venda.");
   await dialog.getByRole("button", { name: "Cancelar" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(itemOne(page).getByText("Camiseta do teste")).toBeVisible();
+  await expect(
+    itemOne(page).getByText("Camiseta do teste").first()
+  ).toBeVisible();
 
   await clear.click();
   await dialog

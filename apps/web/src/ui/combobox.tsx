@@ -49,7 +49,7 @@ function ComboboxContent({
       >
         <ComboboxPrimitive.Popup
           className={cn(
-            "data-open:fade-in-0 data-closed:fade-out-0 relative isolate z-50 grid max-h-[min(var(--available-height),22rem)] w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) gap-1 overflow-y-auto overscroll-contain rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/[0.06] motion-full:duration-100 motion-full:data-closed:animate-out motion-full:data-open:animate-in",
+            "data-open:fade-in-0 relative isolate z-50 grid max-h-[min(var(--available-height),22rem)] w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) gap-1 overflow-y-auto overscroll-contain rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/[0.06] motion-full:duration-100 motion-full:data-open:animate-in",
             className
           )}
           data-slot="combobox-content"

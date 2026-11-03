@@ -32,9 +32,9 @@ async function fillCashSale(
   await page.goto("/sales");
   const item = page.getByRole("group", { exact: true, name: "Item 1" });
   await item.getByLabel("Produto ou variante").fill(search);
-  await item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: product })
+  await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: product })
     .click();
   await item.getByLabel("Quantidade").fill(quantity);
   await item.getByLabel("Preço cobrado").fill(price);

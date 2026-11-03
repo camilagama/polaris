@@ -435,7 +435,7 @@ async function openSaleLab(page: Page, user: string) {
 
 async function fillShirtSale(page: Page, quantity: number) {
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
-  await page.getByRole("button", { name: SHIRT_OPTION }).click();
+  await page.getByRole("option", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill(String(quantity));
   await payWith(page, "Pix");
   // the profile is a choice in both modes; these scenarios sell without one
@@ -479,7 +479,7 @@ test("na mesma aba, sem limpar dados, o usuário b inicia a venda e acha a varia
   // the variants come from this device: the bootstrap of the sale server must have run
   await page.getByLabel("Rede disponível").uncheck();
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
-  await expect(page.getByRole("button", { name: SHIRT_OPTION })).toBeVisible({
+  await expect(page.getByRole("option", { name: SHIRT_OPTION })).toBeVisible({
     timeout: 20_000,
   });
 });
@@ -493,11 +493,17 @@ test.describe("venda", () => {
     await expect(
       page.getByRole("status").filter({ hasText: "Sem internet." })
     ).toBeVisible();
-    // the profile is offered (the ones of the last connection), a typed date is not
+    // the profile is offered (the ones of the last connection), a typed date is not: the note says so where the
+    // field would be
     await expect(page.getByLabel("Perfil de pagamento")).toBeVisible();
+    await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
     await expect(
-      page.getByLabel("Data e hora da venda (opcional)")
-    ).toHaveCount(0);
+      page
+        .getByRole("note")
+        .filter({ hasText: "uma data digitada não fica guardada" })
+    ).toBeVisible();
+    await expect(page.getByLabel("Hora")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Dia,/ })).toHaveCount(0);
 
     await fillShirtSale(page, 2);
     await keepSale(page).click();
@@ -527,9 +533,7 @@ test.describe("venda", () => {
     // the next search already sees the stock the queued sale took (5 - 2)
     await page.getByLabel("Produto ou variante").fill("camiseta azul");
     await expect(
-      page.getByRole("button", {
-        name: SHIRT_WITH_THREE,
-      })
+      page.getByRole("option", { name: SHIRT_WITH_THREE })
     ).toBeVisible();
 
     await page.getByLabel("Rede disponível").check();
@@ -777,7 +781,7 @@ test.describe("venda sem resposta do servidor", () => {
       page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" }),
       page.getByLabel("Quantidade"),
       page.getByRole("button", { name: "Adicionar item" }),
-      page.getByRole("button", { name: "Adicionar ajuste" }),
+      page.getByRole("button", { name: "Alterar data e ajustes" }),
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: one control after the other
       await expect(control).toBeDisabled();
@@ -1086,7 +1090,7 @@ test.describe("sem o aceite dos termos (ADR 0100)", () => {
     await page.getByLabel("Rede disponível").uncheck();
     await page.getByLabel("Produto ou variante").fill("camiseta azul");
     await expect(
-      page.getByRole("button", { name: SHIRT_WITH_THREE })
+      page.getByRole("option", { name: SHIRT_WITH_THREE })
     ).toBeVisible();
 
     // accepted: the same sale goes out once

@@ -131,14 +131,6 @@ export function pickerView(
 }
 
 /**
- * The suggestions open only while the person is at the search: the field in focus or with text typed. A sale screen
- * that just opened shows the field alone, and nothing under it moves when the suggestions arrive.
- */
-export function pickerMayOpen(focused: boolean, text: string): boolean {
-  return focused || text.trim() !== "";
-}
-
-/**
  * A store with nothing to sell says so under the field, without waiting for a touch: it is the state of the store,
  * not a suggestion. A search with no match is said inside the suggestions.
  */

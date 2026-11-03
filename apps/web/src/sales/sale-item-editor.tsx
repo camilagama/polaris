@@ -222,7 +222,7 @@ function ChosenVariant({
           ) : null}
         </p>
         <Button
-          className="-my-1 shrink-0 text-support"
+          className="shrink-0 text-support"
           id={changeId}
           onClick={onChange}
           size="sm"

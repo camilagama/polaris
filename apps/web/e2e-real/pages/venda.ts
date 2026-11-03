@@ -53,9 +53,9 @@ export async function fillSale(
       name: `Item ${index + 1}`,
     });
     await item.getByLabel("Produto ou variante").fill(line.search);
-    await item
-      .getByRole("list", { name: "Variantes encontradas" })
-      .getByRole("button", { name: line.option })
+    await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: line.option })
       .click();
     await item.getByLabel("Quantidade").fill(String(line.quantity));
     if (line.listed !== undefined) {

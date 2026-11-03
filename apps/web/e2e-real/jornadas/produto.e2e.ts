@@ -148,9 +148,9 @@ test("produto: categoria, produto, preço e estoque de abertura num passo aparec
   await page.goto("/sales");
   const item = page.getByRole("group", { name: "Item 1" });
   await item.getByLabel("Produto ou variante").fill("Camiseta");
-  const option = item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: new RegExp(productName) });
+  const option = page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: new RegExp(productName) });
   await expect(option).toBeVisible();
   await option.click();
   await expect(item.getByLabel("Preço de tabela")).toHaveValue(price);

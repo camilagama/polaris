@@ -27,7 +27,6 @@ import type { Loadable } from "./sale-form-model";
 import {
   type PickerOption,
   pickerErrorMessage,
-  pickerMayOpen,
   pickerView,
   storeHasNothingToSell,
   variantSearchRequest,
@@ -108,14 +107,16 @@ interface VariantSearchProps {
 }
 
 const DISMISS_REASONS = new Set(["escape-key", "focus-out", "outside-press"]);
-const TYPING_REASONS = new Set(["clear-press", "input-change", "input-clear"]);
+// only what the person types: Base UI also writes the field when it closes (the label of the value, or empty)
+const TYPING_REASONS = new Set(["input-change"]);
 const optionLabel = (option: PickerOption) => option.label;
 const sameOption = (left: PickerOption, right: PickerOption) =>
   left.id === right.id;
 
 /**
  * Search-and-choose of sellable variants. The suggestions open in a popup anchored to the field (Base UI Combobox),
- * only with the field in focus or with text, so nothing of the form moves when they arrive. The arrows move through
+ * only when the person goes to the field (a touch or click on it, typing, ArrowDown), never by themselves when the
+ * screen opens, and they float over the form: nothing under the field moves when they arrive. The arrows move through
  * them, Enter chooses the highlighted one (the first, while typing) and never submits the sale, Escape closes them.
  */
 export function VariantSearch({
@@ -129,8 +130,8 @@ export function VariantSearch({
   selectedVariantId,
 }: VariantSearchProps) {
   const [text, setText] = useState("");
-  const [focused, setFocused] = useState(Boolean(autoFocus));
-  const [dismissed, setDismissed] = useState(false);
+  // Base UI opens it on a touch or click on the field, on typing and on ArrowDown; never by itself
+  const [requested, setRequested] = useState(Boolean(autoFocus));
   const { load, retry } = useVariantSearch(organizationId, text, localSearch);
   const view = pickerView(
     load,
@@ -141,7 +142,7 @@ export function VariantSearch({
   const selected =
     options.find((option) => option.id === selectedVariantId) ?? null;
   const nothingToSell = storeHasNothingToSell(view);
-  const open = !(nothingToSell || dismissed) && pickerMayOpen(focused, text);
+  const open = requested && !nothingToSell;
   const groupRef = useRef<HTMLDivElement>(null);
   const searchId = `${id}-search`;
   const errorId = `${id}-error`;
@@ -150,7 +151,6 @@ export function VariantSearch({
     (value: string, details: { reason: string }) => {
       if (TYPING_REASONS.has(details.reason)) {
         setText(value);
-        setDismissed(false);
       }
     },
     []
@@ -165,22 +165,13 @@ export function VariantSearch({
   );
   const handleOpenChange = useCallback(
     (next: boolean, details: { reason: string }) => {
-      if (next) {
-        setDismissed(false);
-        return;
-      }
-      setDismissed(true);
-      if (onCancel && DISMISS_REASONS.has(details.reason)) {
+      setRequested(next);
+      if (!next && onCancel && DISMISS_REASONS.has(details.reason)) {
         onCancel();
       }
     },
     [onCancel]
   );
-  const handleFocus = useCallback(() => {
-    setFocused(true);
-    setDismissed(false);
-  }, []);
-  const handleBlur = useCallback(() => setFocused(false), []);
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Enter") {
@@ -218,13 +209,11 @@ export function VariantSearch({
             aria-describedby={error ? errorId : undefined}
             aria-invalid={error ? true : undefined}
             autoComplete="off"
-            // biome-ignore lint/a11y/noAutofocus: only after "Trocar", which the person just pressed on this line
+            // only after "Trocar", which the person just pressed on this line
             autoFocus={autoFocus}
             // the search is cheap to type again: it does not hold the swap of the build (pwa/swap-guard.ts)
             data-swap-ignore=""
             id={searchId}
-            onBlur={handleBlur}
-            onFocus={handleFocus}
             onKeyDown={handleKeyDown}
             placeholder="Buscar por nome, variante ou SKU"
             type="search"

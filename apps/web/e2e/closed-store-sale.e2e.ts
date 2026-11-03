@@ -153,7 +153,7 @@ class Store {
 
 async function buildCart(page: Page) {
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
-  await page.getByRole("button", { name: SHIRT_OPTION }).click();
+  await page.getByRole("option", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill("2");
   await page
     .getByRole("radiogroup", { name: "Método de pagamento" })
@@ -207,7 +207,9 @@ test.describe("venda recusada com a loja encerrada", () => {
       page.getByRole("heading", { exact: true, name: "Nova venda" })
     ).toBeVisible();
     await expect(page.getByLabel("Quantidade")).toHaveValue("2");
-    await expect(page.getByText("Camiseta do teste")).toBeVisible();
+    await expect(
+      page.getByText("Camiseta do teste · Azul", { exact: true })
+    ).toBeVisible();
     await expect(notice(page)).toHaveCount(0);
   });
 

@@ -15,11 +15,7 @@ import {
 import { ItemEditor } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
 import { SummaryPanel } from "./sale-summary-panel";
-import {
-  pickerMayOpen,
-  pickerView,
-  storeHasNothingToSell,
-} from "./sale-variant-picker-model";
+import { pickerView, storeHasNothingToSell } from "./sale-variant-picker-model";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
@@ -140,15 +136,8 @@ describe("o item da venda, enxuto", () => {
   });
 });
 
-describe("a busca abre só com o campo em foco ou com texto", () => {
-  it("fechada ao abrir a tela; abre no foco ou ao digitar", () => {
-    expect(pickerMayOpen(false, "")).toBe(false);
-    expect(pickerMayOpen(false, "   ")).toBe(false);
-    expect(pickerMayOpen(true, "")).toBe(true);
-    expect(pickerMayOpen(false, "cam")).toBe(true);
-  });
-
-  it("loja sem nada para vender diz sob o campo; busca sem resultado diz dentro da lista", () => {
+describe("a loja sem nada para vender", () => {
+  it("diz sob o campo; a busca sem resultado diz dentro da lista", () => {
     const empty = {
       status: "ready",
       value: { entries: [], more: false },
