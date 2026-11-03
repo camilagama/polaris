@@ -61,7 +61,7 @@ function SignedInAs() {
           "Não é a sua conta? "
         )}
         <button
-          className={INLINE_LINK}
+          className={`${INLINE_LINK} touch-hit`}
           disabled={logout.busy}
           onClick={logout.start}
           type="button"
