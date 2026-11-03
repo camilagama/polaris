@@ -22,6 +22,7 @@ const ITEMS: AttentionItem[] = [
     detail:
       "O estoque do servidor não cobre esta venda: o saldo mudou enquanto este aparelho estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu.",
     kind: "sale",
+    redone: false,
     title: "Venda de R$ 20,00 · 14/10 09:30",
   },
   {
@@ -33,6 +34,7 @@ const ITEMS: AttentionItem[] = [
     detail:
       "Outro produto já usa este SKU. Crie o produto de novo com outro SKU e descarte este cadastro.",
     kind: "product",
+    redone: false,
     title: "Produto Camiseta Básica de algodão com um nome bem comprido",
   },
   {
@@ -44,17 +46,19 @@ const ITEMS: AttentionItem[] = [
     detail:
       "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano em Ver Assinatura e toque em Tentar novamente.",
     kind: "stock",
+    redone: false,
     title: "Entrada de estoque",
   },
   {
-    actions: ["sign_in_again", "discard"],
+    actions: ["redo_sale", "sign_in_again", "discard"],
     blocksQueue: false,
     cause: "authorization_revoked",
     code: "authorization_revoked",
     commandId: "0199c2d0-0000-7000-8000-000000000104",
     detail:
-      "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda ainda valer, registre a venda de novo e depois descarte esta. Se o seu acesso mudou, use Sair e entrar de novo.",
+      "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta. Se o seu acesso mudou, use Sair e entrar de novo.",
     kind: "sale",
+    redone: false,
     title: "Venda de R$ 89,90 · 01/11 14:20",
   },
 ];

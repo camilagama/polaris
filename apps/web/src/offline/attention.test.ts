@@ -358,11 +358,67 @@ describe("resolving an item", () => {
       `Venda de R$ 20,00 · ${formatShortInstant(now.toISOString())}`
     );
     expect(item.detail).toBe(
-      "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda ainda valer, registre a venda de novo e depois descarte esta. Se o seu acesso mudou, use Sair e entrar de novo."
+      "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta. Se o seu acesso mudou, use Sair e entrar de novo."
     );
     expect(item.detail).not.toContain("não o recebeu");
     expect(item.detail).not.toContain("se o acesso não voltar");
-    expect(item.actions).toEqual(["sign_in_again", "discard"]);
+    expect(item.actions).toEqual(["redo_sale", "sign_in_again", "discard"]);
+    expect(item.redone).toBe(false);
+    expect(item.detail).not.toContain("registre a venda de novo e depois");
+  });
+
+  it("offers only the discard of the refused sale, said as such, once the new sale exists", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "authorization_revoked");
+
+    const [item] = buildAttention(
+      await outbox.snapshot(),
+      new Set([refused.commandId])
+    ).items;
+
+    expect(item?.redone).toBe(true);
+    expect(item?.actions).toEqual(["discard"]);
+    expect(item?.detail).toContain("Você já refez esta venda");
+    expect(discardWarning(item as AttentionItem)).toContain(
+      "A venda refeita já está registrada ou guardada e não muda"
+    );
+  });
+
+  it("offers no redo for a sale refused for another account code, nor for a product", async () => {
+    const { outbox, product, refuse, sale } = await setup();
+    const wrong = await sale();
+    await refuse(wrong.commandId, "wrong_device");
+    expect((await itemOf(outbox)).actions).toEqual([
+      "sign_in_again",
+      "discard",
+    ]);
+    await outbox.discard(wrong.commandId);
+
+    const queued = await product("Camiseta", "CAM");
+    await refuse(queued.commandId, "authorization_revoked");
+    expect((await itemOf(outbox)).actions).toEqual([
+      "sign_in_again",
+      "discard",
+    ]);
+  });
+
+  it("tells, before a discard of a sale refused for authorization, to redo it first", () => {
+    const base: AttentionItem = {
+      actions: ["redo_sale", "discard"],
+      blocksQueue: true,
+      cause: "authorization_revoked",
+      code: "authorization_revoked",
+      commandId: uuid(1),
+      detail: "",
+      kind: "sale",
+      redone: false,
+      title: "",
+    };
+    expect(discardWarning(base)).toContain("use Refazer esta venda antes");
+    expect(discardWarning({ ...base, code: "wrong_device" })).not.toContain(
+      "Refazer"
+    );
   });
 
   it("keeps the words about the access coming back for the other account codes, and sends them to sign in again", async () => {
@@ -413,7 +469,7 @@ describe("resolving an item", () => {
     await refuse(queued.commandId, "authorization_revoked");
     const item = await itemOf(outbox);
     expect(item.detail).toBe(
-      "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, faça o registro de novo e depois descarte este. Se o seu acesso mudou, use Sair e entrar de novo."
+      "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, anote o que ele tinha, descarte este e faça o registro de novo. Se o seu acesso mudou, use Sair e entrar de novo."
     );
   });
 
@@ -425,6 +481,7 @@ describe("resolving an item", () => {
       code: "x",
       commandId: uuid(1),
       detail: "",
+      redone: false,
       title: "",
     } as const;
     for (const kind of [
