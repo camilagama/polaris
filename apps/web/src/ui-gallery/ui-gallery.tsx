@@ -584,12 +584,7 @@ export function UiGallery() {
                 <p className="text-muted-foreground text-support">
                   Campo de texto
                 </p>
-                <Input aria-label="Campo comum" placeholder="Comum" />
-                <Input
-                  aria-label="Campo principal"
-                  className="touch:h-11"
-                  placeholder="Busca"
-                />
+                <Input aria-label="Campo de texto" placeholder="Busca" />
               </div>
             </div>
           </Section>
@@ -877,7 +872,7 @@ export function UiGallery() {
                   <FieldLabel htmlFor="galeria-observacao">
                     Observação (opcional)
                   </FieldLabel>
-                  <InputGroup className="h-auto items-stretch">
+                  <InputGroup className="h-auto touch:h-auto items-stretch">
                     <InputGroupTextarea id="galeria-observacao" rows={3} />
                   </InputGroup>
                 </Field>
