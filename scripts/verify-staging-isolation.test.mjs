@@ -138,8 +138,8 @@ describe("the staging isolation check", () => {
       "web: env.staging: durable_objects is not used by staging",
       "web: env.staging: kv_namespaces is not used by staging",
       "web: env.staging: services is not used by staging",
-      "web: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
       "web: env.staging: vars.BETTER_AUTH_BASE_URL must be exactly https://dash.araute.app",
+      "web: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)",
     ]);
   });
 
@@ -230,7 +230,7 @@ describe("the staging isolation check", () => {
       { custom_domain: true, pattern: "catalogo.araute.app" },
     ];
     expect(findIsolationProblems(entries)).toEqual([
-      "catalog: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
+      "catalog: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)",
     ]);
   });
 
@@ -760,21 +760,174 @@ describe("the staging isolation check", () => {
     ]);
   });
 
-  it("refuses an Admin reachable in staging", () => {
-    const entries = repositoryEntries();
-    const { staging } = entryOf(entries, "admin").config.env;
-    staging.workers_dev = true;
-    staging.routes = [{ custom_domain: true, pattern: "admin.example.com" }];
-    staging.vars.ACCESS_AUDIENCE = "aud";
-    staging.hyperdrive = [
-      { binding: "ADMIN_HYPERDRIVE", id: "abcdefabcdefabcdefabcdefabcdefab" },
-    ];
-    expect(findIsolationProblems(entries)).toEqual([
-      "admin: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
-      "admin: env.staging: the Admin is not exposed in staging (workers_dev must be false)",
-      "admin: env.staging: the Admin has no Access application in staging",
-      "admin: env.staging: the Admin has no database binding in staging",
-    ]);
+  describe("the Admin of staging, exposed only behind Access", () => {
+    const adminOf = (entries) => entryOf(entries, "admin").config.env;
+    const ROUTE =
+      "admin: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)";
+
+    it("passes on the repository config: no route, the staging team and audience, its own Hyperdrive", () => {
+      expect(findIsolationProblems(repositoryEntries())).toEqual([]);
+      const { staging } = adminOf(repositoryEntries());
+      expect(staging.routes).toBeUndefined();
+      expect(staging.route).toBeUndefined();
+      expect(staging.workers_dev).toBe(false);
+      expect(staging.preview_urls).toBe(false);
+    });
+
+    it("refuses workers.dev or previews on", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.workers_dev = true;
+      staging.preview_urls = true;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: preview_urls must be false (no Cloudflare Previews)",
+        "admin: env.staging: workers_dev must be false (the Admin is reached only through Access at admin.araute.app)",
+      ]);
+    });
+
+    it("refuses an Admin without Access", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.vars.ACCESS_TEAM_DOMAIN = undefined;
+      staging.vars.ACCESS_AUDIENCE = undefined;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: vars.ACCESS_TEAM_DOMAIN must be the <team>.cloudflareaccess.com of the staging Access team",
+        "admin: env.staging: vars.ACCESS_AUDIENCE must be the 64-hex audience tag of the staging Access application",
+      ]);
+    });
+
+    it.each([
+      ["polaris-staging.example.com", "aud"],
+      ["polaris-staging.cloudflareaccess.com.example.com", "8E08"],
+      ["https://polaris-staging.cloudflareaccess.com", "0".repeat(63)],
+      [".cloudflareaccess.com", `${"a".repeat(64)} `],
+    ])("refuses the team %s and the audience %s", (team, audience) => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.vars.ACCESS_TEAM_DOMAIN = team;
+      staging.vars.ACCESS_AUDIENCE = audience;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: vars.ACCESS_TEAM_DOMAIN must be the <team>.cloudflareaccess.com of the staging Access team",
+        "admin: env.staging: vars.ACCESS_AUDIENCE must be the 64-hex audience tag of the staging Access application",
+      ]);
+    });
+
+    it("refuses the Access team and audience of production", () => {
+      const entries = repositoryEntries();
+      const { production, staging } = adminOf(entries);
+      production.vars.ACCESS_TEAM_DOMAIN = staging.vars.ACCESS_TEAM_DOMAIN;
+      production.vars.ACCESS_AUDIENCE = staging.vars.ACCESS_AUDIENCE;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: vars.ACCESS_TEAM_DOMAIN must not be the Access team of production",
+        "admin: env.staging: vars.ACCESS_AUDIENCE must not be the audience of production",
+      ]);
+    });
+
+    it.each([
+      [
+        "the Custom Domain of its own host",
+        (staging) => {
+          staging.routes = [
+            { custom_domain: true, pattern: "admin.araute.app" },
+          ];
+        },
+      ],
+      [
+        "a Custom Domain at another host",
+        (staging) => {
+          staging.routes = [
+            { custom_domain: true, pattern: "admin.example.com" },
+          ];
+        },
+      ],
+      [
+        "a zone route",
+        (staging) => {
+          staging.routes = [
+            { pattern: "admin.araute.app/*", zone_name: "araute.app" },
+          ];
+        },
+      ],
+      [
+        "a wildcard",
+        (staging) => {
+          staging.routes = [{ custom_domain: true, pattern: "*.araute.app" }];
+        },
+      ],
+      [
+        "a bare string route",
+        (staging) => {
+          staging.routes = ["admin.araute.app"];
+        },
+      ],
+      [
+        "a `route`",
+        (staging) => {
+          staging.route = "admin.araute.app/*";
+        },
+      ],
+    ])("refuses %s", (_label, change) => {
+      const entries = repositoryEntries();
+      change(adminOf(entries).staging);
+      expect(findIsolationProblems(entries)).toEqual([ROUTE]);
+    });
+
+    it("refuses an Admin without its database binding", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.hyperdrive = staging.hyperdrive.filter(
+        (item) => item.binding !== "ADMIN_HYPERDRIVE"
+      );
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging lacks hyperdrive:ADMIN_HYPERDRIVE (bindings are not inherited)",
+        "admin: env.staging: the Admin needs ADMIN_HYPERDRIVE in staging",
+      ]);
+    });
+
+    it("refuses an ADMIN_HYPERDRIVE shared with the web, with the billing configuration or with production", () => {
+      const share = (target) => {
+        const entries = repositoryEntries();
+        const admin = adminOf(entries).staging.hyperdrive.find(
+          (item) => item.binding === "ADMIN_HYPERDRIVE"
+        );
+        admin.id = target(entries);
+        return findIsolationProblems(entries);
+      };
+      const webId = (binding) => (entries) =>
+        entryOf(entries, "web").config.env.staging.hyperdrive.find(
+          (item) => item.binding === binding
+        ).id;
+      expect(share(webId("HYPERDRIVE"))).toEqual([
+        "admin: env.staging Hyperdrive ADMIN_HYPERDRIVE shares its id with web HYPERDRIVE",
+      ]);
+      expect(share(webId("BILLING_HYPERDRIVE"))).toEqual([
+        "admin: env.staging Hyperdrive ADMIN_HYPERDRIVE shares its id with web BILLING_HYPERDRIVE",
+      ]);
+      const production = "0123456789abcdef0123456789abcdef";
+      expect(
+        share((entries) => {
+          adminOf(entries).production.hyperdrive[0].id = production;
+          return production;
+        })
+      ).toEqual([
+        'admin: env.staging hyperdrive "0123456789abcdef0123456789abcdef" is also used by admin env.production',
+      ]);
+    });
+
+    it("refuses a production route or variable that reaches the Admin of staging", () => {
+      const entries = repositoryEntries();
+      const { production } = adminOf(entries);
+      production.routes = [
+        { custom_domain: true, pattern: "admin.araute.app" },
+        "*.araute.app/*",
+      ];
+      production.vars.ADMIN_ORIGIN = "https://admin.araute.app";
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.production vars.ADMIN_ORIGIN must not use the host of staging",
+        "admin: env.production routes[0] must not use or reach a host of staging",
+        "admin: env.production routes[1] must not use or reach a host of staging",
+      ]);
+    });
   });
 
   describe("on the built wrangler.json", () => {

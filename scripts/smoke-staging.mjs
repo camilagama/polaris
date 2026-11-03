@@ -9,8 +9,10 @@ import { pathToFileURL } from "node:url";
  * The catalog page of a store that does not exist must answer 404, which proves the path Worker → Hyperdrive →
  * Neon (the public_catalog_* functions answered) without seeding data. Each Worker declares the commit it was
  * built from (`X-Polaris-Release`, ADR 0098 amended), compared with `HEAD_SHA`; the shell, served by Static
- * Assets without the Worker, is compared with the build artifact the deploy published. The Admin is not exposed
- * in staging, so it has no check. Prints the check, the status and a fixed reason, never a body or a header.
+ * Assets without the Worker, is compared with the build artifact the deploy published. The Admin of staging sits
+ * behind Cloudflare Access (amendments to ADR 0097 and ADR 0070): without a sign-in, its health and its API must be
+ * answered by Access with a redirect to the login of the staging team, never by the Worker. Prints the check, the
+ * status and a fixed reason, never a body or a header.
  */
 
 const NONCE = /'nonce-[^']+'/;
@@ -19,6 +21,11 @@ const REQUEST_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const RELEASE_HEADER = "x-polaris-release";
+
+/** The Access team of staging: an anonymous request to the Admin is sent to the login of its application. */
+export const STAGING_ACCESS_TEAM = "polaris-staging.cloudflareaccess.com";
+const ACCESS_LOGIN_PATH = "/cdn-cgi/access/login/admin.araute.app";
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
 /** Sent on every request, so the requests of the smoke are told apart in the logs of the Workers. */
 export const USER_AGENT = "polaris-staging-smoke/1";
@@ -67,6 +74,37 @@ const refusedByOrigin = (response, body) => {
   return parsed(body)?.error?.code === "forbidden" || "403 not forbidden";
 };
 
+/**
+ * Access answered instead of the Worker: a redirect to an https page of the staging team, and no mark of the Worker
+ * (release or request id), which would mean the request went through.
+ */
+const sentToAccess = (response) => {
+  if (!REDIRECT_STATUS.has(response.status)) {
+    return "not a redirect to Access";
+  }
+  if (
+    response.headers.get(RELEASE_HEADER) !== null ||
+    response.headers.get("x-request-id") !== null
+  ) {
+    return "answered by the Worker";
+  }
+  try {
+    const location = new URL(response.headers.get("location") ?? "");
+    if (
+      location.protocol !== "https:" ||
+      location.host !== STAGING_ACCESS_TEAM
+    ) {
+      return "redirect outside the Access team";
+    }
+    return (
+      location.pathname === ACCESS_LOGIN_PATH ||
+      "redirect to another Access page"
+    );
+  } catch {
+    return "redirect outside the Access team";
+  }
+};
+
 const rpc = (body) => ({
   body: JSON.stringify(body),
   method: "POST",
@@ -80,7 +118,7 @@ const rpc = (body) => ({
  * of the platform), and repeating it only spends more CPU, so a 503 or an answer without `X-Request-Id` fails at
  * once as `cpu/plataforma`. They run last, after the get-session has warmed the auth path.
  */
-export function smokeChecks({ catalog, web }, { release, shell }) {
+export function smokeChecks({ admin, catalog, web }, { release, shell }) {
   const appOrigin = new URL(web).origin;
   const sameOrigin = { origin: appOrigin };
   return [
@@ -211,6 +249,16 @@ export function smokeChecks({ catalog, web }, { release, shell }) {
       url: `${catalog}/${MISSING_STORE}`,
     },
     {
+      expect: sentToAccess,
+      name: "admin /health without sign-in (redirected to Access)",
+      url: `${admin}/health`,
+    },
+    {
+      expect: sentToAccess,
+      name: "admin /api/whoami without sign-in (redirected to Access)",
+      url: `${admin}/api/whoami`,
+    },
+    {
       ...rpc({}),
       expect: status(401),
       headers: sameOrigin,
@@ -231,9 +279,10 @@ export function smokeChecks({ catalog, web }, { release, shell }) {
   ];
 }
 
-// the web and the catalog of staging are served at these hosts by Custom Domains (ADR 0097); each Worker
-// accepts its own host only, and the workers.dev hosts are off (`workers_dev: false`)
+// the Workers of staging are served at these hosts by Custom Domains (ADR 0097); each Worker accepts its own host
+// only, and the workers.dev hosts are off (`workers_dev: false`)
 export const STAGING_FIXED_HOST = {
+  admin: "admin.araute.app",
   catalog: "catalogo.araute.app",
   web: "dash.araute.app",
 };
@@ -263,6 +312,8 @@ function isStagingOrigin(key, origin) {
 
 /** One refusal message per key: each Worker accepts its own host only. */
 export const REFUSAL = {
+  admin:
+    "admin: the staging Admin only accepts https://admin.araute.app, without a path",
   catalog:
     "catalog: the staging catalog only accepts https://catalogo.araute.app, without a path",
   web: "web: the staging web only accepts https://dash.araute.app, without a path",
@@ -419,6 +470,7 @@ export async function runSmoke(
 async function main() {
   const failures = await runSmoke(
     {
+      admin: process.env.STAGING_ADMIN_URL,
       catalog: process.env.STAGING_CATALOG_URL,
       web: process.env.STAGING_WEB_URL,
     },

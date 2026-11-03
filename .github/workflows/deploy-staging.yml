@@ -1,8 +1,8 @@
 name: Deploy staging
 
 # The fixed staging (ADR 0097, runbook docs/runbooks/staging.md): after the CI of a push to main is green,
-# migrate the staging database, then publish polaris-web-staging and polaris-catalog-staging, then smoke.
-# The Admin is not exposed in staging and is never deployed here.
+# migrate the staging database, then publish polaris-web-staging and polaris-catalog-staging, then
+# polaris-admin-staging (only behind the Cloudflare Access of the staging team, at admin.araute.app), then smoke.
 #
 # The repository is public. workflow_run runs the file of the default branch, never the one of a pull
 # request, and the restriction of branches of the `staging` Environment does not protect a workflow_run:
@@ -163,6 +163,9 @@ jobs:
         run: |
           bun run --filter @polaris/web build
           bun run --filter @polaris/catalog build
+          # the Admin is bundled by `wrangler deploy --env staging` from its source; only its page script and sheet
+          # are built here (embedded as text, no Assets binding)
+          bun run --filter @polaris/admin build:ui
       # what the deploy follows: refuses placeholders, shared resources and a name without -staging
       - name: Staging isolation (generated config)
         run: node scripts/verify-staging-isolation.mjs --built
@@ -181,6 +184,8 @@ jobs:
             apps/web/.wrangler/deploy/config.json
             apps/catalog/dist
             apps/catalog/.wrangler/deploy/config.json
+            apps/admin/src/ui/generated/admin.js.txt
+            apps/admin/src/ui/generated/admin.css.txt
 
   deploy:
     name: Migrate, deploy and smoke
@@ -257,10 +262,20 @@ jobs:
           for entry in "$ARTIFACT"/* "$ARTIFACT"/.[!.]*; do
             [ -e "$entry" ] || continue
             case "$(basename "$entry")" in
-              web | catalog) ;;
+              web | catalog | admin) ;;
               *) echo "::error::unexpected entry in the build artifact"; exit 1 ;;
             esac
           done
+          # the Admin brings exactly its two generated files, regular, and nothing else
+          generated="$ARTIFACT/admin/src/ui/generated"
+          admin_files=$(cd "$ARTIFACT/admin" 2>/dev/null && find . -mindepth 1 -not -type d | sort || true)
+          if [ "$admin_files" != $'./src/ui/generated/admin.css.txt\n./src/ui/generated/admin.js.txt' ]; then
+            echo "::error::unexpected Admin files in the build artifact"
+            exit 1
+          fi
+          rm -rf apps/admin/src/ui/generated
+          mkdir -p apps/admin/src/ui/generated
+          cp "$generated/admin.js.txt" "$generated/admin.css.txt" apps/admin/src/ui/generated/
           for app in web catalog; do
             redirect="$ARTIFACT/$app/.wrangler/deploy/config.json"
             config_path=$(jq -r .configPath "$redirect")
@@ -304,12 +319,18 @@ jobs:
           (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")
           (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
           node scripts/verify-deployed-sha.mjs
+          # the Admin last, from its source block (the isolation check proved env.staging: one Custom Domain behind
+          # Access, workers.dev and previews off, its own Hyperdrive); a failure here leaves the web and the catalog
+          # already published and confirmed
+          (cd apps/admin && bunx --no-install wrangler deploy --env staging --message "$HEAD_SHA")
       # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
-        # 15 checks; worst case 13 x (3 tries of 10 s + 2 pauses of 5 s) + 2 x 10 s, about 9 min (design t607, patch A)
-        timeout-minutes: 12
+        # 17 checks; worst case 15 x (3 tries of 10 s + 2 pauses of 5 s) + 2 x 10 s, about 11 min
+        timeout-minutes: 13
         env:
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
           STAGING_CATALOG_URL: ${{ vars.STAGING_CATALOG_URL }}
+          # the Admin's host is fixed by its config (Custom Domain behind Access); anonymous requests must be redirected to Access
+          STAGING_ADMIN_URL: https://admin.araute.app
         run: node scripts/smoke-staging.mjs

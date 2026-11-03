@@ -5184,7 +5184,7 @@ Provisionar:
 
 Documentar IDs/resources.
 
-Estado (ADR 0097, [runbook do staging](../docs/runbooks/staging.md)): staging fixo na conta Cloudflare atual, sem Previews; topo do `wrangler.jsonc` só local; `env.staging` e `env.production` explícitos nos três Workers, com placeholders que `verify:staging-isolation` recusa; banco num projeto Neon próprio com o marcador `polaris.environment`; login só pelo Google em modo Testing; Admin não exposto no staging. Workflows não entram no staging (ADR 0088). Os recursos e segredos são criados pelo responsável.
+Estado (ADR 0097, [runbook do staging](../docs/runbooks/staging.md)): staging fixo na conta Cloudflare atual, sem Previews; topo do `wrangler.jsonc` só local; `env.staging` e `env.production` explícitos nos três Workers, com placeholders que `verify:staging-isolation` recusa; banco num projeto Neon próprio com o marcador `polaris.environment`; login só pelo Google em modo Testing; Admin não exposto no staging (*mudou em 03/11/2026: Admin em `admin.araute.app`, só atrás do Access do staging, emenda do ADR 0097*). Workflows não entram no staging (ADR 0088). Os recursos e segredos são criados pelo responsável.
 
 
 
