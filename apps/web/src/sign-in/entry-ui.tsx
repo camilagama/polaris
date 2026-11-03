@@ -322,7 +322,7 @@ export function EntryLinkButton({
 }) {
   return (
     <a
-      className={cn(buttonVariants({ size: "lg", variant }), "w-full")}
+      className={cn(buttonVariants({ size: "xl", variant }), "w-full")}
       data-slot="button"
       href={href}
     >
@@ -419,7 +419,7 @@ export function GoogleButton({
       className={cn("w-full", pending && "disabled:opacity-70")}
       disabled={disabled || pending}
       onClick={onClick}
-      size="lg"
+      size="xl"
       type="button"
     >
       <GoogleMark />
@@ -754,7 +754,7 @@ export function SubmitButton({
       className={cn("w-full", className)}
       disabled={disabled || pending}
       onClick={off ? (event) => event.preventDefault() : undefined}
-      size="lg"
+      size="xl"
       type="submit"
       variant={variant}
     >
