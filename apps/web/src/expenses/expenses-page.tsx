@@ -320,7 +320,7 @@ export function ExpensesPage() {
 
         <TabsContent className="grid gap-4" keepMounted value="lancamentos">
           {/* the month and the category on one line: the list and its first expense come in the first screen */}
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 min-[30rem]:flex min-[30rem]:flex-wrap">
+          <div className="grid grid-cols-1 items-start gap-x-3 gap-y-3 min-[30rem]:flex min-[22.5rem]:grid-cols-[auto_minmax(0,1fr)] min-[30rem]:flex-wrap">
             <MonthPicker
               currentMonth={monthOfDay(today)}
               id="expense-month"
