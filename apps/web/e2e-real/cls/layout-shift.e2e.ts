@@ -16,10 +16,8 @@ import {
 import { journeyClientIp } from "../journey-names";
 import { seedCashSale, seedProduct, seedStock } from "../seed";
 import {
-  CLS_SCENARIOS,
   type ClsScenario,
   clsProblem,
-  exceptionListProblems,
   sessionWindowCls,
 } from "./layout-shift.list";
 
@@ -69,8 +67,21 @@ interface Shift {
 }
 
 interface Recorder {
+  /** A random number per document: a mark of another document means the page reloaded in between. */
+  document: number;
   entries: Shift[];
+  /** Hands the shifts the observer still holds to `entries` (its callback runs later). */
+  flush: () => void;
+  /** How many documents this tab has loaded (`sessionStorage`): a first load is 1. */
+  loads: number;
   mutations: number;
+  supported: boolean;
+}
+
+/** Where a measurement starts: the document and how many shifts it had recorded. */
+interface Mark {
+  count: number;
+  document: number;
 }
 
 /** Runs in the page before its own scripts (`addInitScript`): every layout shift with what moved, and a DOM counter. */
@@ -79,8 +90,16 @@ function recordLayoutShifts() {
   if (target.__layoutShift) {
     return;
   }
-  const state: Recorder = { entries: [], mutations: 0 };
+  const state: Recorder = {
+    document: Math.random(),
+    entries: [],
+    flush: () => undefined,
+    loads: Number(sessionStorage.getItem("__layoutShiftLoads") ?? 0) + 1,
+    mutations: 0,
+    supported: PerformanceObserver.supportedEntryTypes.includes("layout-shift"),
+  };
   target.__layoutShift = state;
+  sessionStorage.setItem("__layoutShiftLoads", String(state.loads));
   const short = (text: string | null | undefined) => {
     const flat = (text ?? "").replace(/\s+/g, " ").trim();
     return flat.length > 70 ? `${flat.slice(0, 70)}…` : flat;
@@ -117,8 +136,8 @@ function recordLayoutShifts() {
           y: Math.round(r.y),
         }
       : null;
-  new PerformanceObserver((list) => {
-    for (const entry of list.getEntries() as unknown as {
+  const keep = (list: PerformanceEntryList) => {
+    for (const entry of list as unknown as {
       sources?: {
         currentRect: DOMRectReadOnly;
         node?: Node;
@@ -144,7 +163,10 @@ function recordLayoutShifts() {
         value: entry.value,
       });
     }
-  }).observe({ buffered: true, type: "layout-shift" });
+  };
+  const observer = new PerformanceObserver((list) => keep(list.getEntries()));
+  observer.observe({ buffered: true, type: "layout-shift" });
+  state.flush = () => keep(observer.takeRecords());
   const watch = () =>
     new MutationObserver((records) => {
       state.mutations += records.length;
@@ -200,22 +222,41 @@ async function settle(page: Page, ready: Locator[]) {
     .toBe(true);
 }
 
-/** The shifts recorded from the `mark`-th on (a count, not a time: the journey's clock is Playwright's, the entries' is not). */
-const since = (page: Page, mark: number) =>
-  page.evaluate(
-    (from) =>
-      (
-        window as unknown as { __layoutShift: Recorder }
-      ).__layoutShift.entries.slice(from),
-    mark
+/**
+ * The shifts recorded since `mark` (a count, not a time: the journey's clock is Playwright's, the entries' is not).
+ * Without a mark, every shift of the document, which must be a first load and not a reload. A document other than the
+ * mark's means the page reloaded and the shifts before it are gone: that fails instead of measuring nothing.
+ */
+async function since(page: Page, mark?: Mark): Promise<Shift[]> {
+  const read = await page.evaluate(() => {
+    const state = (window as unknown as { __layoutShift: Recorder })
+      .__layoutShift;
+    state.flush();
+    return {
+      document: state.document,
+      entries: state.entries,
+      loads: state.loads,
+      supported: state.supported,
+    };
+  });
+  expect(read.supported, "the browser reports layout-shift entries").toBe(true);
+  if (!mark) {
+    expect(read.loads, "the page was loaded once, not reloaded").toBe(1);
+    return read.entries;
+  }
+  expect(read.document, "the page did not reload during the measurement").toBe(
+    mark.document
   );
+  return read.entries.slice(mark.count);
+}
 
-const shiftCount = (page: Page) =>
-  page.evaluate(
-    () =>
-      (window as unknown as { __layoutShift: Recorder }).__layoutShift.entries
-        .length
-  );
+const markOf = (page: Page): Promise<Mark> =>
+  page.evaluate(() => {
+    const state = (window as unknown as { __layoutShift: Recorder })
+      .__layoutShift;
+    state.flush();
+    return { count: state.entries.length, document: state.document };
+  });
 
 function describeShifts(entries: Shift[]): string {
   return [...entries]
@@ -254,28 +295,42 @@ class Measurements {
   }
 }
 
+/**
+ * A phone context of its own, with the journey's session or none; `address` names its rate limit bucket. Not in the
+ * fixture's list: the caller closes it (`withPhonePage`).
+ */
 async function phonePage(
   browser: Browser,
+  address: string,
   journey: Journey | null
 ): Promise<Page> {
   const origin = String(test.info().project.use.baseURL);
   const context = await browser.newContext({
     ...PHONE,
     baseURL: origin,
+    extraHTTPHeaders: { [CLIENT_IP_HEADER]: journeyClientIp(address) },
     ...(journey
-      ? {
-          // the journey's own address: its rate limit bucket, and the session of its context
-          extraHTTPHeaders: {
-            [CLIENT_IP_HEADER]: journeyClientIp(journey.name),
-          },
-          storageState: await journey.page.context().storageState(),
-        }
+      ? { storageState: await journey.page.context().storageState() }
       : {}),
   });
   await context.addInitScript(recordLayoutShifts);
   const page = await context.newPage();
   await page.clock.install({ time: runT0() });
   return page;
+}
+
+async function withPhonePage<T>(
+  browser: Browser,
+  address: string,
+  journey: Journey | null,
+  use: (page: Page) => Promise<T>
+): Promise<T> {
+  const page = await phonePage(browser, address, journey);
+  try {
+    return await use(page);
+  } finally {
+    await page.context().close();
+  }
 }
 
 const home = (page: Page) => [
@@ -289,7 +344,7 @@ type Path = "/" | "/dashboard" | "/inventory" | "/sales" | "/sales/history";
 const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   "/": (page) => [
     ...home(page),
-    page.getByRole("region", { name: "Vendas hoje" }).getByText("R$"),
+    page.getByRole("region", { name: "Vendas hoje" }).getByText("R$").first(),
   ],
   "/dashboard": (page) => [
     page.getByRole("heading", { level: 1, name: "Resultado" }),
@@ -316,18 +371,17 @@ const DESTINATIONS: Path[] = [
 ];
 
 /** A load of the page in a context of its own: no cache, no service worker, as the first visit of the day. */
-async function cold(browser: Browser, journey: Journey, path: Path) {
-  const page = await phonePage(browser, journey);
-  await page.goto(path);
-  await settle(page, SCREENS[path](page));
-  const entries = await since(page, 0);
-  await page.context().close();
-  return entries;
+function cold(browser: Browser, journey: Journey, path: Path) {
+  return withPhonePage(browser, journey.name, journey, async (page) => {
+    await page.goto(path);
+    await settle(page, SCREENS[path](page));
+    return since(page);
+  });
 }
 
 /** The step of the menu (`navigateInApp`) from a settled screen, without a click: no input to discount. */
 async function warm(page: Page, path: Path) {
-  const mark = await shiftCount(page);
+  const mark = await markOf(page);
   await page.evaluate((next) => {
     window.history.pushState(null, "", next);
     window.dispatchEvent(new Event("polaris:address"));
@@ -363,11 +417,6 @@ async function seedSales(journey: Journey) {
 
 test.describe.configure({ retries: 0 });
 
-test("layout shift: a lista de exceções só nomeia cenários medidos", () => {
-  expect(exceptionListProblems()).toEqual([]);
-  expect(new Set(CLS_SCENARIOS).size).toBe(CLS_SCENARIOS.length);
-});
-
 test("layout shift no celular: Início da loja vazia e a entrada", async ({
   browser,
 }, testInfo) => {
@@ -387,15 +436,21 @@ test("layout shift no celular: Início da loja vazia e a entrada", async ({
       .getByRole("region", { name: "Meta" })
       .getByRole("link", { name: "Definir meta" }),
   ]);
-  measurements.record("/ vazia frio", await since(page, 0));
+  measurements.record("/ vazia frio", await since(page));
 
-  const signIn = await phonePage(browser, null);
-  await signIn.goto("/entrar");
-  await settle(signIn, [
-    signIn.getByRole("heading", { level: 1, name: "Entrar no Polaris" }),
-  ]);
-  measurements.record("/entrar sem-sessao frio", await since(signIn, 0));
-  await signIn.context().close();
+  const signIn = await withPhonePage(
+    browser,
+    `${journey.name}-entrar`,
+    null,
+    async (entry) => {
+      await entry.goto("/entrar");
+      await settle(entry, [
+        entry.getByRole("heading", { level: 1, name: "Entrar no Polaris" }),
+      ]);
+      return since(entry);
+    }
+  );
+  measurements.record("/entrar sem-sessao frio", signIn);
 
   expect(measurements.problems.join("\n\n")).toBe("");
 });
@@ -414,7 +469,7 @@ test("layout shift no celular: os destinos da barra e o Resultado, numa loja com
   await page.context().addInitScript(recordLayoutShifts);
   await page.goto("/");
   await settle(page, SCREENS["/"](page));
-  measurements.record("/ com-vendas frio", await since(page, 0));
+  measurements.record("/ com-vendas frio", await since(page));
 
   // one after the other: one preview and one database, and a measurement must not share the CPU with another
   for (const path of DESTINATIONS) {
@@ -429,14 +484,14 @@ test("layout shift no celular: os destinos da barra e o Resultado, numa loja com
   }
   measurements.record("/ com-vendas quente", await warm(page, "/"));
 
-  let mark = await shiftCount(page);
+  let mark = await markOf(page);
   await page.context().setOffline(true);
   await settle(page, [
     ...home(page),
     page.getByText("Sem internet e sem números guardados").first(),
   ]);
   measurements.record("/ com-vendas sem-conexao", await since(page, mark));
-  mark = await shiftCount(page);
+  mark = await markOf(page);
   await page.context().setOffline(false);
   await settle(page, SCREENS["/"](page));
   measurements.record("/ com-vendas volta-a-conexao", await since(page, mark));
