@@ -314,7 +314,11 @@ test("se o cliente mudou em outro aparelho, a alteração é recusada à vista, 
   // the server's row (the other device's edit) is what the card shows, not the refused one
   await expect(refused).toContainText("(outro aparelho)");
   await expect(refused).not.toContainText("Filho");
-  await expectRowOpens(page, "Hugo Neri", "disabled");
+  // the row carries the server's name now ("Hugo Neri (outro aparelho)"): read its button inside the card
+  await expect(refused.locator("[data-row-open]")).toHaveAttribute(
+    "aria-disabled",
+    "true"
+  );
 });
 
 const productRow = (page: Page, name: string) =>
