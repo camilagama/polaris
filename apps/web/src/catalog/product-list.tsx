@@ -14,6 +14,8 @@ import {
 } from "@/ui/dropdown-menu";
 import type { PendingProduct } from "../offline/product-create";
 import { productInitials } from "./product-search-model";
+import { OFFLINE_NOTICE_ID } from "./products-page-parts";
+import { OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
 
 export type ProductListStatus = "active" | "archived";
 
@@ -43,24 +45,25 @@ interface RowActions {
   onRestore: (product: ProductReadModel) => void;
 }
 
-interface ProductMenuProps extends RowActions {
+interface ProductMenuProps extends Omit<RowActions, "onEdit"> {
   locked: boolean;
   pending: boolean;
   product: ProductReadModel;
 }
 
-/** The actions of one product. A locked product (not confirmed yet, or no connection) keeps the menu and shows why in its row. */
+/**
+ * The actions of one product besides opening it (the row itself opens it). A locked product (not confirmed yet, or
+ * no connection) keeps the menu and shows why in its row.
+ */
 function ProductMenu({
   locked,
   onArchive,
-  onEdit,
   onManageMedia,
   onManageVariants,
   onRestore,
   pending,
   product,
 }: ProductMenuProps) {
-  const handleEdit = useCallback(() => onEdit(product), [onEdit, product]);
   const handleVariants = useCallback(
     () => onManageVariants(product),
     [onManageVariants, product]
@@ -84,6 +87,7 @@ function ProductMenu({
         render={
           <Button
             aria-label={`Mais ações para ${product.name}`}
+            className="relative z-10"
             disabled={pending}
             size="icon"
             variant="ghost"
@@ -93,9 +97,6 @@ function ProductMenu({
         <MoreHorizontalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuItem disabled={disabled} onClick={handleEdit}>
-          Editar
-        </DropdownMenuItem>
         <DropdownMenuItem disabled={disabled} onClick={handleVariants}>
           Variantes
         </DropdownMenuItem>
@@ -156,13 +157,21 @@ function ProductRow({
   pendingAction,
   product,
   syncState,
+  onEdit,
   ...actions
 }: ProductRowProps) {
   const pending = pendingAction?.endsWith(product.id) ?? false;
   const pendingLabel = pendingLabelFor(pendingAction, product.id);
+  const handleOpen = useCallback(() => onEdit(product), [onEdit, product]);
+  const reasonId = `product-locked-${product.id}`;
+  // the reason is in the row for a product not confirmed yet, and in the notice at the top without a connection
+  let describedBy: string | undefined;
+  if (lockedReason !== null) {
+    describedBy = syncState ? reasonId : OFFLINE_NOTICE_ID;
+  }
   return (
     <li
-      className="flex items-center gap-3 px-3 py-2.5 md:px-4"
+      className={`flex items-center gap-3 px-3 py-2.5 md:px-4 ${OPENABLE_ROW_CLASS}`}
       data-product-id={product.id}
     >
       <span
@@ -172,7 +181,13 @@ function ProductRow({
         {productInitials(product.name)}
       </span>
       <div className="grid min-w-0 flex-1 gap-0.5">
-        <p className="font-medium [overflow-wrap:anywhere]">{product.name}</p>
+        <RowOpenButton
+          action="Editar"
+          describedBy={describedBy}
+          locked={lockedReason !== null || pending}
+          name={product.name}
+          onOpen={handleOpen}
+        />
         <p className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]">
           {supportLine(categoryName, product.description)}
         </p>
@@ -189,7 +204,7 @@ function ProductRow({
             </Badge>
             {syncState.state === "rejected" ? (
               <a
-                className="focus-ring touch-hit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
+                className="focus-ring touch-hit relative z-10 rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
                 href="/attention"
               >
                 Resolver em Pendências
@@ -198,7 +213,9 @@ function ProductRow({
           </div>
         ) : null}
         {syncState && lockedReason ? (
-          <p className="text-muted-foreground text-support">{lockedReason}</p>
+          <p className="text-muted-foreground text-support" id={reasonId}>
+            {lockedReason}
+          </p>
         ) : null}
         {pendingLabel ? (
           <p className="text-muted-foreground text-support" role="status">

@@ -165,8 +165,9 @@ export const productStates = {
   /** The edit of a product with the name cleared and saved: the form (name, category, description) and the message of the field. */
   async edit(page: Page) {
     await openProductsLab(page);
-    await menuOf(page, "Camiseta do teste").click();
-    await page.getByRole("menuitem", { name: "Editar" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Editar Camiseta do teste" })
+      .click();
     await page.getByRole("dialog", { name: "Camiseta do teste" }).waitFor();
     await page.getByLabel("Nome do produto").fill("");
     await page.getByRole("button", { name: "Salvar alterações" }).click();
@@ -185,8 +186,9 @@ export const productStates = {
   /** The product open with no connection: the strip with "Tentar agora" and the save button off with its reason. */
   async offline(page: Page) {
     await openProductsLab(page);
-    await menuOf(page, "Camiseta do teste").click();
-    await page.getByRole("menuitem", { name: "Editar" }).click();
+    await page
+      .getByRole("button", { exact: true, name: "Editar Camiseta do teste" })
+      .click();
     await page.getByRole("dialog", { name: "Camiseta do teste" }).waitFor();
     // the lab's network control is under the veil of the dialog: switched by the page
     await page

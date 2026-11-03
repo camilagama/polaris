@@ -4,7 +4,7 @@ Produtos (`/products`) é o catálogo: a lista de produtos (ativos e arquivados)
 
 ## Sub-features
 
-- `produtos-lista` a `list "Produtos"`, cada produto um item `[data-product-id]`, com "Mais ações para <nome>".
+- `produtos-lista` a `list "Produtos"`, cada produto um item `[data-product-id]`: a linha é o botão "Editar <nome>" (`[data-row-open]`, abre o produto em Dados) e, ao lado, "Mais ações para <nome>" (Variantes, Imagens, Arquivar). Acima da lista, a contagem ("1.248 produtos"); com mais de 50, "Carregar mais" abaixo do cartão.
 - `produtos-vazio` loja sem produto: "Nenhum produto ainda" e o botão "Novo produto" no vazio.
 - `produto-criar` Dialog "Novo produto": nome, preço de tabela, quantidade e custo; "Mais detalhes" para categoria e descrição.
 - `produto-limite` plano Free no teto de 50 variantes: o Dialog recusa com "Seu plano chegou ao limite de variantes. Nada foi cadastrado."

@@ -54,6 +54,22 @@ function menuTrigger(markup: string, name: string): string {
   return tag[0];
 }
 
+/** The button that opens a product from its row, as drawn: its opening tag. */
+function rowOpen(markup: string, name: string): string {
+  const tag = new RegExp(
+    `<button[^>]*data-row-open=""[^>]*><span class="sr-only">Editar </span>${name}<`
+  ).exec(markup);
+  if (!tag) {
+    throw new Error(`no row button for ${name}`);
+  }
+  return tag[0];
+}
+
+const ROW_BUTTON_PRODUTO_1 =
+  /<button[^>]*data-row-open=""[^>]*><span class="sr-only">Editar <\/span>Produto 1<\/button>/;
+/** A button that opens before the one before it closed. */
+const BUTTON_IN_BUTTON = /<button(?:(?!<\/button>).)*<button/s;
+
 const noop = () => undefined;
 type Props = ComponentProps<typeof ProductList>;
 const base: Props = {
@@ -163,6 +179,47 @@ describe("linha do produto", () => {
     const markup = html({ products: [product(1)], total: 1 });
     expect(markup).toContain('aria-label="Mais ações para Produto 1"');
     expect(menuTrigger(markup, "Produto 1")).not.toContain(OFF);
+  });
+
+  it("a linha abre o produto: o nome é um botão 'Editar …', fora do menu e sem botão dentro de botão", () => {
+    const markup = html({ products: [product(1)], total: 1 });
+    const open = rowOpen(markup, "Produto 1");
+    expect(open).not.toContain("aria-disabled=");
+    expect(markup).toMatch(ROW_BUTTON_PRODUTO_1);
+    // the stretched button and the menu are siblings: no button opens before the row button closes
+    expect(markup).not.toMatch(BUTTON_IN_BUTTON);
+  });
+
+  it("a linha travada continua focável, diz o motivo e não abre", () => {
+    const saved = product(1);
+    const waiting = html({
+      products: [saved],
+      syncStates: new Map([[saved.id, pending(saved.id, "pending")]]),
+      total: 1,
+    });
+    const tag = rowOpen(waiting, "Produto 1");
+    expect(tag).toContain('aria-disabled="true"');
+    expect(tag).toContain(`aria-describedby="product-locked-${saved.id}"`);
+    expect(waiting).toContain(`id="product-locked-${saved.id}"`);
+    expect(tag).not.toContain(OFF);
+
+    const offline = rowOpen(
+      html({ isOffline: true, products: [product(2)], total: 1 }),
+      "Produto 2"
+    );
+    expect(offline).toContain('aria-disabled="true"');
+    expect(offline).toContain('aria-describedby="products-offline-notice"');
+
+    const archiving = rowOpen(
+      html({
+        pendingAction: `archive:${saved.id}`,
+        products: [saved],
+        total: 1,
+      }),
+      "Produto 1"
+    );
+    expect(archiving).toContain('aria-disabled="true"');
+    expect(archiving).not.toContain("aria-describedby=");
   });
 
   it("cada linha é achada pelo id do produto (o foco volta ao menu dela)", () => {

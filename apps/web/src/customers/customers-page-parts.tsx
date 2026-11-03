@@ -3,6 +3,7 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import type { MouseEvent, Ref } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
+import { SearchField } from "@/ui/search-field";
 
 /* The small parts of the customers screen: the title and the strip that says what still works without a connection. */
 
@@ -45,5 +46,23 @@ export function OfflineNotice() {
         arquivar, restaurar e anonimizar precisam de conexão.
       </AlertDescription>
     </Alert>
+  );
+}
+
+interface CustomerSearchProps {
+  onChange: (value: string) => void;
+  value: string;
+}
+
+/** The search of the list, as in Produtos: by name, phone or e-mail, on the rows already read. */
+export function CustomerSearch({ onChange, value }: CustomerSearchProps) {
+  return (
+    <SearchField
+      className="md:max-w-sm"
+      label="Buscar cliente"
+      onValueChange={onChange}
+      placeholder="Nome, telefone ou e-mail"
+      value={value}
+    />
   );
 }

@@ -14,7 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { productInitials } from "../catalog/product-search-model";
-import { ListNotice } from "../catalog/screen-parts";
+import {
+  ListNotice,
+  OPENABLE_ROW_CLASS,
+  RowOpenButton,
+} from "../catalog/screen-parts";
 import type { PendingCustomer } from "../offline/customer-create";
 import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
@@ -33,28 +37,23 @@ interface RowActions {
   onRestore: (customer: CustomerReadModel) => void;
 }
 
-interface CustomerMenuProps extends Omit<RowActions, "onAnonymize"> {
+interface CustomerMenuProps extends Omit<RowActions, "onAnonymize" | "onEdit"> {
   customer: CustomerReadModel;
   /** Archive, restore and anonymize wait for the server: not confirmed yet, or no connection. */
   lifecycleLocked: boolean;
-  /** Editing waits only for the server to confirm what is already waiting. */
-  locked: boolean;
   onAskAnonymize: () => void;
   pending: boolean;
 }
 
-/** The actions of one customer that was not anonymized. */
+/** The actions of one customer that was not anonymized, besides editing it (the row itself opens it). */
 function CustomerMenu({
   customer,
   lifecycleLocked,
-  locked,
   onArchive,
   onAskAnonymize,
-  onEdit,
   onRestore,
   pending,
 }: CustomerMenuProps) {
-  const handleEdit = useCallback(() => onEdit(customer), [customer, onEdit]);
   const handleArchive = useCallback(
     () => onArchive(customer),
     [customer, onArchive]
@@ -69,6 +68,7 @@ function CustomerMenu({
         render={
           <Button
             aria-label={`Mais ações para ${customer.name}`}
+            className="relative z-10"
             disabled={pending}
             size="icon"
             variant="ghost"
@@ -78,9 +78,6 @@ function CustomerMenu({
         <MoreHorizontalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuItem disabled={locked} onClick={handleEdit}>
-          Editar
-        </DropdownMenuItem>
         {customer.status === "active" ? (
           <DropdownMenuItem disabled={lifecycleLocked} onClick={handleArchive}>
             Arquivar
@@ -114,7 +111,7 @@ function AnonymizeConfirm({
   onConfirm,
 }: AnonymizeConfirmProps) {
   return (
-    <fieldset className="grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+    <fieldset className="relative z-10 grid min-w-0 gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
       <legend className="sr-only">
         Confirmar a anonimização de {customer.name}
       </legend>
@@ -162,6 +159,37 @@ function pendingLabelFor(
   return null;
 }
 
+interface CustomerNameProps {
+  customer: CustomerReadModel;
+  locked: boolean;
+  lockedReasonId: string | undefined;
+  onEdit: (customer: CustomerReadModel) => void;
+}
+
+/** The name opens the customer's form; an anonymized customer cannot be edited, so its name is only text. */
+function CustomerName({
+  customer,
+  locked,
+  lockedReasonId,
+  onEdit,
+}: CustomerNameProps) {
+  const handleOpen = useCallback(() => onEdit(customer), [customer, onEdit]);
+  if (customer.anonymizedAt !== null) {
+    return (
+      <p className="font-medium [overflow-wrap:anywhere]">{customer.name}</p>
+    );
+  }
+  return (
+    <RowOpenButton
+      action="Editar"
+      describedBy={lockedReasonId}
+      locked={locked}
+      name={customer.name}
+      onOpen={handleOpen}
+    />
+  );
+}
+
 interface CustomerRowProps extends RowActions {
   customer: CustomerReadModel;
   /** The server cannot be reached: the actions that need it are off, and the notice at the top says why. */
@@ -199,6 +227,7 @@ function CustomerRow({
     .filter(Boolean)
     .join(" · ");
 
+  const reasonId = `customer-locked-${customer.id}`;
   const handleAsk = useCallback(() => setConfirming(true), []);
   const handleCancel = useCallback(() => setConfirming(false), []);
   const handleConfirm = useCallback(() => {
@@ -212,7 +241,7 @@ function CustomerRow({
   }
   return (
     <li
-      className="grid gap-3 px-3 py-2.5 md:px-4"
+      className={`grid gap-3 px-3 py-2.5 md:px-4 ${isAnonymized ? "" : OPENABLE_ROW_CLASS}`}
       data-customer-id={customer.id}
     >
       <div className="flex items-center gap-3">
@@ -224,9 +253,12 @@ function CustomerRow({
         </span>
         <div className="grid min-w-0 flex-1 gap-0.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="font-medium [overflow-wrap:anywhere]">
-              {customer.name}
-            </p>
+            <CustomerName
+              customer={customer}
+              lockedReasonId={lockedReason ? reasonId : undefined}
+              locked={lockedReason !== null || isPending}
+              onEdit={onEdit}
+            />
             {customer.status === "active" && !isAnonymized ? null : (
               <Badge variant={badgeVariant}>
                 {customerStatusLabel(customer)}
@@ -251,14 +283,16 @@ function CustomerRow({
           ) : null}
           {shownState?.state === "rejected" ? (
             <a
-              className="focus-ring touch-hit w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
+              className="focus-ring touch-hit relative z-10 w-fit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
               href="/attention"
             >
               Resolver em Pendências
             </a>
           ) : null}
           {lockedReason ? (
-            <p className="text-muted-foreground text-support">{lockedReason}</p>
+            <p className="text-muted-foreground text-support" id={reasonId}>
+              {lockedReason}
+            </p>
           ) : null}
           {isAnonymized ? (
             <p className="text-muted-foreground text-support">
@@ -276,10 +310,8 @@ function CustomerRow({
           <CustomerMenu
             customer={customer}
             lifecycleLocked={isOffline || lockedReason !== null}
-            locked={lockedReason !== null}
             onArchive={onArchive}
             onAskAnonymize={handleAsk}
-            onEdit={onEdit}
             onRestore={onRestore}
             pending={isPending}
           />
@@ -298,6 +330,7 @@ function CustomerRow({
 }
 
 interface CustomerListProps extends RowActions {
+  /** The customers that match the search. */
   customers: CustomerReadModel[];
   isLoading: boolean;
   /** Working from this device's collections while the connection is down. */
@@ -305,9 +338,13 @@ interface CustomerListProps extends RowActions {
   /** The button of the empty list: the form is not on the page, it opens from here. */
   onNew: (event: MouseEvent<HTMLButtonElement>) => void;
   pendingAction: string | null;
+  /** The typed search; empty when none. */
+  query: string;
   status: CustomerListStatus;
   /** Customers created on this device that the server has not confirmed yet. */
   syncStates: ReadonlyMap<string, PendingCustomer>;
+  /** How many customers the status has, before the search. */
+  total: number;
   /** Edits made on this device that the server has not confirmed yet. */
   updateStates: ReadonlyMap<string, PendingCustomerUpdate>;
 }
@@ -318,8 +355,10 @@ export function CustomerList({
   isOffline,
   onNew,
   pendingAction,
+  query,
   status,
   syncStates,
+  total,
   updateStates,
   ...actions
 }: CustomerListProps) {
@@ -332,7 +371,7 @@ export function CustomerList({
       </ListNotice>
     );
   }
-  if (customers.length === 0) {
+  if (total === 0) {
     return (
       <ListNotice>
         {status === "active" ? (
@@ -356,6 +395,15 @@ export function CustomerList({
         ) : (
           <p className="text-muted-foreground">Nenhum cliente arquivado.</p>
         )}
+      </ListNotice>
+    );
+  }
+  if (customers.length === 0) {
+    return (
+      <ListNotice>
+        <p className="text-muted-foreground" role="status">
+          Nenhum cliente com “{query.trim()}”.
+        </p>
       </ListNotice>
     );
   }

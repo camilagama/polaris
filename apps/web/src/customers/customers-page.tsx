@@ -15,7 +15,8 @@ import {
   ActionFeedback,
   LoadErrorNotice,
 } from "../catalog/products-page-parts";
-import { StatusNav } from "../catalog/screen-parts";
+import { shownListCount } from "../catalog/list-page-model";
+import { ListCountLine, StatusNav } from "../catalog/screen-parts";
 import { focusLater } from "../lib/focus";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { orpcClient } from "../lib/orpc";
@@ -46,6 +47,7 @@ import {
   type CustomerAction,
   type CustomerListStatus,
   customerErrorMessage,
+  filterCustomers,
   hasCustomerContact,
   lockedReasonFor,
   STATUS_OPTIONS,
@@ -55,7 +57,13 @@ import {
   listLocalCustomers,
   toLocalCustomerRow,
 } from "./local-customers";
-import { CustomersHeader, OfflineNotice } from "./customers-page-parts";
+import {
+  CustomerSearch,
+  CustomersHeader,
+  OfflineNotice,
+} from "./customers-page-parts";
+
+const CUSTOMER_NOUN = ["cliente", "clientes"] as const;
 
 /**
  * After the server changed a customer, the same row goes into the local
@@ -85,6 +93,7 @@ export function CustomersPage() {
   >(new Map());
   const [status, setStatus] = useState<CustomerListStatus>("active");
   const [customers, setCustomers] = useState<CustomerReadModel[]>([]);
+  const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<CustomerDraft>(emptyCustomerDraft);
   const [editingCustomer, setEditingCustomer] =
     useState<CustomerReadModel | null>(null);
@@ -274,12 +283,11 @@ export function CustomersPage() {
   }, []);
 
   const handleEdit = useCallback((customer: CustomerReadModel) => {
-    // the row's menu button that opened the edit (the menu itself is gone by the time the form closes)
-    const label = `Mais ações para ${customer.name}`;
+    // the row that opened the edit
     originRef.current = () =>
-      Array.from(document.querySelectorAll<HTMLElement>("button")).find(
-        (button) => button.getAttribute("aria-label") === label
-      ) ?? null;
+      document.querySelector<HTMLElement>(
+        `[data-customer-id="${customer.id}"] [data-row-open]`
+      );
     if (keptRef.current !== customer.id) {
       setEditingCustomer(customer);
       setDraft(draftOfCustomer(customer));
@@ -590,6 +598,8 @@ export function CustomersPage() {
   noticeRef.current = notice;
   const isOffline = workspace !== null && !workspace.online;
   const isPending = pendingAction !== null;
+  const foundCustomers = filterCustomers(customers, query);
+  const listIsShown = !(isLoading || loadError);
   // the empty list has the button itself: not two of them
   const emptyList =
     status === "active" &&
@@ -641,6 +651,7 @@ export function CustomersPage() {
         onUseExisting={handleUseExisting}
         open={formOpen}
       />
+      <CustomerSearch onChange={setQuery} value={query} />
       <StatusNav
         disabled={pendingAction !== null}
         label="Estado dos clientes"
@@ -648,11 +659,21 @@ export function CustomersPage() {
         options={STATUS_OPTIONS}
         value={status}
       />
+      <ListCountLine
+        loading={isLoading}
+        text={shownListCount(
+          listIsShown,
+          foundCustomers.length,
+          customers.length,
+          query,
+          CUSTOMER_NOUN
+        )}
+      />
       {loadError ? (
         <LoadErrorNotice message={loadError} onRetry={handleRetry} />
       ) : (
         <CustomerList
-          customers={customers}
+          customers={foundCustomers}
           isLoading={isLoading}
           isOffline={isOffline}
           onAnonymize={handleAnonymize}
@@ -661,8 +682,10 @@ export function CustomersPage() {
           onEdit={handleEdit}
           onRestore={handleRestore}
           pendingAction={pendingAction}
+          query={query}
           status={status}
           syncStates={syncStates}
+          total={customers.length}
           updateStates={updateStates}
         />
       )}

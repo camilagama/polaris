@@ -7,12 +7,16 @@ import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import EyeOffIcon from "lucide-react/dist/esm/icons/eye-off";
 import GlobeIcon from "lucide-react/dist/esm/icons/globe";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { type FormEvent, useCallback } from "react";
+import { type FormEvent, useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { formatQuantity } from "../lib/format";
+import { listCountText } from "./list-page-model";
 import { ProductTextAreaField, ProductTextField } from "./product-fields";
+import { filterByName } from "./product-search-model";
+import { ProductSearch } from "./products-page-parts";
 import type { ProfileField, ProfileFieldError } from "./public-catalog-errors";
 import {
   type CatalogVisibility,
@@ -22,6 +26,7 @@ import {
   publicUrl,
   slugFromName,
 } from "./public-catalog-model";
+import { LoadMoreButton, useListPage } from "./screen-parts";
 
 /** The id of the notice of the plan: the controls it turns off point at it, so they read why. */
 export const PLAN_NOTICE_ID = "public-catalog-plan-notice";
@@ -411,6 +416,9 @@ interface ProductsCardProps {
 export function ProductsCard(props: ProductsCardProps) {
   const { onChange, products, shown } = props;
   const shownCount = products.filter((product) => shown.has(product.id)).length;
+  const [query, setQuery] = useState("");
+  const found = filterByName(products, query);
+  const page = useListPage(found, query);
   const handleToggle = useCallback(
     (productId: string, show: boolean) => onChange([productId], show),
     [onChange]
@@ -472,16 +480,42 @@ export function ProductsCard(props: ProductsCardProps) {
       <CardContent className="grid gap-3">
         <div>
           <p className="text-muted-foreground text-support">
-            {shownCount} de {products.length} produtos ativos escolhidos.
-            Produto arquivado ou removido sai do catálogo sozinho.
+            {formatQuantity(shownCount)} de {formatQuantity(products.length)}{" "}
+            produtos ativos escolhidos. Produto arquivado ou removido sai do
+            catálogo sozinho.
           </p>
           <ActionMessages {...props.feedback} />
         </div>
         {products.length === 0 ? (
           <p>Você ainda não tem produtos ativos.</p>
         ) : (
-          <ul className="divide-y divide-border">
-            {products.map((product) => {
+          <>
+            <ProductSearch onChange={setQuery} value={query} />
+            {/* "Mostrar todos" and "Tirar todos" keep acting on every active product, not on the search */}
+            {query.trim() !== "" && found.length > 0 ? (
+              <p
+                aria-live="polite"
+                className="text-muted-foreground text-support"
+              >
+                {listCountText(found.length, products.length, query, [
+                  "produto",
+                  "produtos",
+                ])}
+              </p>
+            ) : null}
+          </>
+        )}
+        {products.length > 0 && found.length === 0 ? (
+          <p className="text-muted-foreground" role="status">
+            Nenhum produto com “{query.trim()}”.
+          </p>
+        ) : null}
+        {found.length > 0 ? (
+          <ul
+            aria-label="Produtos do catálogo"
+            className="divide-y divide-border"
+          >
+            {page.items.map((product) => {
               const isShown = shown.has(product.id);
               return (
                 <ProductRow
@@ -495,7 +529,8 @@ export function ProductsCard(props: ProductsCardProps) {
               );
             })}
           </ul>
-        )}
+        ) : null}
+        {page.hasMore ? <LoadMoreButton onClick={page.loadMore} /> : null}
       </CardContent>
     </Card>
   );

@@ -1,4 +1,5 @@
 import type { CustomerReadModel } from "@polaris/contracts";
+import { searchKey } from "../catalog/product-search-model";
 import {
   CHANGE_FAULT_UNKNOWN,
   commonFailureMessage,
@@ -36,6 +37,35 @@ const MOBILE_OR_LANDLINE = /^(\d\d)(\d{4,5})(\d{4})$/;
  */
 export function formatCustomerPhone(phone: string): string {
   return phone.replace(MOBILE_OR_LANDLINE, "($1) $2-$3");
+}
+
+const NOT_DIGIT = /\D/g;
+const PHONE_TYPED = /^[\d\s().+-]+$/;
+
+/**
+ * The customers whose name, phone or e-mail has the typed text (an empty text keeps them all), in the order they
+ * came. The name and the e-mail ignore accents and case; a query made of digits and phone marks compares digits only,
+ * so "(11) 9000", "119000" and "11 9000" find the same customer.
+ */
+export function filterCustomers<
+  T extends Pick<CustomerReadModel, "email" | "name" | "phone">,
+>(customers: readonly T[], query: string): T[] {
+  const key = searchKey(query);
+  if (key === "") {
+    return [...customers];
+  }
+  // only a query typed as a phone compares digits: "Loja 2" is a name, not the phone digit 2
+  const digits = PHONE_TYPED.test(query.trim())
+    ? query.replace(NOT_DIGIT, "")
+    : "";
+  return customers.filter(
+    (customer) =>
+      searchKey(customer.name).includes(key) ||
+      (customer.email !== null && searchKey(customer.email).includes(key)) ||
+      (digits !== "" &&
+        customer.phone !== null &&
+        customer.phone.replace(NOT_DIGIT, "").includes(digits))
+  );
 }
 
 export function hasCustomerContact(draft: CustomerDraft): boolean {
