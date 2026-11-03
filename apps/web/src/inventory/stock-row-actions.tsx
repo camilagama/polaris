@@ -6,8 +6,7 @@ import { type StockRow, stockRowActions } from "./stock-list-model";
 
 /** Names the line that says why the row buttons are off while a panel is open. */
 export const PANEL_OPEN_REASON_ID = "stock-panel-open-reason";
-export const PANEL_OPEN_REASON =
-  "Há um painel aberto. Termine ou feche esse painel para usar os botões.";
+export const PANEL_OPEN_REASON = "Feche o painel aberto para usar os botões.";
 
 /** By the button's place in the row: "Informar custo" stands where "Contar" was and gives it back once the cost is known. */
 export const triggerId = (variantId: string, action: StockAction) =>

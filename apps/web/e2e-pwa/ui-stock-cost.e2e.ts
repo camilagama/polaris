@@ -14,7 +14,12 @@ const INFORM_SHIRT = "Informar custo de Camiseta do teste · Azul";
 const INFORM_ANY = /^Informar custo/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
 const COST_FIELD = "Custo de cada unidade (R$)";
+const SHIRT_CONFLICT =
+  /O saldo no sistema mudou para 4\. Confira o custo e confirme de novo\./;
+const JEANS_CONFLICT =
+  /O saldo no sistema mudou para 12\. Confira a quantidade contada e confirme de novo\./;
 const SHIRT_VARIANT = "0199c2d0-0000-7000-8000-0000000000b1";
+const JEANS_VARIANT = "0199c2d0-0000-7000-8000-0000000000b2";
 
 const rows = (page: Page) =>
   page.getByRole("list", { name: "Saldos por variante" });
@@ -183,15 +188,50 @@ test.describe("Estoque, Informar custo", () => {
     );
     await stockStates.costConfirming(page);
     await page.getByRole("button", { name: "Confirmar custo" }).click();
-    await expect(
-      page.getByText(
-        "O saldo mudou depois que você abriu o painel. Atualizamos o saldo: revise e confirme o custo de novo."
-      )
-    ).toBeVisible();
+    const costField = page.getByLabel(COST_FIELD);
+    await expect(costField).toBeFocused();
+    await expect(costField).toHaveAccessibleDescription(SHIRT_CONFLICT);
     await expect(
       page.getByText("Para as 4 unidades que você tem agora.")
     ).toBeVisible();
     await expect(page.getByText("contagem", { exact: false })).toHaveCount(0);
+  });
+
+  test("o conflito da contagem fica junto do campo, com o foco e o saldo que mudou", async ({
+    page,
+  }) => {
+    await page.route("**/rpc/inventory/inventoryCount", (route: Route) =>
+      route.fulfill(
+        rpc(
+          {
+            code: "CONFLICT",
+            data: { reason: "inventory_version_conflict" },
+            defined: true,
+            message: "Conflict",
+            status: 409,
+          },
+          409
+        )
+      )
+    );
+    await page.route("**/rpc/inventory/getBalance", (route: Route) =>
+      route.fulfill(
+        rpc({
+          movingAverageCost: "62.400000",
+          quantity: 12,
+          variantId: JEANS_VARIANT,
+          version: 2,
+        })
+      )
+    );
+    await stockStates.count(page);
+    await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+    await page.getByRole("button", { name: "Confirmar contagem" }).click();
+    const counted = page.getByLabel("Quantidade contada");
+    await expect(counted).toBeFocused();
+    await expect(counted).toHaveAttribute("aria-invalid", "true");
+    await expect(counted).toHaveAccessibleDescription(JEANS_CONFLICT);
+    await expect(page.getByText("Saldo no sistema: 12 unidades")).toBeVisible();
   });
 
   test("sem conexão a ação não aparece (AC-7)", async ({ page }) => {

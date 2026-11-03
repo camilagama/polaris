@@ -29,6 +29,7 @@ import {
   costText,
   retarget,
   type StockTarget,
+  targetMovementText,
   unitsText,
 } from "./stock-target";
 
@@ -161,7 +162,7 @@ export const STOCK_FIELD_ORDER: Readonly<
 function initialStockDraft(action: StockAction, today: string): StockDraft {
   switch (action) {
     case "receive":
-      return { action, occurredOn: today, quantity: "", unitCost: "" };
+      return { action, occurredOn: today, quantity: "1", unitCost: "" };
     case "cost":
       return { action, valuationUnitCost: "" };
     case "count":
@@ -175,7 +176,7 @@ function initialStockDraft(action: StockAction, today: string): StockDraft {
       return {
         action,
         occurredOn: today,
-        quantity: "",
+        quantity: "1",
         reasonCode: "",
         reasonNote: "",
       };
@@ -510,7 +511,7 @@ function validateCount(
       issue(
         issues,
         "valuationUnitCost",
-        "A valoração só vale quando a quantidade contada é maior que zero."
+        "O custo só vale com quantidade contada maior que zero."
       );
       valuation = null;
     }
@@ -697,6 +698,10 @@ export function stockSummary(
       value: `${target.productName} · ${target.variantText}`,
     },
   ];
+  const moved = targetMovementText(target);
+  if (moved !== null) {
+    lines.push({ label: "Último movimento", value: moved });
+  }
   if (body.action === "receive") {
     lines.push(
       { label: "Quantidade recebida", value: signedUnits(body.quantity) },
@@ -784,6 +789,8 @@ export function stockConsequence(action: StockAction): string {
 export interface StockFailure {
   /** The balance the field message quotes was read again (until then, and if the read fails, it says so without a number). */
   balanceRead: boolean;
+  /** The quantity read is not the one the panel showed: a version conflict can leave it the same. */
+  balanceMoved: boolean;
   /** The attempt cannot be resent as is: the next confirm gets a fresh one. */
   discardAttempt: boolean;
   /** The field the refusal is about: the message sits there, not in the alert at the foot of the panel. */
@@ -848,6 +855,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "inventory_version_conflict",
     {
       discardAttempt: true,
+      field: "physicalQuantity",
       message:
         "O saldo mudou depois que você abriu a contagem. Atualizamos o saldo: revise a quantidade contada e confirme de novo.",
       refreshBalance: true,
@@ -882,7 +890,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
     "invalid_inventory_count_input",
     {
       message:
-        "A contagem foi recusada. A valoração só vale com saldo sem custo conhecido e quantidade contada maior que zero.",
+        "A contagem foi recusada. O custo só vale com saldo sem custo conhecido e quantidade contada maior que zero.",
     },
   ],
   ["invalid_receive_stock_input", { message: invalidDataMessage }],
@@ -914,6 +922,7 @@ function stockFailure(
   } = {}
 ): StockFailure {
   return {
+    balanceMoved: false,
     balanceRead: false,
     discardAttempt: options.discardAttempt ?? false,
     field: options.field ?? null,
@@ -955,6 +964,7 @@ const costReasonOutcomes = new Map<string, ReasonOutcome>([
     "inventory_version_conflict",
     {
       discardAttempt: true,
+      field: "valuationUnitCost",
       message:
         "O saldo mudou depois que você abriu o painel. Atualizamos o saldo: revise e confirme o custo de novo.",
       refreshBalance: true,
@@ -1143,22 +1153,46 @@ export function stockFieldRefusal(
   }
   return {
     field: failure.field,
-    message:
-      failure.reason === "insufficient_stock" && failure.balanceRead
-        ? `O servidor recusou: o saldo agora é ${formatQuantity(state.target.quantity)}. Reduza a quantidade.`
-        : failure.message,
+    message: failure.balanceRead
+      ? (balanceReadMessage(state, failure) ?? failure.message)
+      : failure.message,
   };
 }
 
+/** What a field refusal says once the balance is read: the number is the new one. */
+function balanceReadMessage(
+  state: StockCommandState,
+  failure: StockFailure
+): string | null {
+  const balance = formatQuantity(state.target.quantity);
+  if (failure.reason === "insufficient_stock") {
+    return `O servidor recusou: o saldo agora é ${balance}. Reduza a quantidade.`;
+  }
+  if (failure.reason === "inventory_version_conflict") {
+    const what = state.action === "cost" ? "o custo" : "a quantidade contada";
+    return failure.balanceMoved
+      ? `O saldo no sistema mudou para ${balance}. Confira ${what} e confirme de novo.`
+      : `Houve outro movimento nesta variante. O saldo no sistema é ${balance}. Confira ${what} e confirme de novo.`;
+  }
+  return null;
+}
+
 /** The balance came back: a refusal about a field quotes it from now on. */
-function markBalanceRead(state: StockCommandState): StockCommandState {
+function markBalanceRead(
+  state: StockCommandState,
+  quantity: number
+): StockCommandState {
   const { submission } = state;
   return submission.phase === "failed" && submission.failure.field !== null
     ? {
         ...state,
         submission: {
           ...submission,
-          failure: { ...submission.failure, balanceRead: true },
+          failure: {
+            ...submission.failure,
+            balanceMoved: quantity !== state.target.quantity,
+            balanceRead: true,
+          },
         },
       }
     : state;
@@ -1201,7 +1235,7 @@ export function retargetStock(
     return state;
   }
   return {
-    ...markBalanceRead(state),
+    ...markBalanceRead(state, balance.quantity),
     step: state.submission.phase === "locked" ? state.step : "editing",
     target: retarget(state.target, balance),
   };
