@@ -877,7 +877,7 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   const occurrence = listedExpense(page, "Assinatura do sistema");
   await expect(occurrence).toHaveCount(1);
   await expect(occurrence).toContainText("R$ 1.200,00");
-  await expect(occurrence).toContainText("Competência 14/10/2026");
+  await expect(occurrence).toContainText("Aluguel · 14/10/2026");
   await expect(
     occurrence.getByText("Recorrente", { exact: true })
   ).toBeVisible();
