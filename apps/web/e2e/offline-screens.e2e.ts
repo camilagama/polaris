@@ -5,6 +5,7 @@ import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
+const DAY_PICKER = /^Dia,/;
 const SHIRT_WITH_THREE = /Camiseta do laboratório · Azul.*Saldo 3/;
 const MONEY = /R\$\s*[\d.]+,\d{2}/;
 
@@ -503,7 +504,7 @@ test.describe("venda", () => {
         .filter({ hasText: "uma data digitada não fica guardada" })
     ).toBeVisible();
     await expect(page.getByLabel("Hora")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Dia,/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: DAY_PICKER })).toHaveCount(0);
 
     await fillShirtSale(page, 2);
     await keepSale(page).click();

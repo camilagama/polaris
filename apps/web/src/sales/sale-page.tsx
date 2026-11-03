@@ -306,8 +306,8 @@ export function SalePage() {
     return next;
   }, [organizationId]);
   const blankForm = useCallback(
-    (preset: SalePreset = presetRef.current) =>
-      applySalePreset(createBlankSaleForm(newId), preset),
+    (start: SalePreset = presetRef.current) =>
+      applySalePreset(createBlankSaleForm(newId), start),
     []
   );
   // the cart is work the session notice warns about, until the sale is confirmed or queued

@@ -128,7 +128,7 @@ test("venda sem estoque: a recusa leva à entrada, a venda em andamento volta e 
   await expect(back).toContainText("Caneca esmaltada");
   await expect(back.getByLabel("Quantidade")).toHaveValue("2");
   await expect(back.getByLabel("Preço cobrado")).toHaveValue("35,00");
-  await expect(back).toContainText("Saldo atual: 5 unidades.");
+  await expect(back).toContainText("Saldo 5");
   await tap(page.getByRole("button", { name: "Confirmar venda" }));
   await expect(page.getByRole("region", { name: CONFIRMED })).toBeVisible();
 

@@ -370,8 +370,7 @@ export function isSaleFormDirty(
     form.payment.installmentPlan !== "" ||
     form.payment.installments !== "" ||
     form.payment.anticipationRequested ||
-    (form.profile.choice !== preset.profileChoice &&
-      form.profile.choice !== "")
+    (form.profile.choice !== preset.profileChoice && form.profile.choice !== "")
   );
 }
 
@@ -1045,7 +1044,9 @@ export function saleExtrasSummary(
           .join(" ");
   const count = form.adjustments.length;
   const adjustmentsText =
-    count === 0 ? "Sem ajuste" : `${count} ${count === 1 ? "ajuste" : "ajustes"}`;
+    count === 0
+      ? "Sem ajuste"
+      : `${count} ${count === 1 ? "ajuste" : "ajustes"}`;
   return `${dateText} · ${adjustmentsText}`;
 }
 

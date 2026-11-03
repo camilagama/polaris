@@ -259,7 +259,10 @@ function SaleDate({ error, offline, onChange, value }: SaleDateProps) {
   const handleDay = useCallback(
     (next: string) =>
       onChange(
-        joinSaleDate(next, time === "" && next !== "" ? timeOfDay(new Date()) : time)
+        joinSaleDate(
+          next,
+          time === "" && next !== "" ? timeOfDay(new Date()) : time
+        )
       ),
     [onChange, time]
   );

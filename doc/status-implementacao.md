@@ -2771,3 +2771,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Filtros | Em revisão | `stock-filters.tsx`: busca e o botão "Filtros" (`Popover`, com o número de filtros ativos) na mesma linha; abas de saldo, "Sem custo" (caixa) e "Incluir arquivados" dentro dele; "Atualizar" virou botão de link na linha da contagem. |
 | Textos do painel | Em revisão | O painel aberto dentro da linha não tem linha sob o título (a linha da lista, logo acima, já diz o saldo e o custo); o painel do link da venda, sem linha acima, leva sob o título produto, variante, saldo e custo; a data do último movimento vai para o resumo da revisão; "Custo unitário para valoração (R$)" virou "Custo de cada unidade (R$)" com a dica "Opcional. Vale só se a quantidade contada for maior que zero."; "Feche o painel aberto para usar os botões." cabe em uma linha a 360 px. |
 | Provas | Em revisão | Unidade: `stock-command-model.test.ts` (valor inicial, conflito no campo, resumo), `stock-target.test.ts`; navegador: `e2e/stock-screen.e2e.ts` e `e2e-pwa/ui-stock-attention.e2e.ts`. As baselines de `estoque-lista`, `estoque-vazio` e `estoque-erro` mudam com a barra de filtros. |
+
+### Vender enxuta (t702)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Busca em popup | Em revisão | `src/ui/combobox.tsx` (Base UI Combobox, já dependência) e `sale-variant-picker.tsx`: as sugestões abrem ancoradas ao campo, por cima do formulário, só com toque ou clique no campo, ao digitar ou com a seta para baixo; Enter escolhe a destacada e não envia a venda; Escape fecha. O e2e de CLS mede o /sales em 0 (frio e quente) e as duas linhas saíram da lista de exceções. |
+| Item escolhido | Em revisão | "✓ Camiseta · Preta · Saldo 6 · Trocar" numa linha; "Trocar" reabre a busca com a atual marcada (`aria-selected`) e Escape volta à linha. Quantidade e preços só depois da escolha. "Remover", "Trocar", "−" e "+" levam o nome do item. |
+| Data e ajustes | Em revisão | Fechados na linha "Agora · Sem ajuste · Alterar"; o dia no `DatePicker` e a hora digitada (sai o `datetime-local`); sem conexão, o aviso de que a data digitada não fica guardada aparece no lugar do campo. |
+| Resumo | Em revisão | Só o que foi escolhido: sem "ainda não escolhido", sem "Ajustes nenhum", a prévia com título só quando existe. |
+| Escolhas lembradas | Em revisão | `last-payment-model.ts`: método e perfil da última venda deste aparelho, por loja, no `localStorage`; "Sem perfil" já escolhido na loja sem perfil ativo; o que a tela escolhe não é venda em andamento. |
+| Medida | Em revisão | A 360 px, antes do 1º toque: 2.206 → 1.384 px; repetir uma venda: 5 → 3 toques (busca, produto, confirmar), sem rolagem. A 1280: 1.310 → 802 px. |
