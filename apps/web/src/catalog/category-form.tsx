@@ -65,7 +65,7 @@ export function CategoryForm({
         <form noValidate onSubmit={handleSubmit}>
           <Field className="min-w-0" data-invalid={Boolean(error)}>
             <FieldLabel htmlFor="category-name">Nova categoria</FieldLabel>
-            <div className="flex flex-col gap-3 min-[30rem]:flex-row">
+            <div className="flex flex-col gap-3 min-[30rem]:flex-row min-[30rem]:items-center">
               <InputGroup className="min-[30rem]:flex-1">
                 <InputGroupInput
                   aria-describedby="category-name-text"

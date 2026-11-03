@@ -81,7 +81,7 @@ function ReadLinks() {
   return (
     <ul className="m-0 flex list-none flex-wrap gap-x-6 p-0 text-sm">
       {(["terms", "privacy"] as const).map((document) => (
-        <li className="flex min-h-8 touch:min-h-12 items-center" key={document}>
+        <li className="flex min-h-8 touch:min-h-11 items-center" key={document}>
           <a
             className={TEXT_LINK}
             href={LEGAL_PATHS[document]}

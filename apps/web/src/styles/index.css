@@ -85,6 +85,22 @@
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/*
+ * Until Geist arrives (first visit, before the cache), the text is drawn in Arial scaled to Geist's metrics, so the
+ * swap changes no line box and moves nothing. Measured from geist-latin-wght-normal.woff2 (default instance, wght 400)
+ * against Liberation Sans (Arial's metrics): the average advance of the app's Portuguese text gives size-adjust, and
+ * Geist's typo ascent 1005 and descent 295 per 1000 divided by it give the overrides. No Arial (Linux): the face is
+ * skipped and the next family of the stack is used.
+ */
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("ArialMT");
+  size-adjust: 103.19%;
+  ascent-override: 97.39%;
+  descent-override: 28.59%;
+  line-gap-override: 0%;
+}
+
 @font-face {
   font-display: swap;
   font-family: "Geist Mono Variable";

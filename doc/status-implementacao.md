@@ -2752,3 +2752,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Smoke | Em revisão | `scripts/smoke-staging.mjs`: 15 verificações (release no `/health` e no `robots.txt` contra `HEAD_SHA`, shell `/`, `/sw.js` e `/entrar` iguais ao artefato `apps/web/dist/client`, `auth-methods`, `system/ping` com a origem do app, sem `Origin`, de origem estranha e com `Origin: null` (as três exigem 403 com `error.code` `forbidden`), get-session vazio, catálogo, e por último `listMine` e `createInitial` anônimos com 401). `User-Agent: polaris-staging-smoke/1`; POST só para os hosts fixos; 503 ou resposta sem `X-Request-Id` nas duas chamadas anônimas falha uma vez como `cpu/plataforma`. Teto: 15 × 40 s = 10 min. |
 | Workflow | Pendente (responsável) | `timeout-minutes: 12` no passo `Smoke` (patch na descrição do PR); o repositório não muda `.github/workflows`. |
 | Fora | Registrado | Escrita automática com sessão guardada, leitura de dado de tenant, a leitura de `wrangler deployments status` (parte B) e o cabeçalho em produção (item 8 do checklist). |
+
+### Tamanho de toque por papel no app inteiro (t694)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Campo e seletor | Em revisão | `InputGroup` e `Select` (tamanho padrão) com 44 px no toque (`touch:h-11`); a caixa de texto de várias linhas segue `h-auto touch:h-auto`. DESIGN.md (tabela de papéis) e emenda do ADR 0103 dizem o mesmo; o teste `styles/touch-roles.test.ts` guarda. |
+| Ação principal | Em revisão | `Button size="xl"` (44 no toque, 36 no mouse) nos botões da entrada, "Nova venda" do Início, "Confirmar venda" (resumo e barra fixa), "Aplicar" da barra de filtros e "Ver período" do Resultado. O botão comum fica em 36 px com área de 44 (`touch-hit`). |
+| Sobras de 48 px | Em revisão | Lateral, folha "Mais", seletor de loja, aceite, sumário dos textos legais e o X da pílula de filtro passam a 44 px; o teste reprova qualquer `touch:*-12` novo em `src/`. |
+| Medida de alvos | Em revisão | A verificação 2 do e2e (`ui-guardrails`) segue sem falha em 320 e 360 px; não achou sobreposição nas abas 7/30 do Início nem nas ações de Metas (as áreas de 44 px só crescem na vertical), só o espaço entre "Editar" e "Anular" das Despesas passou a 12 px. |

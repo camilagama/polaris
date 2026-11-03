@@ -90,6 +90,14 @@ export default defineConfig({
       ],
       use: { ...desktop, baseURL: origin("runtime-ligado") },
     },
+    // layout shift of the phone on the runtime build (the deployed one); never retried: a flaky measurement shows at once
+    {
+      dependencies: ["pilha"],
+      name: "layout-shift",
+      retries: 0,
+      testMatch: "cls/*.e2e.ts",
+      use: { ...desktop, baseURL: origin("runtime-ligado") },
+    },
   ],
   reporter: [
     ["list"],

@@ -42,7 +42,7 @@ for (const { path, title } of pages) {
       ).toHaveCount(0);
     });
 
-    test("a 360 px não rola de lado e os links do sumário têm 48 px", async ({
+    test("a 360 px não rola de lado e os links do sumário têm 44 px", async ({
       page,
     }) => {
       await page.setViewportSize({ height: 800, width: 360 });
@@ -65,7 +65,7 @@ for (const { path, title } of pages) {
         elements.map((element) => element.getBoundingClientRect().height)
       );
       for (const height of heights) {
-        expect(height).toBeGreaterThanOrEqual(48);
+        expect(height).toBeGreaterThanOrEqual(44);
       }
     });
 

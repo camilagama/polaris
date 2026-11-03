@@ -29,9 +29,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
    does (map of navigation, § 5): `Ctrl+B` (or `⌘B`), the rail on its edge and the button at its top, the name of each
    item in a tooltip, and the choice kept on the device (`localStorage`, as the cookie of the shadcn would be: the app
    has no server render to read it). From 760 to 1023 px it never folds. Focus is the 3 px outline (`focus-ring`);
-   items are 32 px with a mouse and 48 px with touch; the group label has no transparency. */
+   items are 32 px with a mouse and 44 px with touch; the group label has no transparency. */
 const SIDEBAR_WIDTH = "16rem";
-/** The folded column: 32 px items in 8 px of room on each side, and the 48 px of an item with touch. */
+/** The folded column: 32 px items in 8 px of room on each side, and the 44 px of an item with touch. */
 const SIDEBAR_WIDTH_ICON = "3rem";
 /** The width from which the column folds (map of navigation, § 5). */
 const COLLAPSIBLE_QUERY = "(min-width: 1024px)";
@@ -385,7 +385,7 @@ function SidebarTrigger({ className, ...props }: ComponentProps<"button">) {
     <button
       aria-expanded={state === "expanded"}
       className={cx(
-        "focus-ring inline-flex size-ctl-sm touch:size-12 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-4",
+        "focus-ring inline-flex size-ctl-sm touch:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-4",
         className
       )}
       data-sidebar="trigger"
@@ -536,10 +536,10 @@ function SidebarMenuItem({ className, ...props }: ComponentProps<"li">) {
   );
 }
 
-/** The height of an item: one line of 32 px (48 with touch), or "lg", two lines as tall as they need from there. */
+/** The height of an item: one line of 32 px (44 with touch), or "lg", two lines as tall as they need from there. */
 const MENU_BUTTON_SIZES = {
-  default: "h-8 touch:h-12 items-center",
-  lg: "min-h-8 touch:min-h-12 items-start group-data-[collapsible=icon]:items-center",
+  default: "h-8 touch:h-11 items-center",
+  lg: "min-h-8 touch:min-h-11 items-start group-data-[collapsible=icon]:items-center",
 } as const;
 
 /**
@@ -562,7 +562,7 @@ function SidebarMenuButton({
   const button = (
     <a
       className={cx(
-        `peer/menu-button focus-ring relative flex ${MENU_BUTTON_SIZES[size]} w-full gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-12 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0`,
+        `peer/menu-button focus-ring relative flex ${MENU_BUTTON_SIZES[size]} w-full gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0`,
         className
       )}
       data-active={isActive ? "" : undefined}

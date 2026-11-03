@@ -461,7 +461,7 @@ export function SummaryPanel({
             aria-busy={isSubmitting(submission) || undefined}
             className="w-full max-[899.98px]:hidden"
             disabled={isSubmitting(submission)}
-            size="lg"
+            size="xl"
             type="submit"
           >
             {submitButtonLabel(submission, offline)}
@@ -506,9 +506,9 @@ export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
       </div>
       <Button
         aria-busy={isSubmitting(submission) || undefined}
-        className="h-auto min-h-ctl-lg min-w-0 shrink whitespace-normal py-1.5"
+        className="h-auto min-h-ctl-xl min-w-0 shrink whitespace-normal py-1.5"
         disabled={isSubmitting(submission)}
-        size="lg"
+        size="xl"
         type="submit"
       >
         {submitButtonLabel(submission, offline)}
