@@ -7,6 +7,7 @@ import { cents, numericCents, saleTotals } from "../oracle";
 import { confirmSale, fillSale } from "../pages/venda";
 import { seedProduct, seedStock } from "../seed";
 
+const REFUSED_SALE_TITLE = /^Venda de R\$ 70,00 · \d{2}\/\d{2} \d{2}:\d{2}$/;
 const ZONE = "America/Sao_Paulo";
 const CLOSED_PANEL = /\/loja-encerrada\?loja=/;
 const REOPENED = /\/\?reaberta=1$/;
@@ -266,11 +267,12 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   // the sale stays visible in Pendências, with its value and date, and without promising the access back
   await page.goto("/attention");
   const refusedSale = page.getByRole("listitem").filter({
-    has: page.getByRole("heading", { name: "Venda de 1 item" }),
+    has: page.getByRole("heading", {
+      name: REFUSED_SALE_TITLE,
+    }),
   });
   await expect(refusedSale).toBeVisible({ timeout: 30_000 });
   await expect(refusedSale).toContainText("R$ 70,00");
-  await expect(refusedSale).toContainText("feita em");
   await expect(refusedSale).toContainText("O servidor recusou esta venda");
   await expect(refusedSale).toContainText("Ela não é enviada sozinha");
   await expect(refusedSale).toContainText("registre a venda de novo");

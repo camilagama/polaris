@@ -83,3 +83,63 @@ test("onboarding: abre a loja com nome e fuso, e repetir não duplica", async ({
     })
   ).resolves.toBeTruthy();
 });
+
+/**
+ * The first access offers "Sair" with the offline runtime off (this project's build): who signed in with the wrong
+ * account sees which one and can leave, and the server no longer knows the session afterwards.
+ */
+test("onboarding: a conta aparece com o Sair e Sair leva à tela de entrar", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "onboarding-sair", {
+    organization: false,
+  });
+  const { page } = journey;
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Abra a sua loja" })
+  ).toBeVisible();
+  await expect(
+    page.getByText(`Entrou como ${journey.name}@e2e.invalid. Não é você?`)
+  ).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Sair" }).click();
+  await page.waitForURL("**/entrar**");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Entrar" })
+  ).toBeVisible();
+
+  await page.goto("/");
+  await page.waitForURL("**/entrar**");
+});
+
+/**
+ * With the offline runtime off nothing of the device is cleared before the session ends, so a sign-out the server
+ * refuses must not say that data was erased.
+ */
+test("onboarding: o Sair que falha, sem runtime, não diz que apagou dados", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "onboarding-sair-falha",
+    {
+      organization: false,
+    }
+  );
+  const { page } = journey;
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Abra a sua loja" })
+  ).toBeVisible();
+  await page.route("**/api/auth/sign-out", (route) =>
+    route.fulfill({ body: "{}", contentType: "application/json", status: 500 })
+  );
+  await page.getByRole("button", { exact: true, name: "Sair" }).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Não foi possível sair. Confira a internet e tente de novo."
+  );
+  await expect(page.getByText("apagados")).toHaveCount(0);
+  expect(new URL(page.url()).pathname).toBe("/");
+});

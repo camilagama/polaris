@@ -21,7 +21,8 @@ export interface LogoutDialogProps {
   onCancel: () => void;
   onDiscard: () => void;
   onRetry: () => void;
-  onShowAttention: () => void;
+  /** Left out where the person already is on the page of attention: the button would go nowhere. */
+  onShowAttention?: (() => void) | undefined;
 }
 
 const REASON_TEXT: Record<LogoutBlockReason, string> = {
@@ -120,7 +121,7 @@ export function LogoutDialog({
             <Button disabled={busy} onClick={onRetry} type="button">
               Tentar enviar de novo
             </Button>
-            {needsAttention ? (
+            {needsAttention && onShowAttention ? (
               <Button
                 disabled={busy}
                 onClick={onShowAttention}

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PageLoading } from "../../app-shell/page-loading";
+import { signInPath } from "../../lib/sign-in-path";
 import {
   type AttentionItem,
   type AttentionSummary,
@@ -8,10 +9,13 @@ import {
   resubmitAttentionItem,
 } from "../attention";
 import {
+  type AttentionError,
   AttentionFrame,
   AttentionPanel,
   AttentionStateCard,
+  signInAgainButtonId,
 } from "../attention-panel";
+import { LogoutNotices, useLogout } from "./logout-control";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -21,12 +25,16 @@ import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
  */
 const EMPTY: AttentionSummary = { items: [], waitingBehind: 0 };
 
+/** "Sair e entrar de novo": the queue is protected first, then the sign-in screen brings the person back here. */
+const SIGN_IN_AGAIN = signInPath({ reason: "saiu", returnTo: "/attention" });
+
 export function AttentionPage() {
   const runtime = useOfflineRuntime();
   const snapshot = useRuntimeSnapshot();
   const [summary, setSummary] = useState<AttentionSummary>(EMPTY);
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AttentionError | null>(null);
+  const logout = useLogout(SIGN_IN_AGAIN);
 
   const counts = snapshot?.counts;
   useEffect(() => {
@@ -59,7 +67,7 @@ export function AttentionPage() {
         await runtime?.refreshCounts();
         runtime?.syncNow().catch(() => undefined);
       } catch {
-        setError(message);
+        setError({ commandId: item.commandId, message });
       } finally {
         setBusy(null);
       }
@@ -93,13 +101,27 @@ export function AttentionPage() {
     },
     [resolve, runtime]
   );
-  const handleReviewAccount = useCallback(
-    () =>
-      setError(
-        "Abra o menu e use Sair para entrar de novo com uma conta autorizada. O que está na fila fica guardado neste aparelho até lá."
-      ),
-    []
+  const { blocked, start: startLogout } = logout;
+  const signInFrom = useRef<string | null>(null);
+  const wasBlocked = useRef<boolean>(false);
+  const handleSignInAgain = useCallback(
+    (item: AttentionItem) => {
+      signInFrom.current = item.commandId;
+      setError(null);
+      startLogout();
+    },
+    [startLogout]
   );
+  // the panel that said what the sign-out would lose is gone once the person keeps the session: the focus goes back to
+  // the button that asked
+  useEffect(() => {
+    if (blocked) {
+      wasBlocked.current = true;
+    } else if (wasBlocked.current && signInFrom.current) {
+      wasBlocked.current = false;
+      document.getElementById(signInAgainButtonId(signInFrom.current))?.focus();
+    }
+  }, [blocked]);
 
   if (!(runtime && snapshot)) {
     return (
@@ -125,10 +147,12 @@ export function AttentionPage() {
   return (
     <AttentionPanel
       busyCommandId={busy}
-      errorMessage={error}
+      error={error}
+      notices={<LogoutNotices inAttentionPage logout={logout} />}
       onDiscard={handleDiscard}
       onResubmit={handleResubmit}
-      onReviewAccount={handleReviewAccount}
+      onSignInAgain={handleSignInAgain}
+      signingOut={logout.busy}
       summary={summary}
     />
   );
