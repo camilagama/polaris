@@ -16,6 +16,26 @@ const blocked = (
   ...overrides,
 });
 
+const refusedWork = () =>
+  blocked({
+    attention: {
+      items: [
+        {
+          actions: ["discard"],
+          blocksQueue: true,
+          cause: "sku_conflict",
+          code: "sku_conflict",
+          commandId: "0199c2d0-0000-7000-8000-000000000101",
+          detail: "x",
+          kind: "product",
+          title: "Produto",
+        },
+      ],
+      waitingBehind: 0,
+    },
+    reason: "refused",
+  });
+
 function render(items: BlockedWorkspace[], busy = false): string {
   return renderToStaticMarkup(
     <LogoutDialog
@@ -30,6 +50,20 @@ function render(items: BlockedWorkspace[], busy = false): string {
 }
 
 describe("the logout dialog", () => {
+  it("leaves out Ver Pendências where the person is already on that page", () => {
+    const html = renderToStaticMarkup(
+      <LogoutDialog
+        blocked={[refusedWork()]}
+        onCancel={none}
+        onDiscard={none}
+        onRetry={none}
+      />
+    );
+    expect(html).not.toContain("Ver Pendências");
+    expect(html).toContain("Ficar conectado");
+    expect(render([refusedWork()])).toContain("Ver Pendências");
+  });
+
   it("says how much work would be lost and why it could not be sent", () => {
     const html = render([blocked()]);
     expect(html).toContain("2 operações");
@@ -59,7 +93,6 @@ describe("the logout dialog", () => {
               code: "sku_conflict",
               commandId: "0199c2d0-0000-7000-8000-000000000101",
               detail: "x",
-              facts: null,
               kind: "product",
               title: "Produto",
             },
