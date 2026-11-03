@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
+import { FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
 import {
   Field,
   FieldDescription,
@@ -32,7 +33,6 @@ import {
   FieldSet,
 } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
-import { FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
 import {
   ProductTextAreaField,
   ProductTextField,
@@ -69,10 +69,7 @@ function ContactField({
   );
   return (
     <Field className="min-w-0" data-invalid={invalid}>
-      <FieldLabel htmlFor={id}>
-        {label}{" "}
-        <span className="font-normal text-muted-foreground">Opcional</span>
-      </FieldLabel>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <InputGroup>
         <InputGroupInput
           aria-describedby={invalid ? "customer-contact-error" : undefined}
@@ -85,6 +82,54 @@ function ContactField({
         />
       </InputGroup>
     </Field>
+  );
+}
+
+interface ContactGroupProps {
+  contactError: string | null;
+  email: string;
+  onEmail: (value: string) => void;
+  onPhone: (value: string) => void;
+  phone: string;
+}
+
+/** One of the two is required, so neither says "Opcional": the legend says it once, over both. */
+export function ContactGroup({
+  contactError,
+  email,
+  onEmail,
+  onPhone,
+  phone,
+}: ContactGroupProps) {
+  return (
+    <FieldSet aria-describedby="customer-contact-help">
+      <FieldLegend className="mb-3" variant="label">
+        Telefone ou e-mail (um dos dois)
+      </FieldLegend>
+      <div className="grid gap-4 md:grid-cols-2">
+        <ContactField
+          autoComplete="tel"
+          id="customer-phone"
+          invalid={contactError !== null}
+          label="Telefone"
+          onChange={onPhone}
+          type="tel"
+          value={phone}
+        />
+        <ContactField
+          autoComplete="email"
+          id="customer-email"
+          invalid={contactError !== null}
+          label="Email"
+          onChange={onEmail}
+          type="email"
+          value={email}
+        />
+      </div>
+      <FieldDescription id="customer-contact-help">
+        Email e telefone podem se repetir entre clientes.
+      </FieldDescription>
+    </FieldSet>
   );
 }
 
@@ -359,37 +404,13 @@ export function CustomerForm({
                 value={draft.name}
               />
             </div>
-            <FieldSet aria-describedby="customer-contact-help">
-              <FieldLegend className="mb-3" variant="label">
-                Contato{" "}
-                <span className="font-normal text-muted-foreground">
-                  Informe telefone ou email
-                </span>
-              </FieldLegend>
-              <div className="grid gap-4 md:grid-cols-2">
-                <ContactField
-                  autoComplete="tel"
-                  id="customer-phone"
-                  invalid={contactError !== null}
-                  label="Telefone"
-                  onChange={handlePhone}
-                  type="tel"
-                  value={draft.phone}
-                />
-                <ContactField
-                  autoComplete="email"
-                  id="customer-email"
-                  invalid={contactError !== null}
-                  label="Email"
-                  onChange={handleEmail}
-                  type="email"
-                  value={draft.email}
-                />
-              </div>
-              <FieldDescription id="customer-contact-help">
-                Email e telefone podem se repetir entre clientes.
-              </FieldDescription>
-            </FieldSet>
+            <ContactGroup
+              contactError={contactError}
+              email={draft.email}
+              onEmail={handleEmail}
+              onPhone={handlePhone}
+              phone={draft.phone}
+            />
             {/* always in the tree, so the panel that appears after the check is announced (U-25) */}
             <p className="sr-only" role="status">
               {duplicateMatches.length > 0

@@ -111,6 +111,16 @@ async function settle(page: Page) {
 }
 
 /**
+ * On the phone the content of the shell is at least as tall as the window (so the footer does not jump while the screen
+ * loads), which would make the page grow with the window and never fit it: the capture takes the page at its own height.
+ */
+async function dropShellHeightFloor(page: Page) {
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty("--shell-main-min", "0px")
+  );
+}
+
+/**
  * The whole page in the window, drawn before the capture: `fullPage` grows the window while it captures, and the
  * charts, which measure their box with a ResizeObserver, could be drawn for the passing size.
  */
@@ -238,6 +248,7 @@ for (const { file, screen } of STATES) {
         await page.clock.install({ time: CLOCK });
         await screen.open(page, page.context());
         await expectImagePlatform(page);
+        await dropShellHeightFloor(page);
         await showWholePage(page, VIEWPORTS[viewport].width);
         await expect(page).toHaveScreenshot(
           `${file}-${viewport}-${theme}.png`,

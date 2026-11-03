@@ -305,7 +305,8 @@ export function AttentionPanel({
     return (
       <AttentionFrame>
         <AttentionStateCard>
-          Nada precisa de atenção. Tudo o que foi feito offline foi aceito.
+          Nenhum registro recusado neste aparelho. Tudo o que foi feito sem
+          internet foi aceito.
         </AttentionStateCard>
       </AttentionFrame>
     );

@@ -9,7 +9,7 @@ export const pendingDateTime = new Intl.DateTimeFormat("pt-BR", {
 });
 
 export const pendingStateLabels: Record<PendingSale["state"], string> = {
-  needs_attention: "Precisa de atenção",
+  needs_attention: "Precisa de ação",
   pending: "Aguardando envio",
   rejected: "Recusada pelo servidor",
   syncing: "Enviando…",

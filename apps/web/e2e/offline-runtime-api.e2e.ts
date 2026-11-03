@@ -646,7 +646,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     );
   });
 
-  test("push respondendo session_changed: o comando fica na fila com o mesmo ID e a venda precisa de atenção", async ({
+  test("push respondendo session_changed: o comando fica na fila com o mesmo ID e a venda precisa de ação", async ({
     page,
   }) => {
     const user = `user-${crypto.randomUUID()}`;
@@ -659,7 +659,7 @@ test.describe("createRpcRuntimeApi no app real, com o servidor interceptado", ()
     await page.context().setOffline(false);
 
     await expect(
-      page.getByText("Precisa de atenção", { exact: true })
+      page.getByText("Precisa de ação", { exact: true })
     ).toBeVisible({
       timeout: 20_000,
     });
