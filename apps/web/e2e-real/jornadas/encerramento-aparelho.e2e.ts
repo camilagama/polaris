@@ -260,10 +260,7 @@ test("encerramento no aparelho: a venda guardada sem internet sobrevive ao encer
   await expect(refusedSale).toContainText("O servidor recusou esta venda");
   await expect(refusedSale).toContainText("Ela não é enviada sozinha");
   await expect(refusedSale).toContainText(
-    "use Refazer esta venda: Vender abre com os itens"
-  );
-  await expect(refusedSale).toContainText(
-    "Só depois de confirmar, descarte esta"
+    "toque em Refazer esta venda e, depois de confirmar a nova, descarte esta"
   );
   await expect(refusedSale).not.toContainText("registre a venda de novo");
   await expect(refusedSale).not.toContainText("não o recebeu");

@@ -33,6 +33,7 @@ import {
   localStockEntries,
   readLocalCatalog,
 } from "../offline/local-stock-entries";
+import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { REDO_DONE_NOTICE, REDO_OPENED_NOTICE } from "../offline/sale-redo";
 import {
   finishSaleRedo,
@@ -181,9 +182,26 @@ function draftReadMessage(read: SaleDraftRead): string | null {
   return read.kind === "unreadable" ? DRAFT_UNREADABLE_MESSAGE : null;
 }
 
+function openRedoNotice(
+  redoKey: string | null,
+  restoredDraft: { startedAt: string } | null
+): string | null {
+  return redoKey !== null &&
+    isOpenRedoDraft(
+      readSaleRedos(browserStorage(), redoKey),
+      restoredDraft?.startedAt ?? null
+    )
+    ? REDO_OPENED_NOTICE
+    : null;
+}
+
 export function SalePage() {
   const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
+  const runtime = useOfflineRuntime();
+  const redoKey = runtime?.namespaceKey(organizationId) ?? null;
+  const redoKeyRef = useRef(redoKey);
+  redoKeyRef.current = redoKey;
   const canAdjustStock = hasCapabilityForRole(
     organization.role,
     "inventory:adjust"
@@ -381,12 +399,7 @@ export function SalePage() {
 
   useEffect(() => {
     // set after the mount, so the live region is in the tree before the notice arrives and it is announced
-    const redoNotice = isOpenRedoDraft(
-      readSaleRedos(browserStorage(), organizationId),
-      restoredDraft?.startedAt ?? null
-    )
-      ? REDO_OPENED_NOTICE
-      : null;
+    const redoNotice = openRedoNotice(redoKeyRef.current, restoredDraft);
     setDraftNotice(draftReadMessage(draftRead) ?? redoNotice);
     const readIds = restoredDraft ? draftVariantIds(restoredDraft.form) : [];
     if (readIds.length === 0) {
@@ -433,6 +446,14 @@ export function SalePage() {
     };
     // once, for the cart that came back with the mount
   }, [draftRead, organizationId, readLines, restoredAttempt, restoredDraft]);
+
+  useEffect(() => {
+    // the queue namespace may open after the page did: the redo it names is only known from then on
+    const redoNotice = openRedoNotice(redoKey, restoredDraft);
+    if (redoNotice) {
+      setDraftNotice((current) => current ?? redoNotice);
+    }
+  }, [redoKey, restoredDraft]);
 
   const activeProfiles = useMemo(
     () => (catalog.profiles.status === "ready" ? catalog.profiles.value : []),
@@ -601,9 +622,10 @@ export function SalePage() {
         forgetDraft();
         const redone =
           sentCommandId !== null &&
+          redoKeyRef.current !== null &&
           finishSaleRedo(
             browserStorage(),
-            organizationId,
+            redoKeyRef.current,
             sentDraftStartedAt,
             sentCommandId
           );

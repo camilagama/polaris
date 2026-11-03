@@ -4,7 +4,9 @@ import type { PreferenceStorage } from "../lib/current-organization-model";
  * The link between a sale the server refused and the new sale that redoes it. It lives in `localStorage`, not in
  * the tab like the draft: a tab closed after the new sale was recorded must not bring "Refazer esta venda" back for
  * a sale that is already redone. It holds command IDs and the start of the draft, nothing about a person or a sale.
- * An entry goes away when its refused command leaves the queue.
+ * An entry goes away when its refused command leaves the queue. It is kept per queue namespace (the hash of user and
+ * organization that names the outbox, ADR 0015): the queue that decides what is pruned is the one of that namespace,
+ * so another user of the same browser and store never sees or prunes it.
  */
 export const SALE_REDO_KEY_PREFIX = "polaris.sale.redo.v1:";
 
@@ -17,8 +19,7 @@ export interface SaleRedo {
   startedAt: string;
 }
 
-const key = (organizationId: string) =>
-  `${SALE_REDO_KEY_PREFIX}${organizationId}`;
+const key = (namespaceKey: string) => `${SALE_REDO_KEY_PREFIX}${namespaceKey}`;
 
 const isText = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= 64;
@@ -37,10 +38,10 @@ function isRedo(value: unknown): value is SaleRedo {
 
 export function readSaleRedos(
   storage: PreferenceStorage | null,
-  organizationId: string
+  namespaceKey: string
 ): SaleRedo[] {
   try {
-    const text = storage?.getItem(key(organizationId));
+    const text = storage?.getItem(key(namespaceKey));
     const parsed: unknown = text ? JSON.parse(text) : [];
     return Array.isArray(parsed) ? parsed.filter(isRedo) : [];
   } catch {
@@ -50,14 +51,14 @@ export function readSaleRedos(
 
 function write(
   storage: PreferenceStorage | null,
-  organizationId: string,
+  namespaceKey: string,
   redos: readonly SaleRedo[]
 ): void {
   try {
     if (redos.length === 0) {
-      storage?.removeItem(key(organizationId));
+      storage?.removeItem(key(namespaceKey));
     } else {
-      storage?.setItem(key(organizationId), JSON.stringify(redos));
+      storage?.setItem(key(namespaceKey), JSON.stringify(redos));
     }
   } catch {
     // a blocked storage only loses the link: the refused sale stays in Pendências as it was
@@ -84,11 +85,11 @@ export function isOpenRedoDraft(
  */
 export function startSaleRedo(
   storage: PreferenceStorage | null,
-  organizationId: string,
+  namespaceKey: string,
   refusedCommandId: string,
   startedAt: string
 ): boolean {
-  const redos = readSaleRedos(storage, organizationId);
+  const redos = readSaleRedos(storage, namespaceKey);
   if (
     redos.some(
       (redo) =>
@@ -98,7 +99,7 @@ export function startSaleRedo(
   ) {
     return false;
   }
-  write(storage, organizationId, [
+  write(storage, namespaceKey, [
     ...redos.filter((redo) => redo.refusedCommandId !== refusedCommandId),
     { redoneCommandId: null, refusedCommandId, startedAt },
   ]);
@@ -111,20 +112,20 @@ export function startSaleRedo(
  */
 export function finishSaleRedo(
   storage: PreferenceStorage | null,
-  organizationId: string,
+  namespaceKey: string,
   startedAt: string | null,
   redoneCommandId: string
 ): boolean {
   if (startedAt === null) {
     return false;
   }
-  const redos = readSaleRedos(storage, organizationId);
+  const redos = readSaleRedos(storage, namespaceKey);
   if (!isOpenRedoDraft(redos, startedAt)) {
     return false;
   }
   write(
     storage,
-    organizationId,
+    namespaceKey,
     redos.map((redo) =>
       redo.startedAt === startedAt && redo.redoneCommandId === null
         ? { ...redo, redoneCommandId }
@@ -137,15 +138,15 @@ export function finishSaleRedo(
 /** Forgets the entries whose refused command is no longer in the queue (it was discarded). */
 export function pruneSaleRedos(
   storage: PreferenceStorage | null,
-  organizationId: string,
+  namespaceKey: string,
   queuedCommandIds: ReadonlySet<string>
 ): void {
-  const redos = readSaleRedos(storage, organizationId);
+  const redos = readSaleRedos(storage, namespaceKey);
   const kept = redos.filter((redo) =>
     queuedCommandIds.has(redo.refusedCommandId)
   );
   if (kept.length !== redos.length) {
-    write(storage, organizationId, kept);
+    write(storage, namespaceKey, kept);
   }
 }
 

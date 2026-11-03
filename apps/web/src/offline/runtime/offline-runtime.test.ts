@@ -485,6 +485,24 @@ describe("starting", () => {
     expect(w.stores.has(`user-2-${organizationId}`)).toBe(true);
   });
 
+  it("names the open namespace by user and store for what the browser keeps about the queue, and by no other store", async () => {
+    const w = world();
+    const first = w.make();
+    expect(first.namespaceKey(organizationId)).toBeNull();
+    await first.start(organizationId);
+    const firstKey = first.namespaceKey(organizationId);
+    expect(firstKey).not.toBeNull();
+    expect(first.namespaceKey("another-organization")).toBeNull();
+    await first.stop();
+
+    w.session.user = "user-2";
+    const second = w.make();
+    await second.start(organizationId);
+
+    expect(second.namespaceKey(organizationId)).not.toBeNull();
+    expect(second.namespaceKey(organizationId)).not.toBe(firstKey);
+  });
+
   it("a second user never sees the first one's data, even when the server cannot say whose the device is", async () => {
     const w = world();
     const first = w.make();

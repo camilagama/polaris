@@ -447,6 +447,17 @@ export class OfflineRuntime {
     };
   };
 
+  /**
+   * The key of the open namespace (the hash of user and organization that names the queue), or null while none is
+   * open for `organizationId`. State kept in the browser about the queue of this user (not about the organization)
+   * is keyed by it.
+   */
+  namespaceKey(organizationId: string): string | null {
+    return this.namespace?.organizationId === organizationId
+      ? this.namespace.key
+      : null;
+  }
+
   /** What a screen needs to queue a command, or null when the runtime is not ready. */
   context(): RuntimeContext | null {
     if (

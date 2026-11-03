@@ -162,7 +162,7 @@ const REVOKED_CODE = "authorization_revoked";
 
 function revokedDetail(kind: AttentionItem["kind"]): string {
   if (kind === "sale") {
-    return "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda aconteceu, use Refazer esta venda: Vender abre com os itens, os preços e o pagamento desta venda, e ao confirmar entra uma venda nova. Só depois de confirmar, descarte esta. Se o seu acesso mudou, confira em Revisar acesso e plano.";
+    return "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta.";
   }
   return "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, anote o que ele tinha, descarte este e faça o registro de novo. Se o seu acesso mudou, confira em Revisar acesso e plano.";
 }

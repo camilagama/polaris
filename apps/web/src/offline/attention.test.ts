@@ -355,7 +355,7 @@ describe("resolving an item", () => {
       `R$ 20,00 · feita em ${formatInstant(now.toISOString())}`
     );
     expect(item.detail).toBe(
-      "O servidor recusou esta venda: a permissão deste aparelho mudou depois que ela foi registrada (por exemplo, a loja foi encerrada e reaberta). Ela não é enviada sozinha. Se a venda aconteceu, use Refazer esta venda: Vender abre com os itens, os preços e o pagamento desta venda, e ao confirmar entra uma venda nova. Só depois de confirmar, descarte esta. Se o seu acesso mudou, confira em Revisar acesso e plano."
+      "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta."
     );
     expect(item.detail).not.toContain("não o recebeu");
     expect(item.detail).not.toContain("se o acesso não voltar");

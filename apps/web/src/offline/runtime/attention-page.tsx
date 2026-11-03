@@ -74,6 +74,7 @@ async function readLineEntries(
 function openDraftOf(
   refusedCommandId: string,
   organizationId: string,
+  namespaceKey: string,
   timezone: string | null
 ): "mine" | "none" | "other" {
   const draft = readSaleDraft(
@@ -85,7 +86,7 @@ function openDraftOf(
   if (draft.kind !== "restored") {
     return "none";
   }
-  const mine = readSaleRedos(browserStorage(), organizationId).some(
+  const mine = readSaleRedos(browserStorage(), namespaceKey).some(
     (redo) =>
       redo.refusedCommandId === refusedCommandId &&
       redo.redoneCommandId === null &&
@@ -104,6 +105,7 @@ async function redoSale(
   refusedCommandId: string,
   outbox: Outbox,
   organizationId: string,
+  namespaceKey: string,
   timezone: string | null
 ): Promise<RedoOutcome> {
   const { commands } = await outbox.snapshot();
@@ -113,7 +115,12 @@ async function redoSale(
   if (!command) {
     return { message: REDO_FAILED_MESSAGE };
   }
-  const open = openDraftOf(refusedCommandId, organizationId, timezone);
+  const open = openDraftOf(
+    refusedCommandId,
+    organizationId,
+    namespaceKey,
+    timezone
+  );
   if (open !== "none") {
     return open === "mine" ? "opened" : { message: REDO_BUSY_MESSAGE };
   }
@@ -132,12 +139,7 @@ async function redoSale(
   }
   const startedAt = new Date().toISOString();
   if (
-    !startSaleRedo(
-      browserStorage(),
-      organizationId,
-      refusedCommandId,
-      startedAt
-    )
+    !startSaleRedo(browserStorage(), namespaceKey, refusedCommandId, startedAt)
   ) {
     return { message: REDO_ALREADY_MESSAGE };
   }
@@ -168,7 +170,8 @@ export function AttentionPage() {
   const counts = snapshot?.counts;
   useEffect(() => {
     const context = runtime?.context();
-    if (!context) {
+    const namespaceKey = runtime?.namespaceKey(organizationId) ?? null;
+    if (!(context && namespaceKey)) {
       setSummary(EMPTY);
       return;
     }
@@ -179,14 +182,14 @@ export function AttentionPage() {
         if (current) {
           pruneSaleRedos(
             browserStorage(),
-            organizationId,
+            namespaceKey,
             new Set(queue.commands.map((command) => command.commandId))
           );
           setSummary(
             buildAttention(
               queue,
               redoneCommandIds(
-                readSaleRedos(browserStorage(), organizationId),
+                readSaleRedos(browserStorage(), namespaceKey),
                 queue.commands
               )
             )
@@ -246,7 +249,8 @@ export function AttentionPage() {
   const handleRedo = useCallback(
     (item: AttentionItem) => {
       const context = runtime?.context();
-      if (!context) {
+      const namespaceKey = runtime?.namespaceKey(organizationId) ?? null;
+      if (!(context && namespaceKey)) {
         return;
       }
       setRedoProblem(null);
@@ -256,6 +260,7 @@ export function AttentionPage() {
         item.commandId,
         context.outbox,
         organizationId,
+        namespaceKey,
         organization.timezone
       )
         .catch((): RedoOutcome => ({ message: REDO_FAILED_MESSAGE }))

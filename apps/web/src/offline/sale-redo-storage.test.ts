@@ -10,6 +10,8 @@ import {
 
 const ORG = "0199c2d0-0000-7000-8000-00000000a001";
 const OTHER = "0199c2d0-0000-7000-8000-00000000a002";
+const USER_A_KEY = "2f0c1d9e5a7b4c3d8e6f1a2b3c4d5e6f";
+const USER_B_KEY = "9a8b7c6d5e4f30211203f4e5d6c7b8a9";
 const A = "0199c2d0-0000-7000-8000-0000000000a1";
 const B = "0199c2d0-0000-7000-8000-0000000000b1";
 const NEW = "0199c2d0-0000-7000-8000-0000000000c1";
@@ -103,7 +105,7 @@ describe("the link between a refused sale and the sale that redoes it", () => {
     ]).toEqual([]);
   });
 
-  it("forgets what is not in the queue any more, and is per store", () => {
+  it("forgets what is not in the queue any more, and is per namespace", () => {
     const storage = memory();
     startSaleRedo(storage, ORG, A, "t1");
     finishSaleRedo(storage, ORG, "t1", NEW);
@@ -112,6 +114,22 @@ describe("the link between a refused sale and the sale that redoes it", () => {
     expect(readSaleRedos(storage, ORG)).toEqual([]);
     expect(storage.has(`${SALE_REDO_KEY_PREFIX}${ORG}`)).toBe(false);
     expect(readSaleRedos(storage, OTHER)).toHaveLength(1);
+  });
+
+  it("keeps the link of one user when another user of the same store prunes with a queue that lacks the command", () => {
+    const storage = memory();
+    startSaleRedo(storage, USER_A_KEY, A, "t1");
+    finishSaleRedo(storage, USER_A_KEY, "t1", NEW);
+
+    pruneSaleRedos(storage, USER_B_KEY, new Set([B]));
+
+    const redos = readSaleRedos(storage, USER_A_KEY);
+    expect(redos).toHaveLength(1);
+    expect([
+      ...redoneCommandIds(redos, [{ commandId: A, status: "rejected" }]),
+    ]).toEqual([A]);
+    expect(startSaleRedo(storage, USER_A_KEY, A, "t2")).toBe(false);
+    expect(readSaleRedos(storage, USER_B_KEY)).toEqual([]);
   });
 
   it("reads a damaged value as nothing, and works without storage", () => {

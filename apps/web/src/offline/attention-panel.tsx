@@ -219,26 +219,6 @@ function ItemCard({
         <p className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
           Código: {item.code}
         </p>
-        {redoProblem ? (
-          <Alert variant="destructive">
-            <CircleAlertIcon aria-hidden="true" />
-            <AlertDescription className="grid gap-2">
-              <p>{redoProblem.message}</p>
-              {redoProblem.lines.length > 0 ? (
-                <ul className="grid list-disc gap-1 pl-5">
-                  {redoProblem.lines.map((line) => (
-                    <li
-                      className="[overflow-wrap:anywhere]"
-                      key={`${line.kind}:${line.label}`}
-                    >
-                      {redoProblemText(line)}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
         {confirming ? (
           <div
             aria-label={`Descartar ${item.title}`}
@@ -275,6 +255,26 @@ function ItemCard({
             ))}
           </div>
         )}
+        {redoProblem ? (
+          <Alert variant="destructive">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription className="grid gap-2">
+              <p>{redoProblem.message}</p>
+              {redoProblem.lines.length > 0 ? (
+                <ul className="grid list-disc gap-1 pl-5">
+                  {redoProblem.lines.map((line) => (
+                    <li
+                      className="[overflow-wrap:anywhere]"
+                      key={`${line.kind}:${line.label}`}
+                    >
+                      {redoProblemText(line)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
       </Card>
     </li>
   );

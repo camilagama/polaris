@@ -198,6 +198,9 @@ describe("the attention panel", () => {
       }
     );
     expect(html.match(/role="alert"/g)).toHaveLength(1);
+    expect(html.indexOf('role="alert"')).toBeGreaterThan(
+      html.indexOf("Refazer esta venda")
+    );
     expect(html).toContain("Não preenchi a venda.");
     expect(html).toContain("Caneca: a venda tinha 3 un. e o saldo é 1.");
   });
