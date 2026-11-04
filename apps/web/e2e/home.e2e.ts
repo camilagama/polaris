@@ -3146,12 +3146,12 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
   test("Sair apaga a cópia do Início antes de sair (A, B e a série do mapa do aparelho)", async ({
     page,
   }) => {
-    // "Sair" in the menu of the store card (on the phone it is inside "Mais", proved in app-shell.e2e.ts)
+    // "Sair" in the menu of the store, in the header
     await page.setViewportSize({ height: 800, width: 1280 });
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     await page
-      .getByRole("button", { exact: true, name: "Loja, tema e Sair" })
+      .getByRole("button", { exact: true, name: "Loja, conta e ajuda" })
       .click();
     await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => server.signOutCalls).toBe(1);
@@ -3223,7 +3223,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       await route.fallback();
     });
     await page
-      .getByRole("button", { exact: true, name: "Loja, tema e Sair" })
+      .getByRole("button", { exact: true, name: "Loja, conta e ajuda" })
       .click();
     await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => server.signOutCalls).toBe(1);
