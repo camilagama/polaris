@@ -86,6 +86,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 - [ ] Política de privacidade atualizada com Resend, Turnstile, IP e user-agent de sessão e vínculo Google, e revisão de DPA e região dos providers ([privacy.md](../business-rules/privacy.md)). Retenção legal e legal hold da auditoria definidas.
 
 - [ ] **Restore e deletion ledger ([ADR 0080](../adr/0080-ledger-minimo-de-exclusoes.md)).** O procedimento de [restore e deletion ledger](./deletion-ledger-restore.md) foi ensaiado em ambiente descartável (listar o ledger da origem, restaurar, reaplicar, conferir a consulta vazia) antes do go-live, **com a conferência de ACL do passo 2b** (nenhuma função `SECURITY DEFINER` do `public` executável por PUBLIC e o hash das ACLs das funções igual ao da origem); a branch ou o ambiente de origem de um restore nunca é apagado antes da conferência; decidida a cópia do ledger fora do banco (Fase 16), porque o ledger não sobrevive à perda do próprio banco.
+- [ ] **Backup diário e ensaio de restauração ([ADR 0099](../adr/0099-backup-logico-diario-no-r2-cifrado-com-age.md)).** O [backup](./backup.md) do staging está ligado, com execuções diárias verdes, e um ensaio de restauração do staging passou (`ok: true`, `checks: []`) depois da última mudança dos scripts, da chave ou do formato. Na produção: login, bucket, token, Environment `production-backup` e chave do titular criados como no runbook, o primeiro backup verde e um ensaio numa branch descartável da produção com o RPO e o tempo registrados, há no máximo 90 dias.
 
 ### Billing
 

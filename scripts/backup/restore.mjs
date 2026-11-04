@@ -4,8 +4,8 @@
 // compares the restored database with the manifest taken in the snapshot of the dump: row count of every table,
 // migrations, function ACLs, row security, policies and the deletion ledger.
 //
-//   node scripts/backup/restore.mjs --archive <file.tar.age> --identity <age identity> [--sha256 <hex>]
-//     [--workdir <directory>] [--keep-workdir]
+//   node scripts/backup/restore.mjs --environment staging|production --archive <file.tar.age>
+//     --identity <age identity> --sha256 <hex from the backup run's log> [--workdir <directory>] [--keep-workdir]
 //
 // The connection is only the libpq variables of the target (PGHOST, PGDATABASE, PGUSER, PGPASSWORD or ~/.pgpass,
 // PGSSLMODE=verify-full), never a URL. The target database must be empty and carry the comment
@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ARCHIVE_ENTRIES,
+  BACKUP_ENVIRONMENTS,
   aclAsRoles,
   aclEntries,
   aclFindings,
@@ -32,6 +33,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REFERENCE_SQL = join(here, "sql", "reference.sql");
+const REGULAR_ENTRY = /^-\S+\s+\S+\s+\d+\s+\S+\s+\S+\s+(\S+)$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const VERSION_MAJOR = /\b(\d+)(?:\.\d+)+\b/;
 const BACKUP_READER = "polaris_backup_reader";
@@ -150,6 +152,11 @@ function connectionFindings(env) {
   if (POOLER_HOST.test(env.PGHOST ?? "")) {
     findings.push("use the direct host, not the pooler");
   }
+  for (const name of ["PGOPTIONS", "PGSERVICE", "PGSERVICEFILE"]) {
+    if (env[name]) {
+      findings.push(`${name} must be empty`);
+    }
+  }
   return findings;
 }
 
@@ -161,8 +168,17 @@ function drill(run, workdir) {
     }
     return result.stdout;
   };
-  const sql = (step, text) =>
-    ok(step, "psql", [...PSQL, "--file=-"], { input: text });
+  // psql's error names the object and the SQLSTATE of a catalog statement; pg_restore's stderr is never shown
+  const sql = async (step, text) => {
+    const result = await run("psql", [...PSQL, "--file=-"], { input: text });
+    if (result.code !== 0) {
+      const cause = result.stderr.trim().split("\n")[0] ?? "";
+      refuse(
+        `${step} failed (exit ${result.code}${cause ? `: ${cause}` : ""})`
+      );
+    }
+    return result.stdout;
+  };
   const json = async (step, text) => {
     const lines = (await sql(step, text)).trim().split("\n");
     return JSON.parse(lines.at(-1) ?? "null");
@@ -208,11 +224,19 @@ async function openArchive(step, options, dir) {
     ],
     { interactive: true }
   );
-  const listed = (
-    await step.ok("tar listing", "tar", ["--list", "--file", plain])
+  const lines = (
+    await step.ok("tar listing", "tar", [
+      "--list",
+      "--verbose",
+      "--file",
+      plain,
+    ])
   )
     .split("\n")
-    .filter(Boolean)
+    .filter(Boolean);
+  // regular files only: a link in the archive could point the extraction outside the directory
+  const listed = lines
+    .map((line) => REGULAR_ENTRY.exec(line)?.[1] ?? "")
     .sort();
   if (JSON.stringify(listed) !== JSON.stringify(ARCHIVE_ENTRIES)) {
     refuse(
@@ -222,6 +246,7 @@ async function openArchive(step, options, dir) {
   await step.ok("tar extraction", "tar", [
     "--extract",
     "--no-same-owner",
+    "--no-same-permissions",
     "--file",
     plain,
     "--directory",
@@ -229,7 +254,8 @@ async function openArchive(step, options, dir) {
   ]);
   await rm(plain);
   return validManifest(
-    JSON.parse(await readFile(join(dir, "manifest.json"), "utf8"))
+    JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")),
+    options.environment
   );
 }
 
@@ -286,13 +312,12 @@ export async function runDrill(
     refuse(connection.join("; "));
   }
   const majors = await toolsMajor(run);
-  if (options.sha256 !== undefined) {
-    if (!DIGEST.test(options.sha256)) {
-      refuse("--sha256 must be 64 hex characters");
-    }
-    if ((await sha256Of(options.archive)) !== options.sha256) {
-      refuse("the archive does not match --sha256");
-    }
+  // the hash comes from the log of the backup run, which a holder of the bucket token cannot rewrite
+  if (!DIGEST.test(options.sha256 ?? "")) {
+    refuse("--sha256 must be the 64 hex characters of the backup run's log");
+  }
+  if ((await sha256Of(options.archive)) !== options.sha256) {
+    refuse("the archive does not match --sha256");
   }
   const dir = await mkdtemp(
     join(options.workdir ?? tmpdir(), "polaris-restore-")
@@ -319,6 +344,8 @@ export async function runDrill(
     return {
       checks: differences,
       environment: manifest.environment,
+      ledger_rows: final.ledger_rows,
+      migrations: final.migrations?.count,
       ok: differences.length === 0,
       restore: restored,
       rows: Object.values(final.tables ?? {}).reduce(
@@ -366,14 +393,20 @@ function parseArgs(args) {
   };
   const options = {
     archive: value("--archive"),
+    environment: value("--environment"),
     identity: value("--identity"),
     keepWorkdir: args.includes("--keep-workdir"),
     sha256: value("--sha256"),
     workdir: value("--workdir"),
   };
-  if (!(options.archive && options.identity)) {
+  const complete =
+    options.archive &&
+    options.identity &&
+    options.sha256 &&
+    BACKUP_ENVIRONMENTS.includes(options.environment);
+  if (!complete) {
     refuse(
-      "usage: restore.mjs --archive <file.tar.age> --identity <age identity> [--sha256 <hex>] [--workdir <dir>] [--keep-workdir]"
+      "usage: restore.mjs --environment staging|production --archive <file.tar.age> --identity <age identity> --sha256 <hex> [--workdir <dir>] [--keep-workdir]"
     );
   }
   return options;

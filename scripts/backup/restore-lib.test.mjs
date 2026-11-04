@@ -118,34 +118,60 @@ describe("aclEntries", () => {
 describe("aclAsRoles", () => {
   it("rewrites the three session authorization commands", () => {
     const sql = [
+      "\\restrict abc123",
       "SET SESSION AUTHORIZATION 'polaris_sales_owner';",
       "GRANT SELECT ON TABLE a TO x;",
       "RESET SESSION AUTHORIZATION;",
       "SET SESSION AUTHORIZATION 'pg_database_owner';",
       "GRANT USAGE ON SCHEMA public TO y;",
+      "\\unrestrict abc123",
     ].join("\n");
     expect(aclAsRoles(sql)).toBe(
       [
+        "\\restrict abc123",
         "SET ROLE 'polaris_sales_owner';",
         "GRANT SELECT ON TABLE a TO x;",
         "RESET ROLE;",
         "RESET ROLE;",
         "GRANT USAGE ON SCHEMA public TO y;",
+        "\\unrestrict abc123",
       ].join("\n")
     );
   });
 
   it("refuses when SESSION AUTHORIZATION is left in the middle of a line", () => {
     expect(() =>
-      aclAsRoles("GRANT x; SET SESSION AUTHORIZATION 'a';\n")
+      aclAsRoles(
+        "\\restrict abc123\nGRANT x; SET SESSION AUTHORIZATION 'a';\n\\unrestrict abc123\n"
+      )
     ).toThrow("login cannot run");
+  });
+
+  it("refuses a script without \\restrict", () => {
+    expect(() => aclAsRoles("GRANT SELECT ON TABLE a TO x;\n")).toThrow(
+      "guarded by \\restrict"
+    );
+  });
+
+  it.each([
+    ["a shell escape", "\\! rm -rf /"],
+    ["a reconnection", "\\connect other"],
+  ])("refuses %s even under \\restrict", (_name, line) => {
+    const sql = `\\restrict abc123\n${line}\nGRANT SELECT ON TABLE a TO x;\n\\unrestrict abc123\n`;
+    expect(() => aclAsRoles(sql)).toThrow("guarded by \\restrict");
+  });
+
+  it("refuses a \\restrict key that is not alphanumeric", () => {
+    expect(() =>
+      aclAsRoles("\\restrict a-b\nGRANT SELECT ON TABLE a TO x;\n")
+    ).toThrow("guarded by \\restrict");
   });
 });
 
 describe("validManifest", () => {
   it("accepts a complete manifest", () => {
     const value = manifest();
-    expect(validManifest(value)).toBe(value);
+    expect(validManifest(value, "staging")).toBe(value);
   });
 
   it.each([
@@ -184,13 +210,24 @@ describe("validManifest", () => {
       "reference.purge_functions",
     ],
   ])("refuses a wrong %s and names it", (_name, change, field) => {
-    expect(() => validManifest(change(manifest()))).toThrow(field);
+    expect(() => validManifest(change(manifest()), "staging")).toThrow(field);
   });
 
   it("refuses a manifest without a reference", () => {
     expect(() =>
-      validManifest({ ...manifest(), reference: undefined })
+      validManifest({ ...manifest(), reference: undefined }, "staging")
     ).toThrow("reference.tables");
+  });
+
+  it("refuses a manifest of another environment than the expected one", () => {
+    expect(() => validManifest(manifest(), "production")).toThrow(
+      "environment"
+    );
+    expect(() =>
+      validManifest({ ...manifest(), environment: "production" }, "staging")
+    ).toThrow("environment");
+    const production = { ...manifest(), environment: "production" };
+    expect(validManifest(production, "production")).toBe(production);
   });
 });
 
@@ -272,7 +309,7 @@ describe("aclFindings", () => {
     expect(found[0]).toContain("count_purges_stalled_without_progress");
   });
 
-  it("passes a purge function absent in both the origin and the restore", () => {
+  it("flags a purge function absent in both the origin and the restore", () => {
     const origin = reference();
     origin.purge_functions[1] = {
       function:
@@ -281,7 +318,13 @@ describe("aclFindings", () => {
       public_execute: null,
       runtimes_with_execute: null,
     };
-    expect(aclFindings(origin, structuredClone(origin))).toEqual([]);
+    const found = aclFindings(origin, structuredClone(origin));
+    expect(found).toHaveLength(1);
+    expect(
+      found[0].startsWith(
+        "purge function public.count_purges_stalled_without_progress(integer, integer) is not polaris_purge_owner"
+      )
+    ).toBe(true);
   });
 
   it("flags a purge function absent only in the restore", () => {
@@ -369,7 +412,7 @@ describe("referenceFindings", () => {
     expect(referenceFindings(reference(), exposed).length).toBeGreaterThan(0);
   });
 
-  it("passes an absent purge function that is absent in the origin too", () => {
+  it("flags an absent purge function that is absent in the origin too", () => {
     const origin = reference();
     origin.purge_functions[0] = {
       function: origin.purge_functions[0].function,
@@ -377,7 +420,26 @@ describe("referenceFindings", () => {
       public_execute: null,
       runtimes_with_execute: null,
     };
-    expect(referenceFindings(origin, structuredClone(origin))).toEqual([]);
+    const found = referenceFindings(origin, structuredClone(origin));
+    expect(found).toHaveLength(1);
+    expect(
+      found[0].startsWith(
+        "purge function public.count_purges_held_back() is not polaris_purge_owner"
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ["zero", { count: 0, last_created_at: 10, last_hash: "m5" }],
+    ["missing", undefined],
+  ])("flags a restored database with %s migrations", (_name, migrations) => {
+    const origin = reference();
+    origin.migrations = migrations;
+    const restored = reference();
+    restored.migrations = migrations;
+    expect(referenceFindings(origin, restored)).toEqual([
+      "no migration in the restored database",
+    ]);
   });
 
   it("never puts a row count in a message", () => {

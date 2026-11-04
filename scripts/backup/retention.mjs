@@ -3,7 +3,7 @@
 // but the 35 newest always stay, so a job that stopped for weeks never deletes the last copies when it comes back.
 // Only keys this job writes count; any other object of the prefix is never deleted.
 //
-//   aws s3api list-objects-v2 ... --query 'Contents[].Key' --output json |
+//   aws s3api list-objects-v2 ... --output json |
 //     node retention.mjs --now AAAAMMDDTHHMMSSZ --keep daily/AAAAMMDDTHHMMSSZ.tar.age
 //
 // Prints the keys to delete, one per line. Refuses (exit 1, nothing printed) when the backup just uploaded is not in
@@ -76,17 +76,29 @@ export function expiredBackups({
     .reverse();
 }
 
-/** The keys of an `aws s3api list-objects-v2 --query 'Contents[].Key' --output json` answer (null when empty). */
+/**
+ * The keys of an `aws s3api list-objects-v2 --output json` answer: empty output, or an object without `Contents`,
+ * when the prefix is empty.
+ */
 export function parseListing(text) {
   const trimmed = text.trim();
-  if (trimmed === "" || trimmed === "null") {
+  if (trimmed === "") {
     return [];
   }
-  const keys = JSON.parse(trimmed);
-  if (!(Array.isArray(keys) && keys.every((key) => typeof key === "string"))) {
-    throw new Error("the listing is not a JSON array of keys");
+  const answer = JSON.parse(trimmed);
+  const contents = answer?.Contents ?? [];
+  if (
+    !(
+      answer &&
+      typeof answer === "object" &&
+      !Array.isArray(answer) &&
+      Array.isArray(contents) &&
+      contents.every((entry) => typeof entry?.Key === "string")
+    )
+  ) {
+    throw new Error("the listing is not a list-objects-v2 answer");
   }
-  return keys;
+  return contents.map((entry) => entry.Key);
 }
 
 function option(args, name) {

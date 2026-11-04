@@ -49,22 +49,26 @@ describe("stampInstant", () => {
 });
 
 describe("parseListing", () => {
-  it("reads a JSON array of keys", () => {
-    expect(parseListing('["daily/a","daily/b"]\n')).toEqual([
-      "daily/a",
-      "daily/b",
-    ]);
+  it("reads the keys of a list-objects-v2 answer", () => {
+    expect(
+      parseListing('{"Contents":[{"Key":"daily/a"},{"Key":"daily/b"}]}\n')
+    ).toEqual(["daily/a", "daily/b"]);
   });
 
-  it("treats null and an empty answer as an empty listing", () => {
-    expect(parseListing("null\n")).toEqual([]);
+  it("treats an answer without Contents and an empty output as an empty listing", () => {
+    expect(parseListing('{"RequestCharged": null}\n')).toEqual([]);
     expect(parseListing("")).toEqual([]);
     expect(parseListing("  \n")).toEqual([]);
   });
 
-  it("refuses what is not an array of strings", () => {
-    expect(() => parseListing('{"a":1}')).toThrow("not a JSON array");
-    expect(() => parseListing("[1,2]")).toThrow("not a JSON array");
+  it("refuses what is not a list-objects-v2 answer", () => {
+    expect(() => parseListing("null")).toThrow("not a list-objects-v2 answer");
+    expect(() => parseListing('["daily/a"]')).toThrow(
+      "not a list-objects-v2 answer"
+    );
+    expect(() => parseListing('{"Contents":[{"Key":1}]}')).toThrow(
+      "not a list-objects-v2 answer"
+    );
   });
 });
 
@@ -153,12 +157,15 @@ describe("expiredBackups", () => {
   });
 });
 
+const listing = (keys) =>
+  JSON.stringify({ Contents: keys.map((Key) => ({ Key })) });
+
 describe("retention CLI", () => {
   it("prints one key per line, oldest first", async () => {
     const keys = dailyRun(38);
     const result = await runCli(
       ["--now", NOW, "--keep", keys[0]],
-      JSON.stringify(keys)
+      listing(keys)
     );
     expect(result.code).toBe(0);
     expect(result.stdout).toBe(`${keyAgo(37)}\n${keyAgo(36)}\n`);
@@ -168,14 +175,14 @@ describe("retention CLI", () => {
     const keys = dailyRun(10);
     const result = await runCli(
       ["--now", NOW, "--keep", keys[0]],
-      JSON.stringify(keys)
+      listing(keys)
     );
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("");
   });
 
   it("exits 1 with empty stdout when --keep is missing", async () => {
-    const result = await runCli(["--now", NOW], JSON.stringify(dailyRun(40)));
+    const result = await runCli(["--now", NOW], listing(dailyRun(40)));
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("missing --keep");
@@ -184,14 +191,17 @@ describe("retention CLI", () => {
   it("exits 1 with empty stdout when the listing misses the kept key", async () => {
     const result = await runCli(
       ["--now", NOW, "--keep", keyAgo(0)],
-      JSON.stringify(dailyRun(40, 1))
+      listing(dailyRun(40, 1))
     );
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
   });
 
   it("exits 1 on an empty listing", async () => {
-    const result = await runCli(["--now", NOW, "--keep", keyAgo(0)], "null");
+    const result = await runCli(
+      ["--now", NOW, "--keep", keyAgo(0)],
+      '{"RequestCharged": null}'
+    );
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
   });

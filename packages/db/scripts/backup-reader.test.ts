@@ -78,6 +78,19 @@ describe("the backup login accepted by the environment checks", () => {
     ]);
   });
 
+  it("checks pg_read_all_data wherever it sorts among the memberships", () => {
+    const row = documented();
+    row.memberships.unshift({
+      admin: false,
+      inherit: true,
+      role: "neon_superuser",
+      set: true,
+    });
+    expect(backupReaderFindings(row)).toEqual([
+      "member of neon_superuser, besides pg_read_all_data",
+    ]);
+  });
+
   it("refuses a login without pg_read_all_data, or with another role in its place", () => {
     expect(backupReaderFindings({ ...documented(), memberships: [] })).toEqual([
       "not a member of pg_read_all_data",
@@ -94,7 +107,10 @@ describe("the backup login accepted by the environment checks", () => {
           },
         ],
       })
-    ).toEqual(["member of pg_write_all_data, besides pg_read_all_data"]);
+    ).toEqual([
+      "not a member of pg_read_all_data",
+      "member of pg_write_all_data, besides pg_read_all_data",
+    ]);
   });
 
   it.each([

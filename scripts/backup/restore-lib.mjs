@@ -12,6 +12,8 @@ const PURGE_RUNTIMES = "polaris_privacy_runtime";
 
 const PLATFORM_DEFAULT_ACL =
   /^Command was: ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin\b/;
+const RESTRICT = /^\\restrict [A-Za-z0-9]+$/;
+const UNRESTRICT = /^\\unrestrict [A-Za-z0-9]+$/;
 const ACL_ENTRY = /^[0-9]+; [0-9]+ [0-9]+ ACL /;
 const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const KNOWN_LINES = [
@@ -64,6 +66,15 @@ export function aclEntries(listing) {
  * preparation allows the login (deletion-ledger-restore.md, step 2b.1). Refuses when a line the login cannot run is left.
  */
 export function aclAsRoles(sql) {
+  const metaCommands = sql.split("\n").filter((line) => line.startsWith("\\"));
+  const guarded =
+    metaCommands.some((line) => RESTRICT.test(line)) &&
+    metaCommands.every((line) => RESTRICT.test(line) || UNRESTRICT.test(line));
+  if (!guarded) {
+    throw new Error(
+      "the ACL script must be guarded by \\restrict and carry no other psql meta-command"
+    );
+  }
   const rewritten = sql
     .replace(/^SET SESSION AUTHORIZATION /gm, "SET ROLE ")
     .replace(/^RESET SESSION AUTHORIZATION;/gm, "RESET ROLE;")
@@ -112,12 +123,15 @@ function referenceShapeFindings(reference) {
   return findings;
 }
 
-export function validManifest(manifest) {
+export function validManifest(manifest, expectedEnvironment) {
   const findings = [];
   if (manifest?.format !== 1) {
     findings.push("format");
   }
-  if (!BACKUP_ENVIRONMENTS.includes(manifest?.environment)) {
+  if (
+    !BACKUP_ENVIRONMENTS.includes(manifest?.environment) ||
+    manifest.environment !== expectedEnvironment
+  ) {
     findings.push("environment");
   }
   if (
@@ -176,10 +190,8 @@ function purgeFunctionFindings(origin, restored) {
   if (JSON.stringify(origin) !== JSON.stringify(restored)) {
     findings.push("purge functions differ from the backup");
   }
+  // both functions exist since migration 0110, and every backup this job takes is newer
   for (const row of restored ?? []) {
-    if (row.owner === null && row.public_execute === null) {
-      continue;
-    }
     if (
       row.owner !== PURGE_OWNER ||
       row.public_execute !== false ||
@@ -236,6 +248,10 @@ export function referenceFindings(origin, restored) {
   ];
   const checks = [
     [same(origin.migrations, restored.migrations), "migrations differ"],
+    [
+      (restored.migrations?.count ?? 0) > 0,
+      "no migration in the restored database",
+    ],
     [
       restored.owner_roles === origin.owner_roles &&
         restored.owner_roles >= MIN_OWNER_ROLES,

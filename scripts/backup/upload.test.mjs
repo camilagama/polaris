@@ -64,8 +64,8 @@ case "$sub" in
     ;;
   list-objects-v2)
     keys=$(ls "$FAKE_BUCKET" | grep -v '\\.sha$' | tr '%' '/' | sort)
-    if [ -z "$keys" ]; then echo null; exit 0; fi
-    printf '%s\\n' "$keys" | node -e 'const k=require("fs").readFileSync(0,"utf8").trim().split("\\n");console.log(JSON.stringify(k))'
+    if [ -z "$keys" ]; then echo '{"RequestCharged": null}'; exit 0; fi
+    printf '%s\\n' "$keys" | node -e 'const k=require("fs").readFileSync(0,"utf8").trim().split("\\n");console.log(JSON.stringify({Contents:k.map((Key)=>({Key}))}))'
     ;;
   delete-object)
     rm -f "$file" "$file.sha"
@@ -148,6 +148,16 @@ describe("upload.sh", () => {
     const left = await objects();
     expect(left).toHaveLength(36);
     expect(left).toContain(`daily%${STAMP}.tar.age`);
+    const digest = createHash("sha256")
+      .update("sealed bytes of the backup")
+      .digest("base64");
+    expect(
+      (await calls()).some(
+        (line) =>
+          line.includes("put-object") &&
+          line.includes(`--checksum-sha256 ${digest}`)
+      )
+    ).toBe(true);
     expect(left).not.toContain(`daily%${stampAgo(40)}.tar.age`);
     expect(left).not.toContain(`daily%${stampAgo(36)}.tar.age`);
     expect(left).toContain(`daily%${stampAgo(35)}.tar.age`);

@@ -60,6 +60,12 @@ const ENV = {
   PGSSLMODE: "verify-full",
 };
 
+const ARCHIVE_BYTES = "sealed bytes";
+const ARCHIVE_SHA256 = createHash("sha256").update(ARCHIVE_BYTES).digest("hex");
+
+const entry = (name) => `-rw------- 0/0 123 2026-11-04 06:22 ${name}`;
+const TAR_LISTING = `${["dump", "manifest.json", "roles.sql"].map(entry).join("\n")}\n`;
+
 const ACL_LISTING = [
   "; Archive created",
   "4000; 0 0 ACL - SCHEMA public postgres",
@@ -75,10 +81,12 @@ function fakeRun(overrides = {}) {
   const state = {
     calls,
     directory: undefined,
+    grantFailure: { code: 0, stderr: "" },
     manifest: manifest(),
     pgRestore: { code: 0, stderr: "" },
     restored: reference(),
     revoke: "0",
+    tarCalls: [],
     target: target(),
     ...overrides,
   };
@@ -114,7 +122,7 @@ function fakeRun(overrides = {}) {
       calls.push("pg_restore:acl-script");
       await writeFile(
         flagValue(args, "--file"),
-        "SET SESSION AUTHORIZATION 'polaris_x_owner';\nGRANT SELECT ON TABLE a TO b;\nRESET SESSION AUTHORIZATION;\n"
+        "\\restrict abc123\nSET SESSION AUTHORIZATION 'polaris_x_owner';\nGRANT SELECT ON TABLE a TO b;\nRESET SESSION AUTHORIZATION;\n\\unrestrict abc123\n"
       );
       return { code: 0, stderr: "", stdout: "" };
     }
@@ -122,11 +130,12 @@ function fakeRun(overrides = {}) {
     return { ...state.pgRestore, stdout: "" };
   };
   const tar = async (args) => {
+    state.tarCalls.push(args);
     if (args[0] === "--list") {
       return {
         code: 0,
         stderr: "",
-        stdout: state.tarListing ?? "dump\nmanifest.json\nroles.sql\n",
+        stdout: state.tarListing ?? TAR_LISTING,
       };
     }
     state.directory = flagValue(args, "--directory");
@@ -144,6 +153,10 @@ function fakeRun(overrides = {}) {
     if (command === "psql") {
       if (args[0] === "--version") {
         return { code: 0, stderr: "", stdout: "psql (PostgreSQL) 18.1\n" };
+      }
+      if (state.grantFailure.code !== 0 && options.input.includes("$grant$")) {
+        calls.push("psql:grant");
+        return { ...state.grantFailure, stdout: "" };
       }
       return { code: 0, stderr: "", stdout: psql(options.input) };
     }
@@ -173,7 +186,7 @@ describe("runDrill", () => {
   beforeEach(async () => {
     base = await mkdtemp(join(tmpdir(), "restore-test-"));
     archive = join(base, "backup.tar.age");
-    await writeFile(archive, "sealed bytes");
+    await writeFile(archive, ARCHIVE_BYTES);
   });
 
   afterEach(async () => {
@@ -182,7 +195,9 @@ describe("runDrill", () => {
 
   const options = (extra = {}) => ({
     archive,
+    environment: "staging",
     identity: "identity.txt",
+    sha256: ARCHIVE_SHA256,
     workdir: base,
     ...extra,
   });
@@ -199,6 +214,8 @@ describe("runDrill", () => {
     expect(report.rows).toBe(41_234 + 98_765);
     expect(report.target).toBe("restore-drill");
     expect(report.environment).toBe("staging");
+    expect(report.ledger_rows).toBe(3);
+    expect(report.migrations).toBe(5);
     const text = JSON.stringify(report);
     expect(text).not.toContain("public.sales");
     expect(text).not.toContain("98765");
@@ -216,6 +233,16 @@ describe("runDrill", () => {
     expect(order.indexOf("psql:revoke")).toBeGreaterThan(aclCheck);
     expect(order.at(-1)).toBe("psql:reference");
     expect(await leftovers()).toEqual([]);
+  });
+
+  it("lists the archive verbosely and extracts without the archive's permissions", async () => {
+    const { run, state } = fakeRun();
+    await runDrill(options(), { env: ENV, run });
+    const listing = state.tarCalls.find((args) => args[0] === "--list");
+    const extraction = state.tarCalls.find((args) => args[0] === "--extract");
+    expect(listing).toContain("--verbose");
+    expect(extraction).toContain("--no-same-permissions");
+    expect(extraction).toContain("--no-same-owner");
   });
 
   it("accepts the cloud_admin default privilege errors of pg_restore", async () => {
@@ -267,18 +294,66 @@ describe("runDrill", () => {
     expect(state.calls).not.toContain("age");
   });
 
-  it("accepts the right --sha256", async () => {
-    const sha256 = createHash("sha256").update("sealed bytes").digest("hex");
-    const { run } = fakeRun();
-    const report = await runDrill(options({ sha256 }), { env: ENV, run });
-    expect(report.ok).toBe(true);
-  });
-
   it("refuses a --sha256 that is not 64 hex characters", async () => {
     const { run } = fakeRun();
     await expect(
       runDrill(options({ sha256: "abc" }), { env: ENV, run })
-    ).rejects.toThrow("64 hex");
+    ).rejects.toThrow("--sha256 must be the 64 hex characters");
+  });
+
+  it("refuses a run without --sha256 before running age", async () => {
+    const { run, state } = fakeRun();
+    await expect(
+      runDrill(options({ sha256: undefined }), { env: ENV, run })
+    ).rejects.toThrow("--sha256 must be the 64 hex characters");
+    expect(state.calls).not.toContain("age");
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it("refuses a manifest of another environment than --environment before touching the target", async () => {
+    const { run, state } = fakeRun();
+    await expect(
+      runDrill(options({ environment: "production" }), { env: ENV, run })
+    ).rejects.toThrow("manifest is not valid: environment");
+    expect(state.calls).not.toContain("psql:target");
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a symbolic link",
+      "lrwxrwxrwx 0/0 0 2026-11-04 06:22 dump -> /etc/passwd",
+    ],
+    ["a hard link", "hrwxrwxrwx 0/0 0 2026-11-04 06:22 dump link to roles.sql"],
+    ["a directory", "drwx------ 0/0 0 2026-11-04 06:22 dump"],
+    ["a bare name", "dump"],
+  ])("refuses an archive entry that is %s", async (_name, line) => {
+    const { run, state } = fakeRun({
+      tarListing: `${line}\n${entry("manifest.json")}\n${entry("roles.sql")}\n`,
+    });
+    await expect(runDrill(options(), { env: ENV, run })).rejects.toThrow(
+      "does not hold exactly"
+    );
+    expect(state.tarCalls.some((args) => args[0] === "--extract")).toBe(false);
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it("names the first line of psql's stderr when the preparation fails", async () => {
+    const { run, state } = fakeRun({
+      grantFailure: {
+        code: 3,
+        stderr: "ERROR:  permission denied to grant role\nDETAIL:  more\n",
+      },
+    });
+    const failure = runDrill(options(), { env: ENV, run });
+    await expect(failure).rejects.toThrow("preparation (step 2.1) failed");
+    await expect(failure).rejects.toThrow("exit 3");
+    await expect(failure).rejects.toThrow(
+      "ERROR:  permission denied to grant role"
+    );
+    await expect(failure).rejects.not.toThrow("DETAIL");
+    expect(state.calls).not.toContain("pg_restore:restore");
+    expect(state.calls.at(-1)).toBe("psql:revoke");
   });
 
   it.each([
@@ -294,6 +369,13 @@ describe("runDrill", () => {
       "pooler",
     ],
     ["a missing PGHOST", { PGHOST: "" }, "PGHOST is not set"],
+    ["PGOPTIONS", { PGOPTIONS: "-c role=postgres" }, "PGOPTIONS must be empty"],
+    ["PGSERVICE", { PGSERVICE: "prod" }, "PGSERVICE must be empty"],
+    [
+      "PGSERVICEFILE",
+      { PGSERVICEFILE: "/tmp/service.conf" },
+      "PGSERVICEFILE must be empty",
+    ],
   ])("refuses %s before running any program", async (_name, change, text) => {
     const { run, state } = fakeRun();
     const seen = [];
@@ -310,7 +392,7 @@ describe("runDrill", () => {
 
   it("refuses an archive with an unexpected entry", async () => {
     const { run } = fakeRun({
-      tarListing: "dump\nmanifest.json\nroles.sql\nextra\n",
+      tarListing: `${TAR_LISTING}${entry("extra")}\n`,
     });
     await expect(runDrill(options(), { env: ENV, run })).rejects.toThrow(
       "exactly dump, manifest.json and roles.sql"

@@ -5,7 +5,8 @@
 #   upload.sh <sealed file> <stamp AAAAMMDDTHHMMSSZ>
 #
 # Needs R2_BACKUP_BUCKET, R2_BACKUP_ENDPOINT and the AWS_* credentials of the bucket's token in the environment.
-# The aws CLI pages list-objects-v2 by itself, so the retention sees every object of the prefix, past 1000.
+# Without --query, the aws CLI merges every page of list-objects-v2 into one answer, so the retention sees every object
+# of the prefix, past 1000.
 set -euo pipefail
 
 fail() {
@@ -35,19 +36,22 @@ s3() {
 key="daily/$stamp.tar.age"
 size=$(stat -c %s "$sealed")
 sha=$(sha256sum "$sealed" | cut -d' ' -f1)
+sha_base64=$(openssl dgst -sha256 -binary "$sealed" | base64 -w0)
 
 # a backup is never overwritten: the same stamp twice is a mistake to look at
 if s3 head-object --key "$key" > /dev/null 2>&1; then
   fail "an object with this stamp already exists"
 fi
+# the checksum header makes R2 verify the bytes it received and refuse the PUT when they differ
 s3 put-object --key "$key" --body "$sealed" --content-type application/octet-stream \
-  --metadata "sha256=$sha" > /dev/null
-read -r stored_size stored_sha < <(s3 head-object --key "$key" --query '[ContentLength, Metadata.sha256]' --output text)
+  --checksum-sha256 "$sha_base64" --metadata "sha256=$sha" > /dev/null
+stored=$(s3 head-object --key "$key" --query '[ContentLength, Metadata.sha256]' --output text) || fail "could not read the stored object back"
+read -r stored_size stored_sha <<< "$stored"
 [ "$stored_size" = "$size" ] && [ "$stored_sha" = "$sha" ] || fail "the stored object does not match the sealed file: retention skipped"
 echo "ok: uploaded $key"
 
 # retention only after this run's backup is confirmed: a failed run never deletes anything
-listing=$(s3 list-objects-v2 --prefix daily/ --query 'Contents[].Key' --output json)
+listing=$(s3 list-objects-v2 --prefix daily/ --output json)
 expired=$(printf '%s' "$listing" | node "$here/retention.mjs" --now "$stamp" --keep "$key")
 removed=0
 while IFS= read -r old; do

@@ -8,6 +8,7 @@ import type { Client } from "pg";
  */
 export const BACKUP_READER = "polaris_backup_reader";
 export const BACKUP_READER_CONNECTION_LIMIT = 2;
+const READ_ALL_DATA = "pg_read_all_data";
 const READ_ONLY_SETTING = "default_transaction_read_only=on";
 
 export interface BackupReaderRow {
@@ -59,19 +60,19 @@ const ATTRIBUTES: [keyof BackupReaderRow, boolean, string][] = [
 ];
 
 function membershipFindings(row: BackupReaderRow): string[] {
-  const [only, ...others] = row.memberships;
-  const findings = others.map(
-    (membership) => `member of ${membership.role}, besides pg_read_all_data`
+  const read = row.memberships.find(
+    (membership) => membership.role === READ_ALL_DATA
   );
-  if (only?.role !== "pg_read_all_data") {
-    findings.unshift(
-      only
-        ? `member of ${only.role}, besides pg_read_all_data`
-        : "not a member of pg_read_all_data"
+  const findings = row.memberships
+    .filter((membership) => membership.role !== READ_ALL_DATA)
+    .map(
+      (membership) => `member of ${membership.role}, besides ${READ_ALL_DATA}`
     );
-  } else if (!only.inherit || only.set || only.admin) {
+  if (!read) {
+    findings.unshift(`not a member of ${READ_ALL_DATA}`);
+  } else if (!read.inherit || read.set || read.admin) {
     findings.unshift(
-      "pg_read_all_data must be granted WITH INHERIT TRUE, SET FALSE, ADMIN FALSE"
+      `${READ_ALL_DATA} must be granted WITH INHERIT TRUE, SET FALSE, ADMIN FALSE`
     );
   }
   return findings;
