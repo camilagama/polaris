@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { previewImport } from "../product-import-rows";
 import { IMPORT_MAX_BYTES } from "../product-import-csv";
 import type { ProductImportRowInput } from "@polaris/contracts";
+import { planRoom } from "../../subscription/limit-help-model";
 import { failedImportCsv } from "../product-import-failed-csv";
 import {
   createImportRun,
@@ -25,7 +26,6 @@ import {
   overLimitText,
   pauseText,
   planImport,
-  planRoom,
   previewCounts,
   previewTableRows,
   readImportFile,

@@ -93,6 +93,9 @@ const productPayload = (n: number) => ({
   variantId: uuid(9100 + n),
 });
 
+const SUBSCRIPTION_OFF =
+  new URLSearchParams(window.location.search).get("assinatura") === "off";
+
 export function AttentionLab() {
   const [userId, setUserId] = useState("user-a");
   const [organizationId, setOrganizationId] = useState("org-1");
@@ -104,7 +107,13 @@ export function AttentionLab() {
 
   const refresh = useCallback(async () => {
     const store = storeRef.current;
-    setSummary(store ? buildAttention(await store.outbox.snapshot()) : EMPTY);
+    setSummary(
+      store
+        ? buildAttention(await store.outbox.snapshot(), new Set(), {
+            subscriptionAvailable: !SUBSCRIPTION_OFF,
+          })
+        : EMPTY
+    );
   }, []);
 
   const ensure = useCallback(async () => {

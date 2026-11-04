@@ -2,6 +2,7 @@ import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it } from "vitest";
 import { formatShortInstant } from "../lib/format";
 import { signOfflineLease } from "../lib/offline-lease-token";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import {
   type AttentionItem,
   buildAttention,
@@ -227,6 +228,30 @@ describe("the attention summary", () => {
       await outbox.discard(queued.commandId);
     }
     expect(details.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it("points a plan refusal to Assinatura when the tab exists, and to the support when it does not", async () => {
+    const { outbox, product, refuse } = await setup();
+    const queued = await product("Camisa", "CAM-E");
+    await refuse(queued.commandId, "entitlement_changed");
+    const snapshot = await outbox.snapshot();
+
+    const [available] = buildAttention(snapshot, new Set(), {
+      subscriptionAvailable: true,
+    }).items;
+    const [byDefault] = buildAttention(snapshot).items;
+    expect(available?.actions).toEqual(["open_subscription", "retry"]);
+    expect(available?.detail).toContain("em Ver Assinatura");
+    expect(byDefault).toEqual(available);
+
+    const [unavailable] = buildAttention(snapshot, new Set(), {
+      subscriptionAvailable: false,
+    }).items;
+    expect(unavailable?.actions).toEqual(["retry"]);
+    expect(unavailable?.detail).toBe(
+      `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`
+    );
+    expect(unavailable?.cause).toBe("entitlement_changed");
   });
 
   it("never offers anything that forces the sync, and resubmit only for a sale that can recover", async () => {

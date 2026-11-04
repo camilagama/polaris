@@ -257,6 +257,37 @@ test("L1: configurar variantes no limite diz o limite, não 'o produto mudou', c
   }
 });
 
+test("L1 em 'Adicionar todas as combinações': o teto do plano para antes de gerar, diz quantas e o limite, e nada é gravado", async ({
+  page,
+}) => {
+  const writes: string[] = [];
+  await openApp(page, "/products", {
+    answers: productAnswers(writes),
+    role: "owner",
+    state: "free",
+  });
+  await menuOf(page).click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await page.getByLabel("Valores de Cor").fill("Azul\nPreta");
+  await page
+    .getByRole("button", { name: "Adicionar todas as combinações (2)" })
+    .click();
+  const notice = page
+    .getByRole("dialog")
+    .getByRole("status")
+    .filter({ hasText: "Seriam 2 combinações" });
+  await expect(notice).toContainText(
+    "Seriam 2 combinações e seu plano deixa este produto com até 1. Nenhuma foi adicionada."
+  );
+  await expect(notice).toContainText(
+    "Você usa 50 de 50 variantes no plano Free."
+  );
+  await expect(upgradeIn(notice)).toBeVisible();
+  await expect(page.getByText("Nenhuma combinação adicionada.")).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
 test("AC-7 no L1: 'Conhecer o Pro' fecha o Dialog guardando as variantes, sem recarregar, e elas voltam", async ({
   page,
 }) => {
