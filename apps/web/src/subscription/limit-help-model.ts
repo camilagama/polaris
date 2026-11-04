@@ -39,6 +39,17 @@ export function isLimitReached(error: unknown): boolean {
   );
 }
 
+/** The variants the plan still holds: its limit less what is used, never below zero; `null` with no limit or no read. */
+export function planRoom(
+  plan: Pick<BillingPlanView, "limits" | "usage"> | null
+): number | null {
+  const max = plan?.limits.variants;
+  if (plan === null || max === null || max === undefined) {
+    return null;
+  }
+  return Math.max(max - plan.usage.variants, 0);
+}
+
 type PlanRead = Pick<BillingPlanView, "limits" | "state" | "usage">;
 
 function usageOf(plan: PlanRead, subject: LimitSubject): LimitUsage | null {

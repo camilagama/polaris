@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { ProductVariantConfigurationForm } from "./product-variants-form";
 import { ProductVariantSkuSection } from "./product-variant-sku-section";
-import { emptyConfigurationDraft } from "./product-variants-model";
+import {
+  emptyConfigurationDraft,
+  type VariantConfigurationDraft,
+} from "./product-variants-model";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
@@ -29,7 +32,10 @@ const configuration = (sku: string | null) => ({
 
 function draw(
   sku: string | null,
-  draft = { ...emptyConfigurationDraft, selectedOptions: ["color" as const] }
+  draft: VariantConfigurationDraft = {
+    ...emptyConfigurationDraft,
+    selectedOptions: ["color"],
+  }
 ) {
   return renderToStaticMarkup(
     <StaticOrganizationProvider
@@ -109,5 +115,32 @@ describe("the error of the SKU over the limit", () => {
     expect(markup).not.toContain('role="alert"');
     expect(markup).toContain('aria-invalid="true"');
     expect(markup).toContain('aria-disabled="true"');
+  });
+});
+
+const OFF_ADD_ALL =
+  /disabled=""[^>]*>(<svg[\s\S]*?<\/svg>)?Adicionar todas as combinações</;
+
+describe("Adicionar todas as combinações", () => {
+  it("names on the button how many combinations it adds, and reads nothing before the tap", () => {
+    const markup = draw(null, {
+      ...emptyConfigurationDraft,
+      selectedOptions: ["size", "color"],
+      valueLines: {
+        ...emptyConfigurationDraft.valueLines,
+        color: "Preta\nBranca\nAzul",
+        size: "P\nM\nG\nGG",
+      },
+    });
+    expect(markup).toContain("Adicionar todas as combinações (12)");
+    expect(markup).toContain(
+      'nada é salvo antes de "Salvar variantes"'.replaceAll('"', "&quot;")
+    );
+  });
+
+  it("is off, without a count, while an option has no values", () => {
+    const markup = draw(null);
+    expect(markup).toMatch(OFF_ADD_ALL);
+    expect(markup).not.toContain("Adicionar todas as combinações (");
   });
 });
