@@ -16,6 +16,7 @@ import {
 } from "../offline/runtime/runtime-context";
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { ClosedStoreLine, ReopenedNotice } from "./closed-store-line";
 import { AttentionBlock, AttentionNotes } from "./home-attention";
 import { ChartBlock, type ChartDays } from "./home-chart";
 import { type OfflineHome, offlineHome } from "./home-copy";
@@ -39,12 +40,11 @@ import {
 } from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
-import { type HomeFigures, type HomeState, useHome } from "./use-home";
-import { ClosedStoreLine, ReopenedNotice } from "./closed-store-line";
 import {
   type FirstStepsMemory,
   useFirstStepsMemory,
 } from "./use-first-steps-memory";
+import { type HomeFigures, type HomeState, useHome } from "./use-home";
 
 /**
  * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
@@ -198,9 +198,11 @@ function figureBlocks(
   const sold =
     figures.status === "ready" &&
     !noSaleCounted(figures.data.month, figures.data.before);
+  // the stock's read waits for the figures, and "Precisa de ação" sits above the cards: they come in together
   if (
     figures.status === "loading" ||
-    (checklist.status === "loading" && !sold)
+    (checklist.status === "loading" && !sold) ||
+    state.stock.status === "loading"
   ) {
     // before the figures only this tab's memory knows whether the checklist comes; after them, it does
     const steps =
