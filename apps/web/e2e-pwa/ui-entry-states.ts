@@ -12,7 +12,7 @@ const TURNSTILE_SCRIPT =
   "https://challenges.cloudflare.com/turnstile/v0/api.js**";
 const SITE_KEY = "1x00000000000000000000AA";
 export const EMAIL = "ana@lojadaana.com.br";
-export const PASSWORD = "uma frase longa de teste";
+export const PASSWORD = "Uma frase longa de teste 2026";
 
 export const json = (status: number, body: unknown) => ({
   body: JSON.stringify(body),
@@ -291,16 +291,15 @@ export const entryStates = {
     await page.getByText("Confirmando que você é uma pessoa…").waitFor();
     await settle(page);
   },
-  signUpCompromised: async (page: Page) => {
+  /** A refusal of a rule by the server (an older page, another client), said under the field. */
+  signUpRuleRefused: async (page: Page) => {
     await openSignUp(page);
     await page.route("**/api/auth/sign-up/email", (route) =>
-      route.fulfill(json(400, { code: "password_compromised" }))
+      route.fulfill(json(400, { code: "password_missing_number" }))
     );
     await fillSignUp(page, true);
     await submitSignUp(page);
-    await page
-      .getByText("Essa senha já apareceu em vazamentos. Escolha outra.")
-      .waitFor();
+    await page.getByText("Inclua pelo menos 1 número.").waitFor();
     await settle(page);
   },
   /** The account was made: "Confirme seu e-mail" with the address of the form. */

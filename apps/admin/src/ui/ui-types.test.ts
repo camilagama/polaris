@@ -1,5 +1,11 @@
 import type { AdminOrganizationPage } from "@polaris/db/admin-diagnostics-repository";
 import type {
+  DeadEventSummary as ServerDeadEvent,
+  IncidentRetryResult,
+  OperationalIncidentDetail as ServerIncidentDetail,
+  OperationalIncidentPage as ServerIncidentPage,
+} from "@polaris/db/admin-incident-repository";
+import type {
   openSupportCase,
   SupportCaseDetail as ServerCaseDetail,
   SupportCasePage as ServerCasePage,
@@ -10,10 +16,14 @@ import type { SupportDependencies } from "../support-routes";
 import { describe, expect, it } from "vitest";
 import type {
   ClosedSupportCase,
+  DeadEventSummary,
   OpenedSupportCase,
+  OperationalIncidentDetail,
+  OperationalIncidentPage,
   OrganizationPage,
   RefundWindowView,
   SupportCaseDetail,
+  RetryResult,
   SupportCasePage,
   WhoAmI,
 } from "../../ui/types";
@@ -50,6 +60,12 @@ const refundWindowRead: ServerRefundWindow extends RefundWindowView
   : false = true;
 const refundWindowKeys: Same<keyof ServerRefundWindow, keyof RefundWindowView> =
   true;
+const incidentsMatch: Same<ServerIncidentPage, OperationalIncidentPage> = true;
+const incidentMatches: Same<ServerIncidentDetail, OperationalIncidentDetail> =
+  true;
+const deadEventMatches: Same<ServerDeadEvent, DeadEventSummary> = true;
+// the page says each of the retry's results by its own sentence: a sixth one in the server fails here
+const retryResultsRead: Same<IncidentRetryResult, RetryResult> = true;
 const capabilitiesRead: readonly PlatformCapability[] extends readonly string[]
   ? true
   : false = true;
@@ -66,6 +82,10 @@ describe("the page's types", () => {
       refundWindowRead,
       refundWindowKeys,
       capabilitiesRead,
-    ]).toEqual([true, true, true, true, true, true, true, true, true]);
+      incidentsMatch,
+      incidentMatches,
+      deadEventMatches,
+      retryResultsRead,
+    ]).toEqual(new Array(13).fill(true));
   });
 });

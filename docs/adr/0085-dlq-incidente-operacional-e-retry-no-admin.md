@@ -24,6 +24,12 @@ As filas existem ([ADR 0083](0083-filas-cloudflare-e-consumidor-idempotente.md))
 - **Retenção.** Classe nova `operational_incident`, **proposta** (sem prazo e sem job; ADR 0079): o prazo e o expurgo dos incidentes e dos itens reenviados são do PR112.
 - **Verificação.** Gate `dead-letter` (suítes `ci` e `gate11`) num PostgreSQL 18: privilégios e donos, deduplicação (inclusive concorrente), recusas, retry (os quatro resultados, o teto e a tomada viva), auditoria na mesma transação e ausência de corpo nas colunas. O gate **não** prova a remoção dos itens pelo purge (ninguém apaga linha aqui, e o purge não exclui a organização): essa prova é do PR do purge, junto com a política e o `DELETE` do papel dele.
 
+### Emenda de 04/11/2026: a tela existe (corte admin-v2, Parte 2)
+
+- **Telas.** O Admin serve `GET /incidentes` (a lista, em páginas de até 50, padrão 25) e `GET /incidentes/{uuid}` (o incidente e seus eventos mortos, em páginas), atrás do mesmo login da API e só com `operational_incident:read`; o item "Incidentes" do menu some sem ela. A tela chama só `GET /api/operational-incidents`, `GET /api/operational-incidents/:id` e o retry abaixo: nenhuma rota de API, função de banco, migration, contrato ou capacidade mudou. A leitura não pede caso nem loja, não audita e roda ao abrir; o `organizationId` do evento, que a rota devolve, não é mostrado.
+- **Reenvio na tela.** Um botão por evento, sem motivo (a auditoria não guarda texto), um pedido por clique, sem "reenviar todos" nem "apagar". Os cinco resultados têm texto próprio na linha do evento (`role="status"`); `busy`, `event_gone` e `unknown_item` (409 e 404, cujo corpo a tela lê) releem a lista uma vez. A hora de "Reenviado às" é a do recebimento da resposta, em Brasília, porque a rota só devolve o resultado.
+- **Referência e contagem.** `lastReference` é mostrada como texto, nunca como link. A tela diz que as ocorrências somam para sempre e que o que se acompanha são os eventos a reenviar. O Início mostra "incidentes com eventos a reenviar", contados na primeira página da lista (sem auditoria), com "ou mais" quando há outra página.
+
 ## Consequências
 
 - O caminho de uma falha é: mensagem esgota as tentativas (ou o consumidor a recusa) → `polaris-dlq` → incidente e evento morto → operador vê no Admin → retry (com auditoria) → evento `pending` → despachante → fila. Um evento no teto segue o mesmo caminho a partir do cron.

@@ -95,11 +95,11 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Política de senha | Concluída | 15–128 pontos de código Unicode após NFC; espaços e Unicode aceitos; sem composição arbitrária ou expiração; HIBP fail-closed antes de armazenar/alterar senha.
-| Hash e verify NFC | Concluído | Scrypt mantém os parâmetros e formato salt:key de Better Auth, normalizando NFC; teste confirma que caracteres fullwidth não colapsam para ASCII. |
+| Política de senha | Concluída (regra trocada em 4/11/2026) | 8–128 pontos de código Unicode após NFC, com número, maiúscula e minúscula (especial só dica); espaços e Unicode aceitos; sem expiração. Regra única em `@polaris/domain/auth/password-rules`, no servidor e na tela (campo com medidor e lista de requisitos). Hash: HMAC-SHA-256 com `AUTH_PASSWORD_PEPPER` no Worker e bcrypt custo 11 no PostgreSQL (migration 0112, gate `password-hash`), formato `pgbf1$`; o scrypt em JS estourava a CPU do Workers Free. ADR 0100, emenda de 4/11/2026. Falta: criar o pepper no staging e medir (20 entradas, 5 cadastros, 3 redefinições, 0 `exceededCpu`). |
+| Hash e verify NFC | Concluído (trocado em 4/11/2026) | HMAC-SHA-256 com pepper no Worker e bcrypt custo 11 no PostgreSQL, formato `pgbf1$`, normalizando NFC; hash scrypt antigo nunca confere; teste confirma que caracteres fullwidth não colapsam para ASCII. |
 | Verificação e reset por email | Implementados com mock; envio real adiado | Better Auth exige email verificado antes da sessão de senha; verificação expira em 24h e reset em 1h. Resend é o provider escolhido, mas API key e domínio verificado ainda não estão configurados.
 | Signup/login/reset | Concluídos com testes mock | Login antes de verificar é recusado; reset usa resposta anti-enumeração e revoga todas as sessões. As flags do Worker seguem desligadas até widget, secrets, bindings e Resend estarem configurados.
-| HIBP | Concluído e testado | SHA-1 calculado no Worker, consulta range com prefixo de 5 caracteres e Add-Padding, comparação local do sufixo; falha externa bloqueia signup/reset/alteração. Senha e hash completo não saem do Worker. Lista complementar de senhas comuns/contextuais fica adiada para decisão pré-go-live conforme NIST. |
+| HIBP | Removido em 4/11/2026 (decisão do usuário) | A consulta ao Pwned Passwords saiu com o erro `password_hibp_unavailable` e o `password_compromised`; risco aceito na emenda de 4/11/2026 do ADR 0100. |
 
 ### PR16 — checkpoint para revisão
 
@@ -116,7 +116,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | --- | --- | --- |
 | Configuração Better Auth | Concluída | Linking explícito permitido; linking implícito desligado; `trustedProviders` vazio; emails diferentes não permitidos; perfil local não é sobrescrito. |
 | Google → conta de senha | Concluída com provider mock | Sessão local verificada exige OAuth redirect; claim Google precisa ter email verificado igual; tentativa de mover um Google subject já ligado a outra conta é rejeitada. |
-| Google → senha | Concluída via API server-only | Worker valida sessão e email verificado, aplica NFC/HIBP antes de `auth.api.setPassword`, e o login por senha retorna o mesmo user ID. |
+| Google → senha | Concluída via API server-only | Worker valida sessão e email verificado, aplica NFC e a regra da senha antes de `auth.api.setPassword`, e o login por senha retorna o mesmo user ID. |
 | Account takeover e auditoria | Concluídas com testes mock | Testados email local/provider não verificado, email diferente, sessão ausente, `idToken` do cliente, linking implícito e subject já vinculado. Callback registra evento de segurança com actor ID interno; `id_token` não persiste e access token não fica em claro. |
 | Testes, check e build | Concluídos localmente | 10 testes novos; `bun run check` passou com 47 testes totais; `bun run build` passou. Nenhum OAuth Google real foi executado. |
 | Revisão independente | Concluída | Nenhum blocker confirmado no diff de implementação. |
@@ -2805,12 +2805,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Unidade: `src/ui/screens.test.ts` (rotas, título, ambiente, menu com 8 conjuntos de capacidade, 404, 401, `data-*`), `ui/cases.test.ts`, `ui/home-store.test.ts`, `src/ui/ui-guard.test.ts` (o script nomeia `close`; 100 KB gzip), `src/ui/ui-types.test.ts`, `src/route-surface.test.ts`. Workerd-db (gate `admin-worker`): `src/page.workerd-db.test.ts` abre o caso pela tela, fecha numa tela e uma segunda tela do mesmo caso ouve "já estava fechado"; o banco tem um `support_case.closed`. |
 | Limites | Registrado | A lista e o detalhe não dizem quem abriu por e-mail (o detalhe traz o ID do principal: a tela diz "Você" ou "Outro operador"); as abas de ação do caso, Privacidade, Incidentes, Registro, Retenções e Configurações são das partes seguintes; o ambiente depende de `POLARIS_ENVIRONMENT` (D-3 c). |
 
-### Miniaturas de produto, T1: a capa no modelo de leitura e no sync (t744; corte miniaturas-de-produto; migration 0112)
+### Miniaturas de produto, T1: a capa no modelo de leitura e no sync (t744; corte miniaturas-de-produto; migration 0113)
 
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Campo | Em revisão | `coverAssetId` (UUID ou `null`), opcional no contrato, em `ProductReadModel` (`product.list`) e `localProduct` (`sync.bootstrapPage`, página e releitura por ids do pull): a imagem de menor posição, por `LEFT JOIN LATERAL … LIMIT 1` (`packages/db/src/product-cover.ts`). As respostas dos comandos de produto não o trazem; o pull seguinte o repõe. |
-| Sync | Em revisão | Migration 0112: `record_product_media_sync_change()` (`polaris_sync_owner`) e três gatilhos por comando em `product_media`; uma mudança `product` por envio, reordenação e remoção, sem `products.version` (ADR 0030 e 0093, emendas). |
+| Sync | Em revisão | Migration 0113: `record_product_media_sync_change()` (`polaris_sync_owner`) e três gatilhos por comando em `product_media`; uma mudança `product` por envio, reordenação e remoção, sem `products.version` (ADR 0030 e 0093, emendas). |
 | Provas | Em revisão | Gate `product-cover` (capa com 0, 1 e 3 imagens; reordenar; remover a capa e a última; uma mudança por operação; savepoint; pull; edição com a versão antiga; RLS entre duas lojas; plano da lista de 1.248 produtos no índice `(organization_id, product_id, position)`); gates `definer-owners` e `bootstrap` ajustados. Unidade: `product-cover.test.ts` (contrato), `product-cover-router.test.ts`, `local-products.test.ts`, `bootstrap.test.ts`. |
 | Fora | Registrado | Rota em lote (T2), cache e componente (T3a) e telas (T3b). |
 
@@ -2822,3 +2822,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Cartões de KPI | Em revisão | A linha do chip e a da nota existem sempre, uma sob a outra (`KpiCard` e `KpiCardSkeleton`); a nota de Vendas hoje guarda duas linhas. Ler um dia ou soltá-lo não move o texto de apoio, a sparkline nem a altura. |
 | Provas | Em revisão | `e2e/home.e2e.ts` e `e2e/dashboard.e2e.ts`, a 360 e 1280 px, com o limite de 1 px: 7 ↔ 30 dias (dados e dados, dados e vazio, vazio e vazio), o carregando do gráfico, o Resultado com e sem venda a desenhar, os 29 dias lidos pelo teclado nos cartões e o esqueleto contra o cartão. Unidade: `charts.test.tsx`, `home-chart.test.tsx`, `kpi-card.test.tsx`. O CLS do `e2e-real/cls` não vê a troca por clique (`hadRecentInput`). |
 | Não coberto | Registrado | Resultado em período futuro ("Este período ainda não começou."), rodapé do cartão "Resultado estimado" contra o do esqueleto, a linha de leitura do último dia que quebra em duas linhas no celular quando o dia tem despesa, listas com abas (Produtos, Despesas). Lista com tela e controle no PR. |
+
+### Admin v2, Parte 2: incidentes operacionais e reenvio de um evento (t747; corte admin-v2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Telas | Em revisão | `GET /incidentes` e `GET /incidentes/{uuid}` (`apps/admin/src/ui/page.ts`, `src/app.ts`), atrás do login da API e com a CSP `admin-document`; item "Incidentes" no menu (grupo Operação) só com `operational_incident:read`. Lista em páginas de 25 (até 50): tipo, causa, assunto, ocorrências, primeira, última e eventos a reenviar; nada de loja, cliente ou corpo. Detalhe com os eventos mortos em páginas e a referência só como texto. |
+| Reenvio | Em revisão | `ui/views/incident.ts`: Reenviar por evento, grau Leve (a frase do efeito e da auditoria acima do botão), sem motivo, um pedido por clique com todos os botões desligados até a resposta; os cinco resultados na linha do evento, com `role="status"`; 404 e 409 relêem a lista uma vez (`api.post` passou a ler o corpo só dos status que a tela lista). Sem lote e sem apagar. |
+| Início | Em revisão | A linha "N incidentes com eventos a reenviar" (primeira página de 50 da lista, sem auditoria; "ou mais" com outra página). |
+| Provas | Em revisão | `ui/incidents.test.ts` (lista, detalhe, cada resultado, 400/403/404/409/429/503 e rede, cadeias hostis na referência, duplo clique, sem capacidade, Início), `src/ui/screens.test.ts` (rotas, menu por capacidade, 401), `src/ui/ui-guard.test.ts` (rede: `/api/operational-incidents`, segmentos `events` e `retry`), `src/ui/ui-types.test.ts` (formas e os cinco resultados), `src/route-surface.test.ts`, `src/worker.workerd.test.ts` (workerd, Access simulado). |
+| Limites | Registrado | Sem teste no banco: o gate `admin-worker` não semeia incidente (fora de `apps/admin`, AC-C10); o reenvio e as leituras têm teste de rota e de função de banco desde o ADR 0085. Aceite no staging (AC-C14) e parecer do Rodrigo (AC-C11) pendentes. |

@@ -15,7 +15,6 @@ import {
   createPasswordTestAuth,
   createVerifiedPasswordUser,
   jsonRequest,
-  stubPwnedPasswordRange,
   testPassword,
   testSecret,
 } from "./password-test-support";
@@ -33,7 +32,6 @@ function hex(bytes: Uint8Array): string {
 const wrongPassword = "uma senha errada, bem comprida também";
 
 async function setup(emailVerified = true) {
-  stubPwnedPasswordRange();
   const parts = createPasswordTestAuth();
   const email = "ana.lock@example.invalid";
   if (emailVerified) {

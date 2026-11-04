@@ -42,6 +42,7 @@ import {
   unlockTokenUserId,
 } from "./login-lock";
 import { loginLockKey } from "./login-lock-key";
+import { usablePasswordPepper } from "./password-hash";
 import {
   currentAuthRequestState,
   currentRequestId,
@@ -92,7 +93,18 @@ function isEmailPasswordAuthRoute(request: Request): boolean {
 export function isEmailPasswordAuthEnabled(bindings: WorkerBindings): boolean {
   return (
     bindings.EMAIL_PASSWORD_AUTH_ENABLED === "true" &&
-    Boolean(bindings.RESEND_API_KEY?.trim() && bindings.AUTH_EMAIL_FROM?.trim())
+    Boolean(
+      bindings.RESEND_API_KEY?.trim() && bindings.AUTH_EMAIL_FROM?.trim()
+    ) &&
+    usablePasswordPepper(bindings.AUTH_PASSWORD_PEPPER) !== undefined
+  );
+}
+
+/** The password is asked for but cannot hash: off (fail closed), and said in the log, never with the value. */
+function passwordPepperMissing(bindings: WorkerBindings): boolean {
+  return (
+    bindings.EMAIL_PASSWORD_AUTH_ENABLED === "true" &&
+    usablePasswordPepper(bindings.AUTH_PASSWORD_PEPPER) === undefined
   );
 }
 const resetPasswordCallbackPathPattern = /\/reset-password\/[^/]+$/;
@@ -396,7 +408,7 @@ async function reserveChangePasswordAttempt(
     return {};
   }
   try {
-    await validateNewPassword(newPassword);
+    validateNewPassword(newPassword);
   } catch (error) {
     if (error instanceof PasswordPolicyError) {
       return { response: passwordPolicyResponse(error) };
@@ -573,9 +585,7 @@ export async function handleSetPasswordRequest(
   }
 
   try {
-    const normalizedPassword = await validateNewPassword(
-      requestBody.newPassword
-    );
+    const normalizedPassword = validateNewPassword(requestBody.newPassword);
     const response = await auth.api.setPassword({
       asResponse: true,
       body: { newPassword: normalizedPassword },
@@ -637,6 +647,7 @@ interface SharedAuthConfiguration {
   emailPasswordEnabled: boolean;
   googleClientId: string | undefined;
   googleClientSecret: string | undefined;
+  passwordPepper: string | undefined;
   secret: string;
 }
 
@@ -654,6 +665,7 @@ function sameConfiguration(
     a.emailPasswordEnabled === b.emailPasswordEnabled &&
     a.googleClientId === b.googleClientId &&
     a.googleClientSecret === b.googleClientSecret &&
+    a.passwordPepper === b.passwordPepper &&
     a.secret === b.secret
   );
 }
@@ -675,7 +687,13 @@ function sharedAuthFor(
   ) {
     return sharedAuth;
   }
-  const { baseURL, googleClientId, googleClientSecret, secret } = configuration;
+  const {
+    baseURL,
+    googleClientId,
+    googleClientSecret,
+    passwordPepper,
+    secret,
+  } = configuration;
   sharedAuth = {
     auth: createBetterAuth({
       baseURL,
@@ -697,6 +715,7 @@ function sharedAuthFor(
             },
           }
         : {}),
+      passwordPepper,
       requestId: currentRequestId,
       requestState: currentAuthRequestState,
       runInBackground: runInRequestBackground,
@@ -738,11 +757,17 @@ async function withAuthRuntime(
   }
 
   const emailPasswordEnabled = isEmailPasswordAuthEnabled(bindings);
+  if (passwordPepperMissing(bindings)) {
+    logger.error("auth_password_pepper_missing", { requestId });
+  }
   const entry = sharedAuthFor({
     baseURL,
     emailPasswordEnabled,
     googleClientId: bindings.GOOGLE_CLIENT_ID?.trim(),
     googleClientSecret: bindings.GOOGLE_CLIENT_SECRET?.trim(),
+    passwordPepper: emailPasswordEnabled
+      ? usablePasswordPepper(bindings.AUTH_PASSWORD_PEPPER)
+      : undefined,
     secret,
   });
   const { auth } = entry;

@@ -1,4 +1,8 @@
 import type {
+  PasswordRequirement,
+  PasswordStrength,
+} from "@polaris/domain/auth/password-rules";
+import type {
   CommonFailure,
   EmailProblem,
   NewPasswordProblem,
@@ -34,17 +38,35 @@ export const INCORRECT_CREDENTIALS = "E-mail ou senha incorretos.";
 export const GOOGLE_ACCOUNT_HELP =
   "Conta do Google? Use Continuar com o Google.";
 
-/** The rule, said before typing, on every screen that makes a password (v5.2): the same three rules, shorter. */
-export const PASSWORD_RULE =
-  "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve.";
-export const PASSWORD_TOO_SHORT = "Use pelo menos 15 caracteres.";
+/** The list under a new password (sign-up, reset, change): each rule, then the hint that is never required. */
+export const PASSWORD_REQUIREMENTS_LABEL = "Requisitos da senha";
+export const PASSWORD_REQUIREMENT_TEXTS = {
+  length: "Pelo menos 8 caracteres",
+  lowercase: "Pelo menos 1 letra minúscula",
+  number: "Pelo menos 1 número",
+  uppercase: "Pelo menos 1 letra maiúscula",
+} satisfies Record<PasswordRequirement, string>;
+export const PASSWORD_SPECIAL_HINT = "Um caractere especial (recomendado)";
+/** Read after each item by a screen reader, for the ✓ and ✗ that are drawn only. */
+export const REQUIREMENT_MET = "atendido";
+export const REQUIREMENT_UNMET = "não atendido";
+export const PASSWORD_STRENGTH_TEXTS = {
+  0: "Digite uma senha",
+  1: "Senha fraca",
+  2: "Senha fraca",
+  3: "Senha média",
+  4: "Senha forte",
+} satisfies Record<PasswordStrength, string>;
+
+export const PASSWORD_TOO_SHORT = "Use pelo menos 8 caracteres.";
+export const PASSWORD_MISSING_NUMBER = "Inclua pelo menos 1 número.";
+export const PASSWORD_MISSING_UPPERCASE =
+  "Inclua pelo menos 1 letra maiúscula.";
+export const PASSWORD_MISSING_LOWERCASE =
+  "Inclua pelo menos 1 letra minúscula.";
 export const PASSWORD_TOO_LONG = "A senha pode ter no máximo 128 caracteres.";
 export const PASSWORD_INVALID_CHARACTERS =
   "A senha tem um caractere que não conseguimos usar. Troque esse caractere.";
-export const PASSWORD_COMPROMISED =
-  "Essa senha já apareceu em vazamentos. Escolha outra.";
-export const PASSWORD_CHECK_UNAVAILABLE =
-  "Não conseguimos conferir a senha agora. Tente de novo em instantes.";
 
 export const CHALLENGE_CHECKING = "Confirmando que você é uma pessoa…";
 /** Above the widget, when it asks the person for an action (text of the cut). */
@@ -171,8 +193,6 @@ export function failureText(
       return form === "reset" ? CHALLENGE_BLOCKED_LINK : CHALLENGE_BLOCKED;
     case "challenge":
       return CHALLENGE_FAILED;
-    case "hibp_unavailable":
-      return PASSWORD_CHECK_UNAVAILABLE;
     case "limit":
       return form === "email" || form === "sign-up"
         ? TOO_MANY_EMAILS
@@ -184,10 +204,14 @@ export function failureText(
 
 export function newPasswordText(problem: NewPasswordProblem): string {
   switch (problem) {
-    case "compromised":
-      return PASSWORD_COMPROMISED;
     case "invalid_characters":
       return PASSWORD_INVALID_CHARACTERS;
+    case "missing_lowercase":
+      return PASSWORD_MISSING_LOWERCASE;
+    case "missing_number":
+      return PASSWORD_MISSING_NUMBER;
+    case "missing_uppercase":
+      return PASSWORD_MISSING_UPPERCASE;
     case "too_long":
       return PASSWORD_TOO_LONG;
     default:
