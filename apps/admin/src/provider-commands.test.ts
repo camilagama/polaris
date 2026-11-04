@@ -534,12 +534,8 @@ describe("what the provider answers never reaches the result or a log (the real 
         outcomeRecorded: false,
         result: "provider_unavailable",
       });
-      expect(JSON.stringify(result)).not.toMatch(
-        new RegExp(
-          FORBIDDEN.map((text) => text.replace(/\$/g, "\\$")).join("|")
-        )
-      );
       for (const text of FORBIDDEN) {
+        expect(JSON.stringify(result)).not.toContain(text);
         expect(spy.everything()).not.toContain(text);
         expect(JSON.stringify(spy.reported)).not.toContain(text);
       }
