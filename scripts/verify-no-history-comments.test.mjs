@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { gitEnvironment } from "./exact-count-list.mjs";
 import {
   ADVICE,
   IGNORED_FOLDERS,
@@ -346,6 +347,7 @@ describe("the repository", () => {
     execFileSync("git", ["ls-files", "-z"], {
       cwd: root,
       encoding: "utf8",
+      env: gitEnvironment(),
       maxBuffer: 64 * 1024 * 1024,
     })
       .split("\0")
@@ -386,6 +388,33 @@ describe("the repository", () => {
     expect(files.filter((file) => !sourceFile.test(file))).toEqual([]);
     const tree = new Set(files);
     expect(tracked().filter((file) => !tree.has(file))).toEqual([]);
+  });
+
+  it("lists the tracked files of this repository even when GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE name another one", () => {
+    const other = mkdtempSync(path.join(tmpdir(), "history-comments-git-"));
+    try {
+      const git = (...args) =>
+        execFileSync("git", args, {
+          cwd: other,
+          env: gitEnvironment(),
+          stdio: "pipe",
+        });
+      git("init", "-q");
+      writeFileSync(path.join(other, "theirs.ts"), "");
+      git("add", ".");
+      const before = tracked();
+      vi.stubEnv("GIT_DIR", path.join(other, ".git"));
+      vi.stubEnv("GIT_INDEX_FILE", path.join(other, ".git", "index"));
+      vi.stubEnv("GIT_WORK_TREE", other);
+      const during = tracked();
+      vi.unstubAllEnvs();
+      expect(before).toContain("scripts/verify-no-history-comments.mjs");
+      expect(during).toEqual(before);
+      expect(during).not.toContain("theirs.ts");
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(other, { recursive: true, force: true });
+    }
   });
 
   it("has no comment with history", () => {

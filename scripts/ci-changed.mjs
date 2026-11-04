@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { gitEnvironment } from "./exact-count-list.mjs";
 
 /**
  * Which expensive CI jobs a change can affect. The browser gate costs about
@@ -121,6 +122,7 @@ function changedFiles() {
     ["diff", "--name-only", "--no-renames", "HEAD^1", "HEAD"],
     {
       encoding: "utf8",
+      env: gitEnvironment(),
     }
   );
   if (result.status !== 0) {

@@ -67,7 +67,7 @@ Como a rotina e o cron devem tratar o sentinela:
   ```
 
   Outra execução em curso faz o `flock -n -E 99` sair com código 99 sem rodar o script (o 1 fica livre para o Node, que sai com ele numa exceção não tratada); isso não é falha do sentinela, e o alerta de "código ≠ 0 em 3 execuções seguidas" deve ignorar o 99 (o `flock` não imprime o JSON). Acrescente à lista de silenciadas com `>>`, para não deixar uma linha cortada se o cron ler o arquivo no meio da escrita.
-- **Antes de ligar o cron,** um `curl` real no staging com o token só de leitura (a mesma consulta que o script faz, com `view: "events"`) confere que o formato é `result.events.events[].source` com `fingerprint`, `release` e, nas repetições, `count` e `minute`, e que a resposta vem na ordem do horário do log, sem linha antiga aparecendo depois de uma nova.
+- **Antes de ligar o cron,** um `curl` real no staging com o token só de leitura (a mesma consulta que o script faz, com `view: "events"`) confere que o formato é `result.events.events[].source` com `fingerprint`, `release` e, nas repetições, `count` e `minute`, e que a resposta vem na ordem do horário do log, sem linha antiga aparecendo depois de uma nova. Para o canário, rode também o envio uma vez à mão e a consulta de `--check` (ou o `curl` com o filtro `fingerprint = ef8188b5f342498f` e `$metadata.service`): a chave de filtro `fingerprint` só fica provada contra a API real nessa primeira chamada.
 
 ## Silenciar uma assinatura
 
@@ -87,6 +87,42 @@ Use quando uma assinatura já anunciada continua acordando por motivo conhecido 
 O que a silenciada deixa de fazer: acordar (nova ou em alta), entrar em `held`, entrar na conta de "enxurrada" e gastar das 5 por dia. As linhas dela são lidas e a marca d'água avança, mas nada vira minuto contado no estado (o que já estava lá só expira); a saída traz só `muted`, o número de linhas silenciadas lidas na execução (sem repetir as já lidas), e nunca o texto. Quem já acordou hoje antes de entrar na lista continua contando na cota do dia. A janela cheia (`truncated`) ainda acorda uma vez por dia, mesmo que as 1000 linhas sejam de silenciadas, porque o script não sabe que perdeu linhas de outras assinaturas. Sem `--mute`, nada muda, e a saída não tem a chave `muted`.
 
 Para voltar a ouvir uma assinatura, apague a linha dela; a primeira execução seguinte a trata pelas regras normais.
+
+## Canário diário
+
+O sentinela lê 0 linhas tanto quando não houve erro quanto quando a consulta está cega (token sem permissão, serviço com nome errado, coleta desligada, Workers Logs sem espaço). O canário separa os dois casos: uma vez por dia um erro sintético válido entra pela rota de verdade e, 10 minutos depois, uma consulta confere que ele apareceu. Só roda no staging: em produção a rota está desligada (`"0"`) e responde 204 sem logar, então o canário lá só falharia.
+
+`scripts/client-error-canary.mjs`:
+
+- **Envio** (sem `--check`): um `POST /api/client-errors` com `Origin` igual ao da base, `Content-Type: application/json` e um corpo fixo de 1 evento (`kind: "error"`, `errorName: "Other"`, `routeId: "outra"`, um quadro `canario-abcdefgh.js:1:1` que nenhuma build gera, `v: 1`) mais o `release` do staging. Espera 204. `--base-url <https://...>` e `--release <sha curto de 7 a 12>` são obrigatórios.
+- **Conferência** (`--check`): consulta a telemetria (mesma API e mesmo `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN` só de leitura do sentinela) por `fingerprint` do canário e `$metadata.service` (`--service`, obrigatório) na janela de `--since` (padrão `24h`; no cron use `30m`, que prova que a linha de hoje chegou e não a de ontem). Sem nenhuma linha na janela, sai com código 6.
+- **Saídas:** 0 ok, 2 uso, 3 API ou rede, 4 a rota recusou (`status` na saída), 6 leitor cego. Uma linha de JSON, sem o token e sem texto vindo da API.
+
+**O fingerprint.** É a assinatura que a rota calcula (`clientErrorSignature`: SHA-256 de `kind`, `errorName`, `code`, `status`, `boundary`, `routeId` e o nome do pedaço do primeiro quadro, 16 hexadecimais). Não depende do `release`, então um deploy não o muda. O do canário é:
+
+```
+ef8188b5f342498f
+```
+
+O sentinela não calcula fingerprint, ele lê o da linha. Por isso o canário se cala no sentinela como qualquer assinatura: **ponha esse valor na lista de silenciadas (`--mute`) antes de ligar o cron**, com o motivo no comentário (`ef8188b5f342498f  # canário diário`). O teste `scripts/client-error-canary.test.mjs` roda o corpo na rota real e reprova se o schema recusar o canário ou se a assinatura mudar; se ele reprovar depois de uma mudança em `client-error-fields.ts`, ajuste `CANARY_EVENT`, este valor e a lista de silenciadas juntos.
+
+**Quem roda.** O mesmo cron do sentinela (do responsável), com o mesmo ambiente, um envio por dia e a conferência 10 minutos depois. Use `flock -n -E 99` como no sentinela, e o 99 também não é falha do canário. Exemplo (`<sha>` é o `X-Polaris-Release` que o `/health` do staging serve):
+
+```sh
+0 9 * * * node scripts/client-error-canary.mjs --base-url https://dash.araute.app --release <sha>
+10 9 * * * node scripts/client-error-canary.mjs --check --service polaris-web-staging --since 30m
+```
+
+O envio usa 1 dos 10 pedidos por minuto do endereço e gera 1 linha `client_error` por dia. Não reenvie à mão: dentro de 30 minutos, no mesmo isolate, o reenvio só soma ao contador, e a linha `client_error_count` sai com o próximo pedido da rota depois do minuto (pode demorar no staging); a conferência aceita as duas porque ambas levam o `fingerprint`, mas um reenvio pode dar código 6 sem defeito algum. Nada na rota foi afrouxado para ele. A rota é pública e o fingerprint está no repositório: quem enviar o mesmo corpo mantém a conferência verde; o canário prova que a leitura enxerga, não que o envio de hoje foi o nosso.
+
+**Quando falha.** Qualquer código ≠ 0 do canário é alerta no mesmo dia (não espera 3 execuções, como o sentinela, porque roda uma vez por dia). Enquanto o canário estiver vermelho, "0 linhas" do sentinela não quer dizer "sem erro".
+
+| Código | O que é | O que fazer |
+| --- | --- | --- |
+| 6 | A linha do canário não está nos logs da janela: **leitor cego** ou coleta parada (o envio pode ter dado 204 mesmo assim) | 1) Rode só a conferência de novo, sem reenviar (a indexação pode ter passado de 10 minutos). 2) Confira que `CLIENT_ERRORS_ENABLED` é `"1"` no staging implantado: desligada, a rota responde 204 e não loga, e o envio parece bem-sucedido. 3) Rode a consulta do sentinela com `curl` (seção "Ler") e veja se o formato ainda é `result.events.events[].source`, se o token ainda vale e se o `--service` é o nome do Worker. 4) Veja `client_error_dropped` e a cota dos Workers Logs (ADR 0094). Conserte a consulta ou a coleta antes de confiar no sentinela. |
+| 4 | A rota recusou o canário (`status` na saída) | 403: `BETTER_AUTH_BASE_URL` do staging não é a origem de `--base-url` (ou um desafio de bot/WAF da borda barrou o Node). 429: o limite por endereço (outro cliente no mesmo endereço ou execução repetida); espere 1 minuto e rode de novo. 400: o schema mudou e o corpo fixo deixou de valer (o teste do canário reprova no PR que mudou); atualize o corpo e o fingerprint. 415 ou outro: o corpo ou os cabeçalhos mudaram. Não afrouxe a rota para o canário. |
+| 3 | Rede ou API de telemetria (token revogado, HTTP ≠ 2xx, resposta sem `result.events.events`) | É o mesmo defeito que deixaria o sentinela cego: trate como o alerta de "código ≠ 0 em 3 execuções" dele, sem esperar. |
+| 2 | Uso (argumento, `CLOUDFLARE_*` ausente ou inválido) | Corrija o cron. |
 
 ## Conter uma enxurrada
 
