@@ -46,6 +46,7 @@ const PHONE: JourneyDevice = {
 const ZONE = "America/Sao_Paulo";
 const SETTLE_MS = 20_000;
 const LOADING = /Carregando|Preparando|Sincronizando|Verificando/;
+const UPDATED_LINE = /atualizado às/;
 const CLIENT_IP_HEADER = "cf-connecting-ip";
 
 interface Rect {
@@ -571,7 +572,7 @@ test("layout shift no celular: o Início aberto sem rede, na cópia, quando a re
   );
   await Promise.all(onTheCopy.map((locator) => expect(locator).toBeVisible()));
   releaseStock();
-  await expect(page.locator("#home-updated")).toContainText(/atualizado às/, {
+  await expect(page.locator("#home-updated")).toContainText(UPDATED_LINE, {
     timeout: SETTLE_MS,
   });
   await settle(page, [...SCREENS["/"](page), ...onTheCopy]);
