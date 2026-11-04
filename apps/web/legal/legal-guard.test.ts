@@ -574,9 +574,7 @@ describe("the day of the texts (VITE_LEGAL_VIGENCIA)", () => {
         `variável ${EFFECTIVE_FROM_VARIABLE} não é um dia AAAA-MM-DD: "${value}"`
       );
       expect(staging.warnings.join("\n")).toContain("(data de vigência)");
-      expect(real(env, true).errors.join("\n")).toContain(
-        "(data de vigência)"
-      );
+      expect(real(env, true).errors.join("\n")).toContain("(data de vigência)");
     }
   );
 });
