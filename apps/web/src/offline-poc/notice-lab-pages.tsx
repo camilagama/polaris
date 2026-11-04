@@ -1,3 +1,4 @@
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { AttentionItem, AttentionSummary } from "../offline/attention";
 import {
   type AttentionError,
@@ -64,6 +65,16 @@ const ITEMS: AttentionItem[] = [
 ];
 
 const noop = () => undefined;
+
+function withoutSubscription(entry: AttentionItem): AttentionItem {
+  return entry.cause === "entitlement_changed"
+    ? {
+        ...entry,
+        actions: ["retry"],
+        detail: `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`,
+      }
+    : entry;
+}
 const FIRST_ID = "0199c2d0-0000-7000-8000-000000000101";
 
 export function AttentionLabPage() {
@@ -75,10 +86,12 @@ export function AttentionLabPage() {
           message: "Não foi possível reenviar. Tente de novo.",
         }
       : null;
-  const summary: AttentionSummary =
-    state === "empty"
-      ? { items: [], waitingBehind: 0 }
-      : { items: ITEMS, waitingBehind: 2 };
+  let summary: AttentionSummary = { items: ITEMS, waitingBehind: 2 };
+  if (state === "empty") {
+    summary = { items: [], waitingBehind: 0 };
+  } else if (param("assinatura") === "off") {
+    summary = { items: ITEMS.map(withoutSubscription), waitingBehind: 2 };
+  }
   return (
     <AttentionPanel
       error={error}
