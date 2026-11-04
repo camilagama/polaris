@@ -79,6 +79,7 @@ describe("the Admin app's route surface", () => {
       "GET /lojas/:organizationId",
       "GET /casos",
       "GET /casos/:caseId",
+      "GET /configuracoes",
       "GET /funil",
       "GET /incidentes",
       "GET /incidentes/:incidentId",
