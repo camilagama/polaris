@@ -125,8 +125,9 @@ function limitText(failure: ApiFailure): string {
 }
 
 /**
- * What a refused command says, in words. 400 here is the case that is no longer open (the page sends no input), 409
- * a state that moved; neither leaves a change behind. The three answers that may hide a write that happened
+ * What a refused command says, in words. 400 here is the case that is no longer open (the page sends no input). A 409
+ * is not something these routes answer (they say `changed: false`); it is read as a state that moved, defensively.
+ * Neither leaves a change behind. The three answers that may hide a write that happened
  * (network, 5xx, an answer the page cannot read) are not here: they have their own sentence and no retry.
  */
 function refusalText(failure: ApiFailure): string {
@@ -266,6 +267,7 @@ export function storeActionsView(
       notice.alert(text.unknown);
       sending = false;
       status = null;
+      stateNotice.status("Situação da loja não confirmada.");
       dom.fill(suspensionBox, rereadButton());
       return;
     }

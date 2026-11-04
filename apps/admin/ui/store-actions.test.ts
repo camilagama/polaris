@@ -489,6 +489,8 @@ describe("what each answer of the suspension says (AC-C3)", () => {
       expect(buttons(mounted.root, "Suspender a loja")).toHaveLength(0);
       expect(buttons(mounted.root, "Reler a situação")).toHaveLength(1);
       expect(posts(mounted.calls)).toHaveLength(1);
+      expect(shown(mounted)).toContain("Situação da loja não confirmada.");
+      expect(shown(mounted)).not.toContain("Situação da loja: Ativa.");
 
       await click(mounted.root, "Reler a situação");
 
