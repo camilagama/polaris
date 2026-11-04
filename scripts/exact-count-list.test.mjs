@@ -3,7 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { exactCountProblems, walkFiles } from "./exact-count-list.mjs";
+import {
+  exactCountProblems,
+  gitEnvironment,
+  walkFiles,
+} from "./exact-count-list.mjs";
 
 const INSIDE_CLONE = /dentro do clone do repositório/;
 
@@ -52,7 +56,8 @@ describe("exactCountProblems", () => {
   });
 });
 
-const git = (cwd, ...args) => execFileSync("git", args, { cwd, stdio: "pipe" });
+const git = (cwd, ...args) =>
+  execFileSync("git", args, { cwd, env: gitEnvironment(), stdio: "pipe" });
 
 const touch = (base, files) => {
   for (const file of files) {
@@ -140,5 +145,24 @@ describe("walkFiles", () => {
     git(other, "add", ".");
     vi.stubEnv("GIT_DIR", path.join(other, ".git"));
     expect(walkFiles(base, () => true)).toEqual(["mine.ts"]);
+  });
+
+  it("keeps the fixture's git commands out of a repository named by GIT_DIR, GIT_INDEX_FILE or GIT_WORK_TREE", () => {
+    const base = temp();
+    const other = temp();
+    git(other, "init", "-q");
+    const before = git(other, "status", "--porcelain=v1", "-z").toString();
+    vi.stubEnv("GIT_DIR", path.join(other, ".git"));
+    vi.stubEnv("GIT_INDEX_FILE", path.join(other, ".git", "index"));
+    vi.stubEnv("GIT_WORK_TREE", other);
+    git(base, "init", "-q");
+    touch(base, ["mine.ts"]);
+    git(base, "add", ".");
+    expect(walkFiles(base, () => true)).toEqual(["mine.ts"]);
+    vi.unstubAllEnvs();
+    expect(git(other, "status", "--porcelain=v1", "-z").toString()).toBe(
+      before
+    );
+    expect(git(other, "ls-files").toString()).toBe("");
   });
 });

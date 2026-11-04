@@ -47,11 +47,11 @@ export function exactCountProblems({ found, allowed, what, advice, listFile }) {
 }
 
 /**
- * Every file git knows under `base` (tracked or added to the index) whose relative path passes
- * `keep`, skipping dependencies and build output. Reading the disk instead would count a file that
- * exists only on this machine, so the check would fail here and pass in CI.
+ * Every path git knows under `base` (tracked or added to the index, a symlink or submodule
+ * included), sorted, with no folder skipped. Reading the disk instead would count a file that exists only on this machine, so the
+ * check would fail here and pass in CI.
  */
-export function walkFiles(base, keep) {
+export function trackedFiles(base) {
   const listed = spawnSync("git", ["ls-files", "-z", "--cached"], {
     cwd: base,
     encoding: "utf8",
@@ -70,15 +70,23 @@ export function walkFiles(base, keep) {
   return listed.stdout
     .split("\0")
     .filter((relative) => relative !== "")
-    .filter(
-      (relative) =>
-        !relative
-          .split("/")
-          .slice(0, -1)
-          .some((folder) => IGNORED_FOLDERS.has(folder))
-    )
-    .filter((relative) => keep(relative) && isRegularFile(base, relative))
     .sort();
+}
+
+/**
+ * Every file git knows under `base` whose relative path passes `keep`, skipping dependencies and
+ * build output.
+ */
+export function walkFiles(base, keep) {
+  return trackedFiles(base).filter(
+    (relative) =>
+      !relative
+        .split("/")
+        .slice(0, -1)
+        .some((folder) => IGNORED_FOLDERS.has(folder)) &&
+      keep(relative) &&
+      isRegularFile(base, relative)
+  );
 }
 
 const REPOSITORY_SELECTORS = [
