@@ -1,24 +1,31 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { type ChangeEvent, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+} from "@/ui/collapsible";
+import { todayOr } from "@/ui/date-values";
+import {
   Field,
   FieldContent,
+  FieldDescription,
   FieldError,
   FieldLabel,
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
-import { Input } from "@/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { Separator } from "@/ui/separator";
 import {
   CatalogNotice,
+  DateField,
   describedBy,
   FieldTexts,
   INSTALLMENT_PLAN_LABEL,
@@ -34,12 +41,27 @@ import {
   type CatalogView,
   type ChoiceOption,
   formFieldKeys,
+  joinSaleDate,
   MAX_SALE_ADJUSTMENTS,
   NO_PROFILE_CHOICE,
+  OFFLINE_SALE_DATE_NOTE,
   SALE_DATE_HINT,
   SALE_METHOD_CARDS,
   type SaleFormState,
+  saleExtrasSummary,
+  saleTimeIsWellFormed,
+  splitSaleDate,
+  timeOfDay,
 } from "./sale-form-model";
+
+/** The errors that live inside the closed line of date and adjustments. */
+function isExtrasErrorKey(key: string): boolean {
+  return (
+    key === formFieldKeys.occurredAt ||
+    key === formFieldKeys.adjustments ||
+    key.startsWith("adjustment:")
+  );
+}
 
 const adjustmentKindOptions: ChoiceOption[] = ADJUSTMENT_KINDS.map(
   ([id, label]) => ({ id, label })
@@ -221,41 +243,137 @@ function Adjustments({
 /* Date                                                                       */
 /* -------------------------------------------------------------------------- */
 
-interface DateFieldProps {
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+interface SaleDateProps {
   error: string | undefined;
+  /** Without a connection the sale is dated when it is kept: no field, the note in its place. */
+  offline: boolean;
   onChange: (value: string) => void;
   value: string;
 }
 
-/** The optional commercial date and time; empty means now. */
-function DateField({ error, onChange, value }: DateFieldProps) {
-  const id = "sale-occurred-at";
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
-    [onChange]
+/**
+ * The optional commercial date and time: the day on the DatePicker of src/ui (never after today) and the time typed
+ * beside it; empty means now. Picking a day with no time fills in the time of now, which the person can change.
+ */
+function SaleDate({ error, offline, onChange, value }: SaleDateProps) {
+  const { day, time } = splitSaleDate(value);
+  const handleDay = useCallback(
+    (next: string) =>
+      onChange(
+        joinSaleDate(
+          next,
+          time === "" && next !== "" ? timeOfDay(new Date()) : time
+        )
+      ),
+    [onChange, time]
   );
-  const handleClear = useCallback(() => onChange(""), [onChange]);
+  const handleTime = useCallback(
+    (next: string) => onChange(joinSaleDate(day, next)),
+    [day, onChange]
+  );
+  const handleNow = useCallback(() => {
+    onChange("");
+    document.getElementById("sale-occurred-day")?.focus();
+  }, [onChange]);
+  const timeAtFault =
+    error !== undefined && ISO_DAY.test(day) && !saleTimeIsWellFormed(time);
+  if (offline) {
+    return (
+      <Field>
+        <FieldTitle>Data e hora da venda</FieldTitle>
+        <p className="text-muted-foreground text-support" role="note">
+          {OFFLINE_SALE_DATE_NOTE}
+        </p>
+      </Field>
+    );
+  }
   return (
-    <Field data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor={id}>Data e hora da venda (opcional)</FieldLabel>
-      <div className="flex items-center gap-2">
-        <Input
-          aria-describedby={describedBy(id, error, SALE_DATE_HINT)}
-          aria-invalid={error ? true : undefined}
-          className="min-w-0 flex-1"
-          id={id}
-          onChange={handleChange}
-          type="datetime-local"
-          value={value}
+    <FieldSet className="gap-3">
+      <legend className="font-medium text-sm">
+        Data e hora da venda (opcional)
+      </legend>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
+        <DateField
+          error={timeAtFault ? undefined : error}
+          id="sale-occurred-day"
+          label="Dia"
+          max={todayOr(undefined)}
+          onChange={handleDay}
+          value={day}
+        />
+        <TextField
+          className="w-28"
+          error={timeAtFault ? error : undefined}
+          id="sale-occurred-time"
+          inputMode="numeric"
+          label="Hora"
+          maxLength={5}
+          onChange={handleTime}
+          placeholder="14:30"
+          value={time}
         />
         {value === "" ? null : (
-          <Button onClick={handleClear} type="button" variant="outline">
+          <Button
+            className="self-end"
+            onClick={handleNow}
+            type="button"
+            variant="outline"
+          >
             Usar agora
           </Button>
         )}
       </div>
-      <FieldTexts error={error} hint={SALE_DATE_HINT} id={id} />
-    </Field>
+      <FieldDescription>{SALE_DATE_HINT}</FieldDescription>
+    </FieldSet>
+  );
+}
+
+interface SaleExtrasProps {
+  adjustments: AdjustmentsProps;
+  date: SaleDateProps;
+  /** A date or an adjustment with an error keeps the section open, so the focus can reach it. */
+  hasError: boolean;
+  summary: string;
+}
+
+/** Date and adjustments, closed in one line ("Agora · Sem ajuste · Alterar"): most counter sales use neither. */
+function SaleExtras({ adjustments, date, hasError, summary }: SaleExtrasProps) {
+  // a cart restored on a remount (the draft) shows the date or the adjustments it already has
+  const [open, setOpen] = useState(
+    () => adjustments.adjustments.length > 0 || date.value !== ""
+  );
+  const handleOpenChange = useCallback((next: boolean) => setOpen(next), []);
+  const expanded = open || hasError;
+  return (
+    <Collapsible onOpenChange={handleOpenChange} open={expanded}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 text-muted-foreground" id="sale-extras-summary">
+          {summary}
+        </p>
+        {hasError ? null : (
+          <CollapsibleTrigger
+            aria-describedby="sale-extras-summary"
+            render={
+              <Button
+                className="shrink-0"
+                size="sm"
+                type="button"
+                variant="link"
+              />
+            }
+          >
+            {expanded ? "Fechar" : "Alterar"}
+            <span className="sr-only"> data e ajustes</span>
+          </CollapsibleTrigger>
+        )}
+      </div>
+      <CollapsiblePanel className="grid gap-5 pt-4">
+        <SaleDate {...date} />
+        <Adjustments {...adjustments} />
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -434,7 +552,16 @@ export function PaymentSection({
               você pode reenviá-la sem perfil em Pendências.
             </p>
           ) : null}
-          <CatalogNotice onRetry={onRetry} view={profilesState} />
+          <CatalogNotice
+            onRetry={onRetry}
+            view={
+              // "Sem perfil" already chosen in a store without profiles: the field says it, no paragraph
+              profilesState.kind === "empty" &&
+              form.profile.choice === NO_PROFILE_CHOICE
+                ? null
+                : profilesState
+            }
+          />
           {form.profile.reviewNotice ? (
             <Alert role="alert" variant="warning">
               <TriangleAlertIcon aria-hidden="true" />
@@ -454,20 +581,23 @@ export function PaymentSection({
             </Alert>
           ) : null}
           <Separator />
-          {offline ? null : (
-            <DateField
-              error={errors[formFieldKeys.occurredAt]}
-              onChange={onDateChange}
-              value={form.occurredAtLocal}
-            />
-          )}
-          <Adjustments
-            adjustments={form.adjustments}
-            disabled={disabled}
-            errors={errors}
-            onAdd={onAddAdjustment}
-            onChange={onAdjustmentChange}
-            onRemove={onRemoveAdjustment}
+          <SaleExtras
+            adjustments={{
+              adjustments: form.adjustments,
+              disabled,
+              errors,
+              onAdd: onAddAdjustment,
+              onChange: onAdjustmentChange,
+              onRemove: onRemoveAdjustment,
+            }}
+            date={{
+              error: errors[formFieldKeys.occurredAt],
+              offline,
+              onChange: onDateChange,
+              value: form.occurredAtLocal,
+            }}
+            hasError={Object.keys(errors).some(isExtrasErrorKey)}
+            summary={saleExtrasSummary(form, offline)}
           />
         </CardContent>
       </fieldset>

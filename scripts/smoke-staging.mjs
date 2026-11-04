@@ -11,8 +11,10 @@ import { pathToFileURL } from "node:url";
  * built from (`X-Polaris-Release`, ADR 0098 amended), compared with `HEAD_SHA`; the shell, served by Static
  * Assets without the Worker, is compared with the build artifact the deploy published. The Admin of staging sits
  * behind Cloudflare Access (amendments to ADR 0097 and ADR 0070): without a sign-in, its health and its API must be
- * answered by Access with a redirect to the login of the staging team, never by the Worker. Prints the check, the
- * status and a fixed reason, never a body or a header.
+ * answered by Access with a redirect to the login of the staging team, never by the Worker. The billing webhooks of
+ * Asaas and Woovi get a POST without a token or a signature, which the Worker must refuse with 401 before storing
+ * anything (a 503 says a provider secret is missing). Prints the check, the status and a fixed reason, never a body
+ * or a header.
  */
 
 const NONCE = /'nonce-[^']+'/;
@@ -109,6 +111,25 @@ const rpc = (body) => ({
   body: JSON.stringify(body),
   method: "POST",
 });
+
+/** The billing providers whose webhook route the smoke knocks on, without a token or a signature. */
+export const BILLING_WEBHOOK_PROVIDERS = ["asaas", "woovi"];
+
+/**
+ * A delivery without proof of the provider is refused with 401 `unauthorized` before the body is read as an event,
+ * so nothing is stored. A 503 `billing_provider_not_configured` means a secret or a public key of the provider is
+ * missing in the Worker; a 200 would mean the route took a delivery nobody signed.
+ */
+const refusedWebhook = (response, body) => {
+  const code = parsed(body)?.error?.code;
+  if (response.status === 401) {
+    return code === "unauthorized" || "401 not unauthorized";
+  }
+  if (response.status === 503 && code === "billing_provider_not_configured") {
+    return "provider not configured (a secret is missing)";
+  }
+  return response.status === 200 ? "accepted without a signature" : "not 401";
+};
 
 /**
  * The checks, in order. `web` and `catalog` are the staging origins; `release` is the 12 characters each Worker
@@ -258,6 +279,14 @@ export function smokeChecks({ admin, catalog, web }, { release, shell }) {
       name: "admin /api/whoami without sign-in (redirected to Access)",
       url: `${admin}/api/whoami`,
     },
+    ...BILLING_WEBHOOK_PROVIDERS.map((provider) => ({
+      ...rpc({}),
+      expect: refusedWebhook,
+      name: `web POST /webhooks/billing/${provider} without a signature (refused with 401)`,
+      readBody: true,
+      url: `${web}/webhooks/billing/${provider}`,
+      worker: true,
+    })),
     {
       ...rpc({}),
       expect: status(401),

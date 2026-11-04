@@ -273,6 +273,8 @@ interface QuantityStepperProps {
   /** The same for +. */
   more: string | null;
   onChange: (value: string) => void;
+  /** What is counted ("Camiseta · Preta"), in the names of − and + when several steppers share a screen. */
+  subject?: string | undefined;
   value: string;
 }
 
@@ -289,8 +291,10 @@ export function QuantityStepper({
   less,
   more,
   onChange,
+  subject,
   value,
 }: QuantityStepperProps) {
+  const of = subject ? ` de ${subject}` : "";
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
     [onChange]
@@ -311,7 +315,7 @@ export function QuantityStepper({
       {/* the field has its own label: the group is only layout (role="none"), no nameless "group" to announce */}
       <ButtonGroup role="none">
         <Button
-          aria-label="Menos uma unidade"
+          aria-label={`Menos uma unidade${of}`}
           className="touch:size-11"
           disabled={less === null}
           onClick={handleLess}
@@ -335,7 +339,7 @@ export function QuantityStepper({
           />
         </InputGroup>
         <Button
-          aria-label="Mais uma unidade"
+          aria-label={`Mais uma unidade${of}`}
           className="touch:size-11"
           disabled={more === null}
           onClick={handleMore}

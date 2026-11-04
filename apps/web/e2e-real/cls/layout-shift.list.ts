@@ -38,13 +38,7 @@ export interface ClsException {
   reason: string;
 }
 
-const SALE_SUGGESTIONS =
-  "a lista de variantes encontradas entra no fluxo e empurra Quantidade, Adicionar item e Pagamento 168 px; sai com a lista em popup ancorado à busca, na Vender enxuta";
-
-export const CLS_EXCEPTIONS: Partial<Record<ClsScenario, ClsException>> = {
-  "/sales com-vendas frio": { reason: SALE_SUGGESTIONS },
-  "/sales com-vendas quente": { reason: SALE_SUGGESTIONS },
-};
+export const CLS_EXCEPTIONS: Partial<Record<ClsScenario, ClsException>> = {};
 
 /**
  * What is wrong with one measurement, as a sentence that says what to do, or null. `exceptions` and `limit` are

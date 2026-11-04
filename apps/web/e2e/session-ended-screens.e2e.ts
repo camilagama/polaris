@@ -145,7 +145,7 @@ test("venda: com o carrinho montado, o 401 diz 'A venda não foi registrada.' e 
     },
   });
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
-  await page.getByRole("button", { name: SHIRT_OPTION }).click();
+  await page.getByRole("option", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill("2");
   await page
     .getByRole("radiogroup", { name: "Método de pagamento" })

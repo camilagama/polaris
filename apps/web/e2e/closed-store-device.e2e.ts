@@ -278,7 +278,7 @@ async function openSales(page: Page, server: ClosingServer) {
 
 async function keepOneSale(page: Page) {
   await page.getByLabel("Produto ou variante").fill("camiseta azul");
-  await page.getByRole("button", { name: SHIRT_OPTION }).click();
+  await page.getByRole("option", { name: SHIRT_OPTION }).click();
   await page.getByLabel("Quantidade").fill("1");
   await page
     .getByRole("radiogroup", { name: "Método de pagamento" })

@@ -1,18 +1,22 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
+import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { FieldDescription } from "@/ui/field";
 import { stockEntryHref } from "../inventory/stock-entry-link";
+import { focusLater } from "../lib/focus";
 import { QuantityStepper, TextField } from "./sale-fields";
 import {
   type EvaluationContext,
   type ItemDraft,
   itemFieldKey,
   type SaleSummary,
+  type StockView,
   stepQuantity,
+  stockLineText,
   stockView,
 } from "./sale-form-model";
 import { VariantSearch } from "./sale-variant-picker";
@@ -31,7 +35,6 @@ interface ItemEditorProps {
   /** Searches this device's collections instead of the server (no connection). */
   localSearch: LocalSearch | undefined;
   onChange: (draftId: string, changes: Partial<ItemDraft>) => void;
-  onClearVariant: (draftId: string) => void;
   onPick: (draftId: string, entry: InventoryBalanceEntryReadModel) => void;
   onRemove: (draftId: string) => void;
   organizationId: string;
@@ -42,6 +45,11 @@ interface ItemEditorProps {
   summaryLine: SaleSummary["lines"][number] | undefined;
 }
 
+/**
+ * One line of the sale. Before a variant is chosen it is only the search; once chosen, the variant is one line with a
+ * check, its balance and "Trocar", and the quantity and prices appear under it. "Trocar" opens the search again with
+ * the current variant marked among the suggestions, and leaving it without a choice keeps the line as it was.
+ */
 export function ItemEditor({
   canAdjustStock,
   canRemove,
@@ -50,7 +58,6 @@ export function ItemEditor({
   item,
   localSearch,
   onChange,
-  onClearVariant,
   onPick,
   onRemove,
   organizationId,
@@ -60,7 +67,11 @@ export function ItemEditor({
   summaryLine,
 }: ItemEditorProps) {
   const prefix = `sale-item-${item.draftId}`;
+  const changeId = `${prefix}-change`;
+  const [changing, setChanging] = useState(false);
   const chosen = item.variantId !== "";
+  const searching = !chosen || changing;
+  const name = chosen ? item.label : `item ${index + 1}`;
   const stockState = chosen
     ? stockView(stock[item.variantId], canAdjustStock)
     : null;
@@ -68,13 +79,17 @@ export function ItemEditor({
     errors[itemFieldKey(item.draftId, "product")] ??
     errors[itemFieldKey(item.draftId, "variant")];
   const handlePick = useCallback(
-    (entry: InventoryBalanceEntryReadModel) => onPick(item.draftId, entry),
+    (entry: InventoryBalanceEntryReadModel) => {
+      setChanging(false);
+      onPick(item.draftId, entry);
+    },
     [item.draftId, onPick]
   );
-  const handleClear = useCallback(
-    () => onClearVariant(item.draftId),
-    [item.draftId, onClearVariant]
-  );
+  const handleChange = useCallback(() => setChanging(true), []);
+  const handleCancel = useCallback(() => {
+    setChanging(false);
+    focusLater(() => document.getElementById(changeId)?.focus());
+  }, [changeId]);
   const handleQuantity = useCallback(
     (value: string) => onChange(item.draftId, { quantity: value }),
     [item.draftId, onChange]
@@ -95,61 +110,43 @@ export function ItemEditor({
     <fieldset className="grid min-w-0 gap-3 border-border border-t pt-4 first-of-type:border-t-0 first-of-type:pt-0">
       <legend className="sr-only">Item {index + 1}</legend>
       <div className="flex items-start gap-2">
-        <div className="grid min-w-0 flex-1 gap-0.5">
-          {chosen ? (
-            <>
-              <p className="font-medium [overflow-wrap:anywhere]">
-                {item.label}
-              </p>
-              {stockState ? (
-                <p
-                  className={cn(
-                    "text-support",
-                    stockState.tone === "warning"
-                      ? "text-warning"
-                      : "text-muted-foreground"
-                  )}
-                  id={`${prefix}-stock`}
-                  role="status"
-                >
-                  {stockState.text} {localSearch ? "" : stockState.costText}
-                </p>
-              ) : null}
-              {stockState?.needsEntry && canAdjustStock ? (
-                <a
-                  className={cn(
-                    buttonVariants({ size: "sm", variant: "link" }),
-                    "justify-self-start text-support"
-                  )}
-                  href={stockEntryHref(item.variantId)}
-                >
-                  Dar entrada no estoque
-                  <span className="sr-only"> de {item.label}</span>
-                </a>
-              ) : null}
-              <Button
-                className="justify-self-start text-support"
-                onClick={handleClear}
-                size="sm"
-                type="button"
-                variant="link"
-              >
-                Trocar variante
-              </Button>
-            </>
-          ) : (
+        <div className="grid min-w-0 flex-1 gap-1">
+          {searching ? (
             <VariantSearch
+              autoFocus={changing}
               error={pickError}
               id={prefix}
               localSearch={localSearch}
+              onCancel={changing ? handleCancel : undefined}
               onPick={handlePick}
               organizationId={organizationId}
+              selectedVariantId={changing ? item.variantId : undefined}
+            />
+          ) : (
+            <ChosenVariant
+              changeId={changeId}
+              item={item}
+              offline={localSearch !== undefined}
+              onChange={handleChange}
+              stockState={stockState}
             />
           )}
+          {!searching && stockState?.needsEntry && canAdjustStock ? (
+            <a
+              className={cn(
+                buttonVariants({ size: "sm", variant: "link" }),
+                "justify-self-start text-support"
+              )}
+              href={stockEntryHref(item.variantId)}
+            >
+              Dar entrada no estoque
+              <span className="sr-only"> de {item.label}</span>
+            </a>
+          ) : null}
         </div>
         {canRemove ? (
           <Button
-            aria-label={`Remover item ${index + 1}`}
+            aria-label={`Remover ${name}`}
             className="text-muted-foreground hover:text-destructive"
             onClick={handleRemove}
             size="icon"
@@ -160,6 +157,114 @@ export function ItemEditor({
           </Button>
         ) : null}
       </div>
+      {chosen ? (
+        <ChosenItemFields
+          errors={errors}
+          item={item}
+          onCharged={handleCharged}
+          onListed={handleListed}
+          onQuantity={handleQuantity}
+          prefix={prefix}
+          priceHint={priceHint}
+          stockWarning={stockWarning}
+          summaryLine={summaryLine}
+        />
+      ) : null}
+    </fieldset>
+  );
+}
+
+interface ChosenVariantProps {
+  changeId: string;
+  item: ItemDraft;
+  /** Without a connection the cost on this device is not shown. */
+  offline: boolean;
+  onChange: () => void;
+  stockState: StockView | null;
+}
+
+/** "✓ Camiseta · Preta · Saldo 6   Trocar": the chosen variant in one line, the cost under it. */
+function ChosenVariant({
+  changeId,
+  item,
+  offline,
+  onChange,
+  stockState,
+}: ChosenVariantProps) {
+  const costText = offline ? null : stockState?.costText;
+  return (
+    <div className="grid gap-0.5">
+      <div className="flex items-start gap-2">
+        <CircleCheckIcon
+          aria-hidden="true"
+          className="mt-0.5 size-4 shrink-0 text-foreground"
+        />
+        <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+          <span className="font-medium">{item.label}</span>
+          {stockState ? (
+            <>
+              <span aria-hidden="true" className="text-muted-foreground">
+                {" · "}
+              </span>
+              <span
+                className={cn(
+                  "text-support",
+                  stockState.tone === "warning"
+                    ? "text-warning"
+                    : "text-muted-foreground"
+                )}
+                id={`sale-item-${item.draftId}-stock`}
+                role="status"
+              >
+                {stockLineText(stockState)}
+              </span>
+            </>
+          ) : null}
+        </p>
+        <Button
+          className="shrink-0 text-support"
+          id={changeId}
+          onClick={onChange}
+          size="sm"
+          type="button"
+          variant="link"
+        >
+          Trocar<span className="sr-only"> variante de {item.label}</span>
+        </Button>
+      </div>
+      {costText ? (
+        <p className="pl-6 text-muted-foreground text-support">{costText}</p>
+      ) : null}
+    </div>
+  );
+}
+
+interface ChosenItemFieldsProps {
+  errors: Record<string, string>;
+  item: ItemDraft;
+  onCharged: (value: string) => void;
+  onListed: (value: string) => void;
+  onQuantity: (value: string) => void;
+  prefix: string;
+  priceHint: string | null;
+  stockWarning: string | undefined;
+  summaryLine: SaleSummary["lines"][number] | undefined;
+}
+
+/** Quantity and prices: only once the variant is chosen. */
+function ChosenItemFields({
+  errors,
+  item,
+  onCharged,
+  onListed,
+  onQuantity,
+  prefix,
+  priceHint,
+  stockWarning,
+  summaryLine,
+}: ChosenItemFieldsProps) {
+  return (
+    <>
       {stockWarning ? (
         <p
           className="flex items-start gap-1.5 text-support text-warning"
@@ -179,7 +284,8 @@ export function ItemEditor({
           label="Quantidade"
           less={stepQuantity(item.quantity, -1)}
           more={stepQuantity(item.quantity, 1)}
-          onChange={handleQuantity}
+          onChange={onQuantity}
+          subject={item.label}
           value={item.quantity}
         />
         <TextField
@@ -189,7 +295,7 @@ export function ItemEditor({
           inputMode="decimal"
           label="Preço cobrado"
           maxLength={22}
-          onChange={handleCharged}
+          onChange={onCharged}
           placeholder="49,90"
           value={item.chargedUnitPrice}
         />
@@ -201,7 +307,7 @@ export function ItemEditor({
           inputMode="decimal"
           label="Preço de tabela"
           maxLength={22}
-          onChange={handleListed}
+          onChange={onListed}
           placeholder="59,90"
           value={item.listedUnitPrice}
         />
@@ -224,6 +330,6 @@ export function ItemEditor({
           </span>
         ) : null}
       </div>
-    </fieldset>
+    </>
   );
 }

@@ -150,25 +150,35 @@ async function tap(browser: Browser, element: WebdriverIO.Element) {
 const click = async (browser: Browser, selector: string) =>
   await tap(browser, await browser.$(selector));
 
-/** Botão cujo texto (somando os filhos) contém `text`; o seletor de texto parcial só olha o primeiro nó. */
-async function clickButtonContaining(browser: Browser, text: string) {
+/**
+ * Botão (ou outro controle, por `selector`) cujo texto, somando os filhos, contém `text`; o seletor de texto parcial
+ * só olha o primeiro nó.
+ */
+async function clickButtonContaining(
+  browser: Browser,
+  text: string,
+  selector = "button"
+) {
   const find = (wanted: string) =>
     browser.execute(
-      (needle) =>
-        [...document.querySelectorAll("button")].find((candidate) =>
+      (needle, within) =>
+        [...document.querySelectorAll(within)].find((candidate) =>
           candidate.textContent?.includes(needle)
         ) ?? null,
-      wanted
+      wanted,
+      selector
     );
   try {
     await browser.waitUntil(async () => (await find(text)) !== null, {
       timeout: WAIT_MS,
     });
   } catch (error: unknown) {
-    const seen = await browser.execute(() =>
-      [...document.querySelectorAll("button")].map((button) =>
-        button.textContent?.trim()
-      )
+    const seen = await browser.execute(
+      (within) =>
+        [...document.querySelectorAll(within)].map((button) =>
+          button.textContent?.trim()
+        ),
+      selector
     );
     throw new Error(
       `botão não apareceu: "${text}"; botões: ${JSON.stringify(seen)}`,
@@ -460,7 +470,8 @@ async function saleFlow(
       await setChecked(browser, "Rede disponível", false);
       await waitForText(browser, "Sem conexão. A venda será guardada");
       await searchShirt(browser);
-      await clickButtonContaining(browser, shirt);
+      // a variante é uma opção da lista que abre sob a busca
+      await clickButtonContaining(browser, shirt, '[role="option"]');
       await (await control(browser, "Quantidade")).setValue("2");
       await choose(browser, "Método de pagamento", "Pix");
       await choose(
