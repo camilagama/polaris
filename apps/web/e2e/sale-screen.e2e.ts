@@ -132,7 +132,7 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { exact: true, name: "Hoje" }).click();
   const time = page.getByLabel("Hora");
   await expect(time).not.toHaveValue("");
-  await time.fill("08:00");
+  await time.fill("00:00");
   await expect(summary).toContainText("Data e hora da venda");
   await page.getByRole("button", { name: "Usar agora" }).click();
   await expect(time).toHaveValue("");
