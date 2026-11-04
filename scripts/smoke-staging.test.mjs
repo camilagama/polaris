@@ -15,6 +15,7 @@ import {
 import { polarisContract } from "../packages/contracts/src/index.ts";
 import {
   attempt,
+  BILLING_WEBHOOK_PROVIDERS,
   COMMIT_REFUSAL,
   CREATE_INITIAL_INPUT,
   REFUSAL,
@@ -97,6 +98,14 @@ function anonymousCall(procedure, init) {
   );
 }
 
+/** What the billing webhook route answers (`routes/billing-webhooks.ts`) to a delivery without proof, or without the provider's secrets. */
+const webhookRefusal = (status = 401, code = "unauthorized") =>
+  fromWorker(
+    status,
+    { "content-type": "application/json" },
+    json({ error: { code }, requestId: REQUEST_ID })
+  );
+
 /** A staging that answers every check as expected. */
 function stagingAnswer(url, init = {}) {
   const origin = new Headers(init.headers).get("origin");
@@ -129,6 +138,9 @@ function stagingAnswer(url, init = {}) {
       return anonymousCall(polarisContract.organization.listMine, init);
     case `${origins.web}/rpc/organization/createInitial`:
       return anonymousCall(polarisContract.organization.createInitial, init);
+    case `${origins.web}/webhooks/billing/asaas`:
+    case `${origins.web}/webhooks/billing/woovi`:
+      return webhookRefusal();
     case `${origins.catalog}/`:
       return answer(200, {
         "content-security-policy": "script-src 'nonce-abc' 'strict-dynamic'",
@@ -165,10 +177,10 @@ describe("the staging smoke", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes when every check answers as expected, with seventeen checks", async () => {
+  it("passes when every check answers as expected, with nineteen checks", async () => {
     const fetchImpl = vi.fn(fakeStaging());
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(17);
+    expect(fetchImpl).toHaveBeenCalledTimes(19);
   });
 
   it("runs the anonymous /rpc calls that build Better Auth last, after the get-session", () => {
@@ -176,7 +188,7 @@ describe("the staging smoke", () => {
       release: RELEASE,
       shell: { index: "", serviceWorker: "" },
     }).map((check) => check.url);
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(19);
     expect(names.slice(-2)).toEqual([
       `${origins.web}/rpc/organization/listMine`,
       `${origins.web}/rpc/organization/createInitial`,
@@ -201,17 +213,24 @@ describe("the staging smoke", () => {
       requests.every(({ headers }) => headers.get("user-agent") === USER_AGENT)
     ).toBe(true);
     const posts = requests.filter(({ method }) => method === "POST");
-    expect(posts.map(({ headers }) => headers.get("origin"))).toEqual([
-      origins.web,
-      null,
-      STRANGE_ORIGIN,
-      "null",
-      origins.web,
-      origins.web,
-    ]);
     expect(
-      posts.every(({ url }) => url.startsWith(`${origins.web}/rpc/`))
-    ).toBe(true);
+      posts.map(({ headers, url }) => [
+        new URL(url).pathname,
+        headers.get("origin"),
+      ])
+    ).toEqual([
+      ["/rpc/system/ping", origins.web],
+      ["/rpc/system/ping", null],
+      ["/rpc/system/ping", STRANGE_ORIGIN],
+      ["/rpc/system/ping", "null"],
+      ["/webhooks/billing/asaas", null],
+      ["/webhooks/billing/woovi", null],
+      ["/rpc/organization/listMine", origins.web],
+      ["/rpc/organization/createInitial", origins.web],
+    ]);
+    expect(posts.every(({ url }) => url.startsWith(`${origins.web}/`))).toBe(
+      true
+    );
   });
 
   it("fails on a release different from the deployed commit, and passes when a later attempt has it", async () => {
@@ -434,8 +453,8 @@ describe("the staging smoke", () => {
     expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
       "web /api/auth/get-session (auth configured, no session): 503 not 200",
     ]);
-    // sixteen checks pass at once, the failing one is tried three times
-    expect(fetchImpl).toHaveBeenCalledTimes(19);
+    // eighteen checks pass at once, the failing one is tried three times
+    expect(fetchImpl).toHaveBeenCalledTimes(21);
     expect(
       await runSmoke(
         origins,
@@ -514,6 +533,65 @@ describe("the staging smoke", () => {
     expect(kindOf(polarisContract.system.ping)).toBe("read");
     expect(kindOf(polarisContract.organization.listMine)).toBe("read");
     expect(kindOf(polarisContract.organization.createInitial)).toBe("write");
+  });
+
+  describe("the billing webhooks", () => {
+    const webhook = (provider) => `${origins.web}/webhooks/billing/${provider}`;
+    const nameOf = (provider) =>
+      `web POST /webhooks/billing/${provider} without a signature (401, nothing stored)`;
+
+    it("knocks on the webhook of each provider with a POST, without a token or a signature", async () => {
+      const requests = [];
+      const fetchImpl = (url, init) => {
+        requests.push({ headers: new Headers(init.headers), init, url });
+        return fakeStaging()(url, init);
+      };
+      expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([]);
+      expect(BILLING_WEBHOOK_PROVIDERS).toEqual(["asaas", "woovi"]);
+      for (const provider of BILLING_WEBHOOK_PROVIDERS) {
+        const sent = requests.filter(
+          (request) => request.url === webhook(provider)
+        );
+        expect(sent).toHaveLength(1);
+        expect(sent[0].init.method).toBe("POST");
+        expect(sent[0].headers.has("asaas-access-token")).toBe(false);
+        expect(sent[0].headers.has("x-webhook-signature")).toBe(false);
+        expect(sent[0].headers.has("origin")).toBe(false);
+      }
+    });
+
+    it("fails when a provider's secret is missing (503), saying so", async () => {
+      const fetchImpl = fakeStaging({
+        [webhook("woovi")]: () =>
+          webhookRefusal(503, "billing_provider_not_configured"),
+      });
+      expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
+        `${nameOf("woovi")}: 503 provider not configured (a secret is missing)`,
+      ]);
+    });
+
+    it("fails when a delivery without a signature is accepted, or refused by something else", async () => {
+      const fetchImpl = fakeStaging({
+        [webhook("asaas")]: () =>
+          fromWorker(200, {}, json({ duplicates: 0, received: 0 })),
+        [webhook("woovi")]: () => webhookRefusal(401, "other"),
+      });
+      expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
+        `${nameOf("asaas")}: 200 accepted without a signature`,
+        `${nameOf("woovi")}: 401 401 not unauthorized`,
+      ]);
+    });
+
+    it("fails when the route does not reach the Worker (the shell answered, no X-Request-Id) or answers 404", async () => {
+      const fetchImpl = fakeStaging({
+        [webhook("asaas")]: () => answer(200, {}, INDEX),
+        [webhook("woovi")]: () => webhookRefusal(404, "not_found"),
+      });
+      expect(await runSmoke(origins, options, fetchImpl, noPause)).toEqual([
+        `${nameOf("asaas")}: 200 no X-Request-Id`,
+        `${nameOf("woovi")}: 404 not 401`,
+      ]);
+    });
   });
 
   it("never logs a body or a header value: only the check, the status and a fixed reason", async () => {
@@ -925,7 +1003,16 @@ describe("the requests of the smoke over the real fetch of Node", () => {
     ]);
     expect(byOrigin(STRANGE_ORIGIN)).toHaveLength(1);
     expect(byOrigin("null")).toHaveLength(1);
-    expect(byOrigin(undefined)).toHaveLength(1);
+    // the ping without Origin and the two webhooks, which a provider sends without one
+    expect(
+      byOrigin(undefined)
+        .map(({ url }) => url)
+        .sort()
+    ).toEqual([
+      "/rpc/system/ping",
+      "/webhooks/billing/asaas",
+      "/webhooks/billing/woovi",
+    ]);
     for (const request of received) {
       expect(request.method).toBe("POST");
       expect(request.headers["user-agent"]).toBe(USER_AGENT);

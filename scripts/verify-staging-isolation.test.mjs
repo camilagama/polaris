@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  BILLING_BASE_URLS,
   findHyperdriveProblems,
   findIsolationProblems,
   parseJsonc,
@@ -965,6 +966,167 @@ describe("the staging isolation check", () => {
         "catalog: built wrangler.json bindings differ from env.staging",
       ]);
     });
+  });
+});
+
+describe("billing in staging, against the sandboxes only", () => {
+  const webOf = (entries) => entryOf(entries, "web").config;
+  const STAGING = "web: env.staging";
+  const PRODUCTION = "web: env.production";
+
+  it("has billing on in staging with the sandbox URLs, and off in production with the production URLs", () => {
+    const { staging, production } = readConfig("web").env;
+    expect(staging.vars).toMatchObject({
+      ...BILLING_BASE_URLS.staging,
+      BILLING_SELF_SERVICE_ENABLED: "true",
+    });
+    expect(staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS).not.toBe("");
+    expect(production.vars).toMatchObject({
+      ...BILLING_BASE_URLS.production,
+      BILLING_SELF_SERVICE_ENABLED: "false",
+      WOOVI_REFUND_ENABLED: "false",
+    });
+  });
+
+  it("refuses a production base URL of a provider in staging", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.staging;
+    vars.ASAAS_BASE_URL = "https://api.asaas.com/v3";
+    vars.WOOVI_BASE_URL = "https://api.woovi.com";
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.ASAAS_BASE_URL must be exactly https://api-sandbox.asaas.com/v3 (the sandbox of the provider)`,
+      `${STAGING}: vars.WOOVI_BASE_URL must be exactly https://api.woovi-sandbox.com (the sandbox of the provider)`,
+      `${STAGING}: vars.ASAAS_BASE_URL must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`,
+      `${STAGING}: vars.WOOVI_BASE_URL must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`,
+    ]);
+  });
+
+  it("compares the sandbox URLs exactly: absent, http, a trailing slash or another path is refused", () => {
+    for (const [variable, value] of [
+      ["ASAAS_BASE_URL", undefined],
+      ["ASAAS_BASE_URL", "http://api-sandbox.asaas.com/v3"],
+      ["ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3/"],
+      ["WOOVI_BASE_URL", "https://api.woovi-sandbox.com/api/v1"],
+      ["WOOVI_BASE_URL", "https://API.woovi-sandbox.com"],
+    ]) {
+      const entries = repositoryEntries();
+      webOf(entries).env.staging.vars[variable] = value;
+      expect(findIsolationProblems(entries)).toEqual([
+        `${STAGING}: vars.${variable} must be exactly ${BILLING_BASE_URLS.staging[variable]} (the sandbox of the provider)`,
+      ]);
+    }
+  });
+
+  it("refuses the production API of a provider in any staging variable, whatever its name", () => {
+    for (const value of [
+      "https://api.asaas.com/v3",
+      "api.woovi.com",
+      "veja https://API.WOOVI.COM./api/v1 antes",
+    ]) {
+      const entries = repositoryEntries();
+      const web = webOf(entries);
+      web.env.staging.vars.OUTRA = value;
+      web.env.production.vars.OUTRA = "";
+      expect(findIsolationProblems(entries)).toEqual([
+        `${STAGING}: vars.OUTRA must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`,
+      ]);
+    }
+  });
+
+  it("does not take a sandbox host or a longer name for the production API", () => {
+    for (const value of [
+      "https://api-sandbox.asaas.com/v3",
+      "https://sandbox.asaas.com/i/abc",
+      "https://api.asaas.com.example.org",
+      "https://xapi.woovi.com",
+    ]) {
+      const entries = repositoryEntries();
+      const web = webOf(entries);
+      web.env.staging.vars.OUTRA = value;
+      web.env.production.vars.OUTRA = "";
+      expect(findIsolationProblems(entries)).toEqual([]);
+    }
+  });
+
+  it("refuses a flag of billing in staging that is neither true nor false", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.staging;
+    vars.BILLING_SELF_SERVICE_ENABLED = "1";
+    vars.WOOVI_REFUND_ENABLED = undefined;
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.BILLING_SELF_SERVICE_ENABLED must be "true" or "false"`,
+      `${STAGING}: vars.WOOVI_REFUND_ENABLED must be "true" or "false"`,
+    ]);
+  });
+
+  it("wants the support box of staging, one bare address on araute.app, while billing is on", () => {
+    const refused = `${STAGING}: vars.BILLING_SUPPORT_EMAIL must be one bare address on @araute.app (it is the reply-to of the billing e-mails)`;
+    for (const [value, expected] of [
+      [
+        "",
+        [
+          `${STAGING}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.BILLING_SUPPORT_EMAIL (without it the billing e-mails are skipped)`,
+        ],
+      ],
+      ["alguem@gmail.com", [refused]],
+      ["suporte@araute.app, outro@araute.app", [refused]],
+      ["Suporte <suporte@araute.app>", [refused]],
+      ["suporte@dash.araute.app", [refused]],
+      ["suporte@araute.app.example.com", [refused]],
+      [" suporte@araute.app ", []],
+    ]) {
+      const entries = repositoryEntries();
+      webOf(entries).env.staging.vars.BILLING_SUPPORT_EMAIL = value;
+      expect(findIsolationProblems(entries)).toEqual(expected);
+    }
+  });
+
+  it("accepts billing off in staging without the support box and without the Woovi key", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.staging;
+    vars.BILLING_SELF_SERVICE_ENABLED = "false";
+    vars.BILLING_SUPPORT_EMAIL = "";
+    vars.WOOVI_WEBHOOK_PUBLIC_KEYS = "";
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("refuses billing on in staging without the public key of Woovi", () => {
+    const entries = repositoryEntries();
+    webOf(entries).env.staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS = " ";
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.WOOVI_WEBHOOK_PUBLIC_KEYS (without it every Woovi webhook answers 503)`,
+    ]);
+  });
+
+  it("refuses a sandbox base URL in production, and a sandbox host in any variable of production", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.production;
+    vars.ASAAS_BASE_URL = "https://api-sandbox.asaas.com/v3";
+    vars.WOOVI_BASE_URL = undefined;
+    vars.AUTH_EMAIL_FROM = "Polaris <x@pay.woovi-sandbox.com>";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production lacks vars.WOOVI_BASE_URL, which env.staging sets",
+      `${PRODUCTION}: vars.ASAAS_BASE_URL must be exactly https://api.asaas.com/v3 (the production host of the provider)`,
+      `${PRODUCTION}: vars.WOOVI_BASE_URL must be exactly https://api.woovi.com (the production host of the provider)`,
+      `${PRODUCTION}: vars.AUTH_EMAIL_FROM must not name a sandbox host of Asaas or Woovi`,
+      `${PRODUCTION}: vars.ASAAS_BASE_URL must not name a sandbox host of Asaas or Woovi`,
+    ]);
+  });
+
+  it("refuses a production URL in the built wrangler.json of staging", () => {
+    const entries = repositoryEntries().map((entry) => ({
+      ...entry,
+      built: { ...entry.config.env.staging, targetEnvironment: "staging" },
+    }));
+    const web = entryOf(entries, "web");
+    web.built = {
+      ...web.built,
+      vars: { ...web.built.vars, WOOVI_BASE_URL: "https://api.woovi.com" },
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: built wrangler.json: vars.WOOVI_BASE_URL must be exactly https://api.woovi-sandbox.com (the sandbox of the provider)",
+      "web: built wrangler.json: vars.WOOVI_BASE_URL must not name the production API of Asaas or Woovi (staging bills against the sandbox only)",
+    ]);
   });
 });
 

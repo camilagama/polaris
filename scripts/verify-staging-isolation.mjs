@@ -17,6 +17,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, any
  *   route (its Custom Domain at admin.araute.app is created outside the config), an Access team or audience missing, malformed
  *   or equal to production's, or an ADMIN_HYPERDRIVE missing or shared with another binding of staging;
+ * - the billing base URLs of staging are not exactly the sandboxes of Asaas and Woovi, a staging variable names the
+ *   production API of either, billing is on without the support box on araute.app or the Woovi key, or production has
+ *   other than the production base URLs or names a sandbox host;
  * - any block (top level, staging, production or the build) still declares a switch of the database proof routes
  *   (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`): those routes and tables left the app (ADR 0027).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
@@ -290,8 +293,104 @@ function checkStagingBlock(app, where, staging, production, problems) {
   if (app === "web") {
     checkStagingEmail(where, staging, problems);
     checkStagingAbuseProtection(where, staging, problems);
+    checkStagingBilling(where, staging, problems);
   }
   checkStagingExposure(app, where, staging, production, problems);
+}
+
+// Billing runs in staging against the providers' sandboxes only (ADR 0097, amended): the base URLs are compared as
+// exact strings, and the API host of production of either provider written in any variable of staging is refused,
+// whatever the variable's name. Production is the mirror: its base URLs are the production ones, exactly, and no
+// variable of production names a sandbox host. The secrets are out of reach of this check; the Asaas client refuses
+// a key of the other environment, and a Woovi AppID of production is refused by the sandbox.
+export const BILLING_BASE_URLS = {
+  production: {
+    ASAAS_BASE_URL: "https://api.asaas.com/v3",
+    WOOVI_BASE_URL: "https://api.woovi.com",
+  },
+  staging: {
+    ASAAS_BASE_URL: "https://api-sandbox.asaas.com/v3",
+    WOOVI_BASE_URL: "https://api.woovi-sandbox.com",
+  },
+};
+// bounded on both sides like the hosts of staging: `api-sandbox.asaas.com` does not contain `api.asaas.com`
+const hostInText = (hosts) =>
+  new RegExp(
+    String.raw`(?<![a-z0-9.-])(${hosts.join("|")})(?![a-z0-9-]|\.[a-z0-9])`,
+    "i"
+  );
+const PRODUCTION_BILLING_HOST = hostInText([
+  String.raw`api\.asaas\.com`,
+  String.raw`api\.woovi\.com`,
+]);
+const SANDBOX_BILLING_HOST = hostInText([
+  String.raw`(?:[a-z0-9-]+\.)*sandbox\.asaas\.com`,
+  String.raw`api-sandbox\.asaas\.com`,
+  String.raw`(?:[a-z0-9-]+\.)*woovi-sandbox\.com`,
+]);
+// the support box is the reply-to of the billing e-mails: one bare address, on the staging domain like the sender
+const STAGING_SUPPORT_ADDRESS = /^[A-Za-z0-9._+-]+@araute\.app$/i;
+
+function checkBillingBaseUrls(where, vars, environment, problems) {
+  for (const [variable, expected] of Object.entries(
+    BILLING_BASE_URLS[environment]
+  )) {
+    if (vars[variable] !== expected) {
+      problems.push(
+        `${where}: vars.${variable} must be exactly ${expected} (the ${environment === "staging" ? "sandbox" : "production host"} of the provider)`
+      );
+    }
+  }
+}
+
+function checkStagingBilling(where, staging, problems) {
+  const vars = staging.vars ?? {};
+  for (const flag of ["BILLING_SELF_SERVICE_ENABLED", "WOOVI_REFUND_ENABLED"]) {
+    if (vars[flag] !== "true" && vars[flag] !== "false") {
+      problems.push(`${where}: vars.${flag} must be "true" or "false"`);
+    }
+  }
+  checkBillingBaseUrls(where, vars, "staging", problems);
+  for (const [variable, value] of Object.entries(vars)) {
+    if (
+      stringsOf(value).some(([, text]) => PRODUCTION_BILLING_HOST.test(text))
+    ) {
+      problems.push(
+        `${where}: vars.${variable} must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`
+      );
+    }
+  }
+  const support = (vars.BILLING_SUPPORT_EMAIL ?? "").trim();
+  if (support === "" && vars.BILLING_SELF_SERVICE_ENABLED === "true") {
+    problems.push(
+      `${where}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.BILLING_SUPPORT_EMAIL (without it the billing e-mails are skipped)`
+    );
+  } else if (support !== "" && !STAGING_SUPPORT_ADDRESS.test(support)) {
+    problems.push(
+      `${where}: vars.BILLING_SUPPORT_EMAIL must be one bare address on @araute.app (it is the reply-to of the billing e-mails)`
+    );
+  }
+  if (
+    vars.BILLING_SELF_SERVICE_ENABLED === "true" &&
+    (vars.WOOVI_WEBHOOK_PUBLIC_KEYS ?? "").trim() === ""
+  ) {
+    problems.push(
+      `${where}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.WOOVI_WEBHOOK_PUBLIC_KEYS (without it every Woovi webhook answers 503)`
+    );
+  }
+}
+
+function checkProductionBilling(app, production, problems) {
+  const where = `${app}: env.production`;
+  const vars = production.vars ?? {};
+  checkBillingBaseUrls(where, vars, "production", problems);
+  for (const [variable, value] of Object.entries(vars)) {
+    if (stringsOf(value).some(([, text]) => SANDBOX_BILLING_HOST.test(text))) {
+      problems.push(
+        `${where}: vars.${variable} must not name a sandbox host of Asaas or Woovi`
+      );
+    }
+  }
 }
 
 /** Where each Worker of staging answers: the web, the catalog and the Admin at Custom Domains managed outside the config, the Admin also behind Access. */
@@ -746,6 +845,9 @@ function checkProductionBlock(app, production, staging, problems) {
     );
   }
   checkProductionHosts(app, production, problems);
+  if (app === "web") {
+    checkProductionBilling(app, production, problems);
+  }
   checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
   if (
