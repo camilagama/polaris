@@ -6,6 +6,8 @@
 
 > **Nada deste procedimento foi executado contra um ambiente real**, e não há automação: ela é da Fase 16. O restore lógico (`pg_dump`/`pg_restore`), **nos passos 0 a 3 e 5 (o passo 4 não teve o que reaplicar)** e **com os comandos como estão escritos aqui**, foi **ensaiado em 01/11/2026, das 18:11 às 18:13 UTC**, sobre a `main` em `969ceec5`, numa branch Neon descartável do projeto dos gates (`br-holy-dew-b6cttmv3`, `v11-efemera-202611011724`, filha da `production`, só dados sintéticos), com o cliente PostgreSQL 18.6 do PGDG e a origem no mesmo nível de migrations do backup (110): `pg_restore` com `rc=0` e `restore.err` vazio; no 2b.1, 796 entradas ACL, os dois `grep -c` em zero e o `psql` sem erro; no 2b.2, a lista de funções `SECURITY DEFINER` executáveis por PUBLIC vazia (eram 130 antes do 2b), o hash das ACLs das funções igual ao da origem e as funções de purge como esperado; no 2b.3, `set_restante = 0` e a ACL do `public` igual à da origem, ordenada; passo 3 sem migration e com os 13 `INSERT` da lista em `INSERT 0 0`; passo 5 com a consulta vazia, o ledger igual à lista (13) e as consultas de RLS idênticas às da origem. A consulta 4 do passo 5 (políticas permissivas para `PUBLIC`) rodou no ensaio, com este mesmo SQL, como conferência extra, e entrou no texto depois dele: deu 0 na origem e no restaurado. A consulta 1b só roda quando a 1 diverge e não foi exercitada. O passo 4 não teve o que reaplicar (os 3 clientes já estavam anonimizados e as 10 organizações já estavam `purged` no backup): o `UPDATE` de cliente e o bloco de purge não foram exercitados. Os ensaios anteriores (V12, 31/10/2026, e o de 01/11/2026 de manhã, que reprovou no 2b.1 do texto anterior) estão por trás dos passos 2 e 2b e da conferência do passo 5. A consulta de lista e a de verificação são provadas pelo gate `deletion-ledger` num banco descartável. Qualquer comando Cloudflare ou Neon segue a [política de perfis de CLI](./cli-profile-policy.md). Reaplicar altera dado: é uma ação do responsável, em ambiente já autorizado por ele.
 
+Os passos 2, 2b e as conferências do passo 5 estão automatizados, para o ensaio de um backup diário numa branch descartável, em `scripts/backup/restore.mjs` ([backup e ensaio de restauração](./backup.md)); os passos 0, 1, 3 e 4 continuam à mão. O login de backup (`polaris_backup_reader`) fica fora do preparo do passo 2: o restore não precisa virar ele.
+
 ## Pré-requisitos de acesso
 
 - A conexão do **dono do banco** (a tabela força RLS e não há política para ele; funciona com o papel dono da Neon, que ignora RLS). **Confirme antes**, nas duas pontas (origem e restaurado), que a conexão ignora RLS: `SELECT rolbypassrls OR rolsuper FROM pg_roles WHERE rolname = current_user;` deve dar `true`. Com um login que não ignora RLS, as consultas abaixo **voltam zero linhas sem erro** e o procedimento pareceria concluído sem ter feito nada. Registre também o `count(*)` do ledger de cada ponta.
@@ -86,7 +88,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
       DO $grant$
       DECLARE r text;
       BEGIN
-        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%' LOOP
+        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%' AND rolname <> 'polaris_backup_reader' LOOP
           EXECUTE format('GRANT %I TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE', r);
         END LOOP;
         FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner' LOOP
@@ -175,7 +177,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
         FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner' LOOP
           EXECUTE format('REVOKE CREATE ON SCHEMA public FROM %I', r);
         END LOOP;
-        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%' LOOP
+        FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'polaris\_%' AND rolname <> 'polaris_backup_reader' LOOP
           EXECUTE format('REVOKE %I FROM CURRENT_USER', r);
         END LOOP;
       END
@@ -286,11 +288,11 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
        WHERE schemaname = 'public';
       ```
 
-   3. **Nenhum papel `polaris_*` ignora RLS.** No restaurado, esta consulta tem de voltar **vazia** (os papéis `polaris_*`, de runtime e donos, são criados `NOBYPASSRLS`; superusuário também ignora RLS, por isso a consulta o inclui; os papéis são do cluster, então ela vale para o cluster inteiro):
+   3. **Nenhum papel `polaris_*` ignora RLS.** No restaurado, esta consulta tem de voltar **vazia** (os papéis `polaris_*`, de runtime e donos, são criados `NOBYPASSRLS`; superusuário também ignora RLS, por isso a consulta o inclui; os papéis são do cluster, então ela vale para o cluster inteiro). A única exceção é o login de backup `polaris_backup_reader`, que tem `BYPASSRLS` de propósito e cujos atributos o `staging:verify-database` confere ([backup](./backup.md)):
 
       ```sql
       SELECT rolname FROM pg_roles
-       WHERE rolname LIKE 'polaris\_%' AND (rolbypassrls OR rolsuper)
+       WHERE rolname LIKE 'polaris\_%' AND rolname <> 'polaris_backup_reader' AND (rolbypassrls OR rolsuper)
        ORDER BY 1;
       ```
 
