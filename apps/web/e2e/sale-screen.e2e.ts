@@ -384,7 +384,7 @@ test("Trocar abre a busca com a variante atual marcada; Escape volta à linha co
   await expect(item.getByLabel("Quantidade")).toHaveValue("3");
 });
 
-test('um "Sem perfil" lembrado não vale numa loja com perfil ativo: a venda seguinte não vem com nada marcado e não vira venda em andamento', async ({
+test('um "Sem perfil" lembrado numa loja com perfil ativo: a venda seguinte vem com o método marcado e o perfil em branco, e não vira venda em andamento', async ({
   page,
 }) => {
   await openSaleLab(page, "claro");
@@ -409,11 +409,12 @@ test('um "Sem perfil" lembrado não vale numa loja com perfil ativo: a venda seg
       .filter({ hasText: "Venda guardada neste aparelho" })
   ).toBeVisible();
 
-  await expect(methods.getByRole("radio", { checked: true })).toHaveCount(0);
+  await expect(methods.getByRole("radio", { checked: true })).toHaveCount(1);
+  await expect(methods.getByRole("radio", { name: "Dinheiro" })).toBeChecked();
   await expect(profile).not.toContainText("Sem perfil de pagamento");
   await expect(
     page.getByText("Igual à última venda neste aparelho.")
-  ).toHaveCount(0);
+  ).toBeVisible();
   await expect(
     page.getByRole("status").filter({ hasText: "Venda em andamento" })
   ).toHaveCount(0);

@@ -104,7 +104,8 @@ export function paymentOfSentForm(
 /**
  * The choices a new sale starts with: the last sale's method and profile, or "Sem perfil" in a store that has no
  * active profile (null count: not read yet). A remembered "Sem perfil" only holds while the store has no active
- * profile: once it has one, the sale made without it stops being the start and the person chooses. The remembered
+ * profile: once it has one, the profile is left blank for the person to choose and the remembered method stays (a
+ * null count, profiles not read yet, keeps the method too: it is the same start the read will confirm). The remembered
  * profile keeps the version it was used with, so a profile that changed since asks for "Revisei a prévia
  * atualizada" again, and one that left the list is cleared with its notice.
  */
@@ -120,7 +121,9 @@ export function salePresetFrom(
     };
   }
   if (activeProfileCount !== 0) {
-    return NO_SALE_PRESET;
+    return remembered
+      ? { method: remembered.method, profileChoice: "", profileVersion: null }
+      : NO_SALE_PRESET;
   }
   return {
     method: remembered?.method ?? "",

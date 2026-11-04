@@ -143,22 +143,31 @@ describe("a venda nova começa com o que quase nunca muda", () => {
     });
   });
 
-  it('"Sem perfil" lembrado só vale enquanto a loja não tem perfil ativo', () => {
-    const remembered = { method: "cash" as const, profile: null };
-    expect(salePresetFrom(remembered, 1)).toEqual(NO_SALE_PRESET);
-    expect(salePresetFrom(remembered, 3)).toEqual(NO_SALE_PRESET);
-    expect(salePresetFrom(remembered, null)).toEqual(NO_SALE_PRESET);
+  it('"Sem perfil" lembrado numa loja com perfil ativo mantém o método e deixa o perfil em branco', () => {
+    const remembered = { method: "pix" as const, profile: null };
+    const methodOnly = {
+      method: "pix",
+      profileChoice: "",
+      profileVersion: null,
+    };
+    for (const count of [1, 3, null]) {
+      expect(salePresetFrom(remembered, count)).toEqual(methodOnly);
+    }
     const stillOnTheScreen = applySalePreset(
       blank(),
       salePresetFrom(remembered, 0)
     );
     expect(stillOnTheScreen.profile.choice).toBe(NO_PROFILE_CHOICE);
+    expect(stillOnTheScreen.payment.method).toBe("pix");
     const afterFirstProfile = applySalePreset(
       blank(),
       salePresetFrom(remembered, 1)
     );
     expect(afterFirstProfile.profile.choice).toBe("");
-    expect(afterFirstProfile.payment.method).toBe("");
+    expect(afterFirstProfile.payment.method).toBe("pix");
+    expect(
+      isSaleFormDirty(afterFirstProfile, salePresetFrom(remembered, 1))
+    ).toBe(false);
   });
 
   it("o perfil lembrado com id continua valendo com a leitura em curso, sem perfil ou com perfis", () => {
@@ -176,15 +185,16 @@ describe("a venda nova começa com o que quase nunca muda", () => {
     }
   });
 
-  it('a loja que ganha o primeiro perfil tira o "Sem perfil" que a tela tinha marcado, e só ele', () => {
+  it('a loja que ganha o primeiro perfil tira só o "Sem perfil" que a tela tinha marcado; o método fica', () => {
     const remembered = { method: "cash" as const, profile: null };
     const before = salePresetFrom(remembered, 0);
     const after = salePresetFrom(remembered, 1);
     const marked = applySalePreset(blank(), before);
     expect(marked.profile.choice).toBe(NO_PROFILE_CHOICE);
+    expect(marked.payment.method).toBe("cash");
     const withdrawn = withdrawSalePreset(marked, before, after);
     expect(withdrawn.profile.choice).toBe("");
-    expect(withdrawn.payment.method).toBe("");
+    expect(withdrawn.payment.method).toBe("cash");
     expect(isSaleFormDirty(withdrawn, after)).toBe(false);
     // a venda em andamento da pessoa fica como está
     const worked: SaleFormState = {
