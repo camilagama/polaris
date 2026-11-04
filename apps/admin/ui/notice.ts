@@ -11,10 +11,16 @@ export interface Notice {
   element: HTMLElement;
   /** Progress or a result, announced without moving the focus. */
   status: (text: string) => void;
+  /** The result of an action the operator confirmed: announced and focused, so the next key starts from it. */
+  success: (text: string) => void;
 }
 
 export function createNotice(dom: Dom): Notice {
-  const status = dom.el("p", { class: "status", role: "status" });
+  const status = dom.el("p", {
+    class: "status",
+    role: "status",
+    tabindex: "-1",
+  });
   const alert = dom.el("p", {
     class: "alert",
     hidden: "",
@@ -38,6 +44,11 @@ export function createNotice(dom: Dom): Notice {
     status: (text) => {
       clear();
       status.textContent = text;
+    },
+    success: (text) => {
+      clear();
+      status.textContent = text;
+      status.focus();
     },
   };
 }

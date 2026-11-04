@@ -93,8 +93,9 @@ const NO_DEPENDENCIES = new Proxy(
 ) as AdminDependencies;
 const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
 /**
- * The routes of the cut (AC-6): who the operator is, the search and the diagnostics, the funnel, and the support
- * cases with the refund window under them (`/api/support-cases/:id/refund-window`).
+ * The routes of the cut (AC-6 of the v1, AC-C9 of the v2): who the operator is, the search and the diagnostics, the
+ * funnel, and the support cases (list, detail, open and close) with the refund window under them
+ * (`/api/support-cases/:id/refund-window`).
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/funnel",
@@ -110,11 +111,11 @@ function forbiddenIn(text: string): string[] {
 }
 
 describe("the built script of the page", () => {
-  it("is small: under 60 KB gzip with the sheet (AC-16)", () => {
+  it("is small: under 100 KB gzip with the sheet, one bundle (corte admin-v2, AC-C15)", () => {
     expect(bundle.length).toBeGreaterThan(1000);
     const gzip = (text: string) =>
       execFileSync("gzip", ["-9c"], { input: text }).length;
-    expect(gzip(bundle) + gzip(sheet)).toBeLessThan(60 * 1024);
+    expect(gzip(bundle) + gzip(sheet)).toBeLessThan(100 * 1024);
   });
 
   it("carries no HTML sink, eval, timer, browser storage, outside channel or log", () => {
@@ -165,7 +166,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics and the refund window: no other action of a case or a store", () => {
+  it("names, under those routes, only the diagnostics, the refund window and the close of a case: no other action of a case or a store", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -182,11 +183,11 @@ describe("the built script of the page", () => {
       [...segments]
         .filter((segment) => new RegExp(`/${segment}(?![a-z-])`).test(text))
         .sort();
-    expect(named(bundle)).toEqual(["diagnostics", "refund-window"]);
+    expect(named(bundle)).toEqual(["close", "diagnostics", "refund-window"]);
     // a planted call to another action of a case is seen
     expect(
-      named(`${bundle}fetch(\`/api/support-cases/\${id}/close\`)`)
-    ).toEqual(["close", "diagnostics", "refund-window"]);
+      named(`${bundle}fetch(\`/api/support-cases/\${id}/suspend\`)`)
+    ).toEqual(["close", "diagnostics", "refund-window", "suspend"]);
   });
 });
 

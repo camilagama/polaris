@@ -3,6 +3,7 @@ import {
   type AdminBindings,
   type AdminDependencies,
   createAdminApp,
+  SCREEN_ROUTES,
 } from "./app";
 
 /**
@@ -42,8 +43,8 @@ const dependencies = {
 
 const app = createAdminApp(dependencies, { css: "body{}", js: "export{};" });
 const PUBLIC_PATHS = new Set(["/health"]);
-/** The page and its two files (corte admin-tela-v1): behind the login like the API. */
-const PAGE_PATHS = new Set(["/", "/ui/:file"]);
+/** The screens and their two files (corte admin-v2, Parte 1): behind the login like the API. */
+const PAGE_PATHS = new Set([...SCREEN_ROUTES, "/ui/:file"]);
 const routes = app.routes.filter((route) => route.method !== "ALL");
 const PARAMETER = /:[A-Za-z]+/g;
 
@@ -71,7 +72,15 @@ describe("the Admin app's route surface", () => {
           .filter((route) => PAGE_PATHS.has(route.path))
           .map((route) => `${route.method} ${route.path}`)
       ),
-    ]).toEqual(["GET /", "GET /ui/:file"]);
+    ]).toEqual([
+      "GET /",
+      "GET /lojas",
+      "GET /lojas/:organizationId",
+      "GET /casos",
+      "GET /casos/:caseId",
+      "GET /funil",
+      "GET /ui/:file",
+    ]);
   });
 
   it.each(

@@ -35,6 +35,12 @@ A Fase 9 cria o Admin: a aplicação de quem opera o Polaris (não de um cliente
 - **Nada muda no Worker.** A verificação do token, a falha fechada e o `/health` sem login são os desta decisão. O único hostname é o Custom Domain `admin.araute.app`, ligado à mão pelo responsável (o `wrangler.jsonc` não declara rota, como o web e o catálogo; [ADR 0097](0097-staging-fixo-e-producao-em-conta-separada.md)); `workers_dev` e as prévias seguem desligados, e a verificação de isolamento os confere.
 - **Principais por ambiente.** O emissor do token do staging é `https://polaris-staging.cloudflareaccess.com` e o `sub` é o desse time: um principal cadastrado no staging não existe na produção, e o cadastro de cada ambiente é feito pelo dono do banco daquele ambiente, com o `iss` e o `sub` do token ([runbook do staging](../runbooks/staging.md#3c-admin-adminarauteapp-só-atrás-do-access-responsável)).
 
+### Emenda de 04/11/2026: uma rota por tela, com menu (corte admin-v2, Parte 1)
+
+- **Telas com rota própria.** O Worker serve `GET /`, `/lojas`, `/lojas/{uuid}`, `/casos`, `/casos/novo`, `/casos/{uuid}` e `/funil`, cada uma um documento HTML inteiro gerado no Worker com `hono/html`, atrás do **mesmo** middleware de autenticação da API (sem token, 401 em JSON; login que não é operador, 403; nunca HTML). Caminho fora dessa lista, ou com algo que não é UUID onde a rota pede um, é 404 com o perfil `admin`. O perfil `admin-document` passa a valer por **lista de caminhos de tela** (os acima, com UUID válido) mais o script e a folha; a CSP não muda.
+- **O que o HTML leva.** Deixa de ser uma constante única, mas continua sem dado de loja, de cliente ou do login: leva só texto fixo, o **menu de links** das telas que as capacidades do papel abrem (funciona sem JavaScript; o item atual com `aria-current="page"`; a 360 px, dentro de um `<details>` fechado; sem contagem), o **ambiente** de `POLARIS_ENVIRONMENT` (faixa em texto e o começo do título, "{AMBIENTE} · {Tela} · Polaris Admin"; sem ele, "Ambiente não informado", nunca adivinhado pelo hostname) e, em atributos `data-*` da raiz, o nome da tela e os UUIDs do caminho e de `?loja=` que passaram no teste de UUID, além do `?estado=` só com seus dois valores fixos. Tudo o mais chega por `fetch` e é escrito como texto por `dom.el`. Operador sem a capacidade da tela recebe 403 com a casca e "Sem permissão para isto.", sem dados para o script.
+- **O que a tela escreve, a mais.** Fechar caso de suporte (`POST /api/support-cases/:caseId/close`, com a resolução no corpo JSON), numa revisão em duas etapas na própria tela (ambiente, loja e caso, o que acontece, "isso não poderá ser desfeito" e o que fica na auditoria), um pedido por clique. O caso aberto pela tela (`/casos/novo`) leva à tela dele (`/casos/{uuid}`), que é onde se age. Nenhuma rota de API, função, migration nem capacidade muda; o script continua chamando só `/api/whoami`, `/api/organizations`, `/api/funnel` e `/api/support-cases`, e o teto do script com a folha passa a 100 KB gzip, um bundle só.
+
 ## Consequências
 
 - Roubar o acesso ao Admin exige um login do Access válido **e** uma linha em `platform_principals` para aquele subject; trocar o e-mail no provedor de identidade não leva a nada.
@@ -46,7 +52,7 @@ A Fase 9 cria o Admin: a aplicação de quem opera o Polaris (não de um cliente
 - Sem MFA aplicado pelo Worker: o MFA obrigatório é uma política do Access (runbook); o Worker só verifica o token que o Access emitiu.
 - Um token roubado vale até expirar (a duração da sessão do Access é configurada lá).
 - O isolate guarda as chaves em memória; várias instâncias buscam cada uma a sua.
-- A tela do Admin (emendas de 28/10) cobre buscar loja, o diagnóstico, o funil, abrir e listar caso de suporte e ler a janela de reembolso; acesso temporário, revelação de dados pessoais, comandos de cobrança e suspensão seguem só na API.
+- A tela do Admin (emendas de 28/10 e de 04/11) cobre buscar loja, o diagnóstico, o funil, listar, abrir e fechar caso de suporte e ler a janela de reembolso; acesso temporário, revelação de dados pessoais, comandos de cobrança, suspensão, privacidade, incidentes e registro de acessos seguem só na API até as partes seguintes do corte admin-v2.
 
 ## Alternativas rejeitadas
 

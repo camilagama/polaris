@@ -1,4 +1,4 @@
-import { mountAdmin } from "./app";
+import { mountAdmin, type ScreenContext } from "./app";
 import {
   allElements,
   buttons,
@@ -65,11 +65,26 @@ declare function setImmediate(callback: () => void): unknown;
 export const flush = () =>
   new Promise<void>((resolve) => setImmediate(resolve));
 
+/** The screen a test mounts: Buscar loja, the v1's page, unless the test names another. */
+export function screenContext(
+  overrides: Partial<ScreenContext> = {}
+): ScreenContext {
+  return {
+    environment: "staging",
+    id: null,
+    listState: "abertos",
+    screen: "lojas",
+    store: null,
+    ...overrides,
+  };
+}
+
 /** The page mounted on a fresh document; `answers` are given in the order the page asks. */
 export async function mount(
   answers: Answer[],
   who: Answer = json(OWNER),
-  now: () => Date = () => new Date("2026-10-28T15:07:00.000Z")
+  now: () => Date = () => new Date("2026-10-28T15:07:00.000Z"),
+  context: ScreenContext = screenContext()
 ) {
   const document = new FakeDocument();
   const root = document.createElement("div");
@@ -87,14 +102,23 @@ export async function mount(
     }
     return typeof answer === "function" ? answer() : Promise.resolve(answer);
   };
-  await mountAdmin(root as unknown as HTMLElement, fetchJson, now);
+  const navigations: string[] = [];
+  await mountAdmin(
+    root as unknown as HTMLElement,
+    fetchJson,
+    now,
+    context,
+    (path) => {
+      navigations.push(path);
+    }
+  );
   await flush();
   const search = async (text: string) => {
     byId(root, "busca").value = text;
     buttons(root, "Buscar")[0]?.click();
     await flush();
   };
-  return { calls, document, queue, root, search };
+  return { calls, document, navigations, queue, root, search };
 }
 
 export const alertOf = (root: FakeElement) =>
