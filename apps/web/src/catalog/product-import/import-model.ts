@@ -1,4 +1,3 @@
-import type { BillingPlanView } from "@polaris/contracts";
 import { legalAcceptanceMessage, rpcErrorCode } from "../../lib/rpc-error";
 import { IMPORT_MAX_BYTES } from "../product-import-csv";
 import { csvFile } from "@polaris/domain/privacy/csv";
@@ -53,17 +52,6 @@ export interface ImportPlan {
   toSend: readonly ImportReadyRow[];
   /** The rows of the file under the header. */
   total: number;
-}
-
-/** The variants the plan still holds: its limit less what is used, never below zero; `null` with no limit or no read. */
-export function planRoom(
-  plan: Pick<BillingPlanView, "limits" | "usage"> | null
-): number | null {
-  const max = plan?.limits.variants;
-  if (plan === null || max === null || max === undefined) {
-    return null;
-  }
-  return Math.max(max - plan.usage.variants, 0);
 }
 
 export function planImport(

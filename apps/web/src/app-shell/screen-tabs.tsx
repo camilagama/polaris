@@ -4,15 +4,17 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
 } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { UnsentWorkScope, useUnsentWorkScope } from "../lib/unsent-work";
 import { replaceAddress, useAddress } from "./address";
 import { ErrorBoundary } from "./error-boundary";
 import type { LazyScreen } from "./lazy-screen";
 import {
   addressWithTab,
+  listedTabs,
   openedTab,
-  SCREEN_TABS,
   type TabScreenId,
 } from "./navigation-model";
 import { PageLoading } from "./page-loading";
@@ -61,109 +63,265 @@ export interface TabPanel {
   value: string;
 }
 
+/** What the edges of the list hide: tabs to the left (already passed) and to the right (not reached yet). */
+interface HiddenEdges {
+  end: boolean;
+  start: boolean;
+}
+
+/** The room kept between the open tab and the edge of the list, so it is not under the fade that warns of more tabs. */
+const EDGE_ROOM = 32;
+const EDGE_FADE =
+  "pointer-events-none absolute inset-y-1.5 z-10 w-6 from-background to-transparent";
+
 /**
- * The list of tabs of a screen, on one line: on a narrow phone it scrolls sideways (Configurações has five), with room
- * above and below for the 44 px touch area of each tab, and the tab that opened is brought into view.
+ * The list of tabs of a screen, on one line: on a narrow phone it scrolls sideways (Configurações has six), with room
+ * above and below for the 44 px touch area of each tab. The tab that opened is brought into view, again when the set of
+ * tabs changes (`signature`), and a fade at the edge that hides tabs says there are more to reach.
  */
 export function ScreenTabList({
   children,
   label,
+  signature = "",
   value,
 }: {
   children: ReactNode;
   label: string;
+  /** Changes when the tabs of the list change (one more, one less): the open tab is placed again. */
+  signature?: string;
   value: string;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
+  const [hidden, setHidden] = useState<HiddenEdges>({
+    end: false,
+    start: false,
+  });
+  const measure = useCallback(() => {
+    const list = scroller.current;
+    if (!list) {
+      return;
+    }
+    const start = list.scrollLeft > 1;
+    const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+    setHidden((current) =>
+      current.start === start && current.end === end ? current : { end, start }
+    );
+  }, []);
+  // the scroll is the list's own: `scrollIntoView` would also move the page; no animation (movement is opacity only)
   useEffect(() => {
-    const active = scroller.current?.querySelector<HTMLElement>(
+    const list = scroller.current;
+    const active = list?.querySelector<HTMLElement>(
       `[data-value="${CSS.escape(value)}"]`
     );
-    active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [value]);
+    if (list && active) {
+      const box = active.getBoundingClientRect();
+      const area = list.getBoundingClientRect();
+      if (box.left < area.left + EDGE_ROOM) {
+        list.scrollLeft -= area.left + EDGE_ROOM - box.left;
+      } else if (box.right > area.right - EDGE_ROOM) {
+        list.scrollLeft += box.right - (area.right - EDGE_ROOM);
+      }
+    }
+    measure();
+  }, [measure, signature, value]);
+  useEffect(() => {
+    const list = scroller.current;
+    if (!list || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [measure]);
   return (
-    <div
-      className="-my-1.5 max-w-full overflow-x-auto py-1.5 [scrollbar-width:none]"
-      ref={scroller}
-    >
-      <TabsList aria-label={label} className="justify-start">
-        {children}
-      </TabsList>
+    <div className="relative -my-1.5 max-w-full">
+      <div
+        className="overflow-x-auto py-1.5 [scrollbar-width:none]"
+        onScroll={measure}
+        ref={scroller}
+      >
+        <TabsList aria-label={label} className="justify-start">
+          {children}
+        </TabsList>
+      </div>
+      {hidden.start ? (
+        <span
+          aria-hidden="true"
+          className={`${EDGE_FADE} left-0 bg-linear-to-r`}
+          data-tabs-edge="start"
+        />
+      ) : null}
+      {hidden.end ? (
+        <span
+          aria-hidden="true"
+          className={`${EDGE_FADE} right-0 bg-linear-to-l`}
+          data-tabs-edge="end"
+        />
+      ) : null}
     </div>
   );
 }
 
-/** A tab of the list, with its name in the address. */
+/**
+ * A tab of the list, with its name in the address. `reserved` holds the place of a tab whose condition the server has
+ * not answered yet (it is off and busy until then), so the tabs beside it do not move when the answer arrives.
+ */
 export function ScreenTabTrigger({
   children,
+  reserved = false,
   value,
 }: {
   children: ReactNode;
+  reserved?: boolean;
   value: string;
 }) {
   return (
-    <TabsTrigger className="flex-none" data-value={value} value={value}>
+    <TabsTrigger
+      aria-busy={reserved || undefined}
+      className="flex-none"
+      data-value={value}
+      disabled={reserved}
+      value={value}
+    >
       {children}
     </TabsTrigger>
   );
 }
 
-/** The screen of a tab: its own chunk, loaded when the tab opens, and its failure kept to the tab. */
+/**
+ * Tells the tabs whether the screen inside this panel holds work typed and not sent (`useHoldSwap`), to keep the panel
+ * drawn while another tab is open.
+ */
+function PanelUnsentWork({
+  children,
+  onHold,
+  value,
+}: {
+  children: ReactNode;
+  onHold?: ((value: string, held: boolean) => void) | undefined;
+  value: string;
+}) {
+  const [report, held] = useUnsentWorkScope();
+  useEffect(() => {
+    onHold?.(value, held);
+    return () => onHold?.(value, false);
+  }, [held, onHold, value]);
+  return <UnsentWorkScope value={report}>{children}</UnsentWorkScope>;
+}
+
+/**
+ * The screen of a tab: its own chunk, loaded when the tab opens, and its failure kept to the tab. With `keepMounted` it
+ * stays drawn, hidden, while another tab is open: what the person typed in it is state of the screen, and a screen
+ * that is drawn again starts blank.
+ */
 export function ScreenTabPanel({
+  active = true,
   className,
+  keepMounted = false,
+  onHold,
   panel,
 }: {
+  /** Whether this is the open tab; false while it is kept drawn, hidden. */
+  active?: boolean;
   className?: string;
+  keepMounted?: boolean;
+  /** Called when the screen of the panel starts or stops holding unsent work. */
+  onHold?: ((value: string, held: boolean) => void) | undefined;
   panel: TabPanel;
 }) {
   const { Screen } = panel;
   return (
-    <TabsContent className={className} value={panel.value}>
-      <TabPanelScope>
-        <ErrorBoundary onRetry={Screen.reset}>
-          <Suspense fallback={panel.fallback ?? <PageLoading />}>
-            <Screen />
-          </Suspense>
-        </ErrorBoundary>
-      </TabPanelScope>
+    <TabsContent
+      className={className}
+      keepMounted={keepMounted}
+      value={panel.value}
+    >
+      <PanelUnsentWork onHold={onHold} value={panel.value}>
+        <TabPanelScope active={active}>
+          <ErrorBoundary onRetry={Screen.reset}>
+            <Suspense fallback={panel.fallback ?? <PageLoading />}>
+              <Screen />
+            </Suspense>
+          </ErrorBoundary>
+        </TabPanelScope>
+      </PanelUnsentWork>
     </TabsContent>
   );
 }
 
+/** The tabs whose screen holds unsent work: they stay drawn when another tab opens. */
+function useKeptPanels(): [
+  ReadonlySet<string>,
+  (value: string, held: boolean) => void,
+] {
+  const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
+  const hold = useCallback((value: string, held: boolean) => {
+    setKept((current) => {
+      if (current.has(value) === held) {
+        return current;
+      }
+      const next = new Set(current);
+      if (held) {
+        next.add(value);
+      } else {
+        next.delete(value);
+      }
+      return next;
+    });
+  }, []);
+  return [kept, hold];
+}
+
 /**
  * A destination whose screens became tabs (map of navigation, § 1): its title, the tabs this person has, and the
- * screen of the open one. Only the open tab is drawn.
+ * screen of the open one. Only the open tab is drawn, except one that holds work typed and not sent: it stays drawn,
+ * hidden, until the work is sent or thrown away. `reserved` names tabs whose condition is not answered yet: they are
+ * listed off, in their place, with no panel.
  */
 export function ScreenTabs({
   label,
   panels,
+  reserved = [],
   screen,
   title,
 }: {
   /** The name of the list of tabs, for a screen reader. */
   label: string;
   panels: readonly TabPanel[];
+  reserved?: readonly string[];
   screen: TabScreenId;
   title: string;
 }) {
   const available = panels.map((panel) => panel.value);
   const [value, select] = useScreenTab(screen, available);
-  const tabs = SCREEN_TABS[screen].filter((tab) =>
-    available.includes(tab.value)
-  );
+  const [kept, hold] = useKeptPanels();
+  const tabs = listedTabs(screen, available, reserved);
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">{title}</h1>
       <Tabs className="min-w-0 gap-5" onValueChange={select} value={value}>
-        <ScreenTabList label={label} value={value}>
+        <ScreenTabList
+          label={label}
+          signature={tabs.map((tab) => tab.value).join()}
+          value={value}
+        >
           {tabs.map((tab) => (
-            <ScreenTabTrigger key={tab.value} value={tab.value}>
+            <ScreenTabTrigger
+              key={tab.value}
+              reserved={tab.reserved}
+              value={tab.value}
+            >
               {tab.label}
             </ScreenTabTrigger>
           ))}
         </ScreenTabList>
         {panels.map((panel) => (
-          <ScreenTabPanel key={panel.value} panel={panel} />
+          <ScreenTabPanel
+            keepMounted={kept.has(panel.value)}
+            key={panel.value}
+            onHold={hold}
+            panel={panel}
+          />
         ))}
       </Tabs>
     </div>

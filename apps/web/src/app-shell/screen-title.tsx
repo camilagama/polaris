@@ -8,9 +8,32 @@ import {
 /** Whether a screen is drawn inside a tab of another one (Configurações, Produtos, Resultado: map of navigation, § 1). */
 const InTabContext = createContext(false);
 
-/** Draws its screens as tabs: their titles are under the title of the screen that holds them. */
-export function TabPanelScope({ children }: { children: ReactNode }) {
-  return <InTabContext.Provider value={true}>{children}</InTabContext.Provider>;
+/** Whether the tab this screen is drawn in is the open one: a tab kept drawn while hidden is not. */
+const TabActiveContext = createContext(true);
+
+/**
+ * Draws its screens as tabs: their titles are under the title of the screen that holds them. `active` is false for a tab
+ * kept drawn, hidden, while another one is open.
+ */
+export function TabPanelScope({
+  active = true,
+  children,
+}: {
+  active?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <InTabContext.Provider value={true}>
+      <TabActiveContext.Provider value={active}>
+        {children}
+      </TabActiveContext.Provider>
+    </InTabContext.Provider>
+  );
+}
+
+/** Whether the screen is on the open tab (always true outside tabs): what is global to the page speaks for it only then. */
+export function useTabActive(): boolean {
+  return useContext(TabActiveContext);
 }
 
 /** Whether this screen is a tab of another one (it then leaves the focus on the tab when it opens). */

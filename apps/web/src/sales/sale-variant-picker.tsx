@@ -19,6 +19,7 @@ import { useDebouncedValue } from "../lib/use-debounced-value";
 import { NewProductLink } from "./sale-fields";
 import type { Loadable } from "./sale-form-model";
 import {
+  type PickerOption,
   pickerErrorMessage,
   pickerView,
   variantSearchRequest,
@@ -80,6 +81,51 @@ function useVariantSearch(
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   return { load, query, retry };
+}
+
+interface VariantOptionListProps {
+  id: string;
+  onPick: (event: MouseEvent<HTMLButtonElement>) => void;
+  options: readonly PickerOption[];
+}
+
+export function VariantOptionList({
+  id,
+  onPick,
+  options,
+}: VariantOptionListProps) {
+  return (
+    <ul
+      aria-label="Variantes encontradas"
+      className="grid max-h-88 gap-1.5 overflow-y-auto"
+      id={id}
+    >
+      {options.map((option) => (
+        <li key={option.id}>
+          <button
+            className="focus-ring grid min-h-11 w-full gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left motion-full:transition-colors hover:border-input hover:bg-accent"
+            data-variant-id={option.id}
+            onClick={onPick}
+            type="button"
+          >
+            <span className="font-medium [overflow-wrap:anywhere]">
+              {option.label}
+            </span>
+            <span
+              className={cn(
+                "text-support",
+                option.tone === "warning"
+                  ? "text-warning"
+                  : "text-muted-foreground"
+              )}
+            >
+              {option.detail}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 interface VariantSearchProps {
@@ -196,36 +242,11 @@ export function VariantSearch({
       ) : null}
       {view.kind === "ready" ? (
         <>
-          <ul
-            aria-label="Variantes encontradas"
-            className="grid max-h-88 gap-1.5 overflow-y-auto"
+          <VariantOptionList
             id={listId}
-          >
-            {view.options.map((option) => (
-              <li key={option.id}>
-                <button
-                  className="focus-ring grid min-h-11 w-full gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left motion-full:transition-colors hover:border-input hover:bg-accent"
-                  data-variant-id={option.id}
-                  onClick={handlePick}
-                  type="button"
-                >
-                  <span className="font-medium [overflow-wrap:anywhere]">
-                    {option.label}
-                  </span>
-                  <span
-                    className={cn(
-                      "text-support",
-                      option.tone === "warning"
-                        ? "text-warning"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    {option.detail}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+            onPick={handlePick}
+            options={view.options}
+          />
           {view.hint ? <FieldDescription>{view.hint}</FieldDescription> : null}
         </>
       ) : null}

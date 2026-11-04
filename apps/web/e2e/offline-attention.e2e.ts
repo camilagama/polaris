@@ -1,9 +1,10 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SUPPORT_ADDRESS } from "./support-address";
 
-async function openLab(page: Page, user: string) {
-  await page.goto("/offline-attention-lab");
+async function openLab(page: Page, user: string, query = "") {
+  await page.goto(`/offline-attention-lab${query}`);
   await expect(
     page.getByRole("heading", { name: "Laboratório da atenção" })
   ).toBeVisible();
@@ -91,6 +92,23 @@ test("descartar pede confirmação, diz o que se perde e remove o registro", asy
     timeout: 15_000,
   });
   await expect(page.getByText("Nenhuma pendência de envio")).toBeVisible();
+});
+
+test("sem a aba Assinatura, a mudança de direito não oferece o link e diz para falar com o suporte", async ({
+  page,
+}) => {
+  await openLab(page, `user-${crypto.randomUUID()}`, "?assinatura=off");
+  await click(page, "Criar venda recusada por direito", "Direito alterado: ok");
+  await expect(items(page).first()).toContainText(
+    `Regularize o plano com o suporte (${SUPPORT_ADDRESS}) e toque em Tentar novamente.`
+  );
+  await expect(page.getByRole("link", { name: "Ver Assinatura" })).toHaveCount(
+    0
+  );
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Descartar…" })).toHaveCount(0);
 });
 
 test("um acesso revogado oferece Sair e entrar de novo, com o valor e a data no título", async ({

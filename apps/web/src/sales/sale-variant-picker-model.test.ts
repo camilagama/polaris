@@ -75,23 +75,22 @@ describe("lineBalancesRequest and chunkIds", () => {
 });
 
 describe("pickerOptions", () => {
-  it("shows product, variant, SKU, balance and average cost", () => {
+  it("shows product, variant, SKU and balance, never the average cost", () => {
     const [option] = pickerOptions([entry(1)]);
     expect(option).toMatchObject({
-      detail: "Saldo 3 · SKU CAM-AZ-M · custo médio R$ 12,34",
+      detail: "Saldo 3 · SKU CAM-AZ-M",
       label: "Camiseta Polaris · Azul / M",
       tone: "ok",
     });
   });
 
-  it("flags a variant without balance and never shows an unknown cost as zero", () => {
+  it("flags a variant without balance", () => {
     const [empty, unknown] = pickerOptions([
       entry(1, { quantity: 0 }),
       entry(2, { movingAverageCost: null, sku: null }),
     ]);
     expect(empty).toMatchObject({ tone: "warning" });
-    expect(empty?.detail).toContain("Sem saldo");
-    expect(empty?.detail).not.toContain("custo");
+    expect(empty?.detail).toBe("Sem saldo · SKU CAM-AZ-M");
     expect(unknown?.detail).toBe("Saldo 3");
   });
 
