@@ -2792,3 +2792,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Resumo | Em revisão | Só o que foi escolhido: sem "ainda não escolhido", sem "Ajustes nenhum", a prévia com título só quando existe. |
 | Escolhas lembradas | Em revisão | `last-payment-model.ts`: método e perfil da última venda deste aparelho, por loja, no `localStorage`; "Sem perfil" já escolhido na loja sem perfil ativo, e um "Sem perfil" lembrado só vale enquanto a loja não tem perfil ativo (com um, o método continua e o perfil fica em branco); o que a tela escolhe não é venda em andamento. |
 | Medida | Em revisão | A 360 px, antes do 1º toque: 2.206 → 1.384 px; repetir uma venda: 5 → 3 toques (busca, produto, confirmar), sem rolagem. A 1280: 1.310 → 802 px. |
+
+### Altura estável na troca de estado por clique (t743; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Gráfico sem venda | Em revisão | "Vendas por dia" (Início) e "Vendas × custos por dia" (Resultado): o período sem nada a desenhar mantém a caixa do gráfico, com a mesma altura, o chão do zero e a frase "Sem vendas no período." no meio dela (`AreaChart` com a prop `empty`; a leitura e a legenda ficam na caixa, invisíveis e fora da árvore de acessibilidade). O carregando do Início deixa de contar uma linha de leitura e uma legenda que o gráfico dele não tem. A linha do melhor dia do Resultado guarda a altura vazia. |
+| Cartões de KPI | Em revisão | A linha do chip e a da nota existem sempre, uma sob a outra (`KpiCard` e `KpiCardSkeleton`); a nota de Vendas hoje guarda duas linhas. Ler um dia ou soltá-lo não move o texto de apoio, a sparkline nem a altura. |
+| Provas | Em revisão | `e2e/home.e2e.ts` e `e2e/dashboard.e2e.ts`, a 360 e 1280 px, com o limite de 1 px: 7 ↔ 30 dias (dados e dados, dados e vazio, vazio e vazio), o carregando do gráfico, o Resultado com e sem venda a desenhar, os 29 dias lidos pelo teclado nos cartões e o esqueleto contra o cartão. Unidade: `charts.test.tsx`, `home-chart.test.tsx`, `kpi-card.test.tsx`. O CLS do `e2e-real/cls` não vê a troca por clique (`hadRecentInput`). |
+| Não coberto | Registrado | Resultado em período futuro ("Este período ainda não começou."), rodapé do cartão "Resultado estimado" contra o do esqueleto, a linha de leitura do último dia que quebra em duas linhas no celular quando o dia tem despesa, listas com abas (Produtos, Despesas). Lista com tela e controle no PR. |
