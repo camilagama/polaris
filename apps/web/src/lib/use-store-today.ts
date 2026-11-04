@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { calendarDayInTimezone } from "../lib/dates";
+import { calendarDayInTimezone } from "./dates";
 
 /** The screen is left open for hours; a minute is the finest the day of the store can turn at. */
 export const STORE_TODAY_TICK_MS = 60_000;

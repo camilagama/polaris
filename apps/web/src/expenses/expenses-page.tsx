@@ -37,7 +37,7 @@ import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
 import { type ExpenseFilters, useExpenseList } from "./use-expense-list";
 import { useFormDialog } from "./use-form-dialog";
-import { useStoreToday } from "./use-store-today";
+import { useStoreToday } from "../lib/use-store-today";
 
 type StatusChange = "restore" | "void";
 

@@ -17,7 +17,7 @@ import { Card } from "@/ui/card";
 import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
-import { useStoreToday } from "../expenses/use-store-today";
+import { useStoreToday } from "../lib/use-store-today";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
