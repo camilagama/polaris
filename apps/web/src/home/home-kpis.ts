@@ -45,6 +45,8 @@ export function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
 
 /** The chip of a card: its text, whether it went up (green) or not (neutral: selling less is not an error). */
 export interface Delta {
+  /** What the change is against, said short beside the chip: "vs. setembro". The name of the chip keeps the exact range. */
+  against?: string;
   /** What the change is against, for the name of the chip: "em relação a 1 a 23/09". */
   basis?: string;
   /** True when the text is an amount in reais (the result's chip), which "Esconder valores" hides. */

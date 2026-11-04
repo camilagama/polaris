@@ -94,6 +94,16 @@ const base: Props = {
 const html = (props: Partial<Props> = {}) =>
   renderToStaticMarkup(<ProductList {...base} {...props} />);
 
+const DESCRIBED_BY = /aria-describedby="([^"]*)"/;
+/** The text of the elements a tag points to with aria-describedby, in order. */
+function describedByText(markup: string, tag = ""): string[] {
+  const ids = DESCRIBED_BY.exec(tag)?.[1]?.split(" ") ?? [];
+  return ids.map((id) => {
+    const text = new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(markup)?.[1];
+    return text ?? "";
+  });
+}
+
 const pending = (
   productId: string,
   state: PendingProduct["state"]
@@ -224,9 +234,34 @@ describe("linha do produto", () => {
       "Produto 1"
     );
     expect(archiving).toContain('aria-disabled="true"');
-    // busy is no reason to read: only the support line describes it
     expect(archiving).toContain(
-      `aria-describedby="product-support-${saved.id}"`
+      `aria-describedby="product-support-${saved.id} product-pending-${saved.id}"`
+    );
+  });
+
+  it("a linha que espera uma ação liga o botão ao texto do que roda, junto do motivo que já houver", () => {
+    const [one, two] = [product(1), product(2)];
+    const markup = html({
+      pendingAction: `archive:${one.id}`,
+      products: [one, two],
+      total: 2,
+    });
+    expect(describedByText(markup, rowOpen(markup, "Produto 1"))).toContain(
+      "Arquivando…"
+    );
+    expect(rowOpen(markup, "Produto 2")).toBe(
+      rowOpen(html({ products: [two], total: 1 }), "Produto 2")
+    );
+    expect(rowOpen(markup, "Produto 2")).not.toContain("product-pending-");
+
+    const both = html({
+      pendingAction: `archive:${one.id}`,
+      products: [one],
+      syncStates: new Map([[one.id, pending(one.id, "pending")]]),
+      total: 1,
+    });
+    expect(rowOpen(both, "Produto 1")).toContain(
+      `aria-describedby="product-support-${one.id} product-locked-${one.id} product-pending-${one.id}"`
     );
   });
 

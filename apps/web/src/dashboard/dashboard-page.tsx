@@ -1,3 +1,4 @@
+import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton } from "@/ui/hidden-values";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
@@ -13,7 +14,6 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
-import { Skeleton } from "@/ui/skeleton";
 import { Tabs, TabsContent } from "@/ui/tabs";
 import { replaceAddress } from "../app-shell/address";
 import { lazyScreen } from "../app-shell/lazy-screen";
@@ -64,40 +64,8 @@ import {
 
 const RESULT_TABS = ["resultado", "metas", "despesas"] as const;
 
-/**
- * The expenses while their chunk loads: the shape of the screen of an empty month (the heading, the parts, the month
- * and the card of the list), so the screen that comes takes the place of the skeleton instead of growing out of a
- * short "Carregando…".
- */
-function ExpensesLoading() {
-  return (
-    <div className="grid gap-4" role="status">
-      <span className="sr-only">Carregando as despesas…</span>
-      <div aria-hidden="true" className="grid gap-1">
-        <div className="flex h-5 items-center">
-          <Skeleton className="h-4 w-20" />
-        </div>
-        <Skeleton className="h-9 w-full max-w-xl md:h-[1.125rem]" />
-      </div>
-      <Skeleton
-        aria-hidden="true"
-        className="h-ctl-md w-72 max-w-full rounded-lg"
-      />
-      <Skeleton
-        aria-hidden="true"
-        className="h-[6.8125rem] w-full md:h-[3.5625rem]"
-      />
-      <Skeleton
-        aria-hidden="true"
-        className="h-[23.9375rem] w-full rounded-xl md:h-[21.3125rem]"
-      />
-    </div>
-  );
-}
-
 /** The expenses, the third tab (map of navigation, § 1; `/expenses` opens it): their own chunk, as their screen was. */
 const EXPENSES_PANEL: TabPanel = {
-  fallback: <ExpensesLoading />,
   Screen: lazyScreen(() =>
     import("../expenses/expenses-page").then((module) => ({
       default: module.ExpensesPage,
@@ -108,12 +76,12 @@ const EXPENSES_PANEL: TabPanel = {
 
 function Heading() {
   return (
-    <header className="grid gap-1">
+    <header className="flex items-center gap-1">
       <h1 className="text-title">Resultado</h1>
-      <p className="text-muted-foreground text-support">
+      <HelpTip about="Resultado">
         Estimativa com as vendas confirmadas e as despesas do período. Não é
         lucro líquido nem dinheiro recebido.
-      </p>
+      </HelpTip>
     </header>
   );
 }
@@ -125,27 +93,17 @@ interface ToolbarProps {
   period: Period;
   preset: PeriodPreset;
   state: PeriodSummaryState;
-  /** The year of the store's today, for the name of the period ("outubro", not "outubro de 2026"). */
-  thisYear: string;
   timezone: string;
 }
 
-/**
- * Which read the line beside the period talks about: the server's, or the copy the device kept. While another period
- * loads, the figures of the one before stay on the screen, dimmed, and this line says which they are: in its own place,
- * so nothing is put above the figures and nothing moves (no line comes and goes over them).
- */
+/** Which read the line beside the period talks about: the server's, or the copy the device kept. */
 function updatedText(
   state: PeriodSummaryState,
-  timezone: string,
-  period: Period,
-  thisYear: string
+  timezone: string
 ): string | null {
   const { isLoading, source, summary } = state;
   if (isLoading) {
-    return summary && !samePeriod(summary.period, period)
-      ? `Mostrando ${periodText(summary.period, thisYear)} até o novo período carregar.`
-      : "Atualizando…";
+    return "Atualizando…";
   }
   if (!summary) {
     return null;
@@ -162,7 +120,6 @@ function Toolbar({
   period,
   preset,
   state,
-  thisYear,
   timezone,
 }: ToolbarProps) {
   return (
@@ -186,13 +143,12 @@ function Toolbar({
         </Button>
         {/* v7 § 6: the same choice as on the Início, kept on the device */}
         <HideValuesButton size="sm" />
-        {/* two lines kept on a phone, where "Mostrando … até o novo período carregar." takes two */}
         <p
           aria-live="polite"
-          className="min-h-9 basis-full self-center text-muted-foreground text-support md:min-h-0 md:basis-auto"
+          className="basis-full self-center text-muted-foreground text-support md:basis-auto"
           id="dashboard-updated"
         >
-          {updatedText(state, timezone, period, thisYear)}
+          {updatedText(state, timezone)}
         </p>
       </div>
     </div>
@@ -293,13 +249,19 @@ function Content({
       )}
       data-stale={stale ? "" : undefined}
     >
-      <QualityBanner quality={summary.quality} />
+      {behind ? (
+        <p
+          className="text-muted-foreground text-support"
+          role="status"
+        >{`Mostrando ${shown} até o novo período carregar.`}</p>
+      ) : null}
       <ResultCards
         comparison={onScreen(comparison, summary.period, today)}
         salesComparison={onScreen(salesComparison, summary.period, today)}
         summary={summary}
         today={today}
       />
+      <QualityBanner quality={summary.quality} />
       <ResultChart
         source={state.source}
         summary={summary}
@@ -431,7 +393,6 @@ export function DashboardPage() {
             period={period}
             preset={selection.preset}
             state={state}
-            thisYear={today.slice(0, 4)}
             timezone={organization.timezone}
           />
           {state.summary && state.source === "cache" ? (

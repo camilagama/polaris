@@ -177,6 +177,30 @@ export function ExpenseCategorySelect({
   );
 }
 
+/** "Desfazer" stays reachable while it cannot run (`aria-disabled`) and reads why, as in Produtos. */
+function UndoButton({
+  disabled,
+  onUndo,
+  reasonId,
+}: {
+  disabled: boolean | undefined;
+  onUndo: () => void;
+  reasonId: string | undefined;
+}) {
+  return (
+    <Button
+      aria-describedby={disabled ? reasonId : undefined}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onUndo}
+      size="sm"
+      type="button"
+      variant="link"
+    >
+      Desfazer
+    </Button>
+  );
+}
+
 /**
  * A success note (`status`) or an error (`alert`), or nothing: no gap is drawn without a message. An error may carry
  * more under its text (the way to the Pro of a plan's limit) and take the focus (`errorRef`).
@@ -185,10 +209,21 @@ export function ActionNotice({
   errorExtra,
   errorRef,
   feedback,
+  noticeRef,
+  onUndo,
+  undoDisabled,
+  undoReasonId,
 }: {
   errorExtra?: ReactNode;
   errorRef?: Ref<HTMLDivElement> | undefined;
   feedback: Feedback | null;
+  /** The success notice takes the focus (a button that left the list had it). */
+  noticeRef?: Ref<HTMLDivElement> | undefined;
+  /** The button "Desfazer" of the success notice; none without it. */
+  onUndo?: (() => void) | undefined;
+  /** No connection or a command running: "Desfazer" stays reachable and reads why it is off. */
+  undoDisabled?: boolean | undefined;
+  undoReasonId?: string | undefined;
 }) {
   if (!feedback) {
     return null;
@@ -200,15 +235,43 @@ export function ActionNotice({
       variant="destructive"
     >
       <CircleAlertIcon aria-hidden="true" />
-      <AlertDescription>
+      <AlertDescription
+        className={
+          onUndo ? "flex flex-wrap items-center gap-x-3 gap-y-1" : undefined
+        }
+      >
         {feedback.text}
         {errorExtra}
+        {onUndo ? (
+          <UndoButton
+            disabled={undoDisabled}
+            onUndo={onUndo}
+            reasonId={undoReasonId}
+          />
+        ) : null}
       </AlertDescription>
     </Alert>
   ) : (
-    <Alert>
+    <Alert
+      className="focus-ring"
+      ref={noticeRef}
+      tabIndex={noticeRef ? -1 : undefined}
+    >
       <CircleCheckIcon aria-hidden="true" />
-      <AlertDescription>{feedback.text}</AlertDescription>
+      <AlertDescription
+        className={
+          onUndo ? "flex flex-wrap items-center gap-x-3 gap-y-1" : undefined
+        }
+      >
+        {feedback.text}
+        {onUndo ? (
+          <UndoButton
+            disabled={undoDisabled}
+            onUndo={onUndo}
+            reasonId={undoReasonId}
+          />
+        ) : null}
+      </AlertDescription>
     </Alert>
   );
 }

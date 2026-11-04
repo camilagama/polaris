@@ -742,6 +742,36 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await expect(row(page, "Panfletos")).toBeVisible();
 });
 
+test("anular avisa com o nome da despesa e Desfazer a devolve ao período", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await fillExpense(page, {
+    amount: "80",
+    category: "Marketing",
+    description: "Cartazes",
+  });
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+  await expect(row(page, "Cartazes")).toBeVisible();
+
+  await page.getByRole("button", { name: "Anular despesa Cartazes" }).click();
+  await expect(row(page, "Cartazes")).toHaveCount(0);
+  const notice = page
+    .getByRole("status")
+    .filter({ hasText: "Despesa “Cartazes” anulada." });
+  await expect(notice).toBeVisible();
+  // the pressed button left with its row: the focus is on the notice, not on the page
+  await expect(notice).toBeFocused();
+
+  await notice.getByRole("button", { name: "Desfazer" }).click();
+  await expect(row(page, "Cartazes")).toBeVisible();
+  await expect(page.getByText("Despesa reativada.")).toBeVisible();
+  // the notice of the restore has nothing left to undo
+  await expect(page.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
+  expect(server.expenses.map((stored) => stored.status)).toEqual(["active"]);
+});
+
 test("editar sobre uma versão antiga mostra o conflito e recarrega", async ({
   page,
 }) => {
@@ -847,7 +877,7 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   const occurrence = listedExpense(page, "Assinatura do sistema");
   await expect(occurrence).toHaveCount(1);
   await expect(occurrence).toContainText("R$ 1.200,00");
-  await expect(occurrence).toContainText("Competência 14/10/2026");
+  await expect(occurrence).toContainText("Aluguel · 14/10/2026");
   await expect(
     occurrence.getByText("Recorrente", { exact: true })
   ).toBeVisible();

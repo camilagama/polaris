@@ -577,10 +577,13 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   await expect(card(page, CARD.margin)).toContainText("52,69%");
   // the chips compare with the same days of September (v7 § 8): R$ 130,00 against R$ 100,00
   await expect(card(page, CARD.netSales)).toContainText("+30,0%");
-  // what it compares with is in the name of the chip and in the (i), not in sight
+  // what it compares with is said short beside the chip, in full in its name and in the (i)
   await expect(
     card(page, CARD.netSales).locator("[data-kpi-delta]")
-  ).toHaveAttribute("aria-label", "+30,0% em relação a 1 a 14/09");
+  ).toHaveAttribute("aria-label", "+30,0% em relação a setembro (1 a 14/09)");
+  await expect(
+    card(page, CARD.netSales).locator("[data-kpi-delta]")
+  ).toContainText("vs. setembro");
   // the chips of sales and ticket read `dailySales`; the result's chip reads the summary of the same month
   expect(server.salesComparisons).toContainEqual({
     from: "2026-09-01",

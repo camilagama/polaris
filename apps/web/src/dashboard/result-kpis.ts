@@ -1,5 +1,6 @@
 import { Money } from "@polaris/domain/money/money";
 import {
+  type Delta,
   divideHalfUp,
   type KpiReading,
   moneyDelta,
@@ -70,6 +71,30 @@ export function rangeText(first: string, last: string): string {
   return first.slice(0, 7) === last.slice(0, 7)
     ? `${Number(first.slice(8, 10))} a ${shortDate(last)}`
     : `${shortDate(first)} a ${shortDate(last)}`;
+}
+
+/**
+ * The chip with what it compares with: short beside it ("vs. setembro", "vs. 1 a 7/09") and in full in its name. The
+ * cards compare the days up to the day read with the same days of the period before, so the name of a month also says
+ * those days ("setembro (1 a 25/09)").
+ */
+function withAgainst(
+  delta: Delta | null,
+  period: Period,
+  priorRange: string
+): Delta | null {
+  if (!delta) {
+    return null;
+  }
+  if (!isWholeMonth(period)) {
+    return { ...delta, against: `vs. ${priorRange}` };
+  }
+  const month = monthName(addDays(period.from, -1));
+  return {
+    ...delta,
+    against: `vs. ${month}`,
+    basis: `em relação a ${month} (${priorRange})`,
+  };
 }
 
 /** The sums of the days from the first to each day. */
@@ -193,6 +218,8 @@ interface Prior {
 }
 
 interface ReadContext {
+  /** The period the cards read, to say what its chips compare with. */
+  period: Period;
   /** At rest: the period up to today, with the server's cards as the numbers. */
   atRest: boolean;
   cards: ResultKpiCards;
@@ -219,13 +246,18 @@ function salesReading({
   atRest,
   cards,
   open,
+  period,
   priorSales,
   range,
   sum,
 }: ReadContext): KpiReading {
   const before = priorSales.sum;
   const delta = before
-    ? percentDelta(sum.net, before.net, `em relação a ${priorSales.range}`)
+    ? withAgainst(
+        percentDelta(sum.net, before.net, `em relação a ${priorSales.range}`),
+        period,
+        priorSales.range
+      )
     : null;
   let compare = "";
   if (delta) {
@@ -247,6 +279,7 @@ function salesReading({
 function resultReading({
   atRest,
   cards,
+  period,
   prior,
   range,
   result,
@@ -263,7 +296,11 @@ function resultReading({
     atRest && (known === null || known !== cents(cards.operatingResult));
   const delta =
     !card && known !== null && prior.sum && prior.sum.result !== null
-      ? moneyDelta(known, prior.sum.result, `em relação a ${prior.range}`)
+      ? withAgainst(
+          moneyDelta(known, prior.sum.result, `em relação a ${prior.range}`),
+          period,
+          prior.range
+        )
       : null;
   let value: string | null =
     known === null ? null : Money.fromMinorUnits(known).toString();
@@ -290,6 +327,7 @@ const ticketOf = (sum: Cumulative | undefined): bigint | null =>
 function ticketReading({
   atRest,
   cards,
+  period,
   priorSales,
   range,
   sum,
@@ -298,7 +336,11 @@ function ticketReading({
   const priorTicket = ticketOf(priorSales.sum);
   const delta =
     ticket !== null && priorTicket !== null
-      ? percentDelta(ticket, priorTicket, `em relação a ${priorSales.range}`)
+      ? withAgainst(
+          percentDelta(ticket, priorTicket, `em relação a ${priorSales.range}`),
+          period,
+          priorSales.range
+        )
       : null;
   let value: string | null = cards.ticket;
   if (!atRest) {
@@ -383,6 +425,7 @@ export function resultKpis({
       cards,
       date,
       open: index === null && period.to >= today,
+      period,
       prior: priorResult(at),
       priorSales: priorSales(at),
       // a period that has not started has no day yet: its dates are the whole period

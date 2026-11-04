@@ -44,7 +44,17 @@ const PHONE_TYPED = /^[\d\s().+-]+$/;
 /** "55" before a DDD and 8 or 9 digits: a phone pasted with the country code, kept here without it. */
 const BRAZIL_PREFIXED = /^55(\d{10,11})$/;
 
-function withoutCountryCode(digits: string): string {
+const TYPED_COUNTRY_CODE = /^\+55/;
+
+/**
+ * A typed "+55" is the country code whatever follows it, so a partial "+55 11" looks for "11". Without the "+", 55 is
+ * a real area code (RS) and only a full phone of 12 or 13 digits loses it.
+ */
+function withoutCountryCode(typed: string): string {
+  const digits = typed.replace(NOT_DIGIT, "");
+  if (TYPED_COUNTRY_CODE.test(typed.trim())) {
+    return digits.slice(2);
+  }
   return BRAZIL_PREFIXED.exec(digits)?.[1] ?? digits;
 }
 
@@ -62,7 +72,7 @@ export function filterCustomers<
   }
   // only a query typed as a phone compares digits: "Loja 2" is a name, not the phone digit 2
   const digits = PHONE_TYPED.test(query.trim())
-    ? withoutCountryCode(query.replace(NOT_DIGIT, ""))
+    ? withoutCountryCode(query)
     : "";
   return customers.filter(
     (customer) =>
