@@ -339,13 +339,24 @@ const home = (page: Page) => [
   page.getByRole("region", { name: "Vendas hoje" }),
 ];
 
-type Path = "/" | "/dashboard" | "/inventory" | "/sales" | "/sales/history";
+type Path =
+  | "/"
+  | "/configuracoes"
+  | "/dashboard"
+  | "/inventory"
+  | "/products"
+  | "/sales"
+  | "/sales/history";
 
 /** What each screen shows when its data has arrived. */
 const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   "/": (page) => [
     ...home(page),
     page.getByRole("region", { name: "Vendas hoje" }).getByText("R$").first(),
+  ],
+  "/configuracoes": (page) => [
+    page.getByRole("heading", { level: 1, name: "Configurações" }),
+    page.getByRole("heading", { level: 2, name: "Formas de receber" }),
   ],
   "/dashboard": (page) => [
     page.getByRole("heading", { level: 1, name: "Resultado" }),
@@ -354,6 +365,10 @@ const SCREENS: Record<Path, (page: Page) => Locator[]> = {
   "/inventory": (page) => [
     page.getByRole("heading", { level: 1, name: "Estoque" }),
     page.getByRole("list", { name: "Saldos por variante" }),
+  ],
+  "/products": (page) => [
+    page.getByRole("heading", { level: 1, name: "Produtos" }),
+    page.getByRole("list", { name: "Produtos" }),
   ],
   "/sales": (page) => [
     page.getByRole("heading", { level: 1, name: "Nova venda" }),
@@ -368,7 +383,9 @@ const DESTINATIONS: Path[] = [
   "/sales",
   "/sales/history",
   "/inventory",
+  "/products",
   "/dashboard",
+  "/configuracoes",
 ];
 
 /** A load of the page in a context of its own: no cache, no service worker, as the first visit of the day. */
@@ -456,7 +473,7 @@ test("layout shift no celular: Início da loja vazia e a entrada", async ({
   expect(measurements.problems.join("\n\n")).toBe("");
 });
 
-test("layout shift no celular: os destinos da barra e o Resultado, numa loja com vendas", async ({
+test("layout shift no celular: os destinos da barra, Produtos, Resultado e Configurações, numa loja com vendas", async ({
   browser,
 }, testInfo) => {
   test.setTimeout(180_000);

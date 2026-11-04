@@ -20,7 +20,7 @@ export const SECOND_ORGANIZATION = {
   role: "owner",
   timezone: "America/Sao_Paulo",
 };
-export const USER_ID = "user-do-teste";
+const USER_ID = "user-do-teste";
 export const EMAIL = "contato@exemplo.com.br";
 const LEASE_KEY = {
   id: "teste",
@@ -40,7 +40,7 @@ export const json = (body: unknown) => ({
   contentType: "application/json",
   headers: { ...WORKER_MARK },
 });
-export const inputOf = (route: Route) =>
+const inputOf = (route: Route) =>
   (route.request().postDataJSON() as { json: Record<string, unknown> }).json;
 
 /** What the server says of the ways to sign in (the latest route wins over the one `serve` set). */

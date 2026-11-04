@@ -36,7 +36,7 @@ const THEME_LABEL: Record<Theme, string> = {
 };
 
 /** The name of the button: what the menu holds, without "Sair", which is there only with the runtime. */
-export const STORE_MENU_LABEL = "Loja, conta e ajuda";
+const STORE_MENU_LABEL = "Loja, conta e ajuda";
 
 function LegalItem({ href, label }: { href: string; label: string }) {
   return (
@@ -99,7 +99,7 @@ export function StoreMenu({
         aria-busy={logout.busy || undefined}
         aria-describedby={identityId}
         aria-label={STORE_MENU_LABEL}
-        className="touch-hit focus-ring flex h-10 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent p-1 text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover md:max-w-72 md:shrink md:pr-2 md:@max-[30rem]/header:shrink-0 md:@max-[30rem]/header:p-0"
+        className="touch-hit focus-ring flex h-10 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent p-1 text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover md:max-w-72 md:shrink md:@max-[30rem]/header:shrink-0 md:@max-[30rem]/header:p-0 md:pr-2"
         data-store-menu=""
         ref={trigger}
       >

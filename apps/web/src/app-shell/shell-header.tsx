@@ -37,7 +37,7 @@ export function ShellHeader({
     >
       {/* the header measures its own width: beside the open sidebar with a large text it is narrow, and then it keeps
           only the initials of the store and tighter room, so nothing passes its edge */}
-      <div className="flex h-full items-center gap-2 pr-2 pl-(--gutter) md:pr-4 md:pl-6 md:@max-[30rem]/header:px-2">
+      <div className="flex h-full items-center gap-2 pr-2 pl-(--gutter) md:@max-[30rem]/header:px-2 md:pr-4 md:pl-6">
         {/* from 760 px the brand is at the top of the sidebar, the corner of the frame */}
         <a
           className="touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold text-foreground tracking-tight md:hidden"
@@ -46,11 +46,11 @@ export function ShellHeader({
           <Logo className="size-5" />
           Polaris
         </a>
-        <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3 md:@max-[30rem]/header:gap-1">
+        <div className="ml-auto flex min-w-0 items-center gap-2 md:@max-[30rem]/header:gap-1 md:gap-3">
           <SyncStatus onlineOnly={onlineOnly} />
           <a
             aria-current={helpCurrent ? "page" : undefined}
-            className="focus-ring hidden size-10 shrink-0 place-items-center rounded-md md:@max-[30rem]/header:size-8 text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground md:grid [&_svg]:size-[18px]"
+            className="focus-ring hidden size-10 shrink-0 place-items-center rounded-md text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground md:grid md:@max-[30rem]/header:size-8 [&_svg]:size-[18px]"
             data-header-help=""
             href={HELP_HREF}
             title={HELP_LABEL}
