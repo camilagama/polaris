@@ -506,16 +506,36 @@ describe("the day of the texts (VITE_LEGAL_VIGENCIA)", () => {
       production,
       readText: readRepositoryText,
     });
-  const draftOnly = [
-    `Build de produção com texto legal ainda não final: aviso de rascunho: "${LEGAL_DRAFT_NOTICE}".`,
-  ];
-
-  it("with the day and every variable, the real texts leave only the draft notice in production", () => {
+  it("a produção com a variável e sem a constante reprova", () => {
     const { errors } = real(
       { ...company, [EFFECTIVE_FROM_VARIABLE]: "2026-11-04" },
       true
     );
-    expect(errors).toEqual(draftOnly);
+    const text = errors.join("\n");
+    expect(text).toContain(
+      `variável ${EFFECTIVE_FROM_VARIABLE} não vale na produção`
+    );
+    expect(text).toContain(
+      "terms: [preencher na publicação] (data de vigência)"
+    );
+    expect(text).toContain(
+      "privacy: [preencher na publicação] (data de vigência)"
+    );
+  });
+
+  it("a produção com o dia na constante passa, e a variável não o muda", () => {
+    const documents = {
+      privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: "2026-11-01" },
+      terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: "2026-11-01" },
+    };
+    const { errors } = checkLegalDocuments({
+      company: { ...company, [EFFECTIVE_FROM_VARIABLE]: "2026-12-25" },
+      documents,
+      draftNotice: null,
+      production: true,
+      readText: readRepositoryText,
+    });
+    expect(errors).toEqual([]);
   });
 
   it("with the day and every variable, staging has no pending marker of any page", () => {
@@ -545,15 +565,18 @@ describe("the day of the texts (VITE_LEGAL_VIGENCIA)", () => {
   });
 
   it.each(["04/11/2026", "2026-02-30", "amanhã", "2026-11-4"])(
-    "treats %s as a pending value: it never fills the date, and production refuses it",
+    "treats %s as a pending value: it never fills the date, and staging only warns",
     (value) => {
       const env = { ...company, [EFFECTIVE_FROM_VARIABLE]: value };
-      const production = real(env, true).errors.join("\n");
-      expect(production).toContain(
+      const staging = real(env, false);
+      expect(staging.errors).toEqual([]);
+      expect(staging.warnings.join("\n")).toContain(
         `variável ${EFFECTIVE_FROM_VARIABLE} não é um dia AAAA-MM-DD: "${value}"`
       );
-      expect(production).toContain("(data de vigência)");
-      expect(real(env, false).errors).toEqual([]);
+      expect(staging.warnings.join("\n")).toContain("(data de vigência)");
+      expect(real(env, true).errors.join("\n")).toContain(
+        "(data de vigência)"
+      );
     }
   );
 });

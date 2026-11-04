@@ -141,6 +141,28 @@ function effectiveFromProblems(value: string): string[] {
       ];
 }
 
+function fallbackDay(production: boolean, value: string): string {
+  return production ? "" : value;
+}
+
+function effectiveFromPending(
+  production: boolean,
+  value: string,
+  baseDocuments: Readonly<Record<LegalDocumentId, LegalDocumentVersion>>
+): string[] {
+  if (!production) {
+    return effectiveFromProblems(value);
+  }
+  const constantHasNoDay = LEGAL_DOCUMENT_IDS.some(
+    (id) => baseDocuments[id].effectiveFrom === null
+  );
+  return value !== "" && constantHasNoDay
+    ? [
+        `variável ${EFFECTIVE_FROM_VARIABLE} não vale na produção: o dia vai para effectiveFrom em packages/domain/src/legal/legal-documents.ts, por PR`,
+      ]
+    : [];
+}
+
 export function checkLegalDocuments(input: LegalGuardInput): LegalGuardResult {
   const baseDocuments = input.documents ?? LEGAL_DOCUMENTS;
   const effectiveFromValue = (
@@ -148,14 +170,16 @@ export function checkLegalDocuments(input: LegalGuardInput): LegalGuardResult {
   ).trim();
   const documents = withEffectiveFromFallback(
     baseDocuments,
-    effectiveFromValue
+    fallbackDay(input.production, effectiveFromValue)
   );
   const draftNotice =
     input.draftNotice === undefined ? LEGAL_DRAFT_NOTICE : input.draftNotice;
   const errors: string[] = [];
   const company = legalCompanyValues(input.company, input.production);
   const pending: string[] = [...company.problems];
-  pending.push(...effectiveFromProblems(effectiveFromValue));
+  pending.push(
+    ...effectiveFromPending(input.production, effectiveFromValue, baseDocuments)
+  );
   for (const document of LEGAL_DOCUMENT_IDS) {
     const { effectiveFrom, sha256, version } = documents[document];
     const where = `content/${LEGAL_CONTENT_SLUGS[document]}/v${version}.md`;
