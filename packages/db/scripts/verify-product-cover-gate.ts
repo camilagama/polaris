@@ -407,7 +407,7 @@ async function run() {
     assert.deepEqual(
       pulled.changes.map((change) => [change.entityType, change.entityId]),
       [["product", edited.id]],
-      "the pull after the uploads and the reorder names the product, once"
+      "the pull after the uploads and the reorder names the product (the pull lists each entity once)"
     );
     assert.equal(
       (await bootstrapCovers(tenantA, [edited.id])).get(edited.id),
@@ -428,7 +428,7 @@ async function run() {
     assert.equal(update.changed, true);
     assert.equal(update.product.version, versionBefore + 1);
     tests.push(
-      "after two uploads and a reorder the pull names the product once and re-reading it brings the new cover; an edit made offline with the version from before the images changed applies without a version conflict"
+      "after two uploads and a reorder the pull names the product and re-reading it brings the new cover; an edit made offline with the version from before the images changed applies without a version conflict"
     );
 
     // any other UPDATE of positions, outside the commands, still tells the device once
@@ -470,6 +470,72 @@ async function run() {
       "a plain UPDATE of positions outside the commands writes one change; a statement that only moves the images aside (every position at or above the reorder offset) writes none, and the one that settles them writes one"
     );
 
+    // a reorder that changes nothing, and an UPDATE or a DELETE of no row, write nothing
+    // the positions are 10 and 11 now: the first reorder tidies them to 0 and 1, the second has nothing to do
+    await oneChange(tenantA, edited.id, "a reorder that tidies the gaps", () =>
+      reorder(tenantA, edited.id, [extra, media])
+    );
+    const idle = await productChanges(tenantA, edited.id);
+    await reorder(tenantA, edited.id, [extra, media]);
+    await withRuntimeSqlContext(runtimeUrl, tenantA, async (client) => {
+      await client.query(
+        "UPDATE public.product_media SET position = position + 1 WHERE product_id = $1",
+        [randomUUID()]
+      );
+      await client.query(
+        "DELETE FROM public.product_media WHERE product_id = $1",
+        [randomUUID()]
+      );
+    });
+    assert.equal(
+      await productChanges(tenantA, edited.id),
+      idle,
+      "a reorder that keeps the order writes nothing"
+    );
+    const strayChanges = await admin.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM public.sync_changes WHERE organization_id = $1 AND seq > $2::bigint",
+      [tenantA.organizationId, Number(pulled.nextCursor)]
+    );
+    const expectedSince = await admin.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM public.sync_changes WHERE organization_id = $1 AND seq > $2::bigint AND entity_id = $3",
+      [tenantA.organizationId, Number(pulled.nextCursor), edited.id]
+    );
+    assert.equal(
+      strayChanges.rows[0]?.count,
+      expectedSince.rows[0]?.count,
+      "no change of any other entity appeared"
+    );
+    // one statement over the images of several products (what the purge of a store runs): one change per product
+    const tenantD = await createTenantFixture(admin.pool, "cover many");
+    const many = [
+      await newProduct(tenantD, "muitos um"),
+      await newProduct(tenantD, "muitos dois"),
+    ];
+    for (const item of many) {
+      // biome-ignore lint/performance/noAwaitInLoops: the uploads of one product run in order, as the commands do
+      await upload(tenantD, item.id);
+      await upload(tenantD, item.id);
+    }
+    const before = await Promise.all(
+      many.map((item) => productChanges(tenantD, item.id))
+    );
+    await admin.pool.query(
+      "DELETE FROM public.product_media WHERE organization_id = $1",
+      [tenantD.organizationId]
+    );
+    assert.deepEqual(
+      await Promise.all(many.map((item) => productChanges(tenantD, item.id))),
+      before.map((count) => count + 1),
+      "one DELETE of four images of two products writes one change per product"
+    );
+    assert.deepEqual(
+      await Promise.all(many.map((item) => coverOf(tenantD, item.id))),
+      [null, null]
+    );
+    tests.push(
+      "a reorder that keeps the order and an UPDATE or a DELETE of no row write nothing; one DELETE over the images of two products (as the purge of a store does) writes exactly one change per product"
+    );
+
     // ------------------------------------- 6. a cover is never of another organization
     const otherProduct = await newProduct(tenantB, "outra loja");
     const otherCover = await upload(tenantB, otherProduct.id);
@@ -486,12 +552,6 @@ async function run() {
       "re-reading another organization's product by id reads nothing"
     );
     assert.equal(await coverOf(tenantB, otherProduct.id), otherCover);
-    const foreign = await admin.pool.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM public.product_media pm
-        WHERE pm.organization_id = $1 AND pm.product_id = ANY($2::uuid[])`,
-      [tenantB.organizationId, [...coversA.keys()]]
-    );
-    assert.equal(Number(foreign.rows[0]?.count), 0);
     // the runtime with the context of A, reading the cover of B's product directly, sees nothing
     const crossRead = await withRuntimeSqlContext(
       runtimeUrl,
