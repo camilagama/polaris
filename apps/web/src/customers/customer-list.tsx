@@ -164,6 +164,7 @@ interface CustomerMainProps {
   customer: CustomerReadModel;
   locked: boolean;
   lockedReasonId: string | undefined;
+  pendingLabelId: string | undefined;
   onEdit: (customer: CustomerReadModel) => void;
 }
 
@@ -177,6 +178,7 @@ function CustomerMain({
   locked,
   lockedReasonId,
   onEdit,
+  pendingLabelId,
 }: CustomerMainProps) {
   const handleOpen = useCallback(() => onEdit(customer), [customer, onEdit]);
   const isAnonymized = customer.anonymizedAt !== null;
@@ -238,6 +240,7 @@ function CustomerMain({
           hasStateBadge ? stateId : undefined,
           contacts ? supportId : undefined,
           lockedReasonId,
+          pendingLabelId,
         ]
           .filter(Boolean)
           .join(" ") || undefined
@@ -254,6 +257,7 @@ interface CustomerRowNotesProps {
   isAnonymized: boolean;
   lockedReason: string | null;
   pendingLabel: string | null;
+  pendingLabelId: string;
   reasonId: string;
   shownState: PendingCustomer | PendingCustomerUpdate | undefined;
   /** The waiting command is the creation (not an edit): it names the badge. */
@@ -265,6 +269,7 @@ function CustomerRowNotes({
   isAnonymized,
   lockedReason,
   pendingLabel,
+  pendingLabelId,
   reasonId,
   shownState,
   unconfirmedCreation,
@@ -307,7 +312,11 @@ function CustomerRowNotes({
         </p>
       ) : null}
       {pendingLabel ? (
-        <p className="text-muted-foreground text-support" role="status">
+        <p
+          className="text-muted-foreground text-support"
+          id={pendingLabelId}
+          role="status"
+        >
           {pendingLabel}
         </p>
       ) : null}
@@ -353,6 +362,7 @@ function CustomerRow({
     .join(" · ");
 
   const reasonId = `customer-locked-${customer.id}`;
+  const pendingLabelId = `customer-pending-${customer.id}`;
   const handleAsk = useCallback(() => setConfirming(true), []);
   const handleCancel = useCallback(() => setConfirming(false), []);
   const handleConfirm = useCallback(() => {
@@ -372,6 +382,7 @@ function CustomerRow({
           locked={lockedReason !== null || isPending}
           lockedReasonId={lockedReason ? reasonId : undefined}
           onEdit={onEdit}
+          pendingLabelId={pendingLabel ? pendingLabelId : undefined}
         />
         {isAnonymized ? null : (
           <CustomerMenu
@@ -388,6 +399,7 @@ function CustomerRow({
         isAnonymized={isAnonymized}
         lockedReason={lockedReason}
         pendingLabel={pendingLabel}
+        pendingLabelId={pendingLabelId}
         reasonId={reasonId}
         shownState={shownState}
         unconfirmedCreation={Boolean(syncState)}
