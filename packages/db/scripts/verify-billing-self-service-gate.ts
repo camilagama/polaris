@@ -1670,7 +1670,7 @@ async function run() {
           line.includes('ADD CONSTRAINT "platform_audit_events_type_allowed"')
         ) ?? "";
     // the exact list now: 0091's, the refund window of 0100 and the three of 0105 (the two of the internal-store marker
-    // and the read of the activation funnel). A migration that widens or narrows it changes this line with it.
+    // and the read of the activation funnel) and the four of the operator's provider commands of 0111. A migration that widens or narrows it changes this line with it.
     assert.deepEqual(
       platformTypesOf(constraint.rows[0]?.definition ?? ""),
       [
@@ -1679,11 +1679,15 @@ async function run() {
         "billing.refund_window_read",
         "organization.marked_internal",
         "organization.unmarked_internal",
+        "billing.operator_refund_recorded",
+        "billing.operator_refund_requested",
+        "billing.operator_renewal_cancel_recorded",
+        "billing.operator_renewal_cancel_requested",
       ].sort(),
-      "exactly the list of 0091 plus billing.refund_window_read and the three of 0105: no value of 0091 is gone"
+      "exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111: no value of 0091 is gone"
     );
     tests.push(
-      "admin_read_refund_window answers, to an active operator under an open case of the same store, exactly firstChargeAt, firstChargeAmount, refundRequestedAt, state, method and now (no reference, price ID or subscription), audited in the same transaction with the operator, the store and the case; a case of another store, an inactive operator and a closed case get the same 42501 and leave no row; only the Admin runtime executes it; it is SECURITY DEFINER of polaris_admin_owner with a fixed search_path, and the platform audit check is exactly the list of 0091 plus billing.refund_window_read and the three of 0105"
+      "admin_read_refund_window answers, to an active operator under an open case of the same store, exactly firstChargeAt, firstChargeAmount, refundRequestedAt, state, method and now (no reference, price ID or subscription), audited in the same transaction with the operator, the store and the case; a case of another store, an inactive operator and a closed case get the same 42501 and leave no row; only the Admin runtime executes it; it is SECURITY DEFINER of polaris_admin_owner with a fixed search_path, and the platform audit check is exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111"
     );
 
     console.log(

@@ -313,11 +313,24 @@ const maskedValue = () => MASKED_MONEY;
 const spokenMasked = () => MASKED_SPOKEN;
 const noAxis = () => "";
 
+/** The height of the plot: 220 px for two series or more than seven days, else 180; the empty period keeps it. */
+function plotHeight(series: ResultSeries): number {
+  return series.costsSent || series.rows.length > 7 ? 220 : 180;
+}
+
 /**
  * The area chart of the charts chunk, with the sales and the dashed cost line, broken on a hatched day whose cost is
  * unknown (AC-9).
  */
-function Drawing({ label, series }: { label: string; series: ResultSeries }) {
+function Drawing({
+  empty,
+  label,
+  series,
+}: {
+  empty: boolean;
+  label: string;
+  series: ResultSeries;
+}) {
   const { data, note, secondary, spoken } = useDrawingData(series);
   const [hidden] = useHiddenValues();
   return (
@@ -325,11 +338,12 @@ function Drawing({ label, series }: { label: string; series: ResultSeries }) {
       color="var(--chart-sales)"
       data={data}
       failed={<ChartFailed />}
+      {...(empty ? { empty: "Sem vendas no período." } : {})}
       formatAxis={hidden ? noAxis : axisMoney}
       formatSpoken={hidden ? spokenMasked : moneyText}
       formatValue={hidden ? maskedValue : moneyText}
       {...(hidden ? {} : { axisUnit: "R$" })}
-      height={series.costsSent || series.rows.length > 7 ? 220 : 180}
+      height={plotHeight(series)}
       label={hidden ? maskMoney(label, MASKED_SPOKEN) : label}
       legend="Vendas líquidas"
       name="Vendas"
@@ -377,10 +391,12 @@ function Body({ label, series }: { label: string; series: ResultSeries }) {
     );
   }
   // a period with returns only still has a drawing: "Sem vendas" is for a period with nothing in it
-  return hasAnyValue(series.rows, series.costsDrawn) ? (
-    <Drawing label={label} series={series} />
-  ) : (
-    <p className="text-muted-foreground">Sem vendas no período.</p>
+  return (
+    <Drawing
+      empty={!hasAnyValue(series.rows, series.costsDrawn)}
+      label={label}
+      series={series}
+    />
   );
 }
 
@@ -434,9 +450,10 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
             {costsNote(source === "cache")}
           </p>
         )}
-        {best ? (
-          <p className="text-support">
-            <MoneyText text={best} />
+        {/* the line of the best day keeps its height in a period with no sale, so the chart under it does not move */}
+        {rows.length > 0 ? (
+          <p className="min-h-[1.125rem] text-support">
+            {best ? <MoneyText text={best} /> : null}
           </p>
         ) : null}
         <Body label={label} series={series} />

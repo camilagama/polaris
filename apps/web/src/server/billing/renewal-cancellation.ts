@@ -1,3 +1,4 @@
+import { cancelRenewal } from "@polaris/billing/operator-commands";
 import {
   type BillingProviderPort,
   ProviderNotFoundError,
@@ -17,7 +18,6 @@ import type { QueueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { PermanentHandlerError } from "../queue/consumer";
 import {
-  cancelRenewal,
   type OperatorCommandDependencies,
   reconcileOrganization,
 } from "./commands";

@@ -920,6 +920,46 @@ describe("the staging isolation check", () => {
       ]);
     });
 
+    it("requires the sandboxes of the providers in the Admin of staging, and the production hosts in production", () => {
+      const entries = repositoryEntries();
+      const { production, staging } = adminOf(entries);
+      staging.vars.ASAAS_BASE_URL = "https://api.asaas.com/v3";
+      staging.vars.WOOVI_BASE_URL = undefined;
+      staging.vars.WOOVI_REFUND_ENABLED = "yes";
+      production.vars.ASAAS_BASE_URL = "https://api-sandbox.asaas.com/v3";
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.production: vars.ASAAS_BASE_URL must be exactly https://api.asaas.com/v3 (the production host of the provider)",
+        "admin: env.production: vars.ASAAS_BASE_URL must not name a sandbox host of Asaas or Woovi",
+        "admin: env.staging: vars.ASAAS_BASE_URL must be exactly https://api-sandbox.asaas.com/v3 (the sandbox of the provider)",
+        "admin: env.staging: vars.WOOVI_BASE_URL must be exactly https://api.woovi-sandbox.com (the sandbox of the provider)",
+        'admin: env.staging: vars.WOOVI_REFUND_ENABLED must be "true" or "false"',
+        "admin: env.staging: vars.ASAAS_BASE_URL must not name the production API of Asaas or Woovi",
+      ]);
+    });
+
+    it("refuses a setting of the webhooks in the Admin, and a provider's secret written as a variable anywhere", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.vars.ASAAS_WEBHOOK_TOKEN = "token";
+      staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS = "key";
+      staging.vars.ASAAS_API_KEY = "$aact_hmlg_key";
+      entryOf(entries, "web").config.env.production.vars.WOOVI_APP_ID = "app";
+      entryOf(entries, "admin").config.vars = {
+        ASAAS_API_KEY: "$aact_hmlg_key",
+      };
+      expect(findIsolationProblems(entries)).toEqual([
+        "web: env.production: vars.WOOVI_APP_ID is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: top level: vars.ASAAS_API_KEY is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: env.production lacks vars.ASAAS_WEBHOOK_TOKEN, which env.staging sets",
+        "admin: env.production lacks vars.WOOVI_WEBHOOK_PUBLIC_KEYS, which env.staging sets",
+        "admin: env.production lacks vars.ASAAS_API_KEY, which env.staging sets",
+        "admin: env.staging: vars.ASAAS_WEBHOOK_TOKEN belongs to the webhooks of the web; the Admin never receives a provider's call",
+        "admin: env.staging: vars.WOOVI_WEBHOOK_PUBLIC_KEYS belongs to the webhooks of the web; the Admin never receives a provider's call",
+        "admin: env.staging: vars.ASAAS_API_KEY is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: env.staging: vars.ASAAS_WEBHOOK_TOKEN is a secret of the Worker (wrangler secret put, per environment), never a variable",
+      ]);
+    });
+
     it("refuses a production route or variable that reaches the Admin of staging", () => {
       const entries = repositoryEntries();
       const { production } = adminOf(entries);

@@ -238,6 +238,8 @@ A verificação de isolamento reprova, no `wrangler.jsonc` e no `wrangler.json` 
 
 Os segredos vêm **antes** do deploy que liga a cobrança: sem `ASAAS_WEBHOOK_TOKEN` o smoke fica vermelho (503 no webhook do Asaas); sem `ASAAS_API_KEY`, `WOOVI_APP_ID` ou `BILLING_PAYER_KEY` o smoke passa, mas o checkout da tela responde 503. O `RESEND_API_KEY` e o `AUTH_EMAIL_FROM` da seção 5 já servem aos e-mails de cobrança.
 
+**Segredos do Worker `polaris-admin-staging`** (comandos do operador, [ADR 0105](../adr/0105-comandos-de-provedor-pelo-operador.md); `wrangler secret put <NOME> --env staging` em `apps/admin`): `ASAAS_API_KEY` e `WOOVI_APP_ID`, **os mesmos valores** do `polaris-web-staging` (de sandbox). As variáveis `ASAAS_BASE_URL`, `WOOVI_BASE_URL` (sandboxes) e `WOOVI_REFUND_ENABLED` estão no `env.staging` do `apps/admin/wrangler.jsonc`, e a verificação de isolamento exige os sandboxes também no Admin do staging. Nenhum token de webhook, chave pública da Woovi nem `BILLING_PAYER_KEY` vai ao Admin. Ao girar uma chave, gire os dois Workers juntos; na suspeita de vazamento, revogue primeiro no provedor ([runbook dos provedores](./billing-providers.md#comandos-do-operador-no-admin-cancelar-renovação-e-reembolsar)). Sem os segredos, os dois comandos do operador respondem 503 e o resto do Admin segue.
+
 **Registro dos webhooks nos painéis dos sandboxes:**
 
 - **Asaas (sandbox):** URL `https://dash.araute.app/webhooks/billing/asaas` (sem barra final), envio **sequencial**, eventos de cobrança, de assinatura e `CHECKOUT_PAID`, token de autenticação igual ao `ASAAS_WEBHOOK_TOKEN`. A fila do Asaas pausa depois de 15 falhas seguidas: com o segredo faltando, toda entrega recebe 503; grave os segredos **antes** de registrar o webhook.

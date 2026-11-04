@@ -21,7 +21,7 @@ import {
 import {
   type BillingPortBindings,
   billingProviderPortOf,
-} from "./provider-ports";
+} from "@polaris/billing/provider-ports";
 
 export interface BillingMaintenanceReport {
   retry: BillingRetryReport;

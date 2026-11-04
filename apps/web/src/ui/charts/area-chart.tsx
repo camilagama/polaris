@@ -3,6 +3,7 @@ import { MotionConfig } from "motion/react";
 import {
   type ChangeEvent,
   type MutableRefObject,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -88,6 +89,12 @@ export interface AreaChartProps {
   /** The color of the series: a token of the chart palette. The ink (`--chart-5`) when absent. */
   color?: ChartColor;
   data: readonly ChartDatum[];
+  /**
+   * The sentence of a period with nothing to draw ("Sem vendas no período."): the chart keeps its whole box (the line of
+   * reading and the legend, unseen, and the plot with its floor), says it in the middle of the plot and draws no series, so
+   * the block is as tall as with a drawing. `data` still has the days, which give the box its reading line.
+   */
+  empty?: ReactNode;
   /** The text of a value on the y axis ("1 mil"); `formatValue` when absent. */
   formatAxis?: (value: number) => string;
   /** What the keyboard control says of a value; `formatValue` when absent ("valor escondido" with the values hidden). */
@@ -229,6 +236,90 @@ function EmptyChart({
         style={{ bottom: 32 }}
       />
     </div>
+  );
+}
+
+/** What a period with nothing to draw says, in the middle of the plot and above its floor (the zero). */
+function EmptyPlot({
+  children,
+  height,
+}: {
+  children: ReactNode;
+  height: number;
+}) {
+  return (
+    <div className="relative w-full" style={{ height }}>
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 border-border border-t"
+        data-chart-floor=""
+        style={{ bottom: MARGIN.bottom }}
+      />
+      <p
+        className="absolute inset-x-0 top-0 grid place-items-center px-4 text-center text-muted-foreground"
+        style={{ bottom: MARGIN.bottom }}
+      >
+        {children}
+      </p>
+    </div>
+  );
+}
+
+/** Takes the room of what it holds and shows nothing of it: the reading and the legend of a chart with nothing drawn. */
+function Unseen({ children, on }: { children: ReactNode; on: boolean }) {
+  return on ? (
+    <div aria-hidden="true" className="invisible">
+      {children}
+    </div>
+  ) : (
+    children
+  );
+}
+
+/** What sits above the plot: the line of reading of the day in focus, and the legend of a second series that has one. */
+function AreaTop({
+  color,
+  legend,
+  loadingAtRest,
+  place,
+  reading,
+  secondary,
+  unseen,
+}: {
+  color: ChartColor;
+  legend: string;
+  loadingAtRest: boolean;
+  place: "above" | "over" | null;
+  reading: DayReading;
+  secondary: AreaChartSecondary | undefined;
+  unseen: boolean;
+}) {
+  return (
+    <>
+      {place === "above" ? (
+        <Unseen on={unseen}>
+          <ReadingAt place={place} reading={reading} where="above" />
+        </Unseen>
+      ) : null}
+      {loadingAtRest ? (
+        <p aria-hidden="true" className="min-h-[1.125rem]" />
+      ) : null}
+      {secondary && !secondary.subtle ? (
+        <Unseen on={unseen}>
+          <Legend
+            color={color}
+            dash={DASH}
+            legend={legend}
+            hatched={hasUnknown(secondary.data)}
+            secondary={secondary}
+            secondaryColor={secondary.color ?? GRAY}
+            secondaryDrawn={secondary.data.some(
+              (datum) => datum.value !== null
+            )}
+          />
+        </Unseen>
+      ) : null}
+    </>
   );
 }
 
@@ -402,6 +493,7 @@ export function AreaChart({
   className,
   color,
   data,
+  empty,
   formatAxis,
   formatSpoken,
   formatValue,
@@ -496,77 +588,79 @@ export function AreaChart({
     picked: picked?.key === signature && !pointerOver,
   });
 
+  const isEmpty = empty !== undefined;
   return (
-    <div className={cn("grid gap-2", className)} data-chart="">
-      <ReadingAt place={place} reading={reading} where="above" />
-      {loading && readingAtRest ? (
-        <p aria-hidden="true" className="min-h-[1.125rem]" />
-      ) : null}
-      {secondary && !secondary.subtle ? (
-        <Legend
-          color={color ?? INK}
-          dash={DASH}
-          legend={legend ?? name}
-          hatched={hasUnknown(secondary.data)}
-          secondary={secondary}
-          secondaryColor={secondary.color ?? GRAY}
-          secondaryDrawn={secondary.data.some((datum) => datum.value !== null)}
-        />
-      ) : null}
-      <div
-        className="relative isolate rounded-md"
-        onPointerDown={pointed}
-        onPointerMove={pointed}
-        style={{ height: boxHeight }}
-      >
-        <ReadingAt place={place} reading={reading} where="over" />
+    <div
+      className={cn("grid gap-2", className)}
+      data-chart=""
+      {...(isEmpty ? { "data-chart-empty": "" } : {})}
+    >
+      <AreaTop
+        color={color ?? INK}
+        legend={legend ?? name}
+        loadingAtRest={loading && readingAtRest}
+        place={place}
+        reading={reading}
+        secondary={secondary}
+        unseen={isEmpty}
+      />
+      {isEmpty ? <EmptyPlot height={boxHeight}>{empty}</EmptyPlot> : null}
+      {isEmpty ? null : (
         <div
-          aria-label={label}
-          className="size-full"
-          data-chart-area=""
-          role="img"
+          className="relative isolate rounded-md"
+          onPointerDown={pointed}
+          onPointerMove={pointed}
+          style={{ height: boxHeight }}
         >
-          <Plot
-            axisText={axisText}
-            best={bestIndex(data)}
-            boxHidden={place === "over"}
-            color={color}
-            markers={markers}
-            still={still}
-            valueLabels={valueLabels}
-            formatValue={formatValue}
-            handle={handle}
-            height={boxHeight}
-            loading={loading}
-            loadingLabel={loadingLabel}
-            margin={margin}
-            name={name}
-            points={points}
-            readingNote={readingNote}
-            secondary={secondary}
-          />
+          <ReadingAt place={place} reading={reading} where="over" />
+          <div
+            aria-label={label}
+            className="size-full"
+            data-chart-area=""
+            role="img"
+          >
+            <Plot
+              axisText={axisText}
+              best={bestIndex(data)}
+              boxHidden={place === "over"}
+              color={color}
+              markers={markers}
+              still={still}
+              valueLabels={valueLabels}
+              formatValue={formatValue}
+              handle={handle}
+              height={boxHeight}
+              loading={loading}
+              loadingLabel={loadingLabel}
+              margin={margin}
+              name={name}
+              points={points}
+              readingNote={readingNote}
+              secondary={secondary}
+            />
+          </div>
+          {loading ? null : (
+            <input
+              aria-label={rangeLabel}
+              aria-valuetext={spokenValue({
+                ...reading,
+                formatValue: formatSpoken ?? formatValue,
+                note: spokenNote ? spokenNote(active) : reading.note,
+              })}
+              className={RANGE_CLASS}
+              max={last}
+              min={0}
+              onBlur={hide}
+              onChange={walk}
+              onFocus={show}
+              ref={rangeRef}
+              step={1}
+              type="range"
+              value={active}
+            />
+          )}
         </div>
-        {loading ? null : (
-          <input
-            aria-label={rangeLabel}
-            aria-valuetext={spokenValue({
-              ...reading,
-              formatValue: formatSpoken ?? formatValue,
-              note: spokenNote ? spokenNote(active) : reading.note,
-            })}
-            className={RANGE_CLASS}
-            max={last}
-            min={0}
-            onBlur={hide}
-            onChange={walk}
-            onFocus={show}
-            ref={rangeRef}
-            step={1}
-            type="range"
-            value={active}
-          />
-        )}
-      </div>
+      )}
     </div>
   );
 }

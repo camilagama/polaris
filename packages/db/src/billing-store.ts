@@ -31,6 +31,12 @@ import {
   welcomeNotice,
 } from "@polaris/domain/billing/notices";
 import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
+import {
+  normalizeOperatorReason,
+  type OperatorCommandKind,
+  operatorDecisionEventId,
+  operatorDecisionFactType,
+} from "@polaris/domain/billing/operator-commands";
 import type { PlanViewRecord } from "@polaris/domain/billing/plan-view";
 import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
 import {
@@ -449,6 +455,23 @@ export interface BillingStore {
     limit: number,
     providers: readonly string[]
   ) => Promise<RenewalCancellationRearmReport>;
+  /**
+   * Writes in the billing ledger the operator's decision to cancel the renewal or to refund (the Admin's provider
+   * commands), before the provider is asked: a `command` row of the organization whose fact holds the actor
+   * (`admin:<principal>`) and the reason typed, under `command:operator_<kind>:<commandId>`, so the same command
+   * repeated writes one row. It changes no state; what the provider did comes as its own facts. The reason is free text:
+   * the purge takes it out of the fact (it is not one of the keys it keeps).
+   */
+  recordOperatorDecision: (
+    input: {
+      actor: string;
+      commandId: string;
+      kind: OperatorCommandKind;
+      organizationId: string;
+      reason: string;
+    },
+    now?: Date
+  ) => Promise<void>;
   /**
    * Writes in the billing ledger that the checkout the link names was given up
    * at the provider at the closure (ADR 0074, L4): a `command` row of the
@@ -2818,6 +2841,39 @@ export function createBillingStore(
         [organizationId, link.providerRef]
       );
       return result.rows.length > 0;
+    },
+    async recordOperatorDecision(input, now = new Date()) {
+      if (!isValidGrantActor(input.actor)) {
+        throw new TypeError("invalid_operator_actor");
+      }
+      const reason = normalizeOperatorReason(input.reason);
+      if (reason === null) {
+        throw new TypeError("invalid_operator_reason");
+      }
+      const providerEventId = operatorDecisionEventId(
+        input.kind,
+        input.commandId
+      );
+      await inTransaction(pool, async (client) => {
+        const row = await lockRecord(client, input.organizationId);
+        await writeLedger(
+          client,
+          {
+            fact: {
+              actor: input.actor.trim(),
+              occurredAt: now.toISOString(),
+              reason,
+              type: operatorDecisionFactType(input.kind),
+            },
+            factType: "command",
+            organizationId: input.organizationId,
+            providerEventId,
+            stateAfter: row.state as BillingState,
+            stateBefore: row.state as BillingState,
+          },
+          now
+        );
+      });
     },
     async recordCheckoutDiscarded(input, now = new Date()) {
       await inTransaction(pool, async (client) => {

@@ -3738,3 +3738,351 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
     });
   });
 });
+
+const SALE_OUTSIDE_THE_WEEK: Scenario = {
+  ...SOLD,
+  days: { "2026-09-25": [12_000, 2] },
+};
+const NO_SALE_AT_ALL: Scenario = { ...SOLD, days: {} };
+const SIZES = [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+] as const;
+const CHARTS_CHUNK = "**/assets/charts-*.js";
+
+/** Where a box is on the page, whatever the scroll: the height and the top in document coordinates. */
+interface Place {
+  height: number;
+  top: number;
+}
+
+const placeOf = (locator: Locator): Promise<Place> =>
+  locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { height: box.height, top: box.top + window.scrollY };
+  });
+
+/** Two frames with nothing moving between them: the layout the page settled on. */
+const settled = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+
+/** The block "Vendas por dia" and what sits under it, as the page lays them out now. */
+async function chartPlaces(page: Page) {
+  await settled(page);
+  const chart = region(page, "Vendas por dia");
+  return {
+    card: await placeOf(chart),
+    next: await placeOf(region(page, "Ritmo de vendas")),
+    numbers: await placeOf(
+      chart.getByRole("button", { name: "Ver os números" })
+    ),
+    total: await placeOf(chart.locator("p.grid > span").first()),
+  };
+}
+
+type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
+
+/** Every place of the block within a pixel of the one before: the height, the total, "Ver os números" and the block below. */
+function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
+  for (const key of ["card", "next", "numbers", "total"] as const) {
+    expect(
+      Math.abs(after[key].height - before[key].height),
+      `altura de ${key}`
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(after[key].top - before[key].top),
+      `topo de ${key}`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+async function chooseDays(page: Page, days: "7" | "30") {
+  const chart = region(page, "Vendas por dia");
+  await chart.getByRole("tab", { name: `${days} dias` }).click();
+  await expect(
+    chart.getByRole("tab", { name: `${days} dias` })
+  ).toHaveAttribute("aria-selected", "true");
+}
+
+/** The block of one period has either the drawing or the sentence; waits for the one the scenario gives it. */
+async function expectPeriodShown(page: Page, empty: boolean) {
+  const chart = region(page, "Vendas por dia");
+  if (empty) {
+    await expect(chart).toContainText("Sem vendas no período.");
+  } else {
+    await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
+    await expect(chart).not.toContainText("Sem vendas no período.");
+  }
+}
+
+test.describe("Vendas por dia: trocar de período não muda a altura do bloco nem o que vem depois", () => {
+  const cases = [
+    {
+      name: "dados e dados (7 e 30 dias com venda)",
+      scenario: SOLD,
+      empty: { 30: false, 7: false },
+    },
+    {
+      name: "dados e vazio (7 dias sem venda, 30 dias com)",
+      scenario: SALE_OUTSIDE_THE_WEEK,
+      empty: { 30: false, 7: true },
+    },
+    {
+      name: "vazio e vazio (a loja que não vendeu em 30 dias)",
+      scenario: NO_SALE_AT_ALL,
+      empty: { 30: true, 7: true },
+    },
+  ] as const;
+
+  for (const size of SIZES) {
+    for (const { empty, name, scenario } of cases) {
+      test(`${name} (${size.width} px)`, async ({ page }) => {
+        await page.setViewportSize(size);
+        await openHome(page, new FakeServer(scenario));
+        await expectPeriodShown(page, empty[7]);
+        const week = await chartPlaces(page);
+
+        await chooseDays(page, "30");
+        await expectPeriodShown(page, empty[30]);
+        expectSamePlaces(await chartPlaces(page), week);
+
+        await chooseDays(page, "7");
+        await expectPeriodShown(page, empty[7]);
+        expectSamePlaces(await chartPlaces(page), week);
+      });
+    }
+
+    test(`carregando e pronto: a caixa que guarda o lugar do gráfico tem a altura do gráfico (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route(CHARTS_CHUNK, async (route) => {
+        await held;
+        await route.continue();
+      });
+      await openHome(page, new FakeServer(SOLD));
+      const chart = region(page, "Vendas por dia");
+      await expect(chart.locator("[data-chart-loading]")).toBeVisible();
+      const loading = await chartPlaces(page);
+
+      release();
+      await expect(
+        chart.locator("[data-chart-area] svg").first()
+      ).toBeVisible();
+      expectSamePlaces(await chartPlaces(page), loading);
+    });
+  }
+
+  test("o período sem venda mostra o chão do zero e a frase no meio da área do gráfico, não no lugar dela", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_WEEK));
+    await expectPeriodShown(page, true);
+    const chart = region(page, "Vendas por dia");
+    // the chart of the chunk (the box that held its place has no `data-chart`)
+    const drawn = chart.locator("[data-chart][data-chart-empty]");
+    await expect(drawn).toBeVisible();
+    const floor = drawn.locator("[data-chart-floor]");
+    const plot = floor.locator("xpath=..");
+    const sentence = plot.getByText("Sem vendas no período.");
+    const [plotBox, floorBox, sentenceBox] = await Promise.all([
+      plot.boundingBox(),
+      floor.boundingBox(),
+      sentence.boundingBox(),
+    ]);
+    if (!(plotBox && floorBox && sentenceBox)) {
+      throw new Error("faltou uma caixa do estado vazio");
+    }
+    expect(plotBox.height).toBe(240);
+    // the floor is the zero, 32 px over the bottom of the plot where the dates of the axis go
+    expect(floorBox.y + floorBox.height).toBeCloseTo(
+      plotBox.y + plotBox.height - 32,
+      0
+    );
+    expect(sentenceBox.y + sentenceBox.height).toBeLessThanOrEqual(
+      floorBox.y + floorBox.height
+    );
+    expect(sentenceBox.y).toBeGreaterThanOrEqual(plotBox.y);
+    expect(
+      Math.abs(
+        sentenceBox.x + sentenceBox.width / 2 - (plotBox.x + plotBox.width / 2)
+      )
+    ).toBeLessThanOrEqual(1);
+  });
+});
+
+/** What each KPI card lays out, in document coordinates: the card, its support text and its sparkline. */
+async function kpiPlaces(page: Page) {
+  await settled(page);
+  return page.locator("[data-kpi-row] [data-kpi]").evaluateAll((cards) =>
+    cards.map((card) => {
+      const top = (element: Element | null) =>
+        element
+          ? element.getBoundingClientRect().top + window.scrollY
+          : Number.NaN;
+      const box = card.getBoundingClientRect();
+      return {
+        chip: card.querySelector("[data-kpi-delta]") !== null,
+        height: box.height,
+        note: top(card.querySelector("[data-kpi-note-row]")),
+        spark: top(card.querySelector("[data-kpi-spark]")),
+        top: top(card),
+      };
+    })
+  );
+}
+
+type KpiPlaces = Awaited<ReturnType<typeof kpiPlaces>>;
+
+function expectSameKpiPlaces(
+  after: KpiPlaces,
+  before: KpiPlaces,
+  when: string
+) {
+  expect(after.length, when).toBe(before.length);
+  for (const [index, place] of after.entries()) {
+    const rest = before[index];
+    for (const key of ["height", "note", "spark", "top"] as const) {
+      expect(
+        Math.abs(place[key] - (rest?.[key] ?? Number.NaN)),
+        `${when}: ${key} do cartão ${index}`
+      ).toBeLessThanOrEqual(1);
+    }
+  }
+}
+
+/** Reads, by the arrows, each of the 29 days before today on the sparkline of a card, and the same places as at rest at each stop. */
+async function walkDays(
+  page: Page,
+  name: string,
+  rest: KpiPlaces,
+  chips: Set<boolean>
+) {
+  const slider = region(page, name).getByRole("slider");
+  await slider.focus();
+  for (let step = 1; step <= 29; step += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: one key, then one measure
+    await page.keyboard.press("ArrowLeft");
+    const read = await kpiPlaces(page);
+    for (const place of read) {
+      chips.add(place.chip);
+    }
+    expectSameKpiPlaces(read, rest, `${name}, ${step} dias antes`);
+  }
+  await slider.blur();
+  expectSameKpiPlaces(await kpiPlaces(page), rest, `${name}, solto`);
+}
+
+test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cartão", () => {
+  const RESULTS: Record<string, number> = {
+    "2026-09-20": 1500,
+    "2026-09-21": 3600,
+    "2026-10-02": 2400,
+    "2026-10-18": 55_200,
+    "2026-10-20": 12_615,
+    "2026-10-23": 9603,
+  };
+
+  for (const size of SIZES) {
+    test(`o texto de apoio, a sparkline e a altura de cada cartão ficam onde estavam em todos os dias lidos, com e sem o chip (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openHome(page, new FakeServer({ ...SOLD, results: RESULTS }));
+      await expect(
+        region(page, "Resultado estimado").locator("[data-kpi-spark] svg")
+      ).toBeVisible();
+      const rest = await kpiPlaces(page);
+      const chips = new Set<boolean>(rest.map((place) => place.chip));
+
+      for (const name of ["Vendas hoje", "Vendas em outubro"]) {
+        // biome-ignore lint/performance/noAwaitInLoops: one card at a time, the keyboard is one
+        await walkDays(page, name, rest, chips);
+      }
+      // the walk did cross days with a chip and days without one: the proof is not of a screen that never had it
+      expect([...chips].sort()).toEqual([false, true]);
+    });
+
+    test(`sem venda no mês: a linha do chip e a do texto de apoio continuam nos quatro cartões, vazias para o leitor de tela (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openHome(page, new FakeServer(NO_SALE_AT_ALL));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 0,00");
+      const rows = page.locator(
+        "[data-kpi-row] [data-kpi] [data-kpi-chip-row]"
+      );
+      await expect(rows).toHaveCount(4);
+      const chipRows = await rows.evaluateAll((elements) =>
+        elements.map((element) => ({
+          height: element.getBoundingClientRect().height,
+          text: element.textContent,
+        }))
+      );
+      for (const row of chipRows) {
+        expect(row.height).toBeGreaterThanOrEqual(20);
+        expect(row.text).toBe("");
+      }
+      const notes = page.locator(
+        "[data-kpi-row] [data-kpi] [data-kpi-note-row]"
+      );
+      await expect(notes).toHaveCount(4);
+      await expect(
+        page.locator("[data-kpi-row] [data-kpi] [data-kpi-delta]")
+      ).toHaveCount(0);
+    });
+  }
+
+  test("carregando e pronto: a 360 px, o esqueleto de cada cartão tem a altura do cartão e fica a mesma distância do primeiro", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[0]);
+    const server = new FakeServer(SOLD);
+    let answer: () => void = () => undefined;
+    server.held.set(
+      "report/periodSummary",
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    await openHome(page, server);
+    const skeletons = page.locator("[data-kpi-row] [data-kpi-skeleton]");
+    await expect(skeletons).toHaveCount(4);
+    await settled(page);
+    const loading = await skeletons.evaluateAll((cards) =>
+      cards.map((card) => {
+        const box = card.getBoundingClientRect();
+        return { height: box.height, top: box.top + window.scrollY };
+      })
+    );
+
+    answer();
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const loaded = await kpiPlaces(page);
+    // the result's foot has the lines its sentence takes, which the skeleton does not know: the other three are exact
+    for (const index of [0, 1, 3]) {
+      expect(
+        Math.abs((loaded[index]?.height ?? 0) - (loading[index]?.height ?? 0)),
+        `altura do cartão ${index}`
+      ).toBeLessThanOrEqual(1);
+    }
+    // the card of the month under Hoje is as far from it as its skeleton was
+    expect(
+      Math.abs(
+        (loaded[1]?.top ?? 0) -
+          (loaded[0]?.top ?? 0) -
+          ((loading[1]?.top ?? 0) - (loading[0]?.top ?? 0))
+      )
+    ).toBeLessThanOrEqual(1);
+  });
+});

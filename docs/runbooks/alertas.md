@@ -38,6 +38,7 @@
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
 | [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed` | 60 min | 1 | critical | sim |
+| [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
 
@@ -281,3 +282,13 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 **Como confirmar.** Workers Logs: `event = "billing_refund_pending_incident_failed"`, por `cause` e `sqlState`. Com `sqlState`, veja também [erros-de-banco](#erros-de-banco).
 
 **O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)).
+
+<a id="comando-de-cobranca-do-operador"></a>
+
+### comando-de-cobranca-do-operador — operador cancelou uma renovação ou reembolsou pelo Admin
+
+**O que significa.** Uma pessoa do Access cancelou a renovação ou pediu o reembolso de uma loja pela seção Cobrança do Admin, e o comando chegou ao provedor ([ADR 0105](../adr/0105-comandos-de-provedor-pelo-operador.md)). O evento é `billing_operator_command` (aviso, no Worker `polaris-admin`, não no `polaris-web`), com `operation` (`billing.cancel_renewal` ou `billing.refund`), `reason` (o resultado: `cancelled`, `already_cancelled`, `nothing_to_cancel`, `refund_requested`, `nothing_to_refund`), `provider` e `organizationId` opaco. Não há segunda aprovação no Admin: o alerta existe para a **outra** pessoa do Access ver cada comando na hora. O e-mail do alerta tem de chegar às duas pessoas do Access.
+
+**Como confirmar.** Workers Logs do `polaris-admin`: `event = "billing_operator_command"`. No Admin, o caso da loja mostra a auditoria `billing.operator_*_requested` e `…_recorded`, com o ID do comando; o motivo digitado está no ledger de cobrança (`billing_events`, `provider_event_id = command:operator_<tipo>:<commandId>`).
+
+**O que fazer.** Se foi a outra pessoa, confira o caso e o motivo; nada a fazer. Se ninguém reconhece o comando, trate como sessão de operador comprometida: desligue o operador (`platform_principals.status`), revogue a sessão no Access e siga [suspeita de vazamento da chave](./billing-providers.md#suspeita-de-vazamento-da-chave). Um `admin.operator_refund_rate_limited` no mesmo Worker diz que alguém passou do limite de 3 reembolsos por hora.

@@ -7,7 +7,7 @@ const ports = vi.hoisted(() => ({
   configured: new Set<string>(),
 }));
 
-vi.mock("./provider-ports", () => ({
+vi.mock("@polaris/billing/provider-ports", () => ({
   billingProviderPortOf: (_bindings: unknown, provider: string) => {
     if (!ports.configured.has(provider)) {
       throw new ProviderNotConfiguredError();

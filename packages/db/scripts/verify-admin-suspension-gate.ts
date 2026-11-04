@@ -513,6 +513,177 @@ async function run() {
       "a step of a billing command is written down only for an active operator on an open case, only as one of the four billing steps, with a short note; the organization it names is the case's"
     );
 
+    // ------------------------------------------------- 4b. the operator's provider commands (ADR 0105)
+    const operatorCase = await openCase(orgA.organizationId);
+    assert.ok(operatorCase);
+    const refunder = await principal();
+    for (const event of [
+      "billing.operator_renewal_cancel_requested",
+      "billing.operator_renewal_cancel_recorded",
+      "billing.operator_refund_recorded",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
+      const named = await audit(
+        operatorCase.id,
+        event,
+        randomUUID(),
+        "result=cancelled"
+      );
+      assert.equal(
+        named,
+        orgA.organizationId,
+        `${event} is a step of the operator's commands`
+      );
+      for (const entity of [null, "not-a-uuid", randomUUID().toUpperCase()]) {
+        // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
+        await assert.rejects(
+          () => audit(operatorCase.id, event, entity, null),
+          InvalidSupportRequestError,
+          `${event} names the command ID, a lowercase UUID`
+        );
+      }
+    }
+    await assert.rejects(
+      () =>
+        audit(
+          closedCase.id,
+          "billing.operator_refund_requested",
+          randomUUID(),
+          null,
+          refunder
+        ),
+      InvalidSupportRequestError,
+      "a closed case records no refund"
+    );
+    const refunds = [randomUUID(), randomUUID(), randomUUID()];
+    for (const commandId of refunds) {
+      // biome-ignore lint/performance/noAwaitInLoops: The limit counts the requests in order.
+      await audit(
+        operatorCase.id,
+        "billing.operator_refund_requested",
+        commandId,
+        null,
+        refunder
+      );
+    }
+    const countRefundRequests = async () =>
+      Number(
+        (
+          await owner.pool.query<{ total: string }>(
+            "SELECT count(*) AS total FROM public.platform_audit_events WHERE principal_id = $1 AND event_type = 'billing.operator_refund_requested'",
+            [refunder]
+          )
+        ).rows[0]?.total
+      );
+    assert.equal(await countRefundRequests(), 3);
+    await assert.rejects(
+      () =>
+        audit(
+          operatorCase.id,
+          "billing.operator_refund_requested",
+          randomUUID(),
+          null,
+          refunder
+        ),
+      (error: unknown) =>
+        error instanceof InvalidSupportRequestError &&
+        error.code === "operator_refund_rate_limited",
+      "a fourth refund of the operator within the hour is refused"
+    );
+    assert.equal(
+      await countRefundRequests(),
+      3,
+      "the refused request leaves no row"
+    );
+    // the same command again, after an unknown outcome, is not a new refund
+    await audit(
+      operatorCase.id,
+      "billing.operator_refund_requested",
+      refunds[0],
+      null,
+      refunder
+    );
+    assert.equal(await countRefundRequests(), 4);
+    // the command ID is the client's: the same one on a case of another organization is another refund
+    const otherStoreCase = await openCase(orgB.organizationId);
+    assert.ok(otherStoreCase);
+    await assert.rejects(
+      () =>
+        audit(
+          otherStoreCase.id,
+          "billing.operator_refund_requested",
+          refunds[0],
+          null,
+          refunder
+        ),
+      (error: unknown) =>
+        error instanceof InvalidSupportRequestError &&
+        error.code === "operator_refund_rate_limited",
+      "the same command ID on a case of another organization counts against the limit"
+    );
+    assert.equal(
+      await countRefundRequests(),
+      4,
+      "the refusal on the other organization leaves no row"
+    );
+    // one command ID carried across cases is counted once per case, so it cannot bypass the limit
+    const carrier = await principal();
+    const carried = randomUUID();
+    const carriedCases = [
+      operatorCase,
+      otherStoreCase,
+      await openCase(orgA.organizationId),
+    ];
+    for (const supportCase of carriedCases) {
+      assert.ok(supportCase);
+      // biome-ignore lint/performance/noAwaitInLoops: The limit counts the requests in order.
+      await audit(
+        supportCase.id,
+        "billing.operator_refund_requested",
+        carried,
+        null,
+        carrier
+      );
+    }
+    const fourthCase = await openCase(orgB.organizationId);
+    assert.ok(fourthCase);
+    await assert.rejects(
+      () =>
+        audit(
+          fourthCase.id,
+          "billing.operator_refund_requested",
+          carried,
+          null,
+          carrier
+        ),
+      (error: unknown) =>
+        error instanceof InvalidSupportRequestError &&
+        error.code === "operator_refund_rate_limited",
+      "a fourth case with the same command ID is refused"
+    );
+    assert.equal(
+      await audit(
+        operatorCase.id,
+        "billing.operator_refund_requested",
+        carried,
+        null,
+        carrier
+      ),
+      orgA.organizationId,
+      "the same command on the same case stays a repeat at the limit"
+    );
+    // the limit is the operator's own: another one still refunds
+    await audit(
+      operatorCase.id,
+      "billing.operator_refund_requested",
+      randomUUID(),
+      null,
+      p1
+    );
+    tests.push(
+      "the operator's provider commands record their four steps with the command ID (a lowercase UUID) on an open case; a refund request past 3 distinct commands of the same operator in the last hour is refused with no row, while a repeat of the same command on the same case and another operator are not counted, and the same command ID on another case or organization is"
+    );
+
     // ------------------------------------------------- 5. the billing role ends only a grant of its organization
     const store = createBillingStore(billingUrl);
     try {

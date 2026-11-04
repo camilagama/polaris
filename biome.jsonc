@@ -229,6 +229,8 @@
     {
       // The Admin app reaches the database only through its own modules (ADR 0070):
       // never tenant data, billing, auth or a driver. Each Admin PR that adds a module lists it here.
+      // Of @polaris/billing, only the operator's provider commands, the port they build and its errors (ADR 0105):
+      // never the webhooks, their signatures or a client directly.
       "includes": ["apps/admin/src/**"],
       "linter": {
         "rules": {
@@ -254,6 +256,9 @@
                       "!@polaris/db/billing-store",
                       "@polaris/billing",
                       "@polaris/billing/**",
+                      "!@polaris/billing/operator-commands",
+                      "!@polaris/billing/provider-port",
+                      "!@polaris/billing/provider-ports",
                       "drizzle-orm",
                       "drizzle-orm/**",
                       "pg",

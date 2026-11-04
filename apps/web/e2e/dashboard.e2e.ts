@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -155,7 +155,45 @@ const NO_COST_MONTH: FixtureMonth = {
   ],
 };
 
+/** May: one sale with every cost known and no expense recorded, so the estimate is partial like June's. */
+const MAY_MONTH: FixtureMonth = {
+  expenses: [],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: 2000,
+      discount: 0,
+      gross: 6000,
+      itemLines: 1,
+      items: 2,
+      processingFee: 120,
+      returns: 0,
+      surcharge: 0,
+    },
+  ],
+};
+
+/** June: one sale that was returned whole, so the month has a sale and nothing to draw (the net of every day is zero). */
+const RETURNED_MONTH: FixtureMonth = {
+  expenses: [],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: 0,
+      discount: 0,
+      gross: 10_000,
+      itemLines: 1,
+      items: 0,
+      processingFee: 0,
+      returns: 10_000,
+      surcharge: 0,
+    },
+  ],
+};
+
 const FIXTURE: Readonly<Record<string, FixtureMonth>> = {
+  "2026-05": MAY_MONTH,
+  "2026-06": RETURNED_MONTH,
   "2026-07": NO_SURCHARGE_MONTH,
   "2026-09": PARTIAL_MONTH,
   "2026-10": COMPLETE_MONTH,
@@ -1561,4 +1599,91 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
     await page.waitForTimeout(500);
     expect(server.periods).toHaveLength(2);
   });
+});
+
+const SIZES = [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+] as const;
+
+/** Where a box is on the page, whatever the scroll: the height and the top in document coordinates. */
+const placeOf = (locator: Locator) =>
+  locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { height: box.height, top: box.top + window.scrollY };
+  });
+
+/** Two frames with nothing moving between them: the layout the page settled on. */
+const settled = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+
+async function chartPlaces(page: Page) {
+  await settled(page);
+  const chart = chartRegion(page);
+  return {
+    card: await placeOf(chart),
+    next: await placeOf(chain(page)),
+    numbers: await placeOf(
+      chart.getByRole("button", { name: "Ver os números" })
+    ),
+    totals: await placeOf(chart.locator("dl")),
+  };
+}
+
+type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
+
+function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
+  for (const key of ["card", "next", "numbers", "totals"] as const) {
+    expect(
+      Math.abs(after[key].height - before[key].height),
+      `altura de ${key}`
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(after[key].top - before[key].top),
+      `topo de ${key}`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+test.describe("Vendas × custos por dia: trocar de período não muda a altura do cartão nem o que vem depois", () => {
+  // May and June are both partial estimates (no expense recorded): May has a sale to draw, June one returned whole
+  const periods = [
+    {
+      data: ["2026-05-05", "2026-05-11"],
+      empty: ["2026-06-05", "2026-06-11"],
+      name: "7 dias",
+    },
+    {
+      data: ["2026-05-05", "2026-05-14"],
+      empty: ["2026-06-05", "2026-06-14"],
+      name: "10 dias",
+    },
+  ] as const;
+
+  for (const size of SIZES) {
+    for (const { data, empty, name } of periods) {
+      test(`${name}: com venda, sem venda e com venda de novo (${size.width} px)`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(size);
+        await openDashboard(page, new FakeReportServer());
+        await rangeFields(page, data[0], data[1]);
+        await expect(chartRegion(page)).toContainText("Melhor dia");
+        const withSales = await chartPlaces(page);
+
+        await rangeFields(page, empty[0], empty[1]);
+        await expect(chartRegion(page)).toContainText("Sem vendas no período.");
+        expectSamePlaces(await chartPlaces(page), withSales);
+
+        await rangeFields(page, data[0], data[1]);
+        await expect(chartRegion(page)).toContainText("Melhor dia");
+        expectSamePlaces(await chartPlaces(page), withSales);
+      });
+    }
+  }
 });

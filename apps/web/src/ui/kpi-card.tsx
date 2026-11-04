@@ -277,8 +277,11 @@ function SparkSlot({
 
 const TOP_ROW =
   "flex min-h-[1.125rem] min-w-0 items-center justify-between gap-x-2 text-[0.8125rem] text-muted-foreground leading-[1.125rem]";
-const SUPPORT_ROW =
-  "flex min-h-[1.375rem] flex-wrap items-center gap-x-2 gap-y-1";
+const SUPPORT_ROWS = "grid gap-y-1";
+const CHIP_ROW = "flex min-h-5 min-w-0 items-center";
+const NOTE_ROW = "text-muted-foreground text-xs leading-4";
+/** The lines the note of a card may take: its row keeps them, so a longer note moves nothing under it. */
+const NOTE_LINES = { 1: "min-h-4", 2: "min-h-8" } as const;
 const FOOTER_ROW = "min-h-4 text-muted-foreground text-xs leading-4";
 const SPARK_SLOT = "-mx-(--card-spacing) mt-auto h-[3.25rem] md:h-16";
 const CARD = "min-w-0 gap-1 overflow-hidden px-(--card-spacing) pb-0";
@@ -328,6 +331,7 @@ export function KpiCard({
   help,
   id,
   note,
+  noteLines = 1,
   range,
   spark,
   title,
@@ -353,6 +357,8 @@ export function KpiCard({
   id: string;
   /** The rest of the support line, beside the chip: a count, or the warning. */
   note?: ReactNode;
+  /** The most lines the note takes when a day is read (2 for the "vs. média das quintas: sem vendas antes · …" of Hoje). */
+  noteLines?: 1 | 2;
   range?: KpiRange;
   /** The sparkline, or nothing (then the card ends with its text). */
   spark?: ReactNode;
@@ -390,16 +396,24 @@ export function KpiCard({
         <KpiDate date={date} reserve={dateReserve} />
       </div>
       {value}
-      {/* always there, empty without a change or a note: a chip that comes with a day read moves nothing */}
-      <div className={SUPPORT_ROW}>
-        {chip}
-        {note ? (
-          <span className="text-muted-foreground text-xs leading-4">
-            {note}
-          </span>
-        ) : null}
+      {/* two rows that are always there, empty without a change or a note: a chip that comes with a day read, or a note
+          that goes away, moves nothing under them */}
+      <div className={SUPPORT_ROWS}>
+        <div className={CHIP_ROW} data-kpi-chip-row="">
+          {chip}
+        </div>
+        <div
+          className={cn(NOTE_ROW, NOTE_LINES[noteLines])}
+          data-kpi-note-row=""
+        >
+          {note}
+        </div>
       </div>
-      {footer === undefined ? null : <div className={FOOTER_ROW}>{footer}</div>}
+      {footer === undefined ? null : (
+        <div className={FOOTER_ROW} data-kpi-foot="">
+          {footer}
+        </div>
+      )}
       {action}
       {spark ? <SparkSlot range={range} spark={spark} /> : null}
     </Card>
@@ -415,6 +429,7 @@ export function KpiCardSkeleton({
   action = false,
   className,
   footer = 0,
+  noteLines = 1,
   size = "lg",
   spark = true,
 }: {
@@ -423,6 +438,8 @@ export function KpiCardSkeleton({
   className?: string;
   /** Lines of the foot ("Não é lucro líquido nem caixa"); 0 for none. */
   footer?: number;
+  /** The lines the note of the card keeps, as in `KpiCard`. */
+  noteLines?: 1 | 2;
   size?: "lg" | "md";
   spark?: boolean;
 }) {
@@ -443,8 +460,14 @@ export function KpiCardSkeleton({
       <div className={cn(heroBox(size), "flex items-center")}>
         <Skeleton className="h-[0.8em] w-32" />
       </div>
-      <div className={SUPPORT_ROW}>
-        <Skeleton className="h-3 w-28" />
+      <div className={SUPPORT_ROWS}>
+        <div className={CHIP_ROW} data-kpi-chip-row="">
+          <Skeleton className="h-3 w-28" />
+        </div>
+        <div
+          className={cn(NOTE_ROW, NOTE_LINES[noteLines])}
+          data-kpi-note-row=""
+        />
       </div>
       {Array.from({ length: footer }, (_, index) => (
         <div className={cn(FOOTER_ROW, "flex items-center")} key={index}>
