@@ -1083,6 +1083,7 @@ export function SalePage() {
             profileOptions={profileOptions}
             profilesView={profilesState}
             singlePaymentText={methodHint(lastPayment, form, preset)}
+            timezone={organization.timezone}
           />
         </div>
         <SummaryPanel

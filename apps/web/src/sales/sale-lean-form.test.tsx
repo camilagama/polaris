@@ -244,6 +244,7 @@ describe("Data e ajustes numa linha fechada", () => {
           message: "Nenhum perfil de pagamento ativo.",
         }}
         singlePaymentText="Um pagamento só."
+        timezone="America/Sao_Paulo"
       />
     );
   }
