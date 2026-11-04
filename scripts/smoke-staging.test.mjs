@@ -538,7 +538,7 @@ describe("the staging smoke", () => {
   describe("the billing webhooks", () => {
     const webhook = (provider) => `${origins.web}/webhooks/billing/${provider}`;
     const nameOf = (provider) =>
-      `web POST /webhooks/billing/${provider} without a signature (401, nothing stored)`;
+      `web POST /webhooks/billing/${provider} without a signature (refused with 401)`;
 
     it("knocks on the webhook of each provider with a POST, without a token or a signature", async () => {
       const requests = [];

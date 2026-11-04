@@ -1022,6 +1022,10 @@ describe("billing in staging, against the sandboxes only", () => {
       "https://api.asaas.com/v3",
       "api.woovi.com",
       "veja https://API.WOOVI.COM./api/v1 antes",
+      "https://api.asaas.com:443/v3",
+      "https%3A%2F%2Fapi.asaas.com%2Fv3",
+      "https://www.asaas.com/api/v3",
+      "https://api.openpix.com.br/api/v1",
     ]) {
       const entries = repositoryEntries();
       const web = webOf(entries);
@@ -1039,6 +1043,7 @@ describe("billing in staging, against the sandboxes only", () => {
       "https://sandbox.asaas.com/i/abc",
       "https://api.asaas.com.example.org",
       "https://xapi.woovi.com",
+      "100% sandbox",
     ]) {
       const entries = repositoryEntries();
       const web = webOf(entries);
@@ -1104,12 +1109,14 @@ describe("billing in staging, against the sandboxes only", () => {
     vars.ASAAS_BASE_URL = "https://api-sandbox.asaas.com/v3";
     vars.WOOVI_BASE_URL = undefined;
     vars.AUTH_EMAIL_FROM = "Polaris <x@pay.woovi-sandbox.com>";
+    vars.CATALOG_ORIGIN = "https%3A%2F%2Fsandbox.asaas.com";
     expect(findIsolationProblems(entries)).toEqual([
       "web: env.production lacks vars.WOOVI_BASE_URL, which env.staging sets",
       `${PRODUCTION}: vars.ASAAS_BASE_URL must be exactly https://api.asaas.com/v3 (the production host of the provider)`,
       `${PRODUCTION}: vars.WOOVI_BASE_URL must be exactly https://api.woovi.com (the production host of the provider)`,
       `${PRODUCTION}: vars.AUTH_EMAIL_FROM must not name a sandbox host of Asaas or Woovi`,
       `${PRODUCTION}: vars.ASAAS_BASE_URL must not name a sandbox host of Asaas or Woovi`,
+      `${PRODUCTION}: vars.CATALOG_ORIGIN must not name a sandbox host of Asaas or Woovi`,
     ]);
   });
 

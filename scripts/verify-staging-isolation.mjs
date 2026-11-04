@@ -319,9 +319,12 @@ const hostInText = (hosts) =>
     String.raw`(?<![a-z0-9.-])(${hosts.join("|")})(?![a-z0-9-]|\.[a-z0-9])`,
     "i"
   );
+// with the legacy API hosts: Asaas's old base on www and Woovi's old OpenPix name
 const PRODUCTION_BILLING_HOST = hostInText([
   String.raw`api\.asaas\.com`,
+  String.raw`www\.asaas\.com`,
   String.raw`api\.woovi\.com`,
+  String.raw`api\.openpix\.com\.br`,
 ]);
 const SANDBOX_BILLING_HOST = hostInText([
   String.raw`(?:[a-z0-9-]+\.)*sandbox\.asaas\.com`,
@@ -330,6 +333,17 @@ const SANDBOX_BILLING_HOST = hostInText([
 ]);
 // the support box is the reply-to of the billing e-mails: one bare address, on the staging domain like the sender
 const STAGING_SUPPORT_ADDRESS = /^[A-Za-z0-9._+-]+@araute\.app$/i;
+
+/** The text as written and percent-decoded, so `https%3A%2F%2Fapi.asaas.com` is read as the host it names. */
+function namesHost(expression, text) {
+  let decoded = text;
+  try {
+    decoded = decodeURIComponent(text);
+  } catch {
+    // a lone `%` is no encoding: the text as written is enough
+  }
+  return expression.test(text) || expression.test(decoded);
+}
 
 function checkBillingBaseUrls(where, vars, environment, problems) {
   for (const [variable, expected] of Object.entries(
@@ -353,7 +367,9 @@ function checkStagingBilling(where, staging, problems) {
   checkBillingBaseUrls(where, vars, "staging", problems);
   for (const [variable, value] of Object.entries(vars)) {
     if (
-      stringsOf(value).some(([, text]) => PRODUCTION_BILLING_HOST.test(text))
+      stringsOf(value).some(([, text]) =>
+        namesHost(PRODUCTION_BILLING_HOST, text)
+      )
     ) {
       problems.push(
         `${where}: vars.${variable} must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`
@@ -385,7 +401,9 @@ function checkProductionBilling(app, production, problems) {
   const vars = production.vars ?? {};
   checkBillingBaseUrls(where, vars, "production", problems);
   for (const [variable, value] of Object.entries(vars)) {
-    if (stringsOf(value).some(([, text]) => SANDBOX_BILLING_HOST.test(text))) {
+    if (
+      stringsOf(value).some(([, text]) => namesHost(SANDBOX_BILLING_HOST, text))
+    ) {
       problems.push(
         `${where}: vars.${variable} must not name a sandbox host of Asaas or Woovi`
       );

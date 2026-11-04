@@ -282,7 +282,7 @@ export function smokeChecks({ admin, catalog, web }, { release, shell }) {
     ...BILLING_WEBHOOK_PROVIDERS.map((provider) => ({
       ...rpc({}),
       expect: refusedWebhook,
-      name: `web POST /webhooks/billing/${provider} without a signature (401, nothing stored)`,
+      name: `web POST /webhooks/billing/${provider} without a signature (refused with 401)`,
       readBody: true,
       url: `${web}/webhooks/billing/${provider}`,
       worker: true,
