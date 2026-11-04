@@ -317,6 +317,7 @@ export function ScreenTabs({
         </ScreenTabList>
         {panels.map((panel) => (
           <ScreenTabPanel
+            active={panel.value === value}
             keepMounted={kept.has(panel.value)}
             key={panel.value}
             onHold={hold}
