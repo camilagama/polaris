@@ -8,6 +8,9 @@ import { HeroValue, KpiCard, KpiCardSkeleton } from "./kpi-card";
  * one box of exactly the line height. The heights themselves are measured in the browser (e2e-real/cls).
  */
 
+const CHIP_THEN_NOTE =
+  /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
+
 const card = (props: Partial<Parameters<typeof KpiCard>[0]>) =>
   renderToStaticMarkup(
     <KpiCard
@@ -20,14 +23,26 @@ const card = (props: Partial<Parameters<typeof KpiCard>[0]>) =>
   );
 
 describe("KpiCard", () => {
-  it("keeps the support line without a chip or a note", () => {
-    expect(card({})).toContain("min-h-[1.375rem]");
+  it("keeps the row of the chip and the row of the note without a chip or a note, with no text for a screen reader", () => {
+    const bare = card({});
+    expect(bare).toContain('data-kpi-chip-row=""');
+    expect(bare).toContain('data-kpi-note-row=""');
+    expect(bare).toContain("min-h-5");
+    expect(bare).not.toContain("data-kpi-delta");
     expect(card({ note: "2 vendas" })).toContain("2 vendas");
   });
 
+  it("puts the chip in its own row, apart from the note", () => {
+    const markup = card({
+      chip: <span data-kpi-delta="down">↓ -100,0%</span>,
+      note: "2 vendas",
+    });
+    expect(markup).toMatch(CHIP_THEN_NOTE);
+  });
+
   it("keeps the foot's line when the foot is null, and draws none without one", () => {
-    expect(card({ footer: null })).toContain("min-h-4");
-    expect(card({})).not.toContain("min-h-4");
+    expect(card({ footer: null })).toContain("data-kpi-foot");
+    expect(card({})).not.toContain("data-kpi-foot");
   });
 
   it("keeps the width of the longest date out of sight, with or without a date", () => {
@@ -62,8 +77,8 @@ describe("KpiCardSkeleton", () => {
       <KpiCardSkeleton action footer={1} size="md" />
     );
     expect(markup).toContain('aria-hidden="true"');
-    expect(markup).toContain("min-h-[1.375rem]");
-    expect(markup).toContain("min-h-4");
+    expect(markup).toContain('data-kpi-chip-row=""');
+    expect(markup).toContain('data-kpi-note-row=""');
     expect(markup).toContain("h-[1.05em]");
     expect(markup).toContain("h-[3.25rem]");
   });

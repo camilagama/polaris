@@ -41,8 +41,9 @@ import type { HomeFigures } from "./use-home";
  * its (i) and the compact 7 / 30 selector; under it the total and the period it adds up, the area chart of the charts
  * chunk with only the peak written (with its date) and, in the foot, "Ver os números" with the table of every day and
  * of the days before, which is the proof that the drawing hides nothing. The days before are a faint dashed line, named
- * by the (i) and by the reading of a day, which shows only while a day is read. A period with no sale says so instead
- * of a drawing on the floor. When the chunk does not open the numbers stay, and the sentence of § 5.5 says why.
+ * by the (i) and by the reading of a day, which shows only while a day is read.
+ * A period with no sale keeps the box of the chart, with its floor, and says so in the middle of it. When the chunk
+ * does not open the numbers stay, and the sentence of § 5.5 says why.
  */
 
 const GROUP_OF_THREE = /\B(?=(\d{3})+(?!\d))/g;
@@ -62,6 +63,12 @@ function axisMoney(value: number): string {
     : decimal(value);
 }
 
+/** The height of the plot: 140 px on a phone, 200 from 768 px; the empty period keeps the same one. */
+function useChartHeight() {
+  const still = useIsMobile();
+  return { height: still ? 140 : 200, still };
+}
+
 /** The exact text of a day, for the reading of the chart: the drawing has the value only as a number. */
 function moneyText(value: number): string {
   return formatBrlAmount((Math.round(value * 100) / 100).toFixed(2));
@@ -70,6 +77,7 @@ function moneyText(value: number): string {
 const maskedValue = () => MASKED_MONEY;
 const spokenMasked = () => MASKED_SPOKEN;
 const noAxis = () => "";
+const NO_SALE = "Sem vendas no período.";
 
 /** The Início has no form: loading the page again is the way to ask for the chunk once more. */
 function reloadPage() {
@@ -125,25 +133,29 @@ const points = (series: Series) =>
 function DayChart({
   days,
   earlier,
+  empty,
   series,
   summary,
 }: {
   days: 7 | 30;
   earlier: Series | null;
+  /** A period with no sale: the chart keeps its box and says this in the middle of it. */
+  empty: boolean;
   series: Series;
   summary: string;
 }) {
   const [hidden] = useHiddenValues();
-  const still = useIsMobile();
+  const { height, still } = useChartHeight();
   return (
     <OnDemandAreaChart
       color="var(--chart-sales)"
       data={points(series)}
       failed={<ChartFailed />}
+      {...(empty ? { empty: NO_SALE } : {})}
       formatAxis={hidden ? noAxis : axisMoney}
       formatSpoken={hidden ? spokenMasked : moneyText}
       formatValue={hidden ? maskedValue : moneyText}
-      height={still ? 140 : 200}
+      height={height}
       label={hidden ? maskMoney(summary, MASKED_SPOKEN) : summary}
       markers="key"
       name="Vendas"
@@ -243,16 +255,13 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
           {periodShort(first, figures.today)}
         </span>
       </p>
-      {sold ? (
-        <DayChart
-          days={days}
-          earlier={earlier}
-          series={series}
-          summary={summary}
-        />
-      ) : (
-        <p className="text-muted-foreground">Sem vendas no período.</p>
-      )}
+      <DayChart
+        days={days}
+        earlier={earlier}
+        empty={!sold}
+        series={series}
+        summary={summary}
+      />
       {/* the table of the other period opens closed, as it did with a panel for each period */}
       <Collapsible key={days}>
         <CollapsibleTrigger className={NUMBERS_LINK}>
