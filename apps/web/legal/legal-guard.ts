@@ -7,6 +7,7 @@ import {
 } from "@polaris/domain/legal/legal-company";
 import {
   findPendingMarkers,
+  isCalendarDay,
   LEGAL_CONTENT_SLUGS,
   LEGAL_DOCUMENT_IDS,
   LEGAL_DOCUMENTS,
@@ -14,6 +15,7 @@ import {
   type LegalDocumentId,
   type LegalDocumentVersion,
   legalVersionLine,
+  withEffectiveFromFallback,
 } from "@polaris/domain/legal/legal-documents";
 import { parseMarkdown } from "../src/legal/markdown";
 
@@ -30,6 +32,9 @@ import { parseMarkdown } from "../src/legal/markdown";
  * de publicar...]` marker left in the text, in the version line or in a value, no `{{` token left in
  * the final text, a value for each variable (an e-mail where it must be one), and no draft notice.
  * Staging may carry the markers, and the page shows them; where a variable is absent it shows an example.
+ * The day the texts came into force is the constant's, or, outside production only, `VITE_LEGAL_VIGENCIA`
+ * while the constant has none; with neither, the version line keeps its marker (a warning in staging, an
+ * error in production, which never reads the variable).
  */
 export interface LegalGuardInput {
   /** The `VITE_LEGAL_*` variables of the build, which fill the tokens of the templates. */
@@ -38,9 +43,9 @@ export interface LegalGuardInput {
   documents?: Readonly<Record<LegalDocumentId, LegalDocumentVersion>>;
   /** The draft notice under check; the real one unless a test brings its own. */
   draftNotice?: string | null;
+  production: boolean;
   /** The bytes of `content/<slug>/v<version>.md`, or null when the file does not exist. */
   readText: (document: LegalDocumentId, version: number) => Uint8Array | null;
-  production: boolean;
 }
 
 export interface LegalGuardResult {
@@ -49,6 +54,9 @@ export interface LegalGuardResult {
   /** What only staging may carry: reported, not blocking. */
   warnings: string[];
 }
+
+/** The public variable with the day (YYYY-MM-DD) the texts came into force, while the constant has none; staging only. */
+export const EFFECTIVE_FROM_VARIABLE = "VITE_LEGAL_VIGENCIA";
 
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
 const emailLocalPart = /^[A-Za-z0-9._%+-]+$/;
@@ -126,13 +134,53 @@ export function legalCompanyValues(
   return { problems, values };
 }
 
+function effectiveFromProblems(value: string): string[] {
+  return value === "" || isCalendarDay(value)
+    ? []
+    : [
+        `variável ${EFFECTIVE_FROM_VARIABLE} não é um dia AAAA-MM-DD: "${value}"`,
+      ];
+}
+
+function fallbackDay(production: boolean, value: string): string {
+  return production ? "" : value;
+}
+
+function effectiveFromPending(
+  production: boolean,
+  value: string,
+  baseDocuments: Readonly<Record<LegalDocumentId, LegalDocumentVersion>>
+): string[] {
+  if (!production) {
+    return effectiveFromProblems(value);
+  }
+  const constantHasNoDay = LEGAL_DOCUMENT_IDS.some(
+    (id) => baseDocuments[id].effectiveFrom === null
+  );
+  return value !== "" && constantHasNoDay
+    ? [
+        `variável ${EFFECTIVE_FROM_VARIABLE} não vale na produção: o dia vai para effectiveFrom em packages/domain/src/legal/legal-documents.ts, por PR`,
+      ]
+    : [];
+}
+
 export function checkLegalDocuments(input: LegalGuardInput): LegalGuardResult {
-  const documents = input.documents ?? LEGAL_DOCUMENTS;
+  const baseDocuments = input.documents ?? LEGAL_DOCUMENTS;
+  const effectiveFromValue = (
+    input.company[EFFECTIVE_FROM_VARIABLE] ?? ""
+  ).trim();
+  const documents = withEffectiveFromFallback(
+    baseDocuments,
+    fallbackDay(input.production, effectiveFromValue)
+  );
   const draftNotice =
     input.draftNotice === undefined ? LEGAL_DRAFT_NOTICE : input.draftNotice;
   const errors: string[] = [];
   const company = legalCompanyValues(input.company, input.production);
   const pending: string[] = [...company.problems];
+  pending.push(
+    ...effectiveFromPending(input.production, effectiveFromValue, baseDocuments)
+  );
   for (const document of LEGAL_DOCUMENT_IDS) {
     const { effectiveFrom, sha256, version } = documents[document];
     const where = `content/${LEGAL_CONTENT_SLUGS[document]}/v${version}.md`;

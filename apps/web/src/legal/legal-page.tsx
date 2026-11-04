@@ -5,6 +5,7 @@ import {
 } from "@polaris/domain/legal/legal-documents";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Fragment, type ReactNode } from "react";
+import { LEGAL_DOCUMENTS_IN_FORCE } from "@/lib/legal-in-force";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { currentLegalText } from "./legal-content";
 import { LegalFrame } from "./legal-frame";
@@ -219,7 +220,9 @@ export function LegalDocumentView({ document, text }: LegalDocumentViewProps) {
     <LegalFrame document={document}>
       <div className="flex flex-col gap-4 break-words text-sm/5 touch:text-base/6">
         <p className="text-muted-foreground">
-          {renderInline(parseInline(legalVersionLine(document)))}
+          {renderInline(
+            parseInline(legalVersionLine(document, LEGAL_DOCUMENTS_IN_FORCE))
+          )}
         </p>
         {LEGAL_DRAFT_NOTICE ? (
           <Alert role="note" variant="warning">

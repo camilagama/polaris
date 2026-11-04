@@ -143,6 +143,7 @@ As migrations só acrescentam (expand/contract, [ADR 0096](0096-migrations-compa
 ## Emenda (30/10/2026): dados da empresa nos textos legais por variável de build
 
 - **Fichas.** Razão social, endereço, e-mail de contato e e-mail do encarregado são fichas `{{EMPRESA_RAZAO_SOCIAL}}`, `{{EMPRESA_ENDERECO}}`, `{{CONTATO_EMAIL}}` e `{{DPO_EMAIL}}` no texto, preenchidas no build pelas variáveis públicas `VITE_LEGAL_RAZAO_SOCIAL`, `VITE_LEGAL_ENDERECO`, `VITE_LEGAL_CONTATO_EMAIL` e `VITE_LEGAL_DPO_EMAIL`. O texto final vai no pacote, então `/termos` e `/privacidade` abrem sem rede e sem o Worker. O `sha256` da versão é o do molde, com as fichas: trocar um valor é mudar a variável e fazer o deploy de novo, sem versão nova.
+- **Dia de vigência.** Enquanto `effectiveFrom` da constante for `null`, o dia vem da variável pública `VITE_LEGAL_VIGENCIA` (`AAAA-MM-DD`, dia de calendário real): as páginas e a tela de aceite mostram "Em vigor desde: dd/mm/aaaa" em vez do marcador (`apps/web/src/lib/legal-in-force.ts`). Um dia que já esteja na constante vale sempre mais que a variável. A variável é só do staging: o build de produção a ignora e exige o dia na constante (`effectiveFrom`, por PR), porque o dia não entra no registro do aceite e um novo deploy com outra `var` reescreveria, sem rastro, o "Em vigor desde" de uma versão já aceita. Na produção, a variável sem o dia na constante reprova com a mensagem que diz isso. Sem a variável, ou com valor que não seja um dia, o marcador fica; o build de produção reprova como antes e o staging só avisa. O aviso de rascunho não depende dela e continua até a revisão jurídica.
 - **Staging e desenvolvimento.** Sem a variável, o texto traz um valor que diz "exemplo", sem erro. Variável com marcador, ficha, caractere inválido ou e-mail inválido só avisa.
 - **O que o build de produção reprova** (esta é a lista completa e única; os runbooks e o `DESIGN.md` apontam para cá; a fonte é `apps/web/legal/legal-guard.ts`, com os testes em `apps/web/legal/legal-guard.test.ts`):
   - variável ausente ou vazia;
@@ -150,6 +151,7 @@ As migrations só acrescentam (expand/contract, [ADR 0096](0096-migrations-compa
   - marcador `[preencher` ou `[confirmar` (sem diferenciar maiúsculas, com ou sem espaço depois do colchete) no molde, no texto, na linha da versão (data de vigência) ou no valor de uma variável;
   - ficha `{{…}}` que sobra no texto final ou aparece no valor de uma variável;
   - e-mail inválido em `VITE_LEGAL_CONTATO_EMAIL` ou `VITE_LEGAL_DPO_EMAIL`;
+  - `VITE_LEGAL_VIGENCIA` preenchida enquanto a constante não tem o dia nos dois textos (a variável não vale na produção; ausente cai no marcador da data de vigência). Valor que não seja um dia `AAAA-MM-DD` só é apontado fora da produção;
   - caractere invisível (de controle, de formato, privado, não atribuído ou separador que não seja o espaço comum) ou de Markdown (`*`, `[`, `]`, `<`, `>`, `|`, crase) no valor de uma variável;
   - o aviso de rascunho ainda existente.
 

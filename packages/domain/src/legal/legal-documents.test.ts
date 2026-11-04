@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   findPendingMarkers,
   formatEffectiveFrom,
+  isCalendarDay,
   isLegalDocumentId,
   LEGAL_DOCUMENT_IDS,
   LEGAL_DOCUMENTS,
   LEGAL_PATHS,
   legalVersionLine,
   pendingLegalDocuments,
+  withEffectiveFromFallback,
 } from "./legal-documents";
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
@@ -125,5 +127,64 @@ describe("the documents still to accept", () => {
     expect(isLegalDocumentId("privacy")).toBe(true);
     expect(isLegalDocumentId("cookies")).toBe(false);
     expect(isLegalDocumentId(1)).toBe(false);
+  });
+});
+
+describe("the day that comes from the build", () => {
+  it("accepts only a real calendar day", () => {
+    expect(isCalendarDay("2026-11-04")).toBe(true);
+    expect(isCalendarDay("2028-02-29")).toBe(true);
+    for (const value of [
+      "2026-02-30",
+      "2027-02-29",
+      "2026-13-01",
+      "2026-00-10",
+      "04/11/2026",
+      "2026-11-4",
+      "",
+    ]) {
+      expect(isCalendarDay(value)).toBe(false);
+    }
+  });
+
+  it("fills the day only where the constant has none, and never overrides one", () => {
+    const draft = {
+      privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: null },
+      terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: null },
+    };
+    const filled = withEffectiveFromFallback(draft, " 2026-11-04 ");
+    expect(filled.terms.effectiveFrom).toBe("2026-11-04");
+    expect(filled.privacy.effectiveFrom).toBe("2026-11-04");
+    const published = {
+      privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: "2026-10-19" },
+      terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: null },
+    };
+    const mixed = withEffectiveFromFallback(published, "2026-11-04");
+    expect(mixed.privacy.effectiveFrom).toBe("2026-10-19");
+    expect(mixed.terms.effectiveFrom).toBe("2026-11-04");
+    expect(Object.isFrozen(mixed)).toBe(true);
+    expect(Object.isFrozen(mixed.terms)).toBe(true);
+  });
+
+  it("changes nothing for an absent or invalid day, so the marker stays", () => {
+    for (const value of [undefined, null, "", "   ", "amanhã", "2026-02-30"]) {
+      expect(withEffectiveFromFallback(LEGAL_DOCUMENTS, value)).toBe(
+        LEGAL_DOCUMENTS
+      );
+    }
+  });
+
+  it("makes the version line carry the day instead of the marker", () => {
+    const filled = withEffectiveFromFallback(
+      {
+        privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: null },
+        terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: null },
+      },
+      "2026-11-04"
+    );
+    expect(legalVersionLine("terms", filled)).toBe(
+      "Versão 1. Em vigor desde: 04/11/2026."
+    );
+    expect(findPendingMarkers(legalVersionLine("privacy", filled))).toEqual([]);
   });
 });

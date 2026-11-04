@@ -1,3 +1,7 @@
+import {
+  LEGAL_DOCUMENTS,
+  withEffectiveFromFallback,
+} from "@polaris/domain/legal/legal-documents";
 import { describe, expect, it } from "vitest";
 import {
   acceptanceCheckboxLabel,
@@ -5,6 +9,7 @@ import {
   acceptanceLoadAfterFailure,
   acceptanceLoadFrom,
   acceptanceSubmitFailure,
+  acceptanceVersionLine,
   type PendingLegalDocument,
 } from "./acceptance-model";
 
@@ -95,6 +100,35 @@ describe("acceptanceSubmitFailure", () => {
     ).toBe("failed");
     expect(acceptanceSubmitFailure(new TypeError("Failed to fetch"))).toBe(
       "failed"
+    );
+  });
+});
+
+describe("acceptanceVersionLine", () => {
+  const draft = {
+    privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: null },
+    terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: null },
+  };
+  const withDay = withEffectiveFromFallback(draft, "2026-11-04");
+
+  it("shows the day the server sent, over the one of the build", () => {
+    expect(
+      acceptanceVersionLine(
+        { ...pending("terms"), effectiveFrom: "2026-10-19" },
+        withDay
+      )
+    ).toBe("Versão 1. Em vigor desde: 19/10/2026.");
+  });
+
+  it("falls back to the day of the build while the server sends none", () => {
+    expect(acceptanceVersionLine(pending("privacy"), withDay)).toBe(
+      "Versão 1. Em vigor desde: 04/11/2026."
+    );
+  });
+
+  it("keeps the marker of the draft only without both", () => {
+    expect(acceptanceVersionLine(pending("terms"), draft)).toBe(
+      "Versão 1. Em vigor desde: [preencher na publicação]."
     );
   });
 });
