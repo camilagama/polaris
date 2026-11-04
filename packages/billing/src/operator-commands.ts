@@ -194,12 +194,15 @@ export async function operatorCancelRenewal(
     }
     // a provider that cannot be reached from here refuses before anything is written
     const port = dependencies.portFor(link.provider);
-    await store.recordOperatorDecision({
-      ...input.decision,
-      commandId: input.commandId,
-      kind: "cancel_renewal",
-      organizationId: input.organizationId,
-    });
+    await store.recordOperatorDecision(
+      {
+        ...input.decision,
+        commandId: input.commandId,
+        kind: "cancel_renewal",
+        organizationId: input.organizationId,
+      },
+      dependencies.now?.() ?? new Date()
+    );
     const result = await cancelLinked(dependencies, {
       link,
       organizationId: input.organizationId,
@@ -296,12 +299,15 @@ export async function refundCurrentPeriod(
         throw new AmountChangedError();
       }
       if (input.decision) {
-        await store.recordOperatorDecision({
-          ...input.decision,
-          commandId: input.requestId,
-          kind: "refund",
-          organizationId: input.organizationId,
-        });
+        await store.recordOperatorDecision(
+          {
+            ...input.decision,
+            commandId: input.requestId,
+            kind: "refund",
+            organizationId: input.organizationId,
+          },
+          now
+        );
       }
       const record = await store.readRecord(input.organizationId);
       renewal = record?.cancelAtPeriodEnd

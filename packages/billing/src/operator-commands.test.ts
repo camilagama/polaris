@@ -646,12 +646,10 @@ describe("refundCurrentPeriod, the operator's order (read, check the amount, can
     );
 
     expect(calls).toEqual(["decision", "cancel"]);
-    expect(store.recordOperatorDecision).toHaveBeenCalledWith({
-      ...decision,
-      commandId,
-      kind: "refund",
-      organizationId,
-    });
+    expect(store.recordOperatorDecision).toHaveBeenCalledWith(
+      { ...decision, commandId, kind: "refund", organizationId },
+      now
+    );
   });
 
   it("cancels nothing and writes no decision when there is nothing to refund (already refunded or being refunded)", async () => {
