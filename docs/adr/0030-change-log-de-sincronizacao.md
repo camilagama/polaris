@@ -31,3 +31,18 @@ O plano (PR51) pede `sync_changes` com sequência monotônica, registrada na mes
 - **Cursor por `xmin`/snapshot (`pg_current_snapshot`):** correto, mas amarra o protocolo a detalhes do PostgreSQL e dificulta paginar de forma estável.
 - **Registrar no código dos repositórios:** qualquer escrita nova ou manual poderia esquecer de registrar; o gatilho elimina a classe de erro.
 - **Gravar o conteúdo da entidade no log:** duplica dados (inclusive pessoais) e cria um segundo modelo de leitura.
+
+## Emenda: as imagens do produto e a capa (migration 0111)
+
+**Contexto.** O produto passa a levar `coverAssetId`, a imagem `product_media` de menor posição, no modelo de leitura e na cópia do aparelho (corte das miniaturas). A capa não é coluna: a leitura a calcula (`LEFT JOIN LATERAL … ORDER BY position LIMIT 1`, no índice único `(organization_id, product_id, position)`). Enviar, reordenar ou remover uma imagem muda a capa sem escrever em `products`, então o log não ficava sabendo.
+
+**Decisão.**
+
+- **Três gatilhos por comando em `product_media`** (`AFTER INSERT`, `AFTER UPDATE` e `AFTER DELETE`, `FOR EACH STATEMENT`, com as tabelas de transição) chamam `record_product_media_sync_change()` e gravam uma mudança `product` por produto que o comando tocou. O `DELETE` lê a tabela `OLD`. O gatilho por linha de sempre (`record_sync_change`) não serve: ele só lê `NEW` e a reordenação faz dois `UPDATE` em todas as imagens do produto (afastar e assentar), o que daria duas mudanças por imagem.
+- **Uma mudança por operação.** O `UPDATE` que só afasta as imagens (toda posição nova em 1.000.000 ou acima, o `REORDER_OFFSET` de `media-repository.ts`) não grava nada: ele mantém a ordem e vem sempre seguido, na mesma transação, do que assenta as posições, que grava a mudança. Envio, reordenação e remoção deixam exatamente uma mudança; um `UPDATE` de posições fora dos comandos grava uma; uma remoção que não remove nada não grava. O purge de uma loja apaga `product_media` num comando só e grava uma mudança por produto, que o próprio purge apaga em seguida com o resto do log.
+- **Sem `products.version`.** A capa não soma versão: uma reordenação de imagem não conflita com uma edição do produto feita sem conexão (`expectedVersion` antigo continua valendo).
+- **Mesmo dono, nenhum privilégio novo.** A função é `SECURITY DEFINER` do `polaris_sync_owner`, como as outras duas do log ([ADR 0093](0093-funcoes-security-definer-e-privilegios-padrao.md), emenda da 0095), grava o escopo da organização antes de cada inserção e lê só as tabelas de transição, nunca `sync_changes`: o dono continua sem ler a entidade de uma mudança.
+
+**Compatibilidade ([ADR 0096](0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)).** Só expande: uma função e três gatilhos. O Worker anterior escreve `product_media` como antes e o log ganha mudanças `product`, que ele já sabe puxar. O campo é opcional no contrato: um Worker antigo responde sem ele, e o aparelho guarda o que vier.
+
+**Prova.** O gate `product-cover` (`packages/db/scripts/verify-product-cover-gate.ts`, na suíte `ci`).

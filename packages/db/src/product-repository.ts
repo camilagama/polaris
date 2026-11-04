@@ -35,6 +35,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { assertRoomFor } from "./entitlement-enforcement";
+import { productCoverSubquery } from "./product-cover";
 import { categories } from "./schema/category";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { products, productVariants } from "./schema/product";
@@ -199,6 +200,15 @@ export async function listProducts(
   identity: TenantRequestIdentity,
   options: ProductListOptions = {}
 ) {
+  return await productListQuery(transaction, identity, options);
+}
+
+/** The query of `listProducts`, unexecuted, so a gate can read its plan. */
+export function productListQuery(
+  transaction: TenantRequestTransaction,
+  identity: TenantRequestIdentity,
+  options: ProductListOptions = {}
+) {
   const conditions = [eq(products.organizationId, identity.organizationId)];
   switch (options.status ?? "active") {
     case "active":
@@ -219,9 +229,11 @@ export async function listProducts(
       break;
   }
 
-  return await transaction
-    .select(productColumns)
+  const cover = productCoverSubquery(transaction);
+  return transaction
+    .select({ ...productColumns, coverAssetId: cover.coverAssetId })
     .from(products)
+    .leftJoinLateral(cover, sql`true`)
     .where(and(...conditions))
     .orderBy(asc(products.name), asc(products.id));
 }

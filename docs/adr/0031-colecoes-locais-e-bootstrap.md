@@ -30,3 +30,7 @@ O PR50 do plano cria as coleções locais (categorias, produtos, variantes, esto
 - **Uma base única por navegador, com a organização como coluna:** um erro de filtro vazaria dados entre usuários; arquivos separados tornam o isolamento estrutural e o apagamento trivial.
 - **Snapshot consistente por transação única no servidor:** exigiria uma resposta enorme ou uma transação longa; o cursor mais o pull idempotente dão a mesma garantia com páginas pequenas.
 - **Guardar o conteúdo completo no change log:** ver [ADR 0030](0030-change-log-de-sincronizacao.md).
+
+## Emenda: a capa do produto na coleção `products` (migration 0111)
+
+A linha de `products` ganha `coverAssetId` (UUID da imagem de menor posição, ou `null` sem imagem), calculado pelo servidor no `sync.bootstrapPage`, tanto na página quanto na releitura por ids do pull, e trazido de volta pela mudança `product` que o envio, a reordenação e a remoção de imagem gravam ([ADR 0030](0030-change-log-de-sincronizacao.md), emenda da 0111). O campo é **opcional** na leitura do aparelho ([ADR 0096](0096-migrations-compativeis-com-a-versao-anterior-do-worker.md)): uma cópia feita antes dele abre como está (as linhas são guardadas como vieram, sem mudar a versão do schema local), e o campo ausente quer dizer "ainda não sabido", nunca "sem imagem". A linha guarda só o identificador, nunca bytes nem URL.
