@@ -3073,6 +3073,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     await expectParts();
     answerStock();
+    await expect(page.locator("#home-updated")).toContainText(UPDATED_AT);
     await expect(page.getByText("Carregando os números…")).toHaveCount(0);
     await expectParts();
   });

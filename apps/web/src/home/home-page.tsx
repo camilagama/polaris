@@ -583,7 +583,7 @@ function useOfflineView({
   return { failed: failed?.figures ? failed : null, offline, view };
 }
 
-/** The goal's card: the copy's without a connection (and until the first read after it), the server's otherwise. */
+/** The goal's card: the copy's without a connection (and until the new read is whole), the server's otherwise. */
 function pickGoalBlock({
   goal,
   offline,

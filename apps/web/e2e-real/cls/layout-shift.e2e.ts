@@ -571,6 +571,9 @@ test("layout shift no celular: o Início aberto sem rede, na cópia, quando a re
   );
   await Promise.all(onTheCopy.map((locator) => expect(locator).toBeVisible()));
   releaseStock();
+  await expect(page.locator("#home-updated")).toContainText(/atualizado às/, {
+    timeout: SETTLE_MS,
+  });
   await settle(page, [...SCREENS["/"](page), ...onTheCopy]);
   measurements.record(
     "/ com-vendas copia-volta-a-conexao",
