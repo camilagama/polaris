@@ -462,8 +462,13 @@ test("no celular, o aviso da fila aparece sob o cabeçalho depois de o menu fech
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await route.fallback();
   });
+  // where the title is in the page (not in the window: scrolling is not pushing)
   const heading = page.getByRole("heading", { level: 1 });
-  const before = await heading.boundingBox();
+  const inPage = () =>
+    heading.evaluate(
+      (element) => element.getBoundingClientRect().top + window.scrollY
+    );
+  const before = await inPage();
 
   await clickSair(page);
   await expect(page.getByRole("menu")).toBeHidden();
@@ -477,7 +482,7 @@ test("no celular, o aviso da fila aparece sob o cabeçalho depois de o menu fech
   );
   await expect(dialog).toBeInViewport();
   expect(header?.height).toBe(48);
-  expect((await heading.boundingBox())?.y).toBe(before?.y);
+  expect(await inPage()).toBe(before);
   expect(server.log).not.toContain("sign-out");
 });
 
