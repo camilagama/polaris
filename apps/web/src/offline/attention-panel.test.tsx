@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { AttentionItem, AttentionSummary } from "./attention";
 import {
   AttentionPanel,
@@ -209,8 +210,7 @@ describe("the attention panel", () => {
           actions: ["retry"],
           cause: "entitlement_changed",
           code: "entitlement_changed",
-          detail:
-            "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte e toque em Tentar novamente.",
+          detail: `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`,
         }),
       ],
       waitingBehind: 0,

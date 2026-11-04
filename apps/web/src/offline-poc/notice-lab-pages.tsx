@@ -1,3 +1,4 @@
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { AttentionItem, AttentionSummary } from "../offline/attention";
 import {
   type AttentionError,
@@ -70,8 +71,7 @@ function withoutSubscription(entry: AttentionItem): AttentionItem {
     ? {
         ...entry,
         actions: ["retry"],
-        detail:
-          "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte e toque em Tentar novamente.",
+        detail: `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`,
       }
     : entry;
 }

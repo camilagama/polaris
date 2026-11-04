@@ -1,4 +1,5 @@
 import { formatBrlAmount, formatShortInstant } from "../lib/format";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { LocalWriter } from "./bootstrap";
 import { discardPendingCustomer } from "./customer-create";
 import { discardPendingCustomerUpdate } from "./customer-update";
@@ -180,8 +181,7 @@ function revokedDetail(kind: AttentionItem["kind"]): string {
 const REDONE_DETAIL =
   "Você já refez esta venda: a venda nova foi confirmada ou guardada neste aparelho. Esta, recusada, pode ser descartada sem perder nada.";
 
-const PLAN_DETAIL_WITHOUT_SUBSCRIPTION =
-  "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte e toque em Tentar novamente.";
+const PLAN_DETAIL_WITHOUT_SUBSCRIPTION = `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`;
 
 function detailOf(
   cause: AttentionCause,

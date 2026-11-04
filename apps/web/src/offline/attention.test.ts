@@ -2,6 +2,7 @@ import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it } from "vitest";
 import { formatShortInstant } from "../lib/format";
 import { signOfflineLease } from "../lib/offline-lease-token";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import {
   type AttentionItem,
   buildAttention,
@@ -248,7 +249,7 @@ describe("the attention summary", () => {
     }).items;
     expect(unavailable?.actions).toEqual(["retry"]);
     expect(unavailable?.detail).toBe(
-      "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte e toque em Tentar novamente."
+      `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`
     );
     expect(unavailable?.cause).toBe("entitlement_changed");
   });

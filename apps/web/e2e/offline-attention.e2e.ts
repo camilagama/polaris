@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SUPPORT_ADDRESS } from "./support-address";
 
 async function openLab(page: Page, user: string, query = "") {
   await page.goto(`/offline-attention-lab${query}`);
@@ -99,7 +100,7 @@ test("sem a aba Assinatura, a mudança de direito não oferece o link e diz para
   await openLab(page, `user-${crypto.randomUUID()}`, "?assinatura=off");
   await click(page, "Criar venda recusada por direito", "Direito alterado: ok");
   await expect(items(page).first()).toContainText(
-    "Regularize o plano com o suporte"
+    `Regularize o plano com o suporte (${SUPPORT_ADDRESS}) e toque em Tentar novamente.`
   );
   await expect(page.getByRole("link", { name: "Ver Assinatura" })).toHaveCount(
     0
