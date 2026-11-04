@@ -288,6 +288,25 @@ describe("Data e ajustes numa linha fechada", () => {
     expect(invalidIds(future)).toEqual(["sale-occurred-day"]);
   });
 
+  it("aberta ao montar quando a venda já tem ajuste ou data (o rascunho que volta)", () => {
+    const withAdjustment = renderPayment(
+      {
+        ...form,
+        adjustments: [
+          { draftId: "a1", kind: "discount", value: "5", valueType: "fixed" },
+        ],
+      },
+      false
+    );
+    expect(withAdjustment).toContain('aria-expanded="true"');
+    expect(withAdjustment).toContain("Ajuste 1");
+    const dated = renderPayment(
+      { ...form, occurredAtLocal: "2026-11-02T09:30" },
+      false
+    );
+    expect(dated).toContain('aria-expanded="true"');
+  });
+
   it("com Sem perfil já escolhido numa loja sem perfil, sem o parágrafo do vazio", () => {
     const html = renderPayment(
       {

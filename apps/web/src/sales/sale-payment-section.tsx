@@ -340,7 +340,10 @@ interface SaleExtrasProps {
 
 /** Date and adjustments, closed in one line ("Agora · Sem ajuste · Alterar"): most counter sales use neither. */
 function SaleExtras({ adjustments, date, hasError, summary }: SaleExtrasProps) {
-  const [open, setOpen] = useState(false);
+  // a cart restored on a remount (the draft) shows the date or the adjustments it already has
+  const [open, setOpen] = useState(
+    () => adjustments.adjustments.length > 0 || date.value !== ""
+  );
   const handleOpenChange = useCallback((next: boolean) => setOpen(next), []);
   const expanded = open || hasError;
   return (
