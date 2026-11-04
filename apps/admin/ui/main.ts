@@ -3,6 +3,9 @@ import { mountAdmin, type ScreenContext } from "./app";
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+const SCREEN_PATH =
+  /^\/(?:(?:lojas|casos)\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})?$/;
+
 /** A UUID the Worker wrote, or null; anything else on the root is not taken as one. */
 function uuidOf(value: string | null): string | null {
   return value !== null && UUID.test(value) ? value : null;
@@ -38,6 +41,11 @@ if (root !== null && context !== null) {
     (input, init) => fetch(input, init),
     () => new Date(),
     context,
-    (path) => window.location.assign(path)
+    (path) => {
+      // a screen may only send the browser to another screen of the Admin, by a fixed path or a UUID
+      if (SCREEN_PATH.test(path)) {
+        window.location.assign(path);
+      }
+    }
   );
 }

@@ -21,6 +21,8 @@ export const CLOSE_UNDO = "Não: isso não poderá ser desfeito.";
 const CLOSE_AUDIT = "O fechamento fica na auditoria com o seu e-mail e o caso.";
 export const CLOSE_UNKNOWN =
   "Não deu para confirmar se o caso foi fechado. Recarregue o caso para ver o estado antes de tentar de novo.";
+export const CLOSED_NOT_SHOWN =
+  "O caso foi fechado, mas não deu para mostrá-lo de novo. Use Recarregar o caso.";
 const RESOLUTION_REFUSED =
   "A resolução não foi aceita: use até 500 caracteres, sem caracteres de controle nem quebra de linha.";
 
@@ -161,8 +163,11 @@ export function caseView(tools: ScreenTools): HTMLElement {
     dom.fill(body, header(detail.case), actions(detail), history(detail));
   };
 
-  /** Reads the case; with `after`, says how the action before ended once the case is shown again. */
-  const load = async (after?: () => void) => {
+  /**
+   * Reads the case; with `after`, says how the action before ended once the case is shown again. False when the case
+   * could not be shown (the failure is already said).
+   */
+  const load = async (after?: () => void): Promise<boolean> => {
     turn += 1;
     const mine = turn;
     if (after === undefined) {
@@ -172,11 +177,11 @@ export function caseView(tools: ScreenTools): HTMLElement {
       `/api/support-cases/${encodeURIComponent(caseId ?? "")}`
     );
     if (mine !== turn) {
-      return;
+      return true;
     }
     if (!answer.ok) {
       notice.alert(problemText(answer.problem));
-      return;
+      return false;
     }
     if (
       typeof answer.data?.case?.id !== "string" ||
@@ -184,7 +189,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
       !Array.isArray(answer.data.grants)
     ) {
       notice.alert(PROBLEM_TEXT.failed);
-      return;
+      return false;
     }
     render(answer.data);
     if (after === undefined) {
@@ -192,6 +197,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
     } else {
       after();
     }
+    return true;
   };
 
   function closePanel(item: Case): HTMLElement {
@@ -337,6 +343,18 @@ export function caseView(tools: ScreenTools): HTMLElement {
       heading.focus();
     };
 
+    /** After a close whose outcome the screen cannot show, the only way on is to read the case again. */
+    const onlyReload = (buttons: {
+      back: HTMLButtonElement;
+      confirm: HTMLButtonElement;
+      reload: HTMLButtonElement;
+    }) => {
+      sending = true;
+      buttons.confirm.setAttribute("hidden", "");
+      buttons.back.setAttribute("hidden", "");
+      buttons.reload.removeAttribute("hidden");
+    };
+
     const close = async (buttons: {
       back: HTMLButtonElement;
       confirm: HTMLButtonElement;
@@ -354,7 +372,10 @@ export function caseView(tools: ScreenTools): HTMLElement {
         const said = answer.data.changed
           ? "Caso fechado. Os acessos temporários dele foram revogados."
           : "Este caso já estava fechado.";
-        await load(() => notice.success(said));
+        if (!(await load(() => notice.success(said)))) {
+          onlyReload(buttons);
+          notice.alert(CLOSED_NOT_SHOWN);
+        }
         return;
       }
       sending = false;
@@ -372,8 +393,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
         answer.problem === "unavailable"
       ) {
         // the request may have reached the server: the state is read again before anything is tried
-        buttons.confirm.setAttribute("hidden", "");
-        buttons.reload.removeAttribute("hidden");
+        onlyReload(buttons);
         notice.alert(CLOSE_UNKNOWN);
         return;
       }

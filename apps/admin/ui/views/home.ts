@@ -42,7 +42,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
     );
     if (!(answer.ok && Array.isArray(answer.data?.cases))) {
       notice.alert(
-        `Não foi possível contar os casos abertos. ${PROBLEM_TEXT[answer.ok || answer.problem === "invalid" ? "failed" : answer.problem]}`
+        `Não foi possível contar os casos abertos. ${PROBLEM_TEXT[answer.ok || answer.problem === "invalid" || answer.problem === "not_found" ? "failed" : answer.problem]}`
       );
       return;
     }

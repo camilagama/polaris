@@ -36,6 +36,21 @@ export function caseLink(
       );
 }
 
+/** The link to the closed cases of a store, or null when the ID is not a UUID. */
+export function closedCasesLink(dom: Dom, store: string): HTMLElement | null {
+  return isUuid(store)
+    ? dom.el(
+        "p",
+        {},
+        dom.el(
+          "a",
+          { href: `/casos?estado=fechados&loja=${store.toLowerCase()}` },
+          "Ver os casos fechados desta loja"
+        )
+      )
+    : null;
+}
+
 /** The link that opens a case, with the store chosen when there is one. */
 export function newCaseLink(dom: Dom, store: string | null): HTMLElement {
   const path = isUuid(store)

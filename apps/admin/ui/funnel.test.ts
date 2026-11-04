@@ -17,10 +17,10 @@ import {
   OWNER,
   screenContext,
 } from "./test-page";
-
-/** The funnel lives on its own screen since the v2 shell; the tests below are the v1's. */
-const FUNNEL = screenContext({ screen: "funil" });
 import type { ActivationFunnelResponse } from "./types";
+
+/** The funnel is mounted on its own screen, `/funil`. */
+const FUNNEL = screenContext({ screen: "funil" });
 
 /**
  * The funnel's area (corte admin-tela-v1, AC-7 and AC-8): one read when the area is opened and one per click on

@@ -26,7 +26,12 @@ import type {
   SupportCasePage,
   SupportCaseSummary,
 } from "./types";
-import { CLOSE_EFFECT, CLOSE_UNDO, CLOSE_UNKNOWN } from "./views/case";
+import {
+  CLOSE_EFFECT,
+  CLOSE_UNDO,
+  CLOSE_UNKNOWN,
+  CLOSED_NOT_SHOWN,
+} from "./views/case";
 
 /**
  * The screens of the support cases in a small DOM, against a simulated API (corte admin-v2, Parte 1): the list
@@ -1101,6 +1106,44 @@ describe("what each answer of the close says (AC-C3)", () => {
     expect(mounted.calls).toHaveLength(4);
     expect(mounted.calls[3]?.init.method).toBe("GET");
     expect(buttons(mounted.root, "Fechar caso")).toHaveLength(0);
+    expect(visibleText(mounted.root)).toContain("Caso fechado em");
+  });
+
+  it("says the case was closed when the read after the close fails, and leaves only Recarregar o caso", async () => {
+    const mounted = await mount(
+      [
+        json(detail()),
+        json({ changed: true, id: CASE, status: "closed" }),
+        json({ error: "unavailable" }, 503),
+        json(closedDetail()),
+      ],
+      undefined,
+      undefined,
+      caseContext
+    );
+    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Revisar o fechamento")[0]?.click();
+    buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.click();
+    await flush();
+
+    expect(alertOf(mounted.root)?.textContent).toBe(CLOSED_NOT_SHOWN);
+    expect(
+      buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.hasAttribute(
+        "hidden"
+      )
+    ).toBe(true);
+    expect(buttons(mounted.root, "Voltar")[0]?.hasAttribute("hidden")).toBe(
+      true
+    );
+    buttons(mounted.root, "Recarregar o caso")[0]?.click();
+    await flush();
+    expect(mounted.calls.map((call) => call.init.method)).toEqual([
+      "GET",
+      "GET",
+      "POST",
+      "GET",
+      "GET",
+    ]);
     expect(visibleText(mounted.root)).toContain("Caso fechado em");
   });
 

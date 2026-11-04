@@ -4,7 +4,7 @@ import { labelName } from "../dom";
 import { brasiliaMomentText } from "../format";
 import { createNotice } from "../notice";
 import type { SupportCasePage } from "../types";
-import { caseLink, newCaseLink } from "./case-links";
+import { caseLink, closedCasesLink, newCaseLink } from "./case-links";
 import { diagnosticsView } from "./diagnostics";
 
 /** The most open cases of one store the box asks for; the server's page holds at most 50. */
@@ -80,15 +80,7 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
     notice.element,
     list,
     newCaseLink(dom, organizationId),
-    dom.el(
-      "p",
-      {},
-      dom.el(
-        "a",
-        { href: `/casos?estado=fechados&loja=${organizationId}` },
-        "Ver os casos fechados desta loja"
-      )
-    )
+    closedCasesLink(dom, organizationId)
   );
 }
 

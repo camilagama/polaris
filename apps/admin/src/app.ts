@@ -124,8 +124,8 @@ const PROFILE_HEADERS = {
 
 /**
  * The headers of every answer of the Admin come from the shared module (ADR 0090), and nothing here is cacheable.
- * The page, its script and its sheet (an exact list of GET paths) get the document profile; everything else, the API,
- * `/health` and any 404 included, keeps the inert `admin` one.
+ * The screens (the GET paths `screenOfPath` names), their script and their sheet get the document profile; everything
+ * else, the API, `/health` and any 404 included, keeps the inert `admin` one.
  */
 function securityHeadersMiddleware(
   page: (() => Promise<AdminPage>) | null
