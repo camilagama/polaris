@@ -149,7 +149,6 @@ async function checkHardening(client: Client) {
     [],
     "logins that are not members of a polaris_*_runtime group"
   );
-  // the backup login is the one exception, by name and only as documented (ADR 0099)
   const backupReader = await readBackupReader(client);
   assert.deepEqual(
     backupReader ?? [],

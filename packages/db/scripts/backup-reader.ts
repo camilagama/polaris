@@ -77,7 +77,6 @@ function membershipFindings(row: BackupReaderRow): string[] {
   return findings;
 }
 
-/** What the backup login has beyond the expected; empty when it is exactly the documented one. */
 export function backupReaderFindings(row: BackupReaderRow): string[] {
   const findings = ATTRIBUTES.filter(
     ([column, expected]) => row[column] !== expected

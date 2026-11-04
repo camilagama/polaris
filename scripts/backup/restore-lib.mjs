@@ -55,7 +55,6 @@ export function restoreOutcome(rc, stderr) {
       };
 }
 
-/** The ACL entries of a `pg_restore -l` listing (not the DEFAULT ACL ones). */
 export function aclEntries(listing) {
   return listing.split("\n").filter((line) => ACL_ENTRY.test(line));
 }
@@ -113,7 +112,6 @@ function referenceShapeFindings(reference) {
   return findings;
 }
 
-/** The manifest of a backup, or an error naming what is wrong in it. */
 export function validManifest(manifest) {
   const findings = [];
   if (manifest?.format !== 1) {
