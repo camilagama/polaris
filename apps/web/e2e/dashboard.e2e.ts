@@ -1099,6 +1099,8 @@ const reading = (page: Page) =>
 const METAS_TAB = /^Metas/;
 const ONE_UNKNOWN_DAY = /1 de 30 dias sem custo informado/;
 const CHART_IMAGE = /Vendas líquidas e custos por dia, 1 a 31 de outubro/;
+const YEAR_CHART_IMAGE =
+  /^Vendas líquidas e custos por mês, 1 de janeiro a 14 de outubro/;
 const metasTab = (page: Page) => page.getByRole("tab", { name: METAS_TAB });
 const resultTab = (page: Page) =>
   page.getByRole("tab", { exact: true, name: "Resultado" });
@@ -1313,6 +1315,11 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(region).toContainText(
       "O resultado de cada mês está em Ver os números. Despesas do período entram no dia da competência."
     );
+    await expect(
+      region.getByRole("img", {
+        name: YEAR_CHART_IMAGE,
+      })
+    ).toBeVisible();
     // above 62 days the cards compare with nothing
     await expect(deltas).toHaveCount(0);
 

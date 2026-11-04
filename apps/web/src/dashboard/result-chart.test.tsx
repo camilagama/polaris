@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { knownRuns } from "../ui/charts/chart-data";
 import { GapSeries } from "../ui/charts/chart-gaps";
+import { knownRuns } from "../ui/charts/chart-data";
 import { NumbersTable, ResultChart } from "./result-chart";
 import { addDays } from "./result-period";
 import { resultSeries } from "./result-series";
