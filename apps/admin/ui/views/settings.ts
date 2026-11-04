@@ -21,7 +21,7 @@ const PERMISSION_TEXT: Readonly<Record<string, string>> = {
     "Agendar e cancelar o apagamento de uma loja e cuidar do aviso de encerramento",
   "organization:suspend": "Suspender e reativar uma loja",
   "pii:reveal": "Revelar um dado pessoal de um cliente",
-  "platform:read": "Ver o Início e o funil de ativação",
+  "platform:read": "Ver o Início, o funil de ativação e estas Configurações",
   "privacy_case:manage": "Tratar casos de privacidade",
   "support_case:manage": "Abrir, ver e fechar casos de suporte",
   "tenant_access:grant":

@@ -399,7 +399,7 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
     expect(html).not.toContain("owner@example.com");
   });
 
-  it("writes only the fixed environment, never an e-mail, a role or a permission, and no query value (AC-C6)", async () => {
+  it("writes only the fixed environment, never an e-mail, a role or a permission code, and no query value (AC-C6)", async () => {
     const html = await (
       await setup(
         "platform_owner",
@@ -407,12 +407,10 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
       )("/configuracoes?q=dona@example.com&loja=<b>x</b>")
     ).text();
     expect(ROOT.exec(html)?.[1]).toBe(
-      ' data-tela="configuracoes" data-ambiente="production" data-estado="abertos"'.replace(
-        ' data-estado="abertos"',
-        ""
-      )
+      ' data-tela="configuracoes" data-ambiente="production"'
     );
     expect(html).not.toContain("platform_owner");
+    expect(html).not.toContain("support_case:manage");
     expect(html).not.toContain("dona@example.com");
     expect(TITLE.exec(html)?.[1]).toBe(
       "PRODUÇÃO · Configurações · Polaris Admin"

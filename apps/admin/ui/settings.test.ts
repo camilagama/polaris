@@ -53,7 +53,7 @@ describe("Configurações: Você (AC-P9.1)", () => {
     expect(text).toContain("Operador: dona@polaris.example");
     expect(text).toContain("Dono da plataforma");
     expect(lines(root)).toEqual([
-      "Ver o Início e o funil de ativação",
+      "Ver o Início, o funil de ativação e estas Configurações",
       "Abrir, ver e fechar casos de suporte",
       "Agendar e cancelar o apagamento de uma loja e cuidar do aviso de encerramento",
     ]);
@@ -83,7 +83,7 @@ describe("Configurações: Você (AC-P9.1)", () => {
       })
     );
     expect(lines(root)).toEqual([
-      "Ver o Início e o funil de ativação",
+      "Ver o Início, o funil de ativação e estas Configurações",
       "Permissão novo:poder",
     ]);
     expect(visibleText(root)).toContain("desconhecido: auditor");
@@ -118,7 +118,7 @@ describe("the words of Configurações", () => {
     expect(roleText("platform_owner")).toBe("Dono da plataforma");
     expect(permissionText("novo:poder")).toBe("Permissão novo:poder");
     expect(permissionText("platform:read")).toBe(
-      "Ver o Início e o funil de ativação"
+      "Ver o Início, o funil de ativação e estas Configurações"
     );
   });
 });
@@ -144,6 +144,22 @@ describe("Configurações: Ambiente (AC-P9.2)", () => {
     const text = visibleText(root);
     expect(text).not.toContain("PRODUÇÃO");
     expect(text).not.toContain("STAGING");
+  });
+});
+
+describe("Configurações sem platform:read (AC-C1)", () => {
+  it("says there is no permission and shows none of the three areas", async () => {
+    const { calls, root } = await screen(
+      json({ ...OWNER, capabilities: ["support_case:manage"] })
+    );
+    expect(visibleText(root)).toContain("Sem permissão para isto.");
+    expect(visibleText(root)).not.toContain(SIGN_OUT_TEXT);
+    expect(
+      byTag(root, "section").map((section) =>
+        section.getAttribute("aria-labelledby")
+      )
+    ).toEqual(["configuracoes-titulo"]);
+    expect(calls.map((call) => call.path)).toEqual(["/api/whoami"]);
   });
 });
 
