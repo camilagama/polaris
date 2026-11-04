@@ -1305,8 +1305,14 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect
       .poll(() => server.periods.at(-1))
       .toEqual({ from: "2026-01-01", to: "2026-10-14" });
-    const region = chartRegion(page);
+    await expect(chartRegion(page)).toHaveCount(0);
+    const region = page.getByRole("region", {
+      name: "Vendas × custos por mês",
+    });
     await expect(region).toContainText("1 de janeiro a 14 de outubro");
+    await expect(region).toContainText(
+      "O resultado de cada mês está em Ver os números. Despesas do período entram no dia da competência."
+    );
     // above 62 days the cards compare with nothing
     await expect(deltas).toHaveCount(0);
 
@@ -1314,6 +1320,12 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     const rows = region.locator("table").locator("tbody tr");
     await expect(rows).toHaveCount(10);
     await expect(region.locator("table thead")).toContainText("Mês");
+    await expect(region.locator("table thead")).toContainText(
+      "Resultado do mês"
+    );
+    await expect(region.locator("table thead")).not.toContainText(
+      "Resultado do dia"
+    );
     await expect(rows.first()).toContainText("janeiro de 2026");
     await expect(rows.first()).toContainText("R$ 130,00");
     await expect(rows.last()).toContainText("outubro de 2026");

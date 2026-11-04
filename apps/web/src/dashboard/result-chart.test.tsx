@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { GapSeries } from "../ui/charts/chart-gaps";
 import { knownRuns } from "../ui/charts/chart-data";
+import { GapSeries } from "../ui/charts/chart-gaps";
 import { NumbersTable, ResultChart } from "./result-chart";
 import { addDays } from "./result-period";
 import { resultSeries } from "./result-series";
@@ -259,5 +259,60 @@ describe("the cost line by run of known days (AC-9)", () => {
     expect(mixed).toContain('data-chart-lone-day="1"');
     expect(mixed).toContain('data-chart-run="3-5"');
     expect(mixed.match(/data-chart-run="/g)).toHaveLength(1);
+  });
+});
+
+describe("the unit of the texts follows the grouping (day for a month, month for a year)", () => {
+  /** January to October read on the 25th: more than 62 days, so the chart and the table group by month. */
+  const year = (): StoredPeriodSummary => {
+    const base = october([]);
+    return {
+      ...base,
+      daily: Array.from({ length: 298 }, (_, index) => ({
+        costs: "10.00",
+        date: addDays("2026-01-01", index),
+        netSales: "50.00",
+        operatingExpenses: "0.00",
+        operatingResult: "40.00",
+        salesCount: 1,
+      })),
+      period: { from: "2026-01-01", to: "2026-10-25" },
+    } as StoredPeriodSummary;
+  };
+  it("says month in the title, the sentence and the result column when the rows are months", () => {
+    const markup = chart(year());
+    const said = text(markup);
+    expect(said).toContain("Vendas × custos por mês");
+    expect(said).not.toContain("Vendas × custos por dia");
+    expect(said).toContain("é o resultado estimado do mês");
+
+    const table = text(
+      renderToStaticMarkup(
+        <NumbersTable
+          hasCosts
+          series={resultSeries(year().daily ?? [], "2026-10-25")}
+        />
+      )
+    );
+    expect(table).toContain("Resultado do mês");
+    expect(table).not.toContain("Resultado do dia");
+  });
+
+  it("keeps day for a single month", () => {
+    const markup = chart(october([]));
+    const said = text(markup);
+    expect(said).toContain("Vendas × custos por dia");
+    expect(said).toContain("é o resultado estimado do dia");
+
+    const table = text(
+      renderToStaticMarkup(
+        <NumbersTable
+          hasCosts
+          series={resultSeries(october([]).daily ?? [], "2026-10-25")}
+        />
+      )
+    );
+    expect(table).toContain("Resultado do dia");
+    expect(table).not.toContain("Resultado do mês");
   });
 });
