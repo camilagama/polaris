@@ -58,6 +58,16 @@ const base: Props = {
 const render = (overrides: Partial<Props> = {}) =>
   renderToStaticMarkup(<CustomerList {...base} {...overrides} />);
 
+const DESCRIBED_BY = /aria-describedby="([^"]*)"/;
+/** The text of the elements a tag points to with aria-describedby, in order. */
+function describedByText(markup: string, tag = ""): string[] {
+  const ids = DESCRIBED_BY.exec(tag)?.[1]?.split(" ") ?? [];
+  return ids.map((id) => {
+    const text = new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(markup)?.[1];
+    return text ?? "";
+  });
+}
+
 const OFF = ' disabled=""';
 /** The trigger of the menu of a customer, as drawn: its tag, to say whether it is off. */
 function menuTrigger(markup: string, name: string): string {
@@ -215,5 +225,32 @@ describe("the list of customers", () => {
     const html = render({ pendingAction: `archive:${ana.id}` });
     expect(menuTrigger(html, "Ana Lima")).toContain(OFF);
     expect(html).toContain("Arquivando…");
+  });
+
+  it("links the locked row button to the text of what runs, beside any reason already there", () => {
+    const ana = customer(1, "Ana Lima");
+    const bia = customer(2, "Bia Souza", { phone: null });
+    const running = render({
+      customers: [ana, bia],
+      pendingAction: `archive:${ana.id}`,
+      total: 2,
+    });
+    const [anaTag, biaTag] =
+      running.match(/<button[^>]*data-row-open=""[^>]*>/g) ?? [];
+    expect(anaTag).toContain('aria-disabled="true"');
+    expect(describedByText(running, anaTag)).toContain("Arquivando…");
+    expect(biaTag).not.toContain("customer-pending-");
+    expect(running.split("customer-pending-")).toHaveLength(3);
+
+    const idle = render({ customers: [ana, bia], total: 2 });
+    expect(idle).not.toContain("customer-pending-");
+
+    const both = render({
+      pendingAction: `archive:${ana.id}`,
+      syncStates: new Map([[ana.id, { state: "pending" } as PendingCustomer]]),
+    });
+    expect(ROW_BUTTON_TAG.exec(both)?.[0]).toContain(
+      `aria-describedby="customer-support-${ana.id} customer-locked-${ana.id} customer-pending-${ana.id}"`
+    );
   });
 });
