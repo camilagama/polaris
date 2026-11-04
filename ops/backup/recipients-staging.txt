@@ -1,0 +1,6 @@
+# Public age key of the staging backup (ADR 0099, docs/runbooks/backup.md).
+# One recipient per line (age1...), from `age-keygen -y` of the identity its holder generated offline.
+# The private key never enters the repository, GitHub, R2 or an agent's machine.
+# Changing this file goes through a reviewed pull request, and the Environment variable
+# BACKUP_RECIPIENTS_SHA256 (sha256sum of this file) changes with it: the job refuses a file that does not match.
+# Without a key line the job refuses to seal, so the backup stays off until the holder's key is added here.
