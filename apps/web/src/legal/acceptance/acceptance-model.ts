@@ -1,4 +1,10 @@
-import type { LegalDocumentId } from "@polaris/domain/legal/legal-documents";
+import {
+  formatEffectiveFrom,
+  LEGAL_PENDING_EFFECTIVE_FROM,
+  type LegalDocumentId,
+  type LegalDocumentVersion,
+} from "@polaris/domain/legal/legal-documents";
+import { LEGAL_DOCUMENTS_IN_FORCE } from "../../lib/legal-in-force";
 import { rpcErrorCode, rpcErrorReason } from "../../lib/rpc-error";
 import {
   ACCEPTANCE_CHECKBOX,
@@ -12,6 +18,22 @@ export interface PendingLegalDocument {
   document: LegalDocumentId;
   effectiveFrom: string | null;
   version: number;
+}
+
+/**
+ * "Versão 1. Em vigor desde: 19/10/2026." The day the server sent wins; while it sends none the
+ * build's day (`VITE_LEGAL_VIGENCIA`) stands in, and only without both the marker of the draft shows.
+ */
+export function acceptanceVersionLine(
+  item: PendingLegalDocument,
+  documents: Readonly<
+    Record<LegalDocumentId, LegalDocumentVersion>
+  > = LEGAL_DOCUMENTS_IN_FORCE
+): string {
+  const day = item.effectiveFrom ?? documents[item.document].effectiveFrom;
+  const since =
+    day === null ? LEGAL_PENDING_EFFECTIVE_FROM : formatEffectiveFrom(day);
+  return `Versão ${item.version}. Em vigor desde: ${since}.`;
 }
 
 export type AcceptanceLoad =

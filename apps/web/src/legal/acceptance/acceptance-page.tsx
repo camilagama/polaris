@@ -1,7 +1,5 @@
 import {
-  formatEffectiveFrom,
   LEGAL_PATHS,
-  LEGAL_PENDING_EFFECTIVE_FROM,
   type LegalDocumentId,
 } from "@polaris/domain/legal/legal-documents";
 import InfoIcon from "lucide-react/dist/esm/icons/info";
@@ -42,6 +40,7 @@ import {
   acceptanceLoadAfterFailure,
   acceptanceLoadFrom,
   acceptanceSubmitFailure,
+  acceptanceVersionLine,
   type PendingLegalDocument,
 } from "./acceptance-model";
 import {
@@ -67,14 +66,6 @@ const READ_LINK_TEXT: Readonly<Record<LegalDocumentId, string>> = {
   privacy: ACCEPTANCE_READ_PRIVACY,
   terms: ACCEPTANCE_READ_TERMS,
 };
-
-function versionLine(item: PendingLegalDocument): string {
-  const since =
-    item.effectiveFrom === null
-      ? LEGAL_PENDING_EFFECTIVE_FROM
-      : formatEffectiveFrom(item.effectiveFrom);
-  return `Versão ${item.version}. Em vigor desde: ${since}.`;
-}
 
 /** Both pages are linked, always, and open in another tab so the box keeps its state (AC-70, L1). */
 function ReadLinks() {
@@ -109,7 +100,7 @@ function PendingList({
           <div className="grid">
             <p className="font-medium">{LEGAL_PAGE_TITLES[item.document]}</p>
             <p className="text-muted-foreground text-support">
-              {versionLine(item)}
+              {acceptanceVersionLine(item)}
             </p>
           </div>
           {item.changes ? (

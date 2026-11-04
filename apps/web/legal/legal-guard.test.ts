@@ -16,6 +16,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   checkLegalDocuments,
+  EFFECTIVE_FROM_VARIABLE,
   isProductionBuild,
   legalCompanyValues,
   sha256Hex,
@@ -496,4 +497,63 @@ describe("what is a production build", () => {
     expect(staging.errors).toEqual([]);
     expect(staging.warnings.join("\n")).toContain("[preencher: e-mail]");
   });
+});
+
+describe("the day of the texts (VITE_LEGAL_VIGENCIA)", () => {
+  const real = (env: Record<string, string | undefined>, production: boolean) =>
+    checkLegalDocuments({
+      company: env,
+      production,
+      readText: readRepositoryText,
+    });
+  const draftOnly = [
+    `Build de produção com texto legal ainda não final: aviso de rascunho: "${LEGAL_DRAFT_NOTICE}".`,
+  ];
+
+  it("with the day and every variable, the real texts leave only the draft notice in production", () => {
+    const { errors } = real(
+      { ...company, [EFFECTIVE_FROM_VARIABLE]: "2026-11-04" },
+      true
+    );
+    expect(errors).toEqual(draftOnly);
+  });
+
+  it("with the day and every variable, staging has no pending marker of any page", () => {
+    const { errors, warnings } = real(
+      { ...company, [EFFECTIVE_FROM_VARIABLE]: "2026-11-04" },
+      false
+    );
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([`aviso de rascunho: "${LEGAL_DRAFT_NOTICE}"`]);
+    expect(warnings.join("\n")).not.toMatch(pendingMarkerStart);
+  });
+
+  it("without the day nothing changes: the marker of the date, an error in production and a warning in staging", () => {
+    const production = real(company, true).errors.join("\n");
+    expect(production).toContain(
+      "terms: [preencher na publicação] (data de vigência)"
+    );
+    expect(production).toContain(
+      "privacy: [preencher na publicação] (data de vigência)"
+    );
+    const staging = real(
+      { ...company, [EFFECTIVE_FROM_VARIABLE]: "  " },
+      false
+    );
+    expect(staging.errors).toEqual([]);
+    expect(staging.warnings.join("\n")).toContain("(data de vigência)");
+  });
+
+  it.each(["04/11/2026", "2026-02-30", "amanhã", "2026-11-4"])(
+    "treats %s as a pending value: it never fills the date, and production refuses it",
+    (value) => {
+      const env = { ...company, [EFFECTIVE_FROM_VARIABLE]: value };
+      const production = real(env, true).errors.join("\n");
+      expect(production).toContain(
+        `variável ${EFFECTIVE_FROM_VARIABLE} não é um dia AAAA-MM-DD: "${value}"`
+      );
+      expect(production).toContain("(data de vigência)");
+      expect(real(env, false).errors).toEqual([]);
+    }
+  );
 });
