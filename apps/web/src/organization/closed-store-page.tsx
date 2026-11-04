@@ -613,7 +613,11 @@ export function PanelBody({
     load.status === "acceptance"
   ) {
     return (
-      <p aria-busy="true" className="text-muted-foreground" role="status">
+      <p
+        aria-busy="true"
+        className="min-h-31 text-muted-foreground"
+        role="status"
+      >
         {PANEL_LOADING_TEXT}
       </p>
     );
@@ -742,27 +746,24 @@ export function ClosedStorePage() {
             onRefresh={handleRefresh}
             reading={reading}
           />
-          {/* after the panel is read: the footer would be pushed down by whatever the panel turns out to be */}
-          {load.status === "loading" ? null : (
-            <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-border border-t pt-4">
-              <a className={TEXT_LINK} href={NEW_STORE_PATH}>
-                {NEW_STORE_LINK}
-              </a>
-              <a
-                className={TEXT_LINK}
-                href={LEGAL_PATHS.terms}
-                rel="noopener noreferrer"
-                target="_blank"
-              >
-                Termos de Uso
-                <span className="sr-only"> ({NEW_TAB_HINT})</span>
-              </a>
-              <LogoutControl
-                reason="saiu"
-                returnTo={`${window.location.pathname}${window.location.search}`}
-              />
-            </footer>
-          )}
+          <footer className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-border border-t pt-4">
+            <a className={TEXT_LINK} href={NEW_STORE_PATH}>
+              {NEW_STORE_LINK}
+            </a>
+            <a
+              className={TEXT_LINK}
+              href={LEGAL_PATHS.terms}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Termos de Uso
+              <span className="sr-only"> ({NEW_TAB_HINT})</span>
+            </a>
+            <LogoutControl
+              reason="saiu"
+              returnTo={`${window.location.pathname}${window.location.search}`}
+            />
+          </footer>
         </IdleRuntimeProvider>
       </main>
     </div>
