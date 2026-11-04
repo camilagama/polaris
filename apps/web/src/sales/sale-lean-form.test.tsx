@@ -71,6 +71,9 @@ function renderItem(item: ItemDraft, canRemove = true): string {
   );
 }
 
+const CONTROL_TAG = /<(?:input|button)[^>]*>/g;
+const ID_ATTRIBUTE = /\sid="([^"]+)"/;
+
 describe("o item da venda, enxuto", () => {
   it("antes da escolha, só a busca: nem quantidade nem preços, e a lista fechada", () => {
     const html = renderItem(blankItem);
@@ -252,10 +255,10 @@ describe("Data e ajustes numa linha fechada", () => {
     );
     const message = "Informe uma data e hora válidas.";
     const invalidIds = (html: string) =>
-      [...html.matchAll(/<(?:input|button)[^>]*>/g)]
+      [...html.matchAll(CONTROL_TAG)]
         .map((tag) => tag[0])
         .filter((tag) => tag.includes('aria-invalid="true"'))
-        .map((tag) => /\sid="([^"]+)"/.exec(tag)?.[1]);
+        .map((tag) => ID_ATTRIBUTE.exec(tag)?.[1]);
     const badTime = renderPayment(
       { ...form, occurredAtLocal: joinSaleDate("2026-11-02", "9") },
       false,
