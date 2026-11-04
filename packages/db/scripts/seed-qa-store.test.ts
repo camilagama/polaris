@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertOptions,
   assertQaTarget,
@@ -6,6 +6,8 @@ import {
   markQaStoreInternal,
   type QueryClient,
   type SeedOptions,
+  saleInstant,
+  salePlacement,
 } from "./seed-qa-store";
 
 const ORG = "0199c2d0-0000-7000-8000-00000000c001";
@@ -183,6 +185,12 @@ describe("the seed options", () => {
     ...overrides,
   });
 
+  it("accepts 366 days and no more", () => {
+    expect(MAX_SEED_DAYS).toBe(366);
+    expect(() => assertOptions(options({ days: 366 }))).not.toThrow();
+    expect(() => assertOptions(options({ days: 367 }))).toThrow("seed refused");
+  });
+
   it("accepts the stores of the measure", () => {
     expect(() => assertOptions(options())).not.toThrow();
     expect(() => assertOptions(options({ salesPerDay: 50 }))).not.toThrow();
@@ -192,7 +200,7 @@ describe("the seed options", () => {
   });
 
   it.each([
-    ["more than 60 days", { days: 61 }],
+    ["more than 366 days", { days: MAX_SEED_DAYS + 1 }],
     ["no day", { days: 0 }],
     ["sales per day that are not a number", { salesPerDay: Number.NaN }],
     ["a typo in the sales per day", { salesPerDay: 5000 }],
@@ -223,5 +231,75 @@ describe("the QA store is kept out of the activation funnel", () => {
       );
       expect(statement.values).toEqual([ORG]);
     }
+  });
+});
+
+describe("an old sale is confirmed inside the owner's window and moved back to its day", () => {
+  const TODAY = "2026-11-04";
+  const ZONE = "America/Sao_Paulo";
+  const dayOf = (instant: string) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: ZONE }).format(
+      new Date(instant)
+    );
+  const shift = (date: string, days: number) =>
+    new Date(Date.parse(`${date}T00:00:00.000Z`) - days * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([0, 1, 29, 30, 31, 59, 60, 61, 200, 365])(
+    "places the sale of %i days ago on its day, in occurred_on and in occurred_at",
+    (back) => {
+      vi.useFakeTimers({
+        now: new Date(`${TODAY}T14:00:00.000Z`),
+        toFake: ["Date"],
+      });
+      const { confirmOn, moveBack } = salePlacement(TODAY, back);
+      const confirmedAt = saleInstant(confirmOn, TODAY, 5);
+      const movedAt = new Date(
+        Date.parse(confirmedAt) - moveBack * 86_400_000
+      ).toISOString();
+      const target = shift(TODAY, back);
+      expect(shift(confirmOn, moveBack)).toBe(target);
+      expect(dayOf(movedAt)).toBe(target);
+    }
+  );
+
+  it("keeps today's sales on the planned day when the run crosses the midnight of the store", () => {
+    vi.useFakeTimers({
+      now: new Date("2026-11-05T03:30:00.000Z"),
+      toFake: ["Date"],
+    });
+    for (const back of [0, 30, 360]) {
+      const { confirmOn, moveBack } = salePlacement(TODAY, back);
+      const movedAt = new Date(
+        Date.parse(saleInstant(confirmOn, TODAY, 399)) - moveBack * 86_400_000
+      ).toISOString();
+      expect(dayOf(movedAt)).toBe(shift(TODAY, back));
+    }
+  });
+
+  it("keeps the confirmation inside the 30 days of the owner and moves nothing that is recent", () => {
+    for (let back = 0; back < MAX_SEED_DAYS; back += 1) {
+      const { confirmOn, moveBack } = salePlacement(TODAY, back);
+      const confirmedBack = back - moveBack;
+      expect(confirmedBack).toBeGreaterThanOrEqual(0);
+      expect(confirmedBack).toBeLessThan(30);
+      expect(shift(TODAY, confirmedBack)).toBe(confirmOn);
+      expect(moveBack === 0).toBe(back < 30);
+    }
+  });
+
+  it("uses at most 13 different moves for the 366 days", () => {
+    const moves = new Set(
+      Array.from(
+        { length: MAX_SEED_DAYS },
+        (_, back) => salePlacement(TODAY, back).moveBack
+      )
+    );
+    expect(moves.size).toBe(13);
   });
 });
