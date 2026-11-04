@@ -96,12 +96,10 @@ function NewSale({
   describedBy: string | null;
   offlineText: string | null;
 }) {
-  let described: string | undefined;
-  if (offlineText) {
-    described = "home-new-sale-offline";
-  } else if (describedBy) {
-    described = describedBy;
-  }
+  const described =
+    [offlineText ? "home-new-sale-offline" : null, describedBy]
+      .filter(Boolean)
+      .join(" ") || undefined;
   return (
     <div className="grid w-full gap-1.5 sm:w-auto sm:justify-items-end">
       <a
@@ -700,6 +698,7 @@ function FigureArea({
   blocks,
   goal,
   keep,
+  measure,
 }: {
   attention: React.ReactNode;
   attentionNotes: React.ReactNode;
@@ -707,11 +706,17 @@ function FigureArea({
   goal: React.ReactNode;
   /** The cards keep the height they had with figures (no connection and no copy). */
   keep: boolean;
+  /** The cards with figures are on the screen: their height is the one to keep. */
+  measure: boolean;
 }) {
   return (
     <>
       {attention}
-      {blocks.main ? <KeptHeight keep={keep}>{blocks.main}</KeptHeight> : null}
+      {blocks.main ? (
+        <KeptHeight keep={keep} measure={measure}>
+          {blocks.main}
+        </KeptHeight>
+      ) : null}
       {blocks.pending ? null : (
         <>
           {attentionNotes}
@@ -852,6 +857,7 @@ export function HomePage() {
           blocks={blocks}
           goal={goalBlock}
           keep={explained}
+          measure={offline === null && figures !== null && !blocks.pending}
         />
       </div>
     </div>

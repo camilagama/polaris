@@ -86,8 +86,9 @@ const SPLIT = /^(-?)R\$\s?(.*?)(,\d{2})?$/;
 /**
  * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller, which push
  * the line down), "R$ ••••" (whose dots may come from another font) and "—" take the same height, and nothing under
- * them moves when the values are hidden or a day is read. The line height is the card's (`text-sm`, 20 px), as it has
- * always been drawn; the size class comes before it so the merge of the classes keeps both.
+ * them moves when the values are hidden or a day is read. The line height is the card's (`text-sm`, 20 px), the one
+ * the number has been drawn with (a `leading` put before the size class was dropped by the merge of the classes); the
+ * size class comes first so the merge keeps both.
  */
 function heroBox(size: "lg" | "md"): string {
   return cn(

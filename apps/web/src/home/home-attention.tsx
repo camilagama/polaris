@@ -45,7 +45,7 @@ function LineIcon({ id }: { id: AttentionLine["id"] }) {
  * lines by priority, each a link to where it is resolved, with its icon in a square and what needs doing, with its
  * number; the cost line alone keeps its second line ("Informe para as próximas vendas."), the screen of the others says
  * what to do. The device line comes from the local summary and shows without the stock's reads. With nothing to do the
- * block is not there; what the check of the stock says (reading, no connection, failed) is `AttentionNotes`, under
+ * block is not there; what the check of the stock says (reading, failed) is `AttentionNotes`, under
  * the KPI cards.
  */
 export function AttentionBlock({

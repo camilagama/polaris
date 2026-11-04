@@ -65,14 +65,17 @@ export function HomeBlock({
 export function KeptHeight({
   children,
   keep,
+  measure,
 }: {
   children: ReactNode;
   keep: boolean;
+  /** The block shows what the kept height is of (the cards with figures): only then its height is taken. */
+  measure: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const last = useRef<number | null>(null);
   useLayoutEffect(() => {
-    if (!keep && box.current) {
+    if (measure && !keep && box.current) {
       last.current = box.current.offsetHeight;
     }
   });

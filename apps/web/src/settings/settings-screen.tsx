@@ -74,9 +74,13 @@ function usePasswordOn(): boolean | null {
     let current = true;
     loadAuthMethods()
       .then((methods) => {
-        passwordOnAnswer = methods?.emailPassword === true;
+        const answer = methods?.emailPassword === true;
+        // a failed read counts as off for this visit, but is not kept: the next visit asks again
+        if (methods !== null) {
+          passwordOnAnswer = answer;
+        }
         if (current) {
-          setOn(passwordOnAnswer);
+          setOn(answer);
         }
       })
       .catch(() => undefined);
