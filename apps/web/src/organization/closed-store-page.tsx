@@ -613,7 +613,11 @@ export function PanelBody({
     load.status === "acceptance"
   ) {
     return (
-      <p aria-busy="true" className="text-muted-foreground" role="status">
+      <p
+        aria-busy="true"
+        className="min-h-31 text-muted-foreground"
+        role="status"
+      >
         {PANEL_LOADING_TEXT}
       </p>
     );

@@ -1366,12 +1366,12 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
 
     const release = server.hold("2026-09");
     await choosePreset(page, "Mês passado");
-    await expect(page.locator("#dashboard-updated")).toHaveText("Atualizando…");
-    // still the figures of October, said so, and never under the name of September
+    // still the figures of October, said so in the line beside the period (nothing is put above the figures), and
+    // never under the name of September
+    await expect(page.locator("#dashboard-updated")).toHaveText(
+      "Mostrando 1 a 31 de outubro até o novo período carregar."
+    );
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
-    await expect(
-      page.getByText("Mostrando 1 a 31 de outubro até o novo período carregar.")
-    ).toBeVisible();
     release();
     await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
     await expect(page.getByText("Mostrando 1 a 31 de outubro")).toHaveCount(0);

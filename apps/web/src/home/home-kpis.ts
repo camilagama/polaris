@@ -341,7 +341,7 @@ export interface MonthKpis {
 const drawing = (amount: bigint): number => Number(amount) / 100;
 
 /** "1 a 25/10", or "01/10" on the first day. */
-function rangeText(first: string, last: string): string {
+export function rangeText(first: string, last: string): string {
   return first === last ? shortDate(last) : `1 a ${shortDate(last)}`;
 }
 

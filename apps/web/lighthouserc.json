@@ -44,7 +44,7 @@
           "matchingUrlPattern": ":4381/entrar$",
           "assertions": {
             "cumulative-layout-shift": [
-              "warn",
+              "error",
               {
                 "maxNumericValue": 0.1
               }
@@ -74,7 +74,7 @@
           "matchingUrlPattern": ":4383/loja-horizonte$",
           "assertions": {
             "cumulative-layout-shift": [
-              "warn",
+              "error",
               {
                 "maxNumericValue": 0.1
               }
@@ -104,7 +104,7 @@
           "matchingUrlPattern": ":4382/$",
           "assertions": {
             "cumulative-layout-shift": [
-              "warn",
+              "error",
               {
                 "maxNumericValue": 0.1
               }

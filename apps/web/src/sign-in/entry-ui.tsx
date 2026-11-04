@@ -152,7 +152,7 @@ const ENTRY_WIDTH: Record<EntryWidth, string> = {
 
 /**
  * The page of `/entrar` and `/criar-conta`, and of the screens that stand outside the app shell like them (the
- * first access, the acceptance, the legal texts): one card in the middle, the brand and the title; under the card,
+ * first access, the acceptance, the legal texts): one card at the top, the brand and the title; under the card,
  * the two legal links. Its columns are flex and not grid: an empty part that stays in the tree (a live region,
  * the closed password) gives back the gap with `-mb-4`, which a grid track ignores.
  */
@@ -161,6 +161,7 @@ export function EntryScreen({
   children,
   help = false,
   legalLinks = true,
+  settling = false,
   support,
   title,
   width = "narrow",
@@ -172,6 +173,11 @@ export function EntryScreen({
   help?: boolean;
   /** Without them (the legal texts, which are the pages they point to). */
   legalLinks?: boolean;
+  /**
+   * The card does not have its final content yet (the check of the session): the lines under it wait, so they appear
+   * once in their place instead of being pushed down when the card grows.
+   */
+  settling?: boolean;
   /** The one line under the title, when the screen has one. */
   support?: string | undefined;
   title: string;
@@ -186,10 +192,12 @@ export function EntryScreen({
   );
   return (
     <div className="min-h-dvh bg-background font-sans text-foreground text-sm antialiased">
+      {/* at the top, at a fixed distance, and never centered: a card that grows while it reads (the check of the
+          session, the text of the terms) grows down only, and what is in it stays where it was */}
       <main
         className={cn(
-          "grid min-h-dvh px-(--gutter) py-8",
-          reading ? "place-items-start" : "place-items-center"
+          "grid min-h-dvh place-items-start px-(--gutter) py-8",
+          !reading && "md:pt-24"
         )}
         id="conteudo"
       >
@@ -228,8 +236,8 @@ export function EntryScreen({
               {children}
             </CardContent>
           </Card>
-          {help ? <HelpLine /> : null}
-          {legalLinks ? <LegalLinks /> : null}
+          {help && !settling ? <HelpLine /> : null}
+          {legalLinks && !settling ? <LegalLinks /> : null}
         </div>
       </main>
     </div>

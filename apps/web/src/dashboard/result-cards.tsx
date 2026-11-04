@@ -110,7 +110,6 @@ function sparkHeight(still: boolean): number {
   return still ? 52 : 64;
 }
 
-/** The chip of a reading, or nothing: no empty row under the number when there is no change to show. */
 function chip(reading: KpiReading) {
   return reading.delta ? { chip: <DeltaChip delta={reading.delta} /> } : {};
 }
@@ -204,6 +203,8 @@ export function ResultCards({
   // the group says the period once; the result card keeps a date of its own only when it is another ("outubro inteiro")
   const resultDate =
     read.result.date === read.sales.date ? undefined : read.result.date;
+  const resultDateAtRest =
+    rest.result.date === rest.sales.date ? undefined : rest.result.date;
   const missing = kpis.result.kind === "incomplete" ? kpis.result : null;
   return (
     <div className={KPI_GRID} data-kpi-row="">
@@ -216,6 +217,7 @@ export function ResultCards({
           {...(noCost ? {} : chip(read.result))}
           className="md:col-span-2 lg:col-span-1"
           {...(resultDate ? { date: resultDate } : {})}
+          {...(resultDateAtRest ? { dateReserve: resultDateAtRest } : {})}
           entity="result"
           footer={
             <ResultFooter
@@ -265,7 +267,7 @@ export function ResultCards({
         <KpiCard
           {...chip(read.ticket)}
           entity="ticket"
-          {...(read.ticket.count ? { footer: read.ticket.count } : {})}
+          footer={read.ticket.count || null}
           help={{ about: "Ticket médio", text: read.ticket.help }}
           id="result-kpi-ticket"
           {...(drawn

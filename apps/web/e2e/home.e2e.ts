@@ -2180,9 +2180,7 @@ test.describe("erro por bloco (§ 5.2): Nova venda sempre visível e levando à 
     await openHome(page, server);
     await expect(newSale(page)).toBeVisible();
     await expect(
-      page
-        .getByRole("status")
-        .filter({ hasText: "Carregando os números de hoje…" })
+      page.getByRole("status").filter({ hasText: "Carregando os números…" })
     ).toBeAttached();
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
       timeout: 20_000,
@@ -2645,7 +2643,9 @@ test.describe("janela anterior do Início: uma despesa neste aparelho", () => {
 });
 
 const OFFLINE_SALE = "Sem internet. A venda é enviada quando a conexão voltar.";
-const NO_COPY = "Sem internet e sem números guardados";
+/** The note of each card (and of the goal) without a connection and without a copy: the reason is said once, above. */
+const NO_CONNECTION = "Sem conexão";
+const NO_COPY_REASON = "Sem internet. Os números";
 const CONFIRMED = "Confirmado em 23/10 12:00";
 
 test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
@@ -2674,9 +2674,8 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Meta")).toContainText("Meta de outubro");
     await expect(region(page, "Meta")).toContainText("53,4%");
     await expect(region(page, "Meta")).not.toContainText("Ver as outras");
-    await expect(
-      page.getByText("Avisos do estoque só com conexão.")
-    ).toBeVisible();
+    // the stock is not read without a connection, and nothing is said of it under the cards
+    await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(page.getByText("sem saldo")).toHaveCount(0);
     await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
@@ -2760,7 +2759,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
-  test("sem cópia: 'sem números', sem zeros; metas só com conexão; Nova venda continua", async ({
+  test("sem cópia: os quatro cartões no lugar com '—' e 'Sem conexão', o motivo dito uma vez sob o título, sem zeros; Nova venda continua", async ({
     page,
   }) => {
     const server = new FakeServer({ ...SOLD, goals: [goal({})] });
@@ -2773,17 +2772,29 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       }
     }, OFFLINE_KEYS.source);
     await reopenWithoutNetwork(page, server);
-    await expect(region(page, "Vendas hoje")).toContainText(NO_COPY, {
+    await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION, {
       timeout: 20_000,
     });
     await expect(page.getByText("R$")).toHaveCount(0);
-    await expect(region(page, "Vendas em outubro")).toContainText(NO_COPY);
-    await expect(region(page, "Vendas por dia")).toHaveCount(0);
+    for (const name of [
+      "Vendas hoje",
+      "Vendas em outubro",
+      "Resultado estimado",
+      "Ticket médio",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one card after the other
+      await expect(region(page, name)).toContainText("—sem valor");
+      await expect(region(page, name)).toContainText(NO_CONNECTION);
+    }
+    // the chart keeps its place and its name, so the goal beside it does not change columns
+    await expect(region(page, "Vendas por dia")).toContainText(NO_CONNECTION);
     await expect(page.getByText("Ver os números")).toHaveCount(0);
-    await expect(region(page, "Meta")).toContainText("Metas só com conexão.");
-    await expect(
-      page.getByText("Avisos do estoque só com conexão.")
-    ).toBeVisible();
+    await expect(region(page, "Meta")).toContainText(NO_CONNECTION);
+    await expect(region(page, "Meta")).not.toContainText("Definir meta");
+    // the reason once, in the line under the title, which "Nova venda" points to: never in each card
+    await expect(page.locator("#home-updated")).toContainText(NO_COPY_REASON);
+    await expect(page.getByText(NO_COPY_REASON)).toHaveCount(1);
+    await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
   });
 
@@ -2914,7 +2925,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(page.getByText("a mais que no mesmo período")).toHaveCount(0);
   });
 
-  test("cópia malformada: descartada, vale 'sem números', e a tela não cai", async ({
+  test("cópia malformada: descartada, vale como sem cópia (Sem conexão), e a tela não cai", async ({
     page,
   }) => {
     const server = new FakeServer(SOLD);
@@ -2927,7 +2938,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       }
     });
     await reopenWithoutNetwork(page, server, NOON + HOUR);
-    await expect(region(page, "Vendas hoje")).toContainText(NO_COPY, {
+    await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION, {
       timeout: 20_000,
     });
     await expect(newSale(page)).toBeVisible();
@@ -2955,8 +2966,9 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.context().setOffline(true);
     await expect(
       page
-        .getByText(OFFLINE_SALE)
-        .or(page.getByText("Sem internet: para vender é preciso conexão."))
+        .locator("#home-updated, #home-new-sale-offline")
+        .filter({ hasText: "Sem internet" })
+        .first()
     ).toBeVisible();
     await expect(page.getByText("R$ 320,10")).toHaveCount(0);
     await expect(page.getByText("R$ 2.660,60")).toHaveCount(0);
@@ -3007,9 +3019,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.clock.runFor(10_000);
     await expect.poll(() => periodCalls(server).length).toBeGreaterThan(asked);
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
-    await expect(page.getByText("Carregando os números de hoje…")).toHaveCount(
-      0
-    );
+    await expect(page.getByText("Carregando os números…")).toHaveCount(0);
     await expect(page.getByText(CONFIRMED)).toBeVisible();
     server.broken.delete("report/periodSummary");
     await expect(
@@ -3017,6 +3027,55 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     ).toBeVisible({
       timeout: 20_000,
     });
+  });
+
+  test("aberto sem rede, a rede volta e o estoque demora: a cópia fica até o estoque responder, com Meta, Gráfico e Ritmo", async ({
+    page,
+  }) => {
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openWithCopy(page, server);
+    await reopenWithoutNetwork(page, server, NOON + HOUR);
+    const expectParts = () =>
+      Promise.all(
+        ["Meta", "Vendas por dia", "Ritmo de vendas"].map((name) =>
+          expect(region(page, name)).toBeVisible()
+        )
+      );
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    await expectParts();
+    // the network is back: the figures answer at once, the stock's read is held
+    let answerStock: () => void = () => undefined;
+    server.held.set(
+      "inventory/listBalances",
+      new Promise((resolve) => {
+        answerStock = resolve;
+      })
+    );
+    const balances = () =>
+      server.calls.filter((call) => call.procedure === "inventory/listBalances")
+        .length;
+    const asked = periodCalls(server).length;
+    server.down = false;
+    await page.clock.runFor(10_000);
+    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(asked);
+    await expect.poll(balances).toBeGreaterThan(0);
+    // the stock is asked only after the figures answered; two frames later the page has rendered that answer
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )
+    );
+    // between the answer of the figures and the stock's: still the copy, no skeleton, nothing leaves
+    await expect(page.getByText("Carregando os números…")).toHaveCount(0);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expectParts();
+    answerStock();
+    await expect(page.locator("#home-updated")).toContainText(UPDATED_AT);
+    await expect(page.getByText("Carregando os números…")).toHaveCount(0);
+    await expectParts();
   });
 
   test("sem cópia a 1280: a mesma grade da tela com cópia, e os cartões não trocam de lugar quando a rede volta", async ({
@@ -3033,10 +3092,12 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       }
     }, OFFLINE_KEYS.source);
     await reopenWithoutNetwork(page, server);
-    await expect(region(page, "Vendas hoje")).toContainText(NO_COPY, {
+    await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION, {
       timeout: 20_000,
     });
-    await expect(region(page, "Vendas em outubro")).toContainText(NO_COPY);
+    await expect(region(page, "Vendas em outubro")).toContainText(
+      NO_CONNECTION
+    );
     const places = async () => ({
       goal: await region(page, "Meta").boundingBox(),
       month: await region(page, "Vendas em outubro").boundingBox(),
@@ -3078,7 +3139,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => copyKeys(page)).toEqual([]);
     await page.context().setOffline(true);
-    await expect(region(page, "Vendas hoje")).toContainText(NO_COPY);
+    await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION);
     await expect(page.getByText("R$ 320,10")).toHaveCount(0);
   });
 
@@ -3543,9 +3604,7 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
       .then(() => Date.now());
     await openHome(page, server);
     await expect(
-      page
-        .getByRole("status")
-        .filter({ hasText: "Carregando os números de hoje…" })
+      page.getByRole("status").filter({ hasText: "Carregando os números…" })
     ).toBeAttached();
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
       timeout: 8000,
