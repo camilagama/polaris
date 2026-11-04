@@ -2,6 +2,7 @@ import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
+import { InputGroupInput } from "@/ui/input-group";
 
 /*
  * A search field whose suggestions open in a popup anchored to the field (Base UI Combobox): the list floats over the
@@ -12,17 +13,8 @@ import { cn } from "@/lib/utils";
 const Combobox = ComboboxPrimitive.Root;
 
 /** The text control, inside an InputGroup of src/ui like any other field (the group draws the border and the focus). */
-function ComboboxInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
-  return (
-    <ComboboxPrimitive.Input
-      className={cn(
-        "h-full w-full min-w-0 flex-1 bg-transparent px-3 text-sm touch:text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
-        className
-      )}
-      data-slot="input-group-control"
-      {...props}
-    />
-  );
+function ComboboxInput(props: ComboboxPrimitive.Input.Props) {
+  return <ComboboxPrimitive.Input render={<InputGroupInput />} {...props} />;
 }
 
 function ComboboxContent({
@@ -81,7 +73,7 @@ function ComboboxItem({
   return (
     <ComboboxPrimitive.Item
       className={cn(
-        "relative grid min-h-9 touch:min-h-11 w-full cursor-default select-none grid-cols-[minmax(0,1fr)_1rem] items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden data-disabled:pointer-events-none data-highlighted:bg-accent data-selected:font-medium data-highlighted:text-accent-foreground data-disabled:opacity-50",
+        "relative grid min-h-9 touch:min-h-11 w-full cursor-default select-none grid-cols-[minmax(0,1fr)_1rem] items-center gap-2 rounded-sm px-2 py-1.5 text-sm data-disabled:pointer-events-none data-highlighted:bg-accent data-selected:font-medium data-highlighted:text-accent-foreground data-disabled:opacity-50",
         className
       )}
       data-slot="combobox-item"
