@@ -604,6 +604,74 @@ async function run() {
       refunder
     );
     assert.equal(await countRefundRequests(), 4);
+    // the command ID is the client's: the same one on a case of another organization is another refund
+    const otherStoreCase = await openCase(orgB.organizationId);
+    assert.ok(otherStoreCase);
+    await assert.rejects(
+      () =>
+        audit(
+          otherStoreCase.id,
+          "billing.operator_refund_requested",
+          refunds[0],
+          null,
+          refunder
+        ),
+      (error: unknown) =>
+        error instanceof InvalidSupportRequestError &&
+        error.code === "operator_refund_rate_limited",
+      "the same command ID on a case of another organization counts against the limit"
+    );
+    assert.equal(
+      await countRefundRequests(),
+      4,
+      "the refusal on the other organization leaves no row"
+    );
+    // one command ID carried across cases is counted once per case, so it cannot bypass the limit
+    const carrier = await principal();
+    const carried = randomUUID();
+    const carriedCases = [
+      operatorCase,
+      otherStoreCase,
+      await openCase(orgA.organizationId),
+    ];
+    for (const supportCase of carriedCases) {
+      assert.ok(supportCase);
+      // biome-ignore lint/performance/noAwaitInLoops: The limit counts the requests in order.
+      await audit(
+        supportCase.id,
+        "billing.operator_refund_requested",
+        carried,
+        null,
+        carrier
+      );
+    }
+    const fourthCase = await openCase(orgB.organizationId);
+    assert.ok(fourthCase);
+    await assert.rejects(
+      () =>
+        audit(
+          fourthCase.id,
+          "billing.operator_refund_requested",
+          carried,
+          null,
+          carrier
+        ),
+      (error: unknown) =>
+        error instanceof InvalidSupportRequestError &&
+        error.code === "operator_refund_rate_limited",
+      "a fourth case with the same command ID is refused"
+    );
+    assert.equal(
+      await audit(
+        operatorCase.id,
+        "billing.operator_refund_requested",
+        carried,
+        null,
+        carrier
+      ),
+      orgA.organizationId,
+      "the same command on the same case stays a repeat at the limit"
+    );
     // the limit is the operator's own: another one still refunds
     await audit(
       operatorCase.id,
@@ -613,7 +681,7 @@ async function run() {
       p1
     );
     tests.push(
-      "the operator's provider commands record their four steps with the command ID (a lowercase UUID) on an open case; a refund request past 3 distinct commands of the same operator in the last hour is refused with no row, while a repeat of the same command and another operator are not counted"
+      "the operator's provider commands record their four steps with the command ID (a lowercase UUID) on an open case; a refund request past 3 distinct commands of the same operator in the last hour is refused with no row, while a repeat of the same command on the same case and another operator are not counted, and the same command ID on another case or organization is"
     );
 
     // ------------------------------------------------- 5. the billing role ends only a grant of its organization

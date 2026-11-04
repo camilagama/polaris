@@ -61,7 +61,7 @@ O ADR 0073 deixou fora do Admin os comandos que dependem de provedor "até haver
     - O purge tira o motivo do fato, porque `reason` não é uma das chaves que ele guarda (ADR 0081, 6a): a função de purge não muda, e o gate `organization-purge` prova o caso.
 8. **Freios no lugar da segunda pessoa.**
     - **Alerta:** cada comando que chegou ao provedor emite `billing_operator_command`, sinal `comando-de-cobranca-do-operador` (acorda, limiar 1), para a outra pessoa do Access ver na hora.
-    - **Limite:** cada operador tem no máximo **3 reembolsos distintos por hora**, contados pela auditoria na própria função, com trava por operador. Repetir o mesmo `commandId` não conta de novo.
+    - **Limite:** cada operador tem no máximo **3 reembolsos distintos por hora**, contados pela auditoria na própria função, com trava por operador. Repetir o mesmo `commandId` no mesmo caso (e, portanto, na mesma loja) não conta de novo; o mesmo `commandId` em outro caso ou loja conta como outro reembolso, porque o ID é escolhido pelo cliente. Um pedido recusado por `amount_changed` já consumiu uma das 3 vagas da hora, porque a auditoria do pedido vem antes da conferência do valor: de propósito, erra para o lado seguro.
 
 ## Consequências
 
@@ -79,7 +79,7 @@ O ADR 0073 deixou fora do Admin os comandos que dependem de provedor "até haver
 - **Sem segunda pessoa em produção** (D-D). Uma pessoa só pode reembolsar em produção, sem aprovação. Compensam o `expectedAmount`, o caso aberto, o motivo, a auditoria antes, o alerta e o limite por hora. A decisão de levar isso ao usuário é do Arrascaeta.
 - **A auditoria não é atômica com a ação** (papéis diferentes, como no ADR 0073). O risco é um pedido sem resultado, nunca uma ação sem pedido.
 - **A garantia do item 5 depende de o Asaas mostrar a cobrança fora de `CONFIRMED`/`RECEIVED` logo depois de aceitar o estorno.** A ordem da leitura logo após o `POST /refund` não foi medida no sandbox: é a prova do gate da Parte 10 no staging, antes de liberar em produção.
-- **O CPU dos comandos no Free não foi medido.** O Admin gasta de 4 a 10 ms por rota no staging, e o limite é 10 ms. A medida de 3 comandos reais no staging fica para depois do deploy (Juan, D-C). Um 1102 no meio do comando cai no item 6: repetir com o mesmo `commandId`.
+- **O CPU dos comandos no Free não foi medido.** O Admin gasta de 4 a 10 ms por rota no staging, e o limite é 10 ms. A medida de 3 comandos reais no staging fica para depois do deploy (Juan, D-C). Um 1102 no meio do comando cai no item 6: repetir com o mesmo `commandId`. A tela da Cobrança no Admin e a liberação em produção esperam essa medida: 3 comandos reais no staging, com 0 `exceededCpu`.
 - **A chave do Admin:** o Asaas permite até 10 chaves de API por conta, revogáveis uma a uma, sem escopo por chave. Uma chave própria do Admin dá revogação separada, mas o Asaas desabilita a chave depois de 3 meses sem uso e a expira de vez aos 6. Uma chave usada raramente, como a do Admin, pode estar desabilitada quando for preciso: o runbook diz como conferir. A escolha entre chave própria e a mesma do web é do Arrascaeta ao cadastrar.
 - **Limite e alerta no lugar de aprovação.** O valor 3 por hora é provisório, sem medida de uso real.
 

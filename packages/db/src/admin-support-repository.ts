@@ -481,7 +481,8 @@ export type BillingAuditEvent =
  * first, so nothing is done that was not first written down. The operator's
  * provider commands name their command ID (a UUID) as the entity, and the
  * request of a refund is refused past 3 distinct commands of the operator in
- * the last hour (`operator_refund_rate_limited`, nothing recorded).
+ * the last hour (`operator_refund_rate_limited`, nothing recorded); a command
+ * is distinct by case, organization and command ID.
  */
 export function auditBillingCommand(
   client: AdminQueryable,

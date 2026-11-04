@@ -1,7 +1,7 @@
 -- The operator's provider commands in the Admin (cancel the renewal, refund the period in force): the four audit
 -- types of their request and outcome, and the record of a request through `admin_audit_billing_command`, which takes
 -- them. The request of a refund is limited per operator: at most 3 distinct commands in the last hour (a repeat of the
--- same command ID after an unknown result does not count again); one more is refused with `operator_refund_rate_limited`
+-- same command ID on the same case and organization after an unknown result does not count again); one more is refused with `operator_refund_rate_limited`
 -- and nothing is recorded or done. A lock per operator keeps two requests from counting at the same time. The command
 -- ID is the entity of the four types and must be a UUID.
 --
@@ -61,9 +61,14 @@ BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM public.platform_audit_events AS audit
        WHERE audit.principal_id = p_principal AND audit.event_type = p_event
+         AND audit.support_case_id = p_case AND audit.organization_id = target
          AND audit.entity_id = p_entity_id AND audit.created_at > pg_catalog.now() - interval '1 hour'
     ) THEN
-      SELECT pg_catalog.count(DISTINCT audit.entity_id)::integer INTO recent_refunds
+      -- the command ID is the client's: a repeat is the same command only on the same case and organization,
+      -- so the same ID on another case counts as another refund
+      SELECT pg_catalog.count(
+               DISTINCT (audit.support_case_id, audit.organization_id, audit.entity_id)
+             )::integer INTO recent_refunds
         FROM public.platform_audit_events AS audit
        WHERE audit.principal_id = p_principal AND audit.event_type = p_event
          AND audit.created_at > pg_catalog.now() - interval '1 hour';
