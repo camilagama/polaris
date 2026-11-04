@@ -14,24 +14,14 @@ import UsersIcon from "lucide-react/dist/esm/icons/users";
 import {
   type ComponentType,
   lazy,
-  type MouseEvent,
   type ReactNode,
   Suspense,
   useCallback,
   useEffect,
   useRef,
-  useState,
 } from "react";
 import { Button } from "@/ui/button";
-import { Label } from "@/ui/label";
 import { Logo } from "@/ui/logo";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select";
 import {
   Sidebar,
   SidebarContent,
@@ -49,7 +39,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/ui/sidebar";
-import { ThemeSegmented } from "@/ui/theme-segmented";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
 import { canManageBilling } from "../lib/billing-access";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -64,7 +53,7 @@ import {
 } from "../lib/legal-acceptance";
 import { currentReturnPath } from "../lib/sign-in-path";
 import { useNow } from "../lib/use-now";
-import { LogoutControl, useLogout } from "../offline/runtime/logout-control";
+import { useLogout } from "../offline/runtime/logout-control";
 import {
   OfflineAccessGate,
   useOfflineAccessExpired,
@@ -75,7 +64,7 @@ import {
 } from "../offline/runtime/runtime-context";
 import { useSessionOver } from "../offline/runtime/session-ended";
 import { leaveSessionOver } from "../offline/runtime/session-over";
-import { SyncStatus, SyncStatusMenuLine } from "../offline/runtime/sync-status";
+import { SyncStatusMenuLine } from "../offline/runtime/sync-status";
 import { ClosedStoreNotice, useClosedStoreHere } from "./closed-store-notice";
 import { ConnectionRequiredSlot } from "./connection-required-notice";
 import { FirstAccess } from "./first-access";
@@ -92,14 +81,15 @@ import {
   menuItemsOf,
   NAV_ITEMS,
   type NavId,
+  type NavItem,
   navGroups,
   type RouteId,
 } from "./navigation-model";
 import { PageLoading } from "./page-loading";
 import { SessionEndedNotice } from "./session-ended-notice";
+import { ShellHeader, ShellLogoutNotices } from "./shell-header";
 import { useSignedInEmail } from "./signed-in-email";
 import { StatePanel } from "./state-panel";
-import { StoreCard } from "./store-card";
 
 /** The first access is its own chunk, kept by the service worker: only a person with no organization opens it. */
 const OrganizationSetup = lazy(() =>
@@ -132,96 +122,52 @@ function attentionCountText(count: number): string {
   return count === 1 ? "1 registro recusado" : `${count} registros recusados`;
 }
 
-/** One organization is shown as context; more than one can be switched. */
-function OrganizationSwitcher({ current }: { current: CurrentOrganization }) {
-  const { organization, organizations, select } = current;
-  const handleChange = useCallback(
-    (id: string | null) => {
-      if (id !== null) {
-        select(id);
-      }
-    },
-    [select]
-  );
-  const items = organizations.map((item) => ({
-    label: item.name,
-    value: item.id,
-  }));
-  // The "Mais" sheet of the phone is a modal <dialog> (top layer): a menu portaled to <body> would open behind it,
-  // so the menu goes inside that dialog. On the desktop there is none and the menu goes to <body>.
-  const [dialog, setDialog] = useState<HTMLElement | null>(null);
-  const findDialog = useCallback((node: HTMLElement | null) => {
-    setDialog(node?.closest("dialog") ?? null);
-  }, []);
+/** "Ajuda e contato" in "Mais", after the destinations: on the desktop it is the "?" of the header. */
+const HELP_ITEM: NavItem = {
+  group: null,
+  href: HELP_HREF,
+  id: "help",
+  label: HELP_LABEL,
+};
 
-  // A native label would press the trigger and open the menu; "Loja" only takes the focus there, like the label of a field.
-  const trigger = useRef<HTMLButtonElement>(null);
-  const focusTrigger = useCallback((event: MouseEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    trigger.current?.focus();
-  }, []);
-
-  if (organizations.length < 2) {
-    return (
-      <p className="m-0 truncate font-medium text-sm">
-        <span className="sr-only">Loja: </span>
-        <span>{organization.name}</span>
-      </p>
-    );
-  }
-  return (
-    <div className="grid gap-1.5" ref={findDialog}>
-      <Label
-        className="font-normal text-xs"
-        htmlFor="app-organization"
-        id="app-organization-label"
-        onClick={focusTrigger}
-      >
-        Loja
-      </Label>
-      <Select
-        items={items}
-        onValueChange={handleChange}
-        value={organization.id}
-      >
-        <SelectTrigger
-          aria-labelledby="app-organization-label"
-          className="w-full min-w-0"
-          id="app-organization"
-          ref={trigger}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent {...(dialog ? { container: dialog } : {})}>
-          {items.map((item) => (
-            <SelectItem key={item.value} value={item.value} wrap>
-              {item.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-/**
- * "Ajuda e contato": a line of the "Mais" sheet after the destinations, and on the
- * desktop, with the column folded, an icon in the foot (open, the page is the third link of `LegalLinks`).
- */
-function HelpMenuItem({ current }: { current: boolean }) {
+/** A destination of the menu: the current one has `aria-current="page"` and the emerald dot, Pendências its count. */
+function NavLink({
+  count,
+  current,
+  item,
+}: {
+  count: number;
+  current: boolean;
+  item: NavItem;
+}) {
+  const Icon = NAV_ICONS[item.id];
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         aria-current={current ? "page" : undefined}
-        href={HELP_HREF}
+        // the count is only drawn: its name says it in words, after the visible name
+        aria-label={
+          count > 0 ? `${item.label}, ${attentionCountText(count)}` : undefined
+        }
+        href={item.href}
         isActive={current}
-        tooltip={HELP_LABEL}
+        tooltip={item.label}
       >
-        <CircleHelpIcon aria-hidden />
+        <Icon aria-hidden />
+        {/* folded, the name is still the name of the link: hidden only to the eye */}
         <span className="group-data-[collapsible=icon]:sr-only">
-          {HELP_LABEL}
+          {item.label}
         </span>
-        {current ? (
+        {count > 0 ? (
+          <span
+            aria-hidden="true"
+            className="ml-auto min-w-5 shrink-0 rounded-full bg-warning px-1.5 text-center font-semibold text-warning-foreground text-xs tabular-nums leading-5 group-data-[collapsible=icon]:absolute group-data-[collapsible=icon]:top-0.5 group-data-[collapsible=icon]:right-0.5 group-data-[collapsible=icon]:size-2 group-data-[collapsible=icon]:min-w-0 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:text-[0px]"
+            data-attention-count=""
+          >
+            {countText(count)}
+          </span>
+        ) : null}
+        {current && count === 0 ? (
           <span
             aria-hidden="true"
             className="ml-auto size-1.5 shrink-0 rounded-full bg-mark group-data-[collapsible=icon]:hidden"
@@ -229,6 +175,39 @@ function HelpMenuItem({ current }: { current: boolean }) {
         ) : null}
       </SidebarMenuButton>
     </SidebarMenuItem>
+  );
+}
+
+/** The two legal pages at the foot of "Mais", small: they open in another tab, so nothing open in the app is lost. */
+function SheetLegalLinks() {
+  const link =
+    "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+  return (
+    <ul
+      className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 px-2 py-1 text-muted-foreground text-xs"
+      data-sheet-legal=""
+    >
+      <li>
+        <a
+          className={link}
+          href={LEGAL_PATHS.terms}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Termos de Uso
+        </a>
+      </li>
+      <li>
+        <a
+          className={link}
+          href={LEGAL_PATHS.privacy}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Política de Privacidade
+        </a>
+      </li>
+    </ul>
   );
 }
 
@@ -240,43 +219,34 @@ interface AppSidebarProps {
   navId: NavId | null;
   /** The screen works only with a connection: the state says so while offline (U-54). */
   onlineOnly: boolean;
-  organization: CurrentOrganization | null;
 }
 
 /**
  * The sidebar of the desktop (the shadcn Sidebar) and, below 760 px, the same content in the "Mais" sheet without
- * the four destinations of the bottom bar. The current item has `aria-current="page"` and the emerald dot. Pendências
- * is there only while this device has a refused record, with the count (map of navigation, § 1).
+ * the four destinations of the bottom bar: only navigation, and at its foot the first steps and the trial. The store,
+ * the theme and "Sair" are in the menu of the header; the sheet adds "Ajuda e contato" and the two legal pages, which
+ * the desktop has in the header. Pendências is there only while this device has a refused record, with the count
+ * (map of navigation, § 1).
  */
 function AppSidebar({
   chargeDay,
   firstSteps,
   navId,
   onlineOnly,
-  organization,
 }: AppSidebarProps) {
-  const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
-  // the answer of "Sair" may come after "Mais" was closed, or with the column folded: open it to show the warning
-  const showLogoutAttention = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(true);
-    } else if (state === "collapsed") {
-      // for this answer only: the choice of the person to keep it folded stays on the device
-      setOpen(true, false);
-    }
-  }, [isMobile, setOpen, setOpenMobile, state]);
+  const { isMobile } = useSidebar();
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
-  // the state of "Sair" lives above the switch between the sheet and the card, so a width that crosses 760 px in the
-  // middle of the flow keeps the dialog of the queue and the message of a failure
-  const logout = useLogout("/");
-  const email = useSignedInEmail();
-  const items = menuItemsOf({ attention: rejected > 0 }).filter(
-    (item) => !(isMobile && inBottomBar(item.id))
-  );
+  // on the phone "Ajuda e contato" closes the list, in the group of Configurações
+  const items = [
+    ...menuItemsOf({ attention: rejected > 0 }).filter(
+      (item) => !(isMobile && inBottomBar(item.id))
+    ),
+    ...(isMobile ? [HELP_ITEM] : []),
+  ];
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
-      <SidebarHeader className="px-4 pt-4 pb-2 group-data-[collapsible=icon]:px-2">
-        <div className="flex items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
+      <SidebarHeader className="px-4 pt-2 pb-2 group-data-[collapsible=icon]:px-2">
+        <div className="flex min-h-10 items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
           <a
             className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
             href="/"
@@ -300,107 +270,26 @@ function AppSidebar({
               ) : null}
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {group.items.map((item) => {
-                    const current = item.id === navId;
-                    const Icon = NAV_ICONS[item.id];
-                    const count = item.id === "attention" ? rejected : 0;
-                    return (
-                      <SidebarMenuItem key={item.id}>
-                        <SidebarMenuButton
-                          aria-current={current ? "page" : undefined}
-                          // the count is only drawn: its name says it in words, after the visible name
-                          aria-label={
-                            count > 0
-                              ? `${item.label}, ${attentionCountText(count)}`
-                              : undefined
-                          }
-                          href={item.href}
-                          isActive={current}
-                          tooltip={item.label}
-                        >
-                          <Icon aria-hidden />
-                          {/* folded, the name is still the name of the link: hidden only to the eye */}
-                          <span className="group-data-[collapsible=icon]:sr-only">
-                            {item.label}
-                          </span>
-                          {count > 0 ? (
-                            <span
-                              aria-hidden="true"
-                              className="ml-auto min-w-5 shrink-0 rounded-full bg-warning px-1.5 text-center font-semibold text-warning-foreground text-xs tabular-nums leading-5 group-data-[collapsible=icon]:absolute group-data-[collapsible=icon]:top-0.5 group-data-[collapsible=icon]:right-0.5 group-data-[collapsible=icon]:size-2 group-data-[collapsible=icon]:min-w-0 group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:text-[0px]"
-                              data-attention-count=""
-                            >
-                              {countText(count)}
-                            </span>
-                          ) : null}
-                          {current && count === 0 ? (
-                            <span
-                              aria-hidden="true"
-                              className="ml-auto size-1.5 shrink-0 rounded-full bg-mark group-data-[collapsible=icon]:hidden"
-                            />
-                          ) : null}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
+                  {group.items.map((item) => (
+                    <NavLink
+                      count={item.id === "attention" ? rejected : 0}
+                      current={item.id === navId}
+                      item={item}
+                      key={item.id}
+                    />
+                  ))}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
           ))}
-          {isMobile ? (
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <HelpMenuItem current={navId === "help"} />
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ) : null}
         </nav>
       </SidebarContent>
       <SidebarFooter>
         {/* 12 px around and between, as in the design: the footer itself has 8 */}
-        {isMobile ? (
-          // the phone keeps "Sair" straight in "Mais", with the theme
-          <div className="grid gap-3 p-1">
-            <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
-            <ThemeSegmented />
-            {organization || email ? (
-              <div className="grid min-w-0 gap-0.5">
-                {organization ? (
-                  <OrganizationSwitcher current={organization} />
-                ) : null}
-                {email ? (
-                  <span className="truncate text-muted-foreground text-xs">
-                    {email}
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-            <LogoutControl logout={logout} onAttention={showLogoutAttention} />
-          </div>
-        ) : (
-          // the desktop: the card of the store, with the theme, the other stores and "Sair" in its menu (v7 § 3 item 12)
-          <div className="grid gap-3 p-1">
-            <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
-            <StoreCard
-              email={email}
-              logout={logout}
-              onAttention={showLogoutAttention}
-              organization={organization}
-            />
-            {/* with touch, the 44 px areas of the menu button and of the links would meet: 12 px more between them, and the links that wrap onto a second row are far enough apart for theirs not to meet;
-                folded, the links go under the content (`AppFooter`) */}
-            <LegalLinks
-              className="touch:mt-3 gap-x-4 gap-y-1 touch:gap-y-7 text-muted-foreground text-xs group-data-[collapsible=icon]:hidden"
-              current={navId === "help"}
-            />
-            <div className="hidden group-data-[collapsible=icon]:block">
-              <SidebarMenu>
-                <HelpMenuItem current={navId === "help"} />
-              </SidebarMenu>
-            </div>
-          </div>
-        )}
+        <div className="grid gap-3 p-1">
+          <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
+          {isMobile ? <SheetLegalLinks /> : null}
+        </div>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
@@ -432,7 +321,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
   return (
     <nav
       aria-label="Destinos"
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 bg-sidebar pb-[env(safe-area-inset-bottom)] md:hidden"
       data-bottom-bar=""
     >
       {BOTTOM_BAR_IDS.map((id) => {
@@ -506,36 +395,6 @@ function BottomBar({ navId }: { navId: NavId | null }) {
   );
 }
 
-/** The top of the phone: the brand and the state chip with its short text, on one line (U-07); the theme is in "Mais". */
-function MobileHeader({ onlineOnly }: { onlineOnly: boolean }) {
-  return (
-    <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-2 border-b bg-background/90 pr-2 pl-(--gutter) text-foreground backdrop-blur md:hidden">
-      <a
-        className="touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold tracking-tight"
-        href="/"
-      >
-        <Logo className="size-5" />
-        Polaris
-      </a>
-      <SyncStatus onlineOnly={onlineOnly} />
-    </header>
-  );
-}
-
-/** The chip in the top right corner of the content, on the desktop; the phone has it in its header. */
-function ShellChip({ onlineOnly }: { onlineOnly: boolean }) {
-  const { isMobile } = useSidebar();
-  return isMobile ? (
-    <MobileHeader onlineOnly={onlineOnly} />
-  ) : (
-    <div className="relative mx-auto hidden w-[min(100%-2rem,76rem)] md:block">
-      <div className="absolute top-4 right-0 flex">
-        <SyncStatus onlineOnly={onlineOnly} />
-      </div>
-    </div>
-  );
-}
-
 const OPENING_SIGN_IN_TEXT = "Sua sessão acabou. Abrindo a tela de entrada…";
 
 /**
@@ -577,69 +436,6 @@ function LegalAcceptanceGate({ atOpen }: { atOpen: boolean }) {
     <PageLoading label={ACCEPTANCE_OPENING_SCREEN} />
   ) : (
     <LegalAcceptanceNotice />
-  );
-}
-
-/**
- * The two legal pages, linked from every screen of the app (AC-70); they open in another tab. "Ajuda e contato" is
- * beside them and opens in this one: it is a page of the shell.
- */
-function LegalLinks({
-  className,
-  current,
-}: {
-  className: string;
-  current: boolean;
-}) {
-  const link =
-    "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
-  return (
-    <ul className={`m-0 flex list-none flex-wrap p-0 ${className}`}>
-      <li>
-        <a
-          className={link}
-          href={LEGAL_PATHS.terms}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          Termos de Uso
-        </a>
-      </li>
-      <li>
-        <a
-          className={link}
-          href={LEGAL_PATHS.privacy}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          Política de Privacidade
-        </a>
-      </li>
-      <li>
-        <a
-          aria-current={current ? "page" : undefined}
-          className={link}
-          href={HELP_HREF}
-        >
-          {HELP_LABEL}
-        </a>
-      </li>
-    </ul>
-  );
-}
-
-/**
- * The legal links under the content, on the phone and beside the folded column: from 760 px they are at the foot of
- * the open sidebar (`AppSidebar`), once.
- */
-function AppFooter({ current }: { current: boolean }) {
-  const { state } = useSidebar();
-  return (
-    <footer
-      className={`mx-auto w-[min(100%-2rem,76rem)] pt-4 pb-6 text-muted-foreground text-sm ${state === "collapsed" ? "" : "md:hidden"}`}
-    >
-      <LegalLinks className="gap-x-5 gap-y-2 touch:gap-y-6" current={current} />
-    </footer>
   );
 }
 
@@ -805,8 +601,8 @@ interface AppShellProps {
 }
 
 /**
- * The single frame of every screen (v5.1): the sidebar from 760 px, the header and the bottom bar below it, the
- * state chip, the organization and the main landmark.
+ * The single frame of every screen: the sidebar from 760 px (the bottom bar and "Mais" below it), the header with the
+ * state chip and the menu of the store and of the account, and the panel of the content with the main landmark.
  */
 export function AppShell({
   children,
@@ -851,6 +647,10 @@ export function AppShell({
     routeId
   );
   const closedNotice = useClosedNotice(load);
+  // "Sair" lives in the header for every width: its state is here, above the header and the notices it draws
+  const logout = useLogout("/");
+  const email = useSignedInEmail();
+  const storeMenu = useRef<HTMLButtonElement>(null);
   // the first access (no organization yet) has no menu, no bar and no chip: nothing to go to, so a page of its own
   if (requiresOrganization && load.status === "empty" && !accessExpired) {
     return (
@@ -863,7 +663,7 @@ export function AppShell({
     );
   }
   return (
-    <SidebarProvider className="app-shell-root bg-background">
+    <SidebarProvider className="app-shell-root bg-sidebar">
       <a
         className="focus-ring not-focus:sr-only fixed top-2 left-2 z-50 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm no-underline"
         href="#conteudo"
@@ -875,42 +675,55 @@ export function AppShell({
         firstSteps={firstSteps}
         navId={navId}
         onlineOnly={onlineOnly}
-        organization={organization}
       />
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
-        <ShellChip onlineOnly={onlineOnly} />
-        {/* on the phone the content is at least as tall as the window minus the header (3rem): the legal links in the
-            footer start at the fold, under the fixed bottom bar, and do not paint under "Carregando…" to be pushed down */}
-        <main
-          className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_3rem))]"
-          id="conteudo"
-          // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
-          tabIndex={-1}
+        <ShellHeader
+          email={email}
+          helpCurrent={navId === "help"}
+          logout={logout}
+          onlineOnly={onlineOnly}
+          organization={organization}
+          trigger={storeMenu}
+        />
+        {/* the panel of the content, in the frame of the sidebar and the header: from 760 px its top left corner is
+            rounded, with the 1 px ring of a card on the two edges it shares with the frame */}
+        <div
+          className="flex flex-1 flex-col bg-background md:rounded-tl-xl md:border-(--card-ring) md:border-t md:border-l"
+          data-app-panel=""
         >
-          <ShellNotices
-            acceptance={showAcceptanceNotice}
-            connection={
-              onlineOnly && !sessionOver ? { form: connectionForm } : null
-            }
-            session={showNotice}
-          />
-          <GraceNoticeSlot
-            facts={planFacts}
-            onSubscription={routeId === "subscription"}
-          />
-          {closedNotice && requiresOrganization ? (
-            closedNotice
-          ) : (
-            <OfflineAccessGate>
-              {requiresOrganization ? (
-                <OrganizationGate>{children}</OrganizationGate>
-              ) : (
-                children
-              )}
-            </OfflineAccessGate>
-          )}
-        </main>
-        <AppFooter current={navId === "help"} />
+          {/* on the phone the content fills the window between the header and the bottom bar, so a short page does
+              not scroll */}
+          <main
+            className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_var(--app-header)_-_var(--app-bottom-bar,0rem)))]"
+            id="conteudo"
+            // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
+            tabIndex={-1}
+          >
+            <ShellLogoutNotices logout={logout} trigger={storeMenu} />
+            <ShellNotices
+              acceptance={showAcceptanceNotice}
+              connection={
+                onlineOnly && !sessionOver ? { form: connectionForm } : null
+              }
+              session={showNotice}
+            />
+            <GraceNoticeSlot
+              facts={planFacts}
+              onSubscription={routeId === "subscription"}
+            />
+            {closedNotice && requiresOrganization ? (
+              closedNotice
+            ) : (
+              <OfflineAccessGate>
+                {requiresOrganization ? (
+                  <OrganizationGate>{children}</OrganizationGate>
+                ) : (
+                  children
+                )}
+              </OfflineAccessGate>
+            )}
+          </main>
+        </div>
         <BottomBar navId={navId} />
       </SidebarInset>
     </SidebarProvider>

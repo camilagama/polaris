@@ -28,7 +28,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
    in a modal panel (the "Mais" of the bottom bar). From 1024 px it folds to its icons as the shadcn `collapsible="icon"`
    does (map of navigation, § 5): `Ctrl+B` (or `⌘B`), the rail on its edge and the button at its top, the name of each
    item in a tooltip, and the choice kept on the device (`localStorage`, as the cookie of the shadcn would be: the app
-   has no server render to read it). From 760 to 1023 px it never folds. Focus is the 3 px outline (`focus-ring`);
+   has no server render to read it). From 760 to 1023 px it never folds. The column has no border of its own: with the
+   header of the shell in the same color it is a frame, and the panel of the content draws the edge. Focus is the 3 px outline (`focus-ring`);
    items are 32 px with a mouse and 44 px with touch; the group label has no transparency. */
 const SIDEBAR_WIDTH = "16rem";
 /** The folded column: 32 px items in 8 px of room on each side, and the 44 px of an item with touch. */
@@ -356,7 +357,7 @@ function Sidebar({
       />
       <div
         className={cx(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) border-sidebar-border motion-full:transition-[left,right,width] motion-full:duration-200 ease-linear data-[side=right]:right-0 data-[side=left]:left-0 data-[side=left]:border-r data-[side=right]:border-l group-data-[collapsible=icon]:w-(--sidebar-width-icon) md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) motion-full:transition-[left,right,width] motion-full:duration-200 ease-linear data-[side=right]:right-0 data-[side=left]:left-0 group-data-[collapsible=icon]:w-(--sidebar-width-icon) md:flex",
           className
         )}
         data-side={side}
@@ -429,10 +430,7 @@ function SidebarRail() {
 function SidebarInset({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      className={cx(
-        "relative flex w-full min-w-0 flex-1 flex-col bg-background",
-        className
-      )}
+      className={cx("relative flex w-full min-w-0 flex-1 flex-col", className)}
       data-slot="sidebar-inset"
       {...props}
     />
@@ -475,11 +473,12 @@ function SidebarContent({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
+/** In the sheet of the phone the groups are closer, so the whole menu fits a 640 px screen without scrolling. */
 function SidebarGroup({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cx(
-        "relative flex w-full min-w-0 flex-col p-2 touch:group-data-[collapsible=icon]:px-0",
+        "relative flex w-full min-w-0 flex-col p-2 in-data-[mobile=true]:py-1 touch:group-data-[collapsible=icon]:px-0",
         className
       )}
       data-sidebar="group"
@@ -489,11 +488,12 @@ function SidebarGroup({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
+/** Folded, the label fades out of its place with no text width left, so the 3 rem column has nothing wider than it. */
 function SidebarGroupLabel({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cx(
-        "flex h-8 shrink-0 items-center rounded-md px-2 font-medium text-sidebar-foreground text-xs motion-full:transition-[margin,opacity] motion-full:duration-200 ease-linear group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
+        "flex h-8 shrink-0 items-center rounded-md px-2 font-medium text-sidebar-foreground text-xs motion-full:transition-[margin,opacity] motion-full:duration-200 ease-linear group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:text-[0px] group-data-[collapsible=icon]:opacity-0",
         className
       )}
       data-sidebar="group-label"

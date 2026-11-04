@@ -26,8 +26,12 @@ export const CLS_SCENARIOS = [
   "/sales/history com-vendas quente",
   "/inventory com-vendas frio",
   "/inventory com-vendas quente",
+  "/products com-vendas frio",
+  "/products com-vendas quente",
   "/dashboard com-vendas frio",
   "/dashboard com-vendas quente",
+  "/configuracoes com-vendas frio",
+  "/configuracoes com-vendas quente",
   "/entrar sem-sessao frio",
 ] as const;
 
