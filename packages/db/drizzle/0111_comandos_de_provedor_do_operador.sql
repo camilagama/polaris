@@ -1,9 +1,9 @@
 -- The operator's provider commands in the Admin (cancel the renewal, refund the period in force): the four audit
 -- types of their request and outcome, and the record of a request through `admin_audit_billing_command`, which takes
 -- them. The request of a refund is limited per operator: at most 3 distinct commands in the last hour (a repeat of the
--- same command ID on the same case and organization after an unknown result does not count again); one more is refused with `operator_refund_rate_limited`
--- and nothing is recorded or done. A lock per operator keeps two requests from counting at the same time. The command
--- ID is the entity of the four types and must be a UUID.
+-- same command ID on the same case and organization after an unknown result does not count again); one more is
+-- refused with `operator_refund_rate_limited` and nothing is recorded or done. A lock per operator keeps two requests
+-- from counting at the same time. The command ID is the entity of the four types and must be a UUID.
 --
 -- Expand only (ADR 0096): the CHECK gains values (the Worker of the previous version writes none of them, and every row
 -- it writes still passes), and the function keeps its signature, its owner and its grants. The constraint is added NOT
