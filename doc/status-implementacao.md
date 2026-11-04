@@ -2793,6 +2793,18 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Escolhas lembradas | Em revisão | `last-payment-model.ts`: método e perfil da última venda deste aparelho, por loja, no `localStorage`; "Sem perfil" já escolhido na loja sem perfil ativo, e um "Sem perfil" lembrado só vale enquanto a loja não tem perfil ativo (com um, o método continua e o perfil fica em branco); o que a tela escolhe não é venda em andamento. |
 | Medida | Em revisão | A 360 px, antes do 1º toque: 2.206 → 1.384 px; repetir uma venda: 5 → 3 toques (busca, produto, confirmar), sem rolagem. A 1280: 1.310 → 802 px. |
 
+### Admin v2, Parte 1: casca com menu lateral e casos de suporte (t735; corte admin-v2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Casca | Em revisão | `apps/admin/src/ui/page.ts` e `src/app.ts`: uma rota HTML por tela (`/`, `/lojas`, `/lojas/{uuid}`, `/casos`, `/casos/novo`, `/casos/{uuid}`, `/funil`), atrás do login da API e com a CSP `admin-document`; título "{AMBIENTE} · {Tela} · Polaris Admin" e faixa do ambiente por `POLARIS_ENVIRONMENT`; menu `nav` de links pela capacidade (só Início, Buscar loja, Casos de suporte e Funil, que já existem), `aria-current`, sem contagem, num `<details>` abaixo de 40rem; 403 com "Sem permissão para isto." sem a capacidade. Emenda de 04/11 do ADR 0070. |
+| Início | Em revisão | `ui/views/home.ts`: a busca de loja (leva a `/lojas/{uuid}`) e a contagem dos casos de suporte abertos, lida uma vez da lista sem auditoria; "Nada esperando por você." sem nada. As linhas de privacidade e incidentes entram com as telas delas. |
+| Loja | Em revisão | `ui/views/store.ts`: os casos abertos da loja (links para o caso), "Abrir caso de suporte" e o diagnóstico do v1. |
+| Casos de suporte | Em revisão | `ui/views/cases.ts`, `new-case.ts` e `case.ts`: lista abertos e fechados (abas por link com valor fixo), filtro por loja enviado como digitado, páginas; caso de privacidade só leitura, sem motivo; abrir caso com loja e motivo de 1 a 500 com contador, que leva à tela do caso; fechar com resolução em revisão Forte (ambiente, loja e caso, "Fechar o caso revoga todos os acessos temporários dele. Caso fechado não reabre.", "Não: isso não poderá ser desfeito."), um pedido por clique; repetido, "Este caso já estava fechado."; caso fechado sem ação. Histórico do caso (acessos e auditoria) do `GET /api/support-cases/:id`. |
+| v1 | Em revisão | Busca, diagnóstico, janela de reembolso (`/lojas`) e funil (`/funil`) sem mudar o comportamento: os testes do v1 só trocaram o ponto de montagem. |
+| Provas | Em revisão | Unidade: `src/ui/screens.test.ts` (rotas, título, ambiente, menu com 8 conjuntos de capacidade, 404, 401, `data-*`), `ui/cases.test.ts`, `ui/home-store.test.ts`, `src/ui/ui-guard.test.ts` (o script nomeia `close`; 100 KB gzip), `src/ui/ui-types.test.ts`, `src/route-surface.test.ts`. Workerd-db (gate `admin-worker`): `src/page.workerd-db.test.ts` abre o caso pela tela, fecha numa tela e uma segunda tela do mesmo caso ouve "já estava fechado"; o banco tem um `support_case.closed`. |
+| Limites | Registrado | A lista e o detalhe não dizem quem abriu por e-mail (o detalhe traz o ID do principal: a tela diz "Você" ou "Outro operador"); as abas de ação do caso, Privacidade, Incidentes, Registro, Retenções e Configurações são das partes seguintes; o ambiente depende de `POLARIS_ENVIRONMENT` (D-3 c). |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |

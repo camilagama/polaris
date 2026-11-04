@@ -41,7 +41,9 @@ function countText(count: number, more: boolean): string {
 export function organizationsView(
   dom: Dom,
   api: Api,
-  onSelect: (organization: OrganizationSummary) => void
+  onSelect: (organization: OrganizationSummary) => void,
+  /** The verb of each row's button: the v1's "Ver loja", or what the screen does with the store chosen. */
+  action = "Ver loja"
 ): HTMLElement {
   const notice = createNotice(dom);
   const input = dom.el("input", {
@@ -102,11 +104,11 @@ export function organizationsView(
     const open = dom.el(
       "button",
       {
-        "aria-label": `Ver loja ${labelName(organization.name)} (${organization.id})`,
+        "aria-label": `${action} ${labelName(organization.name)} (${organization.id})`,
         class: "secondary",
         type: "button",
       },
-      "Ver loja"
+      action
     );
     open.addEventListener("click", () => onSelect(organization));
     return tableRow(dom, HEADERS, [

@@ -13,8 +13,8 @@
  *   `AUTH_ENTRY_PATHS` only, so no other page of the app may load a third-party script.
  * - `api`: JSON and file answers of the Worker of apps/web. Nothing is ever loaded from them.
  * - `admin`: the Admin Worker. Like `api`, with no referrer at all (the host is behind Cloudflare Access).
- * - `admin-document`: the operator's page of the Admin and its one script and one sheet, given by an exact list of
- *   paths (the API, `/health` and any 404 keep `admin`). The HTML is a constant and every datum arrives by `fetch`,
+ * - `admin-document`: the operator's screens of the Admin and their one script and one sheet, given by the list of
+ *   screen paths (the API, `/health` and any 404 keep `admin`). The HTML carries no store or login datum: every datum arrives by `fetch`,
  *   so the page needs its own files and nothing else: no inline script or style (no nonce), no image, font, frame,
  *   form target or manifest, and Trusted Types refuse any HTML or script made from a string. Like `admin`, no
  *   referrer and never cached.
