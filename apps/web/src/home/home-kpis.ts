@@ -262,11 +262,11 @@ export function dayReading(
       // a day that has not sold yet is not "−100%" of its base: the day is still open
       const open = day === today && entry.salesCount === 0;
       delta = open ? null : percentDelta(cents(entry.netSales) * 4n, sum);
-      if (delta || open) {
+      if (sum > 0n) {
         note = `vs. média ${weekday.of} ${weekday.plural}`;
         compare = ` Compara com a ${against}.`;
       } else {
-        // sales happened, but returns left the 4 days at zero or below: there is no base for a percent
+        // sales happened, but returns left the 4 days at zero or below: there is no base for a percent, open day or not
         note = `vs. média ${weekday.of} ${weekday.plural}: sem média para comparar`;
       }
     }
