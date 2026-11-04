@@ -1,6 +1,6 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { createDatabase } from "@polaris/db/client";
 import {
   disposableHostPattern,
@@ -19,6 +19,7 @@ import {
   createPasswordHasher,
   PASSWORD_HASH_PREFIX,
   type PasswordHashQueryable,
+  passwordKey,
 } from "../src/server/auth/password-hash";
 
 /**
@@ -279,9 +280,8 @@ async function run() {
     }
     const again = await hasher.hash(PASSWORD);
     assert.notEqual(again, stored, "a new salt for each hash");
-    const key = createHmac("sha256", pepper)
-      .update(PASSWORD.normalize("NFC"))
-      .digest("hex");
+    // the Worker's own `k`: the unit tests prove it is the HMAC-SHA-256 of the NFC password with the pepper
+    const key = await passwordKey(pepper, PASSWORD);
     for (const line of consoleLines.lines) {
       assert.ok(!line.includes(PASSWORD), "no log line carries the password");
       assert.ok(
