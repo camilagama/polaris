@@ -239,6 +239,26 @@ describe("the search of the customers", () => {
     expect(names("5521 3000-1234")).toEqual(["João Araújo"]);
   });
 
+  it("takes a typed +55 as the country code even for a partial phone", () => {
+    expect(names("+55 11")).toEqual(["Beatriz Souza"]);
+    expect(names("+55 (11) 9876")).toEqual(["Beatriz Souza"]);
+    expect(names("+5511")).toEqual(["Beatriz Souza"]);
+    expect(names("+55 21 30")).toEqual(["João Araújo"]);
+    expect(names("+55")).toEqual([]);
+  });
+
+  it("keeps the 55 without the plus, which is also a real area code", () => {
+    const withRs = [
+      ...people,
+      { email: null, name: "Gaúcho", phone: "55991234567" },
+    ];
+    const found = (query: string) =>
+      filterCustomers(withRs, query).map((person) => person.name);
+    expect(found("55 11")).toEqual([]);
+    expect(found("55 99")).toEqual(["Gaúcho"]);
+    expect(found("55")).toEqual(["Gaúcho"]);
+  });
+
   it("reads a text with letters as a name, not as the digits of a phone", () => {
     expect(names("Loja 2")).toEqual(["Loja 2"]);
     expect(names("nada 1")).toEqual([]);

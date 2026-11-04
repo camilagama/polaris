@@ -142,6 +142,18 @@ function pendingLabelFor(
   return pendingAction === `restore:${productId}` ? "Restaurando…" : null;
 }
 
+/** The reason is in the row for a product not confirmed yet, and in the notice at the top without a connection. */
+function reasonRef(
+  lockedReason: string | null,
+  syncState: PendingProduct | undefined,
+  reasonId: string
+): string | undefined {
+  if (lockedReason === null) {
+    return undefined;
+  }
+  return syncState ? reasonId : OFFLINE_NOTICE_ID;
+}
+
 function supportLine(
   categoryName: string | null,
   description: string | null
@@ -164,11 +176,14 @@ function ProductRow({
   const handleOpen = useCallback(() => onEdit(product), [onEdit, product]);
   const reasonId = `product-locked-${product.id}`;
   const supportId = `product-support-${product.id}`;
-  // the reason is in the row for a product not confirmed yet, and in the notice at the top without a connection
-  let reason: string | undefined;
-  if (lockedReason !== null) {
-    reason = syncState ? reasonId : OFFLINE_NOTICE_ID;
-  }
+  const pendingId = `product-pending-${product.id}`;
+  const describedBy = [
+    supportId,
+    reasonRef(lockedReason, syncState, reasonId),
+    pendingLabel ? pendingId : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const hasExtras = Boolean(syncState || pendingLabel);
   return (
     <li
@@ -177,7 +192,7 @@ function ProductRow({
     >
       <div className="flex items-center gap-3">
         <RowOpenButton
-          describedBy={[supportId, reason].filter(Boolean).join(" ")}
+          describedBy={describedBy}
           locked={lockedReason !== null || pending}
           onOpen={handleOpen}
         >
@@ -238,7 +253,11 @@ function ProductRow({
             </p>
           ) : null}
           {pendingLabel ? (
-            <p className="text-muted-foreground text-support" role="status">
+            <p
+              className="text-muted-foreground text-support"
+              id={pendingId}
+              role="status"
+            >
               {pendingLabel}
             </p>
           ) : null}
