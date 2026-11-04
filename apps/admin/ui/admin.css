@@ -69,6 +69,11 @@ h3 {
   font-size: 1rem;
 }
 
+h4 {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.9375rem;
+}
+
 .top {
   display: flex;
   flex-wrap: wrap;
@@ -635,6 +640,15 @@ a {
 
 .action-panel .facts {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.effects {
+  padding-left: 1.25rem;
+  margin: 0;
+}
+
+.effects li {
+  overflow-wrap: anywhere;
 }
 
 .history ul,

@@ -50,6 +50,10 @@ A página do Admin (ADR 0070, emenda de 28/10) consome só `GET /api/whoami`, `G
 
 A área Funil lê `GET /api/funnel` **uma vez ao ser aberta e uma vez por clique em "Atualizar"**; mudar o seletor de semanas (4, 8, 12 ou 26; padrão 12) não lê, e nada lê sozinho (sem temporizador nem nova tentativa), porque cada leitura grava um evento e gasta uma das 30 da hora. Um 5xx ou um 429 é mostrado e não repetido; o 429 diz "Limite de leituras do funil por hora atingido. Tente de novo em N minutos.", com N tirado do `Retry-After` (arredondado para cima). Os números, os percentuais, o "não disponível" com o motivo e as notas do que não conta vêm do contrato; a tela não soma, não divide nem arredonda. A rota não mudou.
 
+### Emenda de 04/11/2026: a tela da marca de loja interna (corte admin-v2, Parte 3)
+
+O painel "Loja" do caso de suporte aberto (`/casos/{uuid}`) oferece "Marcar como loja interna do Polaris" e "Desmarcar loja interna" a quem tem `organization:classify`, grau Leve: a frase do efeito ("A loja sai do funil de ativação. Desmarcar a devolve ao funil.") e da auditoria fica acima do botão e um clique grava, com um pedido por clique (`POST /api/organizations/:id/classification`, `{internal}`). **Nenhuma rota de leitura traz a marca** (o diagnóstico não a tem e o funil só conta as lojas excluídas), e a Parte 3 não cria uma: a tela mostra "ainda não lida" até a primeira resposta da rota, que devolve `{changed, internal}`, e passa a mostrar o que o servidor disse; antes disso oferece as duas ações. Repetir é seguro (o valor é absoluto), então uma falha sem resposta diz isso. Nenhuma rota, migration, contrato ou capacidade mudou.
+
 ## Consequências
 
 - O operador responde "o que há de errado com esta organização" sem nenhum acesso a dados do tenant; uma nova pergunta de diagnóstico é uma coluna a mais no papel e um campo a mais na função, revisados, não uma permissão ampla.

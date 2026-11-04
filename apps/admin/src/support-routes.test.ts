@@ -692,6 +692,40 @@ describe("suspension and billing commands", () => {
     expect(await response.json()).toEqual({ error: "unknown_organization" });
   });
 
+  it.each([
+    ["suspend", "case_not_open", 400],
+    ["suspend", "unknown_case", 404],
+    ["reactivate", "case_not_open", 400],
+    ["reactivate", "unknown_case", 404],
+  ] as const)(
+    "answers the code and the status the screen reads when %s is refused with %s",
+    async (action, code, status) => {
+      const { send } = setup({
+        [action]: vi.fn(() =>
+          Promise.reject(new InvalidSupportRequestError(code))
+        ),
+      });
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/${action}`,
+        {}
+      );
+      expect(response.status).toBe(status);
+      expect(await response.json()).toEqual({ error: code });
+    }
+  );
+
+  it("answers 400 to a classification whose internal is not a boolean, and calls nothing", async () => {
+    const { send, support: calls } = setup();
+    const response = await send(
+      "POST",
+      "/api/organizations/org_1/classification",
+      { internal: "true" }
+    );
+    expect(response.status).toBe(400);
+    expect(calls.classify).not.toHaveBeenCalled();
+  });
+
   it("schedules the purge of a case's organization, with the operator from the login", async () => {
     const { send, support: calls } = setup();
     const response = await send("POST", `/api/support-cases/${caseId}/purge`, {
