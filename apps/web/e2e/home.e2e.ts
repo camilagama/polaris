@@ -1502,6 +1502,31 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
   });
 });
 
+test.describe("Vendas hoje sem base de comparação", () => {
+  test("hoje sem venda, com as 4 sextas somando zero ou menos, diz que não há média e não promete comparação", async ({
+    page,
+  }) => {
+    const returned: Scenario = {
+      ...SOLD,
+      days: { "2026-10-02": [5000, 1], "2026-10-09": [-5000, 1] },
+    };
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openHome(page, new FakeServer(returned));
+    const today = region(page, "Vendas hoje");
+    await expect(today).toContainText("Nenhuma venda ainda");
+    await expect(today).toContainText(
+      "vs. média das sextas: sem média para comparar"
+    );
+    await expect(today.locator("[data-kpi-delta]")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Sobre Vendas hoje" }).click();
+    await expect(
+      page.getByText("Vendas líquidas de hoje.", { exact: true })
+    ).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("Compara com a média");
+  });
+});
+
 test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
   /** The results of the days that sold: 30 % of the net sales, known on every day of both months. */
   const KNOWN: Record<string, number> = {

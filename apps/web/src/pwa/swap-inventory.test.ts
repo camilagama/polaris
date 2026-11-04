@@ -69,10 +69,6 @@ const WITHOUT_OWN_HOLD: Readonly<Record<string, Exemption>> = {
     noWork:
       "entrada: o e-mail se digita de novo; o campo digitado segura pela rede do guarda",
   },
-  "subscription/subscription-offer.tsx": {
-    noWork:
-      "a escolha do plano é um toque; o envio é uma escrita, que segura enquanto vai",
-  },
   "ui/dialog.tsx": { noWork: "o primitivo: o diálogo aberto segura sozinho" },
   "ui/filter-bar.tsx": { ignored: "os filtros ficam no endereço" },
 };

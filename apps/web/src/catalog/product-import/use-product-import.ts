@@ -13,6 +13,7 @@ import { waitingOperations } from "../../offline/runtime/sync-status";
 import {
   type LimitHelpView,
   limitHelpFor,
+  planRoom,
 } from "../../subscription/limit-help-model";
 import {
   IMPORT_FILE_PROBLEM_MESSAGES,
@@ -29,7 +30,6 @@ import {
   type ImportPlan,
   type ImportStep,
   planImport,
-  planRoom,
   readImportFile,
   stepAfter,
   tillIsFailing,

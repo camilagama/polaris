@@ -76,6 +76,8 @@ describe("the sentences that send the person to the support (AC-4)", () => {
       .sort();
     expect(mentioning).toEqual([
       "help/help-page.tsx",
+      "offline-poc/notice-lab-pages.tsx",
+      "offline/attention.ts",
       "organization/organization-setup-model.ts",
       "sign-in/entry-ui.tsx",
       "subscription/subscription-commands-model.ts",

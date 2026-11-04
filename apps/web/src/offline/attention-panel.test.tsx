@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { AttentionItem, AttentionSummary } from "./attention";
 import {
   AttentionPanel,
@@ -199,6 +200,25 @@ describe("the attention panel", () => {
     expect(html).toContain('href="/configuracoes?aba=assinatura"');
     expect(html).toContain("Ver Assinatura");
     expect(html).not.toContain("Revisar acesso e plano");
+    expect(html).not.toContain("Descartar");
+  });
+
+  it("shows only Tentar novamente for a plan refusal when Assinatura is unavailable", () => {
+    const html = render({
+      items: [
+        item({
+          actions: ["retry"],
+          cause: "entitlement_changed",
+          code: "entitlement_changed",
+          detail: `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`,
+        }),
+      ],
+      waitingBehind: 0,
+    });
+    expect(html).toContain("Tentar novamente");
+    expect(html).toContain("Regularize o plano com o suporte");
+    expect(html).not.toContain("Ver Assinatura");
+    expect(html).not.toContain("aba=assinatura");
     expect(html).not.toContain("Descartar");
   });
 

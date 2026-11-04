@@ -30,7 +30,7 @@ Preconditions:
 - Provado: `drives/receitas.verify.ts --grep venda-confirmar` (360 claro e 1280 escuro). A venda guardada sem conexão, na loja `pro` com `launch --runtime`: `drives/offline-pro.verify.ts` (ver o Gotcha).
 
 - **Abrir.** `await page.goto("/sales")`. `getByRole("heading", { level: 1, name: "Nova venda" })`; o primeiro item é `getByRole("group", { exact: true, name: "Item 1" })`.
-- **Buscar.** `item.getByLabel("Produto ou variante").fill("Caneca")`. Aparece `item.getByRole("list", { name: "Variantes encontradas" })` com botões "Caneca esmaltada Saldo 20 · custo médio R$ 12,00"; clique com `getByRole("button", { name: /Caneca esmaltada/ })`.
+- **Buscar.** `item.getByLabel("Produto ou variante").fill("Caneca")`. Aparece `item.getByRole("list", { name: "Variantes encontradas" })` com botões "Caneca esmaltada Saldo 20" (a opção não mostra o custo médio); clique com `getByRole("button", { name: /Caneca esmaltada/ })`.
 - **Quantidade e preço.** `item.getByLabel("Quantidade").fill("2")` (há também "Menos uma unidade" e "Mais uma unidade"); `item.getByLabel("Preço cobrado").fill("35,00")`. "Preço de tabela" vem do produto quando ele tem um.
 - **Desconto.** `getByRole("button", { name: "Adicionar ajuste" })`, depois no `group "Ajuste 1"`: combobox "Tipo de ajuste" → opção "Desconto", combobox "Como informar" → "Percentual (%)", e `getByLabel("Percentual (%)")` (receita de `apps/web/e2e-real/pages/venda.ts`, `fillSale`).
 - **Pagamento.** `getByRole("radiogroup", { name: "Método de pagamento" }).getByRole("radio", { name: "Dinheiro" }).check()`; `getByRole("combobox", { exact: true, name: "Perfil de pagamento" }).click()` e `getByRole("option", { exact: true, name: "Sem perfil de pagamento" }).click()`.

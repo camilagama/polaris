@@ -243,6 +243,25 @@ export function openedTab(
   return { rewrite: value !== asked || unknown, value };
 }
 
+export type ListedTab = ScreenTab & { reserved: boolean };
+
+/**
+ * The tabs to list, in the order of the screen: the ones this person has (`available`) and the `reserved` ones, whose
+ * condition the server has not answered yet, held in their place so the tabs beside them do not move when it does.
+ */
+export function listedTabs(
+  screen: TabScreenId,
+  available: readonly string[],
+  reserved: readonly string[] = []
+): ListedTab[] {
+  return SCREEN_TABS[screen].flatMap((tab): ListedTab[] => {
+    if (available.includes(tab.value)) {
+      return [{ ...tab, reserved: false }];
+    }
+    return reserved.includes(tab.value) ? [{ ...tab, reserved: true }] : [];
+  });
+}
+
 /** The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all. */
 export function addressWithTab(
   href: string,

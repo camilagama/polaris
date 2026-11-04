@@ -298,6 +298,51 @@ describe("dayReading (Vendas hoje)", () => {
     expect(reading.help).toBe("Vendas líquidas de dom, 25/10.");
   });
 
+  describe("today with the 4 weekdays netting to zero or below", () => {
+    const returned = {
+      "2026-09-27": ["50.00", 2],
+      "2026-10-04": ["-50.00", 1],
+      "2026-10-11": ["0.00", 0],
+      "2026-10-18": ["-10.00", 1],
+    } satisfies Record<string, [string, number]>;
+    const open = (month: readonly Day[]) =>
+      month.map((day) =>
+        day.date === TODAY ? { ...day, netSales: "0.00", salesCount: 0 } : day
+      );
+
+    it("says there is no mean to compare before the first sale, with no chip and no comparison in the (i)", () => {
+      const { before, month } = build(returned);
+      const reading = dayReading(before, open(month), TODAY, TODAY);
+      expect(reading.count).toBe("Nenhuma venda ainda");
+      expect(reading.delta).toBeNull();
+      expect(reading.note).toBe(
+        "vs. média dos domingos: sem média para comparar"
+      );
+      expect(reading.help).toBe("Vendas líquidas de hoje.");
+      expect(reading.help).not.toContain("Compara com");
+    });
+
+    it("keeps the same note once the first sale of the day comes in", () => {
+      const { before, month } = build(returned);
+      const waiting = dayReading(before, open(month), TODAY, TODAY);
+      const sold = dayReading(before, month, TODAY, TODAY);
+      expect(sold.count).toBe("4 vendas");
+      expect(sold.delta).toBeNull();
+      expect(sold.note).toBe(waiting.note);
+      expect(sold.help).toBe(waiting.help);
+    });
+
+    it("still compares an open day with a base above zero, with no chip", () => {
+      const { before, month } = build();
+      const reading = dayReading(before, open(month), TODAY, TODAY);
+      expect(reading.delta).toBeNull();
+      expect(reading.note).toBe("vs. média dos domingos");
+      expect(reading.help).toBe(
+        "Vendas líquidas de hoje. Compara com a média dos 4 domingos anteriores."
+      );
+    });
+  });
+
   it("says there is no sale yet today, and no sale on another day", () => {
     const { before, month } = build();
     const empty = month.map((day) =>
