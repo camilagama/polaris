@@ -715,7 +715,12 @@ function FigureArea({
     <>
       {attention}
       {blocks.main ? (
-        <KeptHeight keep={keep} measure={measure}>
+        // a new box for the figures: the skeleton is replaced, not moved, when "Precisa de ação" comes above them
+        <KeptHeight
+          keep={keep}
+          key={blocks.pending ? "skeleton" : "figures"}
+          measure={measure}
+        >
           {blocks.main}
         </KeptHeight>
       ) : null}
