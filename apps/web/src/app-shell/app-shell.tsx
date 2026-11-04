@@ -184,7 +184,7 @@ function SheetLegalLinks() {
     "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
   return (
     <ul
-      className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 px-2 pb-1 text-muted-foreground text-xs"
+      className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 px-2 py-1 text-muted-foreground text-xs"
       data-sheet-legal=""
     >
       <li>

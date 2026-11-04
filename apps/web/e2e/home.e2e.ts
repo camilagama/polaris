@@ -8,6 +8,9 @@ import { READ_PROCEDURES } from "../src/lib/read-gate";
 import { pickDate } from "./date-pickers";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+
 /**
  * The Início at `/` with a connection (desenho do Início v2, § 4 and § 5; corte inicio.md AC-1 to AC-23), in the real app
  * against a server played by network interception: the figures (A and B of `report.periodSummary`, with the daily
@@ -3150,9 +3153,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
-    await page
-      .getByRole("button", { exact: true, name: "Loja, conta e ajuda" })
-      .click();
+    await page.getByRole("button", { name: STORE_MENU_NAME }).click();
     await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => server.signOutCalls).toBe(1);
     // the page leaves while this is asked: a question cut by the navigation is asked again
@@ -3222,9 +3223,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       }
       await route.fallback();
     });
-    await page
-      .getByRole("button", { exact: true, name: "Loja, conta e ajuda" })
-      .click();
+    await page.getByRole("button", { name: STORE_MENU_NAME }).click();
     await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => server.signOutCalls).toBe(1);
 

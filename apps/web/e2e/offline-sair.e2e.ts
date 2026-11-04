@@ -8,6 +8,9 @@ import { deviceFamilyLabel } from "../src/server/device-family-label";
 import { activateByKeyboard, expectActiveElementRing } from "./focus-ring";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+
 /**
  * "Sair" revokes this device (ADR 0048; U-50 and U-51), against a server played by network
  * interception that keeps its state across the pages of a test: the devices, the session of each browser, the queue.
@@ -309,9 +312,8 @@ async function openApp(page: Page, server: Server, path = "/customers") {
   });
 }
 
-const STORE_MENU = "Loja, conta e ajuda";
 const storeMenuButton = (page: Page) =>
-  page.getByRole("button", { exact: true, name: STORE_MENU });
+  page.getByRole("button", { name: STORE_MENU_NAME });
 
 /** "Sair": the last item of the menu of the store, in the header, on every width. */
 async function clickSair(page: Page) {

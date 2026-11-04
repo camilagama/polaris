@@ -35,7 +35,10 @@ const THEME_LABEL: Record<Theme, string> = {
   sistema: "Automático",
 };
 
-/** The name of the button: what the menu holds, without "Sair", which is there only with the runtime. */
+/**
+ * The name of the button: what the menu holds (without "Sair", which is there only with the runtime), then the store,
+ * whose name is the visible label of the button from 760 px (WCAG 2.5.3: what is read on it is in its name).
+ */
 const STORE_MENU_LABEL = "Loja, conta e ajuda";
 
 function LegalItem({ href, label }: { href: string; label: string }) {
@@ -97,18 +100,19 @@ export function StoreMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-busy={logout.busy || undefined}
-        aria-describedby={identityId}
-        aria-label={STORE_MENU_LABEL}
+        aria-describedby={organization && email ? identityId : undefined}
+        aria-label={`${STORE_MENU_LABEL}: ${name}`}
         className="touch-hit focus-ring flex h-10 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent p-1 text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover md:max-w-72 md:shrink md:@max-[30rem]/header:shrink-0 md:@max-[30rem]/header:p-0 md:pr-2"
         data-store-menu=""
         ref={trigger}
       >
+        {/* the initials are drawn as a picture of the store (generated content, not text): the name of the store is in
+            the name of the button */}
         <span
           aria-hidden="true"
-          className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground font-semibold text-background text-xs"
-        >
-          {storeInitials(name)}
-        </span>
+          className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground font-semibold text-background text-xs before:content-[attr(data-initials)]"
+          data-initials={storeInitials(name)}
+        />
         <span
           aria-hidden="true"
           className="hidden min-w-0 truncate font-medium text-sidebar-accent-foreground text-sm md:block md:@max-[30rem]/header:hidden"
@@ -119,9 +123,11 @@ export function StoreMenu({
           aria-hidden="true"
           className="hidden size-4 shrink-0 md:block md:@max-[30rem]/header:hidden"
         />
-        <span className="sr-only" id={identityId}>
-          {organization && email ? `${name} · ${email}` : name}
-        </span>
+        {organization && email ? (
+          <span className="sr-only" id={identityId}>
+            {email}
+          </span>
+        ) : null}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"

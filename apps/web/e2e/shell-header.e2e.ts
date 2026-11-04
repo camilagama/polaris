@@ -11,15 +11,18 @@ import {
 } from "./shell-server";
 import { WORKER_MARK } from "./worker-mark";
 
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+
 /**
  * The header of the shell and the frame around the content: one height in every state, nothing inside it that moves
  * or wraps, the menu of the store with the account, Ajuda, the legal pages and "Sair" two taps away, and no sideways
  * scroll on the page, the sidebar or "Mais" at any width, zoom, theme or text size.
  */
 
-const STORE_MENU = "Loja, conta e ajuda";
+/** "Loja, conta e ajuda", then the store, the visible label of the button from 760 px. */
 const storeMenu = (page: Page) =>
-  page.getByRole("button", { exact: true, name: STORE_MENU });
+  page.getByRole("button", { name: STORE_MENU_NAME });
 const header = (page: Page) => page.locator("[data-app-header]");
 const chip = (page: Page) => page.locator(".sync-status");
 const more = (page: Page) =>
@@ -302,7 +305,9 @@ test.describe("AC-1.1, AC-1.4 e AC-2.2: a altura do cabeçalho nos estados da ca
       await expect(page.getByText("Carregando sua loja…")).toBeVisible();
       await read("carregando a loja");
       release();
-      await expect(storeMenu(page)).toContainText("LT");
+      await expect(storeMenu(page)).toHaveAccessibleName(
+        "Loja, conta e ajuda: Loja do teste"
+      );
 
       await page.unrouteAll({ behavior: "ignoreErrors" });
       await serve(page, [
@@ -362,14 +367,16 @@ test.describe("AC-1.1, AC-1.4 e AC-2.2: a altura do cabeçalho nos estados da ca
     await page.setViewportSize({ height: 800, width: 1280 });
     await serve(page);
     await openShell(page);
-    const main = page.locator("main#conteudo");
-    const before = [await main.boundingBox(), await header(page).boundingBox()];
+    // where the page starts and the header ends (the content may still grow below, as it reads)
+    const places = async () => {
+      const main = await page.locator("main#conteudo").boundingBox();
+      const top = await header(page).boundingBox();
+      return { header: top?.height, mainX: main?.x, mainY: main?.y };
+    };
+    const before = await places();
     await storeMenu(page).click();
     await expect(page.getByRole("menu")).toBeVisible();
-    expect([
-      await main.boundingBox(),
-      await header(page).boundingBox(),
-    ]).toEqual(before);
+    expect(await places()).toEqual(before);
   });
 });
 

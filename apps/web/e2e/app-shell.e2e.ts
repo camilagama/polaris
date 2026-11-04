@@ -15,6 +15,9 @@ import {
 } from "./shell-server";
 import { WORKER_MARK } from "./worker-mark";
 
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+
 /**
  * The shell: the sidebar of the desktop, the bottom bar and "Mais" of the phone, the header with the menu of the store
  * (the theme, Ajuda, the legal pages and "Sair"),
@@ -37,7 +40,7 @@ const more = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Mais" });
 const chip = (page: Page) => page.locator(".sync-status");
 const storeMenu = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Loja, conta e ajuda" });
+  page.getByRole("button", { name: STORE_MENU_NAME });
 /** The store and the e-mail at the top of the open menu of the header. */
 const identity = (page: Page) => page.locator("[data-store-identity]");
 
@@ -106,7 +109,14 @@ test.describe("desktop (1280 px)", () => {
     await expect(
       page.getByRole("link", { exact: true, name: "Polaris" })
     ).toBeVisible();
-    await expect(storeMenu(page)).toContainText("LT");
+    // the name of the button starts with what the menu holds and ends with the store, its visible label
+    await expect(storeMenu(page)).toHaveAccessibleName(
+      "Loja, conta e ajuda: Loja do teste"
+    );
+    await expect(storeMenu(page).locator("[data-initials]")).toHaveAttribute(
+      "data-initials",
+      "LT"
+    );
     await expect(storeMenu(page)).toContainText("Loja do teste");
     await expect(page.locator('[data-slot="sidebar"]')).not.toContainText(
       EMAIL

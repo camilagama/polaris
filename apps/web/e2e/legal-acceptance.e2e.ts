@@ -3,6 +3,9 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { WORKER_MARK } from "./worker-mark";
 
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+
 /**
  * O aceite dos Termos de Uso e da Política de Privacidade (ADR 0100; AC-67 a AC-70 e L5): a tela
  * `/aceite`, fora do shell, e a ida até ela no primeiro acesso. O servidor é simulado pelas rotas.
@@ -324,9 +327,7 @@ test("a partir de 760 px, os links das duas páginas legais ficam no menu da loj
     0
   );
   await expect(page.getByRole("contentinfo")).toHaveCount(0);
-  await page
-    .getByRole("button", { exact: true, name: "Loja, conta e ajuda" })
-    .click();
+  await page.getByRole("button", { name: STORE_MENU_NAME }).click();
   const menu = page.getByRole("menu");
   await expectNewTabLink(
     menu.getByRole("menuitem", { name: "Termos de Uso" }),
