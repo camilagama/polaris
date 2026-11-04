@@ -507,10 +507,15 @@ describe("the day of the texts (VITE_LEGAL_VIGENCIA)", () => {
       readText: readRepositoryText,
     });
   it("a produção com a variável e sem a constante reprova", () => {
-    const { errors } = real(
-      { ...company, [EFFECTIVE_FROM_VARIABLE]: "2026-11-04" },
-      true
-    );
+    const { errors } = checkLegalDocuments({
+      company: { ...company, [EFFECTIVE_FROM_VARIABLE]: "2026-11-04" },
+      documents: {
+        privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: null },
+        terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: null },
+      },
+      production: true,
+      readText: readRepositoryText,
+    });
     const text = errors.join("\n");
     expect(text).toContain(
       `variável ${EFFECTIVE_FROM_VARIABLE} não vale na produção`
@@ -523,7 +528,28 @@ describe("the day of the texts (VITE_LEGAL_VIGENCIA)", () => {
     );
   });
 
-  it("a produção com o dia na constante passa, e a variável não o muda", () => {
+  it("a produção com a variável e o dia só num dos textos reprova", () => {
+    const { errors } = checkLegalDocuments({
+      company: { ...company, [EFFECTIVE_FROM_VARIABLE]: "2026-11-04" },
+      documents: {
+        privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: "2026-11-01" },
+        terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: null },
+      },
+      draftNotice: null,
+      production: true,
+      readText: readRepositoryText,
+    });
+    const text = errors.join("\n");
+    expect(text).toContain(
+      `variável ${EFFECTIVE_FROM_VARIABLE} não vale na produção`
+    );
+    expect(text).toContain(
+      "terms: [preencher na publicação] (data de vigência)"
+    );
+    expect(text).not.toContain("privacy: [preencher");
+  });
+
+  it("a produção com o dia nos dois textos passa mesmo com a variável preenchida", () => {
     const documents = {
       privacy: { ...LEGAL_DOCUMENTS.privacy, effectiveFrom: "2026-11-01" },
       terms: { ...LEGAL_DOCUMENTS.terms, effectiveFrom: "2026-11-01" },

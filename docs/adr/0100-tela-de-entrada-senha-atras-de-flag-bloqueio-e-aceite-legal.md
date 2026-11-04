@@ -151,7 +151,7 @@ As migrations só acrescentam (expand/contract, [ADR 0096](0096-migrations-compa
   - marcador `[preencher` ou `[confirmar` (sem diferenciar maiúsculas, com ou sem espaço depois do colchete) no molde, no texto, na linha da versão (data de vigência) ou no valor de uma variável;
   - ficha `{{…}}` que sobra no texto final ou aparece no valor de uma variável;
   - e-mail inválido em `VITE_LEGAL_CONTATO_EMAIL` ou `VITE_LEGAL_DPO_EMAIL`;
-  - `VITE_LEGAL_VIGENCIA` que não seja um dia `AAAA-MM-DD` (ausente já cai no marcador da data de vigência); na produção, a variável nunca vale, e com ela e sem o dia na constante o build reprova;
+  - `VITE_LEGAL_VIGENCIA` preenchida enquanto a constante não tem o dia nos dois textos (a variável não vale na produção; ausente cai no marcador da data de vigência). Valor que não seja um dia `AAAA-MM-DD` só é apontado fora da produção;
   - caractere invisível (de controle, de formato, privado, não atribuído ou separador que não seja o espaço comum) ou de Markdown (`*`, `[`, `]`, `<`, `>`, `|`, crase) no valor de uma variável;
   - o aviso de rascunho ainda existente.
 

@@ -22,7 +22,7 @@ export interface PendingLegalDocument {
 
 /**
  * "Versão 1. Em vigor desde: 19/10/2026." The day the server sent wins; while it sends none the
- * build's day (`VITE_LEGAL_VIGENCIA`) stands in, and only without both the marker of the draft shows.
+ * build's day (`VITE_LEGAL_VIGENCIA`, which only a build outside production accepts) stands in, and only without both the marker of the draft shows.
  */
 export function acceptanceVersionLine(
   item: PendingLegalDocument,

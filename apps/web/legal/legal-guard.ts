@@ -32,8 +32,9 @@ import { parseMarkdown } from "../src/legal/markdown";
  * de publicar...]` marker left in the text, in the version line or in a value, no `{{` token left in
  * the final text, a value for each variable (an e-mail where it must be one), and no draft notice.
  * Staging may carry the markers, and the page shows them; where a variable is absent it shows an example.
- * The day the texts came into force is the constant's, or `VITE_LEGAL_VIGENCIA` while the constant has none;
- * with neither, the version line keeps its marker (a warning in staging, an error in production).
+ * The day the texts came into force is the constant's, or, outside production only, `VITE_LEGAL_VIGENCIA`
+ * while the constant has none; with neither, the version line keeps its marker (a warning in staging, an
+ * error in production, which never reads the variable).
  */
 export interface LegalGuardInput {
   /** The `VITE_LEGAL_*` variables of the build, which fill the tokens of the templates. */
@@ -54,7 +55,7 @@ export interface LegalGuardResult {
   warnings: string[];
 }
 
-/** The public variable with the day (YYYY-MM-DD) the texts came into force, while the constant has none. */
+/** The public variable with the day (YYYY-MM-DD) the texts came into force, while the constant has none; staging only. */
 export const EFFECTIVE_FROM_VARIABLE = "VITE_LEGAL_VIGENCIA";
 
 const calendarDate = /^\d{4}-\d{2}-\d{2}$/;
