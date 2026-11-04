@@ -286,7 +286,7 @@ function AppSidebar({
       </SidebarContent>
       <SidebarFooter>
         {/* 12 px around and between, as in the design: the footer itself has 8 */}
-        <div className="grid gap-3 p-1">
+        <div className="grid gap-3 p-1 group-data-[collapsible=icon]:p-0">
           <MenuProgress chargeDay={chargeDay} firstSteps={firstSteps} />
           {isMobile ? <SheetLegalLinks /> : null}
         </div>

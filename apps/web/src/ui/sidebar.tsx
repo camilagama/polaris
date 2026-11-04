@@ -451,7 +451,10 @@ function SidebarHeader({ className, ...props }: ComponentProps<"div">) {
 function SidebarFooter({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      className={cx("flex flex-col gap-2 p-2", className)}
+      className={cx(
+        "flex flex-col gap-2 p-2 touch:group-data-[collapsible=icon]:px-0",
+        className
+      )}
       data-sidebar="footer"
       data-slot="sidebar-footer"
       {...props}
