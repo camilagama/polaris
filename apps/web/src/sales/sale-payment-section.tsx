@@ -41,14 +41,15 @@ import {
   type CatalogView,
   type ChoiceOption,
   formFieldKeys,
-  MAX_SALE_ADJUSTMENTS,
   joinSaleDate,
+  MAX_SALE_ADJUSTMENTS,
   NO_PROFILE_CHOICE,
   OFFLINE_SALE_DATE_NOTE,
   SALE_DATE_HINT,
   SALE_METHOD_CARDS,
   type SaleFormState,
   saleExtrasSummary,
+  saleTimeIsWellFormed,
   splitSaleDate,
   timeOfDay,
 } from "./sale-form-model";
@@ -242,6 +243,8 @@ function Adjustments({
 /* Date                                                                       */
 /* -------------------------------------------------------------------------- */
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
 interface SaleDateProps {
   error: string | undefined;
   /** Without a connection the sale is dated when it is kept: no field, the note in its place. */
@@ -274,6 +277,8 @@ function SaleDate({ error, offline, onChange, value }: SaleDateProps) {
     onChange("");
     document.getElementById("sale-occurred-day")?.focus();
   }, [onChange]);
+  const timeAtFault =
+    error !== undefined && ISO_DAY.test(day) && !saleTimeIsWellFormed(time);
   if (offline) {
     return (
       <Field>
@@ -291,7 +296,7 @@ function SaleDate({ error, offline, onChange, value }: SaleDateProps) {
       </legend>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
         <DateField
-          error={error}
+          error={timeAtFault ? undefined : error}
           id="sale-occurred-day"
           label="Dia"
           max={todayOr(undefined)}
@@ -300,6 +305,7 @@ function SaleDate({ error, offline, onChange, value }: SaleDateProps) {
         />
         <TextField
           className="w-28"
+          error={timeAtFault ? error : undefined}
           id="sale-occurred-time"
           inputMode="numeric"
           label="Hora"

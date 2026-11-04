@@ -199,11 +199,15 @@ describe("Data e ajustes numa linha fechada", () => {
     );
   });
 
-  function renderPayment(state: SaleFormState, offline: boolean): string {
+  function renderPayment(
+    state: SaleFormState,
+    offline: boolean,
+    errors: Record<string, string> = {}
+  ): string {
     return renderToStaticMarkup(
       <PaymentSection
         disabled={false}
-        errors={{}}
+        errors={errors}
         form={state}
         offline={offline}
         onAcknowledgeReview={noop}
@@ -236,6 +240,35 @@ describe("Data e ajustes numa linha fechada", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("Adicionar ajuste");
     expect(html).not.toContain("datetime-local");
+  });
+
+  it("a hora digitada sem ':' vale, e o erro de hora fica no campo Hora, não no Dia", () => {
+    const typed = {
+      ...form,
+      occurredAtLocal: joinSaleDate("2026-11-02", "930"),
+    };
+    expect(saleExtrasSummary(typed, false)).toBe(
+      "02/11/2026 09:30 · Sem ajuste"
+    );
+    const message = "Informe uma data e hora válidas.";
+    const invalidIds = (html: string) =>
+      [...html.matchAll(/<(?:input|button)[^>]*>/g)]
+        .map((tag) => tag[0])
+        .filter((tag) => tag.includes('aria-invalid="true"'))
+        .map((tag) => /\sid="([^"]+)"/.exec(tag)?.[1]);
+    const badTime = renderPayment(
+      { ...form, occurredAtLocal: joinSaleDate("2026-11-02", "9") },
+      false,
+      { occurredAt: message }
+    );
+    expect(invalidIds(badTime)).toEqual(["sale-occurred-time"]);
+    expect(badTime).toContain(message);
+    const future = renderPayment(
+      { ...form, occurredAtLocal: joinSaleDate("2026-11-02", "23:59") },
+      false,
+      { occurredAt: "A data e hora da venda não podem estar no futuro." }
+    );
+    expect(invalidIds(future)).toEqual(["sale-occurred-day"]);
   });
 
   it("com Sem perfil já escolhido numa loja sem perfil, sem o parágrafo do vazio", () => {

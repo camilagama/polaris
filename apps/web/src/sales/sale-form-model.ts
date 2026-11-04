@@ -1039,7 +1039,10 @@ export function saleExtrasSummary(
   const dateText =
     offline || form.occurredAtLocal === ""
       ? "Agora"
-      : [year && month && date ? `${date}/${month}/${year}` : day, time]
+      : [
+          year && month && date ? `${date}/${month}/${year}` : day,
+          saleTimeText(time),
+        ]
           .filter((part) => part !== "")
           .join(" ");
   const count = form.adjustments.length;
@@ -1050,8 +1053,26 @@ export function saleExtrasSummary(
   return `${dateText} · ${adjustmentsText}`;
 }
 
-const localDateTimePattern =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+/* The hour may come without the leading zero or the ":" ("9:30", "930", "14h30"): the numeric keypad of the iPhone has
+   no ":" key, so the hours and minutes typed as digits are read as such. */
+const SALE_TIME_SOURCE = String.raw`(\d{1,2})[:h.]?(\d{2})`;
+const localDateTimePattern = new RegExp(
+  String.raw`^(\d{4})-(\d{2})-(\d{2})T${SALE_TIME_SOURCE}(?::(\d{2}))?$`
+);
+const saleTimePattern = new RegExp(`^${SALE_TIME_SOURCE}$`);
+
+/** The typed time as "HH:MM" when it has that shape ("930" is "09:30"); otherwise as typed. */
+function saleTimeText(time: string): string {
+  const match = saleTimePattern.exec(time.trim());
+  return match
+    ? `${(match[1] ?? "").padStart(2, "0")}:${match[2] ?? ""}`
+    : time;
+}
+
+/** Whether the typed time has the shape of an hour and minutes (whether they exist is checked with the date). */
+export function saleTimeIsWellFormed(time: string): boolean {
+  return saleTimePattern.test(time.trim());
+}
 
 type LocalDateTimeParse =
   | { kind: "empty" }
@@ -1059,7 +1080,7 @@ type LocalDateTimeParse =
   | { date: Date; kind: "ok" };
 
 /**
- * Reads a `datetime-local` value as a moment in the device time zone. A date
+ * Reads the joined day and time (`AAAA-MM-DDTHH:MM`) as a moment in the device time zone. A date
  * that does not exist (`31/02`) is invalid rather than rolled over.
  */
 export function parseLocalDateTime(text: string): LocalDateTimeParse {
