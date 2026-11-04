@@ -110,7 +110,6 @@ function sparkHeight(still: boolean): number {
   return still ? 52 : 64;
 }
 
-/** The chip of a reading, or nothing (the support line of the card stays, empty). */
 function chip(reading: KpiReading) {
   return reading.delta ? { chip: <DeltaChip delta={reading.delta} /> } : {};
 }

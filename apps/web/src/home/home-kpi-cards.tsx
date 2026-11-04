@@ -327,7 +327,6 @@ export const NO_CONNECTION_NOTE = "Sem conexão";
 /** The place of a sparkline, empty: a card without figures keeps the height it has with them. */
 const EMPTY_SPARK = <span aria-hidden="true" />;
 
-/** The place of a link under the support line ("Ver o resultado"), empty. */
 const EMPTY_ACTION = <span aria-hidden="true" className="block h-4" />;
 
 /**

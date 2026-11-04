@@ -299,7 +299,6 @@ function pageBlocks({
   chart: { days: ChartDays; onDays: (days: ChartDays) => void };
   /** The copy, when every try of the figures failed with a connection (null when there is none). */
   failed: OfflineHome | null;
-  /** What this tab knows of the store before the figures are read: whether it has the checklist. */
   firstSteps: FirstStepsMemory;
   now: Date;
   offline: OfflineHome | null;
@@ -694,10 +693,7 @@ function LowerBlocks({
   );
 }
 
-/**
- * The blocks of figures in their order: "Precisa de ação", the cards, the line of the stock and the blocks under them.
- * While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`).
- */
+/** While the cards are a skeleton of a shape not known yet, nothing comes after them (`Blocks.pending`). */
 function FigureArea({
   attention,
   attentionNotes,
