@@ -101,9 +101,9 @@ async function addShirtToSale(page: Page) {
     .waitFor();
   const item = page.getByRole("group", { exact: true, name: "Item 1" });
   await item.getByLabel("Produto ou variante").fill("cam");
-  await item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: SHIRT_OPTION })
+  await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: SHIRT_OPTION })
     .click();
 }
 
@@ -159,6 +159,7 @@ test("uma venda com item segura a troca: a aba oculta não troca e a venda conti
     page
       .getByRole("group", { exact: true, name: "Item 1" })
       .getByText("Camiseta do teste")
+      .first()
   ).toBeVisible();
 });
 
@@ -183,7 +184,7 @@ test("a venda fora da tela não segura a troca: a aba oculta troca, e Vender abr
     .filter({ visible: true })
     .click();
   const item = page.getByRole("group", { exact: true, name: "Item 1" });
-  await expect(item.getByText("Camiseta do teste")).toBeVisible();
+  await expect(item.getByText("Camiseta do teste").first()).toBeVisible();
   // the variant is chosen (the search left the line) and the screen says the sale came back
   await expect(item.getByLabel("Produto ou variante")).toHaveCount(0);
   await expect(

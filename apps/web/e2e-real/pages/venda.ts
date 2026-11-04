@@ -53,15 +53,19 @@ export async function fillSale(
       name: `Item ${index + 1}`,
     });
     await item.getByLabel("Produto ou variante").fill(line.search);
-    await item
-      .getByRole("list", { name: "Variantes encontradas" })
-      .getByRole("button", { name: line.option })
+    await page
+      .getByRole("listbox", { name: "Variantes encontradas" })
+      .getByRole("option", { name: line.option })
       .click();
     await item.getByLabel("Quantidade").fill(String(line.quantity));
     if (line.listed !== undefined) {
       await item.getByLabel("Preço de tabela").fill(line.listed);
     }
     await item.getByLabel("Preço cobrado").fill(line.charged);
+  }
+  if (discountPercents.length > 0) {
+    // date and adjustments stay closed in one line until "Alterar"
+    await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
   }
   for (const [index, percent] of discountPercents.entries()) {
     // biome-ignore lint/performance/noAwaitInLoops: one adjustment after the other

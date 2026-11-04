@@ -33,7 +33,6 @@ function renderItem(quantity: number, canAdjustStock: boolean): string {
       item={item}
       localSearch={undefined}
       onChange={noop}
-      onClearVariant={noop}
       onPick={noop}
       onRemove={noop}
       organizationId="org"
@@ -118,8 +117,8 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
     expect(html.indexOf("Sem estoque")).toBeLessThan(
       html.indexOf("Dar entrada no estoque")
     );
-    expect(html.indexOf("Dar entrada no estoque")).toBeLessThan(
-      html.indexOf("Trocar variante")
+    expect(html.indexOf("Trocar")).toBeLessThan(
+      html.indexOf("Dar entrada no estoque")
     );
   });
 
@@ -134,7 +133,7 @@ describe("o caminho do saldo 0 até a entrada de estoque", () => {
 
   it("com saldo, nenhum dos dois aparece", () => {
     const html = renderItem(3, true);
-    expect(html).toContain("Saldo atual: 3 unidades.");
+    expect(html).toContain(">Saldo 3</span>");
     expect(html).not.toContain("/inventory");
   });
 

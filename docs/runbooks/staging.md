@@ -254,6 +254,7 @@ Os segredos vêm **antes** do deploy que liga a cobrança: sem `ASAAS_WEBHOOK_TO
 - Variáveis do Environment, que não são segredo: `CLOUDFLARE_ACCOUNT_ID`, `STAGING_DATABASE_HOST` (o host do projeto `polaris-staging`), `STAGING_WEB_URL` e `STAGING_CATALOG_URL`. O endereço do Admin (`STAGING_ADMIN_URL`, `https://admin.araute.app`) fica escrito no passo do smoke, porque o host é o do Custom Domain ligado à mão (seção 3c), que o config do Admin não declara.
 - O Custom Domain do Admin é ligado à mão (seção 3c), como o do web e o do catálogo: o token não precisa de permissão de zona.
 - A restrição de branch do Environment **não** protege num `workflow_run`: o controle é o `if` do job do workflow.
+- Environment `staging-backup`, só do backup diário (login `polaris_backup_reader`, bucket `polaris-backup-staging`, token R2 só nele, chave age pública no repositório): o passo a passo, os nomes dos segredos e das variáveis e quem faz cada um estão no [runbook do backup](./backup.md#ligar-no-staging-responsável). Ele é restrito à `main`, e ali a restrição protege, porque o gatilho é `schedule` ou `workflow_dispatch`, não `workflow_run`. O login de backup é a única exceção de `staging:verify-database` à regra de que todo login é membro de um grupo `*_runtime`, e só com os atributos exatos daquele runbook.
 
 ## 7. Ligar o deploy automático (responsável)
 

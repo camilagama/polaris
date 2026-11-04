@@ -10,8 +10,8 @@ import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
   acknowledgeProfileReview,
   addAdjustment,
-  adjustmentFieldKey,
   addItem,
+  adjustmentFieldKey,
   attemptAfterFailure,
   autoSelectOnlyVariants,
   cancelDiscard,
@@ -41,6 +41,7 @@ import {
   mapSaleSubmitError,
   NO_PROFILE_CHOICE,
   parseLocalDateTime,
+  saleTimeIsWellFormed,
   parseMoneyText,
   parsePercentageText,
   prepareConfirmation,
@@ -1738,6 +1739,22 @@ describe("sale date and time", () => {
       expect(parsed.date.getMinutes()).toBe(30);
     }
     expect(parseLocalDateTime("2026-04-20T09:30:15").kind).toBe("ok");
+  });
+
+  it("reads the time as the numeric keypad types it (no ':' on the iPhone keypad)", () => {
+    for (const time of ["9:30", "930", "0930", "09h30", "09.30"]) {
+      const parsed = parseLocalDateTime(`2026-04-20T${time}`);
+      expect(parsed.kind, time).toBe("ok");
+      if (parsed.kind === "ok") {
+        expect(parsed.date.getHours(), time).toBe(9);
+        expect(parsed.date.getMinutes(), time).toBe(30);
+      }
+    }
+    expect(saleTimeIsWellFormed("1430")).toBe(true);
+    for (const time of ["", "14", "14:3", "1430:", "14:30:"]) {
+      expect(saleTimeIsWellFormed(time), time).toBe(false);
+    }
+    expect(parseLocalDateTime("2026-04-20T2560").kind).toBe("invalid");
   });
 
   it("treats empty as now and rejects anything unparsable", () => {

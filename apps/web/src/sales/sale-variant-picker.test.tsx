@@ -1,12 +1,10 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { VariantOptionList } from "./sale-variant-picker";
+import { VariantOptionText } from "./sale-variant-picker";
 import { pickerOptions } from "./sale-variant-picker-model";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
-
-const NOOP = () => undefined;
 
 function entry(
   n: number,
@@ -33,15 +31,15 @@ function entry(
 }
 
 const render = (entries: readonly InventoryBalanceEntryReadModel[]) =>
-  renderToStaticMarkup(
-    <VariantOptionList
-      id="sale-line-0-results"
-      onPick={NOOP}
-      options={pickerOptions(entries)}
-    />
-  );
+  pickerOptions(entries)
+    .map((option) =>
+      renderToStaticMarkup(
+        <VariantOptionText key={option.id} option={option} />
+      )
+    )
+    .join("");
 
-describe("VariantOptionList", () => {
+describe("VariantOptionText", () => {
   it.each([
     ["with a known cost", entry(1)],
     ["with the cost unknown", entry(2, { movingAverageCost: null })],
