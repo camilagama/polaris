@@ -4,6 +4,8 @@ export interface RlsExemptTable {
 }
 
 export interface RlsExemptSchema {
+  /** The schema holds functions only: the gate fails on any table, view, sequence or other relation in it. */
+  functionsOnly?: true;
   reason: string;
   schema: string;
 }
@@ -26,5 +28,11 @@ export const RLS_EXEMPT_SCHEMAS: readonly RlsExemptSchema[] = [
     reason:
       "drizzle-kit's migration journal (drizzle.__drizzle_migrations: hash and timestamp per migration); no store data, and no runtime role has USAGE on the schema",
     schema: "drizzle",
+  },
+  {
+    functionsOnly: true,
+    reason:
+      "pgcrypto for the password hash (migration 0111, ADR 0100 amended): its functions only, no relation; only the authentication runtime has USAGE on the schema",
+    schema: "polaris_password",
   },
 ];

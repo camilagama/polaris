@@ -95,11 +95,11 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 
 | Subetapa | Status | Evidência / dependência |
 | --- | --- | --- |
-| Política de senha | Concluída | 15–128 pontos de código Unicode após NFC; espaços e Unicode aceitos; sem composição arbitrária ou expiração; HIBP fail-closed antes de armazenar/alterar senha.
+| Política de senha | Concluída (regra trocada em 4/11/2026) | 8–128 pontos de código Unicode após NFC, com número, maiúscula e minúscula (especial só dica); espaços e Unicode aceitos; sem expiração. Regra única em `@polaris/domain/auth/password-rules`, no servidor e na tela (campo com medidor e lista de requisitos). Hash: HMAC-SHA-256 com `AUTH_PASSWORD_PEPPER` no Worker e bcrypt custo 11 no PostgreSQL (migration 0111, gate `password-hash`), formato `pgbf1$`; o scrypt em JS estourava a CPU do Workers Free. ADR 0100, emenda de 4/11/2026. Falta: criar o pepper no staging e medir (20 entradas, 5 cadastros, 3 redefinições, 0 `exceededCpu`). |
 | Hash e verify NFC | Concluído | Scrypt mantém os parâmetros e formato salt:key de Better Auth, normalizando NFC; teste confirma que caracteres fullwidth não colapsam para ASCII. |
 | Verificação e reset por email | Implementados com mock; envio real adiado | Better Auth exige email verificado antes da sessão de senha; verificação expira em 24h e reset em 1h. Resend é o provider escolhido, mas API key e domínio verificado ainda não estão configurados.
 | Signup/login/reset | Concluídos com testes mock | Login antes de verificar é recusado; reset usa resposta anti-enumeração e revoga todas as sessões. As flags do Worker seguem desligadas até widget, secrets, bindings e Resend estarem configurados.
-| HIBP | Concluído e testado | SHA-1 calculado no Worker, consulta range com prefixo de 5 caracteres e Add-Padding, comparação local do sufixo; falha externa bloqueia signup/reset/alteração. Senha e hash completo não saem do Worker. Lista complementar de senhas comuns/contextuais fica adiada para decisão pré-go-live conforme NIST. |
+| HIBP | Removido em 4/11/2026 (decisão do usuário) | A consulta ao Pwned Passwords saiu com o erro `password_hibp_unavailable` e o `password_compromised`; risco aceito na emenda de 4/11/2026 do ADR 0100. |
 
 ### PR16 — checkpoint para revisão
 
@@ -116,7 +116,7 @@ A branch Neon descartável pr13-better-auth-gate expira em 2026-10-08 às 09:29 
 | --- | --- | --- |
 | Configuração Better Auth | Concluída | Linking explícito permitido; linking implícito desligado; `trustedProviders` vazio; emails diferentes não permitidos; perfil local não é sobrescrito. |
 | Google → conta de senha | Concluída com provider mock | Sessão local verificada exige OAuth redirect; claim Google precisa ter email verificado igual; tentativa de mover um Google subject já ligado a outra conta é rejeitada. |
-| Google → senha | Concluída via API server-only | Worker valida sessão e email verificado, aplica NFC/HIBP antes de `auth.api.setPassword`, e o login por senha retorna o mesmo user ID. |
+| Google → senha | Concluída via API server-only | Worker valida sessão e email verificado, aplica NFC e a regra da senha antes de `auth.api.setPassword`, e o login por senha retorna o mesmo user ID. |
 | Account takeover e auditoria | Concluídas com testes mock | Testados email local/provider não verificado, email diferente, sessão ausente, `idToken` do cliente, linking implícito e subject já vinculado. Callback registra evento de segurança com actor ID interno; `id_token` não persiste e access token não fica em claro. |
 | Testes, check e build | Concluídos localmente | 10 testes novos; `bun run check` passou com 47 testes totais; `bun run build` passou. Nenhum OAuth Google real foi executado. |
 | Revisão independente | Concluída | Nenhum blocker confirmado no diff de implementação. |

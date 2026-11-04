@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
+import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
 import { mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
 import { useChallengeRetry } from "./challenge-retry";
@@ -522,14 +522,13 @@ export function EmailInput({
 /**
  * A password field with "Mostrar" / "Ocultar" (AC-72): a short button whose name says what it will do ("Mostrar
  * senha", "Ocultar senha"); pasting is never blocked. `visible` is owned by the form, which hides the password
- * again on every submit. The rule, when there is one, is said before typing.
+ * again on every submit. A new password has its own field, with the rules (`new-password-field.tsx`).
  */
 export function PasswordInput({
   autoComplete,
   describedById,
   error,
   fieldRef,
-  hint,
   id,
   label,
   name,
@@ -538,7 +537,6 @@ export function PasswordInput({
   value,
   visible,
 }: FieldProps & {
-  hint?: string;
   onToggle: () => void;
   visible: boolean;
 }) {
@@ -549,13 +547,9 @@ export function PasswordInput({
   return (
     <Field data-invalid={error !== null || undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      {hint ? (
-        <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
-      ) : null}
       <InputGroup>
         <InputGroupInput
           aria-describedby={describedBy(
-            hint !== undefined && `${id}-hint`,
             error !== null && `${id}-error`,
             describedById
           )}
@@ -730,6 +724,7 @@ export function SubmitButton({
   children,
   className,
   disabled = false,
+  heldBy,
   offBy,
   pending,
   pendingText,
@@ -744,6 +739,11 @@ export function SubmitButton({
   disabled?: boolean;
   /** The id of the alert that says why the button is off for now (a pause): same `aria-disabled` as a blocked challenge. */
   offBy?: string | undefined;
+  /**
+   * The id of what is still missing in the form (the rules of a new password): off for the pointer, like `offBy`,
+   * but Enter (in a field or on the button) still reaches the submit handler, which refuses and flags the field.
+   */
+  heldBy?: string | undefined;
   pending: boolean;
   pendingText: string;
   /** "outline" where the action is not the point of the screen ("Reenviar e-mail"). */
@@ -755,10 +755,11 @@ export function SubmitButton({
     <Button
       aria-busy={pending || undefined}
       aria-describedby={
-        [blocked ? alertId : undefined, offBy].filter(Boolean).join(" ") ||
-        undefined
+        [blocked ? alertId : undefined, offBy, heldBy]
+          .filter(Boolean)
+          .join(" ") || undefined
       }
-      aria-disabled={off || undefined}
+      aria-disabled={off || heldBy !== undefined || undefined}
       className={cn("w-full", className)}
       disabled={disabled || pending}
       onClick={off ? (event) => event.preventDefault() : undefined}

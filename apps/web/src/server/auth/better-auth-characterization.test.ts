@@ -8,6 +8,7 @@ import { createBetterAuth } from "../auth";
 import type { AccessLogEntry } from "./access-log";
 import { requestIp, requestIpForSessionRow } from "./access-log";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
+import { createTestPasswordHasher } from "./password-hash-test-support";
 
 /**
  * What the Polaris relies on from inside Better Auth, written on 1.6.23 before the upgrade to 1.7 and kept as is
@@ -72,6 +73,7 @@ function createHarness(options: HarnessOptions = {}) {
       }),
     baseURL,
     databaseAdapter: memoryAdapter(database),
+    passwordHasher: createTestPasswordHasher(),
     emailDelivery: {
       sendPasswordReset: () => Promise.resolve(),
       sendVerificationEmail: ({ url }) => {
@@ -436,9 +438,6 @@ describe("Better Auth as the Polaris uses it (characterization, t435)", () => {
 
   describe("fixed baseURL", () => {
     it("keeps the base URL of the configuration whatever Host and X-Forwarded-Host say", async () => {
-      vi.stubGlobal("fetch", () =>
-        Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`))
-      );
       const harness = createHarness();
 
       const signUp = await harness.post(

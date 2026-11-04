@@ -33,6 +33,8 @@ const expectedDatabase =
 
 const baseURL = "http://localhost";
 const secret = randomBytes(32).toString("hex");
+// the hash of the password runs in the database (migration 0111), over the HMAC with this pepper
+const passwordPepper = randomBytes(32).toString("base64");
 const RECORD = "public.record_auth_access(text,text,inet,text)";
 const PASSWORD = "Long passphrase for the access log gate 2026!";
 const SESSION_COOKIE = /better-auth\.session_token=/;
@@ -45,13 +47,6 @@ interface LockClient {
 interface Captured {
   fields: Record<string, unknown>;
   text: string;
-}
-
-function urlOf(input: RequestInfo | URL): string {
-  if (typeof input === "string") {
-    return input;
-  }
-  return input instanceof Request ? input.url : input.href;
 }
 
 function captureLogs() {
@@ -113,7 +108,6 @@ async function run() {
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
   const userIds: string[] = [];
-  const realFetch = globalThis.fetch;
   let revoked = false;
   let lockClient: LockClient | undefined;
   let primaryFailure = false;
@@ -148,15 +142,6 @@ async function run() {
     logins.push([role, "polaris_auth_runtime"]);
     const authUrl = temporaryRuntimeUrl(adminUrl, role, password);
 
-    // the HIBP range lookup of the password policy is the only outbound call: answered locally
-    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = urlOf(input);
-      if (url.startsWith("https://api.pwnedpasswords.com/range/")) {
-        return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
-      }
-      return realFetch(input, init);
-    }) as typeof fetch;
-
     const verificationEmails: { token: string; url: string }[] = [];
     const emailDelivery: AuthEmailDelivery = {
       sendPasswordReset: () => Promise.resolve(),
@@ -172,6 +157,7 @@ async function run() {
         baseURL,
         database: database.db,
         emailDelivery,
+        passwordPepper,
         plugins: [testUtils() as unknown as BetterAuthPlugin],
         requestId,
         secret,
@@ -543,7 +529,6 @@ async function run() {
     throw error;
   } finally {
     logs.restore();
-    globalThis.fetch = realFetch;
     if (lockClient) {
       await lockClient.query("ROLLBACK").catch(() => undefined);
       lockClient.release();

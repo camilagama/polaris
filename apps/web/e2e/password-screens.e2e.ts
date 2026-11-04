@@ -14,7 +14,7 @@ const SHOTS = process.env.T163_SHOTS;
 const TURNSTILE_SCRIPT =
   "https://challenges.cloudflare.com/turnstile/v0/api.js**";
 const SITE_KEY = "1x00000000000000000000AA";
-const PASSWORD = "uma frase longa de teste";
+const PASSWORD = "Uma frase longa de teste 2026";
 const TECHNICAL =
   /\b(40[0-9]|429|50[0-9])\b|auth_|password_|_required|rate_limited|INVALID|turnstile/i;
 const TOKEN_IN_URL = /token/;
@@ -129,8 +129,8 @@ async function serve(page: Page, server: Server) {
         google: true,
         turnstileSiteKey: server.emailPassword ? SITE_KEY : null,
       }),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
     })
   );
   await page.route("**/api/auth/get-session", (route) =>
@@ -151,8 +151,8 @@ async function serve(page: Page, server: Server) {
     const answer = server.answers[path] ?? ok;
     await route.fulfill({
       body: JSON.stringify(answer.body),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status: answer.status,
     });
   };
@@ -274,6 +274,65 @@ const newPasswordField = (page: Page) =>
 const BLOCKED_DESCRIPTION = /Recarregue a página/;
 const callsTo = (server: Server, path: string) =>
   server.calls.filter((call) => call.path === path);
+
+/**
+ * The field of a new password (sign-up, reset, change): the meter and the list are always drawn, so typing
+ * moves nothing below the field; at 360 and 1280 px the button keeps its place from empty to a strong password.
+ */
+async function expectNewPasswordField(
+  page: Page,
+  field: ReturnType<Page["getByLabel"]>,
+  button: ReturnType<Page["getByRole"]>
+) {
+  const rules = page.getByRole("list", { name: "Requisitos da senha" });
+  const listId = (await rules.getAttribute("id")) ?? "no list";
+  expect((await field.getAttribute("aria-describedby"))?.split(" ")).toContain(
+    listId
+  );
+  const strength = page.getByText("Digite uma senha", { exact: true });
+  await expect(strength).toHaveAttribute("aria-live", "polite");
+  await expect(button).toHaveAttribute("aria-disabled", "true");
+  const toggle = page.getByRole("button", { name: "Mostrar senha" }).last();
+  await toggle.click();
+  await expect(field).toHaveAttribute("type", "text");
+  await expect(
+    page.getByRole("button", { name: "Ocultar senha" }).last()
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Ocultar senha" }).last().click();
+  await expect(field).toHaveAttribute("type", "password");
+  for (const width of [360, 1280]) {
+    // biome-ignore lint/performance/noAwaitInLoops: one width after the other on the same page
+    await page.setViewportSize({ height: width === 360 ? 740 : 800, width });
+    await field.fill("");
+    const empty = await button.boundingBox();
+    const steps: [string, string, string][] = [
+      ["a", "Senha fraca", "Pelo menos 1 letra minúscula, atendido"],
+      ["Abcdefg1", "Senha média", "Pelo menos 8 caracteres, atendido"],
+      [
+        "Abcdef!1",
+        "Senha forte",
+        "Um caractere especial (recomendado), atendido",
+      ],
+    ];
+    for (const [value, level, item] of steps) {
+      // biome-ignore lint/performance/noAwaitInLoops: each value after the other on the same field
+      await field.fill(value);
+      await expect(page.getByText(level, { exact: true })).toBeVisible();
+      await expect(
+        rules.getByRole("listitem").filter({ hasText: item })
+      ).toHaveCount(1);
+      expect(await button.boundingBox(), `${value} at ${width} px`).toEqual(
+        empty
+      );
+    }
+    await expect(button).not.toHaveAttribute("aria-disabled", "true");
+  }
+  await field.fill("abc");
+  await expect(button).toHaveAttribute("aria-disabled", "true");
+  await field.press("Enter");
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(field).toBeFocused();
+}
 
 test.describe("com a senha desligada (AC-46)", () => {
   test("a entrada mostra só o Google e as páginas de senha levam a /entrar", async ({
@@ -617,9 +676,7 @@ test.describe("desafio bloqueado (P2)", () => {
       // biome-ignore lint/performance/noAwaitInLoops: one page after the other in the same tab
       await page.goto(path);
       await page.getByLabel("E-mail", { exact: true }).fill("quem@exemplo.com");
-      if (path === "/entrar") {
-        await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
-      }
+      await page.getByLabel("Senha", { exact: true }).fill(PASSWORD);
       const submit = page.getByRole("button", { exact: true, name: button });
       const alert = page.getByRole("alert");
       await expect(alert).toContainText("Recarregue a página");
@@ -695,29 +752,38 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
     page.getByRole("button", { name: "Continuar com o Google" })
   ).toBeEnabled();
   await shot(page, "criar-conta-pronta");
-  // the rule, the box and the button open with the password, after the e-mail
+  // the rules, the box and the button open with the password, after the e-mail
   await expect(page.getByRole("checkbox")).toBeHidden();
   await page.getByLabel("E-mail", { exact: true }).fill("nova@exemplo.com");
-  await expect(
-    page.getByText(
-      "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve."
-    )
-  ).toBeVisible();
+  const rules = page.getByRole("list", { name: "Requisitos da senha" });
+  await expect(rules).toBeVisible();
+  await expect(rules.getByRole("listitem")).toHaveText([
+    "Pelo menos 8 caracteres, não atendido",
+    "Pelo menos 1 número, não atendido",
+    "Pelo menos 1 letra maiúscula, não atendido",
+    "Pelo menos 1 letra minúscula, não atendido",
+    "Um caractere especial (recomendado), não atendido",
+  ]);
   const accept = page.getByRole("checkbox");
   await expect(accept).not.toBeChecked();
   await expect(page.getByRole("link", { name: TERMS }).first()).toHaveAttribute(
     "rel",
     NOOPENER
   );
-  await page.getByLabel("Senha", { exact: true }).fill("curta");
-  const create = page.getByRole("button", { exact: true, name: "Criar conta" });
-  await expect(create).toBeEnabled();
-  await create.click();
   const password = page.getByLabel("Senha", { exact: true });
+  await password.fill("curta");
+  const create = page.getByRole("button", { exact: true, name: "Criar conta" });
+  // off while a rule is missing, naming the list as the reason
+  await expect(create).toHaveAttribute("aria-disabled", "true");
+  await expect(create).toHaveAttribute(
+    "aria-describedby",
+    (await rules.getAttribute("id")) ?? "no list"
+  );
+  await password.press("Enter");
   await expect(password).toHaveAttribute("aria-invalid", "true");
   await expect(password).toBeFocused();
-  await expect(page.getByText("Use pelo menos 15 caracteres.")).toBeVisible();
   await password.fill(PASSWORD);
+  await expect(create).not.toHaveAttribute("aria-disabled", "true");
   await create.click();
   await expect(accept).toBeFocused();
   await expect(
@@ -726,16 +792,15 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   await shot(page, "criar-conta-erros");
   expect(callsTo(server, "/api/auth/sign-up/email")).toEqual([]);
 
+  // a refusal of the server for a rule (an older page, another client) is said under the field
   server.answers["/api/auth/sign-up/email"] = {
-    body: { code: "password_compromised" },
+    body: { code: "password_missing_number" },
     status: 400,
   };
   await accept.check();
   await create.click();
-  await expect(
-    page.getByText("Essa senha já apareceu em vazamentos. Escolha outra.")
-  ).toBeVisible();
-  await shot(page, "criar-conta-senha-vazada");
+  await expect(page.getByText("Inclua pelo menos 1 número.")).toBeVisible();
+  await shot(page, "criar-conta-senha-recusada");
 
   server.answers["/api/auth/sign-up/email"] = ok;
   await create.click();
@@ -762,6 +827,37 @@ test("criar conta: regra antes de digitar, erros junto do campo, aceite obrigat�
   expect(wordLines).toBe(1);
   await shot(page, "criar-conta-confirme");
   await expectNoTechnicalText(page);
+});
+
+test("nova senha: o campo com a força e os requisitos, sem mover nada ao digitar (AC-47)", async ({
+  page,
+}) => {
+  const server = newServer();
+  await serve(page, server);
+  await page.goto("/redefinir-senha#token=tok-de-teste.123");
+  await expect(newPasswordField(page)).toBeVisible();
+  await expectNewPasswordField(
+    page,
+    newPasswordField(page),
+    page.getByRole("button", { name: "Trocar senha" })
+  );
+  await shot(page, "nova-senha-requisitos");
+  expect(callsTo(server, "/api/auth/reset-password")).toEqual([]);
+});
+
+test("criar conta: o campo com a força e os requisitos, sem mover nada ao digitar (AC-47)", async ({
+  page,
+}) => {
+  const server = newServer();
+  await serve(page, server);
+  await page.goto("/criar-conta");
+  await page.getByLabel("E-mail", { exact: true }).fill("nova@exemplo.com");
+  await expectNewPasswordField(
+    page,
+    page.getByLabel("Senha", { exact: true }),
+    page.getByRole("button", { exact: true, name: "Criar conta" })
+  );
+  expect(callsTo(server, "/api/auth/sign-up/email")).toEqual([]);
 });
 
 test("esqueci a senha: a resposta igual exista ou não a conta (AC-49, AC-51)", async ({
@@ -1021,8 +1117,8 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
     await page.route("**/api/auth/get-session", (route) =>
       route.fulfill({
         body: JSON.stringify({ session: { id: "s" }, user: { id: "u" } }),
-        headers: { ...WORKER_MARK },
         contentType: "application/json",
+        headers: { ...WORKER_MARK },
       })
     );
     await page.route("**/rpc/**", (route) => {
@@ -1033,14 +1129,29 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
             json: { organizations: [ORGANIZATION] },
             meta: [],
           }),
-          headers: { ...WORKER_MARK },
           contentType: "application/json",
+          headers: { ...WORKER_MARK },
         });
       }
       return route.abort("internetdisconnected");
     });
     await page.goto("/conta/seguranca");
   }
+
+  test("o campo da nova senha com a força e os requisitos, sem mover nada ao digitar (AC-47)", async ({
+    page,
+  }) => {
+    const server = newServer();
+    await openAccount(page, server);
+    await page.getByLabel("Senha atual").fill("a senha antiga dele");
+    await expectNewPasswordField(
+      page,
+      newPasswordField(page),
+      page.getByRole("button", { exact: true, name: "Trocar senha" })
+    );
+    await shot(page, "trocar-senha-requisitos");
+    expect(callsTo(server, "/api/auth/change-password")).toEqual([]);
+  });
 
   test("diz o que acontece com os outros aparelhos e troca a senha", async ({
     page,

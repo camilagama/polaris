@@ -17,11 +17,12 @@ import {
   EntryNotice,
   EntryScreen,
   EntrySuccess,
-  PasswordInput,
   SubmitButton,
   useReveal,
 } from "./entry-ui";
+import { heldByRequirements, NewPasswordField } from "./new-password-field";
 import {
+  isRequirementProblem,
   newPasswordProblem,
   postAuth,
   resetOutcome,
@@ -34,7 +35,6 @@ import {
   GO_TO_SIGN_IN,
   NEW_PASSWORD_LABEL,
   newPasswordText,
-  PASSWORD_RULE,
   RESET_BUTTON,
   RESET_BUTTON_PENDING,
   RESET_DONE,
@@ -59,6 +59,7 @@ function ResetPasswordForm({
   const [password, setPassword] = useState("");
   const [visible, toggleVisible, hide] = useReveal();
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordFlagged, setPasswordFlagged] = useState(false);
   const [alert, setAlert] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [phase, setPhase] = useState<ResetPhase>("form");
@@ -73,7 +74,11 @@ function ResetPasswordForm({
       hide();
       setAlert(null);
       const problem = newPasswordProblem(password);
-      setPasswordError(problem ? newPasswordText(problem) : null);
+      const ruleMissing = problem !== null && isRequirementProblem(problem);
+      setPasswordFlagged(ruleMissing);
+      setPasswordError(
+        problem && !ruleMissing ? newPasswordText(problem) : null
+      );
       if (problem) {
         passwordRef.current?.focus();
         return;
@@ -128,11 +133,10 @@ function ResetPasswordForm({
     <EntryScreen title={RESET_TITLE}>
       {alert ? <EntryAlert>{alert}</EntryAlert> : null}
       <form className="flex flex-col gap-4" noValidate onSubmit={submit}>
-        <PasswordInput
-          autoComplete="new-password"
+        <NewPasswordField
           error={passwordError}
           fieldRef={passwordRef}
-          hint={PASSWORD_RULE}
+          flagged={passwordFlagged}
           id={`${formId}-password`}
           label={NEW_PASSWORD_LABEL}
           name="new-password"
@@ -152,6 +156,7 @@ function ResetPasswordForm({
           alertId={challengeAlertId(formId)}
           challenge={challenge}
           disabled={challenge.state === "loading"}
+          heldBy={heldByRequirements(`${formId}-password`, password)}
           pending={pending}
           pendingText={RESET_BUTTON_PENDING}
         >

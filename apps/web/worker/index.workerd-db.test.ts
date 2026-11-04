@@ -573,6 +573,7 @@ describe("the e-mail and password flows of the web worker", () => {
   const AUTH_BINDINGS = {
     AUTH_ABUSE_PROTECTION_ENABLED: "true",
     AUTH_EMAIL_FROM: "Polaris <no-reply@web.test>",
+    AUTH_PASSWORD_PEPPER: "harness-password-pepper-of-32-characters-or-more",
     EMAIL_PASSWORD_AUTH_ENABLED: "true",
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: "harness-google-secret",
@@ -624,7 +625,7 @@ describe("the e-mail and password flows of the web worker", () => {
 
   /**
    * The network of the Worker, answered here: Resend (the e-mails are kept, the links are read from them), the Turnstile
-   * check, the HIBP range of the password policy and the token endpoint of Google. Any other call is kept in `strangers`
+   * check and the token endpoint of Google. Any other call is kept in `strangers`
    * and answered 502, and a test ends by asserting there is none.
    */
   function fakeNetwork(googleClaims?: Record<string, unknown>) {
@@ -638,9 +639,6 @@ describe("the e-mail and password flows of the web worker", () => {
           input instanceof Request ? input.url : String(input)
         );
         const body = await bodyOf(input, init);
-        if (url.href.startsWith("https://api.pwnedpasswords.com/range/")) {
-          return new Response(`${"0".repeat(35)}:0\r\n`);
-        }
         if (url.href === "https://api.resend.com/emails") {
           emails.push(JSON.parse(body) as SentEmail);
           return Response.json({ id: crypto.randomUUID() });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createServerApp } from "../app";
 import { protectAuthRequest } from "../auth/abuse-protection";
 import type { WorkerBindings } from "../environment";
+import { testPasswordPepper } from "../auth/password-hash-test-support";
 import { authMethods } from "./auth-methods";
 
 const bindings = (extra: Partial<WorkerBindings> = {}) =>
@@ -24,9 +25,12 @@ const { AUTH_EMAIL_RATE_LIMITER: _emailLimiter, ...withoutEmailLimiter } =
 const { AUTH_RATE_LIMITER: _ipLimiter, ...withoutIpLimiter } = protection;
 const passwordSetup = {
   AUTH_EMAIL_FROM: "Polaris <no-reply@polaris.example>",
+  AUTH_PASSWORD_PEPPER: testPasswordPepper,
   EMAIL_PASSWORD_AUTH_ENABLED: "true",
   RESEND_API_KEY: "re_test",
 };
+const { AUTH_PASSWORD_PEPPER: _pepper, ...passwordSetupWithoutPepper } =
+  passwordSetup;
 const password = { ...passwordSetup, ...protection };
 
 describe("authMethods", () => {
@@ -53,6 +57,20 @@ describe("authMethods", () => {
       true,
       true,
       "1x00000000000000000000AA",
+    ],
+    [
+      "the password flag is on without the password pepper",
+      { ...google, ...passwordSetupWithoutPepper, ...protection },
+      true,
+      false,
+      null,
+    ],
+    [
+      "the password flag is on with a pepper shorter than 32 characters",
+      { ...google, ...password, AUTH_PASSWORD_PEPPER: "p".repeat(31) },
+      true,
+      false,
+      null,
     ],
     [
       "the password flag is on without the e-mail sender",
@@ -209,6 +227,12 @@ describe("authMethods and protectAuthRequest share one list of what is ready", (
       expect(authMethods(bindings(extra)).emailPassword).toBe(ready);
     }
   );
+
+  it("adds the password pepper: without it the form is not offered although the abuse protection has no 503", async () => {
+    const extra = { ...passwordSetupWithoutPepper, ...protection };
+    expect(await signUpGetsConfigurationError(extra)).toBe(false);
+    expect(authMethods(bindings(extra)).emailPassword).toBe(false);
+  });
 
   it("adds only the public site key: without it the form is not offered although the server has no 503", async () => {
     const extra = { ...passwordSetup, ...protection, TURNSTILE_SITE_KEY: " " };

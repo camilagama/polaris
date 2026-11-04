@@ -26,6 +26,8 @@ export interface CatalogPolicy {
 export interface CatalogSnapshot {
   policies: CatalogPolicy[];
   relations: CatalogRelation[];
+  /** Every relation of a user schema besides public, as `schema.name`; absent where a test has none to plant. */
+  schemaRelations?: string[];
   schemas: string[];
 }
 
@@ -49,6 +51,13 @@ export const SCHEMAS_SQL = `SELECT nspname AS name
  WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname !~ '^pg_'
  ORDER BY nspname`;
 
+// every relation (of any kind) outside public, so a schema of functions only is seen to stay that way
+export const SCHEMA_RELATIONS_SQL = `SELECT n.nspname || '.' || c.relname AS name
+  FROM pg_catalog.pg_class AS c
+  JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+ WHERE n.nspname <> 'public' AND n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+ ORDER BY 1`;
+
 // every policy of public with its roles, so the verdict (not the query) decides what `{public}` means; the cast makes
 // the driver return a text array (it does not parse the `name[]` of pg_policies.roles)
 export const POLICIES_SQL = `SELECT tablename AS table_name,
@@ -68,6 +77,9 @@ export async function readCatalog(client: Client): Promise<CatalogSnapshot> {
     security_invoker: boolean;
   }>(RELATIONS_SQL);
   const schemas = await client.query<{ name: string }>(SCHEMAS_SQL);
+  const schemaRelations = await client.query<{ name: string }>(
+    SCHEMA_RELATIONS_SQL
+  );
   const policies = await client.query<{
     permissive: boolean;
     policy_name: string;
@@ -88,6 +100,7 @@ export async function readCatalog(client: Client): Promise<CatalogSnapshot> {
       rowSecurity: row.row_security,
       securityInvoker: row.security_invoker,
     })),
+    schemaRelations: schemaRelations.rows.map((row) => row.name),
     schemas: schemas.rows.map((row) => row.name),
   };
 }
@@ -190,6 +203,23 @@ function schemaViolations(
   return found;
 }
 
+function functionsOnlyViolations(
+  relations: string[],
+  exemptSchemas: readonly RlsExemptSchema[]
+): string[] {
+  const functionsOnly = new Set(
+    exemptSchemas
+      .filter((entry) => entry.functionsOnly)
+      .map((entry) => entry.schema)
+  );
+  return relations
+    .filter((relation) => functionsOnly.has(relation.split(".")[0] ?? ""))
+    .map(
+      (relation) =>
+        `${relation} is a relation in a schema of functions only, which this gate does not read for row security: move it to public, or extend the restore runbook (docs/runbooks/deletion-ledger-restore.md, step 5) and this gate to cover the schema`
+    );
+}
+
 // a policy with no TO clause is stored as {public} too; a permissive one for PUBLIC applies to every role with a privilege on
 // the table, while a restrictive one only narrows what the permissive ones allow
 function publicPolicyViolations(policies: CatalogPolicy[]): string[] {
@@ -213,6 +243,7 @@ export function catalogViolations(
       snapshot.relations.filter((relation) => !isTable(relation))
     ),
     ...schemaViolations(snapshot.schemas, exemptSchemas),
+    ...functionsOnlyViolations(snapshot.schemaRelations ?? [], exemptSchemas),
     ...publicPolicyViolations(snapshot.policies),
   ];
 }

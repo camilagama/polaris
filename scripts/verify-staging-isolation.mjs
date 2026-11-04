@@ -684,6 +684,33 @@ function checkNoProofSwitches(app, config, built, problems) {
   }
 }
 
+// Values that exist only as Worker secrets, one per environment (`wrangler secret put <NAME> --env <env>`, runbook
+// staging.md): a var with the name would put the value in the repository and in the built wrangler.json, and the
+// var would shadow nothing, because a secret and a var of one name cannot both exist. The pepper of the password
+// hash (ADR 0100, amended) is the first; without it the password is off and the routes log
+// `auth_password_pepper_missing`, which no file can prove, so this check only keeps it out of the files.
+const SECRET_ONLY = ["AUTH_PASSWORD_PEPPER"];
+
+function checkSecretsNotVars(app, config, built, problems) {
+  const blocks = [
+    ["top level", config],
+    ...Object.entries(config.env ?? {}).map(([name, block]) => [
+      `env.${name}`,
+      block,
+    ]),
+    ["built wrangler.json", built ?? undefined],
+  ];
+  for (const [where, block] of blocks) {
+    for (const name of SECRET_ONLY) {
+      if (block?.vars && Object.hasOwn(block.vars, name)) {
+        problems.push(
+          `${app}: ${where}: vars.${name} must not exist: it is a Worker secret of each environment (wrangler secret put ${name})`
+        );
+      }
+    }
+  }
+}
+
 /**
  * `entries`: one `{ app, config, built }` per Worker, `config` the parsed wrangler.jsonc and `built`
  * the parsed wrangler.json of the staging build (or undefined when not checked). Returns the problems.
@@ -701,6 +728,7 @@ export function findIsolationProblems(entries) {
       }
     }
     checkNoProofSwitches(app, config, built, problems);
+    checkSecretsNotVars(app, config, built, problems);
     const staging = config.env?.staging;
     const production = config.env?.production;
     if (!(staging && production)) {

@@ -7,6 +7,7 @@ const TECHNICAL =
   /\b(40[0-9]|429|50[0-9])\b|auth_|password_|_required|_failed|rate_limited|UNAUTHORIZED|INVALID|token|turnstile|HIBP|\bHTTP\b|erro=/i;
 const TOUCH_OR_PAUSED = /toque|Pausamos/;
 const RELOAD = /recarregue/i;
+const BREACH_OR_PHRASE = /vaz|frase com espaços|15 caracteres/i;
 const ACCOUNT_LOCKED = /conta (foi )?bloqueada|bloqueamos/i;
 
 const everyText = (): string[] => [
@@ -19,22 +20,24 @@ const everyText = (): string[] => [
   texts.changePausedText(15),
   texts.confirmSentText(null),
   texts.confirmSentText("quem@exemplo.com"),
-  ...(
-    [
-      "blocked",
-      "challenge",
-      "hibp_unavailable",
-      "limit",
-      "unavailable",
-    ] as const
-  ).flatMap((failure) =>
-    (["email", "other", "reset", "sign-in", "sign-up"] as const).map((form) =>
-      texts.failureText(failure, form)
-    )
+  ...(["blocked", "challenge", "limit", "unavailable"] as const).flatMap(
+    (failure) =>
+      (["email", "other", "reset", "sign-in", "sign-up"] as const).map((form) =>
+        texts.failureText(failure, form)
+      )
   ),
   ...(
-    ["compromised", "invalid_characters", "too_long", "too_short"] as const
+    [
+      "invalid_characters",
+      "missing_lowercase",
+      "missing_number",
+      "missing_uppercase",
+      "too_long",
+      "too_short",
+    ] as const
   ).map(texts.newPasswordText),
+  ...Object.values(texts.PASSWORD_REQUIREMENT_TEXTS),
+  ...Object.values(texts.PASSWORD_STRENGTH_TEXTS),
 ];
 
 describe("the password screen texts", () => {
@@ -93,11 +96,31 @@ describe("the password screen texts", () => {
     expect(texts.HIDE_PASSWORD_LABEL).toBe("Ocultar senha");
   });
 
-  it("say the size rule before typing, with the numbers the server applies (AC-47)", () => {
-    expect(texts.PASSWORD_RULE).toBe(
-      "No mínimo 15 caracteres. Vale frase com espaços. Senha que já vazou não serve."
+  it("list the rules the server applies, the special character as a hint, and the four levels of the meter (AC-47)", () => {
+    expect(texts.PASSWORD_REQUIREMENT_TEXTS).toEqual({
+      length: "Pelo menos 8 caracteres",
+      lowercase: "Pelo menos 1 letra minúscula",
+      number: "Pelo menos 1 número",
+      uppercase: "Pelo menos 1 letra maiúscula",
+    });
+    expect(texts.PASSWORD_SPECIAL_HINT).toBe(
+      "Um caractere especial (recomendado)"
     );
+    expect(texts.PASSWORD_STRENGTH_TEXTS).toEqual({
+      0: "Digite uma senha",
+      1: "Senha fraca",
+      2: "Senha fraca",
+      3: "Senha média",
+      4: "Senha forte",
+    });
+    expect(texts.PASSWORD_TOO_SHORT).toBe("Use pelo menos 8 caracteres.");
     expect(texts.PASSWORD_TOO_LONG).toContain("128");
+  });
+
+  it("no longer speak of a breach nor of a phrase with spaces", () => {
+    for (const text of everyText()) {
+      expect(text).not.toMatch(BREACH_OR_PHRASE);
+    }
   });
 
   it("show the address only when it is in memory, and 'o seu e-mail' otherwise", () => {

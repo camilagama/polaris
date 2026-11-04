@@ -14,7 +14,7 @@
 @source "../ui";
 @source "../ui-gallery";
 /* The entry (v5.2): every page of the password family, and "Trocar senha" inside the app. */
-@source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page}.tsx";
+@source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page,new-password-field}.tsx";
 /* The stock screen (v5.1): the page, the panel, its fields and the row buttons; the logic files have no class. */
 @source "../inventory/{inventory-page,stock-action-strip,stock-command-panel,stock-filters,stock-panel-fields,stock-row-actions}.tsx";
 /* The products screen (v5.1, third migrated screen): its own files, with the images panel. */

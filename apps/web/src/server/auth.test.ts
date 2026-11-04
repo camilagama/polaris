@@ -9,9 +9,21 @@ import type { AuthEmailDelivery, AuthSecurityAuditEvent } from "./auth";
 import { createBetterAuth, databaseVerificationLinkRecorder } from "./auth";
 import type { AccessLogWriter } from "./auth/access-log";
 import { createResendAuthEmailDelivery } from "./auth/email";
-import { handleBetterAuthRequest } from "./auth/handler";
+import {
+  handleBetterAuthRequest,
+  isEmailPasswordAuthEnabled,
+} from "./auth/handler";
 import { googleTestProfile } from "./auth/google-profile-test-support";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./auth/legal-acceptance-test-support";
+import {
+  createTestPasswordHasher,
+  createTestPasswordHashStore,
+  testPasswordPepper,
+} from "./auth/password-hash-test-support";
+import {
+  createPasswordHasher,
+  type PasswordHasher,
+} from "./auth/password-hash";
 import {
   hostileRedirectTargets,
   validReturnCallbackURL,
@@ -25,8 +37,6 @@ const testBaseURL = "http://localhost";
 const SET_COOKIE_SPLIT_REGEX = /,(?=\s*[^;,=\s]+=)/;
 const EXPIRED_COOKIE_REGEX = /;\s*max-age=0/i;
 const SESSION_COOKIE_REGEX = /(?:__Secure-)?better-auth\.session_token=/;
-const HIBP_RANGE_PATH_PATTERN =
-  /^https:\/\/api\.pwnedpasswords\.com\/range\/[A-F0-9]{5}$/;
 const testBindings = {
   BETTER_AUTH_BASE_URL: testBaseURL,
   BETTER_AUTH_SECRET: testSecret,
@@ -83,6 +93,7 @@ function createGoogleTestApp(
     baseURL: testBaseURL,
     databaseAdapter,
     googleProvider: testGoogleProvider,
+    passwordHasher: createTestPasswordHasher(),
     ...(legalAcceptanceRecorder ? { legalAcceptanceRecorder } : {}),
     plugins: [testUtils() as unknown as BetterAuthPlugin],
     requestId: "pr14-oauth-test-request",
@@ -101,6 +112,7 @@ function createEmailPasswordTestApp(
   options: {
     failEpochBump?: boolean;
     legalAcceptanceRecorder?: LegalAcceptanceRecorder;
+    passwordHasher?: PasswordHasher;
     verificationLinkRecorder?: (userId: string) => Promise<void>;
   } = {}
 ) {
@@ -146,6 +158,7 @@ function createEmailPasswordTestApp(
     baseURL: testBaseURL,
     databaseAdapter,
     emailDelivery: emailDeliveryOverride ?? emailDelivery,
+    passwordHasher: options.passwordHasher ?? createTestPasswordHasher(),
     ...(options.legalAcceptanceRecorder
       ? { legalAcceptanceRecorder: options.legalAcceptanceRecorder }
       : {}),
@@ -168,39 +181,6 @@ function createEmailPasswordTestApp(
     epochBumps,
     passwordResetEmails,
     verificationEmails,
-  };
-}
-
-function stubPwnedPasswordRange() {
-  let calls = 0;
-  let requestURL = "";
-  let addPadding = "";
-
-  vi.stubGlobal(
-    "fetch",
-    (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      if (typeof input === "string") {
-        requestURL = input;
-      } else if (input instanceof Request) {
-        requestURL = input.url;
-      } else {
-        requestURL = input.href;
-      }
-
-      if (!requestURL.startsWith("https://api.pwnedpasswords.com/range/")) {
-        throw new Error("Unexpected outbound request during auth test.");
-      }
-
-      addPadding = new Headers(init?.headers).get("Add-Padding") ?? "";
-      calls += 1;
-      return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
-    }
-  );
-
-  return {
-    addPadding: () => addPadding,
-    calls: () => calls,
-    requestURL: () => requestURL,
   };
 }
 
@@ -388,8 +368,7 @@ describe("Email/password authentication", () => {
 
   it("requires verified email before password login and normalizes Unicode", async () => {
     const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
-    const hibp = stubPwnedPasswordRange();
-    const password = "frase longa com acento e\u0301 para uma senha segura 42";
+    const password = "Frase longa com acento e\u0301 para uma senha segura 42";
     const normalizedPassword = password.normalize("NFC");
     const email = "password-user@example.invalid";
     const signUp = await testApp.request(
@@ -416,9 +395,6 @@ describe("Email/password authentication", () => {
     );
     expect(verificationEmails).toHaveLength(1);
     expect(verificationEmails[0]?.email).toBe(email);
-    expect(hibp.calls()).toBe(1);
-    expect(hibp.addPadding()).toBe("true");
-    expect(hibp.requestURL()).toMatch(HIBP_RANGE_PATH_PATTERN);
 
     const unverifiedLogin = await testApp.request(
       "/api/auth/sign-in/email",
@@ -459,7 +435,6 @@ describe("Email/password authentication", () => {
     );
     expect(login.status).toBe(200);
     expect(cookieHeader(login.headers)).toMatch(SESSION_COOKIE_REGEX);
-    expect(hibp.calls()).toBe(1);
   });
 
   it("uses generic reset responses and revokes all sessions after password reset", async () => {
@@ -469,7 +444,6 @@ describe("Email/password authentication", () => {
       passwordResetEmails,
       verificationEmails,
     } = createEmailPasswordTestApp();
-    const hibp = stubPwnedPasswordRange();
     const email = "reset-user@example.invalid";
     const oldPassword = "Old long password for Polaris 2026!";
     const signUp = await testApp.request(
@@ -577,7 +551,6 @@ describe("Email/password authentication", () => {
       testBindings
     );
     expect(reset.status).toBe(200);
-    expect(hibp.calls()).toBe(2);
     // A password reset invalidates every offline lease of the user.
     expect(epochBumps).toHaveLength(1);
     expect(epochBumps[0]).toBeTruthy();
@@ -627,9 +600,8 @@ describe("Email/password authentication", () => {
 
   it("uses NFC rather than compatibility normalization for password hashes", async () => {
     const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
-    stubPwnedPasswordRange();
-    const fullWidthPassword = `${"Ａ".repeat(15)}!`;
-    const asciiPassword = `${"A".repeat(15)}!`;
+    const fullWidthPassword = `${"Ａ".repeat(6)}a1!`;
+    const asciiPassword = `${"A".repeat(6)}a1!`;
     const email = "unicode-password@example.invalid";
     const signUp = await testApp.request(
       "/api/auth/sign-up/email",
@@ -688,7 +660,6 @@ describe("Email/password authentication", () => {
   });
   it("normalizes the existing password before an authenticated password change", async () => {
     const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
-    const hibp = stubPwnedPasswordRange();
     const email = "change-password@example.invalid";
     const currentPassword = "A passphrase with e\u0301 for Polaris 2026!";
     const newPassword = "A newly chosen passphrase for Polaris 2026!";
@@ -747,7 +718,6 @@ describe("Email/password authentication", () => {
       testBindings
     );
     expect(change.status).toBe(200);
-    expect(hibp.calls()).toBe(2);
 
     const newPasswordLogin = await testApp.request(
       "/api/auth/sign-in/email",
@@ -770,7 +740,6 @@ describe("Email/password authentication", () => {
       passwordResetEmails,
       verificationEmails,
     } = createEmailPasswordTestApp(undefined, { failEpochBump: true });
-    stubPwnedPasswordRange();
     const email = "reset-bump-failure@example.invalid";
     const oldPassword = "Old long password for Polaris 2026!";
     const post = (path: string, body: unknown, cookie?: string) =>
@@ -823,14 +792,13 @@ describe("Email/password authentication", () => {
     );
     expect(await priorSession.json()).toBeNull();
   });
-  it("does not query HIBP for an invalid reset token or unauthenticated password change", async () => {
+  it("refuses an invalid reset token before validating the new password, and an unauthenticated password change", async () => {
     const { app: testApp } = createEmailPasswordTestApp();
-    const hibp = stubPwnedPasswordRange();
     const invalidReset = await testApp.request(
       "/api/auth/reset-password",
       {
         body: JSON.stringify({
-          newPassword: "A long password to test invalid reset token!",
+          newPassword: "x",
           token: "invalid-reset-token",
         }),
         headers: {
@@ -857,9 +825,9 @@ describe("Email/password authentication", () => {
       testBindings
     );
 
-    expect(invalidReset.status).not.toBe(200);
-    expect(unauthenticatedChange.status).not.toBe(200);
-    expect(hibp.calls()).toBe(0);
+    expect(invalidReset.status).toBe(400);
+    expect(await invalidReset.json()).toMatchObject({ code: "INVALID_TOKEN" });
+    expect(unauthenticatedChange.status).toBe(401);
   });
   it("keeps verification and reset responses generic when Resend rejects delivery", async () => {
     const resendFetch = vi.fn<typeof fetch>((input) => {
@@ -870,10 +838,6 @@ describe("Email/password authentication", () => {
         ({ url } = input);
       } else {
         ({ href: url } = input);
-      }
-
-      if (url.startsWith("https://api.pwnedpasswords.com/range/")) {
-        return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
       }
 
       if (url === "https://api.resend.com/emails") {
@@ -900,7 +864,7 @@ describe("Email/password authentication", () => {
     });
     const { app: testApp } = createEmailPasswordTestApp(emailDelivery);
     const email = "resend-outage@example.invalid";
-    const password = "A unique long password for resend tests!";
+    const password = "A unique long password for resend tests 2026!";
     const signUp = await testApp.request(
       "/api/auth/sign-up/email",
       {
@@ -981,51 +945,143 @@ describe("Email/password authentication", () => {
       "provider detail must not be exposed"
     );
   });
-  it("fails closed when HIBP is unavailable before account creation", async () => {
+
+  it("answers a hash in the old scrypt format as a wrong password, never as a match", async () => {
     const {
       app: testApp,
-      verificationEmails,
       auth,
+      verificationEmails,
     } = createEmailPasswordTestApp();
-    const password = "A very long test passphrase 2026!";
-    const loggerSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    vi.stubGlobal("fetch", () => Promise.reject(new Error(password)));
-
-    const response = await testApp.request(
+    const email = "old-hash@example.invalid";
+    const signIn = (password: string) =>
+      testApp.request(
+        "/api/auth/sign-in/email",
+        {
+          body: JSON.stringify({ email, password }),
+          headers: { "content-type": "application/json", origin: testBaseURL },
+          method: "POST",
+        },
+        testBindings
+      );
+    const signUp = await testApp.request(
       "/api/auth/sign-up/email",
       {
         body: JSON.stringify({
-          email: "hibp-down@example.invalid",
+          email,
           legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
-          name: "HIBP Down",
-          password,
+          name: "Old Hash",
+          password: "Uma senha com formato novo 2026",
         }),
-        headers: {
-          "content-type": "application/json",
-          origin: testBaseURL,
-        },
+        headers: { "content-type": "application/json", origin: testBaseURL },
         method: "POST",
       },
       testBindings
     );
-    const authContext = (await auth.$context) as unknown as {
-      internalAdapter: {
-        findUserByEmail: (email: string) => Promise<unknown>;
-      };
-    };
+    expect(signUp.status).toBe(200);
+    expect(verificationEmails).toHaveLength(1);
+    const context = await auth.$context;
+    const found = await context.internalAdapter.findUserByEmail(email);
+    expect(found).not.toBeNull();
+    const userId = found?.user.id as string;
+    await context.internalAdapter.updateUser(userId, { emailVerified: true });
+    expect((await signIn("Uma senha com formato novo 2026")).status).toBe(200);
 
-    expect(response.status).toBe(503);
-    expect(
-      await authContext.internalAdapter.findUserByEmail(
-        "hibp-down@example.invalid"
-      )
-    ).toBeNull();
-    expect(verificationEmails).toHaveLength(0);
-    expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(password);
+    await context.internalAdapter.updatePassword(
+      userId,
+      `${"ab".repeat(16)}:${"cd".repeat(64)}`
+    );
+    const response = await signIn("Uma senha com formato novo 2026");
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      code: "INVALID_EMAIL_OR_PASSWORD",
+    });
+    expect(response.headers.get("set-cookie") ?? "").not.toMatch(
+      SESSION_COOKIE_REGEX
+    );
+  });
+
+  it("writes no password and no HMAC key to the log in sign-up, sign-in and a failed sign-in", async () => {
+    const store = createTestPasswordHashStore();
+    const { app: testApp, auth } = createEmailPasswordTestApp(undefined, {
+      passwordHasher: createPasswordHasher({
+        pepper: testPasswordPepper,
+        store,
+      }),
+    });
+    const lines: unknown[][] = [];
+    for (const method of ["debug", "error", "info", "log", "warn"] as const) {
+      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        lines.push(args);
+      });
+    }
+    const email = "no-log@example.invalid";
+    const password = "Uma senha que nunca vai ao log 2026";
+    const wrong = "Outra senha errada que nunca vai ao log 2026";
+    const post = (path: string, body: unknown) =>
+      testApp.request(
+        path,
+        {
+          body: JSON.stringify(body),
+          headers: { "content-type": "application/json", origin: testBaseURL },
+          method: "POST",
+        },
+        testBindings
+      );
+
+    const signUp = await post("/api/auth/sign-up/email", {
+      email,
+      legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
+      name: "No Log",
+      password,
+    });
+    expect(signUp.status).toBe(200);
+    const context = await auth.$context;
+    const found = await context.internalAdapter.findUserByEmail(email);
+    await context.internalAdapter.updateUser(found?.user.id as string, {
+      emailVerified: true,
+    });
+    const signIn = await post("/api/auth/sign-in/email", { email, password });
+    const failed = await post("/api/auth/sign-in/email", {
+      email,
+      password: wrong,
+    });
+
+    expect(signIn.status).toBe(200);
+    expect(failed.status).toBe(401);
+    expect(store.keys.length).toBeGreaterThanOrEqual(3);
+    const logged = JSON.stringify(lines);
+    for (const secret of [password, wrong, ...store.keys]) {
+      expect(logged).not.toContain(secret);
+    }
   });
 });
+describe("isEmailPasswordAuthEnabled and the password pepper", () => {
+  const enabled = {
+    AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+    AUTH_PASSWORD_PEPPER: testPasswordPepper,
+    EMAIL_PASSWORD_AUTH_ENABLED: "true",
+    RESEND_API_KEY: "re_test_only",
+  } as WorkerBindings;
+
+  it("is on with the switch, the e-mail sender and a pepper of 32 characters", () => {
+    expect(isEmailPasswordAuthEnabled(enabled)).toBe(true);
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["blank", " ".repeat(40)],
+    ["shorter than 32 characters", "p".repeat(31)],
+  ])("is off with the switch on and the pepper %s", (_name, pepper) => {
+    expect(
+      isEmailPasswordAuthEnabled({
+        ...enabled,
+        AUTH_PASSWORD_PEPPER: pepper,
+      } as WorkerBindings)
+    ).toBe(false);
+  });
+});
+
 describe("Google OAuth and security audit", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1367,7 +1423,7 @@ describe("Google OAuth and security audit", () => {
         email: "user@example.invalid",
         legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
         name: "Test User",
-        password: "A long enough test password!",
+        password: "A long enough test password 2026!",
       }),
       headers: { "content-type": "application/json", origin: testBaseURL },
       method: "POST",
@@ -1554,7 +1610,7 @@ describe("redirect targets of the Google sign-in start (open redirect)", () => {
 });
 
 describe("Sign-up legal acceptance (AC-68)", () => {
-  const password = "frase longa e segura para o cadastro 2026";
+  const password = "Frase longa e segura para o cadastro 2026";
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1623,7 +1679,6 @@ describe("Sign-up legal acceptance (AC-68)", () => {
   ])(
     "refuses the sign-up %s with 400 legal_acceptance_required and creates no user",
     async (_name, legalAcceptance) => {
-      const hibp = stubPwnedPasswordRange();
       const recorder = vi.fn(async () => undefined);
       const {
         app: testApp,
@@ -1643,7 +1698,6 @@ describe("Sign-up legal acceptance (AC-68)", () => {
       expect(await findUserByEmail(auth, email)).toBeNull();
       expect(verificationEmails).toHaveLength(0);
       expect(recorder).not.toHaveBeenCalled();
-      expect(hibp.calls()).toBe(0);
 
       const login = await testApp.request(
         "/api/auth/sign-in/email",
@@ -1659,7 +1713,6 @@ describe("Sign-up legal acceptance (AC-68)", () => {
   );
 
   it("creates the user and records the acceptance of terms and privacy with the new user id", async () => {
-    stubPwnedPasswordRange();
     const recorder = vi.fn(
       async (_entry: { document: string; userId: string }) => undefined
     );
@@ -1687,7 +1740,6 @@ describe("Sign-up legal acceptance (AC-68)", () => {
   });
 
   it("accepts the sign-up with the acceptance even when it carries extra keys", async () => {
-    stubPwnedPasswordRange();
     const recorder = vi.fn(async () => undefined);
     const { app: testApp } = createEmailPasswordTestApp(undefined, {
       legalAcceptanceRecorder: recorder,
@@ -1703,7 +1755,6 @@ describe("Sign-up legal acceptance (AC-68)", () => {
   });
 
   it("does not take a failed record as a failed sign-up: the user is created and the response is 200", async () => {
-    stubPwnedPasswordRange();
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const logged = vi
       .spyOn(logger, "error")
@@ -1739,7 +1790,6 @@ describe("Sign-up legal acceptance (AC-68)", () => {
   });
 
   it("only guards the email sign-up: the other auth routes need no acceptance", async () => {
-    stubPwnedPasswordRange();
     const { app: testApp } = createEmailPasswordTestApp();
 
     const response = await testApp.request(
@@ -1784,7 +1834,7 @@ describe("Sign-up legal acceptance (AC-68)", () => {
 });
 
 describe("Verification link record (ADR 0100, P10)", () => {
-  const password = "frase longa e segura para o cadastro 2026";
+  const password = "Frase longa e segura para o cadastro 2026";
   const email = "link-record@example.invalid";
 
   afterEach(() => {
@@ -1817,7 +1867,6 @@ describe("Verification link record (ADR 0100, P10)", () => {
     });
 
   it("records the end of the link of the user before each verification e-mail goes out, at the sign-up and at a resend", async () => {
-    stubPwnedPasswordRange();
     const order: string[] = [];
     const recorded: string[] = [];
     const recorder = vi.fn((userId: string) => {
@@ -1850,7 +1899,6 @@ describe("Verification link record (ADR 0100, P10)", () => {
   });
 
   it("sends no e-mail when the end of its link could not be recorded: a link the purge does not know of must not exist", async () => {
-    stubPwnedPasswordRange();
     const logged = vi
       .spyOn(logger, "error")
       .mockImplementation(() => undefined);
@@ -1873,7 +1921,6 @@ describe("Verification link record (ADR 0100, P10)", () => {
   });
 
   it("answers the resend without a session the same for an address that exists and one that does not, also when the record fails", async () => {
-    stubPwnedPasswordRange();
     const state: { failing: boolean } = { failing: false };
     const recorder = vi.fn(() =>
       state.failing
@@ -1903,7 +1950,6 @@ describe("Verification link record (ADR 0100, P10)", () => {
   });
 
   it("records and sends the resend inside the cap of 72 hours, and neither records nor sends after it, with the same answer", async () => {
-    stubPwnedPasswordRange();
     const logged = vi
       .spyOn(logger, "error")
       .mockImplementation(() => undefined);
@@ -2011,7 +2057,6 @@ describe("Verification link record (ADR 0100, P10)", () => {
   });
 
   it("sends the e-mail as before when there is no recorder (the test adapter has no database)", async () => {
-    stubPwnedPasswordRange();
     const { app: testApp, verificationEmails } = createEmailPasswordTestApp();
 
     expect((await signUp(testApp)).status).toBe(200);
