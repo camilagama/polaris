@@ -22,7 +22,8 @@ export type PasswordStrength = 0 | 1 | 2 | 3 | 4;
 const NUMBER = /\p{Nd}/u;
 const UPPERCASE = /\p{Lu}/u;
 const LOWERCASE = /\p{Ll}/u;
-const SPECIAL = /[^\p{L}\p{N}]/u;
+// a combining mark left after NFC belongs to a letter, not a special character
+const SPECIAL = /[^\p{L}\p{N}\p{M}]/u;
 
 export function passwordCharacters(password: string): number {
   return Array.from(password.normalize("NFC")).length;
@@ -30,9 +31,9 @@ export function passwordCharacters(password: string): number {
 
 const checks: Record<PasswordRequirement, (password: string) => boolean> = {
   length: (password) => passwordCharacters(password) >= PASSWORD_MIN_CHARACTERS,
-  lowercase: (password) => LOWERCASE.test(password),
-  number: (password) => NUMBER.test(password),
-  uppercase: (password) => UPPERCASE.test(password),
+  lowercase: (password) => LOWERCASE.test(password.normalize("NFC")),
+  number: (password) => NUMBER.test(password.normalize("NFC")),
+  uppercase: (password) => UPPERCASE.test(password.normalize("NFC")),
 };
 
 export function meetsPasswordRequirement(
@@ -51,7 +52,7 @@ export function unmetPasswordRequirements(
 }
 
 export function hasSpecialCharacter(password: string): boolean {
-  return SPECIAL.test(password);
+  return SPECIAL.test(password.normalize("NFC"));
 }
 
 export function passwordStrength(password: string): PasswordStrength {

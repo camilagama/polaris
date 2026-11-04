@@ -29,8 +29,9 @@ import {
  *      authentication runtime only;
  *   2. the real hasher stores `pgbf1$` and a bcrypt of cost 11, a new salt each time, checks the right password (and its
  *      decomposed NFD spelling, with accents) and refuses a wrong one;
- *   3. an old scrypt hash is a wrong password and never reaches the database;
- *   4. the functions refuse a raw password and a text that is not a bcrypt hash (22023), so neither is a general crypt;
+ *   3. an old scrypt hash is a wrong password: never recomputed, only one bcrypt of `k` made and dropped, so it takes
+ *      as long as an e-mail without an account;
+ *   4. the functions refuse a raw password and a text that is not a bcrypt hash (22023), so a raw password is never hashed;
  *   5. the tenant and the Admin runtimes reach neither the functions nor pgcrypto (42501);
  *   6. no line of the console carries the password or `k`;
  *   7. the gate fails on a mutation: with the cost of `auth_password_hash` lowered to 4, in a transaction rolled back,
@@ -76,15 +77,17 @@ const WRONG_PASSWORD = "Acao de 2026!";
 /** Counts the queries, so a check that must not reach the database is seen not to. */
 function countingQueryable(client: GateClient) {
   let count = 0;
+  const texts: string[] = [];
   const queryable: PasswordHashQueryable = {
     query: (config) => {
       count += 1;
+      texts.push(config.text);
       return client.query(config) as unknown as ReturnType<
         PasswordHashQueryable["query"]
       >;
     },
   };
-  return { count: () => count, queryable };
+  return { count: () => count, queryable, texts };
 }
 
 function captureConsole() {
@@ -296,13 +299,13 @@ async function run() {
       await hasher.verify({ hash: OLD_SCRYPT_HASH, password: PASSWORD }),
       false
     );
-    assert.equal(
-      counted.count(),
-      before,
-      "the old hash never reaches the database"
+    assert.deepEqual(
+      counted.texts.slice(before),
+      ["SELECT public.auth_password_hash($1::text) AS hash"],
+      "the old hash is never checked: one bcrypt of k is made and dropped, as for an e-mail without an account"
     );
     tests.push(
-      "an old scrypt hash is a wrong password and never reaches the database"
+      "an old scrypt hash is a wrong password: never checked, one bcrypt of k made and dropped (the time of an e-mail without an account)"
     );
 
     await expectSqlState(

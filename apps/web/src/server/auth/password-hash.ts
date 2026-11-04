@@ -6,9 +6,10 @@ import { normalizePassword } from "./password-policy";
  * PostgreSQL (`auth_password_hash` and `auth_password_crypt`, migration 0111), and waiting for the database is not
  * CPU time. The password never leaves the Worker, and `k` is worthless without the pepper.
  *
- * Stored as `pgbf1$<bcrypt>`: the digit is the version of the pepper, so a new pepper can live beside the old one.
- * A hash in any other format (the scrypt `salt:key` of before) is a wrong password, checked without computing
- * anything: computing scrypt is what exceeded the CPU limit, and the person resets the password by e-mail.
+ * Stored as `pgbf1$<bcrypt>`: the digit reserves the version of the pepper; only version 1 exists, so a new pepper
+ * invalidates every stored password. A hash in any other format never matches and is never recomputed in its own
+ * algorithm (that would spend the Worker's CPU); one bcrypt of `k` is still made and dropped, so the answer takes as
+ * long as the one for an e-mail without an account (Better Auth hashes the password typed for it).
  */
 export const PASSWORD_HASH_PREFIX = "pgbf1$";
 /** At least 32 characters: the runbook makes it from 32 random bytes in base64 (44 characters). */
@@ -154,14 +155,14 @@ export function createPasswordHasher({
       return `${PASSWORD_HASH_PREFIX}${await store.hash(key)}`;
     },
     async verify({ hash, password }) {
-      if (!hash.startsWith(PASSWORD_HASH_PREFIX)) {
-        return false;
-      }
-      const stored = hash.slice(PASSWORD_HASH_PREFIX.length);
-      if (!STORED_BCRYPT_PATTERN.test(stored)) {
-        return false;
-      }
       const key = await keyOf(password);
+      const stored = hash.startsWith(PASSWORD_HASH_PREFIX)
+        ? hash.slice(PASSWORD_HASH_PREFIX.length)
+        : "";
+      if (!STORED_BCRYPT_PATTERN.test(stored)) {
+        await store.hash(key);
+        return false;
+      }
       return constantTimeEqual(await store.crypt(key, stored), stored);
     },
   };

@@ -78,21 +78,23 @@ describe("password hasher", () => {
     }
   });
 
-  it("answers an old scrypt hash, or any hash without the prefix, as a wrong password without computing anything", async () => {
+  it("answers an old scrypt hash, or any hash without the prefix, as a wrong password: never checked, one bcrypt made and dropped", async () => {
     const store = {
       crypt: vi.fn(() => Promise.resolve("never")),
-      hash: vi.fn(() => Promise.resolve("never")),
+      hash: vi.fn(() => Promise.resolve("dropped")),
     };
     const hasher = createPasswordHasher({ pepper: testPasswordPepper, store });
-    for (const hash of [
+    const hashes = [
       OLD_SCRYPT_HASH,
       "",
       `${PASSWORD_HASH_PREFIX}not-a-bcrypt`,
       `pgbf2$$2a$11$${"a".repeat(53)}`,
-    ]) {
+    ];
+    for (const hash of hashes) {
       expect(await hasher.verify({ hash, password: "Abcdefg1" })).toBe(false);
     }
     expect(store.crypt).not.toHaveBeenCalled();
+    expect(store.hash).toHaveBeenCalledTimes(hashes.length);
   });
 
   it("fails closed without a pepper", async () => {

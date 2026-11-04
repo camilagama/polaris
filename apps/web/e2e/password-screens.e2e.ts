@@ -332,6 +332,10 @@ async function expectNewPasswordField(
   await field.press("Enter");
   await expect(field).toHaveAttribute("aria-invalid", "true");
   await expect(field).toBeFocused();
+  // the flag goes once every rule is met, without another submit
+  await field.fill("Abcdefg1");
+  await expect(field).not.toHaveAttribute("aria-invalid", "true");
+  await field.fill("abc");
 }
 
 test.describe("com a senha desligada (AC-46)", () => {

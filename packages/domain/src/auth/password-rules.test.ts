@@ -39,7 +39,11 @@ describe("password rules", () => {
     expect(hasSpecialCharacter("Abcdefg1")).toBe(false);
     expect(hasSpecialCharacter("Abcdef g1")).toBe(true);
     expect(hasSpecialCharacter("Abcdef!1")).toBe(true);
-    expect(unmetPasswordRequirements("abcdefgh!")).not.toContain("special");
+    expect(unmetPasswordRequirements("Abcdefg1!")).toEqual([]);
+    expect(unmetPasswordRequirements("Abcdefg1")).toEqual([]);
+    // a decomposed accent is part of its letter, not a special character
+    expect(hasSpecialCharacter("Senha2026e\u0301")).toBe(false);
+    expect(hasSpecialCharacter("Senha2026u\u0308\u0301")).toBe(false);
   });
 
   it("measures 0 empty, 1 and 2 weak, 3 with every rule, 4 with a special character as well", () => {

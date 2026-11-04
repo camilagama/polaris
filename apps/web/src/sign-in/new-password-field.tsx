@@ -145,7 +145,9 @@ export function NewPasswordField({
     (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
     [onChange]
   );
-  const invalid = flagged || error !== null;
+  // the flag of a submit lasts while a rule is missing: once every rule is met the field is valid again
+  const invalid =
+    (flagged && unmetPasswordRequirements(value).length > 0) || error !== null;
   return (
     <Field data-invalid={invalid || undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
