@@ -4,10 +4,12 @@ import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   EMAIL,
+  leaveOneRefused,
   ORGANIZATION_ID,
   ORGANIZATIONS,
   SECOND_ORGANIZATION,
   serve,
+  serveFoot,
 } from "./shell-server";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -613,9 +615,9 @@ test.describe("AC-1.6: nenhuma rolagem de lado, na página, na lateral e em Mais
       test.setTimeout(120_000);
       await page.emulateMedia({ colorScheme: scheme });
       await page.setViewportSize({ height: 800, width: 1280 });
-      await serve(page, [
-        { ...SECOND_ORGANIZATION, id: ORGANIZATION_ID, name: LONG_STORE },
-      ]);
+      // the worst case of the column and of "Mais": Pendências, Primeiros passos and Teste grátis all on
+      await serveFoot(page, { name: LONG_STORE });
+      await leaveOneRefused(page);
       const found: string[] = [];
       // Ajuda in every condition (its content is text that wraps: what is measured is the shell), and Produtos, a
       // screen with a toolbar and tabs, at the zoom
@@ -623,6 +625,16 @@ test.describe("AC-1.6: nenhuma rolagem de lado, na página, na lateral e em Mais
         // biome-ignore lint/performance/noAwaitInLoops: one page at a time
         await page.setViewportSize({ height: 800, width: 1280 });
         await openShell(page, path);
+        for (const attribute of ["data-menu-first-steps", "data-menu-trial"]) {
+          // biome-ignore lint/performance/noAwaitInLoops: one item at a time
+          await expect(page.locator(`[${attribute}]`)).toBeVisible();
+        }
+        await expect(
+          page.getByRole("link", {
+            exact: true,
+            name: "Pendências, 1 registro recusado",
+          })
+        ).toBeVisible();
         await runConditions(page, conditions, `${path}, `, found);
       }
       expect(found).toEqual([]);
@@ -633,12 +645,24 @@ test.describe("AC-1.6: nenhuma rolagem de lado, na página, na lateral e em Mais
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
-    await serve(page);
+    await serveFoot(page, {});
+    await leaveOneRefused(page);
     await openShell(page);
+    const inner = page.locator('[data-slot="sidebar-inner"]');
+    // the three items that have the most to say are all there, so what is measured is the folded column in its worst case
+    for (const name of [
+      "Pendências, 1 registro recusado",
+      "Primeiros passos, 2 de 3 concluídos",
+      "Teste grátis, primeira cobrança em 10/11, abrir Assinatura",
+    ]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one link at a time
+      await expect(
+        inner.getByRole("link", { exact: true, name })
+      ).toBeVisible();
+    }
     await page
       .getByRole("button", { exact: true, name: "Recolher menu" })
       .click();
-    const inner = page.locator('[data-slot="sidebar-inner"]');
     await expect.poll(async () => (await inner.boundingBox())?.width).toBe(48);
     const wider = await inner.evaluate((column) => {
       const edge = column.getBoundingClientRect().right;

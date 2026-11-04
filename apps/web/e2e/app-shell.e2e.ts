@@ -5,13 +5,14 @@ import { expect, test } from "@playwright/test";
 import { SUPPORT_ADDRESS } from "./support-address";
 import {
   authMethods,
-  DEVICE,
   EMAIL,
   json,
-  ORGANIZATION_ID,
+  leaveOneRefused,
   ORGANIZATIONS,
   SECOND_ORGANIZATION,
   serve,
+  serveFoot,
+  TRIAL_PLAN,
 } from "./shell-server";
 import { WORKER_MARK } from "./worker-mark";
 
@@ -454,66 +455,6 @@ const pathOf = (page: Page) => {
   const url = new URL(page.url());
   return `${url.pathname}${url.search}`;
 };
-
-/**
- * One command of this device that the server refused (as `sync.push` leaves it): written into the outbox of the
- * runtime, which opened with the page, and read again on a reload. The screens of this harness have no copy of their
- * own to queue with, so the record is made here, in the shape the outbox keeps.
- */
-async function leaveOneRefused(page: Page) {
-  await page.goto("/");
-  await expect(chip(page)).toContainText("Tudo sincronizado", {
-    timeout: 20_000,
-  });
-  await page.evaluate(
-    async ({ deviceId, organizationId }) => {
-      const names = (await indexedDB.databases())
-        .map(({ name }) => name ?? "")
-        .filter((name) => name.startsWith("polaris-outbox-"));
-      for (const name of names) {
-        // biome-ignore lint/performance/noAwaitInLoops: one database, the one of this person
-        await new Promise<void>((resolve, reject) => {
-          const opening = indexedDB.open(name);
-          opening.onerror = () => reject(opening.error);
-          opening.onsuccess = () => {
-            const tx = opening.result.transaction(
-              ["commands", "meta"],
-              "readwrite"
-            );
-            const at = new Date().toISOString();
-            tx.objectStore("commands").put({
-              attempts: 1,
-              baseVersion: null,
-              commandId: crypto.randomUUID(),
-              createdAt: at,
-              deviceId,
-              lastAttemptAt: at,
-              lease: "lease",
-              organizationId,
-              payload: { name: "Bia Souza" },
-              rejection: { at, code: "validation_failed" },
-              seq: 1,
-              status: "rejected",
-              type: "customer.create",
-            });
-            tx.objectStore("meta").put(1, "lastSeq");
-            tx.oncomplete = () => {
-              opening.result.close();
-              resolve();
-            };
-            tx.onerror = () => reject(tx.error);
-          };
-        });
-      }
-      return names.length;
-    },
-    { deviceId: DEVICE.id, organizationId: ORGANIZATION_ID }
-  );
-  await page.reload();
-  await expect(chip(page)).toContainText("precisa de atenção", {
-    timeout: 20_000,
-  });
-}
 
 /** The text of the Pendências link: its name and the drawn count (its accessible name says the count in words). */
 const PENDENCIAS_WITH_COUNT = "Pendências1";
@@ -1022,77 +963,9 @@ test.describe("barra do celular a 360 e 320 px", () => {
 });
 
 test.describe("pé do menu: primeiros passos e teste grátis", () => {
-  /** A trial with its first charge set, as the server reads it (every key: the answer is strict). */
-  const TRIAL_PLAN = {
-    accessEndsAt: "2026-11-11T03:00:00.000Z",
-    cycleMonths: 1,
-    kept: { historyMonths: 3, products: 18, sales: 47 },
-    limits: { goals: 3, images: 5000, variants: 2000 },
-    method: "card",
-    nextCharge: { amount: "24.90", on: "2026-11-10" },
-    offer: {
-      methods: ["card", "pix_automatic"],
-      prices: [
-        { amount: "249.00", cycleMonths: 12 },
-        { amount: "24.90", cycleMonths: 1 },
-      ],
-    },
-    recovery: null,
-    refund: null,
-    refundPending: false,
-    refundWindowEndedOn: null,
-    renewalCancelled: false,
-    resubscribeFrom: null,
-    state: "trialing",
-    trialAvailable: false,
-    usage: { goals: 1, images: 12, variants: 38 },
-  };
   const STEPS_NAME = "Primeiros passos, 2 de 3 concluídos";
   const TRIAL_NAME =
     "Teste grátis, primeira cobrança em 10/11, abrir Assinatura";
-
-  /**
-   * The shell of a store in its trial: `steps` is what the Início read of the first steps in this tab, `role` and
-   * `billingSelfService` say whether this person manages the billing. Counts the reads of the plan.
-   */
-  async function serveFoot(
-    page: Page,
-    {
-      billingSelfService = true,
-      role = "owner",
-      steps = 2,
-    }: { billingSelfService?: boolean; role?: string; steps?: number | null }
-  ) {
-    const organizations = [
-      {
-        id: ORGANIZATION_ID,
-        name: "Loja do teste",
-        role,
-        timezone: "America/Sao_Paulo",
-      },
-    ];
-    await serve(page, organizations);
-    await page.route("**/rpc/organization/listMine", (route) =>
-      route.fulfill(json({ billingSelfService, organizations }))
-    );
-    const reads = { plan: 0 };
-    await page.route("**/rpc/billing/readPlan", (route) => {
-      reads.plan += 1;
-      return route.fulfill(json(TRIAL_PLAN));
-    });
-    if (steps !== null) {
-      await page.addInitScript(
-        ([organizationId, done]) => {
-          sessionStorage.setItem(
-            "polaris.home.firstSteps",
-            JSON.stringify({ done, organizationId })
-          );
-        },
-        [ORGANIZATION_ID, steps] as const
-      );
-    }
-    return reads;
-  }
 
   const stepsLink = (page: Page) =>
     page.getByRole("link", { exact: true, name: STEPS_NAME });

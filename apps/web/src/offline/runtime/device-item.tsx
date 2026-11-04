@@ -51,8 +51,8 @@ interface RowProps {
 
 const THIS_DEVICE_ONLINE_HELP = (
   <>
-    Para tirar este aparelho, use <strong>Sair</strong>: no celular ele está em
-    Mais; em tela grande, no menu ⋯ do cartão da loja, no pé da barra lateral.
+    Para tirar este aparelho, use <strong>Sair</strong>, no menu da loja, no
+    alto da tela.
   </>
 );
 const THIS_DEVICE_OFFLINE_HELP =
