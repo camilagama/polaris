@@ -14,6 +14,7 @@ import {
   NO_SALE_PRESET,
   reconcileProfileReload,
   type SaleFormState,
+  withdrawSalePreset,
 } from "./sale-form-model";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -135,11 +136,72 @@ describe("a venda nova começa com o que quase nunca muda", () => {
     expect(
       salePresetFrom({ method: "pix", profile: { id: PROFILE, version: 4 } }, 3)
     ).toEqual({ method: "pix", profileChoice: PROFILE, profileVersion: 4 });
-    expect(salePresetFrom({ method: "cash", profile: null }, 3)).toEqual({
+    expect(salePresetFrom({ method: "cash", profile: null }, 0)).toEqual({
       method: "cash",
       profileChoice: NO_PROFILE_CHOICE,
       profileVersion: null,
     });
+  });
+
+  it('"Sem perfil" lembrado só vale enquanto a loja não tem perfil ativo', () => {
+    const remembered = { method: "cash" as const, profile: null };
+    expect(salePresetFrom(remembered, 1)).toEqual(NO_SALE_PRESET);
+    expect(salePresetFrom(remembered, 3)).toEqual(NO_SALE_PRESET);
+    expect(salePresetFrom(remembered, null)).toEqual(NO_SALE_PRESET);
+    const stillOnTheScreen = applySalePreset(
+      blank(),
+      salePresetFrom(remembered, 0)
+    );
+    expect(stillOnTheScreen.profile.choice).toBe(NO_PROFILE_CHOICE);
+    const afterFirstProfile = applySalePreset(
+      blank(),
+      salePresetFrom(remembered, 1)
+    );
+    expect(afterFirstProfile.profile.choice).toBe("");
+    expect(afterFirstProfile.payment.method).toBe("");
+  });
+
+  it("o perfil lembrado com id continua valendo com a leitura em curso, sem perfil ou com perfis", () => {
+    const remembered = {
+      method: "pix" as const,
+      profile: { id: PROFILE, version: 4 },
+    };
+    const expected = {
+      method: "pix",
+      profileChoice: PROFILE,
+      profileVersion: 4,
+    };
+    for (const count of [null, 0, 1]) {
+      expect(salePresetFrom(remembered, count)).toEqual(expected);
+    }
+  });
+
+  it('a loja que ganha o primeiro perfil tira o "Sem perfil" que a tela tinha marcado, e só ele', () => {
+    const remembered = { method: "cash" as const, profile: null };
+    const before = salePresetFrom(remembered, 0);
+    const after = salePresetFrom(remembered, 1);
+    const marked = applySalePreset(blank(), before);
+    expect(marked.profile.choice).toBe(NO_PROFILE_CHOICE);
+    const withdrawn = withdrawSalePreset(marked, before, after);
+    expect(withdrawn.profile.choice).toBe("");
+    expect(withdrawn.payment.method).toBe("");
+    expect(isSaleFormDirty(withdrawn, after)).toBe(false);
+    // a venda em andamento da pessoa fica como está
+    const worked: SaleFormState = {
+      ...marked,
+      adjustments: [
+        { draftId: "a1", kind: "discount", value: "5", valueType: "fixed" },
+      ],
+    };
+    expect(withdrawSalePreset(worked, before, after)).toBe(worked);
+    // o que a pessoa escolheu diferente do preset também
+    const chosen: SaleFormState = {
+      ...marked,
+      profile: { choice: PROFILE, reviewNotice: null, seenVersion: 1 },
+    };
+    expect(withdrawSalePreset(chosen, before, after).profile.choice).toBe(
+      PROFILE
+    );
   });
 
   it("preenche só o que a pessoa não escolheu", () => {

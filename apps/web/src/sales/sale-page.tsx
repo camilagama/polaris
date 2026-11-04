@@ -134,6 +134,7 @@ import {
   updateAdjustment,
   updateItem,
   updatePayment,
+  withdrawSalePreset,
 } from "./sale-form-model";
 import { ItemEditor } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
@@ -577,9 +578,15 @@ export function SalePage() {
       setForm((current) => editSaleForm(submission, current, edit)),
     [submission]
   );
+  const appliedPresetRef = useRef<SalePreset | null>(null);
   useEffect(() => {
-    // the profiles were read: a store without an active one starts on "Sem perfil"; only empty choices are filled
-    editForm((current) => applySalePreset(current, preset));
+    // the profiles were read: a store without an active one starts on "Sem perfil"; only empty choices are filled,
+    // and what an earlier preset filled in is taken back when this one no longer offers it
+    const previous = appliedPresetRef.current ?? preset;
+    appliedPresetRef.current = preset;
+    editForm((current) =>
+      applySalePreset(withdrawSalePreset(current, previous, preset), preset)
+    );
   }, [editForm, preset]);
   const handleItemChange = useCallback(
     (draftId: string, changes: Partial<ItemDraft>) =>

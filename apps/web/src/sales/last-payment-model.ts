@@ -1,6 +1,7 @@
 import type { PreferenceStorage } from "../lib/current-organization-model";
 import {
   NO_PROFILE_CHOICE,
+  NO_SALE_PRESET,
   SALE_METHOD_CARDS,
   type SaleFormState,
   type SaleMethod,
@@ -102,26 +103,28 @@ export function paymentOfSentForm(
 
 /**
  * The choices a new sale starts with: the last sale's method and profile, or "Sem perfil" in a store that has no
- * active profile (null count: not read yet). The remembered profile keeps the version it was used with, so a profile
- * that changed since asks for "Revisei a prévia atualizada" again, and one that left the list is cleared with its
- * notice.
+ * active profile (null count: not read yet). A remembered "Sem perfil" only holds while the store has no active
+ * profile: once it has one, the sale made without it stops being the start and the person chooses. The remembered
+ * profile keeps the version it was used with, so a profile that changed since asks for "Revisei a prévia
+ * atualizada" again, and one that left the list is cleared with its notice.
  */
 export function salePresetFrom(
   remembered: RememberedPayment | null,
   activeProfileCount: number | null
 ): SalePreset {
-  const method = remembered?.method ?? "";
   if (remembered?.profile) {
     return {
-      method,
+      method: remembered.method,
       profileChoice: remembered.profile.id,
       profileVersion: remembered.profile.version,
     };
   }
-  const noProfile = remembered !== null || activeProfileCount === 0;
+  if (activeProfileCount !== 0) {
+    return NO_SALE_PRESET;
+  }
   return {
-    method,
-    profileChoice: noProfile ? NO_PROFILE_CHOICE : "",
+    method: remembered?.method ?? "",
+    profileChoice: NO_PROFILE_CHOICE,
     profileVersion: null,
   };
 }

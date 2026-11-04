@@ -299,7 +299,8 @@ export function createBlankSaleForm(createId: () => string): SaleFormState {
 
 /**
  * What the screen fills in on a new sale for the person: the method and profile of the last sale on this device, or
- * "Sem perfil" in a store without an active profile (last-payment-model.ts). Empty fields are no preset.
+ * "Sem perfil" in a store without an active profile, and a remembered "Sem perfil" holds only there
+ * (last-payment-model.ts). Empty fields are no preset.
  */
 export interface SalePreset {
   method: SaleMethod | "";
@@ -341,6 +342,39 @@ export function applySalePreset(
           reviewNotice: null,
           seenVersion: preset.profileVersion,
         }
+      : form.profile,
+  };
+}
+
+/**
+ * Takes back what the previous preset filled in when the new one no longer offers it (a remembered "Sem perfil" in a
+ * store that just got an active profile), only while the form is still what that preset made it: anything else the
+ * person did stays, and a choice that differs from the preset is theirs.
+ */
+export function withdrawSalePreset(
+  form: SaleFormState,
+  previous: SalePreset,
+  next: SalePreset
+): SaleFormState {
+  if (isSaleFormDirty(form, previous)) {
+    return form;
+  }
+  const dropMethod =
+    previous.method !== "" &&
+    next.method === "" &&
+    form.payment.method === previous.method;
+  const dropProfile =
+    previous.profileChoice !== "" &&
+    next.profileChoice === "" &&
+    form.profile.choice === previous.profileChoice;
+  if (!(dropMethod || dropProfile)) {
+    return form;
+  }
+  return {
+    ...form,
+    payment: dropMethod ? selectPaymentMethod(form, "").payment : form.payment,
+    profile: dropProfile
+      ? { choice: "", reviewNotice: null, seenVersion: null }
       : form.profile,
   };
 }
