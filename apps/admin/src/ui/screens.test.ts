@@ -37,6 +37,7 @@ const owner = {
 };
 const CASE = "0199a0a0-0000-7000-8000-00000000c0de";
 const STORE = "0199a0a0-0000-7000-8000-00000000beef";
+const INCIDENT = "0199a0a0-0000-7000-8000-00000000f00d";
 const DOCUMENT = securityHeaders("admin-document")["Content-Security-Policy"];
 const INERT = securityHeaders("admin")["Content-Security-Policy"];
 const HTML_FORBIDDEN = [
@@ -110,6 +111,13 @@ const SCREENS = [
     `data-id="${CASE}"`,
   ],
   ["/funil", "Funil de ativação", "Funil", 'data-tela="funil"'],
+  ["/incidentes", "Incidentes", "Incidentes", 'data-tela="incidentes"'],
+  [
+    `/incidentes/${INCIDENT}`,
+    "Incidente",
+    "Incidentes",
+    `data-id="${INCIDENT}"`,
+  ],
 ] as const;
 
 describe("one route per screen (AC-P1.2)", () => {
@@ -173,7 +181,8 @@ describe("one route per screen (AC-P1.2)", () => {
     "/lojas/nada",
     "/casos/novo/x",
     "/privacidade",
-    "/incidentes",
+    `/incidentes/${INCIDENT}/events`,
+    "/incidentes/123",
     "/registro",
     "/retencoes",
     "/configuracoes",
@@ -244,6 +253,7 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
         "Início /",
         "Buscar loja /lojas",
         "Casos de suporte /casos",
+        "Incidentes /incidentes",
         "Funil /funil",
       ],
       ["Lojas", "Suporte", "Operação"],
@@ -272,15 +282,22 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
       ["Buscar loja /lojas", "Casos de suporte /casos"],
       ["Lojas", "Suporte"],
     ],
+    [
+      "operational_incident:read",
+      ["operational_incident:read"],
+      ["Incidentes /incidentes"],
+      ["Operação"],
+    ],
+    [
+      "only the retry, which opens no screen",
+      ["operational_incident:retry"],
+      [],
+      [],
+    ],
     // the items of later parts are not in the menu until their screens exist
     [
       "only capabilities of screens that do not exist yet",
-      [
-        "privacy_case:manage",
-        "operational_incident:read",
-        "access_log:read",
-        "organization:legal_hold",
-      ],
+      ["privacy_case:manage", "access_log:read", "organization:legal_hold"],
       [],
       [],
     ],

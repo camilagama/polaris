@@ -27,6 +27,8 @@ export type ScreenId =
   | "caso-novo"
   | "casos"
   | "funil"
+  | "incidente"
+  | "incidentes"
   | "inicio"
   | "loja"
   | "lojas";
@@ -45,6 +47,11 @@ export const SCREENS: Readonly<Record<ScreenId, Screen>> = {
   },
   casos: { capability: "support_case:manage", title: "Casos de suporte" },
   funil: { capability: "platform:read", title: "Funil de ativação" },
+  incidente: { capability: "operational_incident:read", title: "Incidente" },
+  incidentes: {
+    capability: "operational_incident:read",
+    title: "Incidentes",
+  },
   inicio: { capability: "platform:read", title: "Início" },
   loja: { capability: "organization:diagnose", title: "Loja" },
   lojas: { capability: "organization:diagnose", title: "Buscar loja" },
@@ -59,7 +66,7 @@ interface MenuItem {
 
 /**
  * The menu of the design (§1.1), with only the screens that exist: a group whose items the operator cannot open goes
- * with its label. The other items of the design (Privacidade, Incidentes, Registro de acessos, Retenções legais,
+ * with its label. The other items of the design (Privacidade, Registro de acessos, Retenções legais,
  * Configurações) enter with their parts.
  */
 const MENU: readonly { items: readonly MenuItem[]; label: string | null }[] = [
@@ -99,6 +106,12 @@ const MENU: readonly { items: readonly MenuItem[]; label: string | null }[] = [
   {
     items: [
       {
+        capability: "operational_incident:read",
+        label: "Incidentes",
+        path: "/incidentes",
+        screens: ["incidentes", "incidente"],
+      },
+      {
         capability: "platform:read",
         label: "Funil",
         path: "/funil",
@@ -125,6 +138,7 @@ export function screenOfPath(
     "/casos": "casos",
     "/casos/novo": "caso-novo",
     "/funil": "funil",
+    "/incidentes": "incidentes",
     "/lojas": "lojas",
   };
   const screen = fixed[path];
@@ -140,6 +154,9 @@ export function screenOfPath(
   }
   if (area === "casos") {
     return { id: id.toLowerCase(), screen: "caso" };
+  }
+  if (area === "incidentes") {
+    return { id: id.toLowerCase(), screen: "incidente" };
   }
   return null;
 }

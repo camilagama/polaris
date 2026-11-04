@@ -47,9 +47,14 @@ export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface Api {
   get: <T>(path: string) => Promise<ApiResult<T>>;
+  /**
+   * `answers` names the statuses besides 2xx whose JSON body is the answer, not a problem: a route that says what it
+   * did with a 404 or a 409 (the retry of a dead event). Any other status is a problem as always.
+   */
   post: <T>(
     path: string,
-    body: Readonly<Record<string, string>>
+    body: Readonly<Record<string, string>>,
+    answers?: readonly number[]
   ) => Promise<ApiResult<T>>;
 }
 
@@ -116,7 +121,8 @@ async function failureOf(response: Response): Promise<ApiFailure> {
 export function createApi(fetchJson: Fetch): Api {
   const send = async <T>(
     path: string,
-    init: RequestInit
+    init: RequestInit,
+    answers: readonly number[] = []
   ): Promise<ApiResult<T>> => {
     let response: Response;
     try {
@@ -130,7 +136,7 @@ export function createApi(fetchJson: Fetch): Api {
     } catch {
       return { ok: false, problem: "network" };
     }
-    if (!response.ok) {
+    if (!(response.ok || answers.includes(response.status))) {
       return failureOf(response);
     }
     try {
@@ -142,14 +148,18 @@ export function createApi(fetchJson: Fetch): Api {
   return {
     get: (path) =>
       send(path, { headers: { accept: "application/json" }, method: "GET" }),
-    post: (path, body) =>
-      send(path, {
-        body: JSON.stringify(body),
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
+    post: (path, body, answers) =>
+      send(
+        path,
+        {
+          body: JSON.stringify(body),
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+          },
+          method: "POST",
         },
-        method: "POST",
-      }),
+        answers
+      ),
   };
 }
