@@ -43,9 +43,9 @@ test("venda-offline", async ({ context, evidence, page }) => {
   ).toBeVisible();
   const item = page.getByRole("group", { exact: true, name: "Item 1" });
   await item.getByLabel("Produto ou variante").fill("Camiseta");
-  await item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: SHIRT })
+  await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: SHIRT })
     .click();
   await item.getByLabel("Quantidade").fill("1");
   await item.getByLabel("Preço cobrado").fill(price);

@@ -28,7 +28,13 @@ describe("FeePreviewDetails (P-4)", () => {
   it("a região já existe antes de haver prévia, para que o primeiro cálculo também seja anunciado", () => {
     const html = renderToStaticMarkup(<FeePreviewDetails preview={null} />);
     expect(html).toMatch(LIVE_REGION);
-    expect(html).toContain("Complete itens, pagamento e perfil");
     expect(html).not.toContain("<dl");
+  });
+
+  it("sem prévia, nem título nem explicação: o Resumo só mostra o que já foi escolhido", () => {
+    const html = renderToStaticMarkup(<FeePreviewDetails preview={null} />);
+    expect(html).not.toContain("Prévia de taxas e prazo");
+    expect(html).not.toContain("O servidor recalcula");
+    expect(html).not.toContain("aria-labelledby");
   });
 });

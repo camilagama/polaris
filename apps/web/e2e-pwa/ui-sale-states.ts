@@ -231,9 +231,9 @@ async function pick(
 ): Promise<Locator> {
   const item = page.getByRole("group", { exact: true, name: `Item ${index}` });
   await item.getByLabel("Produto ou variante").fill(search);
-  await item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: option })
+  await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: option })
     .click();
   return item;
 }
@@ -334,6 +334,7 @@ export const saleStates = {
       page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" }),
       page.getByRole("option", { name: PROFILE_OPTION })
     );
+    await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
     await page.getByRole("button", { name: "Adicionar ajuste" }).click();
     const adjustment = page.getByRole("group", {
       exact: true,

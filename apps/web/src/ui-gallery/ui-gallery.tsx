@@ -1,4 +1,4 @@
-import { type ChangeEvent, useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
@@ -20,6 +20,15 @@ import {
 import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import { Checkbox } from "@/ui/checkbox";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxFooter,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/ui/combobox";
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
 import {
@@ -187,6 +196,54 @@ function GallerySearch() {
       placeholder="Nome do produto"
       value={text}
     />
+  );
+}
+
+const GALLERY_VARIANTS = [
+  { detail: "Saldo 6 · SKU CAM-P", id: "preta", label: "Camiseta · Preta" },
+  { detail: "Saldo 0", id: "branca", label: "Camiseta · Branca" },
+  { detail: "Saldo 14", id: "caneca", label: "Caneca esmaltada" },
+] as const;
+type GalleryVariant = (typeof GALLERY_VARIANTS)[number];
+const galleryVariantLabel = (item: GalleryVariant) => item.label;
+
+/** The search of the sale: suggestions in a popup anchored to the field, the chosen one marked. */
+function GalleryCombobox() {
+  const [chosen, setChosen] = useState<GalleryVariant | null>(
+    GALLERY_VARIANTS[0]
+  );
+  const anchor = useRef<HTMLDivElement>(null);
+  return (
+    <div className="grid max-w-sm gap-1.5">
+      <Label htmlFor="galeria-variante">Produto ou variante</Label>
+      <Combobox
+        items={[...GALLERY_VARIANTS]}
+        itemToStringLabel={galleryVariantLabel}
+        onValueChange={setChosen}
+        value={chosen}
+      >
+        <InputGroup ref={anchor}>
+          <ComboboxInput
+            id="galeria-variante"
+            placeholder="Buscar por nome, variante ou SKU"
+          />
+        </InputGroup>
+        <ComboboxContent anchor={anchor}>
+          <ComboboxEmpty>Nenhuma variante encontrada.</ComboboxEmpty>
+          <ComboboxList aria-label="Variantes encontradas">
+            {(item: GalleryVariant) => (
+              <ComboboxItem key={item.id} value={item}>
+                <span className="font-medium">{item.label}</span>
+                <span className="text-muted-foreground text-support">
+                  {item.detail}
+                </span>
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+          <ComboboxFooter>Digite para refinar a busca.</ComboboxFooter>
+        </ComboboxContent>
+      </Combobox>
+    </div>
   );
 }
 
@@ -609,6 +666,7 @@ export function UiGallery() {
                 placeholder="Material, corte, cuidados"
               />
             </div>
+            <GalleryCombobox />
           </Section>
 
           <Section title="Sobreposições">
