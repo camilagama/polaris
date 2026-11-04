@@ -7,6 +7,8 @@ import { casesView } from "./views/cases";
 import { diagnosticsView } from "./views/diagnostics";
 import { funnelView } from "./views/funnel";
 import { homeView } from "./views/home";
+import { incidentView } from "./views/incident";
+import { incidentsView } from "./views/incidents";
 import { newCaseView } from "./views/new-case";
 import { organizationsView } from "./views/organizations";
 import { refundWindowView } from "./views/refund-window";
@@ -89,6 +91,14 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
     "caso-novo": (tools) => [newCaseView(tools)],
     casos: (tools) => [casesView(tools)],
     funil: funnelScreen,
+    incidente: (tools) =>
+      tools.can("operational_incident:read")
+        ? [incidentView(tools)]
+        : [forbiddenArea(tools.dom, "Incidente", "incidente-titulo")],
+    incidentes: (tools) =>
+      tools.can("operational_incident:read")
+        ? [incidentsView(tools)]
+        : [forbiddenArea(tools.dom, "Incidentes", "incidentes-titulo")],
     inicio: (tools) => [homeView(tools)],
     loja: (tools) => [storeView(tools)],
     lojas: storesScreen,

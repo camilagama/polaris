@@ -80,6 +80,8 @@ describe("the Admin app's route surface", () => {
       "GET /casos",
       "GET /casos/:caseId",
       "GET /funil",
+      "GET /incidentes",
+      "GET /incidentes/:incidentId",
       "GET /ui/:file",
     ]);
   });

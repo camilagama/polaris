@@ -284,6 +284,16 @@ button {
   margin: 0;
 }
 
+/* the incidents' tables have more columns than the card has room for on a desktop: headers and cells wrap by word */
+.grid.incidents th,
+.grid.incidents td:not(:first-child) {
+  white-space: normal;
+}
+
+.grid.incidents code {
+  overflow-wrap: anywhere;
+}
+
 /* the funnel's tables scroll sideways inside their own region, never the page; the week column stays in view */
 .table-scroll {
   max-width: 100%;
