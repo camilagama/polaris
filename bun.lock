@@ -119,7 +119,9 @@
     "packages/billing": {
       "name": "@polaris/billing",
       "dependencies": {
+        "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
+        "@polaris/observability": "workspace:*",
       },
     },
     "packages/contracts": {

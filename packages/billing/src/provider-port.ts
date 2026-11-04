@@ -172,13 +172,18 @@ export interface BillingProviderPort {
    * another period, or no first charge was recorded, it throws
    * `NotFirstChargeError` and asks the provider for no refund: it fails
    * closed); the operator's refund passes `"any_paid"`, the paid charge of the
-   * period in force, whichever it is.
+   * period in force, whichever it is. `options.beforeRefund` runs once the
+   * charge to refund is found and before the provider is asked to refund it: a
+   * throw there refunds nothing, and the refund asked afterwards is of that
+   * same charge (the operator's command checks the amount and cancels the
+   * renewal in it).
    */
   refundCurrentPeriod: (
     providerRef: string,
     now: Date,
     providerSubscriptionId: string | null,
-    charge: RefundableCharge
+    charge: RefundableCharge,
+    options?: RefundOptions
   ) => Promise<RefundOutcome>;
   /**
    * Whether `refundCurrentPeriod` may call the provider here. The refund
@@ -198,6 +203,15 @@ export interface BillingProviderPort {
 export interface RecordedFirstCharge {
   eventId: string | null;
   periodEndsAt: Date | null;
+}
+
+/** The charge `refundCurrentPeriod` found, as the hook sees it: only its amount, as `money.md` writes it. */
+export interface ChargeToRefund {
+  amount: string;
+}
+
+export interface RefundOptions {
+  beforeRefund?: (charge: ChargeToRefund) => Promise<void>;
 }
 
 /**

@@ -297,7 +297,8 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       providerRef,
       now,
       providerSubscriptionId,
-      refundable
+      refundable,
+      options
     ) {
       if (config.refundEnabled !== true) {
         // the refund of an installment is not proven in the sandbox yet (S3.2): nothing is called
@@ -326,6 +327,7 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       const endToEndId = pickWooviEndToEndId(
         raw[installments.indexOf(installment)]
       );
+      await options?.beforeRefund?.({ amount: installment.amount });
       await client.refundPix(
         stringifyWithAmount(
           {

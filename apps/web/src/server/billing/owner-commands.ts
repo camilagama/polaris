@@ -1,4 +1,8 @@
 import {
+  cancelRenewalEventId,
+  refundCancelEventId,
+} from "@polaris/billing/operator-commands";
+import {
   type BillingProviderPort,
   NotFirstChargeError,
   ProviderUnavailableError,
@@ -18,7 +22,6 @@ import {
 } from "@polaris/domain/billing/plan-view";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
-import { cancelRenewalEventId, refundCancelEventId } from "./commands";
 
 /**
  * The owner's billing commands (ADR 0104, decision 3): cancel the renewal, ask for the refund of the right of
