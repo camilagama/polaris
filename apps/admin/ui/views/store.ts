@@ -94,11 +94,7 @@ export function storeView(tools: ScreenTools): HTMLElement {
   if (id === null) {
     return dom.el("p", { role: "alert" }, "Esta loja não foi encontrada.");
   }
-  const head = dom.el(
-    "p",
-    { class: "store-head" },
-    storeName(dom, "", id)
-  );
+  const head = dom.el("p", { class: "store-head" }, storeName(dom, "", id));
   const parts: HTMLElement[] = [head];
   if (can("support_case:manage")) {
     parts.push(storeCases(tools, id));
