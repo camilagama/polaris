@@ -11,7 +11,7 @@ import type {
 } from "../types";
 
 /** The server's limit for a case's reason (`MAX_CASE_REASON_LENGTH`), in characters as a person counts them. */
-const MAX_REASON_LENGTH = 500;
+export const MAX_REASON_LENGTH = 500;
 /** The most open cases of one store the list asks for; the server's page holds at most 50. */
 const CASES_PAGE = "50";
 const REASON_SHOWN = 120;
@@ -47,7 +47,7 @@ function countText(count: number, more: boolean): string {
  * What a failed opening says. Without an answer the case may have been opened all the same (the request may have
  * reached the server): the operator looks at the list before asking again, so a case is not opened twice.
  */
-function openProblemText(problem: Problem): string {
+export function openProblemText(problem: Problem): string {
   if (problem === "invalid") {
     return `O motivo não foi aceito: use de 1 a ${MAX_REASON_LENGTH} caracteres, sem caracteres de controle.`;
   }
@@ -62,7 +62,7 @@ function openProblemText(problem: Problem): string {
 }
 
 /** Why a reason typed here would be refused by the server, or null when it would be taken (AC-11). */
-function reasonProblem(reason: string): string | null {
+export function reasonProblem(reason: string): string | null {
   const trimmed = reason.trim();
   if (trimmed === "") {
     return "Escreva o motivo do caso.";

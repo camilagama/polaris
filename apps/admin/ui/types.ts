@@ -72,3 +72,37 @@ export interface RefundWindowView {
   state: string;
   window: { open: boolean; until: string } | null;
 }
+
+/** What `GET /api/support-cases/:caseId` answers: the case, its temporary accesses and its audit trail. */
+export interface SupportCaseDetail {
+  audit: {
+    createdAt: string;
+    detail: string | null;
+    entityId: string | null;
+    entityType: string | null;
+    eventType: string;
+    id: string;
+    principalId: string;
+  }[];
+  case: SupportCaseSummary & {
+    closedAt: string | null;
+    context: string | null;
+    openedBy: string;
+    resolution: string | null;
+  };
+  grants: {
+    active: boolean;
+    expiresAt: string;
+    id: string;
+    principalId: string;
+    revokedAt: string | null;
+    startsAt: string;
+  }[];
+}
+
+/** What `POST /api/support-cases/:caseId/close` answers: `changed` is false when the case was already closed. */
+export interface ClosedSupportCase {
+  changed: boolean;
+  id: string;
+  status: string;
+}

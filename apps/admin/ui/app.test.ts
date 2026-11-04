@@ -13,99 +13,19 @@ import {
   accessRedirect,
   alertOf,
   type Answer,
+  diagnostics,
   flush,
   json,
   mount,
   OWNER,
   summary,
 } from "./test-page";
-import type { OrganizationDiagnostics } from "./types";
 
 /**
  * The Admin page in a small DOM (ui/test-dom.ts), against a simulated API: what it asks the server, what it shows
  * and how it fails (corte admin-tela-v1, AC-3 to AC-6, AC-11, AC-12 and AC-14). Nothing here sets a clock: the page
  * has no timer, and the dates are fixed instants checked in Brasília.
  */
-
-function diagnostics(
-  overrides: {
-    attention?: OrganizationDiagnostics["attention"];
-    billing?: Partial<NonNullable<OrganizationDiagnostics["billing"]>> | null;
-    entitlements?: Partial<OrganizationDiagnostics["entitlements"]>;
-    grants?: OrganizationDiagnostics["grants"];
-    name?: string;
-    quotas?: OrganizationDiagnostics["quotas"];
-  } = {}
-): OrganizationDiagnostics {
-  const billing =
-    overrides.billing === null
-      ? null
-      : {
-          accessEndsAt: "2026-11-15T02:59:59.000Z",
-          cancelAtPeriodEnd: false,
-          cycleMonths: 1,
-          lastFactAt: "2026-10-15T15:00:00.000Z",
-          overLimitSince: null,
-          pendingCycleMonths: null,
-          provider: "asaas",
-          revokedReason: null,
-          revokedThrough: null,
-          state: "active",
-          trialStartedAt: "2026-10-01T15:00:00.000Z",
-          version: 3,
-          ...overrides.billing,
-        };
-  return {
-    attention: overrides.attention ?? [],
-    billing,
-    billingEvents: {
-      byStatus: {},
-      lastReceivedAt: null,
-      maxAttempts: 0,
-      oldestUnprocessedAt: null,
-    },
-    entitlements: {
-      accessEndsAt: "2026-11-15T02:59:59.000Z",
-      flags: { "offline.write": true, public_catalog: true },
-      overLimit: false,
-      plan: "pro",
-      raisedByGrant: [],
-      state: "active",
-      ...overrides.entitlements,
-    },
-    grants: overrides.grants ?? [],
-    offline: { activeGrants: 0, devices: 2, lastSeenAt: null },
-    organization: {
-      authorizationEpoch: 1,
-      createdAt: "2026-10-01T12:00:00.000Z",
-      currency: "BRL",
-      id: "org-pro-1",
-      members: 1,
-      name: overrides.name ?? "Loja do Bruno",
-      status: "active",
-      timezone: "America/Sao_Paulo",
-    },
-    quotas: overrides.quotas ?? [
-      { key: "goals.active.max", limit: 10, status: "ok", used: 1 },
-      { key: "images.active.max", limit: 500, status: "ok", used: 20 },
-      { key: "images.per_product.max", limit: 5, status: "at_limit", used: 5 },
-      { key: "variants.active.max", limit: 1000, status: "ok", used: 40 },
-    ],
-    sync: {
-      last7Days: {},
-      lastReceivedAt: "2026-10-27T03:30:00.000Z",
-      rejectedByCode: {},
-    },
-    usage: {
-      activeGoals: 1,
-      archivedProducts: 0,
-      images: 20,
-      maxImagesPerProduct: 5,
-      products: 12,
-      variants: 40,
-    },
-  };
-}
 
 /** A status code or an error code of the server: never shown to the operator. */
 /** Bidi controls and invisible characters, which an attribute must not carry as they are. */
