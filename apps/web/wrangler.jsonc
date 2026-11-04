@@ -253,7 +253,9 @@
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
         // Open to anyone on purpose: the staging data is synthetic. The sender must be on araute.app
-        // (the isolation check refuses another domain). RESEND_API_KEY is a Worker secret (runbook staging.md).
+        // (the isolation check refuses another domain). RESEND_API_KEY is a Worker secret (runbook staging.md), and
+        // so is AUTH_PASSWORD_PEPPER, the pepper of the password hash of this environment: without it the password is
+        // off (ADR 0100, amended). The isolation check refuses the pepper as a var.
         "EMAIL_PASSWORD_AUTH_ENABLED": "true",
         "AUTH_EMAIL_FROM": "Polaris (staging) <nao-responda@araute.app>",
         // The Turnstile widget `polaris-staging` (managed, hostname dash.araute.app only; runbook staging.md). The site
@@ -438,6 +440,7 @@
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
+        // on at the go-live only with AUTH_PASSWORD_PEPPER set as a secret of production, never the one of staging
         "EMAIL_PASSWORD_AUTH_ENABLED": "false",
         // empty on purpose (the parity check wants the name): the sender is set at the go-live, on a verified domain of production
         "AUTH_EMAIL_FROM": "",

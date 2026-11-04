@@ -358,11 +358,14 @@ export const passwordStates = {
       .waitFor();
     await settle(page);
   },
+  /** A rule missing: the button is off (`aria-disabled`), so Enter in the field submits and the field is flagged. */
   resetShort: async (page: Page) => {
     await openReset(page);
     await newPasswordField(page).fill(SHORT_PASSWORD);
-    await submit(page, "Trocar senha");
-    await page.getByText("Use pelo menos 15 caracteres.").waitFor();
+    await newPasswordField(page).press("Enter");
+    await page
+      .locator('input[aria-invalid="true"][name="new-password"]')
+      .waitFor();
     await settle(page);
   },
   unlockChecking: async (page: Page) => {

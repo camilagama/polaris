@@ -1,3 +1,9 @@
+import {
+  PASSWORD_MAX_CHARACTERS,
+  type PasswordRequirement,
+  passwordCharacters,
+  unmetPasswordRequirements,
+} from "@polaris/domain/auth/password-rules";
 import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 
 /**
@@ -116,31 +122,42 @@ export function emailProblem(value: string): EmailProblem | null {
 }
 
 export type NewPasswordProblem =
-  | "compromised"
   | "invalid_characters"
+  | "missing_lowercase"
+  | "missing_number"
+  | "missing_uppercase"
   | "too_long"
   | "too_short";
 
-const PASSWORD_MIN = 15;
-const PASSWORD_MAX = 128;
+const REQUIREMENT_PROBLEMS = {
+  length: "too_short",
+  lowercase: "missing_lowercase",
+  number: "missing_number",
+  uppercase: "missing_uppercase",
+} satisfies Record<PasswordRequirement, NewPasswordProblem>;
 
 /**
- * The size rule, checked before sending as the server checks it (NFC, 15 to 128 characters). The breach
- * check only the server makes.
+ * The rules checked before sending, the ones the server checks (`@polaris/domain/auth/password-rules`, on the NFC
+ * form): the first rule missing, in the order of the list, or the maximum of 128 characters.
  */
 export function newPasswordProblem(value: string): NewPasswordProblem | null {
-  const { length } = [...value.normalize("NFC")];
-  if (length < PASSWORD_MIN) {
-    return "too_short";
+  if (passwordCharacters(value) > PASSWORD_MAX_CHARACTERS) {
+    return "too_long";
   }
-  return length > PASSWORD_MAX ? "too_long" : null;
+  const [missing] = unmetPasswordRequirements(value);
+  return missing ? REQUIREMENT_PROBLEMS[missing] : null;
+}
+
+/** A problem that is a rule of the list: the list shows it (✗ in red), with no line of its own. */
+export function isRequirementProblem(problem: NewPasswordProblem): boolean {
+  return Object.values(REQUIREMENT_PROBLEMS).includes(
+    problem as (typeof REQUIREMENT_PROBLEMS)[PasswordRequirement]
+  );
 }
 
 /** A password refusal of the server, as a problem of the field. */
 function passwordPolicyProblem(code: string | null): NewPasswordProblem | null {
   switch (code) {
-    case "password_compromised":
-      return "compromised";
     case "password_invalid_unicode":
       return "invalid_characters";
     case "password_too_long":
@@ -149,17 +166,19 @@ function passwordPolicyProblem(code: string | null): NewPasswordProblem | null {
     case "password_too_short":
     case "PASSWORD_TOO_SHORT":
       return "too_short";
+    case "password_missing_number":
+      return "missing_number";
+    case "password_missing_uppercase":
+      return "missing_uppercase";
+    case "password_missing_lowercase":
+      return "missing_lowercase";
     default:
       return null;
   }
 }
 
 /** The refusals every password form shares. Anything not named here is "unavailable". */
-export type CommonFailure =
-  | "challenge"
-  | "hibp_unavailable"
-  | "limit"
-  | "unavailable";
+export type CommonFailure = "challenge" | "limit" | "unavailable";
 
 export function commonFailure(answer: AuthAnswer): CommonFailure {
   if (answer.status === 429) {
@@ -167,9 +186,6 @@ export function commonFailure(answer: AuthAnswer): CommonFailure {
   }
   if (answer.code === "auth_challenge_failed") {
     return "challenge";
-  }
-  if (answer.code === "password_hibp_unavailable") {
-    return "hibp_unavailable";
   }
   return "unavailable";
 }

@@ -10,15 +10,14 @@
 
 ## Senhas
 
-- Para o fluxo de senha como fator único, aceitar de 15 a 128 pontos de código Unicode após normalização NFC. Espaços e caracteres Unicode são permitidos; a aplicação não trunca nem remove espaços.
-- Não exigir combinações arbitrárias de maiúsculas, minúsculas, números ou símbolos; não exigir troca periódica. Uma senha comprometida deve ser substituída.
-- Antes de armazenar ou alterar uma senha, verificar o valor inteiro contra o corpus de senhas comprometidas do HIBP Pwned Passwords. Calcular SHA-1 somente no Worker, enviar apenas o prefixo de cinco dígitos hexadecimais pelo endpoint k-anonymity com `Add-Padding: true`, comparar os sufixos localmente e nunca enviar a senha ou o hash completo.
-- Se a consulta HIBP não puder ser concluída, rejeitar a criação/alteração da senha com erro temporário genérico. Não armazenar a senha sem a verificação.
-- Não executar a consulta HIBP durante login: ela é necessária quando a senha é criada ou alterada, não em cada autenticação.
+- Para o fluxo de senha como fator único, a senha nova tem de 8 a 128 pontos de código Unicode após normalização NFC, com pelo menos 1 número, 1 letra maiúscula e 1 letra minúscula (letras acentuadas contam pela sua caixa). Caractere especial é recomendado, nunca exigido. Espaços e caracteres Unicode são permitidos; a aplicação não trunca nem remove espaços. A regra é uma só, conferida no servidor e repetida na tela antes do envio; a recusa diz qual regra faltou.
+- Não exigir troca periódica. Uma senha comprometida deve ser substituída.
+- Não há consulta a corpus de senhas vazadas (decisão do usuário, 4/11/2026): o risco de uma senha conhecida passar a regra fica aceito, com o bloqueio de 5 tentativas em 15 minutos, o limite por IP e o desafio contra robôs como freio.
+- A senha nunca é guardada nem enviada ao banco. O servidor da aplicação calcula `k`, o HMAC-SHA-256 da senha em NFC com um segredo próprio de cada ambiente (pepper), e o banco guarda só o bcrypt de `k` com custo 11, com o prefixo da versão do pepper (`pgbf1$`). Sem o pepper, a senha fica desligada. Um hash de outro formato nunca confere: a pessoa redefine a senha pelo e-mail.
 - Reset de senha revoga todas as sessões Better Auth do usuário.
 - **Definir** (`set-password`) ou **trocar** (`change-password`) a senha exige uma sessão com login nos últimos 15 minutos e e-mail verificado. A troca e a definição revogam as outras sessões do usuário e troca a época de autorização, o que revoga as concessões de acesso offline vivas; a sessão de quem trocou continua (com token novo) e o token não é devolvido ao JavaScript. As duas operações geram auditoria de segurança (`password_set`, `password_changed`) e um e-mail de aviso à pessoa. O reset de senha grava `password_reset_completed` e limpa o contador de bloqueio.
 
-A política de tamanho, Unicode, composição e expiração segue as recomendações de senhas do [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html). A consulta de senhas comprometidas segue a [API oficial Pwned Passwords](https://haveibeenpwned.com/API/v3). O limite máximo de 128 pontos de código é a escolha do produto e supera o mínimo de capacidade recomendado pelo NIST. O NIST também recomenda bloquear valores comuns, esperados ou específicos do serviço; o plano exige a consulta HIBP, e a necessidade de uma lista adicional fica para revisão antes do go-live.
+A política de Unicode e expiração segue as recomendações de senhas do [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html). O mínimo de 8, a composição e o fim da consulta de senhas vazadas são escolha do usuário (padrão de mercado) e ficam abaixo do que o NIST recomenda para senha como fator único (15 pontos de código, sem composição, com a lista de valores comprometidos): o risco está aceito no [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md) (emenda de 4/11/2026) e volta à revisão antes do go-live. O limite máximo de 128 pontos de código é a escolha do produto.
 
 ## Cadastro por senha nunca verificado
 
@@ -89,7 +88,7 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 - Não associar contas automaticamente durante um login social. O vínculo Google exige uma sessão existente e verificada, iniciada por ação explícita do usuário no fluxo OAuth com redirect/PKCE.
 - O email da conta Polaris e o email retornado pelo Google precisam estar verificados e ser iguais sem distinção de caixa. Rejeitar email ausente, não verificado ou diferente.
 - Não aceitar `idToken` enviado diretamente pelo cliente para criar vínculo. `trustedProviders` permanece vazio, emails diferentes não são permitidos e o perfil local não é sobrescrito ao vincular.
-- Uma sessão Google só pode adicionar senha se o email local estiver verificado; o Worker chama a API server-only do Better Auth, aplica a mesma normalização NFC, tamanho e consulta HIBP da criação de senha e mantém a sessão associada ao mesmo user ID.
+- Uma sessão Google só pode adicionar senha se o email local estiver verificado; o Worker chama a API server-only do Better Auth, aplica a mesma normalização NFC e as mesmas regras da criação de senha e mantém a sessão associada ao mesmo user ID.
 - O callback OAuth de vínculo gera evento de segurança com o ID interno do usuário quando a sessão está presente; nunca registrar token, payload ou dados sensíveis do provider.
 
 O fluxo explícito e a API server-side `setPassword` seguem a [documentação Better Auth de usuários e contas](https://www.better-auth.com/docs/concepts/users-accounts).

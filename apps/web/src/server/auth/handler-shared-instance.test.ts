@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../environment";
+import { testPasswordPepper } from "./password-hash-test-support";
 import {
   currentAuthRequestState,
   currentRequestId,
@@ -14,6 +15,7 @@ interface CapturedOptions {
   database: FakeDatabase;
   emailDelivery?: unknown;
   googleProvider?: { clientId: string };
+  passwordPepper?: string;
   requestId: () => string;
   requestState?: unknown;
   runInBackground: (task: Promise<unknown>) => void;
@@ -269,6 +271,7 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
       "the password switch",
       {
         AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+        AUTH_PASSWORD_PEPPER: testPasswordPepper,
         EMAIL_PASSWORD_AUTH_ENABLED: "true",
         RESEND_API_KEY: "re_test_only",
       },
@@ -298,6 +301,7 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
     await getSession("full", vi.fn(), {
       ...bindings,
       AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+      AUTH_PASSWORD_PEPPER: testPasswordPepper,
       BETTER_AUTH_SECRET: "p".repeat(32),
       EMAIL_PASSWORD_AUTH_ENABLED: "true",
       GOOGLE_CLIENT_ID: "client",
@@ -306,6 +310,39 @@ describe("the /api/auth/* routes share one Better Auth per isolate", () => {
     });
     expect(lastOptions().emailDelivery).toBeDefined();
     expect(lastOptions().googleProvider?.clientId).toBe("client");
+  });
+
+  it("hands the pepper to the instance only when the password is on, and logs auth_password_pepper_missing, without a value, when it is short", async () => {
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const password = {
+      ...bindings,
+      AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+      BETTER_AUTH_SECRET: "p".repeat(32),
+      EMAIL_PASSWORD_AUTH_ENABLED: "true",
+      RESEND_API_KEY: "re_test_only",
+    };
+
+    await getSession("with-pepper", vi.fn(), {
+      ...password,
+      AUTH_PASSWORD_PEPPER: testPasswordPepper,
+    });
+    expect(lastOptions().passwordPepper).toBe(testPasswordPepper);
+    expect(JSON.stringify(logged.mock.calls)).not.toContain(
+      "auth_password_pepper_missing"
+    );
+
+    await getSession("short-pepper", vi.fn(), {
+      ...password,
+      AUTH_PASSWORD_PEPPER: "ppppp",
+    });
+    expect(lastOptions().passwordPepper).toBeUndefined();
+    expect(lastOptions().emailDelivery).toBeUndefined();
+    expect(logged).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "auth_password_pepper_missing" })
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("ppppp");
   });
 
   it("keys the instance on the environment, never on the request", async () => {

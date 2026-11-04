@@ -80,7 +80,6 @@ export const BASELINE_PACKAGES = [
   "@cloudflare/vite-plugin",
   "@cloudflare/workers-types",
   "@lhci/cli",
-  "@noble/hashes",
   "@orpc/client",
   "@orpc/server",
   "@playwright/test",

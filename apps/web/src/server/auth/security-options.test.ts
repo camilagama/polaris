@@ -2,6 +2,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBetterAuth } from "../auth";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
+import { createTestPasswordHasher } from "./password-hash-test-support";
 import {
   betterAuthSecurityOptions,
   sessionCookieName as sessionCookieNameFor,
@@ -9,7 +10,7 @@ import {
 
 const httpsBaseURL = "https://polaris.example.invalid";
 const testSecret = "test-only-better-auth-secret-32-bytes";
-const password = "uma frase longa e unica para os testes de seguranca 42";
+const password = "Uma frase longa e unica para os testes de seguranca 42";
 const email = "security-options@example.invalid";
 const sessionCookieName = /^__Secure-better-auth\.session_token=/;
 const secureAttribute = /;\s*Secure/i;
@@ -23,16 +24,6 @@ interface MemoryDatabase extends Record<string, Record<string, unknown>[]> {
   session: Record<string, unknown>[];
   user: Record<string, unknown>[];
   verification: Record<string, unknown>[];
-}
-
-function stubPwnedPasswordRange() {
-  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
-    const url = input instanceof Request ? input.url : String(input);
-    if (!url.startsWith("https://api.pwnedpasswords.com/range/")) {
-      throw new Error("Unexpected outbound request during auth test.");
-    }
-    return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
-  });
 }
 
 function createHarness(
@@ -54,6 +45,7 @@ function createHarness(
     auditEventWriter: () => Promise.resolve(),
     baseURL,
     databaseAdapter: memoryAdapter(database),
+    passwordHasher: createTestPasswordHasher(),
     emailDelivery: {
       sendPasswordReset: () => Promise.resolve(),
       sendVerificationEmail: ({ token, url }) => {
@@ -161,7 +153,6 @@ describe("Better Auth security options", () => {
   });
 
   it("issues Secure, HttpOnly, SameSite=Lax, path-scoped cookies with the __Secure- prefix over HTTPS", async () => {
-    stubPwnedPasswordRange();
     const fresh = createHarness();
     await signUpAndVerify(fresh);
     const login = await fresh.post("/sign-in/email", { email, password });
@@ -183,7 +174,6 @@ describe("Better Auth security options", () => {
   });
 
   it("records the Cloudflare client IP and ignores a spoofed X-Forwarded-For", async () => {
-    stubPwnedPasswordRange();
     const harness = createHarness();
     await signUpAndVerify(harness);
 
@@ -201,7 +191,6 @@ describe("Better Auth security options", () => {
   });
 
   it("never falls back to X-Forwarded-For when Cloudflare sent no client IP", async () => {
-    stubPwnedPasswordRange();
     const harness = createHarness();
     await signUpAndVerify(harness);
 
@@ -217,7 +206,6 @@ describe("Better Auth security options", () => {
   });
 
   it("answers sign-up before the verification e-mail is delivered when a background runner is set", async () => {
-    stubPwnedPasswordRange();
     let releaseDelivery: () => void = () => undefined;
     const delivery = new Promise<void>((resolve) => {
       releaseDelivery = resolve;
@@ -251,7 +239,6 @@ describe("Better Auth security options", () => {
   });
 
   it("swallows delivery failures of background e-mail without failing the request", async () => {
-    stubPwnedPasswordRange();
     const logger = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);

@@ -777,7 +777,7 @@ export const SCREENS: UiScreen[] = [
   ),
   entryScreen("criar conta e-mail completo", entryStates.signUpEmailComplete),
   entryScreen("criar conta sem o aceite", entryStates.signUpAcceptMissing),
-  entryScreen("criar conta senha vazada", entryStates.signUpCompromised),
+  entryScreen("criar conta senha recusada", entryStates.signUpRuleRefused),
   entryScreen("criar conta criando", entryStates.signUpCreating),
   entryScreen("criar conta confirmando pessoa", entryStates.signUpChecking),
   entryScreen("criar conta desafio interativo", entryStates.signUpInteractive),
