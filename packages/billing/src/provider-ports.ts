@@ -1,15 +1,11 @@
-import {
-  checkoutReturnUrls,
-  createAsaasPort,
-} from "@polaris/billing/asaas/port";
-import type { FetchLike } from "@polaris/billing/http";
+import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
+import { checkoutReturnUrls, createAsaasPort } from "./asaas/port";
+import type { FetchLike } from "./http";
 import {
   type BillingProviderPort,
   ProviderNotConfiguredError,
-} from "@polaris/billing/provider-port";
-import { createWooviPort } from "@polaris/billing/woovi/port";
-import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
-import type { WorkerBindings } from "../environment";
+} from "./provider-port";
+import { createWooviPort } from "./woovi/port";
 
 /** A command to the provider gives up after this long (ADR 0101): the caller sees `provider_unavailable`. */
 const BILLING_COMMAND_TIMEOUT_MS = 8000;
@@ -35,29 +31,37 @@ function fetchOf(options: BillingPortOptions): FetchLike {
     : base;
 }
 
-export type BillingPortBindings = Pick<
-  WorkerBindings,
-  | "ASAAS_API_KEY"
-  | "ASAAS_BASE_URL"
-  | "BETTER_AUTH_BASE_URL"
-  | "WOOVI_APP_ID"
-  | "WOOVI_BASE_URL"
-  | "WOOVI_REFUND_ENABLED"
->;
+/**
+ * The settings of the providers, as the Worker reads them. `ASAAS_API_KEY` and `WOOVI_APP_ID` are secrets; the base
+ * URLs and the refund switch are variables of each environment. The webhook secrets are not here: a Worker that only
+ * calls the providers (the Admin) never holds them.
+ */
+export interface BillingPortBindings {
+  ASAAS_API_KEY?: string;
+  ASAAS_BASE_URL?: string;
+  /** The app's own origin: the card checkout's return URLs are built on it. Only the web has it. */
+  BETTER_AUTH_BASE_URL?: string;
+  WOOVI_APP_ID?: string;
+  WOOVI_BASE_URL?: string;
+  WOOVI_REFUND_ENABLED?: string;
+}
 
 function asaasPortOf(
   bindings: BillingPortBindings,
-  options: BillingPortOptions
+  options: BillingPortOptions,
+  checkout: boolean
 ): BillingProviderPort {
   const apiKey = bindings.ASAAS_API_KEY ?? "";
   const baseUrl = bindings.ASAAS_BASE_URL ?? "";
-  const appBaseUrl = bindings.BETTER_AUTH_BASE_URL ?? "";
-  if (!(apiKey && baseUrl && appBaseUrl)) {
+  const appBaseUrl = checkout ? (bindings.BETTER_AUTH_BASE_URL ?? "") : null;
+  if (!(apiKey && baseUrl) || appBaseUrl === "") {
     throw new ProviderNotConfiguredError();
   }
   try {
-    // an origin that is not https (or local http) would send the payer anywhere
-    checkoutReturnUrls(appBaseUrl);
+    if (appBaseUrl !== null) {
+      // an origin that is not https (or local http) would send the payer anywhere
+      checkoutReturnUrls(appBaseUrl);
+    }
     return createAsaasPort({
       apiKey,
       appBaseUrl,
@@ -112,10 +116,31 @@ export function billingProviderPortOf(
   provider: string,
   options: BillingPortOptions = {}
 ): BillingProviderPort {
+  return portOf(bindings, provider, options, true);
+}
+
+/**
+ * The port for the operator's commands (cancel the renewal, refund): the same clients and checks, without the app's
+ * origin, so it cannot open a card checkout (`prepareSubscription` refuses with `ProviderNotConfiguredError`).
+ */
+export function operatorProviderPortOf(
+  bindings: BillingPortBindings,
+  provider: string,
+  options: BillingPortOptions = {}
+): BillingProviderPort {
+  return portOf(bindings, provider, options, false);
+}
+
+function portOf(
+  bindings: BillingPortBindings,
+  provider: string,
+  options: BillingPortOptions,
+  checkout: boolean
+): BillingProviderPort {
   if (!billingProviderHandled(provider)) {
     throw new ProviderNotConfiguredError();
   }
   return provider === "woovi"
     ? wooviPortOf(bindings, options)
-    : asaasPortOf(bindings, options);
+    : asaasPortOf(bindings, options, checkout);
 }

@@ -356,6 +356,19 @@ export const alertSignals = [
     title: "Incidente do reembolso não gravado",
     windowMinutes: 60,
   },
+  {
+    // every command of an operator that reached a provider wakes the other person of the Access (ADR 0105): the
+    // Admin has no second approval, so the other person sees each one as it happens
+    id: "comando-de-cobranca-do-operador",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["billing_operator_command"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Operador cancelou uma renovação ou reembolsou pelo Admin",
+    windowMinutes: 15,
+  },
 ] as const satisfies readonly AlertSignal[];
 
 export type AlertSignalId = (typeof alertSignals)[number]["id"];

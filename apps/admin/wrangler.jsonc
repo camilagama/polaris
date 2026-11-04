@@ -63,10 +63,16 @@
       "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
       "workers_dev": false,
       "preview_urls": false,
+      // The operator's provider commands (ADR 0105) call the sandboxes only, as the web of staging does; the keys
+      // (ASAAS_API_KEY, WOOVI_APP_ID) are Worker secrets of this environment, and the Asaas client refuses a
+      // production key against the sandbox host. No setting of the webhooks comes here.
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
         "ACCESS_TEAM_DOMAIN": "polaris-staging.cloudflareaccess.com",
-        "ACCESS_AUDIENCE": "8e08707bd1989a6e4f8cc738b5c9fddd2c589fa235613d22c7bcca60a485a4ca"
+        "ACCESS_AUDIENCE": "8e08707bd1989a6e4f8cc738b5c9fddd2c589fa235613d22c7bcca60a485a4ca",
+        "ASAAS_BASE_URL": "https://api-sandbox.asaas.com/v3",
+        "WOOVI_BASE_URL": "https://api.woovi-sandbox.com",
+        "WOOVI_REFUND_ENABLED": "true"
       },
       "observability": {
         "enabled": true,
@@ -94,10 +100,14 @@
       "account_id": "PLACEHOLDER-production-account-id",
       "workers_dev": false,
       "preview_urls": false,
+      // The production hosts of the providers, as the web of production; the keys are secrets still to be set.
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
         "ACCESS_TEAM_DOMAIN": "PLACEHOLDER-production-team.cloudflareaccess.com",
-        "ACCESS_AUDIENCE": "PLACEHOLDER-production-access-audience"
+        "ACCESS_AUDIENCE": "PLACEHOLDER-production-access-audience",
+        "ASAAS_BASE_URL": "https://api.asaas.com/v3",
+        "WOOVI_BASE_URL": "https://api.woovi.com",
+        "WOOVI_REFUND_ENABLED": "false"
       },
       "observability": {
         "enabled": true,

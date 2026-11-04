@@ -100,6 +100,11 @@ const cases = [
     adminMessage,
   ],
   ["@polaris/billing", ["apps", "admin", "src"], adminMessage],
+  // the operator's commands are the only door to billing (ADR 0105): never a webhook, its signature or a client
+  ["@polaris/billing/asaas/webhook", ["apps", "admin", "src"], adminMessage],
+  ["@polaris/billing/woovi/webhook", ["apps", "admin", "src"], adminMessage],
+  ["@polaris/billing/woovi/signature", ["apps", "admin", "src"], adminMessage],
+  ["@polaris/billing/asaas/client", ["apps", "admin", "src"], adminMessage],
   ["better-auth", ["apps", "admin", "src"], adminMessage],
   ["pg", ["apps", "admin", "src"], adminMessage],
 ].map(([specifier, workspace, expected]) => ({
@@ -185,6 +190,15 @@ const importControls = [
   controlImport(["apps", "web", "src", "lib"], browserMessage),
   controlImport(["apps", "catalog", "src"], catalogMessage),
   controlImport(["apps", "admin", "src"], adminMessage),
+  // the one door the Admin has to billing must stay open, or the rejections above would only mean "all of billing"
+  {
+    allowed: true,
+    expected: adminMessage,
+    rule: importRule,
+    source: forbiddenImport("@polaris/billing/operator-commands"),
+    specifier: "@polaris/billing/operator-commands",
+    workspace: ["apps", "admin", "src"],
+  },
 ];
 cases.push(
   ...importControls,

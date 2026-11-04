@@ -3,7 +3,7 @@ import { normalizePassword } from "./password-policy";
 /**
  * The hash of a password without spending the Worker's CPU (ADR 0100, amended). The Worker computes only
  * `k = hex(HMAC-SHA-256(pepper, NFC password))` with WebCrypto, microseconds; the bcrypt of `k` (cost 11) runs in
- * PostgreSQL (`auth_password_hash` and `auth_password_crypt`, migration 0111), and waiting for the database is not
+ * PostgreSQL (`auth_password_hash` and `auth_password_crypt`, migration 0112), and waiting for the database is not
  * CPU time. The password never leaves the Worker, and `k` is worthless without the pepper.
  *
  * Stored as `pgbf1$<bcrypt>`: the digit reserves the version of the pepper; only version 1 exists, so a new pepper

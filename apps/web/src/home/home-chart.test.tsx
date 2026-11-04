@@ -73,6 +73,44 @@ describe("o bloco Vendas por dia", () => {
   });
 });
 
+const IDLE = {
+  before: { daily: daily("2026-09-01", "2026-09-30", () => "0.00") },
+  month: { daily: daily("2026-10-01", "2026-10-31", () => "0.00") },
+  today: TODAY,
+} as unknown as HomeFigures;
+
+const BOX_HEIGHT = /data-chart-(?:empty|loading)[^>]*style="height:(\d+)px"/;
+const ZERO_TOTAL = /R\$\s0,00/;
+const boxHeight = (markup: string) => Number(BOX_HEIGHT.exec(markup)?.[1]);
+
+describe("o período sem venda", () => {
+  for (const days of ["7", "30"] as const) {
+    it(`${days} dias: a caixa do gráfico fica, com a frase e o chão dentro dela, e guarda a altura que o gráfico terá (a prova de que é a mesma do gráfico pronto está no e2e)`, () => {
+      const empty = renderToStaticMarkup(
+        <ChartBlock days={days} figures={IDLE} onDays={NO_CHANGE} />
+      );
+      const sold = renderToStaticMarkup(
+        <ChartBlock days={days} figures={figures} onDays={NO_CHANGE} />
+      );
+      expect(empty).toContain("data-chart-empty");
+      expect(empty).toContain("Sem vendas no período.");
+      expect(empty).toContain("data-chart-floor");
+      expect(sold).not.toContain("Sem vendas no período.");
+      expect(boxHeight(empty)).toBe(240);
+      expect(boxHeight(empty)).toBe(boxHeight(sold));
+    });
+  }
+
+  it("o total, o período e 'Ver os números' continuam no bloco", () => {
+    const empty = renderToStaticMarkup(
+      <ChartBlock days="7" figures={IDLE} onDays={NO_CHANGE} />
+    );
+    expect(empty).toMatch(ZERO_TOTAL);
+    expect(empty).toContain("17 a 23/10");
+    expect(empty).toContain("Ver os números");
+  });
+});
+
 describe("a tabela de 'Ver os números'", () => {
   const series = lastDays(BEFORE, MONTH, TODAY, 7);
   const earlier = lastDays(BEFORE, MONTH, "2026-10-16", 7);

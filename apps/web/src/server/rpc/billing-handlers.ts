@@ -48,7 +48,7 @@ import { billingSelfServiceEnabled } from "../billing/self-service";
 import {
   type BillingPortOptions,
   billingProviderPortOf,
-} from "../billing/provider-ports";
+} from "@polaris/billing/provider-ports";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
 

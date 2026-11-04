@@ -1,7 +1,7 @@
 import {
   ProviderNotConfiguredError,
   ProviderNotFoundError,
-} from "@polaris/billing/provider-port";
+} from "./provider-port";
 import { describe, expect, it, vi } from "vitest";
 import { billingProviderPortOf } from "./provider-ports";
 

@@ -209,11 +209,11 @@ Trocar só o segredo (suspeita de vazamento, rotina): no painel, no widget `pola
 
 ### Pepper da senha
 
-`AUTH_PASSWORD_PEPPER` é o segredo do hash da senha ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), emenda de 4/11/2026): o Worker calcula o HMAC-SHA-256 da senha com ele, e o banco guarda só o bcrypt desse HMAC (migration 0111). Um por ambiente, nunca o mesmo no staging e na produção, nunca em `vars` (a verificação de isolamento reprova), nunca em arquivo do repositório, chat, PR nem log. Sem ele, ou com menos de 32 caracteres, a senha fica desligada: `/api/auth-methods` traz `"emailPassword": false` e os logs do Worker mostram `auth_password_pepper_missing` a cada pedido de `/api/auth`.
+`AUTH_PASSWORD_PEPPER` é o segredo do hash da senha ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), emenda de 4/11/2026): o Worker calcula o HMAC-SHA-256 da senha com ele, e o banco guarda só o bcrypt desse HMAC (migration 0112). Um por ambiente, nunca o mesmo no staging e na produção, nunca em `vars` (a verificação de isolamento reprova), nunca em arquivo do repositório, chat, PR nem log. Sem ele, ou com menos de 32 caracteres, a senha fica desligada: `/api/auth-methods` traz `"emailPassword": false` e os logs do Worker mostram `auth_password_pepper_missing` a cada pedido de `/api/auth`.
 
-**Criar** (antes de ligar a senha, ou depois do deploy que trouxe a migration 0111):
+**Criar** (antes de ligar a senha, ou depois do deploy que trouxe a migration 0112):
 
-1. Conferir que a migration 0111 está no banco do ambiente (`polaris_password.crypt` existe): sem ela, o cadastro e a entrada por senha respondem 500.
+1. Conferir que a migration 0112 está no banco do ambiente (`polaris_password.crypt` existe): sem ela, o cadastro e a entrada por senha respondem 500.
 2. Em `apps/web`, gerar e gravar sem o valor passar pelo terminal nem pelo histórico: `openssl rand -base64 32 | wrangler secret put AUTH_PASSWORD_PEPPER --env staging` (32 bytes aleatórios, 44 caracteres em base64). O segredo vale na hora, sem deploy.
 3. Conferir sem imprimir valores: `curl -fsS https://dash.araute.app/api/auth-methods` traz `"emailPassword": true`, e um cadastro de teste confirma o e-mail e entra.
 
@@ -251,6 +251,8 @@ A verificação de isolamento reprova, no `wrangler.jsonc` e no `wrangler.json` 
 | `ASAAS_WEBHOOK_TOKEN_NEXT` | só durante a rotação do token |
 
 Os segredos vêm **antes** do deploy que liga a cobrança: sem `ASAAS_WEBHOOK_TOKEN` o smoke fica vermelho (503 no webhook do Asaas); sem `ASAAS_API_KEY`, `WOOVI_APP_ID` ou `BILLING_PAYER_KEY` o smoke passa, mas o checkout da tela responde 503. O `RESEND_API_KEY` e o `AUTH_EMAIL_FROM` da seção 5 já servem aos e-mails de cobrança.
+
+**Segredos do Worker `polaris-admin-staging`** (comandos do operador, [ADR 0105](../adr/0105-comandos-de-provedor-pelo-operador.md); `wrangler secret put <NOME> --env staging` em `apps/admin`): `ASAAS_API_KEY` e `WOOVI_APP_ID`, **os mesmos valores** do `polaris-web-staging` (de sandbox). As variáveis `ASAAS_BASE_URL`, `WOOVI_BASE_URL` (sandboxes) e `WOOVI_REFUND_ENABLED` estão no `env.staging` do `apps/admin/wrangler.jsonc`, e a verificação de isolamento exige os sandboxes também no Admin do staging. Nenhum token de webhook, chave pública da Woovi nem `BILLING_PAYER_KEY` vai ao Admin. Ao girar uma chave, gire os dois Workers juntos; na suspeita de vazamento, revogue primeiro no provedor ([runbook dos provedores](./billing-providers.md#comandos-do-operador-no-admin-cancelar-renovação-e-reembolsar)). Sem os segredos, os dois comandos do operador respondem 503 e o resto do Admin segue.
 
 **Registro dos webhooks nos painéis dos sandboxes:**
 

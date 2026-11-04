@@ -33,7 +33,7 @@ const expectedDatabase =
 
 const baseURL = "http://localhost";
 const secret = randomBytes(32).toString("hex");
-// the hash of the password runs in the database (migration 0111), over the HMAC with this pepper
+// the hash of the password runs in the database (migration 0112), over the HMAC with this pepper
 const passwordPepper = randomBytes(32).toString("base64");
 const RECORD = "public.record_auth_access(text,text,inet,text)";
 const PASSWORD = "Long passphrase for the access log gate 2026!";

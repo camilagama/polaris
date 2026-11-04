@@ -15,7 +15,8 @@
  *     bun scripts/gate7-asaas.ts checkout --organization <id> --user <id> \
  *     --cycle 1 --trial --link-file /tmp/gate7-link.txt
  *
- * Commands: checkout, state, wait, reconcile, refund, cancel, settle-unclaimed.
+ * Commands: checkout, state, wait, reconcile, refund (optional `--amount 24.90`, the amount read), cancel,
+ * settle-unclaimed.
  * See docs/runbooks/billing-providers.md (Gate 7).
  */
 import { randomUUID } from "node:crypto";
@@ -28,20 +29,22 @@ import { createDatabase } from "@polaris/db/client";
 import { withAuthorizedTenantTransaction } from "@polaris/db/tenant-transaction";
 import { describeError } from "@polaris/observability/wide-event";
 import {
+  cancelRenewal,
+  type RefundCommandDependencies,
+  refundCurrentPeriod,
+} from "@polaris/billing/operator-commands";
+import {
   ENVIRONMENT_MARKER_SQL,
   type EnvironmentReadings,
 } from "../../../packages/db/scripts/environment-marker";
 import {
-  cancelRenewal,
   checkoutPriceOf,
   type OperatorCommandDependencies,
-  type RefundCommandDependencies,
   reconcileOrganization,
-  refundCurrentPeriod,
   settleUnclaimedTrials,
   startCardCheckout,
 } from "../src/server/billing/commands";
-import { billingProviderPortOf } from "../src/server/billing/provider-ports";
+import { billingProviderPortOf } from "@polaris/billing/provider-ports";
 import {
   assertAsaasSandbox,
   assertGate7Database,
@@ -59,6 +62,8 @@ const WAIT_POLL_MS = 15_000;
 const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
+    // the amount the QA read (`"24.90"`): the refund answers `amount_changed` when the charge holds another
+    amount: { type: "string" },
     cycle: { type: "string" },
     "link-file": { type: "string" },
     minutes: { type: "string" },
@@ -282,10 +287,11 @@ async function main(): Promise<void> {
       return print(
         await withOperator(async (dependencies) => {
           const refund = await refundCurrentPeriod(dependencies, {
+            ...(values.amount ? { expectedAmount: values.amount } : {}),
             organizationId: organization(),
             requestId: randomUUID(),
           });
-          // the renewal as the record shows it now: cancelled also when nothing was left to refund
+          // the renewal as the record shows it now
           const record = await dependencies.store.readRecord(organization());
           return refundReport(refund, record?.cancelAtPeriodEnd ?? false);
         })

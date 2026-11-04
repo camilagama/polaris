@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AreaChart } from "./area-chart";
+import { OnDemandAreaChart } from "./on-demand";
 import { Sparkline } from "./sparkline";
 
 /**
@@ -319,4 +320,125 @@ describe("Sparkline", () => {
       html(<Sparkline color="var(--chart-3)" values={[1, 2, 3]} />)
     ).not.toMatch(OKLCH_OR_HEX);
   });
+});
+
+const BOX_HEIGHT = /style="height:(\d+)px"/;
+const heightOf = (markup: string) => Number(BOX_HEIGHT.exec(markup)?.[1]);
+const UNSEEN_READING =
+  /<div aria-hidden="true" class="invisible"><p[^>]*data-chart-reading/;
+const UNSEEN_LEGEND =
+  /<div aria-hidden="true" class="invisible"><ul[^>]*data-chart-legend/;
+const SENTENCE = "Sem vendas no período.";
+
+describe("an area chart of a period with nothing to draw", () => {
+  const secondary = {
+    data: WEEK,
+    legend: "Custos (CMV, taxas e despesas)",
+    name: "Custos",
+  };
+
+  it("keeps its reading line and its legend, unseen, and has no drawing, no image and no keyboard control", () => {
+    const empty = html(
+      <AreaChart
+        data={WEEK}
+        empty={SENTENCE}
+        formatValue={money}
+        label="Vendas"
+        secondary={secondary}
+      />
+    );
+    expect(empty).toContain("data-chart-empty");
+    expect(empty).toContain(SENTENCE);
+    expect(empty).toContain("data-chart-floor");
+    expect(empty).not.toContain("<input");
+    expect(empty).not.toContain('role="img"');
+    expect(empty).not.toContain("data-chart-area");
+    // both are in the layout and out of the accessibility tree and of the eyes
+    expect(empty).toMatch(UNSEEN_READING);
+    expect(empty).toMatch(UNSEEN_LEGEND);
+  });
+
+  it("the plot has the height of the drawn one: the plot and the margins of the blocks", () => {
+    const drawn = (props: Partial<Parameters<typeof AreaChart>[0]>) =>
+      html(
+        <AreaChart data={WEEK} formatValue={money} label="Vendas" {...props} />
+      );
+    expect(heightOf(drawn({ empty: SENTENCE, height: 200 }))).toBe(240);
+    expect(heightOf(drawn({ height: 200 }))).toBe(240);
+  });
+
+  it("the sentence is the only thing a screen reader finds in place of the drawing", () => {
+    const empty = html(
+      <AreaChart
+        data={WEEK}
+        empty={SENTENCE}
+        formatValue={money}
+        label="Vendas"
+        readingAtRest={false}
+      />
+    );
+    expect(empty).not.toContain("data-chart-reading");
+    expect(empty.match(/>Sem vendas no período\.</g)).toHaveLength(1);
+  });
+});
+
+describe("the box that holds the place of an area chart before its chunk comes", () => {
+  const cases = [
+    {
+      name: "the chart of the Início: no reading line, a context line",
+      props: {
+        height: 200,
+        readingAtRest: false,
+        secondary: {
+          color: "var(--chart-3)",
+          data: WEEK,
+          legend: "x",
+          name: "x",
+          subtle: true,
+        },
+      },
+      height: 240,
+    },
+    {
+      name: "a chart with the reading line at rest",
+      props: { height: 180 },
+      height: 246,
+    },
+    {
+      name: "two series with a legend",
+      props: {
+        height: 220,
+        secondary: { data: WEEK, legend: "Custos", name: "Custos" },
+      },
+      height: 330,
+    },
+  ] as const;
+
+  for (const { height, name, props } of cases) {
+    it(`${name}: ${height} px, the same with a sentence to say`, () => {
+      const loading = html(
+        <OnDemandAreaChart
+          data={WEEK}
+          formatValue={money}
+          label="Vendas"
+          {...props}
+        />
+      );
+      const empty = html(
+        <OnDemandAreaChart
+          data={WEEK}
+          empty={SENTENCE}
+          formatValue={money}
+          label="Vendas"
+          {...props}
+        />
+      );
+      expect(loading).toContain("data-chart-loading");
+      expect(empty).toContain("data-chart-empty");
+      expect(empty).not.toContain("data-chart-loading");
+      expect(empty).toContain(SENTENCE);
+      expect(heightOf(loading)).toBe(height);
+      expect(heightOf(empty)).toBe(height);
+    });
+  }
 });

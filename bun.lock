@@ -18,6 +18,7 @@
     "apps/admin": {
       "name": "@polaris/admin",
       "dependencies": {
+        "@polaris/billing": "workspace:*",
         "@polaris/contracts": "workspace:*",
         "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
@@ -118,7 +119,9 @@
     "packages/billing": {
       "name": "@polaris/billing",
       "dependencies": {
+        "@polaris/db": "workspace:*",
         "@polaris/domain": "workspace:*",
+        "@polaris/observability": "workspace:*",
       },
     },
     "packages/contracts": {

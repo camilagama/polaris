@@ -23,7 +23,7 @@ import {
 } from "../src/server/auth/password-hash";
 
 /**
- * The hash of a password in PostgreSQL (migration 0111, ADR 0100 amended), on a real PostgreSQL 18 with the Worker's
+ * The hash of a password in PostgreSQL (migration 0112, ADR 0100 amended), on a real PostgreSQL 18 with the Worker's
  * own hasher (`password-hash.ts`) and the authentication runtime's role:
  *   1. pgcrypto lives in `polaris_password`, which only the authentication runtime uses (the schema is the barrier: on
  *      Neon the functions of a trusted extension stay executable by PUBLIC); the two functions of the interface are SECURITY INVOKER, pin the search_path and are executed by the

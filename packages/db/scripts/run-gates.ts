@@ -112,6 +112,12 @@ const gates: Gate[] = [
     "billing-owner-commands",
     "../../../apps/web/scripts/verify-billing-owner-commands-gate.ts",
   ],
+  // the operator's provider commands (ADR 0105), with the real store, inbox, ledger and lock: the refund once by the
+  // state of the charge, the amount checked first, the decision in the ledger, the lock of another command
+  [
+    "billing-operator-commands",
+    "../../../apps/web/scripts/verify-billing-operator-commands-gate.ts",
+  ],
   // the consumer of billing.notice (ADR 0104, PR G), with the real store, the real recipient and the Worker's wiring:
   // the notice in the fact's transaction, the sweep once, the order of the arguments, the purge, cases 3 and 4 of item 5
   [
@@ -153,7 +159,7 @@ const gates: Gate[] = [
   ["access-log", "verify-access-log-gate.ts"],
   // the lock of the sign-in by password (ADR 0100): the 5th failure, the release, the reservation, the expiry
   ["login-lock", "verify-login-lock-gate.ts"],
-  // lives in apps/web: the Worker's hasher against the bcrypt of pgcrypto (0111), who reaches it, the old hash refused
+  // lives in apps/web: the Worker's hasher against the bcrypt of pgcrypto (0112), who reaches it, the old hash refused
   ["password-hash", "../../../apps/web/scripts/verify-password-hash-gate.ts"],
   // the purge of the user who never verified the e-mail (ADR 0100, Q-D2): every condition together, the limit, the audit
   ["unverified-user-purge", "verify-unverified-user-purge-gate.ts"],
@@ -367,6 +373,7 @@ const suites: Record<string, string[]> = {
     "billing-self-service",
     "billing-read-plan",
     "billing-owner-commands",
+    "billing-operator-commands",
     "billing-notices",
     "billing-notice-consumer",
     "operational-selection",

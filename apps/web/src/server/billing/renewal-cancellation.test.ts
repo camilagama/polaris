@@ -9,7 +9,7 @@ import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancella
 import { queueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PermanentHandlerError } from "../queue/consumer";
-import { cancelRenewalEventId } from "./commands";
+import { cancelRenewalEventId } from "@polaris/billing/operator-commands";
 import {
   handleRenewalCancelRequested,
   RENEWAL_CANCEL_REARM_BATCH,

@@ -112,26 +112,68 @@ function Reserved({
   className,
   floor,
   height,
+  message,
 }: {
   className?: string | undefined;
   floor?: number;
   height: number;
+  /** What a period with nothing to draw says, in the middle of the box above the floor: the box then is not hidden. */
+  message?: ReactNode;
 }) {
+  const said = message !== undefined;
   return (
     <div
-      aria-hidden="true"
+      {...(said
+        ? { "data-chart-empty": "" }
+        : { "aria-hidden": "true", "data-chart-loading": "" })}
       className={cn("relative w-full", className)}
-      data-chart-loading=""
       style={{ height }}
     >
       {floor === undefined ? null : (
         <div
+          aria-hidden="true"
           className="absolute inset-x-0 border-border border-t"
           data-chart-floor=""
           style={{ bottom: floor }}
         />
       )}
+      {said ? (
+        <p
+          className="absolute inset-x-0 top-0 grid place-items-center px-4 text-center text-muted-foreground"
+          style={{ bottom: floor ?? 0 }}
+        >
+          {message}
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+/** The line of reading above the drawing (18 px of text and the gap of the chart's grid). */
+const READING_LINE = 26;
+/** The legend of a second series that is not a context line (36 px of text and the gap). */
+const LEGEND_LINE = 44;
+
+/**
+ * The height the box that holds the place of an area chart takes while its chunk loads (or fails, for a period with
+ * nothing to draw): the plot, the margins of the blocks, the line of reading above the drawing when it shows at rest and
+ * the legend of a second series that has one. The legend wraps by the width of its box, so this is the common case
+ * (two lines of text on a phone), not a measure; the chart of the chunk measures its own.
+ */
+function areaBlockHeight({
+  height,
+  readingAtRest,
+  secondary,
+}: {
+  height: number | undefined;
+  readingAtRest: boolean | undefined;
+  secondary: boolean | undefined;
+}): number {
+  return (
+    (height ?? 180) +
+    EXTRA_HEIGHT +
+    (readingAtRest === false ? 0 : READING_LINE) +
+    (secondary ? LEGEND_LINE : 0)
   );
 }
 
@@ -143,20 +185,24 @@ export function OnDemandAreaChart({
   if (state.status === "ready") {
     return <state.charts.AreaChart {...props} />;
   }
-  if (state.status === "failed") {
+  // a period with nothing to draw has its sentence whatever happens to the chunk: there is no drawing to ask it for
+  if (state.status === "failed" && props.empty === undefined) {
     return failed ?? null;
   }
   // the box of the chart is its plot plus the margins of the blocks (`EXTRA_HEIGHT` of chart-data.ts, which this loader
   // may not import), and the reading line above the drawing is one line of text that the box holds too (with a second
-  // series the reading takes two lines on a phone and the legend one more)
+  // series that has a legend, one more)
   // the floor of the drawing is 32 px above its bottom (the dates of the x axis)
   return (
     <Reserved
       className={props.className}
       floor={32}
-      height={
-        (props.height ?? 180) + EXTRA_HEIGHT + (props.secondary ? 26 + 44 : 26)
-      }
+      height={areaBlockHeight({
+        height: props.height,
+        readingAtRest: props.readingAtRest,
+        secondary: props.secondary && !props.secondary.subtle,
+      })}
+      message={props.empty}
     />
   );
 }

@@ -19,7 +19,10 @@ import {
   type Mock,
   vi,
 } from "vitest";
-import { cancelRenewalEventId, refundCancelEventId } from "./commands";
+import {
+  cancelRenewalEventId,
+  refundCancelEventId,
+} from "@polaris/billing/operator-commands";
 import {
   OWNER_COMMAND_BUDGET_MS,
   type OwnerCommandAudit,

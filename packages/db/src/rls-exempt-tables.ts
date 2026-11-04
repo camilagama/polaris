@@ -32,7 +32,7 @@ export const RLS_EXEMPT_SCHEMAS: readonly RlsExemptSchema[] = [
   {
     functionsOnly: true,
     reason:
-      "pgcrypto for the password hash (migration 0111, ADR 0100 amended): its functions only, no relation; only the authentication runtime has USAGE on the schema",
+      "pgcrypto for the password hash (migration 0112, ADR 0100 amended): its functions only, no relation; only the authentication runtime has USAGE on the schema",
     schema: "polaris_password",
   },
 ];
