@@ -1264,8 +1264,6 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    // "Este ano" waits for the CPU measure (AC-23)
-    await expect(preset(page, "Este ano")).toHaveCount(0);
 
     await choosePreset(page, "Últimos 30 dias");
     await expect(chartRegion(page)).toContainText(
@@ -1291,6 +1289,44 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     });
   });
 
+  test("Este ano lê de 1º de janeiro até hoje e o gráfico agrupa por mês (AC-1, AC-7)", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    // the sales of the year fall on January 1st, the first day the year reads
+    server.fixture = { ...FIXTURE, "2026-01": COMPLETE_MONTH };
+    await openDashboard(page, server);
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+
+    await choosePreset(page, "Este ano");
+    await expectPreset(page, "Este ano");
+    expect(server.periods.at(-1)).toEqual({
+      from: "2026-01-01",
+      to: "2026-10-14",
+    });
+    const region = chartRegion(page);
+    await expect(region).toContainText("1 de janeiro a 14 de outubro");
+    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    // above 62 days the cards compare with nothing
+    await expect(page.locator("[data-kpi-delta]")).toHaveCount(0);
+
+    await region.getByRole("button", { name: "Ver os números" }).click();
+    const rows = region.locator("table").locator("tbody tr");
+    await expect(rows).toHaveCount(10);
+    await expect(region.locator("table thead")).toContainText("Mês");
+    await expect(rows.first()).toContainText("janeiro de 2026");
+    await expect(rows.first()).toContainText("R$ 130,00");
+    await expect(rows.last()).toContainText("outubro de 2026");
+
+    // a free range of a whole year is accepted too
+    await rangeFields(page, "2025-10-15", "2026-10-14");
+    await expectPreset(page, "Período");
+    expect(server.periods.at(-1)).toEqual({
+      from: "2025-10-15",
+      to: "2026-10-14",
+    });
+  });
+
   test("um intervalo inválido diz o que está errado e não chama o servidor", async ({
     page,
   }) => {
@@ -1307,10 +1343,10 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       "A data inicial vem depois da final."
     );
 
-    await page.getByLabel("De", { exact: true }).fill("2026-01-01");
-    await page.getByLabel("Até", { exact: true }).fill("2026-03-05");
+    await page.getByLabel("De", { exact: true }).fill("2025-10-13");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-14");
     await page.getByRole("button", { name: "Ver período" }).click();
-    await expect(page.getByRole("alert")).toContainText("Escolha até 62 dias.");
+    await expect(page.getByRole("alert")).toContainText("Escolha até 1 ano.");
 
     await page.getByLabel("De", { exact: true }).fill("");
     await page.getByRole("button", { name: "Ver período" }).click();

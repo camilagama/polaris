@@ -2790,3 +2790,10 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Resumo | Em revisão | Só o que foi escolhido: sem "ainda não escolhido", sem "Ajustes nenhum", a prévia com título só quando existe. |
 | Escolhas lembradas | Em revisão | `last-payment-model.ts`: método e perfil da última venda deste aparelho, por loja, no `localStorage`; "Sem perfil" já escolhido na loja sem perfil ativo, e um "Sem perfil" lembrado só vale enquanto a loja não tem perfil ativo (com um, o método continua e o perfil fica em branco); o que a tela escolhe não é venda em andamento. |
 | Medida | Em revisão | A 360 px, antes do 1º toque: 2.206 → 1.384 px; repetir uma venda: 5 → 3 toques (busca, produto, confirmar), sem rolagem. A 1280: 1.310 → 802 px. |
+
+### "Este ano" ligado no Resultado (t733)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Medida | Em revisão | CPU do `report.periodSummary` (com o ranking) no `wrangler dev`, contra as respostas gravadas do PostgreSQL 18 de uma loja de 45 vendas por dia (1.368 por mês, 16.150 em 366 dias), p50 de 40 chamadas: mês 32,1 ms, ano (1º de janeiro a 4 de novembro) 35,4 ms, 366 dias 36,6–36,9 ms; a mesma janela de 366 dias numa loja de 3 vendas por dia, 37,5 ms; o `get-session` sozinho, 16,9 ms. O custo não cresce com as vendas (a agregação é do PostgreSQL desde a t479, uma linha por data) e o ano custa ~4,5 ms a mais que o mês, que já roda no staging. Sem mudança de forma. |
+| Períodos longos | Em revisão | `result-period.ts`: sai `LONG_PERIODS_ENABLED`; "Este ano" entre "Últimos 30 dias" e "Período", e o intervalo livre até 366 dias ("Escolha até 1 ano."). O agrupamento por mês acima de 62 dias e os cartões sem comparação já existiam. Prova: `result-period.test.ts` e `e2e/dashboard.e2e.ts` ("Este ano lê de 1º de janeiro até hoje e o gráfico agrupa por mês"). |

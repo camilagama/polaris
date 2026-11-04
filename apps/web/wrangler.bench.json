@@ -1,0 +1,222 @@
+{
+  "name": "polaris-web-local",
+  "compatibility_date": "2026-10-06",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_als"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "EMAIL_PASSWORD_AUTH_ENABLED": "false",
+    "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+    "WOOVI_REFUND_ENABLED": "false",
+    "CLOSURE_AUTO_PURGE_ENABLED": "false",
+    "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
+    "BILLING_SELF_SERVICE_ENABLED": "false",
+    "BILLING_SUPPORT_EMAIL": "",
+    "WELCOME_EMAIL_ENABLED": "false",
+    "LEGAL_ACCEPTANCE_ENFORCED": "false",
+    "CLIENT_ERRORS_ENABLED": "1",
+    "ROUTE_TIMING_ALL": "true"
+  },
+  "main": "./worker/index.ts",
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05
+    }
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "AUTH_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "ONBOARDING_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "MEDIA_CLEANUP_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "PRIVACY_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "BILLING_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    },
+    {
+      "binding": "OUTBOX_HYPERDRIVE",
+      "id": "local-only",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/polaris"
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "polaris-media-local"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "900016",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "AUTH_EMAIL_RATE_LIMITER",
+      "namespace_id": "900017",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "RPC_MUTATION_RATE_LIMIT",
+      "namespace_id": "900018",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "RPC_READ_RATE_LIMIT",
+      "namespace_id": "900021",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "RPC_READ_IP_RATE_LIMIT",
+      "namespace_id": "900022",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "RPC_BULK_RATE_LIMIT",
+      "namespace_id": "900023",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "MEDIA_UPLOAD_RATE_LIMIT",
+      "namespace_id": "900019",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "AUTH_SOCIAL_RATE_LIMITER",
+      "namespace_id": "900020",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    },
+    {
+      "name": "CLIENT_ERROR_RATE_LIMIT",
+      "namespace_id": "900024",
+      "simple": {
+        "limit": 100000,
+        "period": 60
+      }
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "QUEUE_CRITICAL",
+        "queue": "polaris-critical-local"
+      },
+      {
+        "binding": "QUEUE_DEFAULT",
+        "queue": "polaris-default-local"
+      },
+      {
+        "binding": "QUEUE_MEDIA",
+        "queue": "polaris-media-local"
+      },
+      {
+        "binding": "QUEUE_DLQ",
+        "queue": "polaris-dlq-local"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "polaris-critical-local",
+        "dead_letter_queue": "polaris-dlq-local",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 5,
+        "retry_delay": 30
+      },
+      {
+        "queue": "polaris-default-local",
+        "dead_letter_queue": "polaris-dlq-local",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 3,
+        "retry_delay": 30
+      },
+      {
+        "queue": "polaris-media-local",
+        "dead_letter_queue": "polaris-dlq-local",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 3,
+        "retry_delay": 60
+      },
+      {
+        "queue": "polaris-dlq-local",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 10,
+        "retry_delay": 60
+      }
+    ]
+  },
+  "triggers": {
+    "crons": [
+      "17 * * * *",
+      "19 * * * *"
+    ]
+  },
+  "define": {
+    "import.meta.env": "{\"POLARIS_SERVER_RELEASE\":\"bench\"}"
+  }
+}
