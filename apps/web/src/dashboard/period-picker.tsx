@@ -124,8 +124,8 @@ function PresetChoice({ onChoose, preset }: PresetChoiceProps) {
 
 /**
  * The periods of the Resultado (AC-1, AC-2): "Este mês" (the one it opens on), "Mês passado", "Últimos 30 dias",
- * "Este ano" and "Período", a free range of up to 366 days. A preset reads at once. The range has its own fields and a button: an invalid one says what is wrong under the field "Até" and asks
- * the server for nothing.
+ * "Este ano" and "Período", a free range of up to 366 days. A preset reads at once. The range has its own fields and a
+ * button: an invalid one says what is wrong under the field "Até" and asks the server for nothing.
  */
 export function PeriodPicker({
   onCustom,

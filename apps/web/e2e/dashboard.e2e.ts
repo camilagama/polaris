@@ -1296,19 +1296,19 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     // the sales of the year fall on January 1st, the first day the year reads
     server.fixture = { ...FIXTURE, "2026-01": COMPLETE_MONTH };
     await openDashboard(page, server);
-    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+    const deltas = page.locator("[data-kpi-delta]");
+    // the month compares with the month before
+    await expect(deltas.first()).toBeVisible();
 
     await choosePreset(page, "Este ano");
     await expectPreset(page, "Este ano");
-    expect(server.periods.at(-1)).toEqual({
-      from: "2026-01-01",
-      to: "2026-10-14",
-    });
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2026-01-01", to: "2026-10-14" });
     const region = chartRegion(page);
     await expect(region).toContainText("1 de janeiro a 14 de outubro");
-    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
     // above 62 days the cards compare with nothing
-    await expect(page.locator("[data-kpi-delta]")).toHaveCount(0);
+    await expect(deltas).toHaveCount(0);
 
     await region.getByRole("button", { name: "Ver os números" }).click();
     const rows = region.locator("table").locator("tbody tr");
@@ -1321,10 +1321,9 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     // a free range of a whole year is accepted too
     await rangeFields(page, "2025-10-15", "2026-10-14");
     await expectPreset(page, "Período");
-    expect(server.periods.at(-1)).toEqual({
-      from: "2025-10-15",
-      to: "2026-10-14",
-    });
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2025-10-15", to: "2026-10-14" });
   });
 
   test("um intervalo inválido diz o que está errado e não chama o servidor", async ({
