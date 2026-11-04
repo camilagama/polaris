@@ -87,7 +87,8 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       count: "25 vendas",
       date: "1 a 25/10",
       delta: {
-        basis: "em relação a 1 a 25/09",
+        against: "vs. setembro",
+        basis: "em relação a setembro (1 a 25/09)",
         text: "+25,0%",
         trend: "up",
       },
@@ -98,10 +99,13 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     // every day known: the result is the sum of the days, with its chip in reais
     expect(rest.result).toMatchObject({
       date: "1 a 25/10",
-      delta: { money: true, text: "+R$ 250,00" },
+      delta: { against: "vs. setembro", money: true, text: "+R$ 250,00" },
       value: "1000.00",
     });
-    expect(rest.ticket.delta?.text).toBe("+25,0%");
+    expect(rest.ticket.delta).toMatchObject({
+      against: "vs. setembro",
+      text: "+25,0%",
+    });
     expect(kpis.series.result).toHaveLength(25);
   });
 
@@ -136,7 +140,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     const rest = kpis.read(null);
     // vendas: 25 x 50,00 = 1250,00 against 25 x 40,00 = 1000,00
     expect(rest.sales.delta).toMatchObject({ text: "+25,0%", trend: "up" });
-    expect(rest.sales.delta?.basis).toBe("em relação a 1 a 25/09");
+    expect(rest.sales.delta?.basis).toBe("em relação a setembro (1 a 25/09)");
     // ticket: 50,00 against 1000,00 / 50 sales = 20,00
     expect(rest.ticket.delta).toMatchObject({ text: "+150,0%", trend: "up" });
     // resultado: 1000,00 against 25 x 30,00 = 750,00, from the summary's days, not from the sales read
@@ -146,7 +150,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
     // a day read compares the same days of the sales read: 10 x 50,00 against 10 x 40,00
     expect(kpis.read(9).sales).toMatchObject({
-      delta: { basis: "em relação a 1 a 10/09", text: "+25,0%" },
+      delta: { basis: "em relação a setembro (1 a 10/09)", text: "+25,0%" },
     });
   });
 
@@ -359,7 +363,25 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(rest.sales.count).toBe("25 vendas");
     expect(rest.sales.date).toBe("26/09 a 25/10");
     expect(rest.sales.delta?.basis).toBe("em relação a 27/08 a 25/09");
+    expect(rest.sales.delta?.against).toBe("vs. 27/08 a 25/09");
     expect(rest.sales.delta?.text).toBe("0,0%");
+  });
+
+  it("says the month before by name when the period is a whole month, also for a past one", () => {
+    const march = { from: "2026-03-01", to: "2026-03-31" };
+    const before = comparisonPeriod(march, "2026-04-02");
+    const february = before
+      ? { days: days(before.from, 28), period: before }
+      : null;
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-03-01", 31),
+      period: march,
+      previous: february,
+      previousSales: february,
+      today: "2026-04-02",
+    });
+    expect(kpis.read(null).sales.delta?.against).toBe("vs. fevereiro");
   });
 
   it("names the whole period, never a range backwards, for a period that has not started", () => {

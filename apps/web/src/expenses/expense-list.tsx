@@ -10,8 +10,8 @@ import { StatusNav } from "../catalog/screen-parts";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
+import { formatMonthLabel } from "./expense-model";
 import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
-import { expenseGroupLabel, formatMonthLabel } from "./expense-model";
 import type {
   ExpenseFilters,
   ExpenseListState,
@@ -29,41 +29,45 @@ interface ExpenseFiltersBarProps {
   onChange: (filters: ExpenseFilters) => void;
 }
 
-/** Category and status of the list (the month is above the list, at the top of Lançamentos). */
-export function ExpenseFiltersBar({
+/** The category of the list: beside the month at the top of Lançamentos, so both come before the list on one line. */
+export function ExpenseCategoryFilter({
   categories,
   filters,
   onChange,
 }: ExpenseFiltersBarProps) {
-  const { categoryId, status } = filters;
-
-  const handleStatus = useCallback(
-    (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
-    [filters, onChange]
-  );
   const handleCategory = useCallback(
     (value: string) => onChange({ ...filters, categoryId: value }),
     [filters, onChange]
   );
-
   return (
-    <div className="grid gap-4">
-      <ExpenseCategorySelect
-        allLabel="Todas as categorias"
-        categories={categories}
-        className="min-[30rem]:max-w-80"
-        id="expense-category-filter"
-        label="Categoria"
-        onChange={handleCategory}
-        value={categoryId}
-      />
-      <StatusNav
-        label="Situação das despesas"
-        onSelect={handleStatus}
-        options={statusTabs}
-        value={status}
-      />
-    </div>
+    <ExpenseCategorySelect
+      allLabel="Todas"
+      categories={categories}
+      className="min-[30rem]:w-64"
+      id="expense-category-filter"
+      label="Categoria"
+      onChange={handleCategory}
+      value={filters.categoryId}
+    />
+  );
+}
+
+/** Active and voided, inside the card of the list (the month and the category are above it). */
+export function ExpenseStatusTabs({
+  filters,
+  onChange,
+}: Omit<ExpenseFiltersBarProps, "categories">) {
+  const handleStatus = useCallback(
+    (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
+    [filters, onChange]
+  );
+  return (
+    <StatusNav
+      label="Situação das despesas"
+      onSelect={handleStatus}
+      options={statusTabs}
+      value={filters.status}
+    />
   );
 }
 
@@ -76,13 +80,13 @@ interface ExpenseSummaryProps {
   state: ExpenseListState;
 }
 
-/** The month total comes from the server: it covers every page, not only what is loaded. */
+/** The total comes from the server: it covers every page, not only what is loaded. It sits under the title of the list. */
 export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
   const showTotal = !state.isLoading || state.expenses.length > 0;
   return (
     <div
       aria-live="polite"
-      className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 rounded-lg border bg-muted/40 px-3 py-2.5"
+      className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1"
     >
       <div className="grid gap-0.5">
         <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -94,8 +98,8 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
         </p>
       </div>
       <p className="text-muted-foreground text-support">
-        {formatMonthLabel(filters.month)}
-        {showTotal ? ` · ${countLabel(state.count)}` : ""}
+        {showTotal ? countLabel(state.count) : ""}
+        <span className="sr-only"> em {formatMonthLabel(filters.month)}</span>
       </p>
     </div>
   );
@@ -150,10 +154,7 @@ function ExpenseCard({
           ) : null}
         </div>
         <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
-          {expense.categoryName} · {expenseGroupLabel(expense.categoryGroup)}
-        </p>
-        <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
-          Competência {formatCalendarDate(expense.competenceOn)}
+          {expense.categoryName} · {formatCalendarDate(expense.competenceOn)}
           {expense.payee ? ` · ${expense.payee}` : ""}
         </p>
       </div>
@@ -166,7 +167,7 @@ function ExpenseCard({
         >
           {formatBrlAmount(expense.amount)}
         </p>
-        <div className="flex gap-2 touch:gap-3">
+        <div className="flex items-center gap-2 touch:gap-3">
           {voided ? (
             <Button
               {...connectionControlProps(online)}
@@ -197,9 +198,10 @@ function ExpenseCard({
                 aria-label={`Anular despesa ${expense.description}`}
                 disabled={isBusy}
                 onClick={handleVoid}
+                className="ml-3 text-destructive hover:text-destructive"
                 size="sm"
                 type="button"
-                variant="outline"
+                variant="ghost"
               >
                 {thisBusy ? "Anulando…" : "Anular"}
               </Button>

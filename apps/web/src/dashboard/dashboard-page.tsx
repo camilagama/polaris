@@ -1,3 +1,4 @@
+import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton } from "@/ui/hidden-values";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
@@ -75,12 +76,12 @@ const EXPENSES_PANEL: TabPanel = {
 
 function Heading() {
   return (
-    <header className="grid gap-1">
+    <header className="flex items-center gap-1">
       <h1 className="text-title">Resultado</h1>
-      <p className="text-muted-foreground text-support">
+      <HelpTip about="Resultado">
         Estimativa com as vendas confirmadas e as despesas do período. Não é
         lucro líquido nem dinheiro recebido.
-      </p>
+      </HelpTip>
     </header>
   );
 }
@@ -254,13 +255,13 @@ function Content({
           role="status"
         >{`Mostrando ${shown} até o novo período carregar.`}</p>
       ) : null}
-      <QualityBanner quality={summary.quality} />
       <ResultCards
         comparison={onScreen(comparison, summary.period, today)}
         salesComparison={onScreen(salesComparison, summary.period, today)}
         summary={summary}
         today={today}
       />
+      <QualityBanner quality={summary.quality} />
       <ResultChart
         source={state.source}
         summary={summary}
