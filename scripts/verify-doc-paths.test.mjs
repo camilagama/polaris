@@ -1,7 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { gitEnvironment } from "./exact-count-list.mjs";
 import { trackTree } from "./track-tree.mjs";
 import { DOC_PATHS_LIST } from "./verify-doc-paths.list.mjs";
 import {
@@ -78,6 +80,75 @@ describe("missingPaths", () => {
       "DESIGN.md → apps/web/src/velho.ts": 2,
       "docs/runbooks/x.md → docs/runbooks/y.md": 1,
     });
+  });
+
+  const plant = (base, file, text = "") => {
+    mkdirSync(path.dirname(path.join(base, file)), { recursive: true });
+    writeFileSync(path.join(base, file), text);
+  };
+
+  it("refuses a path that exists only on the disk (not versioned), as the CI does", () => {
+    const missing = withTree((base) => {
+      plant(base, "apps/web/src/local-only.ts");
+      plant(
+        base,
+        "docs/local.md",
+        "`apps/web/src/local-only.ts`, `apps/web/src/a.ts`, [l](../apps/web/src/local-only.ts)\n"
+      );
+      execFileSync("git", ["add", "docs/local.md"], {
+        cwd: base,
+        env: gitEnvironment(),
+        stdio: "pipe",
+      });
+      return missingPaths(base);
+    });
+    expect(missing).toMatchObject({
+      "docs/local.md → apps/web/src/local-only.ts": 1,
+      "docs/local.md → ../apps/web/src/local-only.ts": 1,
+    });
+    expect(missing["docs/local.md → apps/web/src/a.ts"]).toBeUndefined();
+  });
+
+  it("accepts a folder that holds a versioned file, with or without the trailing slash, and refuses an empty one", () => {
+    const missing = withTree((base) => {
+      plant(base, "apps/web/src/empty/.keep-local");
+      plant(
+        base,
+        "docs/folders.md",
+        "`apps/web/src/`, `apps/web/scripts`, `apps/web`, `apps/web/src/empty/`\n"
+      );
+      execFileSync("git", ["add", "docs/folders.md"], {
+        cwd: base,
+        env: gitEnvironment(),
+        stdio: "pipe",
+      });
+      return missingPaths(base);
+    });
+    expect(
+      Object.keys(missing).filter((key) => key.startsWith("docs/folders.md"))
+    ).toEqual(["docs/folders.md → apps/web/src/empty/"]);
+  });
+
+  it("finds a versioned file under a folder the other checks skip", () => {
+    const missing = withTree((base) => {
+      plant(base, "packages/db/drizzle/0001_x.sql");
+      plant(
+        base,
+        "docs/db.md",
+        "`packages/db/drizzle/0001_x.sql`, `packages/db/drizzle/9999_nope.sql`, [a](a%20b.md), [b](./y.md)\n"
+      );
+      plant(base, "docs/a b.md");
+      plant(base, "docs/y.md");
+      execFileSync("git", ["add", "-f", "."], {
+        cwd: base,
+        env: gitEnvironment(),
+        stdio: "pipe",
+      });
+      return missingPaths(base);
+    });
+    expect(
+      Object.keys(missing).filter((key) => key.startsWith("docs/db.md"))
+    ).toEqual(["docs/db.md → packages/db/drizzle/9999_nope.sql"]);
   });
 
   it("refuses a document that still names a deleted file and says how to find the others", () => {
