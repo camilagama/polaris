@@ -202,6 +202,26 @@ describe("the attention panel", () => {
     expect(html).not.toContain("Descartar");
   });
 
+  it("shows only Tentar novamente for a plan refusal when Assinatura is unavailable", () => {
+    const html = render({
+      items: [
+        item({
+          actions: ["retry"],
+          cause: "entitlement_changed",
+          code: "entitlement_changed",
+          detail:
+            "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte e toque em Tentar novamente.",
+        }),
+      ],
+      waitingBehind: 0,
+    });
+    expect(html).toContain("Tentar novamente");
+    expect(html).toContain("Regularize o plano com o suporte");
+    expect(html).not.toContain("Ver Assinatura");
+    expect(html).not.toContain("aba=assinatura");
+    expect(html).not.toContain("Descartar");
+  });
+
   it("offers signing in again, not a retry, for a refusal about the session or the access", () => {
     const html = render({
       items: [

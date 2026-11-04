@@ -2,6 +2,7 @@ import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { navigateInApp } from "../../app-shell/address";
 import { PageLoading } from "../../app-shell/page-loading";
+import { canManageBilling } from "../../lib/billing-access";
 import { useCurrentOrganization } from "../../lib/current-organization";
 import { browserStorage } from "../../lib/current-organization-model";
 import { orpcClient } from "../../lib/orpc";
@@ -169,7 +170,12 @@ const SIGN_IN_AGAIN = signInPath({ reason: "saiu", returnTo: "/attention" });
 export function AttentionPage() {
   const runtime = useOfflineRuntime();
   const snapshot = useRuntimeSnapshot();
-  const { organization, organizationId } = useCurrentOrganization();
+  const { billingSelfService, organization, organizationId } =
+    useCurrentOrganization();
+  const subscriptionAvailable = canManageBilling(
+    billingSelfService,
+    organization.role
+  );
   const [redoProblem, setRedoProblem] = useState<RedoProblem | null>(null);
   const [summary, setSummary] = useState<AttentionSummary>(EMPTY);
   const [busy, setBusy] = useState<string | null>(null);
@@ -200,7 +206,8 @@ export function AttentionPage() {
               redoneCommandIds(
                 readSaleRedos(browserStorage(), namespaceKey),
                 queue.commands
-              )
+              ),
+              { subscriptionAvailable }
             )
           );
         }
@@ -210,7 +217,7 @@ export function AttentionPage() {
       current = false;
     };
     // the figures change whenever the queue does
-  }, [runtime, counts, organizationId]);
+  }, [runtime, counts, organizationId, subscriptionAvailable]);
 
   const resolve = useCallback(
     async (item: AttentionItem, work: () => Promise<void>, message: string) => {

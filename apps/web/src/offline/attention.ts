@@ -180,12 +180,16 @@ function revokedDetail(kind: AttentionItem["kind"]): string {
 const REDONE_DETAIL =
   "Você já refez esta venda: a venda nova foi confirmada ou guardada neste aparelho. Esta, recusada, pode ser descartada sem perder nada.";
 
+const PLAN_DETAIL_WITHOUT_SUBSCRIPTION =
+  "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte e toque em Tentar novamente.";
+
 function detailOf(
   cause: AttentionCause,
   kind: AttentionItem["kind"],
   code: string,
-  redone: boolean
+  options: { redone: boolean; subscriptionAvailable: boolean }
 ): string {
+  const { redone, subscriptionAvailable } = options;
   if (redone && kind === "sale" && code === REVOKED_CODE) {
     return REDONE_DETAIL;
   }
@@ -218,7 +222,9 @@ function detailOf(
     case "sale_too_old":
       return "Esta venda é mais antiga que a janela de registros retroativos e não pode ser enviada como está. Registre a venda de outra forma e descarte esta.";
     case "entitlement_changed":
-      return "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano em Ver Assinatura e toque em Tentar novamente.";
+      return subscriptionAvailable
+        ? "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano em Ver Assinatura e toque em Tentar novamente."
+        : PLAN_DETAIL_WITHOUT_SUBSCRIPTION;
     case "session_changed":
       return "Este registro foi feito por outra conta, e o servidor não o recebeu; nada foi perdido. Entre com a conta que o criou e toque em Tentar novamente.";
     case "authorization_revoked":
@@ -234,11 +240,14 @@ function detailOf(
 function actionsFor(
   cause: AttentionCause,
   kind: AttentionItem["kind"],
-  options: { code: string; redone: boolean }
+  options: { code: string; redone: boolean; subscriptionAvailable: boolean }
 ): AttentionAction[] {
   if (cause === "entitlement_changed") {
-    // the refusal is not stored: once the plan allows it, the same command goes through
-    return ["open_subscription", "retry"];
+    // the refusal is not stored: once the plan allows it, the same command goes through; without the Assinatura tab
+    // there is nowhere to send the person
+    return options.subscriptionAvailable
+      ? ["open_subscription", "retry"]
+      : ["retry"];
   }
   if (cause === "session_changed") {
     // the same command goes through once the account that made it signs in
@@ -263,13 +272,22 @@ function actionsFor(
     : ["discard"];
 }
 
+export interface AttentionOptions {
+  /**
+   * The "Assinatura" tab of Configurações exists for this person (billing self-service on and a role that manages it,
+   * ADR 0104). Without it, the plan card does not point there.
+   */
+  subscriptionAvailable?: boolean;
+}
+
 /**
  * Turns the outbox into what the attention panel shows. `redone` holds the refused sales that already have their new
  * sale (the link Vender keeps), so the card offers to discard the refused one instead of redoing it twice.
  */
 export function buildAttention(
   snapshot: OutboxSnapshot,
-  redone: ReadonlySet<string> = new Set()
+  redone: ReadonlySet<string> = new Set(),
+  { subscriptionAvailable = true }: AttentionOptions = {}
 ): AttentionSummary {
   const items = snapshot.commands.flatMap((command) => {
     const kind = kindOf(command);
@@ -281,12 +299,19 @@ export function buildAttention(
     const isRedone = kind === "sale" && redone.has(command.commandId);
     return [
       {
-        actions: actionsFor(cause, kind, { code, redone: isRedone }),
+        actions: actionsFor(cause, kind, {
+          code,
+          redone: isRedone,
+          subscriptionAvailable,
+        }),
         blocksQueue: snapshot.blockedBy?.commandId === command.commandId,
         cause,
         code,
         commandId: command.commandId,
-        detail: detailOf(cause, kind, code, isRedone),
+        detail: detailOf(cause, kind, code, {
+          redone: isRedone,
+          subscriptionAvailable,
+        }),
         kind,
         redone: isRedone,
         title: titleOf(command, kind),
