@@ -24,6 +24,8 @@ const noop = () => undefined;
 const SAO_PAULO = "America/Sao_Paulo";
 const AUCKLAND = "Pacific/Auckland";
 const originalZone = process.env.TZ;
+const NOW_AHEAD = new Date("2026-11-03T02:30:00Z");
+const NOW_BEHIND = new Date("2026-11-03T12:00:00Z");
 
 function renderDay(timezone: string | null): { max?: string; today?: string } {
   seen.props = [];
@@ -74,11 +76,8 @@ describe("o campo Dia da venda segue o dia da loja", () => {
 
   it("aparelho adiantado: perto da meia-noite da loja o aparelho já está no dia seguinte, e o limite fica no dia da loja", () => {
     process.env.TZ = "Pacific/Kiritimati";
-    vi.useFakeTimers({
-      now: new Date("2026-11-03T02:30:00Z"),
-      toFake: ["Date"],
-    });
-    expect(new Date().getDate()).toBe(3);
+    vi.useFakeTimers({ now: NOW_AHEAD, toFake: ["Date"] });
+    expect(new Date(NOW_AHEAD).getDate()).toBe(3);
     const field = renderDay(SAO_PAULO);
     expect(field.max).toBe("2026-11-02");
     expect(field.today).toBe("2026-11-02");
@@ -86,11 +85,8 @@ describe("o campo Dia da venda segue o dia da loja", () => {
 
   it("aparelho atrasado: a loja já virou o dia e o aparelho não, e o limite é o dia novo da loja", () => {
     process.env.TZ = "Pacific/Pago_Pago";
-    vi.useFakeTimers({
-      now: new Date("2026-11-03T12:00:00Z"),
-      toFake: ["Date"],
-    });
-    expect(new Date().getDate()).toBe(3);
+    vi.useFakeTimers({ now: NOW_BEHIND, toFake: ["Date"] });
+    expect(new Date(NOW_BEHIND).getDate()).toBe(3);
     const field = renderDay(AUCKLAND);
     expect(field.max).toBe("2026-11-04");
     expect(field.today).toBe("2026-11-04");
