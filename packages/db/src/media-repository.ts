@@ -628,7 +628,7 @@ export async function removeProductMedia(
 
 /**
  * A position far above any real one, used to move links aside while they swap places. The sync trigger of
- * product_media (migration 0111) takes a statement whose new positions are all at or above it for this move and
+ * product_media (migration 0112) takes a statement whose new positions are all at or above it for this move and
  * records nothing for it: the statement that settles the order records the change.
  */
 const REORDER_OFFSET = 1_000_000;

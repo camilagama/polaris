@@ -112,6 +112,12 @@ const gates: Gate[] = [
     "billing-owner-commands",
     "../../../apps/web/scripts/verify-billing-owner-commands-gate.ts",
   ],
+  // the operator's provider commands (ADR 0105), with the real store, inbox, ledger and lock: the refund once by the
+  // state of the charge, the amount checked first, the decision in the ledger, the lock of another command
+  [
+    "billing-operator-commands",
+    "../../../apps/web/scripts/verify-billing-operator-commands-gate.ts",
+  ],
   // the consumer of billing.notice (ADR 0104, PR G), with the real store, the real recipient and the Worker's wiring:
   // the notice in the fact's transaction, the sweep once, the order of the arguments, the purge, cases 3 and 4 of item 5
   [
@@ -367,6 +373,7 @@ const suites: Record<string, string[]> = {
     "billing-self-service",
     "billing-read-plan",
     "billing-owner-commands",
+    "billing-operator-commands",
     "billing-notices",
     "billing-notice-consumer",
     "operational-selection",

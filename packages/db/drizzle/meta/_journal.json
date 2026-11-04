@@ -775,8 +775,15 @@
     {
       "idx": 110,
       "version": "7",
-      "when": 1793826037143,
-      "tag": "0111_capa_do_produto_no_sync",
+      "when": 1793800693679,
+      "tag": "0111_comandos_de_provedor_do_operador",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1793827508047,
+      "tag": "0112_capa_do_produto_no_sync",
       "breakpoints": true
     }
   ]

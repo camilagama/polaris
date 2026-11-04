@@ -32,7 +32,7 @@ O plano (PR51) pede `sync_changes` com sequência monotônica, registrada na mes
 - **Registrar no código dos repositórios:** qualquer escrita nova ou manual poderia esquecer de registrar; o gatilho elimina a classe de erro.
 - **Gravar o conteúdo da entidade no log:** duplica dados (inclusive pessoais) e cria um segundo modelo de leitura.
 
-## Emenda: as imagens do produto e a capa (migration 0111)
+## Emenda: as imagens do produto e a capa (migration 0112)
 
 **Contexto.** O produto passa a levar `coverAssetId`, a imagem `product_media` de menor posição, no modelo de leitura e na cópia do aparelho (corte das miniaturas). A capa não é coluna: a leitura a calcula (`LEFT JOIN LATERAL … ORDER BY position LIMIT 1`, no índice único `(organization_id, product_id, position)`). Enviar, reordenar ou remover uma imagem muda a capa sem escrever em `products`, então o log não ficava sabendo.
 

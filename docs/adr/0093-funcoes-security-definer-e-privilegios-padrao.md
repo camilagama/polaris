@@ -69,7 +69,7 @@ Uma função `SECURITY DEFINER` roda com os direitos do dono. Se o `search_path`
 
 **Limites.** As checagens leem o texto das políticas (`current_setting('…')`). Um GUC lido dentro de uma função chamada pela política não é visto. O `UPDATE (updated_at)` em `"user"` do dono do onboarding existe só para o `FOR SHARE` (precedente da 0093); `"user"` não tem RLS nem gatilho, e o gate confere que continua sem gatilho.
 
-**Terceiro gatilho do log (migration 0111).** `record_product_media_sync_change()`, dos gatilhos por comando de `product_media` ([ADR 0030](0030-change-log-de-sincronizacao.md), emenda da 0111), nasce do `polaris_sync_owner` pelo mesmo caminho (`SET ROLE` com `CREATE` em `public` só pelo tempo do comando), com o `set_config` do escopo antes de cada inserção, `EXECUTE` só do dono e do migrador e nenhum privilégio novo: lê só as tabelas de transição. O gate `definer-owners` passa a listar as três funções do dono.
+**Terceiro gatilho do log (migration 0112).** `record_product_media_sync_change()`, dos gatilhos por comando de `product_media` ([ADR 0030](0030-change-log-de-sincronizacao.md), emenda da 0112), nasce do `polaris_sync_owner` pelo mesmo caminho (`SET ROLE` com `CREATE` em `public` só pelo tempo do comando), com o `set_config` do escopo antes de cada inserção, `EXECUTE` só do dono e do migrador e nenhum privilégio novo: lê só as tabelas de transição. O gate `definer-owners` passa a listar as três funções do dono.
 
 ## Emenda: RLS com FORCE em session (migration 0097)
 

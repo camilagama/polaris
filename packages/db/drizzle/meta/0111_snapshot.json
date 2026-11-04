@@ -1,5 +1,5 @@
 {
-  "id": "b38e7487-fc3c-47c6-b500-0ed782db6a6f",
+  "id": "53a22694-77b3-4d6c-91cb-de6e8d3e595a",
   "prevId": "74c80363-4e9d-49db-8c50-2039f71e7ed4",
   "version": "7",
   "dialect": "postgresql",
@@ -7843,7 +7843,7 @@
       "checkConstraints": {
         "platform_audit_events_type_allowed": {
           "name": "platform_audit_events_type_allowed",
-          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read', 'organization.marked_internal', 'organization.unmarked_internal', 'activation_funnel.read')"
+          "value": "\"platform_audit_events\".\"event_type\" IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read', 'organization.marked_internal', 'organization.unmarked_internal', 'activation_funnel.read', 'billing.operator_renewal_cancel_requested', 'billing.operator_renewal_cancel_recorded', 'billing.operator_refund_requested', 'billing.operator_refund_recorded')"
         },
         "platform_audit_events_detail_allowed": {
           "name": "platform_audit_events_detail_allowed",

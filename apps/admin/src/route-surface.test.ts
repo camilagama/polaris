@@ -29,6 +29,7 @@ const NEVER = new Proxy(
 const dependencies = {
   accessLog: NEVER,
   activationFunnel: NEVER,
+  providerCommands: NEVER,
   refundWindow: NEVER,
   authenticate: () => {
     throw new Error("no token: never asked");

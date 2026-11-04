@@ -6,6 +6,7 @@ import type {
   RefundableCharge,
   RefundOutcome,
 } from "@polaris/billing/provider-port";
+import { refundCancelEventId } from "@polaris/billing/operator-commands";
 import { ProviderUnavailableError } from "@polaris/billing/provider-port";
 import {
   type BillingStore,
@@ -28,7 +29,6 @@ import {
   temporaryRuntimeUrl,
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
-import { refundCancelEventId } from "../src/server/billing/commands";
 import {
   type OwnerCommandDependencies,
   OwnerCommandProviderFailure,
