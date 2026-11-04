@@ -154,6 +154,7 @@ function setup(
       role: vi.fn(),
       scope: vi.fn(),
     },
+    providerCommands: { cancelRenewal: vi.fn(), refund: vi.fn() },
     refundWindow: { read: vi.fn() },
     report: vi.fn(),
     resolvePrincipal: vi.fn(() => Promise.resolve({ ...principal, role })),

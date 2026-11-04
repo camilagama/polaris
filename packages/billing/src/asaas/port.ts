@@ -7,6 +7,7 @@ import {
   type CheckoutReturnUrls,
   type PrepareSubscriptionInput,
   type ProviderBillingEvent,
+  ProviderNotConfiguredError,
   ProviderNotFoundError,
   ProviderRejectedError,
   ProviderResponseMalformedError,
@@ -37,8 +38,11 @@ const CYCLE_LABELS: Readonly<Record<number, string>> = {
 
 export interface AsaasPortConfig {
   apiKey: string;
-  /** The app's own origin (`BETTER_AUTH_BASE_URL`): the checkout's return URLs are built on it, on the server. */
-  appBaseUrl: string;
+  /**
+   * The app's own origin (`BETTER_AUTH_BASE_URL`): the checkout's return URLs are built on it, on the server. Null for
+   * a port that never opens a checkout (the operator's): `prepareSubscription` then refuses.
+   */
+  appBaseUrl: string | null;
   baseUrl: string;
   fetch: FetchLike;
   /** A fresh UUID v4 per checkout (`crypto.randomUUID`); injected so a test can name it. */
@@ -208,6 +212,9 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       );
     },
     async prepareSubscription(input) {
+      if (config.appBaseUrl === null) {
+        throw new ProviderNotConfiguredError();
+      }
       const reference = newPolarisReference(config.randomUuid());
       const body = checkoutBody(
         input,
@@ -268,7 +275,8 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
       providerRef,
       now,
       providerSubscriptionId,
-      refundable
+      refundable,
+      options
     ) {
       requireRecordedFirstCharge(refundable);
       // read first: a refund of a charge that is not paid is a 400 whose text says nothing usable
@@ -288,6 +296,7 @@ export function createAsaasPort(config: AsaasPortConfig): BillingProviderPort {
             refundable,
             chargePeriodEndsAt(charge, subscription)
           );
+          await options?.beforeRefund?.({ amount: charge.amount });
           await client.refundPayment(charge.id);
           return "refund_requested";
         }

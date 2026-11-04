@@ -11,6 +11,7 @@
     "typecheck": "bun run build:ui && tsc --noEmit && tsc --noEmit -p ui && tsc --noEmit -p tsconfig.page-e2e.json"
   },
   "dependencies": {
+    "@polaris/billing": "workspace:*",
     "@polaris/contracts": "workspace:*",
     "@polaris/db": "workspace:*",
     "@polaris/domain": "workspace:*",

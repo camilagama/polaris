@@ -28,6 +28,10 @@ import {
 import { type IncidentDependencies, incidentRoutes } from "./incident-routes";
 import { type PrivacyDependencies, privacyRoutes } from "./privacy-routes";
 import {
+  type ProviderCommandDependencies,
+  providerCommandRoutes,
+} from "./provider-command-routes";
+import {
   type RefundWindowDependencies,
   refundWindowRoutes,
 } from "./refund-window-routes";
@@ -57,6 +61,16 @@ export interface AdminBindings {
   ADMIN_HYPERDRIVE?: { connectionString: string };
   /** The billing role's login: the only writer of billing, used only for the billing commands (ADR 0073). */
   ADMIN_BILLING_HYPERDRIVE?: { connectionString: string };
+  /**
+   * The providers, read only inside the operator's two provider commands (ADR 0105). `ASAAS_API_KEY` and
+   * `WOOVI_APP_ID` are secrets of the Worker; the base URLs and the refund switch are variables of each environment
+   * (the sandboxes in staging). The webhook secrets never come here.
+   */
+  ASAAS_API_KEY?: string;
+  ASAAS_BASE_URL?: string;
+  WOOVI_APP_ID?: string;
+  WOOVI_BASE_URL?: string;
+  WOOVI_REFUND_ENABLED?: string;
 }
 
 export interface AdminDependencies {
@@ -89,6 +103,8 @@ export interface AdminDependencies {
   incidents: IncidentDependencies;
   /** The workflow of a privacy request (ADR 0077). */
   privacy: PrivacyDependencies;
+  /** The operator's provider commands: cancel the renewal and refund the period in force (ADR 0105). */
+  providerCommands: ProviderCommandDependencies;
   /** The window of the right of withdrawal of one store, read under an open case and audited (ADR 0104, decisions 8 and 10). */
   refundWindow: RefundWindowDependencies;
   /** Support cases, temporary tenant access, the masked read and the reveal (ADR 0072). */
@@ -396,6 +412,14 @@ export function createAdminApp(
     "/",
     refundWindowRoutes(
       dependencies.refundWindow,
+      requireCapability,
+      dependencies.report
+    )
+  );
+  api.route(
+    "/",
+    providerCommandRoutes(
+      dependencies.providerCommands,
       requireCapability,
       dependencies.report
     )
