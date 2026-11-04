@@ -13,6 +13,9 @@ export const PLATFORM_CAPABILITIES = Object.freeze([
   "tenant_data:read",
   "pii:reveal",
   "billing:operate",
+  // refunds the period in force of a store at the provider (ADR 0105): apart from billing:operate, so a role that
+  // operates billing does not refund by default
+  "billing:refund",
   "organization:suspend",
   "privacy_case:manage",
   "organization:purge",

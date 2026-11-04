@@ -92,6 +92,7 @@ function setup(overrides: Partial<AdminDependencies> = {}) {
     report: vi.fn(),
     accessLog: { read: vi.fn() },
     activationFunnel: { read: vi.fn() },
+    providerCommands: { cancelRenewal: vi.fn(), refund: vi.fn() },
     refundWindow: { read: vi.fn() },
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
