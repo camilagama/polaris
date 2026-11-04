@@ -2,7 +2,8 @@
  * The screens and states the layout shift check measures (`layout-shift.e2e.ts`), the limit, and the exact list of the
  * ones still known to be over it. A scenario is `<address> <store> <how it was reached>`: `frio` is a load of the page
  * in a new context, `quente` a step inside the app from the Início (the way the menu goes, `navigateInApp`), and
- * `sem-conexao`/`volta-a-conexao` the Início when the device loses and gets back the network.
+ * `sem-conexao`/`volta-a-conexao` the Início when the device loses and gets back the network, and
+ * `copia-volta-a-conexao` the Início entered with no network, on the copy, when the network comes back.
  *
  * The list works like `scripts/verify-no-blind-waits.list.mjs`: a scenario over the limit that is not in the list
  * fails, and a scenario in the list that is now under the limit fails too, so the change that fixes a screen takes its
@@ -18,6 +19,7 @@ export const CLS_SCENARIOS = [
   "/ com-vendas quente",
   "/ com-vendas sem-conexao",
   "/ com-vendas volta-a-conexao",
+  "/ com-vendas copia-volta-a-conexao",
   "/sales com-vendas frio",
   "/sales com-vendas quente",
   "/sales/history com-vendas frio",

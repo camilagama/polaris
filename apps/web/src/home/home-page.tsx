@@ -169,6 +169,23 @@ function readBlocks(
   };
 }
 
+/**
+ * The cards are still to come: the figures, or what hangs on them. The checklist is read only when the figures counted
+ * no sale (with a sale counted the cards come at once), and the stock's read waits for the figures.
+ */
+function figuresPending({ checklist, figures, stock }: HomeState): boolean {
+  if (figures.status === "loading") {
+    return true;
+  }
+  if (figures.status !== "ready") {
+    return false;
+  }
+  const sold = !noSaleCounted(figures.data.month, figures.data.before);
+  return (
+    (checklist.status === "loading" && !sold) || stock.status === "loading"
+  );
+}
+
 /** Where the figures are: the skeletons, the error, the checklist, or Hoje and Mês. Returns the chart and the ranking too. */
 function figureBlocks(
   state: HomeState,
@@ -194,16 +211,8 @@ function figureBlocks(
       rhythm: null,
     };
   }
-  // the checklist is read only when the figures counted no sale: with a sale counted the cards come at once
-  const sold =
-    figures.status === "ready" &&
-    !noSaleCounted(figures.data.month, figures.data.before);
   // the stock's read waits for the figures, and "Precisa de ação" sits above the cards: they come in together
-  if (
-    figures.status === "loading" ||
-    (checklist.status === "loading" && !sold) ||
-    state.stock.status === "loading"
-  ) {
+  if (figures.status === "loading" || figuresPending(state)) {
     // before the figures only this tab's memory knows whether the checklist comes; after them, it does
     const steps =
       figures.status === "ready"
@@ -505,11 +514,11 @@ function useOfflineClock(online: boolean, serverNow: () => number): number {
 
 /**
  * What the page shows without a connection (the copy, § 7.4), and, once the connection is back, the copy still on the
- * screen until the first read answers: no skeletons and no jump of the page.
+ * screen until the new read is whole: no skeletons and no jump of the page.
  */
 function useOfflineView({
   figuresFailed,
-  figuresLoading,
+  cardsPending,
   online,
   organizationId,
   readsReport,
@@ -519,7 +528,7 @@ function useOfflineView({
 }: {
   /** Every try of the figures failed, and trying again may help (not a refusal). */
   figuresFailed: boolean;
-  figuresLoading: boolean;
+  cardsPending: boolean;
   online: boolean;
   organizationId: string;
   readsReport: boolean;
@@ -547,12 +556,13 @@ function useOfflineView({
           ),
     [clock, copyAllowed, online, organizationId, serverNow, timezone]
   );
-  // the connection is back: the copy stays on the screen until the first read answers (no skeletons, no jump)
+  // the connection is back: the copy stays on the screen until the new read is whole, figures and what hangs on them
+  // (the stock is not read when the page opens without a connection), so no skeleton takes the cards and no block leaves
   const keptCopy = useRef<OfflineHome | null>(null);
   if (offline) {
     // only figures are worth keeping: "sem internet" never stays once the connection is back
     keptCopy.current = offline.figures ? offline : null;
-  } else if (!figuresLoading) {
+  } else if (!cardsPending) {
     keptCopy.current = null;
   }
   const view = offline ?? keptCopy.current;
@@ -768,7 +778,7 @@ export function HomePage() {
   const snapshot = useRuntimeSnapshot();
   const { failed, offline, view } = useOfflineView({
     figuresFailed: state.figures.status === "error" && state.figures.retryable,
-    figuresLoading: state.figures.status === "loading",
+    cardsPending: figuresPending(state),
     online,
     organizationId,
     readsReport: reads.report,

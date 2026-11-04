@@ -3027,6 +3027,54 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     });
   });
 
+  test("aberto sem rede, a rede volta e o estoque demora: a cópia fica até o estoque responder, com Meta, Gráfico e Ritmo", async ({
+    page,
+  }) => {
+    const server = new FakeServer({ ...SOLD, goals: [goal({})] });
+    await openWithCopy(page, server);
+    await reopenWithoutNetwork(page, server, NOON + HOUR);
+    const expectParts = () =>
+      Promise.all(
+        ["Meta", "Vendas por dia", "Ritmo de vendas"].map((name) =>
+          expect(region(page, name)).toBeVisible()
+        )
+      );
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10", {
+      timeout: 20_000,
+    });
+    await expectParts();
+    // the network is back: the figures answer at once, the stock's read is held
+    let answerStock: () => void = () => undefined;
+    server.held.set(
+      "inventory/listBalances",
+      new Promise((resolve) => {
+        answerStock = resolve;
+      })
+    );
+    const balances = () =>
+      server.calls.filter((call) => call.procedure === "inventory/listBalances")
+        .length;
+    const asked = periodCalls(server).length;
+    server.down = false;
+    await page.clock.runFor(10_000);
+    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(asked);
+    await expect.poll(balances).toBeGreaterThan(0);
+    // the stock is asked only after the figures answered; two frames later the page has rendered that answer
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )
+    );
+    // between the answer of the figures and the stock's: still the copy, no skeleton, nothing leaves
+    await expect(page.getByText("Carregando os números…")).toHaveCount(0);
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expectParts();
+    answerStock();
+    await expect(page.getByText("Carregando os números…")).toHaveCount(0);
+    await expectParts();
+  });
+
   test("sem cópia a 1280: a mesma grade da tela com cópia, e os cartões não trocam de lugar quando a rede volta", async ({
     page,
   }) => {
