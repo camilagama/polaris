@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Client } from "pg";
+import { BACKUP_READER, readBackupReader } from "./backup-reader";
 import {
   assertClean,
   findForcedTableOwnerWithoutBypass,
@@ -38,7 +39,8 @@ import { poolerPattern, sqlState } from "./sales-gate-support";
  *   can SET to, inherit or administer with ADMIN OPTION, such as `polaris_closed_export_reader`) is NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB,
  *   NOREPLICATION and NOBYPASSRLS, with a floor on how many were looked at, and no `*_owner` role is a member (INHERIT, SET or
  *   ADMIN OPTION) of any role (`owner-role-attributes.ts`); and every login other than the owner is a member of a
- *   `polaris_*_runtime` group (item 15).
+ *   `polaris_*_runtime` group (item 15), except the backup login `polaris_backup_reader`, which must have exactly the
+ *   attributes of `backup-reader.ts` when it exists.
  *
  * The output lists names only: no URL, password or data.
  */
@@ -136,7 +138,9 @@ async function checkHardening(client: Client) {
       ORDER BY 1`,
     [RUNTIME_GROUP_PATTERN]
   );
-  const appLogins = logins.rows.filter((row) => !PLATFORM_ROLE.test(row.login));
+  const appLogins = logins.rows.filter(
+    (row) => !(PLATFORM_ROLE.test(row.login) || row.login === BACKUP_READER)
+  );
   const orphans = appLogins
     .filter((row) => row.groups.length === 0)
     .map((row) => row.login);
@@ -145,12 +149,21 @@ async function checkHardening(client: Client) {
     [],
     "logins that are not members of a polaris_*_runtime group"
   );
+  const backupReader = await readBackupReader(client);
+  assert.deepEqual(
+    backupReader ?? [],
+    [],
+    `the backup login ${BACKUP_READER} is not exactly the documented one`
+  );
   return [
     "definer-hardening (read-only): no finding (search_path, TEMPORARY, CREATE, runtime reach, PUBLIC EXECUTE, foreignOwner, ownerScope, tableWithoutRowSecurity, forcedTableOwnerWithoutBypass, rowSecurityWithoutPolicy, scopeWithoutWriter)",
     "PUBLIC has no TEMPORARY on the database",
     `${roles.owners} polaris_*_owner roles and ${roles.reachable} roles a runtime role reaches: NOLOGIN, NOSUPERUSER, NOCREATEROLE, NOCREATEDB, NOREPLICATION, NOBYPASSRLS`,
     `the ${roles.owners} polaris_*_owner roles are members of no role`,
     ...appLogins.map((row) => `login ${row.login}: ${row.groups.join(", ")}`),
+    backupReader
+      ? `login ${BACKUP_READER}: pg_read_all_data, BYPASSRLS, read-only, owns nothing`
+      : `no backup login ${BACKUP_READER}`,
   ];
 }
 
