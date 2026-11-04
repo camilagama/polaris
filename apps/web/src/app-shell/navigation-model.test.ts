@@ -14,6 +14,7 @@ import {
   HELP_LABEL,
   inBottomBar,
   legacyAddress,
+  listedTabs,
   menuItemsOf,
   NAV_ITEMS,
   navGroups,
@@ -245,6 +246,37 @@ describe("tabs", () => {
     expect(tabHref("settings", "senha")).toBe("/configuracoes?aba=senha");
     expect(tabHref("settings", "formas-de-receber")).toBe("/configuracoes");
     expect(tabHref("products", "categorias")).toBe("/products?aba=categorias");
+  });
+});
+
+describe("listedTabs", () => {
+  const values = (list: ReturnType<typeof listedTabs>) =>
+    list.map((tab) => [tab.value, tab.reserved]);
+
+  it("lists the tabs this person has, in the order of the screen", () => {
+    expect(
+      values(listedTabs("settings", ["seus-dados", "formas-de-receber"]))
+    ).toEqual([
+      ["formas-de-receber", false],
+      ["seus-dados", false],
+    ]);
+  });
+
+  it("holds the place of a reserved tab between its neighbours, and drops it once it is a tab of the person", () => {
+    const waiting = ["formas-de-receber", "catalogo-publico", "seus-dados"];
+    expect(values(listedTabs("settings", waiting, ["senha"]))).toEqual([
+      ["formas-de-receber", false],
+      ["catalogo-publico", false],
+      ["senha", true],
+      ["seus-dados", false],
+    ]);
+    expect(
+      values(listedTabs("settings", [...waiting, "senha"], ["senha"]))
+    ).toContainEqual(["senha", false]);
+    expect(values(listedTabs("settings", waiting))).not.toContainEqual([
+      "senha",
+      true,
+    ]);
   });
 });
 

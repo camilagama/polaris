@@ -4,7 +4,7 @@ import type {
   PolarisRpcClient,
 } from "@polaris/contracts";
 import { variantFullLabel } from "../inventory/stock-target";
-import { formatBrlAmount, formatQuantity } from "../lib/format";
+import { formatQuantity } from "../lib/format";
 import { readErrorMessage } from "../lib/rpc-error";
 import {
   type ItemDraft,
@@ -70,9 +70,6 @@ export function pickerOptions(
     const parts = [stockText(entry)];
     if (entry.sku) {
       parts.push(`SKU ${entry.sku}`);
-    }
-    if (entry.movingAverageCost !== null && entry.quantity > 0) {
-      parts.push(`custo médio ${formatBrlAmount(entry.movingAverageCost)}`);
     }
     return {
       detail: parts.join(" · "),

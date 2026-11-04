@@ -232,6 +232,25 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
   );
 });
 
+test("o CPF digitado para o Pix continua lá depois de olhar outra aba de Configurações", async ({
+  page,
+}) => {
+  await openScreen(page);
+  await page
+    .getByRole("radiogroup", { name: "Como pagar" })
+    .getByRole("radio", { name: PIX })
+    .click();
+  await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
+
+  await page
+    .getByRole("tab", { exact: true, name: "Formas de receber" })
+    .click();
+  await expect(page.getByLabel("CPF ou CNPJ")).toBeHidden();
+  await page.getByRole("tab", { exact: true, name: "Assinatura" }).click();
+
+  await expect(page.getByLabel("CPF ou CNPJ")).toHaveValue("529.982.247-25");
+});
+
 test("Pix Automático: 'Começar o teste grátis' sem número de dias, nome e e-mail da conta, CPF com teclado numérico e sem telefone (AS-12 emenda, AS-13)", async ({
   page,
 }) => {

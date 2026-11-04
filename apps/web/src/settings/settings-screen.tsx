@@ -63,15 +63,21 @@ const PANELS: Readonly<Record<string, TabPanel>> = {
   },
 };
 
+/** What the server last said about the password (not a failed read), kept for the life of the page so Configurações opens with its tabs settled. */
+let knownPasswordOn: boolean | null = null;
+
 /** Whether the password is on (ADR 0100, AC-46); null while the server has not said. */
 function usePasswordOn(): boolean | null {
-  const [on, setOn] = useState<boolean | null>(null);
+  const [on, setOn] = useState<boolean | null>(knownPasswordOn);
   useEffect(() => {
     let current = true;
     loadAuthMethods()
       .then((methods) => {
+        if (methods !== null) {
+          knownPasswordOn = methods.emailPassword;
+        }
         if (current) {
-          setOn(methods?.emailPassword === true);
+          setOn(methods?.emailPassword ?? knownPasswordOn === true);
         }
       })
       .catch(() => undefined);
@@ -109,11 +115,13 @@ export function SettingsScreen() {
         (value === asked && (value !== "senha" || passwordOn === null))
     )
     .map(([, panel]) => panel);
+  const reserved = passwordOn === null ? ["senha"] : [];
   return (
     <>
       <ScreenTabs
         label="Configurações"
         panels={panels}
+        reserved={reserved}
         screen="settings"
         title="Configurações"
       />

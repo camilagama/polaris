@@ -90,6 +90,25 @@ function useVariantSearch(
   return { load, query, retry };
 }
 
+/** What a suggestion says: the full name, then the balance and the SKU (the warning tone when there is no balance). */
+export function VariantOptionText({ option }: { option: PickerOption }) {
+  return (
+    <>
+      <span className="font-medium [overflow-wrap:anywhere]">
+        {option.label}
+      </span>
+      <span
+        className={cn(
+          "text-support",
+          option.tone === "warning" ? "text-warning" : "text-muted-foreground"
+        )}
+      >
+        {option.detail}
+      </span>
+    </>
+  );
+}
+
 interface VariantSearchProps {
   /** Focus the field when it appears: the person asked to change the variant. */
   autoFocus?: boolean | undefined;
@@ -238,19 +257,7 @@ export function VariantSearch({
           <ComboboxList aria-label="Variantes encontradas">
             {(option: PickerOption) => (
               <ComboboxItem key={option.id} value={option}>
-                <span className="font-medium [overflow-wrap:anywhere]">
-                  {option.label}
-                </span>
-                <span
-                  className={cn(
-                    "text-support",
-                    option.tone === "warning"
-                      ? "text-warning"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  {option.detail}
-                </span>
+                <VariantOptionText option={option} />
               </ComboboxItem>
             )}
           </ComboboxList>
