@@ -452,6 +452,7 @@ describe("the staging isolation check", () => {
       ...entry,
       built: {
         ...entry.config.env.staging,
+        assets: entry.config.assets,
         durable_objects: { bindings: [] },
         kv_namespaces: [],
         targetEnvironment: "staging",
@@ -463,7 +464,11 @@ describe("the staging isolation check", () => {
   it("refuses the switches of the database proof routes in any block, even off", () => {
     const entries = repositoryEntries().map((entry) => ({
       ...entry,
-      built: { ...entry.config.env.staging, targetEnvironment: "staging" },
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
     }));
     const web = entryOf(entries, "web").config;
     web.vars = { ...web.vars, DB_POC_ENABLED: "false" };
@@ -934,6 +939,7 @@ describe("the staging isolation check", () => {
   describe("on the built wrangler.json", () => {
     const built = (config) => ({
       ...config.env.staging,
+      assets: config.assets,
       targetEnvironment: "staging",
     });
 
@@ -966,6 +972,55 @@ describe("the staging isolation check", () => {
         "catalog: built wrangler.json bindings differ from env.staging",
       ]);
     });
+  });
+});
+
+describe("the paths the Worker answers reach it before the assets handler", () => {
+  const withBuilt = () =>
+    repositoryEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
+    }));
+
+  it("refuses a top level without /webhooks/*", () => {
+    const entries = withBuilt();
+    const web = entryOf(entries, "web");
+    web.config.assets = {
+      ...web.config.assets,
+      run_worker_first: ["/health", "/ready", "/rpc/*", "/api/*", "/assets/*"],
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: top level: assets.run_worker_first must list "/webhooks/*" (the assets handler would answer it and the Worker would never see the delivery)',
+    ]);
+  });
+
+  it("refuses an environment that repeats the block without it", () => {
+    const entries = withBuilt();
+    entryOf(entries, "web").config.env.production.assets = {
+      run_worker_first: ["/health", "/api/*"],
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.production: assets.run_worker_first must list "/webhooks/*" (the assets handler would answer it and the Worker would never see the delivery)',
+    ]);
+  });
+
+  it("refuses a built wrangler.json that lost it (run_worker_first as true or absent)", () => {
+    const entries = withBuilt();
+    const web = entryOf(entries, "web");
+    web.built = { ...web.built, assets: { run_worker_first: true } };
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: built wrangler.json: assets.run_worker_first must list "/webhooks/*" (the assets handler would answer it and the Worker would never see the delivery)',
+    ]);
+    web.built = { ...web.built, assets: {} };
+    expect(findIsolationProblems(entries)).toHaveLength(1);
+  });
+
+  it("leaves the other Workers alone (they serve no assets)", () => {
+    expect(findIsolationProblems(withBuilt())).toEqual([]);
   });
 });
 
@@ -1123,7 +1178,11 @@ describe("billing in staging, against the sandboxes only", () => {
   it("refuses a production URL in the built wrangler.json of staging", () => {
     const entries = repositoryEntries().map((entry) => ({
       ...entry,
-      built: { ...entry.config.env.staging, targetEnvironment: "staging" },
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
     }));
     const web = entryOf(entries, "web");
     web.built = {

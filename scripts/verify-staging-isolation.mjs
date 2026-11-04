@@ -692,6 +692,14 @@ export function findIsolationProblems(entries) {
   const problems = [];
   for (const { app, config, built } of entries) {
     checkTopLevel(app, config, problems);
+    if (app === "web") {
+      checkWorkerFirst(`${app}: top level`, config.assets, problems);
+      for (const [name, environment] of Object.entries(config.env ?? {})) {
+        if (environment.assets !== undefined) {
+          checkWorkerFirst(`${app}: env.${name}`, environment.assets, problems);
+        }
+      }
+    }
     checkNoProofSwitches(app, config, built, problems);
     const staging = config.env?.staging;
     const production = config.env?.production;
@@ -885,6 +893,20 @@ function checkProductionBlock(app, production, staging, problems) {
 }
 
 /** The wrangler.json the staging build generated: the file the deploy follows. */
+/** The paths the Worker answers that the assets handler would otherwise take (a POST to a webhook gets its 405). */
+export const WORKER_FIRST_REQUIRED = ["/webhooks/*"];
+
+function checkWorkerFirst(where, assets, problems) {
+  const list = assets?.run_worker_first;
+  for (const pattern of WORKER_FIRST_REQUIRED) {
+    if (!(Array.isArray(list) && list.includes(pattern))) {
+      problems.push(
+        `${where}: assets.run_worker_first must list "${pattern}" (the assets handler would answer it and the Worker would never see the delivery)`
+      );
+    }
+  }
+}
+
 function checkBuilt(app, staging, production, built, problems) {
   if (built === null) {
     problems.push(
@@ -906,6 +928,9 @@ function checkBuilt(app, staging, production, built, problems) {
     problems.push(
       `${app}: built wrangler.json targets "${built.targetEnvironment}", not staging`
     );
+  }
+  if (app === "web") {
+    checkWorkerFirst(`${app}: built wrangler.json`, built.assets, problems);
   }
   const expected = JSON.stringify(bindingsSnapshot(staging));
   if (JSON.stringify(bindingsSnapshot(built)) !== expected) {

@@ -223,10 +223,20 @@
   },
   // The Worker also runs first for /assets/*: the single-page fallback would answer a chunk that does not exist
   // with the shell (200 text/html), and `import()` and the service worker took it for the chunk (src/server/built-assets.ts).
+  // Every path the Worker answers must be listed: the assets handler answers the rest, a POST to /webhooks/* with 405 and
+  // the Worker never sees the delivery. src/server/worker-first-routes.test.ts compares this list with the routes of the app.
+  // The environments inherit the block, so the list exists once.
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/health", "/ready", "/rpc/*", "/api/*", "/assets/*"]
+    "run_worker_first": [
+      "/health",
+      "/ready",
+      "/rpc/*",
+      "/api/*",
+      "/webhooks/*",
+      "/assets/*"
+    ]
   },
   "env": {
     // The fixed staging of this account (ADR 0097): synthetic data only, Google sign-in in Testing
