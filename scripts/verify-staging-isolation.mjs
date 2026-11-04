@@ -892,9 +892,8 @@ function checkProductionBlock(app, production, staging, problems) {
   }
 }
 
-/** The wrangler.json the staging build generated: the file the deploy follows. */
 /** The paths the Worker answers that the assets handler would otherwise take (a POST to a webhook gets its 405). */
-export const WORKER_FIRST_REQUIRED = ["/webhooks/*"];
+const WORKER_FIRST_REQUIRED = ["/webhooks/*"];
 
 function checkWorkerFirst(where, assets, problems) {
   const list = assets?.run_worker_first;
@@ -907,6 +906,7 @@ function checkWorkerFirst(where, assets, problems) {
   }
 }
 
+/** The wrangler.json the staging build generated: the file the deploy follows. */
 function checkBuilt(app, staging, production, built, problems) {
   if (built === null) {
     problems.push(

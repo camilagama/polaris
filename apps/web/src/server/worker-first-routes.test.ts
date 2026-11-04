@@ -50,7 +50,7 @@ function matchesPattern(pattern: string, path: string): boolean {
 }
 
 describe("the paths the Worker answers", () => {
-  it("are the ones the app registers (the list below is not empty)", () => {
+  it("are read from the app itself, so the coverage check below has real routes to compare", () => {
     expect(routedPaths()).toContain("/webhooks/billing/:provider");
     expect(routedPaths()).toContain("/health");
     expect(routedPaths()).toContain("/api/auth/*");
