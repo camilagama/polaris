@@ -279,7 +279,7 @@ export function MonthPicker({
             render={
               <Button
                 aria-label={`${label}, ${text}`}
-                className="min-w-40 flex-1 bg-card shadow-xs dark:bg-secondary/60"
+                className="min-w-32 flex-1 bg-card shadow-xs min-[30rem]:min-w-40 dark:bg-secondary/60"
                 id={id}
                 type="button"
                 variant="outline"

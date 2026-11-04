@@ -1,7 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { exactCountProblems, walkFiles } from "./exact-count-list.mjs";
+import {
+  exactCountProblems,
+  trackedFiles,
+  walkFiles,
+} from "./exact-count-list.mjs";
 import { DOC_PATHS_LIST } from "./verify-doc-paths.list.mjs";
 
 /**
@@ -13,6 +17,8 @@ import { DOC_PATHS_LIST } from "./verify-doc-paths.list.mjs";
  * a relative Markdown link. A link resolves from the folder of the document, as on GitHub; a path in
  * backticks counts as found from the repository root, the folder of the document or a workspace
  * (`apps/*`, `packages/*`), because runbooks name `scripts/x.ts` meaning the one of the app they talk about.
+ * A path counts as found only if git knows it (a file in the index, or a folder that holds one), as in CI;
+ * a file that exists only on this machine fails here too.
  *
  * Not checked: build output and local state (`dist`, `.wrangler`, `test-results`, reports,
  * `.dev.vars` and the like), paths with a placeholder (`*`, `<id>`, `{a,b}`, `$VAR`), and names of
@@ -30,6 +36,8 @@ const markdownLink = /\]\((?!https?:|mailto:|#|\/)([^)\s]+)\)/g;
 const lineSuffix = /(?::L?\d[\d\-–,L]*)+$|#.*$/;
 const trailingPunctuation = /[.,;)]+$/;
 const placeholder = /[*<>{}$|]|\.\.\.|…/;
+const workspaceFolder = /^(?:apps|packages)\/[^/]+$/;
+const trailingSlash = /\/$/;
 const NOT_IN_GIT = new Set([
   ".dev.vars",
   ".e2e-state",
@@ -77,35 +85,51 @@ export function namedPaths(markdown) {
   return named.filter(({ name }) => checkable(name));
 }
 
-/** The workspace folders (`apps/*`, `packages/*`) of the repository. */
-export function workspaceFolders(base) {
-  return ["apps", "packages"].flatMap((top) =>
-    existsSync(path.join(base, top))
-      ? readdirSync(path.join(base, top), { withFileTypes: true })
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => `${top}/${entry.name}`)
-      : []
-  );
+/**
+ * The files git knows plus every folder that holds one, the root included. A path that exists
+ * only on this machine is not in it, so it fails here as it does in CI.
+ */
+export function versionedPaths(base) {
+  const known = new Set(["."]);
+  for (const file of trackedFiles(base)) {
+    known.add(file);
+    for (
+      let folder = path.posix.dirname(file);
+      !known.has(folder);
+      folder = path.posix.dirname(folder)
+    ) {
+      known.add(folder);
+    }
+  }
+  return known;
+}
+
+/** The workspace folders (`apps/*`, `packages/*`) among the versioned paths. */
+export function workspaceFolders(known) {
+  return [...known].filter((entry) => workspaceFolder.test(entry));
 }
 
 /**
- * Whether a path named in `document` exists. A link resolves from the document's folder only, as on
- * GitHub; a path in backticks from the root, the document's folder or a workspace.
+ * Whether a path named in `document` is versioned. A link resolves from the document's folder only,
+ * as on GitHub; a path in backticks from the root, the document's folder or a workspace.
  */
-export function resolves(base, document, { kind, name }, workspaces) {
+export function resolves(known, document, { kind, name }, workspaces) {
   const decoded = decodeURIComponent(name);
   const folder = path.posix.dirname(document);
   const bases = kind === "link" ? [folder] : [".", folder, ...workspaces];
-  return bases.some((from) => existsSync(path.join(base, from, decoded)));
+  return bases.some((from) =>
+    known.has(path.posix.join(from, decoded).replace(trailingSlash, "") || ".")
+  );
 }
 
 export function missingPaths(base = root) {
-  const workspaces = workspaceFolders(base);
+  const known = versionedPaths(base);
+  const workspaces = workspaceFolders(known);
   const found = {};
   for (const document of walkFiles(base, (file) => file.endsWith(".md"))) {
     const markdown = readFileSync(path.join(base, document), "utf8");
     for (const named of namedPaths(markdown)) {
-      if (!resolves(base, document, named, workspaces)) {
+      if (!resolves(known, document, named, workspaces)) {
         const key = `${document} → ${named.name}`;
         found[key] = (found[key] ?? 0) + 1;
       }
@@ -136,6 +160,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     process.exit(1);
   }
   console.log(
-    "Todo caminho citado nos documentos existe (fora da lista conhecida)."
+    "Todo caminho citado nos documentos está versionado (fora da lista conhecida)."
   );
 }

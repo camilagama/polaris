@@ -257,11 +257,13 @@ describe("the chips of the cards and where they come from", () => {
     const sales = card(markup, "result-kpi-sales");
     expect(sales).toContain("data-kpi-delta=");
     expect(words(sales)).toContain("+25,0%");
-    // what it compares with is in the name of the chip and in the (i), not in sight
-    expect(sales).toContain('aria-label="+25,0% em relação a 1 a 25/09"');
-    expect(words(sales)).not.toContain("vs. ");
+    // what it compares with is in sight, short, and in the name of the chip with the exact range
+    expect(sales).toContain(
+      'aria-label="+25,0% em relação a setembro (1 a 25/09)"'
+    );
+    expect(words(sales)).toContain("+25,0%vs. setembro");
     const ticket = card(markup, "result-kpi-ticket");
-    expect(words(ticket)).toContain("+25,0%");
+    expect(words(ticket)).toContain("+25,0%vs. setembro");
     // the summary's read is not there: no chip of the result
     expect(card(markup, "result-kpi-result")).not.toContain("data-kpi-delta=");
   });
@@ -273,7 +275,7 @@ describe("the chips of the cards and where they come from", () => {
     const result = card(markup, "result-kpi-result");
     expect(result).toContain("data-kpi-delta=");
     // 1000,00 against 25 x 30,00
-    expect(words(result)).toContain("+R$ 250,00");
+    expect(words(result)).toContain("+R$ 250,00vs. setembro");
   });
 
   it("the chip of the Resultado stays as the summary's days give it, whatever the sales read says", () => {
