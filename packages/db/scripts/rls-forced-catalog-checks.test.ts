@@ -12,6 +12,7 @@ import {
   catalogViolations,
   POLICIES_SQL,
   RELATIONS_SQL,
+  SCHEMA_RELATIONS_SQL,
   SCHEMAS_SQL,
 } from "./rls-forced-catalog-checks";
 
@@ -253,10 +254,34 @@ describe("the catalog verdict of the rls-forced-catalog gate", () => {
     ).toEqual([]);
   });
 
-  it("keeps the exempt lists exactly as reviewed: no table, and the drizzle schema", () => {
+  it("keeps the exempt lists exactly as reviewed: no table, the drizzle schema and the schema of pgcrypto, of functions only", () => {
     expect(RLS_EXEMPT_TABLES).toEqual([]);
-    expect(RLS_EXEMPT_SCHEMAS.map((entry) => entry.schema)).toEqual([
-      "drizzle",
+    expect(
+      RLS_EXEMPT_SCHEMAS.map((entry) => [entry.schema, entry.functionsOnly])
+    ).toEqual([
+      ["drizzle", undefined],
+      ["polaris_password", true],
+    ]);
+  });
+
+  it("fails on any relation in a schema of functions only, and not in another exempt schema", () => {
+    const exempt = [
+      { reason: "journal", schema: "drizzle" },
+      { functionsOnly: true as const, reason: "functions", schema: "fns" },
+    ];
+    expect(
+      catalogViolations(
+        {
+          policies: [],
+          relations: [],
+          schemaRelations: ["drizzle.__drizzle_migrations", "fns.planted"],
+          schemas: ["drizzle", "fns"],
+        },
+        [],
+        exempt
+      )
+    ).toEqual([
+      "fns.planted is a relation in a schema of functions only, which this gate does not read for row security: move it to public, or extend the restore runbook (docs/runbooks/deletion-ledger-restore.md, step 5) and this gate to cover the schema",
     ]);
   });
 
@@ -266,6 +291,7 @@ describe("the catalog verdict of the rls-forced-catalog gate", () => {
     expect(RELATIONS_SQL).toContain("security_invoker=(true|on|1|yes)");
     expect(SCHEMAS_SQL).toContain("nspname <> 'information_schema'");
     expect(SCHEMAS_SQL).toContain("nspname !~ '^pg_'");
+    expect(SCHEMA_RELATIONS_SQL).toContain("n.nspname <> 'public'");
     expect(POLICIES_SQL).toContain("schemaname = 'public'");
     expect(POLICIES_SQL).toContain("roles::text[]");
     expect(POLICIES_SQL).toContain("permissive = 'PERMISSIVE'");

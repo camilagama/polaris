@@ -20,10 +20,10 @@ import { SessionEndedNotice } from "../app-shell/session-ended-notice";
 import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { signInPath } from "../lib/sign-in-path";
-import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
-import { firstSettingsTab } from "../settings/settings-tabs";
 import { LogoutDialog } from "../offline/logout-dialog";
+import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { useLogout } from "../offline/runtime/logout-control";
+import { firstSettingsTab } from "../settings/settings-tabs";
 import { useEntryMethods } from "./entry-methods";
 import {
   EntryAlert,
@@ -34,7 +34,13 @@ import {
   SubmitButton,
   useReveal,
 } from "./entry-ui";
-import { changeOutcome, newPasswordProblem, postAuth } from "./password-model";
+import { heldByRequirements, NewPasswordField } from "./new-password-field";
+import {
+  changeOutcome,
+  isRequirementProblem,
+  newPasswordProblem,
+  postAuth,
+} from "./password-model";
 import {
   CHANGE_BUTTON,
   CHANGE_BUTTON_PENDING,
@@ -56,7 +62,6 @@ import {
   PAGE_LOADING,
   PAGE_UNAVAILABLE,
   PASSWORD_REQUIRED,
-  PASSWORD_RULE,
 } from "./password-texts";
 
 const ACCOUNT_SECURITY_PATH = tabHref("settings", "senha");
@@ -163,6 +168,7 @@ function ChangePasswordForm() {
   const [nextVisible, toggleNext, hideNext] = useReveal();
   const [currentError, setCurrentError] = useState<string | null>(null);
   const [nextError, setNextError] = useState<string | null>(null);
+  const [nextFlagged, setNextFlagged] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [pending, setPending] = useState(false);
   const [pause, setPause] = useState<Pause | null>(null);
@@ -197,7 +203,11 @@ function ChangePasswordForm() {
       const currentIssue = current.length === 0 ? PASSWORD_REQUIRED : null;
       const nextIssue = newPasswordProblem(next);
       setCurrentError(currentIssue);
-      setNextError(nextIssue ? newPasswordText(nextIssue) : null);
+      const ruleMissing = nextIssue !== null && isRequirementProblem(nextIssue);
+      setNextFlagged(ruleMissing);
+      setNextError(
+        nextIssue && !ruleMissing ? newPasswordText(nextIssue) : null
+      );
       if (currentIssue) {
         currentRef.current?.focus();
         return;
@@ -326,11 +336,10 @@ function ChangePasswordForm() {
                   value={current}
                   visible={currentVisible}
                 />
-                <PasswordInput
-                  autoComplete="new-password"
+                <NewPasswordField
                   error={nextError}
                   fieldRef={nextRef}
-                  hint={PASSWORD_RULE}
+                  flagged={nextFlagged}
                   id={nextId}
                   label={NEW_PASSWORD_LABEL}
                   name="new-password"
@@ -344,6 +353,7 @@ function ChangePasswordForm() {
                   <SubmitButton
                     className="sm:w-fit"
                     // the pause is known: the button stays off, naming the alert, until the time is up
+                    heldBy={heldByRequirements(nextId, next)}
                     offBy={paused ? pauseAlertId : undefined}
                     pending={pending}
                     pendingText={CHANGE_BUTTON_PENDING}

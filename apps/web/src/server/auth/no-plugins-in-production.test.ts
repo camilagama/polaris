@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../environment";
+import { testPasswordPepper } from "./password-hash-test-support";
 
 /**
  * No Better Auth plugin in production without a security review first. The three advisories of better-auth 1.6.23
@@ -85,6 +86,7 @@ const configurations: [string, WorkerBindings][] = [
     {
       ...bindings,
       AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
+      AUTH_PASSWORD_PEPPER: testPasswordPepper,
       BETTER_AUTH_SECRET: "g".repeat(32),
       EMAIL_PASSWORD_AUTH_ENABLED: "true",
       GOOGLE_CLIENT_ID: "client-id.invalid",

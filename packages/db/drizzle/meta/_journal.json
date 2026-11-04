@@ -778,6 +778,13 @@
       "when": 1793800693679,
       "tag": "0111_comandos_de_provedor_do_operador",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1793814632902,
+      "tag": "0112_hash_de_senha_no_postgres",
+      "breakpoints": true
     }
   ]
 }
