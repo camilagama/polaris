@@ -139,6 +139,20 @@ describe("o item da venda, enxuto", () => {
   });
 });
 
+describe("o erro antes da escolha", () => {
+  it("só pede o produto: quantidade e preços, que não aparecem, não contam como campos a corrigir", () => {
+    const blank = createBlankSaleForm(() => "d1");
+    const evaluation = evaluateSaleForm(
+      blank,
+      { profiles: [], stock: {} },
+      { now: NOW, showRequired: true }
+    );
+    expect(
+      Object.keys(evaluation.errors).filter((key) => key.startsWith("item:"))
+    ).toEqual(["item:d1:product"]);
+  });
+});
+
 describe("a loja sem nada para vender", () => {
   it("diz sob o campo; a busca sem resultado diz dentro da lista", () => {
     const empty = {

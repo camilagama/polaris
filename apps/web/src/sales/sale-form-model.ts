@@ -1235,6 +1235,10 @@ function parseItem(item: ItemDraft, issues: Issue[]): ParsedItem | null {
       true
     );
   }
+  if (item.variantId === "") {
+    // quantity and prices are only on screen once the variant is chosen: an error there could not be reached
+    return null;
+  }
   const quantity = parseQuantityField(item, issues);
   const listed = parsePriceField(
     item.draftId,
