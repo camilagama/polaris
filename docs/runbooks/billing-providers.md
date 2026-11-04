@@ -63,6 +63,21 @@ Chave recusada (rotacionada ou revogada antes da hora) aparece no log como `bill
 
 O corpo do webhook, o recurso relido e o link do checkout nunca vão para o log; os registros trazem só IDs e códigos.
 
+## Comandos do operador no Admin (cancelar renovação e reembolsar)
+
+Desde o [ADR 0105](../adr/0105-comandos-de-provedor-pelo-operador.md), o Worker do Admin (`polaris-admin`) também chama o provedor, só nos dois comandos do operador (`POST /api/support-cases/<caso>/billing/cancel-renewal` e `/billing/refund`). Ele tem a **mesma chave** do web: `ASAAS_API_KEY` e `WOOVI_APP_ID` como *secret*, `ASAAS_BASE_URL`, `WOOVI_BASE_URL` e `WOOVI_REFUND_ENABLED` como var por ambiente no `apps/admin/wrangler.jsonc`. O que só serve para receber chamadas do provedor (`ASAAS_WEBHOOK_TOKEN`, `ASAAS_WEBHOOK_TOKEN_NEXT`, `WOOVI_WEBHOOK_PUBLIC_KEYS`, `BILLING_PAYER_KEY`) **nunca** vai ao Admin: `provider-secret-confinement.test.ts` e o `verify-staging-isolation` reprovam.
+
+**Girar a chave: os dois Workers juntos.** A chave do Admin e a do web são a mesma; girar só uma deixa a outra com a chave que vai ser revogada.
+
+1. Gere a nova chave no painel do provedor (Asaas: Integrações, Chaves de API; Woovi: API/Plugins).
+2. Grave o valor novo em `ASAAS_API_KEY` (ou `WOOVI_APP_ID`) **nos dois** Workers do mesmo ambiente, colando no prompt: `wrangler secret put ASAAS_API_KEY --env <ambiente>` em `apps/web` e em `apps/admin`. O segredo vale na hora, sem deploy.
+3. Confira os dois: no web, um evento de teste do sandbox (ou o próximo real) responde 200; no Admin, a próxima chamada de um comando não loga `billing_provider_rejected`.
+4. Só então revogue a chave antiga no painel.
+
+**Suspeita de vazamento: revogue primeiro no provedor.** A ordem se inverte: (1) revogue a chave no painel do provedor, o que corta o uso indevido na hora, mesmo que o web e o Admin passem a responder 503 (`billing_provider_rejected`) até o passo 3; (2) gere a nova; (3) grave-a nos dois Workers; (4) confira como acima. Enquanto isso, o operador recebe 503 `provider_unavailable` e pode repetir o mesmo comando com o mesmo `commandId` depois da troca. Registre a suspeita como incidente e confira a auditoria (`billing.operator_refund_requested`/`…_recorded`) e o painel do provedor por estornos que ninguém pediu.
+
+**O que o operador vê:** caso aberto da loja, motivo de 1 a 300 caracteres e o `commandId` da confirmação. O reembolso confere `expectedAmount` com a cobrança lida sob a trava (`amount_changed` se diferir, nada é cancelado) e só então cancela a renovação e estorna essa cobrança; uma cobrança já estornada ou em estorno (`REFUND_REQUESTED`, `REFUND_IN_PROGRESS`, `REFUNDED`) não é estornada de novo. 503 `provider_unavailable` é repetível com o mesmo `commandId`; 429 `rate_limited` é o limite de reembolsos por operador por hora (3, provisório). Cada comando que chega ao provedor emite o sinal [`comando-de-cobranca-do-operador`](./alertas.md#comando-de-cobranca-do-operador) para a outra pessoa do Access. Nada do provedor vai na resposta nem no log. A medição de CPU de 3 comandos reais no staging fica para depois do deploy.
+
 ## Gate 7 do cartão (script, só sandbox)
 
 `apps/web/scripts/gate7-asaas.ts` roda os comandos de cobrança contra o **sandbox** do Asaas e um banco de **staging** (comentário do banco `polaris.environment=staging`) ou local sem marcador. Ele recusa chave que não comece com `$aact_hmlg_`, host que não seja `api-sandbox.asaas.com` URL de banco com qualquer parâmetro além de `sslmode` e `channel_binding` (antes de conectar), `DATABASE_URL` e `BILLING_DATABASE_URL` de bancos diferentes, e banco sem o marcador `staging` gravado (o comentário do banco, ou a forma antiga do `ALTER DATABASE` no banco local) fora de `localhost` sem marcador. O link do checkout vai para um arquivo novo, criado antes do checkout, com permissão `0600`, fora do repositório (também pelo caminho real); nunca para o terminal, log, PR ou relatório.

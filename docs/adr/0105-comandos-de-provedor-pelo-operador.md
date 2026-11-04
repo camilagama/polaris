@@ -4,7 +4,7 @@ status: accepted
 
 # Comandos de provedor pelo operador: cancelar a renovação e reembolsar pelo Admin
 
-> Número provisório até o merge (pode mudar se outro ADR entrar antes). Emenda o [ADR 0073](0073-admin-suspensao-e-comandos-de-cobranca.md) (os comandos de provedor entram no Admin) e o [ADR 0104](0104-autosservico-de-cobranca-do-dono.md) (o reembolso fora da janela do dono, que era "trabalho do operador" por script, passa a ter tela de operador); cita o [ADR 0066](0066-cobranca-provider-neutral-e-trial-por-pessoa.md) e o [ADR 0101](0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md).
+> Número provisório até o merge (pode mudar se outro ADR entrar antes). Emenda o [ADR 0073](0073-admin-suspensao-e-comandos-de-cobranca.md) (os comandos de provedor entram no Admin) e o [ADR 0104](0104-autosservico-de-cobranca-do-dono.md) (o reembolso fora da janela do dono, que era "trabalho do operador" por script, passa a ter tela de operador); cita o [ADR 0066](0066-reembolso-e-chargeback.md) e o [ADR 0101](0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md).
 
 ## Contexto
 
