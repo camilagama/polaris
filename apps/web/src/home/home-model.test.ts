@@ -18,6 +18,7 @@ import {
   monthTitle,
   msUntilNextMidnight,
   newSaleOfflineText,
+  noCopyText,
   offlineGoal,
   pastGoalSummary,
   pickGoal,
@@ -543,6 +544,17 @@ describe("newSaleOfflineText (AC-30)", () => {
     );
     expect(newSaleOfflineText(false)).toBe(
       "Sem internet: para vender é preciso conexão."
+    );
+  });
+});
+
+describe("noCopyText (sem conexão e sem cópia)", () => {
+  it("diz uma vez por que os cartões estão sem número, e as vendas só quando o aparelho não pode vender", () => {
+    expect(noCopyText(false)).toBe(
+      "Sem internet. Os números e as vendas voltam com a conexão."
+    );
+    expect(noCopyText(true)).toBe(
+      "Sem internet. Os números voltam com a conexão."
     );
   });
 });

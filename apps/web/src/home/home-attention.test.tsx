@@ -70,23 +70,22 @@ describe("Precisa de ação", () => {
 });
 
 describe("a linha discreta do conferir do estoque", () => {
-  const notes = (props: { offline?: boolean; stock: Stock }) =>
-    renderToStaticMarkup(
-      <AttentionNotes offline={props.offline ?? false} stock={props.stock} />
-    );
+  const notes = (props: { stock: Stock }) =>
+    renderToStaticMarkup(<AttentionNotes stock={props.stock} />);
 
-  it("diz que está conferindo, sem conexão e que não deu", () => {
+  it("diz que está conferindo e que não deu", () => {
     expect(notes({ stock: { status: "loading" } })).toContain(
       "Conferindo o estoque…"
-    );
-    expect(notes({ offline: true, stock: { status: "hidden" } })).toContain(
-      "Avisos do estoque só com conexão."
     );
     expect(
       notes({
         stock: { retryable: true, status: "error" } as Stock,
       })
     ).toContain("Avisos do estoque indisponíveis agora.");
+  });
+
+  it("sem conexão não diz nada: o estoque não é lido e a linha do título já diz", () => {
+    expect(notes({ stock: { status: "hidden" } })).toBe("");
   });
 
   it("não diz nada quando o estoque respondeu", () => {

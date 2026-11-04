@@ -441,8 +441,9 @@ export function RhythmBlock({
         <p className="text-muted-foreground">O mapa abre com internet.</p>
       </HomeBlock>
     ) : (
+      // the height of the map with its legend and its lines under it, so the blocks under it stay
       <BlockSkeleton
-        className="h-72"
+        className="h-[39rem] lg:h-[29.5rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />

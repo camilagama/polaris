@@ -45,7 +45,7 @@ function LineIcon({ id }: { id: AttentionLine["id"] }) {
  * lines by priority, each a link to where it is resolved, with its icon in a square and what needs doing, with its
  * number; the cost line alone keeps its second line ("Informe para as próximas vendas."), the screen of the others says
  * what to do. The device line comes from the local summary and shows without the stock's reads. With nothing to do the
- * block is not there; what the check of the stock says (reading, no connection, failed) is `AttentionNotes`, under
+ * block is not there; what the check of the stock says (reading, failed) is `AttentionNotes`, under
  * the KPI cards.
  */
 export function AttentionBlock({
@@ -115,28 +115,15 @@ export function AttentionBlock({
 }
 
 /**
- * What the check of the stock says when it has no lines to show: a discreet line under the KPI cards. Reading, no
- * connection for a role that reads the stock, or failed (§ 5.2 (c)); nothing when it answered (the lines, or nothing to do).
+ * What the check of the stock says when it has no lines to show: a discreet line under the KPI cards. Reading or failed
+ * (§ 5.2 (c)); nothing when it answered (the lines, or nothing to do), and nothing without a connection (the stock is
+ * not read then, and the line under the title already says the connection is missing).
  */
-export function AttentionNotes({
-  offline = false,
-  stock,
-}: {
-  /** No connection, for a role that reads the stock: its lines wait for the connection, said in one sentence. */
-  offline?: boolean;
-  stock: Block<unknown>;
-}) {
+export function AttentionNotes({ stock }: { stock: Block<unknown> }) {
   if (stock.status === "loading") {
     return (
       <p className="text-muted-foreground text-support" role="status">
         Conferindo o estoque…
-      </p>
-    );
-  }
-  if (offline) {
-    return (
-      <p className="text-muted-foreground text-support">
-        Avisos do estoque só com conexão.
       </p>
     );
   }

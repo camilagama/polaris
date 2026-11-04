@@ -7,6 +7,7 @@ import {
   firstSaleConfirmed,
   firstStepsCount,
   firstStepsDone,
+  firstStepsMemory,
   rememberedFirstSteps,
   rememberFirstSteps,
   subscribeFirstSteps,
@@ -25,6 +26,30 @@ const fakeStore = () => {
     values,
   };
 };
+
+describe("what the tab knows of the store before the Início reads it", () => {
+  it("steps, sold, or nothing for a store the Início did not read in this tab", () => {
+    const store = fakeStore();
+    expect(firstStepsMemory("loja-a", store)).toBeNull();
+    rememberFirstSteps("loja-a", { firstProductId: null }, store);
+    expect(firstStepsMemory("loja-a", store)).toBe("steps");
+    expect(firstStepsMemory("loja-b", store)).toBeNull();
+    rememberFirstSteps("loja-a", null, store);
+    expect(firstStepsMemory("loja-a", store)).toBe("sold");
+    expect(firstStepsMemory("loja-b", store)).toBeNull();
+  });
+
+  it("a value that is not one says nothing", () => {
+    const store = fakeStore();
+    store.setItem(FIRST_STEPS_KEY, "{");
+    expect(firstStepsMemory("loja-a", store)).toBeNull();
+    store.setItem(
+      FIRST_STEPS_KEY,
+      JSON.stringify({ done: "x", organizationId: "loja-a" })
+    );
+    expect(firstStepsMemory("loja-a", store)).toBeNull();
+  });
+});
 
 describe("the first steps of the menu", () => {
   it("are the three of the Início: the store, the first product, the first sale", () => {

@@ -46,6 +46,7 @@ const PHONE: JourneyDevice = {
 const ZONE = "America/Sao_Paulo";
 const SETTLE_MS = 20_000;
 const LOADING = /Carregando|Preparando|Sincronizando|Verificando/;
+const UPDATED_LINE = /atualizado às/;
 const CLIENT_IP_HEADER = "cf-connecting-ip";
 
 interface Rect {
@@ -488,13 +489,97 @@ test("layout shift no celular: os destinos da barra e o Resultado, numa loja com
   await page.context().setOffline(true);
   await settle(page, [
     ...home(page),
-    page.getByText("Sem internet e sem números guardados").first(),
+    page.getByRole("region", { name: "Vendas hoje" }).getByText("Sem conexão"),
   ]);
   measurements.record("/ com-vendas sem-conexao", await since(page, mark));
   mark = await markOf(page);
   await page.context().setOffline(false);
   await settle(page, SCREENS["/"](page));
   measurements.record("/ com-vendas volta-a-conexao", await since(page, mark));
+
+  expect(measurements.problems.join("\n\n")).toBe("");
+});
+
+type Sql = Parameters<Parameters<typeof test>[2]>[0]["sql"];
+
+/** The offline copy and the runtime are a Pro capability and the stack has no provider: the billing record of an active subscription. */
+async function makePro(sql: Sql, organizationId: string): Promise<void> {
+  await sql.query(
+    `INSERT INTO organization_billing (organization_id, state, access_ends_at, cycle_months)
+     VALUES ($1, 'active', now() + interval '365 days', 1)`,
+    [organizationId]
+  );
+}
+
+test("layout shift no celular: o Início aberto sem rede, na cópia, quando a rede volta", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const measurements = new Measurements();
+  const journey = await openJourney(browser, testInfo, "layout-shift-copia", {
+    device: PHONE,
+    organization: { timezone: ZONE },
+  });
+  await seedSales(journey);
+  await makePro(sql, journey.organizationId as string);
+  const { page } = journey;
+  await page.context().addInitScript(recordLayoutShifts);
+  await page.goto("/");
+  await settle(page, SCREENS["/"](page));
+  // the runtime is up and the device holds the copy: only then does the Início have a copy to open on
+  await expect(
+    page.getByRole("status").filter({ hasText: "Tudo sincronizado" })
+  ).toBeVisible({ timeout: SETTLE_MS });
+
+  // left online, entered again once the network is gone: the page mounts with nothing to read, so the stock is never
+  // asked; the runtime stays up, which a reload would not keep
+  await warm(page, "/sales");
+  await page.context().setOffline(true);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Sem conexão" })
+  ).toBeVisible({ timeout: SETTLE_MS });
+  await warm(page, "/");
+  const onTheCopy = [
+    ...home(page),
+    page.getByRole("region", { name: "Vendas hoje" }).getByText("R$").first(),
+    page.getByRole("region", { name: "Meta" }),
+    page.getByRole("region", { name: "Vendas por dia" }),
+    page.getByRole("region", { name: "Ritmo de vendas" }),
+  ];
+  await settle(page, onTheCopy);
+  const mark = await markOf(page);
+  // the stock answers only after the figures did and the page rendered them: the window the local stack closes at once
+  let releaseStock: () => void = () => undefined;
+  const stockHeld = new Promise<void>((resolve) => {
+    releaseStock = resolve;
+  });
+  await page.route("**/rpc/inventory/listBalances", async (route) => {
+    await stockHeld;
+    await route.continue();
+  });
+  const figuresAnswered = page.waitForResponse(
+    (response) =>
+      response.url().includes("/rpc/report/periodSummary") && response.ok()
+  );
+  await page.context().setOffline(false);
+  await figuresAnswered;
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      )
+  );
+  await Promise.all(onTheCopy.map((locator) => expect(locator).toBeVisible()));
+  releaseStock();
+  await expect(
+    page.getByRole("status").filter({ hasText: UPDATED_LINE })
+  ).toBeVisible({ timeout: SETTLE_MS });
+  await settle(page, [...SCREENS["/"](page), ...onTheCopy]);
+  measurements.record(
+    "/ com-vendas copia-volta-a-conexao",
+    await since(page, mark)
+  );
 
   expect(measurements.problems.join("\n\n")).toBe("");
 });

@@ -1,6 +1,6 @@
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import type { ReactNode } from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
@@ -55,6 +55,39 @@ export function HomeBlock({
       </div>
       {children}
     </Card>
+  );
+}
+
+/**
+ * A block that keeps, while `keep`, at least the height it had the last time it was drawn without it: the cards
+ * without a connection stay as tall as the cards with figures were, whatever the foot of each one said.
+ */
+export function KeptHeight({
+  children,
+  keep,
+  measure,
+}: {
+  children: ReactNode;
+  keep: boolean;
+  /** The block shows what the kept height is of (the cards with figures): only then its height is taken. */
+  measure: boolean;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const last = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (measure && !keep && box.current) {
+      last.current = box.current.offsetHeight;
+    }
+  });
+  const height = keep ? last.current : null;
+  return (
+    <div
+      className="grid"
+      ref={box}
+      style={height ? { minHeight: height } : undefined}
+    >
+      {children}
+    </div>
   );
 }
 

@@ -406,9 +406,12 @@ export function AcceptancePage() {
         />
       )}
       {leaving || load.status !== "pending" ? <ReadLinks /> : null}
-      <IdleRuntimeProvider>
-        <LogoutControl />
-      </IdleRuntimeProvider>
+      {/* after the read: under a body whose height is not known yet, "Sair" would be pushed down when it comes */}
+      {load.status === "loading" ? null : (
+        <IdleRuntimeProvider>
+          <LogoutControl />
+        </IdleRuntimeProvider>
+      )}
     </EntryScreen>
   );
 }

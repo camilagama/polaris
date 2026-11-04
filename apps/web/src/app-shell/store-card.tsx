@@ -109,11 +109,14 @@ export function StoreCard({
             {organization ? <span className="sr-only">Loja: </span> : null}
             {name}
           </span>
+          {/* the second line is kept before the store is known, so the card does not grow when it comes */}
           {organization && email ? (
             <span className="truncate text-muted-foreground text-xs">
               {email}
             </span>
-          ) : null}
+          ) : (
+            <span aria-hidden="true" className="h-[1.25em] text-xs" />
+          )}
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger
