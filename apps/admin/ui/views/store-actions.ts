@@ -169,6 +169,7 @@ export function storeActionsView(
   const { api, can, context, dom, now } = tools;
   const stateNotice = createNotice(dom);
   const notice = createNotice(dom);
+  const internalNotice = createNotice(dom);
   const suspensionBox = dom.el("div", { class: "suspension" });
   const internalBox = dom.el("div", { class: "internal" });
   let status: string | null = null;
@@ -384,7 +385,7 @@ export function storeActionsView(
   const classify = async (target: boolean, button: HTMLElement) => {
     sending = true;
     button.setAttribute("aria-disabled", "true");
-    notice.status("Gravando a marca da loja…");
+    internalNotice.status("Gravando a marca da loja…");
     const answer = await api.post<{ changed: boolean; internal: boolean }>(
       `/api/organizations/${encodeURIComponent(item.organizationId)}/classification`,
       { internal: target }
@@ -396,22 +397,22 @@ export function storeActionsView(
       const marked = internal
         ? "A loja está marcada como interna e saiu do funil de ativação."
         : "A loja não está marcada como interna e voltou ao funil de ativação.";
-      notice.success(
+      internalNotice.success(
         answer.data.changed ? marked : `Nada mudou: já era assim. ${marked}`
       );
       return;
     }
     button.setAttribute("aria-disabled", "false");
     if (answer.ok || writeMayHaveHappened(answer)) {
-      notice.alert(
+      internalNotice.alert(
         "Não deu para confirmar se a marca foi gravada. Repetir é seguro: tente de novo."
       );
     } else if (answer.problem === "invalid") {
-      notice.alert("O pedido não foi aceito. Recarregue a página.");
+      internalNotice.alert("O pedido não foi aceito. Recarregue a página.");
     } else if (answer.problem === "not_found") {
-      notice.alert("Esta loja não foi encontrada.");
+      internalNotice.alert("Esta loja não foi encontrada.");
     } else {
-      notice.alert(refusalText(answer));
+      internalNotice.alert(refusalText(answer));
     }
   };
 
@@ -465,8 +466,9 @@ export function storeActionsView(
     { "aria-labelledby": "loja-acoes-titulo", class: "action-panel" },
     dom.el("h3", { id: "loja-acoes-titulo" }, "Loja"),
     maySuspend && mayRead ? stateNotice.element : null,
+    notice.element,
     suspensionBox,
     internalBox,
-    notice.element
+    internalNotice.element
   );
 }
