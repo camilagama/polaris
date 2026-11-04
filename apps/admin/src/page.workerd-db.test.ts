@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
-import { mountAdmin } from "../ui/app";
+import { mountAdmin, type ScreenContext } from "../ui/app";
 import {
   allElements,
   buttons,
@@ -35,6 +35,7 @@ const ORIGIN = "https://admin.test";
 /** The Admin's own limit (ACTIVATION_FUNNEL_READS_PER_HOUR); the gate counts the events of these reads. */
 const FUNNEL_READS_PER_HOUR = 30;
 const WAIT = { interval: 50, timeout: 30_000 };
+const CASES_COUNT = /\d+ casos?\./;
 const LAST_MINUTE_OF_A_DAY = /^\d{2}\/\d{2}\/\d{4} 23:59$/;
 const LIMIT_SENTENCE =
   /Limite de leituras do funil por hora atingido\. Tente de novo em \d+ minutos?\./;
@@ -66,16 +67,36 @@ async function asBrowser(path: string, init: RequestInit = {}) {
   });
 }
 
-async function openPage() {
+/** One screen of the page, as the Worker names it on the root (`data-tela`, `data-id`, `data-loja`). */
+async function openPage(screen: Partial<ScreenContext> & { screen: string }) {
   const document = new FakeDocument();
   const root = document.createElement("div");
   document.body.append(root);
   const calls: PageCall[] = [];
-  await mountAdmin(root as unknown as HTMLElement, async (path, init) => {
-    const response = await asBrowser(path, init);
-    calls.push({ method: init.method ?? "GET", path, status: response.status });
-    return response;
-  });
+  const navigations: string[] = [];
+  await mountAdmin(
+    root as unknown as HTMLElement,
+    async (path, init) => {
+      const response = await asBrowser(path, init);
+      calls.push({
+        method: init.method ?? "GET",
+        path,
+        status: response.status,
+      });
+      return response;
+    },
+    () => new Date(fixture.screen.firstChargeAt),
+    {
+      environment: "unknown",
+      id: null,
+      listState: "abertos",
+      store: null,
+      ...screen,
+    },
+    (path) => {
+      navigations.push(path);
+    }
+  );
   const text = () => visibleText(root);
   const shows = (sentence: string | RegExp) =>
     vi.waitFor(() => expect(text()).toMatch(sentence), WAIT);
@@ -83,7 +104,7 @@ async function openPage() {
     allElements(root).find(
       (element) => element.getAttribute("aria-labelledby") === titleId
     ) as FakeElement;
-  return { calls, root, section, shows, text };
+  return { calls, navigations, root, section, shows, text };
 }
 
 const funnelCalls = (calls: PageCall[]) =>
@@ -107,7 +128,7 @@ async function json(response: Response): Promise<Record<string, unknown>> {
 
 describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => {
   it("reads the funnel once when the area opens, and not again for the weeks or for opening it again (AC-7, AC-8)", async () => {
-    const page = await openPage();
+    const page = await openPage({ screen: "funil" });
     expect(page.calls.map((call) => call.path)).toEqual(["/api/whoami"]);
     buttons(page.root, "Abrir o funil")[0]?.click();
     await page.shows("Funil de 12 semanas, atualizado em");
@@ -151,7 +172,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
 
   it("opens a case of the store, reads its refund window once and is refused once the case is closed (AC-9, AC-10)", async () => {
     const { hostile, trial } = fixture.screen;
-    const page = await openPage();
+    const page = await openPage({ screen: "lojas" });
     byId(page.root, "busca").value = hostile.id;
     buttons(page.root, "Buscar")[0]?.click();
     await page.shows("1 loja encontrada.");
@@ -256,5 +277,75 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     expect(windowCalls(page.calls).map((call) => call.status)).toEqual([
       200, 403,
     ]);
+  });
+  it("opens a case from the store, closes it on its screen, and a stale screen is told it was already closed (AC-P1.5, AC-P1.6)", async () => {
+    const { free } = fixture.screen;
+    const opening = await openPage({ screen: "caso-novo", store: free.id });
+    await opening.shows("Loja: ");
+    await vi.waitFor(() => expect(opening.text()).toContain(free.id), WAIT);
+    byId(opening.root, "motivo").value = "Dono não consegue entrar";
+    buttons(opening.root, "Abrir caso")[0]?.click();
+    await vi.waitFor(() => expect(opening.navigations).toHaveLength(1), WAIT);
+    expect(opening.calls.filter((call) => call.method === "POST")).toEqual([
+      { method: "POST", path: "/api/support-cases", status: 201 },
+    ]);
+    const [path] = opening.navigations;
+    const caseId = String(path).replace("/casos/", "");
+    expect(path).toBe(`/casos/${caseId}`);
+
+    // two screens of the same open case: the first closes it, the second still shows it open
+    const first = await openPage({ id: caseId, screen: "caso" });
+    const second = await openPage({ id: caseId, screen: "caso" });
+    await first.shows("Caso em uso");
+    await second.shows("Caso em uso");
+    const close = (page: Awaited<ReturnType<typeof openPage>>) => {
+      buttons(page.root, "Fechar caso")[0]?.click();
+      byId(page.root, "resolucao").value = "Senha trocada pelo dono";
+      buttons(page.root, "Revisar o fechamento")[0]?.click();
+      expect(page.text()).toContain("Não: isso não poderá ser desfeito.");
+      buttons(page.root, "Confirmar o fechamento do caso")[0]?.click();
+    };
+    close(first);
+    await first.shows(
+      "Caso fechado. Os acessos temporários dele foram revogados."
+    );
+    expect(buttons(first.root, "Fechar caso")).toEqual([]);
+    expect(first.text()).toContain("Para agir de novo, abra outro caso.");
+    expect(first.text()).toContain("Senha trocada pelo dono");
+    close(second);
+    await second.shows("Este caso já estava fechado.");
+    expect(
+      [...first.calls, ...second.calls].filter((call) => call.method === "POST")
+    ).toEqual([
+      {
+        method: "POST",
+        path: `/api/support-cases/${caseId}/close`,
+        status: 200,
+      },
+      {
+        method: "POST",
+        path: `/api/support-cases/${caseId}/close`,
+        status: 200,
+      },
+    ]);
+
+    // the database has one close, by this operator, and the case among the closed ones of the store
+    const detail = await json(await asBrowser(`/api/support-cases/${caseId}`));
+    expect(
+      (detail.audit as { eventType: string }[]).filter(
+        (entry) => entry.eventType === "support_case.closed"
+      )
+    ).toHaveLength(1);
+    const list = await openPage({ listState: "fechados", screen: "casos" });
+    await list.shows(CASES_COUNT);
+    byId(list.root, "casos-loja").value = free.id;
+    buttons(list.root, "Filtrar")[0]?.click();
+    await vi.waitFor(
+      () =>
+        expect(
+          byTag(list.root, "a").map((link) => link.getAttribute("href"))
+        ).toContain(`/casos/${caseId}`),
+      WAIT
+    );
   });
 });

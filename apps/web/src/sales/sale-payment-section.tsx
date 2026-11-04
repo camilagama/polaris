@@ -2,6 +2,7 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useState } from "react";
+import { useStoreToday } from "../lib/use-store-today";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
@@ -11,7 +12,6 @@ import {
   CollapsiblePanel,
   CollapsibleTrigger,
 } from "@/ui/collapsible";
-import { todayOr } from "@/ui/date-values";
 import {
   Field,
   FieldContent,
@@ -250,6 +250,8 @@ interface SaleDateProps {
   /** Without a connection the sale is dated when it is kept: no field, the note in its place. */
   offline: boolean;
   onChange: (value: string) => void;
+  /** The store's zone: the last chosen day is the store's today, not the device's. */
+  timezone: string | null;
   value: string;
 }
 
@@ -257,8 +259,15 @@ interface SaleDateProps {
  * The optional commercial date and time: the day on the DatePicker of src/ui (never after today) and the time typed
  * beside it; empty means now. Picking a day with no time fills in the time of now, which the person can change.
  */
-function SaleDate({ error, offline, onChange, value }: SaleDateProps) {
+function SaleDate({
+  error,
+  offline,
+  onChange,
+  timezone,
+  value,
+}: SaleDateProps) {
   const { day, time } = splitSaleDate(value);
+  const today = useStoreToday(timezone);
   const handleDay = useCallback(
     (next: string) =>
       onChange(
@@ -299,8 +308,9 @@ function SaleDate({ error, offline, onChange, value }: SaleDateProps) {
           error={timeAtFault ? undefined : error}
           id="sale-occurred-day"
           label="Dia"
-          max={todayOr(undefined)}
+          max={today}
           onChange={handleDay}
+          today={today}
           value={day}
         />
         <TextField
@@ -402,6 +412,8 @@ interface PaymentSectionProps {
   profilesView: CatalogView;
   /** "Um pagamento só, no valor total…", said under the methods. */
   singlePaymentText: string;
+  /** The store's zone (null when the store has none), for the day the date field stops at. */
+  timezone: string | null;
 }
 
 export function PaymentSection({
@@ -423,6 +435,7 @@ export function PaymentSection({
   profileOptions,
   profilesView: profilesState,
   singlePaymentText,
+  timezone,
 }: PaymentSectionProps) {
   const card = form.payment.method === "credit_card";
   const options = [noProfileOption, ...profileOptions];
@@ -594,6 +607,7 @@ export function PaymentSection({
               error: errors[formFieldKeys.occurredAt],
               offline,
               onChange: onDateChange,
+              timezone,
               value: form.occurredAtLocal,
             }}
             hasError={Object.keys(errors).some(isExtrasErrorKey)}
