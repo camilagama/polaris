@@ -214,6 +214,11 @@ button[aria-disabled="true"] {
   overflow-wrap: anywhere;
 }
 
+.store-head {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
 .store-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8125rem;
@@ -432,9 +437,11 @@ a {
 
 /* The shell (corte admin-v2, design §1.3): a side menu from 40rem up; below it, the environment and a closed
  * <details> menu on top, which pushes the content down when opened instead of covering it. */
+/* explicit rows: with only min-height, auto rows share the spare height and a short page opens with an empty menu row */
 .shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 100dvh;
 }
 
@@ -472,6 +479,7 @@ a {
 @media (min-width: 40rem) {
   .shell {
     grid-template-columns: 16rem minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .side {

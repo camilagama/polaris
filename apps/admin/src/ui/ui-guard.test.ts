@@ -195,6 +195,14 @@ describe("the sheet of the page", () => {
   it("loads nothing: no import, no url(), no font face", () => {
     expect(sheet).not.toMatch(SHEET_LOADS);
   });
+
+  it("gives the shell grid rows, so a short page does not stretch the menu row over the screen", () => {
+    const shell = [...sheet.matchAll(/\.shell \{([^}]*)\}/g)];
+    expect(shell).toHaveLength(2);
+    for (const [, body] of shell) {
+      expect(body).toContain("grid-template-rows:");
+    }
+  });
 });
 
 /** Every file under apps/admin/ui; the guard covers all of them but the test DOM, which defines the sinks to refuse them. */

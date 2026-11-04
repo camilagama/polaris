@@ -1,6 +1,6 @@
 import { PROBLEM_TEXT } from "../api";
 import type { ScreenTools } from "../app";
-import { labelName } from "../dom";
+import { labelName, storeName } from "../dom";
 import { brasiliaMomentText } from "../format";
 import { createNotice } from "../notice";
 import type { SupportCasePage } from "../types";
@@ -94,11 +94,18 @@ export function storeView(tools: ScreenTools): HTMLElement {
   if (id === null) {
     return dom.el("p", { role: "alert" }, "Esta loja não foi encontrada.");
   }
-  const parts: HTMLElement[] = [];
+  const head = dom.el(
+    "p",
+    { class: "store-head" },
+    storeName(dom, "", id)
+  );
+  const parts: HTMLElement[] = [head];
   if (can("support_case:manage")) {
     parts.push(storeCases(tools, id));
   }
-  const diagnostics = diagnosticsView(dom, api, now);
+  const diagnostics = diagnosticsView(dom, api, now, (organization) =>
+    dom.fill(head, storeName(dom, organization.name, organization.id))
+  );
   diagnostics.show({ id, name: "" });
   parts.push(diagnostics.element);
   return dom.el("div", { class: "areas" }, ...parts);

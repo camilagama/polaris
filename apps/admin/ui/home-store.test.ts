@@ -5,6 +5,8 @@ import {
   type Answer,
   alertOf,
   type Call,
+  diagnostics,
+  flush,
   json,
   mount,
   OWNER,
@@ -295,6 +297,24 @@ describe("Loja", () => {
       `/api/organizations/${STORE}/diagnostics`,
     ]);
     expect(hrefs(root)).not.toContain(`/casos/novo?loja=${STORE}`);
+  });
+
+  it("names the store above its cases once the diagnostics are read", async () => {
+    const { root } = await storeScreen([
+      json(page([summaryOf()])),
+      json(diagnostics({ name: "Loja da Ana" })),
+    ]);
+    await flush();
+
+    const head = allElements(root).find(
+      (element) => element.getAttribute("class") === "store-head"
+    );
+    const areas = head?.parent;
+    expect(areas?.children[0]).toBe(head);
+    expect(head?.textContent).toContain("Loja da Ana");
+    expect(areas?.children[1]?.getAttribute("aria-labelledby")).toBe(
+      "casos-loja-titulo"
+    );
   });
 
   it("says the sentence of the problem when the cases cannot be read", async () => {
