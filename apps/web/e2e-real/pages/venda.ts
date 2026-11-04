@@ -74,6 +74,23 @@ export async function fillSale(
       exact: true,
       name: `Ajuste ${index + 1}`,
     });
+    try {
+      await expect(adjustment).toBeVisible({ timeout: 4000 });
+    } catch (error) {
+      const extras = await page
+        .locator("[data-slot=collapsible]")
+        .evaluate((el) => el.outerHTML.slice(0, 3000))
+        .catch(String);
+      console.log(
+        "T702DIAG",
+        JSON.stringify({
+          extras,
+          url: page.url(),
+          groups: await page.getByRole("group").allInnerTexts(),
+        })
+      );
+      throw error;
+    }
     await choose(page, adjustment, "Tipo de ajuste", "Desconto");
     await choose(page, adjustment, "Como informar", "Percentual (%)");
     await adjustment.getByLabel("Percentual (%)").fill(percent);
