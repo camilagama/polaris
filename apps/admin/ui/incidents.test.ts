@@ -797,3 +797,59 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
     expect(alertOf(root)?.textContent).toContain("incidentes");
   });
 });
+
+describe("when the list cannot be read again after a retry", () => {
+  it("keeps the list and the sentence of the event, says the list could not be read, and does not claim it was updated", async () => {
+    const { root } = await detailScreen([
+      json(detail()),
+      json({ result: "unknown_item" }, 404),
+      json({ error: "x" }, 503),
+    ]);
+
+    retryButton(root, EVENT)?.click();
+    await flush();
+
+    expect(rowsOf(root)).toHaveLength(1);
+    expect(lineOf(root, EVENT)?.textContent).toBe(
+      "Este evento não foi encontrado neste incidente. Nada foi mudado."
+    );
+    expect(alertOf(root)?.textContent).toBe(PROBLEM_TEXT.unavailable);
+    expect(retryButton(root, EVENT)?.getAttribute("aria-disabled")).toBe(
+      "false"
+    );
+  });
+
+  it("frees the buttons when the list read again is malformed", async () => {
+    const { root } = await detailScreen([
+      json(detail()),
+      json({ result: "busy" }, 409),
+      json({ events: [null], incident: {}, next: null }),
+    ]);
+
+    retryButton(root, EVENT)?.click();
+    await flush();
+
+    expect(retryButton(root, EVENT)?.getAttribute("aria-disabled")).toBe(
+      "false"
+    );
+  });
+});
+
+describe("Início when both counts fail", () => {
+  it("says both in one alert instead of one hiding the other", async () => {
+    const { root } = await mount(
+      [json({ error: "x" }, 503), json({ error: "x" }, 503)],
+      json({
+        ...OWNER,
+        capabilities: ["support_case:manage", "operational_incident:read"],
+      }),
+      undefined,
+      screenContext({ screen: "inicio" })
+    );
+
+    expect(alertOf(root)?.textContent).toBe(
+      `Não foi possível contar os casos abertos e os incidentes. ${PROBLEM_TEXT.unavailable}`
+    );
+    expect(visibleText(root)).not.toContain("Nada esperando por você.");
+  });
+});

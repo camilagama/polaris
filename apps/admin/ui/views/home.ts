@@ -45,9 +45,8 @@ export function homeView(tools: ScreenTools): HTMLElement {
     "Nada esperando por você."
   );
 
-  let unread = false;
+  const unread: { text: string; what: string }[] = [];
   const failed = (what: string, answer: { ok: boolean; problem?: Problem }) => {
-    unread = true;
     const problem =
       answer.ok ||
       answer.problem === undefined ||
@@ -55,7 +54,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
       answer.problem === "not_found"
         ? "failed"
         : answer.problem;
-    notice.alert(`Não foi possível contar ${what}. ${PROBLEM_TEXT[problem]}`);
+    unread.push({ text: PROBLEM_TEXT[problem], what });
   };
 
   const countCases = async (): Promise<HTMLElement | null> => {
@@ -113,8 +112,13 @@ export function homeView(tools: ScreenTools): HTMLElement {
     const found = (await Promise.all(pending)).filter(
       (item): item is HTMLElement => item !== null
     );
+    const [first] = unread;
+    if (first !== undefined) {
+      const names = unread.map((item) => item.what).join(" e ");
+      notice.alert(`Não foi possível contar ${names}. ${first.text}`);
+    }
     if (found.length === 0) {
-      if (!unread) {
+      if (first === undefined) {
         empty.removeAttribute("hidden");
       }
       return;

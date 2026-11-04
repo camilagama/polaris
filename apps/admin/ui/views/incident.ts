@@ -25,7 +25,7 @@ const REFERENCE_SHOWN = 200;
 export const FOREVER_TEXT =
   "As ocorrências somam para sempre: acompanhe os eventos a reenviar.";
 export const RETRY_EFFECT =
-  "O evento volta para a fila e será enviado no próximo ciclo (até uma hora). Reenviar de novo é seguro. Fica na auditoria com o seu e-mail.";
+  "O evento volta para a fila e será enviado no próximo ciclo (até uma hora). Reenviar de novo é seguro. Fica na auditoria.";
 export const NO_EVENTS = "Nenhum evento morto neste incidente.";
 export const INCIDENT_NOT_FOUND = "Este incidente não foi encontrado.";
 export const RETRY_UNKNOWN =
@@ -54,7 +54,11 @@ function isResult(value: unknown): value is RetryResult {
   return typeof value === "string" && RESULTS.has(value);
 }
 
-function resultText(result: RetryResult, at: string): string {
+function resultText(
+  result: RetryResult,
+  at: string,
+  listUpdated: boolean
+): string {
   switch (result) {
     case "retried":
       return `Reenviado às ${at}. O evento sai no próximo ciclo (até uma hora).`;
@@ -65,7 +69,9 @@ function resultText(result: RetryResult, at: string): string {
     case "event_gone":
       return "Este evento não existe mais e não pode ser reenviado. Nada foi mudado.";
     case "unknown_item":
-      return "Este evento não foi encontrado neste incidente. Nada foi mudado. A lista foi atualizada.";
+      return listUpdated
+        ? "Este evento não foi encontrado neste incidente. Nada foi mudado. A lista foi atualizada."
+        : "Este evento não foi encontrado neste incidente. Nada foi mudado.";
     default: {
       const unreachable: never = result;
       return unreachable;
@@ -96,12 +102,26 @@ function countText(count: number, more: boolean): string {
   return more ? `${found} Há mais: use Carregar mais.` : found;
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function isDetail(data: unknown): data is OperationalIncidentDetail {
-  const detail = data as Partial<OperationalIncidentDetail> | null | undefined;
+  if (!(isObject(data) && Array.isArray(data.events))) {
+    return false;
+  }
+  const { incident } = data;
   return (
-    Array.isArray(detail?.events) &&
-    typeof detail.incident === "object" &&
-    detail.incident !== null
+    isObject(incident) &&
+    typeof incident.kind === "string" &&
+    typeof incident.cause === "string" &&
+    typeof incident.subject === "string" &&
+    data.events.every(
+      (event) =>
+        isObject(event) &&
+        typeof event.eventId === "string" &&
+        typeof event.eventType === "string"
+    )
   );
 }
 
@@ -207,11 +227,24 @@ export function incidentView(tools: ScreenTools): HTMLElement {
       notice.alert(answer.ok ? PROBLEM_TEXT.failed : failureText(answer));
       return;
     }
-    say(eventId, resultText(result, brasiliaTime(now())));
-    if (REREAD.has(result)) {
-      await load(null);
+    await settle(eventId, result);
+  };
+
+  const settle = async (eventId: string, result: RetryResult) => {
+    const at = brasiliaTime(now());
+    say(eventId, resultText(result, at, true));
+    let reread = true;
+    try {
+      if (REREAD.has(result)) {
+        reread = await load(null);
+      }
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
+    if (!reread) {
+      say(eventId, resultText(result, at, false));
+      return;
+    }
     const current = lines.get(eventId);
     if (current === undefined) {
       notice.success(said.get(eventId) ?? "");
@@ -288,20 +321,12 @@ export function incidentView(tools: ScreenTools): HTMLElement {
     );
   };
 
-  async function load(after: string | null) {
+  async function load(after: string | null): Promise<boolean> {
     if (incidentId === null) {
-      return;
+      return false;
     }
     const parameters = new URLSearchParams({ limit: PAGE_SIZE });
-    if (after === null) {
-      rows.replaceChildren();
-      lines.clear();
-      senders.clear();
-      shown = 0;
-      next = null;
-      table.setAttribute("hidden", "");
-      moreButton.setAttribute("hidden", "");
-    } else {
+    if (after !== null) {
       parameters.set("after", after);
     }
     const wasBusy = busy;
@@ -317,11 +342,17 @@ export function incidentView(tools: ScreenTools): HTMLElement {
           ? INCIDENT_NOT_FOUND
           : failureText(answer)
       );
-      return;
+      return false;
     }
     if (!isDetail(answer.data)) {
       notice.alert(PROBLEM_TEXT.failed);
-      return;
+      return false;
+    }
+    if (after === null) {
+      rows.replaceChildren();
+      lines.clear();
+      senders.clear();
+      shown = 0;
     }
     showHead(answer.data.incident);
     const added = answer.data.events.map(row);
@@ -335,6 +366,7 @@ export function incidentView(tools: ScreenTools): HTMLElement {
     if (after !== null) {
       added[0]?.querySelector("button")?.focus();
     }
+    return true;
   }
 
   moreButton.addEventListener("click", () => {
