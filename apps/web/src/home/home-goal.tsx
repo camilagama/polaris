@@ -1,8 +1,10 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
+import { Card } from "@/ui/card";
 import { buttonVariants } from "@/ui/button";
 import { MoneyText } from "@/ui/hidden-values";
+import { Skeleton } from "@/ui/skeleton";
 import { OnDemandRingChart } from "@/ui/charts/on-demand";
 import {
   formatGoalPercent,
@@ -25,7 +27,7 @@ import {
   type OfflineGoal,
   pastGoalSummary,
 } from "./home-model";
-import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
+import { BlockError, HomeBlock } from "./home-parts";
 import type { Block } from "./use-home";
 
 /**
@@ -334,6 +336,23 @@ function SettledGoal({
   );
 }
 
+/** The goal while it reads: the shape of the card of a store without a goal (the title and "Definir meta"), its least. */
+function GoalSkeleton() {
+  return (
+    <Card
+      aria-busy="true"
+      className="min-w-0 px-(--card-spacing)"
+      role="status"
+    >
+      <span className="sr-only">Carregando a meta…</span>
+      <div aria-hidden="true" className="flex h-5 items-center">
+        <Skeleton className="h-4 w-12" />
+      </div>
+      <Skeleton aria-hidden="true" className="h-ctl-md w-32" />
+    </Card>
+  );
+}
+
 export function GoalBlock({
   block,
   onRetry,
@@ -353,7 +372,7 @@ export function GoalBlock({
     return null;
   }
   if (block.status === "loading") {
-    return <BlockSkeleton label="Carregando a meta…" lines={1} />;
+    return <GoalSkeleton />;
   }
   if (block.status === "error" || view === null) {
     return (
@@ -392,7 +411,8 @@ export function GoalBlock({
 
 /**
  * The goal without a connection (§ 7.3, § 7.4): the one the card showed, kept on the device, by the rule of the
- * period; with no copy, "Metas só com conexão.". Setting or seeing the other goals needs the connection: no link.
+ * period; with no copy, "Sem conexão", on the height of the card with "Definir meta" (the one a store without a goal
+ * has with the connection), so the blocks under it stay. Setting or seeing the other goals needs the connection: no link.
  */
 export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
   let content: React.ReactNode;
@@ -414,7 +434,11 @@ export function OfflineGoalBlock({ goal }: { goal: OfflineGoal }) {
       }
       break;
     default:
-      content = <p className="text-muted-foreground">Metas só com conexão.</p>;
+      content = (
+        <p className="flex min-h-ctl-md items-center text-muted-foreground">
+          Sem conexão
+        </p>
+      );
   }
   return (
     <HomeBlock id="home-goal" title={title}>

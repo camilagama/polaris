@@ -55,6 +55,8 @@ export function useScreenTab(
 }
 
 export interface TabPanel {
+  /** What shows while the screen's chunk loads, with the screen's own shape; `PageLoading` without it. */
+  fallback?: ReactNode;
   Screen: LazyScreen;
   value: string;
 }
@@ -119,7 +121,7 @@ export function ScreenTabPanel({
     <TabsContent className={className} value={panel.value}>
       <TabPanelScope>
         <ErrorBoundary onRetry={Screen.reset}>
-          <Suspense fallback={<PageLoading />}>
+          <Suspense fallback={panel.fallback ?? <PageLoading />}>
             <Screen />
           </Suspense>
         </ErrorBoundary>

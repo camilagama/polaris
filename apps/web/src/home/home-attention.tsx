@@ -115,28 +115,15 @@ export function AttentionBlock({
 }
 
 /**
- * What the check of the stock says when it has no lines to show: a discreet line under the KPI cards. Reading, no
- * connection for a role that reads the stock, or failed (§ 5.2 (c)); nothing when it answered (the lines, or nothing to do).
+ * What the check of the stock says when it has no lines to show: a discreet line under the KPI cards. Reading or failed
+ * (§ 5.2 (c)); nothing when it answered (the lines, or nothing to do), and nothing without a connection (the stock is
+ * not read then, and the line under the title already says the connection is missing).
  */
-export function AttentionNotes({
-  offline = false,
-  stock,
-}: {
-  /** No connection, for a role that reads the stock: its lines wait for the connection, said in one sentence. */
-  offline?: boolean;
-  stock: Block<unknown>;
-}) {
+export function AttentionNotes({ stock }: { stock: Block<unknown> }) {
   if (stock.status === "loading") {
     return (
       <p className="text-muted-foreground text-support" role="status">
         Conferindo o estoque…
-      </p>
-    );
-  }
-  if (offline) {
-    return (
-      <p className="text-muted-foreground text-support">
-        Avisos do estoque só com conexão.
       </p>
     );
   }

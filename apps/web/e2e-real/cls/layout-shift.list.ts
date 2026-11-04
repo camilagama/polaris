@@ -36,21 +36,10 @@ export interface ClsException {
   reason: string;
 }
 
-const HOME_SKELETONS =
-  'o esqueleto da Meta, do Gráfico e do Ritmo tem outra altura que o "Primeiros passos" e o "Definir meta" da loja nova; sai com os esqueletos na forma final, da altura do bloco que vem';
 const SALE_SUGGESTIONS =
   "a lista de variantes encontradas entra no fluxo e empurra Quantidade, Adicionar item e Pagamento 168 px; sai com a lista em popup ancorado à busca, na Vender enxuta";
-const HOME_OFFLINE =
-  "sem conexão e sem cópia guardada, os quatro cartões viram dois blocos curtos e a Meta outro texto, e voltam com a rede; sai com os cartões no lugar e na altura de sempre, sem número";
 
 export const CLS_EXCEPTIONS: Partial<Record<ClsScenario, ClsException>> = {
-  "/ com-vendas sem-conexao": { reason: HOME_OFFLINE },
-  "/ com-vendas volta-a-conexao": { reason: HOME_OFFLINE },
-  "/ vazia frio": { reason: HOME_SKELETONS },
-  "/entrar sem-sessao frio": {
-    reason:
-      'o cartão centrado na vertical cresce para os dois lados quando "Verificando se você já entrou…" dá lugar ao formulário; sai com a entrada alinhada ao topo',
-  },
   "/sales com-vendas frio": { reason: SALE_SUGGESTIONS },
   "/sales com-vendas quente": { reason: SALE_SUGGESTIONS },
 };

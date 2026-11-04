@@ -1,11 +1,13 @@
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import { useCallback, useMemo, useState } from "react";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
+import { Skeleton } from "@/ui/skeleton";
 import {
   DeltaChip,
   HeroValue,
   KPI_GRID,
   KpiCard,
+  KpiCardSkeleton,
   KpiGroup,
   type KpiRange,
 } from "@/ui/kpi-card";
@@ -22,9 +24,10 @@ import {
   dayReading,
   type KpiReading,
   monthKpis,
+  rangeText,
   todaySeries,
 } from "./home-kpis";
-import { chartValue, monthTitle } from "./home-model";
+import { chartValue, firstOfMonth, monthTitle } from "./home-model";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -53,6 +56,14 @@ function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
 /** The height of a sparkline: 64 px from 760 px, 52 on a phone. */
 function sparkHeight(still: boolean): number {
   return still ? 52 : 64;
+}
+
+/** The date of the result card when it is not the period of the group, which its group already says. */
+function ownDate(read: {
+  result: KpiReading;
+  sales: KpiReading;
+}): string | undefined {
+  return read.result.date === read.sales.date ? undefined : read.result.date;
 }
 
 function Chip({ reading }: { reading: KpiReading }) {
@@ -188,8 +199,9 @@ function MonthCards({
   const incomplete =
     kpis.result.kind === "noCost" || isIncompleteEstimate(quality);
   // the result card has a date of its own only when it is not the period of the group ("outubro inteiro")
-  const resultDate =
-    read.result.date === read.sales.date ? undefined : read.result.date;
+  const resultDate = ownDate(read);
+  const rest = kpis.read(null);
+  const resultDateAtRest = ownDate(rest);
   return (
     <KpiGroup
       className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
@@ -233,6 +245,7 @@ function MonthCards({
         chip={<Chip reading={read.result} />}
         className="lg:col-start-3 lg:row-start-2"
         {...(resultDate ? { date: resultDate } : {})}
+        {...(resultDateAtRest ? { dateReserve: resultDateAtRest } : {})}
         entity="result"
         footer={
           <ResultFooter
@@ -264,7 +277,7 @@ function MonthCards({
         chip={<Chip reading={read.ticket} />}
         className="lg:col-start-4 lg:row-start-2"
         entity="ticket"
-        {...(read.ticket.count ? { footer: read.ticket.count } : {})}
+        footer={read.ticket.count || null}
         help={{ about: "Ticket médio", text: read.ticket.help }}
         id="home-ticket"
         {...(drawn
@@ -304,6 +317,109 @@ export function KpiCards({
         />
       )}
       <MonthCards figures={figures} still={still} />
+    </div>
+  );
+}
+
+/** The text of each card without a connection and without a copy: the reason is said once, in the line under the title. */
+export const NO_CONNECTION_NOTE = "Sem conexão";
+
+/** The place of a sparkline, empty: a card without figures keeps the height it has with them. */
+const EMPTY_SPARK = <span aria-hidden="true" />;
+
+/** The place of a link under the support line ("Ver o resultado"), empty. */
+const EMPTY_ACTION = <span aria-hidden="true" className="block h-4" />;
+
+/**
+ * The four cards without a connection and without a copy on the device (§ 7.4): in their places and with the height
+ * they have with figures (the support line, the foot, the link and the sparkline kept empty), each with its name, "—"
+ * (an unknown value is never a zero) and "Sem conexão". Nothing moves when the connection goes or comes back.
+ */
+export function NoFiguresCards({ today }: { today: string }) {
+  const title = monthTitle(today);
+  const name = title.toLowerCase();
+  const empty = <HeroValue amount={null} />;
+  return (
+    <div className={KPI_GRID} data-kpi-row="">
+      <KpiCard
+        className="md:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2"
+        entity="sales"
+        id="home-today"
+        note={NO_CONNECTION_NOTE}
+        spark={EMPTY_SPARK}
+        title="Vendas hoje"
+        value={empty}
+      />
+      <KpiGroup
+        className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+        period={rangeText(firstOfMonth(today), today)}
+        title={title}
+      >
+        <KpiCard
+          className="md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-2"
+          entity="sales"
+          id="home-month"
+          note={NO_CONNECTION_NOTE}
+          spark={EMPTY_SPARK}
+          title={
+            <>
+              Vendas<span className="sr-only"> em {name}</span>
+            </>
+          }
+          value={empty}
+        />
+        <KpiCard
+          action={EMPTY_ACTION}
+          className="lg:col-start-3 lg:row-start-2"
+          entity="result"
+          footer={null}
+          id="home-result"
+          note={NO_CONNECTION_NOTE}
+          spark={EMPTY_SPARK}
+          title="Resultado estimado"
+          value={<HeroValue amount={null} size="md" />}
+        />
+        <KpiCard
+          className="lg:col-start-4 lg:row-start-2"
+          entity="ticket"
+          footer={null}
+          id="home-ticket"
+          note={NO_CONNECTION_NOTE}
+          spark={EMPTY_SPARK}
+          title="Ticket médio"
+          value={<HeroValue amount={null} size="md" />}
+        />
+      </KpiGroup>
+    </div>
+  );
+}
+
+/**
+ * The four cards while the figures are read: the shape of `KpiCards` (Hoje, the line of the month and its three cards,
+ * each with the rows it has with figures), so the cards that come take the same places.
+ */
+export function KpiCardsSkeleton() {
+  return (
+    <div className={KPI_GRID} data-kpi-row="">
+      <KpiCardSkeleton className="md:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2" />
+      <div
+        aria-hidden="true"
+        className="flex h-[1.125rem] items-center md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+      >
+        <Skeleton className="h-3 w-28" />
+      </div>
+      <KpiCardSkeleton className="md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-2" />
+      <KpiCardSkeleton
+        action
+        className="lg:col-start-3 lg:row-start-2"
+        footer={1}
+        size="md"
+      />
+      <KpiCardSkeleton
+        className="lg:col-start-4 lg:row-start-2"
+        footer={1}
+        size="md"
+      />
     </div>
   );
 }

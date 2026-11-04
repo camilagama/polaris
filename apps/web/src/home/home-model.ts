@@ -723,3 +723,13 @@ export function newSaleOfflineText(canSellOffline: boolean): string {
     ? "Sem internet. A venda é enviada quando a conexão voltar."
     : "Sem internet: para vender é preciso conexão.";
 }
+
+/**
+ * The line under the title without a connection and without a copy: why the cards say "Sem conexão", said once. When
+ * this device can keep a sale, the line under "Nova venda" says that, so this one speaks of the figures only.
+ */
+export function noCopyText(canSellOffline: boolean): string {
+  return canSellOffline
+    ? "Sem internet. Os números voltam com a conexão."
+    : "Sem internet. Os números e as vendas voltam com a conexão.";
+}

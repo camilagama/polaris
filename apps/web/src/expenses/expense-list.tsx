@@ -93,7 +93,8 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
           {showTotal ? formatBrlAmount(state.total) : "…"}
         </p>
       </div>
-      <p className="text-muted-foreground text-support">
+      {/* a line of its own on a phone: the count that comes after the read does not make it wrap then */}
+      <p className="text-muted-foreground text-support max-sm:basis-full">
         {formatMonthLabel(filters.month)}
         {showTotal ? ` · ${countLabel(state.count)}` : ""}
       </p>

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { KpiCards } from "./home-kpi-cards";
+import { KpiCards, NoFiguresCards } from "./home-kpi-cards";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -231,5 +231,32 @@ describe("a ajuda de cada cartão", () => {
   it("o ticket não tem linha de apoio em repouso: só o chip", () => {
     const ticket = card(render(figures()), "home-ticket");
     expect(words(ticket)).not.toContain("Média por venda");
+  });
+});
+
+const NO_FIGURES_GROUP =
+  /Outubro<\/span> · <span class="tabular-nums">1 a 23\/10/;
+
+describe("the cards without a connection and without a copy", () => {
+  it("are the four, each with its name, '—' and 'Sem conexão', never a zero nor the long sentence", () => {
+    const markup = renderToStaticMarkup(<NoFiguresCards today={TODAY} />);
+    for (const id of [
+      "home-today",
+      "home-month",
+      "home-result",
+      "home-ticket",
+    ]) {
+      expect(markup).toContain(`id="${id}"`);
+    }
+    expect(markup.match(/Sem conexão/g)).toHaveLength(4);
+    expect(markup.match(/sem valor/g)).toHaveLength(4);
+    expect(markup).not.toContain("R$");
+    expect(markup).not.toContain("Sem internet");
+    expect(markup).toMatch(NO_FIGURES_GROUP);
+  });
+
+  it("keep the sparkline's place, so they are as tall as with figures", () => {
+    const markup = renderToStaticMarkup(<NoFiguresCards today={TODAY} />);
+    expect(markup.match(/data-kpi-spark=""/g)).toHaveLength(4);
   });
 });

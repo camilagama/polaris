@@ -1,6 +1,7 @@
 import { type MouseEvent, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
+import { Skeleton } from "@/ui/skeleton";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
@@ -118,6 +119,12 @@ export function DataExportList({
           <Alert role="alert" variant="destructive">
             <AlertDescription>{loadError}</AlertDescription>
           </Alert>
+        ) : null}
+        {/* the list is being read: the line of the empty list keeps its place, the case of a store with no copy */}
+        {exports === null && !loadError ? (
+          <div aria-hidden="true" className="flex h-5 items-center">
+            <Skeleton className="h-3.5 w-48" />
+          </div>
         ) : null}
         {exports !== null && exports.length === 0 ? (
           <p className="text-muted-foreground">{NO_EXPORTS_TEXT}</p>

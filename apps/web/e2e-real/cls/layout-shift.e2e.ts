@@ -488,7 +488,7 @@ test("layout shift no celular: os destinos da barra e o Resultado, numa loja com
   await page.context().setOffline(true);
   await settle(page, [
     ...home(page),
-    page.getByText("Sem internet e sem números guardados").first(),
+    page.getByRole("region", { name: "Vendas hoje" }).getByText("Sem conexão"),
   ]);
   measurements.record("/ com-vendas sem-conexao", await since(page, mark));
   mark = await markOf(page);

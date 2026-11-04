@@ -37,6 +37,8 @@ export const LimitLeaveScope = LimitLeaveContext.Provider;
 export interface LimitHelpState {
   clear: () => void;
   help: LimitHelpView | null;
+  /** The owner's plan is being read for the help: its place is kept (`LimitHelp`), so the notice does not grow after. */
+  pending: boolean;
   /** A refusal (or a block) by the plan's limit is on screen: works out what goes with it. */
   show: (subject: LimitSubject) => void;
 }
@@ -50,6 +52,7 @@ export function useLimitHelp(): LimitHelpState {
   const { billingSelfService, organization, organizationId } =
     useCurrentOrganization();
   const [help, setHelp] = useState<LimitHelpView | null>(null);
+  const [pending, setPending] = useState(false);
   const latest = useRef(0);
   const { role } = organization;
   const show = useCallback(
@@ -58,6 +61,7 @@ export function useLimitHelp(): LimitHelpState {
       const ask = latest.current;
       setHelp(null);
       const canManage = canManageBilling(billingSelfService, role);
+      setPending(canManage);
       if (!canManage) {
         setHelp(
           limitHelpFor({
@@ -83,15 +87,24 @@ export function useLimitHelp(): LimitHelpState {
             );
           }
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          if (ask === latest.current) {
+            setPending(false);
+          }
+        });
     },
     [billingSelfService, organizationId, role]
   );
   const clear = useCallback(() => {
     latest.current += 1;
     setHelp(null);
+    setPending(false);
   }, []);
-  return useMemo(() => ({ clear, help, show }), [clear, help, show]);
+  return useMemo(
+    () => ({ clear, help, pending, show }),
+    [clear, help, pending, show]
+  );
 }
 
 /**
@@ -128,9 +141,12 @@ function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
  */
 export function LimitHelp({
   help,
+  pending = false,
   shown = true,
 }: {
   help: LimitHelpView | null;
+  /** The plan is being read: the place of "Conhecer o Pro" is kept, empty, so the notice does not grow when it comes. */
+  pending?: boolean;
   /** Whether the limit's text is the one on screen: the help goes only with it. */
   shown?: boolean;
 }) {
@@ -159,6 +175,13 @@ export function LimitHelp({
     },
     [leave]
   );
+  if (help === null && pending && shown) {
+    return (
+      <span aria-hidden="true" className="mt-1 grid justify-items-start gap-2">
+        <span className="h-ctl-sm" />
+      </span>
+    );
+  }
   if (help === null || !shown) {
     return null;
   }
