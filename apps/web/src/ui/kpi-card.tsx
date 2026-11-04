@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "./card";
 import { HelpTip } from "./help-tip";
 import { MaskedMoney, MoneyText } from "./hidden-values";
+import { Skeleton } from "./skeleton";
 
 /**
  * The KPI card of the recipe "KPI sparklines" of Bklit UI, with our text (revisão de UI v7, § 3): the name with the
@@ -79,12 +80,24 @@ const ENTITY_SQUARE: Record<KpiEntity, string> = {
 };
 
 const SIGN = /^[+-]/;
+
 const SPLIT = /^(-?)R\$\s?(.*?)(,\d{2})?$/;
 
 /**
- * An amount as a display: the whole number in the color of the text, weight 650, with the "R$" at 56 % and the cents a
- * step smaller (v7 § 1); a loss in red, with its sign. Hidden, "R$ ••••" (heard "valor escondido"); none, a dash.
+ * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller, which push
+ * the line down), "R$ ••••" (whose dots may come from another font) and "—" take the same height, and nothing under
+ * them moves when the values are hidden or a day is read. The line height is the card's (`text-sm`, 20 px), the one
+ * the number has been drawn with (a `leading` put before the size class was dropped by the merge of the classes); the
+ * size class comes first so the merge keeps both.
  */
+function heroBox(size: "lg" | "md"): string {
+  return cn(
+    "whitespace-nowrap font-[650] tabular-nums tracking-[-0.035em]",
+    size === "lg" ? "text-[1.75rem] md:text-[1.875rem]" : "text-[1.3125rem]",
+    "h-[1.05em] leading-5"
+  );
+}
+
 export function HeroValue({
   amount,
   size = "lg",
@@ -94,10 +107,7 @@ export function HeroValue({
   size?: "lg" | "md";
 }) {
   const [hidden] = useHiddenValues();
-  const box = cn(
-    "whitespace-nowrap font-[650] tabular-nums leading-[1.05] tracking-[-0.035em]",
-    size === "lg" ? "text-[1.75rem] md:text-[1.875rem]" : "text-[1.3125rem]"
-  );
+  const box = heroBox(size);
   const currency = "font-medium text-[0.56em] tracking-normal";
   if (amount === null) {
     return (
@@ -245,10 +255,7 @@ function SparkSlot({
     [onChange]
   );
   return (
-    <div
-      className="relative -mx-(--card-spacing) mt-auto h-[3.25rem] touch-pan-y md:h-16"
-      data-kpi-spark=""
-    >
+    <div className={cn("relative touch-pan-y", SPARK_SLOT)} data-kpi-spark="">
       {spark}
       {range ? (
         <input
@@ -268,11 +275,54 @@ function SparkSlot({
   );
 }
 
+const TOP_ROW =
+  "flex min-h-[1.125rem] min-w-0 items-center justify-between gap-x-2 text-[0.8125rem] text-muted-foreground leading-[1.125rem]";
+const SUPPORT_ROW =
+  "flex min-h-[1.375rem] flex-wrap items-center gap-x-2 gap-y-1";
+const FOOTER_ROW = "min-h-4 text-muted-foreground text-xs leading-4";
+const SPARK_SLOT = "-mx-(--card-spacing) mt-auto h-[3.25rem] md:h-16";
+const CARD = "min-w-0 gap-1 overflow-hidden px-(--card-spacing) pb-0";
+
+/** The date at the top right, over the width of the longest one the card may show (`reserve`), kept out of sight. */
+function KpiDate({
+  date,
+  reserve,
+}: {
+  date?: string | undefined;
+  reserve?: string | undefined;
+}) {
+  const shown = date ? (
+    <span
+      className="col-start-1 row-start-1 justify-self-end whitespace-nowrap"
+      data-kpi-date=""
+    >
+      {date}
+    </span>
+  ) : null;
+  if (!reserve) {
+    return shown ? (
+      <span className="grid shrink-0 text-xs tabular-nums">{shown}</span>
+    ) : null;
+  }
+  return (
+    <span className="grid shrink-0 text-xs tabular-nums">
+      <span
+        aria-hidden="true"
+        className="invisible col-start-1 row-start-1 whitespace-nowrap"
+      >
+        {reserve}
+      </span>
+      {shown}
+    </span>
+  );
+}
+
 export function KpiCard({
   action,
   chip,
   className,
   date,
+  dateReserve,
   entity,
   footer,
   help,
@@ -289,7 +339,13 @@ export function KpiCard({
   className?: string;
   /** The date of a card that has one of its own, at the top right; the others take it from their group. */
   date?: string;
+  /**
+   * The longest date the card may show (the one at rest, "outubro inteiro"): its width stays taken when the date is
+   * another or none, so the title does not wrap and unwrap while a day is read.
+   */
+  dateReserve?: string;
   entity: KpiEntity;
+  /** The line under the support line. `null` keeps its height empty, for a card whose foot comes and goes. */
   footer?: ReactNode;
   /** The (i) beside the title: what the number is and what it compares with (never a warning). */
   help?: { about: string; text: string };
@@ -306,15 +362,11 @@ export function KpiCard({
   return (
     <Card
       aria-labelledby={id}
-      className={cn(
-        "min-w-0 gap-1 overflow-hidden px-(--card-spacing) pb-0",
-        !spark && "pb-(--card-spacing)",
-        className
-      )}
+      className={cn(CARD, !spark && "pb-(--card-spacing)", className)}
       data-kpi={entity}
       role="region"
     >
-      <div className="flex min-h-[1.125rem] min-w-0 items-center justify-between gap-x-2 text-[0.8125rem] text-muted-foreground leading-[1.125rem]">
+      <div className={TOP_ROW}>
         <div className="flex min-w-0 items-center gap-1">
           <h2
             className="flex min-w-0 items-center font-medium text-foreground"
@@ -335,31 +387,76 @@ export function KpiCard({
             </HelpTip>
           ) : null}
         </div>
-        {date ? (
-          <span
-            className="shrink-0 whitespace-nowrap text-xs tabular-nums"
-            data-kpi-date=""
-          >
-            {date}
+        <KpiDate date={date} reserve={dateReserve} />
+      </div>
+      {value}
+      {/* always there, empty without a change or a note: a chip that comes with a day read moves nothing */}
+      <div className={SUPPORT_ROW}>
+        {chip}
+        {note ? (
+          <span className="text-muted-foreground text-xs leading-4">
+            {note}
           </span>
         ) : null}
       </div>
-      {value}
-      {chip || note ? (
-        <div className="flex min-h-[1.375rem] flex-wrap items-center gap-x-2 gap-y-1">
-          {chip}
-          {note ? (
-            <span className="text-muted-foreground text-xs leading-4">
-              {note}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      {footer ? (
-        <div className="text-muted-foreground text-xs leading-4">{footer}</div>
-      ) : null}
+      {footer === undefined ? null : <div className={FOOTER_ROW}>{footer}</div>}
       {action}
       {spark ? <SparkSlot range={range} spark={spark} /> : null}
     </Card>
+  );
+}
+
+/**
+ * A KPI card while its figures are read: the rows of `KpiCard` with their heights (the top line, the number, the support
+ * line, the foot and the action when the card has them, the sparkline), drawn in `Skeleton`, so the card that comes
+ * takes the same place. Drawing only: the status is said by whom shows it.
+ */
+export function KpiCardSkeleton({
+  action = false,
+  className,
+  footer = 0,
+  size = "lg",
+  spark = true,
+}: {
+  /** The card has a link under the support line ("Ver o resultado"). */
+  action?: boolean;
+  className?: string;
+  /** Lines of the foot ("Não é lucro líquido nem caixa"); 0 for none. */
+  footer?: number;
+  size?: "lg" | "md";
+  spark?: boolean;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "group/card flex flex-col overflow-hidden rounded-xl bg-card py-(--card-spacing) shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
+        CARD,
+        !spark && "pb-(--card-spacing)",
+        className
+      )}
+      data-kpi-skeleton=""
+    >
+      <div className={TOP_ROW}>
+        <Skeleton className="h-3 w-24" />
+      </div>
+      <div className={cn(heroBox(size), "flex items-center")}>
+        <Skeleton className="h-[0.8em] w-32" />
+      </div>
+      <div className={SUPPORT_ROW}>
+        <Skeleton className="h-3 w-28" />
+      </div>
+      {Array.from({ length: footer }, (_, index) => (
+        <div className={cn(FOOTER_ROW, "flex items-center")} key={index}>
+          <Skeleton className="h-3 w-full" />
+        </div>
+      ))}
+      {action ? (
+        <div className="flex h-4 items-center">
+          <Skeleton className="h-3 w-24" />
+        </div>
+      ) : null}
+      {spark ? <div className={SPARK_SLOT} /> : null}
+    </div>
   );
 }

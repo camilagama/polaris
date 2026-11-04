@@ -122,6 +122,29 @@ export function rememberedFirstSteps(
   }
 }
 
+/**
+ * What this tab knows of the store before the Início reads it: "steps" when the Início read the steps of a store that
+ * never sold, "sold" when it read that the store sold, null when it did not read this store in this tab.
+ */
+export function firstStepsMemory(
+  organizationId: string,
+  store: SessionStore | null = sessionStore()
+): "sold" | "steps" | null {
+  if (rememberedFirstSteps(organizationId, store) !== null) {
+    return "steps";
+  }
+  try {
+    const value = JSON.parse(
+      storedText(store) ?? "null"
+    ) as Partial<RememberedSteps> | null;
+    return value?.organizationId === organizationId && value.done === null
+      ? "sold"
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function keptOnDevice(
   organizationId: string,
   store: SessionStore | null

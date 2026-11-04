@@ -313,8 +313,10 @@ export function ListNote({
   loading?: boolean | undefined;
 }) {
   return (
+    // two lines kept on a phone: "Carregando despesas…" and the empty list ("Nenhuma despesa neste período. Toque em…")
+    // take the same box
     <p
-      className="py-6 text-center text-muted-foreground text-support"
+      className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0"
       role={loading ? "status" : undefined}
     >
       {children}

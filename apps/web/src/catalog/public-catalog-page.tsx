@@ -6,6 +6,7 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
 } from "react";
@@ -207,8 +208,13 @@ export function PublicCatalogPage() {
   const profile = setup?.profile ?? null;
   const planBlocks = setup !== null && !setup.enabled;
   // the plan does not include the catalog (L4 of the corte 1.6): the notice gains the way to the Pro
-  const { help: limitHelp, show: showLimitHelp } = useLimitHelp();
-  useEffect(() => {
+  const {
+    help: limitHelp,
+    pending: limitHelpPending,
+    show: showLimitHelp,
+  } = useLimitHelp();
+  // before the paint: the notice comes with the place of its help already kept (`LimitHelp`)
+  useLayoutEffect(() => {
     if (planBlocks) {
       showLimitHelp("catalog");
     }
@@ -332,7 +338,7 @@ export function PublicCatalogPage() {
             O catálogo público faz parte do plano Pro. Você pode ver o que já
             está guardado, mas só poderá salvar o perfil e escolher produtos
             quando o plano incluir.
-            <LimitHelp help={limitHelp} />
+            <LimitHelp help={limitHelp} pending={limitHelpPending} />
           </AlertDescription>
         </Alert>
       ) : null}
