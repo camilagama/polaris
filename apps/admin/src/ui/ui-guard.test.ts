@@ -102,7 +102,10 @@ const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
  * (`/api/support-cases/:id/entitlement-grants` and `…/:grantId`; Parte 4), the court's read of the access log
  * (`/api/access-log/read`, a POST; Parte 8), and the privacy cases (list, detail, open and each of the six steps,
  * `/api/privacy-cases/:id/identity`, `/role`, `/scope`, `/decision`, `/actions` and `/resolve`; Parte 11), and the two acts on
- * the closure notice of a closed store (`/api/support-cases/:id/closure-notice/reissue` and `/dismiss`; Parte 12).
+ * the closure notice of a closed store (`/api/support-cases/:id/closure-notice/reissue` and `/dismiss`; Parte 12), and
+ * the temporary access to a case's customers: giving it (`/api/support-cases/:id/access`), reading them masked
+ * (`/api/support-cases/:id/customers`) and ending it (`/api/tenant-access/:grantId`; Parte 5). Revealing a field
+ * (`…/customers/:customerId/reveal`) is not in the cut.
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/access-log",
@@ -111,6 +114,7 @@ const ROUTES_OF_THIS_CUT = [
   "/api/organizations",
   "/api/privacy-cases",
   "/api/support-cases",
+  "/api/tenant-access",
   "/api/whoami",
 ];
 
@@ -176,7 +180,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case and the two acts on the closure notice: no other action of a case or a store (no purge or legal hold)", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access and reading the masked customers: no other action of a case or a store (no purge or legal hold)", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -194,10 +198,12 @@ describe("the built script of the page", () => {
         .filter((segment) => new RegExp(`/${segment}(?![a-z-])`).test(text))
         .sort();
     const expected = [
+      "access",
       "actions",
       "classification",
       "close",
       "closure-notice",
+      "customers",
       "decision",
       "diagnostics",
       "dismiss",
@@ -219,6 +225,11 @@ describe("the built script of the page", () => {
     expect(
       named(`${bundle}fetch(\`/api/support-cases/\${id}/purge\`)`)
     ).toEqual([...expected, "purge"].sort());
+    expect(
+      named(
+        `${bundle}fetch(\`/api/support-cases/\${id}/customers/\${c}/reveal\`)`
+      )
+    ).toEqual([...expected, "reveal"].sort());
   });
 });
 
@@ -226,7 +237,7 @@ const DELETE_CALL = /method:\s*"DELETE"/g;
 const OTHER_WRITES = /method:\s*"(PUT|PATCH)"/;
 
 describe("the verbs of the built script", () => {
-  it("sends one DELETE, the end of a grant, and no PUT or PATCH", () => {
+  it("sends one DELETE, the end of a grant or of an access, and no PUT or PATCH", () => {
     expect(bundle.match(DELETE_CALL)).toHaveLength(1);
     expect(bundle).not.toMatch(OTHER_WRITES);
   });

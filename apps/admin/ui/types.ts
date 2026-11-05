@@ -264,3 +264,33 @@ export interface PrivacyStepAnswer {
   id: string;
   stage: string;
 }
+
+/** What `POST /api/support-cases/:caseId/access` answers: the access given, its end by the database's clock. */
+export interface GrantedAccess {
+  caseId: string;
+  expiresAt: string;
+  id: string;
+  organizationId: string;
+  startsAt: string;
+}
+
+/** What `DELETE /api/tenant-access/:grantId` answers: false when the access had already ended or does not exist. */
+export interface EndedAccess {
+  revoked: boolean;
+}
+
+/** A customer as the server masks it (`m***@e***.br`, `***`): the page shows it as it came, never unmasked. */
+export interface MaskedCustomer {
+  archived: boolean;
+  email: string | null;
+  hasNotes: boolean;
+  id: string;
+  name: string;
+  phone: string | null;
+}
+
+/** What `GET /api/support-cases/:caseId/customers` answers: a page of at most 50 and the cursor of the next. */
+export interface MaskedCustomerPage {
+  customers: MaskedCustomer[];
+  next: string | null;
+}

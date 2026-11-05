@@ -10,6 +10,7 @@ import {
 } from "../format";
 import { createNotice } from "../notice";
 import type { ClosedSupportCase, SupportCaseDetail } from "../types";
+import { type AccessMessage, type AccessView, accessView } from "./access";
 import { newCaseLink, storePath } from "./case-links";
 import { entitlementsView } from "./entitlements";
 import { storeActionsView } from "./store-actions";
@@ -59,6 +60,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
   const body = dom.el("div", { class: "case" });
   const caseId = context.id;
   let turn = 0;
+  let access: AccessView | null = null;
 
   const byWhom = (principalId: string) =>
     principalId === who.principal.id ? "você" : "outro operador";
@@ -137,8 +139,17 @@ export function caseView(tools: ScreenTools): HTMLElement {
     );
   };
 
+  const accessSection = (detail: SupportCaseDetail) => {
+    access = accessView(tools, detail.case, detail.grants, {
+      reload: (message: AccessMessage) => load(() => access?.say(message)),
+    });
+    return access?.element ?? null;
+  };
+
   const actions = (detail: SupportCaseDetail) => {
     const item = detail.case;
+    access?.discard();
+    access = null;
     if (item.kind !== "support") {
       return dom.el(
         "p",
@@ -155,7 +166,8 @@ export function caseView(tools: ScreenTools): HTMLElement {
           {},
           `Caso fechado em ${brasiliaMomentText(item.closedAt)}. Para agir de novo, abra outro caso.`
         ),
-        newCaseLink(dom, item.organizationId)
+        newCaseLink(dom, item.organizationId),
+        accessSection(detail)
       );
     }
     const mayAct = can("organization:suspend") || can("organization:classify");
@@ -164,7 +176,8 @@ export function caseView(tools: ScreenTools): HTMLElement {
       { class: "case-actions" },
       closePanel(item),
       mayAct ? storeActionsView(tools, item) : null,
-      can("billing:operate") ? entitlementsView(tools, item) : null
+      can("billing:operate") ? entitlementsView(tools, item) : null,
+      accessSection(detail)
     );
   };
 
