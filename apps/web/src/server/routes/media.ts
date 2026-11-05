@@ -216,7 +216,9 @@ function declaredContentLength(request: Request): number | null {
   return length;
 }
 
-async function readBoundedBody(request: Request): Promise<Uint8Array> {
+async function readBoundedBody(
+  request: Request
+): Promise<Uint8Array<ArrayBuffer>> {
   const expectedLength = declaredContentLength(request);
   if (!request.body) {
     throw new UnsupportedMediaImageError();

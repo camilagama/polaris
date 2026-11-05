@@ -404,6 +404,316 @@ test("enviar sem internet diz 'Sem internet' e que repetir é seguro, e a imagem
   ).toBeEnabled();
 });
 
+type Rgb = [number, number, number];
+
+/** What the browser decodes from a body the panel sent: its size and the color at each asked point (0..1 of a side). */
+function decoded(page: Page, body: Buffer, points: [number, number][] = []) {
+  return page.evaluate(
+    async ([base64, at]) => {
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes]));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("no 2d context");
+      }
+      context.drawImage(bitmap, 0, 0);
+      const colors = at.map(([x, y]) => {
+        const { data } = context.getImageData(
+          Math.floor(x * (bitmap.width - 1)),
+          Math.floor(y * (bitmap.height - 1)),
+          1,
+          1
+        );
+        return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
+      });
+      const result = { colors, height: bitmap.height, width: bitmap.width };
+      bitmap.close();
+      return result;
+    },
+    [body.toString("base64"), points] as const
+  );
+}
+
+/** Each channel within 24 of the expected one (JPEG moves colors a little). */
+function expectColor(actual: number[] | undefined, expected: Rgb) {
+  expect(actual).toHaveLength(3);
+  for (const [index, channel] of (actual ?? []).entries()) {
+    expect(Math.abs(channel - (expected[index] ?? 0))).toBeLessThanOrEqual(24);
+  }
+}
+
+const BLUE: Rgb = [30, 90, 200];
+const GREEN: Rgb = [40, 170, 80];
+const RED: Rgb = [220, 60, 40];
+const YELLOW: Rgb = [230, 200, 40];
+const WHITE: Rgb = [255, 255, 255];
+
+/**
+ * An image of `width` × `height` encoded by the browser. "quadrants" paints blue, green, red and yellow (top left,
+ * top right, bottom left, bottom right), to see where a crop came from; "halves" paints the left half blue and the
+ * right half red; "transparent" leaves it transparent but for a red corner.
+ */
+async function browserImage(
+  page: Page,
+  input: {
+    height: number;
+    paint: "halves" | "quadrants" | "transparent";
+    type: "image/jpeg" | "image/png";
+    width: number;
+  }
+) {
+  const base64 = await page.evaluate(
+    async ({ colors, height, paint, type, width }) => {
+      const canvas = new OffscreenCanvas(width, height);
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("no 2d context");
+      }
+      const fill = (
+        color: number[],
+        x: number,
+        y: number,
+        w: number,
+        h: number
+      ) => {
+        context.fillStyle = `rgb(${color.join(" ")})`;
+        context.fillRect(x, y, w, h);
+      };
+      const [blue = [], green = [], red = [], yellow = []] = colors;
+      if (paint === "quadrants") {
+        fill(blue, 0, 0, width / 2, height / 2);
+        fill(green, width / 2, 0, width / 2, height / 2);
+        fill(red, 0, height / 2, width / 2, height / 2);
+        fill(yellow, width / 2, height / 2, width / 2, height / 2);
+      } else if (paint === "halves") {
+        fill(blue, 0, 0, width / 2, height);
+        fill(red, width / 2, 0, width / 2, height);
+      } else {
+        fill(red, 0, 0, width / 8, height / 8);
+      }
+      const blob = await canvas.convertToBlob({ quality: 0.92, type });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      return btoa(binary);
+    },
+    { ...input, colors: [BLUE, GREEN, RED, YELLOW] }
+  );
+  return Buffer.from(base64, "base64");
+}
+
+/** The JPEG with an EXIF segment saying "rotate 90° clockwise to show" (Orientation 6), right after its SOI. */
+function withExifOrientation6(jpeg: Buffer) {
+  const exif = Buffer.from([
+    0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, 0x4d, 0x4d,
+    0x00, 0x2a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x01, 0x01, 0x12, 0x00, 0x03,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+  return Buffer.concat([jpeg.subarray(0, 2), exif, jpeg.subarray(2)]);
+}
+
+const created = api(
+  { asset: mediaAsset(0), replayed: false, requestId: REQUEST_ID },
+  201
+);
+
+/** Opens the panel with an upload that is answered with success, and returns the bodies it received. */
+async function openWithUpload(page: Page) {
+  const sent: { body: Buffer; crop: string | null; type: string | null }[] = [];
+  await openMediaPanel(page, {
+    lists: [list(0), list(1)],
+    upload: (route) => {
+      const request = route.request();
+      sent.push({
+        body: request.postDataBuffer() ?? Buffer.alloc(0),
+        crop: request.headers()["x-media-crop"] ?? null,
+        type: request.headers()["content-type"] ?? null,
+      });
+      return route.fulfill(created);
+    },
+  });
+  return sent;
+}
+
+async function sendImage(page: Page) {
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+}
+
+test("envia o recorte já reduzido a 1200 px em JPEG, com o recorte da imagem inteira", async ({
+  page,
+}) => {
+  const sent = await openWithUpload(page);
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: solidPng(2400, 1600),
+    mimeType: "image/png",
+    name: "foto.png",
+  });
+  await sendImage(page);
+
+  expect(sent).toHaveLength(1);
+  const [upload] = sent;
+  expect(upload?.type).toBe("image/jpeg");
+  expect(JSON.parse(upload?.crop ?? "null")).toEqual({
+    height: 1,
+    width: 1,
+    x: 0,
+    y: 0,
+  });
+  // a JPEG starts with FF D8 FF
+  expect([...(upload?.body.subarray(0, 3) ?? [])]).toEqual([0xff, 0xd8, 0xff]);
+  const image = await decoded(page, upload?.body ?? Buffer.alloc(0));
+  expect({ height: image.height, width: image.width }).toEqual({
+    height: 800,
+    width: 1200,
+  });
+});
+
+test("uma foto JPEG em retrato com recorte sai só com a área recortada, do lugar escolhido", async ({
+  page,
+}) => {
+  const sent = await openWithUpload(page);
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: await browserImage(page, {
+      height: 4000,
+      paint: "quadrants",
+      type: "image/jpeg",
+      width: 3000,
+    }),
+    mimeType: "image/jpeg",
+    name: "retrato.jpg",
+  });
+  const area = page.getByRole("button", {
+    name: "Área de recorte. Arraste ou use as setas para ajustar.",
+  });
+  await expect(area).toBeVisible();
+  // by keyboard, the same on a phone and on a desktop: Alt moves the near edge by 5%, an arrow alone shrinks by 5%
+  await area.focus();
+  for (const [key, times] of [
+    ["Alt+ArrowRight", 11],
+    ["ArrowLeft", 1],
+    ["Alt+ArrowDown", 11],
+    ["ArrowUp", 4],
+  ] as const) {
+    for (let press = 0; press < times; press += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each key changes the crop the next one starts from
+      await page.keyboard.press(key);
+    }
+  }
+  await sendImage(page);
+
+  expect(sent).toHaveLength(1);
+  const image = await decoded(page, sent[0]?.body ?? Buffer.alloc(0), [
+    [0.5, 0.5],
+    [0.05, 0.05],
+  ]);
+  // the whole photo would be 900 × 1200; the crop, x 55–95% and y 55–80%, is 1200 × 1000 px and is not scaled
+  expect(Math.abs(image.width - 1200)).toBeLessThanOrEqual(1);
+  expect(Math.abs(image.height - 1000)).toBeLessThanOrEqual(1);
+  // all of it comes from the bottom right quadrant, never from the top left corner of the photo
+  expectColor(image.colors[0], YELLOW);
+  expectColor(image.colors[1], YELLOW);
+});
+
+test("um PNG transparente sai em JPEG com fundo branco, não preto", async ({
+  page,
+}) => {
+  const sent = await openWithUpload(page);
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: await browserImage(page, {
+      height: 600,
+      paint: "transparent",
+      type: "image/png",
+      width: 800,
+    }),
+    mimeType: "image/png",
+    name: "recorte.png",
+  });
+  await sendImage(page);
+
+  const image = await decoded(page, sent[0]?.body ?? Buffer.alloc(0), [
+    [0.5, 0.5],
+    [0.02, 0.02],
+  ]);
+  expect({ height: image.height, width: image.width }).toEqual({
+    height: 600,
+    width: 800,
+  });
+  expectColor(image.colors[0], WHITE);
+  expectColor(image.colors[1], RED);
+});
+
+test("uma foto com orientação EXIF sai de pé, como o recorte a mostra", async ({
+  page,
+}) => {
+  const sent = await openWithUpload(page);
+  const stored = await browserImage(page, {
+    height: 200,
+    paint: "halves",
+    type: "image/jpeg",
+    width: 400,
+  });
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: withExifOrientation6(stored),
+    mimeType: "image/jpeg",
+    name: "celular.jpg",
+  });
+  await sendImage(page);
+
+  const image = await decoded(page, sent[0]?.body ?? Buffer.alloc(0), [
+    [0.5, 0.2],
+    [0.5, 0.8],
+  ]);
+  // stored 400 × 200 with blue on the left; shown turned clockwise, 200 × 400 with blue on top
+  expect({ height: image.height, width: image.width }).toEqual({
+    height: 400,
+    width: 200,
+  });
+  expectColor(image.colors[0], BLUE);
+  expectColor(image.colors[1], RED);
+});
+
+test("a nova tentativa depois de cair a conexão envia os mesmos bytes, com o mesmo comando", async ({
+  page,
+}) => {
+  const sent: { body: Buffer; uploadId: string | null }[] = [];
+  await openMediaPanel(page, {
+    lists: [list(0), list(1)],
+    upload: (route) => {
+      const request = route.request();
+      sent.push({
+        body: request.postDataBuffer() ?? Buffer.alloc(0),
+        uploadId: request.headers()["x-upload-id"] ?? null,
+      });
+      return sent.length === 1
+        ? route.abort("internetdisconnected")
+        : route.fulfill(created);
+    },
+  });
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: solidPng(1600, 1200, [200, 120, 90]),
+    mimeType: "image/png",
+    name: "foto.png",
+  });
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByRole("alert")).toContainText("Sem internet.");
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+
+  expect(sent).toHaveLength(2);
+  const [first, retry] = sent;
+  expect(retry?.uploadId).toBe(first?.uploadId);
+  expect(retry?.body.equals(first?.body ?? Buffer.alloc(0))).toBe(true);
+  const image = await decoded(page, retry?.body ?? Buffer.alloc(0));
+  expect({ height: image.height, width: image.width }).toEqual({
+    height: 900,
+    width: 1200,
+  });
+});
+
 /** No box of the panel ends beyond the right edge of the window (the page may hide it, so boxes are measured). */
 async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
