@@ -188,8 +188,8 @@ export interface PrivacyRequestInput {
   channel: unknown;
   note?: unknown;
   receivedAt?: Date | undefined;
-  requesterKind: unknown;
   requestType: unknown;
+  requesterKind: unknown;
 }
 
 export function normalizePrivacyRequest(
@@ -217,14 +217,14 @@ export function normalizePrivacyRequest(
     dueAt: dueDate(receivedAt),
     note: shortText(input.note, MAX_PRIVACY_NOTE_LENGTH),
     receivedAt,
-    requesterKind: oneOf(
-      PRIVACY_REQUESTER_KINDS,
-      input.requesterKind,
-      "invalid_privacy_request"
-    ),
     requestType: oneOf(
       PRIVACY_REQUEST_TYPES,
       input.requestType,
+      "invalid_privacy_request"
+    ),
+    requesterKind: oneOf(
+      PRIVACY_REQUESTER_KINDS,
+      input.requesterKind,
       "invalid_privacy_request"
     ),
   };

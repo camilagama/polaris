@@ -4,8 +4,6 @@ import type { Choices } from "../privacy";
 
 /** The server's limit for a privacy note, a decision's note and a resolution (`MAX_PRIVACY_NOTE_LENGTH`). */
 export const MAX_NOTE_LENGTH = 500;
-/** The least a note must say when the reason is a legal retention (`MIN_LEGAL_RETENTION_NOTE_LENGTH`). */
-export const MIN_LEGAL_RETENTION_NOTE_LENGTH = 10;
 /** The server's limit and alphabet for the opaque reference to the subject (`MAX_PRIVACY_REFERENCE_LENGTH`). */
 export const MAX_REFERENCE_LENGTH = 64;
 const OPAQUE_REFERENCE = /^[A-Za-z0-9_-]+$/;

@@ -7,6 +7,9 @@ import { brasiliaDay } from "./format";
  * A code the server returns that is not here is shown as unknown, never as a known one.
  */
 
+/** The least a note must say when the reason is a legal retention; `src/ui/privacy-lists.test.ts` compares it with the domain's. */
+export const MIN_LEGAL_RETENTION_NOTE_LENGTH = 10;
+
 export type Choices = readonly (readonly [code: string, label: string])[];
 
 export const REQUEST_TYPES: Choices = [

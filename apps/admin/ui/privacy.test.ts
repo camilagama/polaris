@@ -1137,7 +1137,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
         })
       );
       expect(visibleText(old.root)).toContain(
-        "nota: não registrada (decidido antes desta regra)"
+        "nota: não registrada (decidido antes desta regra ou apagada pelo purge)"
       );
       const current = await openCase(
         detail("decided", {

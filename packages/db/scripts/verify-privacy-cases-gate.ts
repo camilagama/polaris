@@ -597,6 +597,21 @@ async function run() {
       search_path: ["search_path=pg_catalog, public, pg_temp"],
       security_definer: true,
     });
+    const reach = await owner.pool.query<{
+      public_runs: boolean;
+      runtime_runs: boolean;
+    }>(
+      `SELECT has_function_privilege('public', f.oid, 'EXECUTE') AS public_runs,
+              has_function_privilege('polaris_admin_runtime', f.oid, 'EXECUTE') AS runtime_runs
+         FROM (SELECT 'public.admin_privacy_record_decision(uuid, uuid, text, text, text)'::regprocedure::oid AS oid) AS f`
+    );
+    assert.deepEqual(reach.rows[0], { public_runs: false, runtime_runs: true });
+    const failedLegal = await scoped("failed", "controller");
+    await assert.rejects(
+      () => decide(failedLegal, "reject", "legal_retention"),
+      refused("invalid_privacy_step"),
+      "a missing note is refused before the case's facts are weighed, as the domain does"
+    );
     tests.push(
       "a legal retention needs a note of 10 to 500 code points after the trim (none, blank, 9 characters, 9 emoji and 501 are refused with invalid_privacy_step; 10 and 500 are taken), no other reason does; a decision taken before the rule, with no note, still moves on to executed and resolved because no CHECK holds it; the function stays SECURITY DEFINER of polaris_admin_owner with the search_path of 0077"
     );

@@ -3,8 +3,9 @@
 -- the function raises `invalid_privacy_step` (22023), the refusal every malformed step already uses. The other reasons,
 -- `other` included, keep the rule of before.
 -- No CHECK on `privacy_cases`: Postgres tests a CHECK on every UPDATE of the row, and the cases decided before this rule,
--- with `legal_retention` and no note, still go through `executed` and `resolved`. The function is the only writer of the
--- decision (the decision is immutable once written, 0067), so tightening it is enough; those cases stay as they are.
+-- with `legal_retention` and no note, still go through `executed` and `resolved`; the purge of a closed organization also
+-- sets `decision_note` to NULL (0075), which a CHECK would refuse in every such case. The decision is immutable once
+-- written (0067) and only this function writes it, so tightening the function is enough; those cases stay as they are.
 -- Expand only (ADR 0096): the same signature, so CREATE OR REPLACE keeps the owner and the grants of 0067 and 0077; the
 -- search_path is restated, with pg_temp last as in 0077, because a replace without it would clear it. The Worker of the
 -- previous version that sends this reason without a note gets the 400 it already knows.

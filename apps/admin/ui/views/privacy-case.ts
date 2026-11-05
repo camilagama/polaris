@@ -15,6 +15,7 @@ import {
   IDENTITY_STATUSES,
   isCode,
   labelOf,
+  MIN_LEGAL_RETENTION_NOTE_LENGTH,
   privacyCasePath,
   REQUEST_TYPES,
   REQUESTER_KINDS,
@@ -24,22 +25,24 @@ import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
 import { closureNoticeSection, mayShowClosureNotice } from "./closure-notice";
 import { dueCell } from "./privacy-cases";
+import { mayShowPurgeTab, purgeTab } from "./purge";
 import {
   choiceField,
   type Field,
   isUuidText,
   MAX_NOTE_LENGTH,
   MAX_REFERENCE_LENGTH,
-  MIN_LEGAL_RETENTION_NOTE_LENGTH,
   NO_PERSONAL_DATA,
   noteProblem,
   plainField,
   referenceProblem,
   textField,
 } from "./privacy-form";
-import { mayShowPurgeTab, purgeTab } from "./purge";
 
-const LEGAL_NOTE_MISSING = "nota: não registrada (decidido antes desta regra)";
+const NOTE_OPTIONAL_LABEL = "Nota da decisão (opcional)";
+const NOTE_MANDATORY_LABEL = "Nota da decisão (obrigatória)";
+const LEGAL_NOTE_MISSING =
+  "nota: não registrada (decidido antes desta regra ou apagada pelo purge)";
 const LEGAL_NOTE_REQUIRED = `Obrigatória: diga a norma (de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres)`;
 const LEGAL_NOTE_REFUSED = `Com este motivo a nota é obrigatória: diga a norma, de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres.`;
 export const STEP_UNDO = "Não: cada etapa vale uma vez.";
@@ -540,7 +543,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const note = textField(
         dom,
         id("nota"),
-        "Nota da decisão (opcional)",
+        NOTE_OPTIONAL_LABEL,
         MAX_NOTE_LENGTH,
         NO_PERSONAL_DATA
       );
@@ -939,8 +942,8 @@ function legalNoteHint(
     const mandatory = reason.control.value === "legal_retention";
     if (label !== null) {
       label.textContent = mandatory
-        ? "Nota da decisão (obrigatória)"
-        : "Nota da decisão (opcional)";
+        ? NOTE_MANDATORY_LABEL
+        : NOTE_OPTIONAL_LABEL;
     }
     if (mandatory) {
       hint.removeAttribute("hidden");
