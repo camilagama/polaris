@@ -21,7 +21,6 @@ import {
 } from "./test-page";
 import type { SupportCaseDetail } from "./types";
 import {
-  END_EFFECT,
   END_UNDO,
   END_UNKNOWN,
   GRANT_REPEATED,
@@ -410,7 +409,7 @@ describe("the review before giving (AC-C2, AC-C4, AC-P4.1)", () => {
       "STAGING",
       "Loja da Ana",
       "Dono pediu mais variantes por uma semana",
-      "A loja passa a ter Variantes ativas = 2000 até 30/10/2026",
+      "A loja passa a ter Variantes ativas = 2000 por 48 horas (até cerca de 30/10/2026",
       ", sem mudar a cobrança.",
       GRANT_RAISES,
       GRANT_UNDO,
@@ -420,11 +419,22 @@ describe("the review before giving (AC-C2, AC-C4, AC-P4.1)", () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
     expect(text).toContain("Compensação pela queda");
     expect(text).toContain(GRANT_EXPIRES);
-    expect(text).toContain("estimativa pelo relógio deste navegador");
+    expect(text).toContain(
+      "O prazo conta da confirmação; a data certa aparece na lista."
+    );
+    expect(text).not.toContain("estimativa pelo relógio");
     expect(writes(mounted.calls)).toHaveLength(0);
     expect(mounted.document.activeElement?.textContent).toBe(
       "Revise antes de dar a concessão"
     );
+  });
+
+  it("says one hour in the singular", async () => {
+    const mounted = await open([]);
+
+    await toReview(mounted, { hours: "1" });
+
+    expect(shown(mounted)).toContain("= 2000 por 1 hora (até cerca de ");
   });
 
   it("says a capability as ligado or desligado", async () => {
@@ -433,7 +443,7 @@ describe("the review before giving (AC-C2, AC-C4, AC-P4.1)", () => {
     await toReview(mounted, { key: "offline.write", value: "true" });
 
     expect(shown(mounted)).toContain(
-      "A loja passa a ter Venda offline = ligado até"
+      "A loja passa a ter Venda offline = ligado por 48 horas (até cerca de "
     );
   });
 
@@ -731,15 +741,14 @@ describe("ending a grant (AC-P4.4)", () => {
       "Loja da Ana",
       "Dono pediu mais variantes por uma semana",
       "A loja volta ao que o plano dá para Variantes ativas.",
-      END_EFFECT,
       END_UNDO,
       "O encerramento fica na auditoria com o seu e-mail e o caso.",
     ]) {
       expect(text).toContain(part);
     }
-    expect(END_EFFECT).toBe(
-      "Encerrar a concessão devolve a loja ao que o plano dá. Não poderá ser desfeito; uma nova concessão é outra decisão registrada."
-    );
+    expect(END_UNDO).toBe("Não: uma nova concessão é outra decisão registrada.");
+    expect(text.split("outra decisão registrada").length - 1).toBe(1);
+    expect(text).not.toContain("poderá ser desfeito");
     expect(writes(mounted.calls)).toHaveLength(0);
     expect(mounted.document.activeElement?.textContent).toBe(
       "Revise antes de encerrar"

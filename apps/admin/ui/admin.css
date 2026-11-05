@@ -420,6 +420,18 @@ button {
     white-space: normal;
   }
 
+  /* at 320 px the 8 rem label column leaves a button less than one long word ("concessão") plus its padding: the label column narrows and the button gives up side padding so no word is split */
+  @media (max-width: 22.5rem) {
+    .grid:not(.funnel) td {
+      grid-template-columns: 6rem minmax(0, 1fr);
+    }
+
+    .grid:not(.funnel) td > button {
+      padding-inline: 0.5rem;
+      overflow-wrap: normal;
+    }
+  }
+
   .grid:not(.funnel) td::before {
     font-size: 0.875rem;
     color: var(--muted-foreground);

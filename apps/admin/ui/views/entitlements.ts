@@ -26,6 +26,9 @@ import {
 import type { StoreActionsCase } from "./store-actions";
 
 const HOUR_MS = 3_600_000;
+
+const hoursText = (hours: number) =>
+  `por ${hours} ${hours === 1 ? "hora" : "horas"}`;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -33,10 +36,8 @@ export const GRANT_UNDO =
   "Sim: Encerrar concessão. Uma nova concessão é outra decisão registrada.";
 const GRANT_AUDIT =
   "A concessão fica na auditoria com o seu e-mail e o caso. O motivo digitado fica com ela.";
-export const END_EFFECT =
-  "Encerrar a concessão devolve a loja ao que o plano dá. Não poderá ser desfeito; uma nova concessão é outra decisão registrada.";
 export const END_UNDO =
-  "Não: isso não poderá ser desfeito. Uma nova concessão é outra decisão registrada.";
+  "Não: uma nova concessão é outra decisão registrada.";
 const END_AUDIT = "O encerramento fica na auditoria com o seu e-mail e o caso.";
 export const NOTHING_ENDED = "Nada foi encerrado.";
 export const OUTCOME_NOT_RECORDED =
@@ -375,7 +376,7 @@ export function entitlementsView(
             `${entitlementText(grant.key)} = ${grantValueText(grant.limitValue, grant.flagValue)}, até ${brasiliaMomentText(grant.expiresAt)}`,
           ],
         ],
-        `A loja volta ao que o plano dá para ${entitlementText(grant.key)}. ${END_EFFECT}`,
+        `A loja volta ao que o plano dá para ${entitlementText(grant.key)}.`,
         END_UNDO,
         END_AUDIT
       ),
@@ -456,14 +457,14 @@ export function entitlementsView(
       heading,
       reviewFacts(
         [["Motivo", dom.el("bdi", {}, fields.reason)]],
-        `A loja passa a ter ${entitlementText(fields.key)} = ${valueText(fields)} até ${estimate}, sem mudar a cobrança. ${GRANT_RAISES}`,
+        `A loja passa a ter ${entitlementText(fields.key)} = ${valueText(fields)} ${hoursText(fields.hours)} (até cerca de ${estimate}), sem mudar a cobrança. ${GRANT_RAISES}`,
         GRANT_UNDO,
         GRANT_AUDIT
       ),
       dom.el(
         "p",
         { class: "hint" },
-        `${GRANT_EXPIRES} A data acima é uma estimativa pelo relógio deste navegador: o prazo conta a partir da confirmação e a data certa é a do servidor, mostrada na lista logo depois.`
+        `${GRANT_EXPIRES} O prazo conta da confirmação; a data certa aparece na lista.`
       ),
       dom.el("div", { class: "button-row" }, confirm, back)
     );
