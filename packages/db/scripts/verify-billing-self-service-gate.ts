@@ -939,8 +939,8 @@ async function run() {
     );
     assert.equal(r1.status, "applied");
     // what the previous Worker leaves in the expand window: applied renewals, the columns not written. The latest end
-    // is written "2099-01-01T20:00:00-12:00" (02/01 08:00Z), which sorts as text before "2099-01-02T02:00:00Z": by the
-    // text, the day of samePeriod would reach back to 01/01 02:00Z and take in the fact of 01/01 06:00Z, received first
+    // is written "2099-01-01T20:00:00-12:00" (`2099-01-02T08:00Z`), which sorts as text before "2099-01-02T02:00:00Z": by the
+    // text, the day of samePeriod would reach back to `2099-01-01T02:00Z` and take in the fact of `2099-01-01T06:00Z`, received first
     const backfillLedger = async (
       providerRef: string,
       fact: Record<string, unknown>
@@ -1123,7 +1123,7 @@ async function run() {
       nPeriod3.getTime(),
     ]);
     tests.push(
-      'the backfill of 0118 (the very statement of billing:current-charge-reconcile), run as the migrator and never under SET ROLE, writes the store whose renewals the previous Worker applied without the columns: the latest period by its instant ("T00:00-03:00" over "T02:00Z", the text order reversed), only facts of the record\'s own link, applied and with an ISO instant, with the fact\'s amount (or first_charge_amount for the first charge without one); a second run writes zero rows'
+      'the backfill of 0118 (the very statement of billing:current-charge-reconcile), run as the migrator and never under SET ROLE, writes the store whose renewals the previous Worker applied without the columns: the latest period by its instant ("2099-01-01T20:00:00-12:00" over "2099-01-02T02:00:00Z", the text order reversed, so the day of samePeriod leaves out an older fact received first), only facts of the record\'s own link, applied and with an ISO instant, with the fact\'s amount (or first_charge_amount for the first charge without one); two facts of one charge within a day give the first received fact and the amount of the one that has it, as processEvent; the charge of a link the previous Worker replaced is cleared; a second run writes zero rows'
     );
 
     // ------------------------------------------------ 4. the owner's limit: 1 every 30 s, 10 an hour
