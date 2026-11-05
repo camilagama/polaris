@@ -46,6 +46,21 @@ export interface BillingPortBindings {
   WOOVI_REFUND_ENABLED?: string;
 }
 
+/**
+ * Whether the provider refunds through Polaris at all, from the settings alone and with no port built (a port needs the
+ * secrets, and a screen only asks whether to offer the button): Asaas always, Woovi only while `WOOVI_REFUND_ENABLED`
+ * is `"true"`, any other provider never. The Woovi port and the operator's refund command read the same rule.
+ */
+export function refundsEnabledFor(
+  bindings: BillingPortBindings,
+  provider: string | null
+): boolean {
+  if (provider === "asaas") {
+    return true;
+  }
+  return provider === "woovi" && bindings.WOOVI_REFUND_ENABLED === "true";
+}
+
 function asaasPortOf(
   bindings: BillingPortBindings,
   options: BillingPortOptions,
@@ -93,7 +108,7 @@ function wooviPortOf(
       fetch: fetchOf(options),
       randomUuid: options.randomUuid ?? (() => crypto.randomUUID()),
       // off until the refund of an installment is proven in the sandbox (S3.2, Gate 7)
-      refundEnabled: bindings.WOOVI_REFUND_ENABLED === "true",
+      refundEnabled: refundsEnabledFor(bindings, "woovi"),
       timeoutMs: BILLING_COMMAND_TIMEOUT_MS,
     });
   } catch {

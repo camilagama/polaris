@@ -1,9 +1,9 @@
+import { describe, expect, it, vi } from "vitest";
 import {
   ProviderNotConfiguredError,
   ProviderNotFoundError,
 } from "./provider-port";
-import { describe, expect, it, vi } from "vitest";
-import { billingProviderPortOf } from "./provider-ports";
+import { billingProviderPortOf, refundsEnabledFor } from "./provider-ports";
 
 const valid = {
   ASAAS_API_KEY: "$aact_hmlg_fake",
@@ -271,5 +271,61 @@ describe("billingProviderPortOf", () => {
         expect(calls).toBe(1);
       });
     });
+  });
+});
+
+describe("refundsEnabledFor", () => {
+  it.each([
+    ["Asaas, with no setting", "asaas", {}, true],
+    [
+      "Asaas, whatever the Pix switch says",
+      "asaas",
+      { WOOVI_REFUND_ENABLED: "false" },
+      true,
+    ],
+    [
+      "Woovi, with the switch off",
+      "woovi",
+      { WOOVI_REFUND_ENABLED: "false" },
+      false,
+    ],
+    ["Woovi, with no switch", "woovi", {}, false],
+    [
+      "Woovi, with the switch in another word",
+      "woovi",
+      { WOOVI_REFUND_ENABLED: "TRUE" },
+      false,
+    ],
+    [
+      "Woovi, with the switch on",
+      "woovi",
+      { WOOVI_REFUND_ENABLED: "true" },
+      true,
+    ],
+    [
+      "an unknown provider, switch on",
+      "boleto",
+      { WOOVI_REFUND_ENABLED: "true" },
+      false,
+    ],
+    ["no provider", null, { WOOVI_REFUND_ENABLED: "true" }, false],
+  ])("says %s", (_name, provider, bindings, expected) => {
+    expect(refundsEnabledFor(bindings, provider)).toBe(expected);
+  });
+
+  it("is the rule of the Woovi port itself, so the screen never offers what the command refuses", () => {
+    const woovi = {
+      WOOVI_APP_ID: "app",
+      WOOVI_BASE_URL: "https://api.woovi-sandbox.com",
+    };
+    for (const bindings of [
+      { ...woovi, WOOVI_REFUND_ENABLED: "true" },
+      { ...woovi, WOOVI_REFUND_ENABLED: "false" },
+      woovi,
+    ]) {
+      expect(billingProviderPortOf(bindings, "woovi").refundsEnabled).toBe(
+        refundsEnabledFor(bindings, "woovi")
+      );
+    }
   });
 });

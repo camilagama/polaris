@@ -44,11 +44,15 @@ const sp = (local: string) => new Date(`${local}-03:00`);
 // first charge at 15:30 of `2026-10-10` in São Paulo: the window's last second is 23:59:59 of `2026-10-17`
 function raw(overrides: Partial<RawRefundWindow> = {}): RawRefundWindow {
   return {
+    accessEndsAt: sp("2026-11-10T09:00:00"),
+    cancelAtPeriodEnd: false,
     firstChargeAmount: "24.90",
     firstChargeAt: sp("2026-10-10T15:30:00"),
     method: "pix_automatic",
     now: sp("2026-10-12T09:00:00"),
     refundRequestedAt: null,
+    revokedReason: null,
+    revokedThrough: null,
     state: "active",
     ...overrides,
   };
@@ -56,7 +60,8 @@ function raw(overrides: Partial<RawRefundWindow> = {}): RawRefundWindow {
 
 function setup(
   read: RefundWindowDependencies["read"] = vi.fn(() => Promise.resolve(raw())),
-  role = "platform_owner"
+  role = "platform_owner",
+  settings: Partial<AdminBindings> = {}
 ) {
   const report = vi.fn();
   const dependencies: AdminDependencies = {
@@ -99,7 +104,7 @@ function setup(
         },
         method,
       }),
-      bindings
+      { ...bindings, ...settings }
     );
   const sendText = (text: string, type: string) =>
     app.fetch(
@@ -112,7 +117,7 @@ function setup(
         },
         method: "POST",
       }),
-      bindings
+      { ...bindings, ...settings }
     );
   return { read, report, send, sendText };
 }
@@ -148,9 +153,66 @@ describe("reading the window of the right of withdrawal (ADR 0104, decisions 8 a
       now: "2026-10-12T12:00:00.000Z",
       refundable: true,
       refundRequestedAt: null,
+      refundsHere: false,
+      renewal: {
+        accessUntil: null,
+        renewsOn: "2026-11-10",
+        resubscribeFrom: null,
+        status: "renewing",
+      },
       request: null,
       state: "active",
       window: { open: true, until: "2026-10-18T02:59:59.000Z" },
+    });
+  });
+
+  it.each([
+    ["Pix with the refund switch off", "pix_automatic", {}, false],
+    [
+      "Pix with the refund switch on",
+      "pix_automatic",
+      { WOOVI_REFUND_ENABLED: "true" },
+      true,
+    ],
+    [
+      "Pix with the switch on in another word",
+      "pix_automatic",
+      { WOOVI_REFUND_ENABLED: "1" },
+      false,
+    ],
+    ["the card, whatever the Pix switch says", "card", {}, true],
+    ["a store with no provider", null, { WOOVI_REFUND_ENABLED: "true" }, false],
+  ] as const)(
+    "says whether the provider refunds here for %s, from the Worker's settings",
+    async (_name, method, settings, refundsHere) => {
+      const { send } = setup(
+        vi.fn(() => Promise.resolve(raw({ method }))),
+        "platform_owner",
+        settings
+      );
+
+      const body = (await (await send({ organizationId: "org-1" })).json()) as {
+        refundsHere: boolean;
+      };
+
+      expect(body.refundsHere).toBe(refundsHere);
+    }
+  );
+
+  it("says the renewal is cancelled with the access still paid, from the record and not from the provider", async () => {
+    const { send } = setup(
+      vi.fn(() => Promise.resolve(raw({ cancelAtPeriodEnd: true })))
+    );
+
+    const body = (await (await send({ organizationId: "org-1" })).json()) as {
+      renewal: unknown;
+    };
+
+    expect(body.renewal).toEqual({
+      accessUntil: "2026-11-10T12:00:00.000Z",
+      renewsOn: null,
+      resubscribeFrom: "2026-11-10T12:00:00.000Z",
+      status: "cancelled",
     });
   });
 
@@ -176,6 +238,8 @@ describe("reading the window of the right of withdrawal (ADR 0104, decisions 8 a
       "now",
       "refundRequestedAt",
       "refundable",
+      "refundsHere",
+      "renewal",
       "request",
       "state",
       "window",

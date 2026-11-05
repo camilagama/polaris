@@ -813,6 +813,13 @@
       "when": 1793880000000,
       "tag": "0116_nota_da_guarda_legal",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1793894547470,
+      "tag": "0117_janela_com_renovacao",
+      "breakpoints": true
     }
   ]
 }

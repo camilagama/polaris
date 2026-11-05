@@ -147,6 +147,19 @@ function timerCalls(files: readonly string[]): Record<string, number> {
   );
 }
 
+const MONEY_ON_ONE_LINE = /\.money\s*\{[^}]*white-space:\s*nowrap/;
+const BUTTON_ROW_WRAPS = /\.button-row\s*\{[^}]*flex-wrap:\s*wrap/;
+const BUTTON_LABEL_WRAPS =
+  /\.button-row button[^{]*\{[^}]*white-space:\s*normal/;
+
+describe("the narrow screen of the billing area (AC-P10.2 to AC-P10.6)", () => {
+  it("keeps a refund amount on one line and lets the buttons wrap, so 360 px has no horizontal scroll", () => {
+    expect(sheet).toMatch(MONEY_ON_ONE_LINE);
+    expect(sheet).toMatch(BUTTON_ROW_WRAPS);
+    expect(sheet).toMatch(BUTTON_LABEL_WRAPS);
+  });
+});
+
 describe("the built script of the page", () => {
   it("is small: under 100 KB gzip with the sheet, one bundle (corte admin-v2, AC-C15)", () => {
     expect(bundle.length).toBeGreaterThan(1000);
@@ -211,7 +224,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access, reading the masked customers and revealing one field of one, and the purge and the legal hold: no other action of a case or a store", () => {
+  it("names, under those routes, only the diagnostics, the refund window, cancelling a renewal and refunding the period in force, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access, reading the masked customers and revealing one field of one, and the purge and the legal hold: no other action of a case or a store", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -224,14 +237,16 @@ describe("the built script of the page", () => {
         )
     );
     expect(segments.size).toBeGreaterThan(10);
-    const named = (text: string) =>
-      [...segments]
+    const namedIn = (known: ReadonlySet<string>, text: string) =>
+      [...known]
         .filter((segment) => new RegExp(`/${segment}(?![a-z-])`).test(text))
         .sort();
     const expected = [
       "access",
       "actions",
+      "billing",
       "cancel",
+      "cancel-renewal",
       "classification",
       "close",
       "closure-notice",
@@ -246,6 +261,7 @@ describe("the built script of the page", () => {
       "purge",
       "reactivate",
       "read",
+      "refund",
       "refund-window",
       "reissue",
       "release",
@@ -256,11 +272,14 @@ describe("the built script of the page", () => {
       "scope",
       "suspend",
     ];
+    const named = (text: string) => namedIn(segments, text);
     expect(named(bundle)).toEqual(expected);
-    // a planted call to another action of a case is seen
+    // every route segment is one the page names; a planted call to a segment no route of the cut permits is seen
+    const planted = new Set([...segments, "erase"]);
+    expect(expected).not.toContain("erase");
     expect(
-      named(`${bundle}fetch(\`/api/support-cases/\${id}/billing/refund\`)`)
-    ).toEqual([...expected, "billing", "refund"].sort());
+      namedIn(planted, `${bundle}fetch(\`/api/support-cases/\${id}/erase\`)`)
+    ).toEqual([...expected, "erase"].sort());
   });
 });
 
