@@ -6,5 +6,8 @@
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./theme.css": "./src/theme.css"
   }
 }

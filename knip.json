@@ -45,7 +45,8 @@
         "cloudflare",
         "@fontsource-variable/geist",
         "@fontsource-variable/geist-mono",
-        "tw-animate-css"
+        "tw-animate-css",
+        "@polaris/ui"
       ],
       "project": [
         "src/**/*.{ts,tsx}",
@@ -68,7 +69,7 @@
     "apps/admin": {
       "entry": ["src/**/*.test.ts", "ui/main.ts", "ui/**/*.test.ts"],
       "project": ["src/**/*.ts", "ui/**/*.ts"],
-      "ignoreDependencies": ["cloudflare"]
+      "ignoreDependencies": ["cloudflare", "@polaris/ui"]
     }
   }
 }

@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compile } from "tailwindcss";
@@ -22,6 +23,7 @@ const web = fileURLToPath(new URL("../", import.meta.url));
 export const ADMIN_SHEET_SOURCE = "apps/admin/ui/admin.source.css";
 export const ADMIN_SHEET_OUTPUT = "apps/admin/ui/admin.css";
 const THEME = "packages/ui/src/theme.css";
+const requireFromWeb = createRequire(join(web, "package.json"));
 const COMMAND = "bun run admin:sheet";
 const TARGET = ["chrome111", "edge111", "firefox128", "safari16.4"];
 
@@ -73,6 +75,9 @@ function stylesheetPath(id: string, base: string): string {
   }
   if (id.startsWith("tailwindcss/")) {
     return join(web, "node_modules", id);
+  }
+  if (id.startsWith("@polaris/")) {
+    return requireFromWeb.resolve(id);
   }
   return resolve(base, id);
 }
