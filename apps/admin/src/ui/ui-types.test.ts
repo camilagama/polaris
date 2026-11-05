@@ -10,7 +10,11 @@ import type {
   OperationalIncidentPage as ServerIncidentPage,
 } from "@polaris/db/admin-incident-repository";
 import type {
+  openPrivacyCase,
   openSupportCase,
+  PrivacyCaseDetail as ServerPrivacyDetail,
+  PrivacyCasePage as ServerPrivacyPage,
+  PrivacyStepResult,
   SupportCaseDetail as ServerCaseDetail,
   SupportCasePage as ServerCasePage,
 } from "@polaris/db/admin-support-repository";
@@ -35,7 +39,11 @@ import type {
   OpenedSupportCase,
   OperationalIncidentDetail,
   OperationalIncidentPage,
+  OpenedPrivacyCase,
   OrganizationPage,
+  PrivacyCaseDetail,
+  PrivacyCasePage,
+  PrivacyStepAnswer,
   RefundWindowView,
   SupportCaseDetail,
   RetryResult,
@@ -100,6 +108,13 @@ const accessPageMatches: Extract<
 > extends { entries: AccessLogPage["entries"]; next: AccessLogPage["next"] }
   ? true
   : false = true;
+const privacyPageMatches: Same<ServerPrivacyPage, PrivacyCasePage> = true;
+const privacyDetailMatches: Same<ServerPrivacyDetail, PrivacyCaseDetail> = true;
+const privacyOpenedMatches: Same<
+  NonNullable<Awaited<ReturnType<typeof openPrivacyCase>>>,
+  OpenedPrivacyCase
+> = true;
+const privacyStepMatches: Same<PrivacyStepResult, PrivacyStepAnswer> = true;
 const capabilitiesRead: readonly PlatformCapability[] extends readonly string[]
   ? true
   : false = true;
@@ -124,7 +139,11 @@ describe("the page's types", () => {
       endedMatches,
       accessEntryMatches,
       accessPageMatches,
-    ]).toEqual(new Array(17).fill(true));
+      privacyPageMatches,
+      privacyDetailMatches,
+      privacyOpenedMatches,
+      privacyStepMatches,
+    ]).toEqual(new Array(21).fill(true));
   });
 });
 

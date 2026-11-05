@@ -12,6 +12,7 @@ export type Problem =
   | "forbidden"
   | "invalid"
   | "network"
+  | "not_allowed"
   | "not_found"
   | "plan_catalog_incomplete"
   | "rate_limited"
@@ -38,6 +39,8 @@ export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
   invalid:
     "A busca não foi aceita: use até 100 caracteres, sem caracteres de controle.",
   network: "Não foi possível falar com o Admin. Tente de novo.",
+  not_allowed:
+    "O caso não permite esta escolha. Confira as regras desta etapa e escolha de novo.",
   not_found: "Loja não encontrada.",
   plan_catalog_incomplete:
     "O catálogo de planos está incompleto; avise a engenharia.",
@@ -50,7 +53,9 @@ export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
-type PostBody = Readonly<Record<string, boolean | number | string>>;
+type PostBody = Readonly<
+  Record<string, boolean | number | string | readonly string[]>
+>;
 
 export interface Api {
   /** A DELETE with no body, from this origin like the POST: the one way the page ends something the server holds. */
@@ -101,6 +106,10 @@ function problemOf(response: Response, code: string | null): Problem {
     // the refund window's one refusal (a closed case, a case of another store, an inactive operator) is not a
     // missing capability: it has its own sentence, which does not say which of them it was (AC-10)
     return code === "refund_window_read_refused" ? "refused" : "forbidden";
+  }
+  if (response.status === 400) {
+    // a privacy decision or action the case does not allow is the operator's choice refused, not a malformed request
+    return code === "privacy_decision_not_allowed" ? "not_allowed" : "invalid";
   }
   if (known !== undefined) {
     return known;

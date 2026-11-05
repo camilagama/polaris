@@ -43,6 +43,7 @@ const TAGS = new Set([
   "label",
   "li",
   "main",
+  "ol",
   "option",
   "p",
   "section",

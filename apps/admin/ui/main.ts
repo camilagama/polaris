@@ -4,7 +4,7 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const SCREEN_PATH =
-  /^\/(?:(?:lojas|casos|incidentes)\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})?$/;
+  /^\/(?:(?:lojas|casos|incidentes|privacidade)\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})?$/;
 
 /** A UUID the Worker wrote, or null; anything else on the root is not taken as one. */
 function uuidOf(value: string | null): string | null {

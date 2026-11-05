@@ -726,3 +726,93 @@ a {
 .chosen {
   margin: 0 0 0.75rem;
 }
+
+/* the privacy case's steps: one column at every width (AC-P11.8); the state of each step is a word, not only a tone */
+.steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  list-style: none;
+}
+
+.step {
+  padding: 0.5rem 0.75rem;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.step-line {
+  margin: 0;
+}
+
+.step-mark {
+  font-weight: 600;
+}
+
+.step-later {
+  color: var(--muted-foreground);
+}
+
+.step-current {
+  border: 2px solid var(--foreground);
+}
+
+.step-current .step-panel {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+
+.step-panel h4 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.rules {
+  padding-left: 1.25rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.step-form .field,
+.privacy-form .field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.25rem;
+  max-width: 32rem;
+  margin-top: 0.75rem;
+}
+
+.step-form .field label,
+.privacy-form .field label,
+.step-form .label {
+  font-weight: 600;
+}
+
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.25rem 1rem;
+  max-width: 40rem;
+}
+
+.check {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+.check input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+}
+
+.due-warn .due-text {
+  font-weight: 700;
+  color: var(--destructive);
+}

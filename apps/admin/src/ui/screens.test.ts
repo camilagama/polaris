@@ -135,6 +135,19 @@ const SCREENS = [
     "Registro de acessos",
     'data-tela="registro"',
   ],
+  ["/privacidade", "Privacidade", "Privacidade", 'data-estado="abertos"'],
+  [
+    "/privacidade/novo",
+    "Abrir caso de privacidade",
+    "Privacidade",
+    'data-tela="privacidade-novo"',
+  ],
+  [
+    `/privacidade/${CASE}`,
+    "Caso de privacidade",
+    "Privacidade",
+    `data-id="${CASE}"`,
+  ],
 ] as const;
 
 describe("one route per screen (AC-P1.2)", () => {
@@ -197,7 +210,11 @@ describe("one route per screen (AC-P1.2)", () => {
     "/casos/123",
     "/lojas/nada",
     "/casos/novo/x",
-    "/privacidade",
+    "/privacidade/",
+    "/privacidade/123",
+    "/privacidade/novo/x",
+    `/privacidade/${CASE}/identity`,
+    `/privacidade/${CASE}/purge`,
     `/incidentes/${INCIDENT}/events`,
     "/incidentes/123",
     "/registro/x",
@@ -297,6 +314,7 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
         "Início /",
         "Buscar loja /lojas",
         "Casos de suporte /casos",
+        "Privacidade /privacidade",
         "Incidentes /incidentes",
         "Funil /funil",
         "Registro de acessos /registro",
@@ -341,6 +359,12 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
       ["Auditoria"],
     ],
     [
+      "privacy_case:manage",
+      ["privacy_case:manage"],
+      ["Privacidade /privacidade"],
+      ["Suporte"],
+    ],
+    [
       "only the retry, which opens no screen",
       ["operational_incident:retry"],
       [],
@@ -349,7 +373,7 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
     // the items of later parts are not in the menu until their screens exist
     [
       "only capabilities of screens that do not exist yet",
-      ["privacy_case:manage", "organization:legal_hold"],
+      ["organization:legal_hold"],
       [],
       [],
     ],
@@ -395,6 +419,54 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
     expect(html).toContain("Sem permissão para isto.");
     expect(ROOT.exec(html)?.[1]).toBe("");
     expect(menuOf(html).links).toEqual([]);
+  });
+
+  it.each(["/privacidade", "/privacidade/novo", `/privacidade/${CASE}`])(
+    "gives %s, with no data for the script, to an operator without privacy_case:manage (403, AC-C1)",
+    async (path) => {
+      const response = await setup("unknown_role")(path);
+      expect(response.status).toBe(403);
+      const html = await response.text();
+      expect(html).toContain("Sem permissão para isto.");
+      expect(ROOT.exec(html)?.[1]).toBe("");
+      expect(html).not.toContain(CASE);
+    }
+  );
+});
+
+describe("the privacy screens (Parte 11: AC-C6, AC-P11.6)", () => {
+  it("writes of the query only the fixed list state and a UUID store: no note, reference, reason or case", async () => {
+    const call = setup();
+    const hostile = await (
+      await call(
+        "/privacidade?estado=<script>&nota=Maria&referencia=cpf123&motivo=x&caso=0199a0a0"
+      )
+    ).text();
+    expect(ROOT.exec(hostile)?.[1]).toBe(
+      ' data-tela="privacidade" data-ambiente="unknown" data-estado="abertos"'
+    );
+    for (const leaked of ["<script>", "Maria", "cpf123", "0199a0a0"]) {
+      expect(hostile).not.toContain(leaked);
+    }
+    const closed = await (await call("/privacidade?estado=fechados")).text();
+    expect(ROOT.exec(closed)?.[1]).toContain('data-estado="fechados"');
+    const opening = await (
+      await call(`/privacidade/novo?loja=${STORE.toUpperCase()}&nota=Maria`)
+    ).text();
+    expect(ROOT.exec(opening)?.[1]).toBe(
+      ` data-tela="privacidade-novo" data-ambiente="unknown" data-loja="${STORE}"`
+    );
+    expect(opening).not.toContain("Maria");
+  });
+
+  it("titles every privacy screen with the screen only, never a store or a case (AC-C6)", async () => {
+    const html = await (
+      await setup("platform_owner", "production")(`/privacidade/${CASE}`)
+    ).text();
+    expect(TITLE.exec(html)?.[1]).toBe(
+      "PRODUÇÃO · Caso de privacidade · Polaris Admin"
+    );
+    expect(menuOf(html).current).toEqual(["Privacidade"]);
   });
 });
 

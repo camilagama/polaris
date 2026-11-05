@@ -67,6 +67,8 @@ const isRuntimeLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-runtime-lab";
 const isLogoutLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-logout-lab";
+const isThumbnailsLabRoute =
+  isOfflinePocEnabled && window.location.pathname === "/offline-thumbnails-lab";
 const isAttentionLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
 // The lab of the screens is also in the browser-check build: the interface guardrails measure the sale screen there.
@@ -132,6 +134,21 @@ if (isShellPiecesRoute) {
     }
   };
   loadRuntimeLab().catch(() => undefined);
+} else if (isThumbnailsLabRoute) {
+  const loadThumbnailsLab = async () => {
+    try {
+      const { ThumbnailsLab } = await import("./offline-poc/thumbnails-lab");
+      root.render(<ThumbnailsLab />);
+    } catch (error: unknown) {
+      root.render(
+        <main role="alert">
+          <h1>Falha ao abrir o laboratório das miniaturas</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadThumbnailsLab().catch(() => undefined);
 } else if (isLogoutLabRoute) {
   const loadLogoutLab = async () => {
     try {
