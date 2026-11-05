@@ -33,6 +33,9 @@ export type ScreenId =
   | "inicio"
   | "loja"
   | "lojas"
+  | "privacidade"
+  | "privacidade-caso"
+  | "privacidade-novo"
   | "registro";
 
 interface Screen {
@@ -58,6 +61,15 @@ export const SCREENS: Readonly<Record<ScreenId, Screen>> = {
   inicio: { capability: "platform:read", title: "Início" },
   loja: { capability: "organization:diagnose", title: "Loja" },
   lojas: { capability: "organization:diagnose", title: "Buscar loja" },
+  privacidade: { capability: "privacy_case:manage", title: "Privacidade" },
+  "privacidade-caso": {
+    capability: "privacy_case:manage",
+    title: "Caso de privacidade",
+  },
+  "privacidade-novo": {
+    capability: "privacy_case:manage",
+    title: "Abrir caso de privacidade",
+  },
   registro: { capability: "access_log:read", title: "Registro de acessos" },
 };
 
@@ -77,7 +89,7 @@ interface MenuGroup {
 
 /**
  * The menu of the design (§1.1), with only the screens that exist: a group whose items the operator cannot open goes
- * with its label. The other items of the design (Privacidade, Retenções legais) enter with their parts.
+ * with its label. The other item of the design (Retenções legais) enters with its part.
  */
 const MENU: readonly MenuGroup[] = [
   {
@@ -109,6 +121,12 @@ const MENU: readonly MenuGroup[] = [
         label: "Casos de suporte",
         path: "/casos",
         screens: ["casos", "caso-novo", "caso"],
+      },
+      {
+        capability: "privacy_case:manage",
+        label: "Privacidade",
+        path: "/privacidade",
+        screens: ["privacidade", "privacidade-novo", "privacidade-caso"],
       },
     ],
     label: "Suporte",
@@ -174,6 +192,8 @@ export function screenOfPath(
     "/funil": "funil",
     "/incidentes": "incidentes",
     "/lojas": "lojas",
+    "/privacidade": "privacidade",
+    "/privacidade/novo": "privacidade-novo",
     "/registro": "registro",
   };
   const screen = fixed[path];
@@ -192,6 +212,9 @@ export function screenOfPath(
   }
   if (area === "incidentes") {
     return { id: id.toLowerCase(), screen: "incidente" };
+  }
+  if (area === "privacidade") {
+    return { id: id.toLowerCase(), screen: "privacidade-caso" };
   }
   return null;
 }
@@ -309,7 +332,7 @@ function rootAttributes(request: PageRequest, environment: Environment) {
   if (request.store !== null) {
     pairs.push(["data-loja", request.store]);
   }
-  if (request.screen === "casos") {
+  if (request.screen === "casos" || request.screen === "privacidade") {
     pairs.push(["data-estado", request.listState]);
   }
   return pairs.map(([name, value]) =>

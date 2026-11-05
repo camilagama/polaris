@@ -348,4 +348,132 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
       WAIT
     );
   });
+  it("opens a privacy case and takes it through its steps one at a time; a stale screen is refused in words (Parte 11: AC-P11.1 to AC-P11.5)", async () => {
+    const { free } = fixture.screen;
+    const opening = await openPage({
+      screen: "privacidade-novo",
+      store: free.id,
+    });
+    await vi.waitFor(() => expect(opening.text()).toContain(free.id), WAIT);
+    byId(opening.root, "privacidade-motivo").value = "Pedido de exclusão";
+    byId(opening.root, "privacidade-canal").value = "email";
+    byId(opening.root, "privacidade-tipo").value = "deletion";
+    byId(opening.root, "privacidade-quem").value = "data_subject";
+    buttons(opening.root, "Abrir caso de privacidade")[0]?.click();
+    await vi.waitFor(() => expect(opening.navigations).toHaveLength(1), WAIT);
+    const [path] = opening.navigations;
+    const caseId = String(path).replace("/privacidade/", "");
+    expect(path).toBe(`/privacidade/${caseId}`);
+
+    const page = await openPage({ id: caseId, screen: "privacidade-caso" });
+    const stale = await openPage({ id: caseId, screen: "privacidade-caso" });
+    await page.shows("Revisar identidade");
+    await stale.shows("Revisar identidade");
+    const record = (
+      on: Awaited<ReturnType<typeof openPage>>,
+      review: string,
+      confirm: string,
+      fill: () => void
+    ) => {
+      fill();
+      buttons(on.root, review)[0]?.click();
+      expect(on.text()).toContain("Não: cada etapa vale uma vez.");
+      const [button] = buttons(on.root, confirm);
+      button?.click();
+      button?.click();
+    };
+    const identity = (on: Awaited<ReturnType<typeof openPage>>) => () => {
+      byId(on.root, "etapa-identity-status").value = "failed";
+      byId(on.root, "etapa-identity-metodo").value = "email_ownership";
+    };
+    record(page, "Revisar identidade", "Registrar identidade", identity(page));
+    await page.shows("Etapa “Identidade” registrada.");
+    record(
+      stale,
+      "Revisar identidade",
+      "Registrar identidade",
+      identity(stale)
+    );
+    await stale.shows(
+      "Esta etapa já foi registrada ou ainda não é a vez dela. Nada foi refeito."
+    );
+    await stale.shows("Revisar papel do polaris");
+
+    record(
+      page,
+      "Revisar papel do polaris",
+      "Registrar papel do polaris",
+      () => {
+        byId(page.root, "etapa-role-papel").value = "controller";
+      }
+    );
+    await page.shows("Etapa “Papel do Polaris” registrada.");
+    record(page, "Revisar escopo", "Registrar escopo", () => {
+      byId(page.root, "etapa-scope-account").checked = true;
+    });
+    await page.shows("Etapa “Escopo” registrada.");
+    // with the identity not confirmed the server refuses an acceptance: said in words, nothing recorded
+    record(page, "Revisar decisão", "Registrar decisão", () => {
+      byId(page.root, "etapa-decision-decisao").value = "accept";
+    });
+    await page.shows("O caso não permite esta escolha.");
+    expect(page.text()).not.toContain("privacy_decision_not_allowed");
+    record(page, "Revisar decisão", "Registrar decisão", () => {
+      byId(page.root, "etapa-decision-decisao").value = "reject";
+      byId(page.root, "etapa-decision-motivo").value = "identity_not_verified";
+    });
+    await page.shows("Etapa “Decisão” registrada.");
+    expect(page.text()).toContain(
+      "Sem ação: uma recusa não tem o que registrar."
+    );
+    record(page, "Revisar resolução", "Registrar resolução", () => {
+      byId(page.root, "etapa-resolve-texto").value = "Recusado sem identidade";
+    });
+    await page.shows("Etapa “Resolução” registrada.");
+    expect(page.text()).toContain("Caso resolvido em");
+
+    const posts = [...page.calls, ...stale.calls].filter(
+      (call) => call.method === "POST"
+    );
+    expect(posts).toEqual([
+      {
+        method: "POST",
+        path: `/api/privacy-cases/${caseId}/identity`,
+        status: 200,
+      },
+      {
+        method: "POST",
+        path: `/api/privacy-cases/${caseId}/role`,
+        status: 200,
+      },
+      {
+        method: "POST",
+        path: `/api/privacy-cases/${caseId}/scope`,
+        status: 200,
+      },
+      {
+        method: "POST",
+        path: `/api/privacy-cases/${caseId}/decision`,
+        status: 400,
+      },
+      {
+        method: "POST",
+        path: `/api/privacy-cases/${caseId}/decision`,
+        status: 200,
+      },
+      {
+        method: "POST",
+        path: `/api/privacy-cases/${caseId}/resolve`,
+        status: 200,
+      },
+      {
+        method: "POST",
+        path: `/api/privacy-cases/${caseId}/identity`,
+        status: 409,
+      },
+    ]);
+    const detail = await json(await asBrowser(`/api/privacy-cases/${caseId}`));
+    expect((detail.privacy as { stage: string }).stage).toBe("resolved");
+    expect((detail.case as { status: string }).status).toBe("closed");
+  });
 });

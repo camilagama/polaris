@@ -169,3 +169,83 @@ export interface AccessLogPage {
   entries: AccessLogEntry[];
   next: string | null;
 }
+
+/** One case of `GET /api/privacy-cases` (ADR 0077): codes, the store and the due date the server keeps. */
+export interface PrivacyCaseSummary {
+  dueAt: string;
+  id: string;
+  openedAt: string;
+  organizationId: string;
+  organizationName: string;
+  overdue: boolean;
+  requesterKind: string;
+  requestType: string;
+  stage: string;
+  status: string;
+}
+
+export interface PrivacyCasePage {
+  cases: PrivacyCaseSummary[];
+  next: string | null;
+}
+
+/** What `GET /api/privacy-cases/:caseId` answers: the case, the workflow's record, the actions and the trail. */
+export interface PrivacyCaseDetail {
+  actions: {
+    action: string;
+    entityId: string | null;
+    id: string;
+    recordedAt: string;
+    recordedBy: string;
+  }[];
+  audit: {
+    at: string;
+    detail: string | null;
+    entityType: string | null;
+    eventType: string;
+    principalId: string;
+  }[];
+  case: {
+    closedAt: string | null;
+    id: string;
+    openedAt: string;
+    organizationId: string;
+    organizationName: string;
+    resolution: string | null;
+    status: string;
+  };
+  privacy: {
+    channel: string;
+    decision: string | null;
+    decisionNote: string | null;
+    decisionReason: string | null;
+    dueAt: string;
+    identityMethod: string | null;
+    identityStatus: string | null;
+    note: string | null;
+    overdue: boolean;
+    polarisRole: string | null;
+    receivedAt: string;
+    requesterKind: string;
+    requestType: string;
+    resolvedAt: string | null;
+    scopeCategories: string[] | null;
+    stage: string;
+    subjectReference: string | null;
+  };
+}
+
+/** What `POST /api/privacy-cases` answers with the case it opened. */
+export interface OpenedPrivacyCase {
+  dueAt: string;
+  id: string;
+  openedAt: string;
+  organizationId: string;
+  stage: string;
+}
+
+/** What each step's `POST` answers: the case and the stage it is at now. */
+export interface PrivacyStepAnswer {
+  id: string;
+  stage: string;
+}

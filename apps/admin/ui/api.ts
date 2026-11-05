@@ -12,6 +12,7 @@ export type Problem =
   | "forbidden"
   | "invalid"
   | "network"
+  | "not_allowed"
   | "not_found"
   | "plan_catalog_incomplete"
   | "rate_limited"
@@ -36,6 +37,8 @@ export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
   invalid:
     "A busca não foi aceita: use até 100 caracteres, sem caracteres de controle.",
   network: "Não foi possível falar com o Admin. Tente de novo.",
+  not_allowed:
+    "O caso não permite esta escolha. Confira as regras desta etapa e escolha de novo.",
   not_found: "Loja não encontrada.",
   plan_catalog_incomplete:
     "O catálogo de planos está incompleto; avise a engenharia.",
@@ -56,7 +59,7 @@ export interface Api {
    */
   post: <T>(
     path: string,
-    body: Readonly<Record<string, boolean | string>>,
+    body: Readonly<Record<string, boolean | string | readonly string[]>>,
     answers?: readonly number[]
   ) => Promise<ApiResult<T>>;
 }
@@ -97,6 +100,12 @@ async function problemOf(response: Response): Promise<Problem> {
     return (await errorCode(response)) === "refund_window_read_refused"
       ? "refused"
       : "forbidden";
+  }
+  if (response.status === 400) {
+    // a privacy decision or action the case does not allow is the operator's choice refused, not a malformed request
+    return (await errorCode(response)) === "privacy_decision_not_allowed"
+      ? "not_allowed"
+      : "invalid";
   }
   if (known !== undefined) {
     return known;
