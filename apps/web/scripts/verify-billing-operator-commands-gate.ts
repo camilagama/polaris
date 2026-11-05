@@ -322,7 +322,7 @@ async function run() {
       (
         await owner.pool.query<{
           last_reference: string | null;
-          occurrence_count: number;
+          occurrence_count: string;
         }>(
           "SELECT occurrence_count, last_reference FROM public.operational_incidents WHERE kind = 'billing_amount_mismatch' AND cause = 'amount_mismatch' AND subject = 'billing.current_charge'"
         )
@@ -370,9 +370,10 @@ async function run() {
     assert.equal((await record(shopM))?.cancel_at_period_end, false);
     assert.deepEqual(await ledger(shopM, "command:"), []);
     const after = await mismatchIncident();
+    // occurrence_count is a bigint: the driver gives it as text
     assert.equal(
-      after?.occurrence_count,
-      (before?.occurrence_count ?? 0) + 1,
+      Number(after?.occurrence_count),
+      Number(before?.occurrence_count ?? 0) + 1,
       "one occurrence of the incident"
     );
     assert.equal(
