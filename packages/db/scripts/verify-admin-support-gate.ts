@@ -461,7 +461,7 @@ async function run() {
         () =>
           asAdmin((client) =>
             client.query(
-              "SELECT public.admin_list_support_cases(NULL, NULL, $1, NULL)",
+              "SELECT public.admin_list_support_cases(NULL, NULL, $1, NULL, NULL)",
               [size]
             )
           ),
@@ -469,6 +469,107 @@ async function run() {
         `a page size of ${size}`
       );
     }
+    const ofKind = (kind: string | null, status: string | null = null) =>
+      asAdmin((client) =>
+        listSupportCases(client, {
+          after: null,
+          kind,
+          limit: 50,
+          organizationId: null,
+          status,
+        })
+      );
+    const supportOnly = await ofKind("support");
+    const privacyOnly = await ofKind("privacy");
+    const everyKind = await ofKind(null);
+    assert.ok(supportOnly.cases.some((entry) => entry.id === grantCase.id));
+    assert.ok(!supportOnly.cases.some((entry) => entry.id === privacyCase?.id));
+    assert.ok(supportOnly.cases.every((entry) => entry.kind === "support"));
+    assert.ok(privacyOnly.cases.some((entry) => entry.id === privacyCase?.id));
+    assert.ok(!privacyOnly.cases.some((entry) => entry.id === grantCase.id));
+    assert.ok(privacyOnly.cases.every((entry) => entry.kind === "privacy"));
+    assert.deepEqual(
+      everyKind.cases.map((entry) => entry.id),
+      [...supportOnly.cases, ...privacyOnly.cases]
+        .map((entry) => entry.id)
+        .sort()
+        .reverse(),
+      "without a kind, every case is listed"
+    );
+    const openSupport = await ofKind("support", "open");
+    assert.ok(
+      openSupport.cases.every(
+        (entry) => entry.kind === "support" && entry.status === "open"
+      )
+    );
+    const supportPage = await asAdmin((client) =>
+      listSupportCases(client, {
+        after: null,
+        kind: "support",
+        limit: 1,
+        organizationId: null,
+        status: null,
+      })
+    );
+    assert.equal(supportPage.cases.length, 1);
+    assert.equal(
+      supportPage.next === null,
+      supportOnly.cases.length <= 1,
+      "the next page of a kind counts only that kind"
+    );
+    for (const kind of ["audit", "", "SUPPORT", "support "]) {
+      // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
+      await expectSqlState(
+        () =>
+          asAdmin((client) =>
+            client.query(
+              "SELECT public.admin_list_support_cases(NULL, NULL, 10, NULL, $1)",
+              [kind]
+            )
+          ),
+        "22023",
+        `the kind ${JSON.stringify(kind)} is not on the list`
+      );
+    }
+    const signatures = await owner.pool.query<{
+      args: string;
+      config: string[] | null;
+      definer: boolean;
+      owner: string;
+      public_runs: boolean;
+      runtime_runs: boolean;
+      others_run: boolean;
+    }>(
+      `SELECT pg_get_function_identity_arguments(p.oid) AS args,
+              p.proconfig AS config,
+              p.prosecdef AS definer,
+              pg_get_userbyid(p.proowner) AS owner,
+              has_function_privilege('public', p.oid, 'EXECUTE') AS public_runs,
+              has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE') AS runtime_runs,
+              (has_function_privilege('polaris_pr11_runtime', p.oid, 'EXECUTE')
+               OR has_function_privilege('polaris_billing_runtime', p.oid, 'EXECUTE')
+               OR has_function_privilege('polaris_catalog_runtime', p.oid, 'EXECUTE')) AS others_run
+         FROM pg_proc p
+        WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'admin_list_support_cases'`
+    );
+    assert.deepEqual(
+      signatures.rows,
+      [
+        {
+          args: "p_status text, p_organization_id text, p_limit integer, p_after uuid, p_kind text",
+          config: ["search_path=pg_catalog, public, pg_temp"],
+          definer: true,
+          others_run: false,
+          owner: "polaris_admin_owner",
+          public_runs: false,
+          runtime_runs: true,
+        },
+      ],
+      "only the signature with the kind exists, as the Admin owner, definer, pinned and run only by the Admin role"
+    );
+    tests.push(
+      "the list of cases narrows to one kind of the closed list (null lists every kind, another value is refused with 22023, the next page counts only that kind) and the list function has one signature, owned by the Admin owner, with a pinned search_path and EXECUTE only for the Admin role"
+    );
     tests.push(
       "a case opens only for a real organization, with a known kind, a reason of 1 to 500 characters and a context of up to 2000, by an active operator (a disabled or unknown principal is refused); cases are listed newest first, by status or organization, a page at a time"
     );
