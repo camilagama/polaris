@@ -369,9 +369,8 @@ export function hasSurcharges(chain: PeriodChain): boolean {
 }
 
 const COMPETENCE = "Despesas do período entram no dia da competência.";
-const EQUALITY =
-  "A diferença entre as duas linhas é o resultado estimado do dia";
-const TO_THE_TABLE = "O resultado de cada dia está em Ver os números.";
+const EQUALITY = "A diferença entre as duas linhas é o resultado estimado do";
+const TO_THE_TABLE = "O resultado de cada";
 
 /**
  * The line that supports the chart (AC-11), in five
@@ -381,16 +380,17 @@ const TO_THE_TABLE = "O resultado de cada dia está em Ver os números.";
  * are; with no known day there is a single line and no equality. No line when the costs are not sent at all.
  */
 export function supportText(
-  series: Pick<ResultSeries, "costsDrawn" | "costsSent" | "days">,
+  series: Pick<ResultSeries, "costsDrawn" | "costsSent" | "days" | "grouped">,
   chain: PeriodChain
 ): string | null {
   if (!series.costsSent) {
     return null;
   }
   const { total, unknown } = series.days;
+  const [unit, units] = series.grouped ? ["mês", "meses"] : ["dia", "dias"];
   const tail = hasSurcharges(chain)
-    ? `${TO_THE_TABLE} ${COMPETENCE}`
-    : `${EQUALITY}${unknown > 0 ? " nos dias sem hachura" : ""}. ${COMPETENCE}`;
+    ? `${TO_THE_TABLE} ${unit} está em Ver os números. ${COMPETENCE}`
+    : `${EQUALITY} ${unit}${unknown > 0 ? ` nos ${units} sem hachura` : ""}. ${COMPETENCE}`;
   if (unknown === 0) {
     return series.costsDrawn ? tail : null;
   }

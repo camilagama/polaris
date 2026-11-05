@@ -2,15 +2,13 @@ import { describe, expect, it } from "vitest";
 import { calendarDayInTimezone } from "../lib/dates";
 import {
   addDays,
-  availablePresets,
   copyMonthOf,
   dayCount,
-  LONG_PERIODS_ENABLED,
   MAX_PERIOD_DAYS,
-  maxPeriodDays,
   monthAbbreviation,
   monthName,
-  type PeriodPreset,
+  PRESET_LABELS,
+  PRESETS,
   periodText,
   presetPeriod,
   rangeMessage,
@@ -105,43 +103,47 @@ describe("what each preset reads (AC-1)", () => {
   });
 });
 
-describe("the presets on offer (AC-2, AC-23)", () => {
-  it("keeps the year and the long ranges off until the CPU measure is registered", () => {
-    expect(LONG_PERIODS_ENABLED).toBe(false);
-    expect(availablePresets()).toEqual([
+describe("the presets on offer (AC-1, AC-2)", () => {
+  it("offers the year between the 30 days and the free range", () => {
+    expect(PRESETS).toEqual([
       "this-month",
       "last-month",
       "last-30",
+      "year",
       "custom",
     ]);
-    expect(maxPeriodDays()).toBe(62);
+    expect(PRESET_LABELS.year).toBe("Este ano");
   });
 
-  it("opens the year and the 366 days with the switch on", () => {
-    expect(availablePresets(true)).toContain<PeriodPreset>("year");
-    expect(maxPeriodDays(true)).toBe(MAX_PERIOD_DAYS);
-    expect(MAX_PERIOD_DAYS).toBe(366);
+  it("reads the year from January 1st to today, a leap year's last day included", () => {
+    expect(presetPeriod("year", "2028-12-31", null)).toEqual({
+      from: "2028-01-01",
+      to: "2028-12-31",
+    });
+    expect(dayCount({ from: "2028-01-01", to: "2028-12-31" })).toBe(
+      MAX_PERIOD_DAYS
+    );
+    expect(presetPeriod("year", "2027-01-01", null)).toEqual({
+      from: "2027-01-01",
+      to: "2027-01-01",
+    });
   });
 });
 
 describe("the range of Período (AC-2)", () => {
-  it("accepts a range of up to 62 days, both ends counted", () => {
+  it("accepts a range of up to 366 days, both ends counted", () => {
     expect(rangeProblem("2026-10-01", "2026-10-01")).toBeNull();
-    expect(rangeProblem("2026-09-01", "2026-11-01")).toBeNull(); // 62 days
-    expect(dayCount({ from: "2026-09-01", to: "2026-11-01" })).toBe(62);
-  });
-
-  it("refuses 63 days while the long periods are off, with the limit in the text", () => {
-    expect(rangeProblem("2026-09-01", "2026-11-02")).toBe("too_long");
-    expect(rangeMessage("too_long")).toBe("Escolha até 62 dias.");
-  });
-
-  it("allows 366 days and refuses 367 with the long periods on", () => {
-    expect(rangeProblem("2026-01-01", "2026-12-31", 366)).toBeNull();
-    expect(rangeProblem("2026-01-01", "2027-01-02", 366)).toBe("too_long");
+    expect(rangeProblem("2026-09-01", "2026-11-02")).toBeNull(); // 63 days
+    expect(rangeProblem("2025-11-04", "2026-11-04")).toBeNull(); // 366 days
+    expect(dayCount({ from: "2025-11-04", to: "2026-11-04" })).toBe(366);
     // a leap year has 366 days and is the longest range there is
-    expect(rangeProblem("2028-01-01", "2028-12-31", 366)).toBeNull();
-    expect(rangeMessage("too_long", 366)).toBe("Escolha até 1 ano.");
+    expect(rangeProblem("2028-01-01", "2028-12-31")).toBeNull();
+  });
+
+  it("refuses 367 days, with the limit in the text", () => {
+    expect(rangeProblem("2025-11-03", "2026-11-04")).toBe("too_long");
+    expect(rangeProblem("2026-01-01", "2027-01-02")).toBe("too_long");
+    expect(rangeMessage("too_long")).toBe("Escolha até 1 ano.");
   });
 
   it("says what is wrong when an end is missing or is not a date, and when they are in the wrong order", () => {

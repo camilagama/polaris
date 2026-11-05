@@ -19,49 +19,17 @@ export type PeriodPreset =
   | "this-month"
   | "year";
 
-/** The key of the browser storage with which the e2e build alone turns the long periods on (the geometry tests). */
-const E2E_LONG_PERIODS_KEY = "polaris.e2e.longPeriods";
-
-/**
- * Only the build of the e2e (`offline-poc` mode, never a deployed one) can open the long periods, and only for a test
- * that writes `E2E_LONG_PERIODS_KEY` before the page loads: the rest of the suite sees them closed, as a store does.
- */
-function longPeriodsInE2e(): boolean {
-  if (import.meta.env.MODE !== "offline-poc") {
-    return false;
-  }
-  try {
-    return globalThis.localStorage?.getItem(E2E_LONG_PERIODS_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * "Este ano" and any range above 62 days wait for the CPU measure of the `periodSummary` of 366 days in staging
- * (AC-23). The server already sends them by month (`granularity` "month"); turning this on is the one change that
- * opens the long periods. Until the measure is registered it stays off.
- */
-export const LONG_PERIODS_ENABLED = longPeriodsInE2e();
-
 /** The longest range the contract accepts (AC-2). */
 export const MAX_PERIOD_DAYS = 366;
-/** The longest range while the long periods are off. */
-const SHORT_PERIOD_DAYS = 62;
 
-/** The longest range a person can ask for. */
-export function maxPeriodDays(longPeriods: boolean = LONG_PERIODS_ENABLED) {
-  return longPeriods ? MAX_PERIOD_DAYS : SHORT_PERIOD_DAYS;
-}
-
-/** The presets on offer, in the order they are shown ("Este ano" only with the long periods on). */
-export function availablePresets(
-  longPeriods: boolean = LONG_PERIODS_ENABLED
-): PeriodPreset[] {
-  return longPeriods
-    ? ["this-month", "last-month", "last-30", "year", "custom"]
-    : ["this-month", "last-month", "last-30", "custom"];
-}
+/** The presets on offer, in the order they are shown. */
+export const PRESETS: readonly PeriodPreset[] = [
+  "this-month",
+  "last-month",
+  "last-30",
+  "year",
+  "custom",
+];
 
 export const PRESET_LABELS: Readonly<Record<PeriodPreset, string>> = {
   custom: "Período",
@@ -132,34 +100,25 @@ export function copyMonthOf(
 export type RangeProblem = "missing" | "order" | "too_long";
 
 /** What is wrong with a range typed by the person, before anything is asked of the server (AC-2); null when it is fine. */
-export function rangeProblem(
-  from: string,
-  to: string,
-  maxDays: number = maxPeriodDays()
-): RangeProblem | null {
+export function rangeProblem(from: string, to: string): RangeProblem | null {
   if (!(isCalendarDate(from) && isCalendarDate(to))) {
     return "missing";
   }
   if (from > to) {
     return "order";
   }
-  return dayCount({ from, to }) > maxDays ? "too_long" : null;
+  return dayCount({ from, to }) > MAX_PERIOD_DAYS ? "too_long" : null;
 }
 
 /** The sentence under the field for each problem. */
-export function rangeMessage(
-  problem: RangeProblem,
-  maxDays: number = maxPeriodDays()
-): string {
+export function rangeMessage(problem: RangeProblem): string {
   switch (problem) {
     case "missing":
       return "Escolha a data inicial e a final.";
     case "order":
       return "A data inicial vem depois da final.";
     default:
-      return maxDays >= MAX_PERIOD_DAYS
-        ? "Escolha até 1 ano."
-        : `Escolha até ${maxDays} dias.`;
+      return "Escolha até 1 ano.";
   }
 }
 

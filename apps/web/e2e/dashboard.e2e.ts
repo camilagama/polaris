@@ -564,8 +564,9 @@ const chainRow = (page: Page, label: string) =>
   chain(page).locator("tbody tr").filter({ hasText: label });
 const preset = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name });
+const CHART_REGION_NAME = /^Vendas × custos por (dia|mês)$/;
 const chartRegion = (page: Page) =>
-  page.getByRole("region", { name: "Vendas × custos por dia" });
+  page.getByRole("region", { name: CHART_REGION_NAME });
 /** A phone (the Pixel 5 project too) has the periods in a Select; from 768 px they are a strip of buttons. */
 const compact = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
 const periodSelect = (page: Page) =>
@@ -1137,6 +1138,8 @@ const reading = (page: Page) =>
 const METAS_TAB = /^Metas/;
 const ONE_UNKNOWN_DAY = /1 de 30 dias sem custo informado/;
 const CHART_IMAGE = /Vendas líquidas e custos por dia, 1 a 31 de outubro/;
+const YEAR_CHART_IMAGE =
+  /^Vendas líquidas e custos por mês, 1 de janeiro a 14 de outubro/;
 const metasTab = (page: Page) => page.getByRole("tab", { name: METAS_TAB });
 const resultTab = (page: Page) =>
   page.getByRole("tab", { exact: true, name: "Resultado" });
@@ -1302,8 +1305,6 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    // "Este ano" waits for the CPU measure (AC-23)
-    await expect(preset(page, "Este ano")).toHaveCount(0);
 
     await choosePreset(page, "Últimos 30 dias");
     await expect(chartRegion(page)).toContainText(
@@ -1329,6 +1330,69 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     });
   });
 
+  test("Este ano lê de 1º de janeiro até hoje e o gráfico mostra os meses do servidor (AC-1, AC-7)", async ({
+    page,
+  }) => {
+    const server = new MonthlyReportServer();
+    // the sales of the year fall on January 1st, the first day the year reads
+    server.fixture = { ...FIXTURE, "2026-01": COMPLETE_MONTH };
+    await openDashboard(page, server);
+    const deltas = page.locator("[data-kpi-delta]");
+    // the month compares with the month before
+    await expect(deltas.first()).toBeVisible();
+
+    await choosePreset(page, "Este ano");
+    await expectPreset(page, "Este ano");
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2026-01-01", to: "2026-10-14" });
+    await expect(
+      page.getByRole("region", { name: "Vendas × custos por dia" })
+    ).toHaveCount(0);
+    const region = page.getByRole("region", {
+      name: "Vendas × custos por mês",
+    });
+    await expect(region).toContainText("1 de janeiro a 14 de outubro");
+    await expect(region).toContainText(
+      "O resultado de cada mês está em Ver os números. Despesas do período entram no dia da competência."
+    );
+    await expect(
+      region.getByRole("img", {
+        name: YEAR_CHART_IMAGE,
+      })
+    ).toBeVisible();
+    // above 62 days the cards compare with nothing
+    await expect(deltas).toHaveCount(0);
+
+    await region.getByRole("button", { name: "Ver os números" }).click();
+    const rows = region.locator("table").locator("tbody tr");
+    await expect(rows).toHaveCount(10);
+    await expect(region.locator("table thead")).toContainText("Mês");
+    await expect(region.locator("table thead")).toContainText(
+      "Resultado do mês"
+    );
+    await expect(region.locator("table thead")).not.toContainText(
+      "Resultado do dia"
+    );
+    await expect(rows.first()).toContainText("janeiro de 2026");
+    await expect(rows.first()).toContainText("R$ 130,00");
+    await expect(rows.last()).toContainText("outubro de 2026");
+
+    // a free range of a whole year is accepted too
+    // the fake server reads the records of the month the range starts in
+    server.fixture = { ...server.fixture, "2025-10": COMPLETE_MONTH };
+    await rangeFields(page, "2025-10-15", "2026-10-14");
+    await expectPreset(page, "Período");
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2025-10-15", to: "2026-10-14" });
+    const yearRegion = page.getByRole("region", {
+      name: "Vendas × custos por mês",
+    });
+    await expect(yearRegion).toContainText("15 de outubro de 2025");
+    await expect(yearRegion.locator("table tbody tr")).toHaveCount(13);
+  });
+
   test("um intervalo inválido diz o que está errado e não chama o servidor", async ({
     page,
   }) => {
@@ -1345,10 +1409,10 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       "A data inicial vem depois da final."
     );
 
-    await page.getByLabel("De", { exact: true }).fill("2026-01-01");
-    await page.getByLabel("Até", { exact: true }).fill("2026-03-05");
+    await page.getByLabel("De", { exact: true }).fill("2025-10-13");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-14");
     await page.getByRole("button", { name: "Ver período" }).click();
-    await expect(page.getByRole("alert")).toContainText("Escolha até 62 dias.");
+    await expect(page.getByRole("alert")).toContainText("Escolha até 1 ano.");
 
     await page.getByLabel("De", { exact: true }).fill("");
     await page.getByRole("button", { name: "Ver período" }).click();
@@ -1806,9 +1870,6 @@ test.describe("períodos longos por mês: trocar entre o mês, 30 dias e o ano n
       page,
     }) => {
       await page.setViewportSize(size);
-      await page.addInitScript(() =>
-        window.localStorage.setItem("polaris.e2e.longPeriods", "true")
-      );
       const server = new MonthlyReportServer();
       server.fixture = fixture;
       await openDashboard(page, server);
@@ -1848,9 +1909,6 @@ test.describe("períodos longos por mês: trocar entre o mês, 30 dias e o ano n
       page,
     }) => {
       await page.setViewportSize(size);
-      await page.addInitScript(() =>
-        window.localStorage.setItem("polaris.e2e.longPeriods", "true")
-      );
       const server = new MonthlyReportServer();
       server.fixture = fixture;
       await openDashboard(page, server);
