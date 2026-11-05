@@ -341,10 +341,8 @@ const maskedValue = () => MASKED_MONEY;
 const spokenMasked = () => MASKED_SPOKEN;
 const noAxis = () => "";
 
-/** The height of the plot: 220 px for two series or more than seven days, else 180; the empty period keeps it. */
-function plotHeight(series: ResultSeries): number {
-  return series.costsSent || series.rows.length > 7 ? 220 : 180;
-}
+/** One height for every period and every cost state, so the card of the chart never changes its box. */
+const PLOT_HEIGHT = 220;
 
 /**
  * The area chart of the charts chunk, with the sales and the dashed cost line, broken on a hatched day whose cost is
@@ -371,7 +369,7 @@ function Drawing({
       formatSpoken={hidden ? spokenMasked : moneyText}
       formatValue={hidden ? maskedValue : moneyText}
       {...(hidden ? {} : { axisUnit: "R$" })}
-      height={plotHeight(series)}
+      height={PLOT_HEIGHT}
       label={hidden ? maskMoney(label, MASKED_SPOKEN) : label}
       legend="Vendas líquidas"
       name="Vendas"
