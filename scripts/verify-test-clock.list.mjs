@@ -31,7 +31,11 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
-  "apps/web/e2e/app-shell.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
+  "apps/web/e2e/shell-server.ts": {
+    count: 2,
+    reason:
+      "o servidor simulado das specs da casca assina o lease com a hora real e grava o comando recusado na hora real do navegador, porque a página roda no relógio real; são as leituras que saíram de app-shell.e2e.ts, sem leitura nova",
+  },
   "apps/web/e2e/close-store.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e/closed-store-device.e2e.ts": {
     count: 2,

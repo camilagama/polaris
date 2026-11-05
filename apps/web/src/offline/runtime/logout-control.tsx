@@ -154,11 +154,6 @@ export type Logout = ReturnType<typeof useLogout>;
 
 interface LogoutNoticesProps {
   logout: Logout;
-  /**
-   * Called when the warning of the pending queue or a message appears, so a closed "Mais" sheet of the phone opens
-   * again: the answer may arrive after the person closed it.
-   */
-  onAttention?: (() => void) | undefined;
   /** On the page of attention, where "Ver Pendências" would go nowhere. */
   inAttentionPage?: boolean | undefined;
 }
@@ -170,19 +165,12 @@ interface LogoutNoticesProps {
  */
 export function LogoutNotices({
   logout,
-  onAttention,
   inAttentionPage = false,
 }: LogoutNoticesProps) {
   const { blocked, busy, message } = logout;
   const blockedRef = useRef<HTMLDivElement>(null);
   const messageRef = useRef<HTMLParagraphElement>(null);
-  const needsAttention = blocked !== null || message !== null;
-  useEffect(() => {
-    if (needsAttention) {
-      onAttention?.();
-    }
-  }, [needsAttention, onAttention]);
-  // in the sidebar the warning opens below "Sair", in a narrow column that may scroll: bring it to view, with focus
+  // the warning may open in a part of the page that scrolls: bring it to view, with focus
   useEffect(() => {
     const shown = blocked ? blockedRef.current : messageRef.current;
     if (shown) {
@@ -226,59 +214,25 @@ export function LogoutNotices({
 }
 
 interface LogoutControlProps {
-  /**
-   * The logout of the one that holds the state, when the control may be unmounted and mounted again with it kept (the
-   * sidebar, when the width crosses 760 px in the middle of the flow). Without it the control has its own.
-   */
-  logout?: Logout | undefined;
-  /** See `LogoutNotices`. */
-  onAttention?: (() => void) | undefined;
   /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
   reason?: SignInReason | undefined;
   /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
   returnTo?: string | undefined;
 }
 
-/** "Sair" as a button with its notices under it: the "Mais" sheet of the phone, the acceptance and Aparelhos. */
-export function LogoutControl({
-  logout,
-  onAttention,
-  reason,
-  returnTo,
-}: LogoutControlProps = {}) {
-  return logout ? (
-    <LogoutButton logout={logout} onAttention={onAttention} />
-  ) : (
-    <OwnLogoutControl
-      onAttention={onAttention}
-      reason={reason}
-      returnTo={returnTo}
-    />
-  );
-}
-
-function OwnLogoutControl({
-  onAttention,
-  reason,
-  returnTo,
-}: Omit<LogoutControlProps, "logout">) {
+/** "Sair" as a button with its notices under it, with a logout of its own: the acceptance and the closed store. */
+export function LogoutControl({ reason, returnTo }: LogoutControlProps = {}) {
   const logout = useLogout(
     reason ? logoutDestination({ reason, returnTo }) : "/"
   );
-  return <LogoutButton logout={logout} onAttention={onAttention} />;
+  return <LogoutButton logout={logout} />;
 }
 
 /**
  * "Sair" (ADR 0039) protects the queue, then ends the session. The button only exists while the offline runtime is on,
  * because that is when a device holds work no one else has; the first access offers its own (`endsWithoutRuntime`).
  */
-function LogoutButton({
-  logout,
-  onAttention,
-}: {
-  logout: Logout;
-  onAttention?: (() => void) | undefined;
-}) {
+function LogoutButton({ logout }: { logout: Logout }) {
   const runtime = useOfflineRuntime();
   if (!runtime) {
     return null;
@@ -294,7 +248,7 @@ function LogoutButton({
         <LogOutIcon aria-hidden="true" />
         Sair
       </button>
-      <LogoutNotices logout={logout} onAttention={onAttention} />
+      <LogoutNotices logout={logout} />
     </div>
   );
 }

@@ -30,4 +30,21 @@ describe("the first access, Abra a sua loja", () => {
     expect(html).toMatch(SAIR_BUTTON);
     expect(html).toContain("Não é a sua conta?");
   });
+
+  it("links the two legal pages under the form, in another tab, as the screen has no menu (AC-2.7)", () => {
+    const html = render(null);
+    const form = html.indexOf("</form>");
+    for (const [href, name] of [
+      ["/termos", "Termos de Uso"],
+      ["/privacidade", "Política de Privacidade"],
+    ] as const) {
+      const link = new RegExp(
+        `<a class="([^"]*)" href="${href}" rel="noopener noreferrer" target="_blank">${name}`
+      ).exec(html);
+      expect(link, name).not.toBeNull();
+      // under the form, so the form does not move; a touch area of 44 px (`touch-hit`)
+      expect(link?.index ?? -1).toBeGreaterThan(form);
+      expect(link?.[1]).toContain("touch-hit");
+    }
+  });
 });

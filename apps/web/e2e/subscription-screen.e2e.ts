@@ -225,10 +225,10 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
     "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.",
     "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.",
   ]);
-  // the Terms and the Privacy Policy are the shell's, once on the screen
+  // the Terms and the Privacy Policy are the shell's (the menu of the store, in the header), not the screen's
   await expect(page.locator("main footer").getByRole("link")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
-    1
+    0
   );
 });
 
@@ -519,13 +519,13 @@ for (const [label, value, text] of [
         "Você pode desistir"
       );
     }
-    // the Terms and the Privacy Policy stay the shell's in every state
+    // the Terms and the Privacy Policy stay the shell's (the menu of the store) in every state: none on the screen
     await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
-      1
+      0
     );
     await expect(
       page.getByRole("link", { name: "Política de Privacidade" })
-    ).toHaveCount(1);
+    ).toHaveCount(0);
   });
 }
 

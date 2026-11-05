@@ -78,6 +78,15 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `warning` / `popover` | ícone de aviso do toast | Toast | **7.6** | 3 | ✓ |
 | `ring` / `popover` | foco do teclado no toast | Toast | **3.95** | 3 | ✓ |
 | `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.36** | 3 | ✓ |
+| `foreground` / `sidebar` | marca do cabeçalho do celular e item atual da barra de destinos (moldura) | ShellHeader, BottomBar | **16.36** | 7 | ✓ |
+| `sidebar-foreground` / `sidebar` | "?" e seta do menu da loja, no cabeçalho | ShellHeader, StoreMenu | **9.81** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar` | nome da loja no botão do menu do cabeçalho | StoreMenu | **16.36** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | "?" e botão da loja do cabeçalho em hover | ShellHeader, StoreMenu | **15.41** | 7 | ✓ |
+| `muted-foreground` / `sidebar` | rótulos da barra de destinos; Termos e Política no pé de Mais (12 px) | BottomBar, AppSidebar | **7.33** | 4.5 | ✓ |
+| `warning` / `warning/10 sobre sidebar` | chip sem conexão e de envio pausado, no cabeçalho | SyncStatus | **5.89** | 4.5 | ✓ |
+| `destructive` / `destructive/10 sobre sidebar` | chip "Atenção", no cabeçalho | SyncStatus | **5.70** | 4.5 | ✓ |
+| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **3.58** | 3 | ✓ |
+| `background` / `foreground` | iniciais da loja no círculo do cabeçalho | StoreMenu | **17.34** | 7 | ✓ |
 
 ## Tema escuro
 
@@ -119,7 +128,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `border sobre popover` / `popover` | borda de diálogo, menu e painel aberto dentro do cartão (decorativa) | border-border | **1.20** | 1.0 | ✓ |
 | `card-ring sobre card` / `card` | anel de 1 px do cartão do catálogo público (decorativo) | card-ring | **1.19** | 1.0 | ✓ |
 | `border sobre background` / `background` | divisória sobre o fundo | border-border | **1.17** | 1.0 | ✓ |
-| `sidebar-border sobre sidebar` / `sidebar` | divisória da lateral e borda do cartão da loja (decorativa) | border-sidebar-border | **1.15** | 1.0 | ✓ |
+| `sidebar-border sobre sidebar` / `sidebar` | traço do trilho da lateral em hover (decorativo) | border-sidebar-border | **1.15** | 1.0 | ✓ |
 | `sidebar-accent` / `sidebar` | fundo do item atual contra a lateral (decorativo: o ponto esmeralda, o peso 500 e o aria-current dizem onde se está) | SidebarMenuButton | **1.14** | 1.0 | ✓ |
 | `sidebar-hover` / `sidebar` | fundo do item em hover contra a lateral (decorativo) | SidebarMenuButton | **1.07** | 1.0 | ✓ |
 | `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **7.67** | 3 | ✓ |
@@ -159,10 +168,20 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `warning` / `popover` | ícone de aviso do toast | Toast | **8.5** | 3 | ✓ |
 | `ring` / `popover` | foco do teclado no toast | Toast | **4.92** | 3 | ✓ |
 | `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.42** | 3 | ✓ |
+| `foreground` / `sidebar` | marca do cabeçalho do celular e item atual da barra de destinos (moldura) | ShellHeader, BottomBar | **16.15** | 7 | ✓ |
+| `sidebar-foreground` / `sidebar` | "?" e seta do menu da loja, no cabeçalho | ShellHeader, StoreMenu | **9.48** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar` | nome da loja no botão do menu do cabeçalho | StoreMenu | **16.15** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | "?" e botão da loja do cabeçalho em hover | ShellHeader, StoreMenu | **15.08** | 7 | ✓ |
+| `muted-foreground` / `sidebar` | rótulos da barra de destinos; Termos e Política no pé de Mais (12 px) | BottomBar, AppSidebar | **9.81** | 4.5 | ✓ |
+| `warning` / `warning/10 sobre sidebar` | chip sem conexão e de envio pausado, no cabeçalho | SyncStatus | **8.75** | 4.5 | ✓ |
+| `destructive` / `destructive/15 sobre sidebar` | chip "Atenção", no cabeçalho | SyncStatus | **6.77** | 4.5 | ✓ |
+| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **6.01** | 3 | ✓ |
+| `background` / `foreground` | iniciais da loja no círculo do cabeçalho | StoreMenu | **15.41** | 7 | ✓ |
 
 Notas:
 
 - `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
 - O foco do teclado é `--ring` cheio (3,36 a 5,73:1 contra fundo, cartão, menu e hover): é o que conta, o halo dos campos é só reforço.
 - Estados com transparência estão na lista; nenhum cai abaixo da meta.
+- A moldura (lateral e cabeçalho em `--sidebar`) e o painel do conteúdo (`--background`) são superfícies decorativas: a diferença de cor entre as duas não é a marca do limite, que é o anel de 1 px (`--card-ring`) nas bordas esquerda e superior do painel. O chip do cabeçalho sincronizado ou enviando tem fundo próprio (`--card`), medido em `foreground` / `card`.
 - Rampa do mapa de calor (`--chart-heat-1` a `-4`, v7, ainda sem tela): monótona, um matiz, passos de 1,42 / 1,55 / 1,86 (claro) e 1,69 / 1,74 / 1,76 (escuro) entre níveis vizinhos. O nível 1 tem 1,39:1 sobre o cartão no claro: a escala é sequencial e o tom mais claro recua para o fundo de propósito; o dia sem venda não depende dele, porque é outra forma (quadrado vazio com contorno). Fica fora da tabela testada por isso.

@@ -91,6 +91,23 @@ function DropdownMenuItem({
   );
 }
 
+/** A link of the menu (Base UI `LinkItem`): an `<a>` that navigates, with the look and the touch height of an item. */
+function DropdownMenuLinkItem({
+  className,
+  ...props
+}: MenuPrimitive.LinkItem.Props) {
+  return (
+    <MenuPrimitive.LinkItem
+      className={cn(
+        "relative flex min-h-8 touch:min-h-11 cursor-default select-none items-center gap-1.5 rounded-sm px-2 py-1.5 text-sm no-underline outline-hidden focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        className
+      )}
+      data-slot="dropdown-menu-link-item"
+      {...props}
+    />
+  );
+}
+
 function DropdownMenuCheckboxItem({
   className,
   children,
@@ -184,6 +201,7 @@ export {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuLinkItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
