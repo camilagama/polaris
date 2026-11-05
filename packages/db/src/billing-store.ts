@@ -7,6 +7,7 @@ import {
   type BillingCycleMonths,
   type BillingFact,
   type BillingRecord,
+  currentChargeAfter,
   dueTransition,
   type IgnoredFactReason,
   isBillingCycleMonths,
@@ -1478,6 +1479,78 @@ async function recordFirstCharge(
   );
 }
 
+/**
+ * The charge of the period in force (ADR 0104, §7), for every applied `charge_succeeded`: what it moves is decided by
+ * `currentChargeAfter` (only forward by the end of the period paid for), the row is the one `lockRecord` holds, and
+ * the ledger row is this event's own. A fact without amount falls back to the first charge's amount only when it is
+ * the first charge (the price the checkout sent, as `recordFirstCharge`); a renewal never takes the checkout's price.
+ */
+async function recordCurrentCharge(
+  client: PoolClient,
+  input: { eventId: string; fact: BillingFact; organizationId: string }
+): Promise<void> {
+  const { fact } = input;
+  if (fact.type !== "charge_succeeded") {
+    return;
+  }
+  const result = await client.query<{
+    current_charge_amount: string | null;
+    current_charge_event_id: string | null;
+    current_charge_period_ends_at: Date | null;
+    first_charge_amount: string | null;
+    first_charge_event_id: string | null;
+  }>(
+    `SELECT round(current_charge_amount, 2)::text AS current_charge_amount,
+            current_charge_event_id::text AS current_charge_event_id, current_charge_period_ends_at,
+            round(first_charge_amount, 2)::text AS first_charge_amount,
+            first_charge_event_id::text AS first_charge_event_id
+       FROM public.organization_billing WHERE organization_id = $1`,
+    [input.organizationId]
+  );
+  const [row] = result.rows;
+  if (!row) {
+    return;
+  }
+  const stored =
+    row.current_charge_period_ends_at && row.current_charge_event_id
+      ? {
+          amount: row.current_charge_amount,
+          eventId: row.current_charge_event_id,
+          periodEndsAt: row.current_charge_period_ends_at,
+        }
+      : null;
+  const firstChargeAmount =
+    row.first_charge_event_id === input.eventId
+      ? row.first_charge_amount
+      : null;
+  const change = currentChargeAfter(stored, {
+    amount: fact.amount?.value ?? firstChargeAmount,
+    eventId: input.eventId,
+    periodEndsAt: fact.periodEndsAt,
+  });
+  if (change.kind === "replace") {
+    await client.query(
+      `UPDATE public.organization_billing SET
+         current_charge_amount = $2::numeric,
+         current_charge_period_ends_at = $3::timestamptz,
+         current_charge_event_id = $4::uuid
+       WHERE organization_id = $1`,
+      [
+        input.organizationId,
+        change.charge.amount,
+        change.charge.periodEndsAt,
+        change.charge.eventId,
+      ]
+    );
+  } else if (change.kind === "fill_amount") {
+    await client.query(
+      `UPDATE public.organization_billing SET current_charge_amount = $2::numeric
+       WHERE organization_id = $1 AND current_charge_amount IS NULL`,
+      [input.organizationId, change.amount]
+    );
+  }
+}
+
 const ignoredCode: Record<IgnoredFactReason, string> = {
   not_applicable: "not_applicable",
   stale: "stale",
@@ -1745,6 +1818,7 @@ async function processInTransaction(
     fact,
     organizationId,
   });
+  await recordCurrentCharge(client, { eventId, fact, organizationId });
   // the notices this applied fact causes: an ignored or duplicated fact never gets here
   await recordTransitionNotices(client, organizationId, {
     after: result.record,
@@ -2514,12 +2588,13 @@ export function createBillingStore(
         }
         await client.query(
           // a new subscription reference is a new checkout: a payment taken back on the old one does not follow it,
-          // and neither do its first charge, the owner's refund request nor the safety net's back-off (ADR 0104: each
+          // and neither do its first and current charges, the owner's refund request nor the safety net's back-off (ADR 0104: each
           // new subscription opens a new window of the right of withdrawal)
           `UPDATE public.organization_billing SET provider = $2, provider_ref = $3, provider_subscription_id = NULL,
              revoked_through = NULL, revoked_reason = NULL, revoked_cycle_months = NULL, revoked_cancel_at_period_end = false,
              price_amount = $4::numeric, price_id = $5, first_charge_on = $6::date,
              first_charge_at = NULL, first_charge_amount = NULL, first_charge_event_id = NULL,
+             current_charge_amount = NULL, current_charge_period_ends_at = NULL, current_charge_event_id = NULL,
              refund_requested_at = NULL, refund_request_id = NULL, refund_rearm_attempts = NULL, refund_rearm_at = NULL,
              updated_at = now(), version = version + 1 WHERE organization_id = $1`,
           [

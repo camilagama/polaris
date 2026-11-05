@@ -994,3 +994,48 @@ export function parseBillingFact(value: unknown): BillingFact | null {
       return null;
   }
 }
+
+/** The charge of the period in force, as the billing record keeps it (ADR 0104, §7). */
+export interface CurrentCharge {
+  /** `"24.90"`, or null when the fact that set it carried no amount. */
+  amount: string | null;
+  /** The ledger row (`billing_events.id`) it came from. */
+  eventId: string;
+  periodEndsAt: Date;
+}
+
+/** What an applied `charge_succeeded` does to the stored charge of the period in force. */
+export type CurrentChargeChange =
+  | { kind: "keep" }
+  | { amount: string; kind: "fill_amount" }
+  | { charge: CurrentCharge; kind: "replace" };
+
+/**
+ * The charge in force only moves forward by the end of the period it paid for:
+ * a later period replaces all of it (an amount from an older period never
+ * stands for a newer one, so a fact without amount leaves it null), the same
+ * period (a redelivery, or the provider's confirmation and receipt of one
+ * charge) only fills an amount that was missing, and an earlier period (a late
+ * confirmation applied after a renewal) changes nothing. `amount` is the
+ * fact's, or the caller's fallback for the first charge of the link only.
+ */
+export function currentChargeAfter(
+  stored: CurrentCharge | null,
+  charge: CurrentCharge
+): CurrentChargeChange {
+  if (
+    stored === null ||
+    charge.periodEndsAt.getTime() >
+      stored.periodEndsAt.getTime() + PERIOD_MATCH_TOLERANCE_MS
+  ) {
+    return { charge, kind: "replace" };
+  }
+  if (
+    samePeriod(stored.periodEndsAt, charge.periodEndsAt) &&
+    stored.amount === null &&
+    charge.amount !== null
+  ) {
+    return { amount: charge.amount, kind: "fill_amount" };
+  }
+  return { kind: "keep" };
+}

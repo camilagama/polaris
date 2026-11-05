@@ -14,6 +14,7 @@ import {
   type RefundedRenewal,
 } from "../src/billing-store";
 import { createDatabase } from "../src/client";
+import { CURRENT_CHARGE_RECONCILE_SQL } from "./current-charge-reconcile-sql";
 import { withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
@@ -48,6 +49,9 @@ import {
  *      by the cap's own owner only;
  *   8. `admin_read_refund_window`: the operator and the case, the closed keys, the audit in the same transaction, and
  *      the platform audit check that keeps every value of 0091.
+ * And the charge in force of migration 0118 (ADR 0104 §7, ADR 0105): its three columns column by column and role by
+ * role, `processEvent` only forward and `attachProvider` clearing it (3b), the backfill run as the migrator and run
+ * twice, the incident `billing_amount_mismatch` (after 5) and the key `currentChargeAmount` of the window (8).
  * The fixtures stay, as in the other gates; the logins are dropped at the end.
  */
 const expectedDatabase =
@@ -76,10 +80,21 @@ const NEW_COLUMNS = [
   "refund_requested_at",
 ] as const;
 
-/** What the Admin owner reads of `organization_billing`: the columns of 0062 and three of 0100 (ADR 0104, decision 8). */
+/** The columns of 0118 on `organization_billing`: the charge in force. */
+const CURRENT_CHARGE_COLUMNS = [
+  "current_charge_amount",
+  "current_charge_event_id",
+  "current_charge_period_ends_at",
+] as const;
+
+/**
+ * What the Admin owner reads of `organization_billing`: the columns of 0062, three of 0100 (ADR 0104, decision 8)
+ * and the amount of the charge in force of 0118.
+ */
 const ADMIN_OWNER_COLUMNS = [
   "access_ends_at",
   "cancel_at_period_end",
+  "current_charge_amount",
   "cycle_months",
   "first_charge_amount",
   "first_charge_at",
@@ -212,6 +227,9 @@ async function run() {
       (
         await owner.pool.query<{
           cancel_at_period_end: boolean;
+          current_charge_amount: string | null;
+          current_charge_event_id: string | null;
+          current_charge_period_ends_at: Date | null;
           first_charge_amount: string | null;
           first_charge_at: Date | null;
           first_charge_event_id: string | null;
@@ -231,7 +249,8 @@ async function run() {
           `SELECT state, cancel_at_period_end, revoked_reason, revoked_cancel_at_period_end, price_amount::text,
                   price_id, first_charge_on::text, first_charge_at, first_charge_amount::text, first_charge_event_id,
                   refund_requested_at, refund_request_id, provider_command_at, provider_commands_hour,
-                  refund_rearm_attempts, refund_rearm_at
+                  refund_rearm_attempts, refund_rearm_at, current_charge_amount::text, current_charge_event_id::text,
+                  current_charge_period_ends_at
              FROM public.organization_billing WHERE organization_id = $1`,
           [tenant.organizationId]
         )
@@ -321,8 +340,78 @@ async function run() {
     assert.deepEqual(
       adminColumns.rows.map((row) => row.column_name),
       ADMIN_OWNER_COLUMNS,
-      "the Admin owner reads exactly the closed list (0062 plus three), never provider_ref, price_id nor refund_request_id"
+      "the Admin owner reads exactly the closed list (0062, three of 0100, one of 0118), never provider_ref, price_id nor refund_request_id"
     );
+    // 0118: the charge in force, column by column and role by role. Every role of the platform (no login) other than
+    // the billing runtime and the Admin owner holds nothing on the three; those two hold exactly what is listed.
+    const currentColumns = await owner.pool.query<{
+      column_name: string;
+      is_nullable: string;
+    }>(
+      `SELECT column_name, is_nullable FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'organization_billing' AND column_name = ANY($1::text[])
+        ORDER BY column_name`,
+      [[...CURRENT_CHARGE_COLUMNS]]
+    );
+    assert.deepEqual(
+      currentColumns.rows.map((row) => [row.column_name, row.is_nullable]),
+      CURRENT_CHARGE_COLUMNS.map((column) => [column, "YES"]),
+      "the three columns of 0118 exist and are nullable (expand only)"
+    );
+    const currentPrivileges = await owner.pool.query<{
+      column_name: string;
+      privilege: string;
+      role: string;
+    }>(
+      `SELECT role.rolname AS role, columns.column_name, privilege.name AS privilege
+         FROM pg_catalog.pg_roles AS role
+        CROSS JOIN unnest($1::text[]) AS columns(column_name)
+        CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) AS privilege(name)
+        WHERE role.rolname LIKE 'polaris\\_%' AND NOT role.rolcanlogin
+          AND has_column_privilege(role.oid, 'public.organization_billing'::regclass, columns.column_name, privilege.name)
+        ORDER BY role.rolname, columns.column_name, privilege.name`,
+      [[...CURRENT_CHARGE_COLUMNS]]
+    );
+    assert.deepEqual(
+      currentPrivileges.rows.map(
+        (row) => `${row.role}.${row.column_name}:${row.privilege}`
+      ),
+      [
+        // INSERT and SELECT of the billing runtime come from its grant on the whole table (0053: `lockRecord` creates
+        // the row of a store); UPDATE is the column grant of 0118
+        "polaris_admin_owner.current_charge_amount:SELECT",
+        "polaris_billing_runtime.current_charge_amount:INSERT",
+        "polaris_billing_runtime.current_charge_amount:SELECT",
+        "polaris_billing_runtime.current_charge_amount:UPDATE",
+        "polaris_billing_runtime.current_charge_event_id:INSERT",
+        "polaris_billing_runtime.current_charge_event_id:SELECT",
+        "polaris_billing_runtime.current_charge_event_id:UPDATE",
+        "polaris_billing_runtime.current_charge_period_ends_at:INSERT",
+        "polaris_billing_runtime.current_charge_period_ends_at:SELECT",
+        "polaris_billing_runtime.current_charge_period_ends_at:UPDATE",
+      ],
+      "only the billing runtime reads and writes the charge in force, and the Admin owner reads its amount"
+    );
+    for (const role of [
+      runtimeRole,
+      "polaris_catalog_runtime",
+      "polaris_privacy_runtime",
+      "polaris_privacy_owner",
+      "polaris_purge_owner",
+      "polaris_outbox_runtime",
+      "polaris_outbox_owner",
+      "polaris_auth_runtime",
+      "polaris_admin_runtime",
+    ]) {
+      for (const column of CURRENT_CHARGE_COLUMNS) {
+        const held = await owner.pool.query<{ any: boolean }>(
+          `SELECT has_column_privilege($1, 'public.organization_billing', $2, 'SELECT')
+               OR has_column_privilege($1, 'public.organization_billing', $2, 'UPDATE') AS any`,
+          [role, column]
+        );
+        assert.equal(held.rows[0]?.any, false, `${role} holds ${column}`);
+      }
+    }
     const tenantA = await newTenant("columns");
     await owner.pool.query(
       "INSERT INTO public.organization_billing (organization_id) VALUES ($1)",
@@ -407,6 +496,38 @@ async function run() {
         constraint
       );
     }
+    for (const [assignment, constraint] of [
+      [
+        "current_charge_amount = 24.90",
+        "organization_billing_current_charge_coherent",
+      ],
+      [
+        `current_charge_event_id = '${randomUUID()}'`,
+        "organization_billing_current_charge_coherent",
+      ],
+      [
+        "current_charge_period_ends_at = now(), current_charge_amount = 24.9",
+        "organization_billing_current_charge_coherent",
+      ],
+      [
+        "current_charge_period_ends_at = now(), current_charge_amount = 0.00",
+        "organization_billing_current_charge_coherent",
+      ],
+    ] as const) {
+      await expectSqlState(
+        () =>
+          owner.pool.query(
+            `UPDATE public.organization_billing SET ${assignment} WHERE organization_id = $1`,
+            [tenantA.organizationId]
+          ),
+        "23514",
+        `the check refuses ${assignment}`,
+        constraint
+      );
+    }
+    tests.push(
+      "the three columns of 0118 (the charge in force) are nullable; SELECT and UPDATE of the three only to the billing runtime and SELECT of the amount only to the Admin owner, over every role of the platform (the tenant, catalog, privacy, purge, outbox, auth and Admin runtimes hold none); the check refuses an amount or event without the end of the period, an amount without two places and a zero amount"
+    );
     tests.push(
       "the 13 new columns are nullable, written only by the billing role, invisible to the tenant (42501 on each, the old ones still readable), three of them readable by the Admin owner, whose list of columns is exactly the closed list of ADR 0104; the checks refuse a price without its ID or scale, an amount or event of the first charge without its moment, a request ID without the anchor, a counter over 10 and a back-off without its moment"
     );
@@ -496,6 +617,16 @@ async function run() {
     current = await record(tenantB);
     assert.equal(current?.first_charge_at?.getTime(), firstChargeAt.getTime());
     assert.equal(current?.first_charge_event_id, first.id);
+    assert.equal(
+      current?.current_charge_amount,
+      "26.90",
+      "the renewal at another amount is the charge in force"
+    );
+    assert.equal(current?.current_charge_event_id, renewal.id);
+    assert.equal(
+      current?.current_charge_period_ends_at?.getTime(),
+      at(24 * 58).getTime()
+    );
 
     // Pix without a trial: Free to active, with the amount of the fact; then a refund and a new subscription
     const tenantC = await newTenant("new window");
@@ -550,6 +681,11 @@ async function run() {
     current = await record(tenantC);
     assert.equal(current?.revoked_reason, "refund");
     assert.notEqual(current?.state, "active");
+    assert.equal(
+      current?.current_charge_amount,
+      "19.90",
+      "a refund keeps the charge in force: whoever reads it decides by the state"
+    );
     // a new subscription: a new window of the right of withdrawal
     await billing.attachProvider(
       tenantC.organizationId,
@@ -565,6 +701,15 @@ async function run() {
     assert.equal(current?.first_charge_at, null);
     assert.equal(current?.first_charge_amount, null);
     assert.equal(current?.first_charge_event_id, null);
+    assert.deepEqual(
+      [
+        current?.current_charge_amount,
+        current?.current_charge_event_id,
+        current?.current_charge_period_ends_at,
+      ],
+      [null, null, null],
+      "a new link clears the charge in force of the old one"
+    );
     assert.equal(current?.refund_requested_at, null);
     assert.equal(current?.refund_request_id, null);
     assert.equal(current?.refund_rearm_attempts, null);
@@ -592,11 +737,315 @@ async function run() {
       "the new subscription has its own first charge, so its own window"
     );
     assert.equal(current?.first_charge_amount, "249.00");
+    assert.equal(
+      current?.current_charge_amount,
+      "249.00",
+      "the first charge without amount falls back to the price sent, as first_charge_amount"
+    );
+    assert.equal(current?.current_charge_event_id, c2.id);
     tests.push(
       "attachProvider records the price, its ID and the day of the first charge, keeps them for the same link, and with a new link clears the first charge, the owner's refund anchor and request ID and the back-off of the net: the new subscription records its own first charge, so each new subscription opens a new window of the right of withdrawal (decision (i))"
     );
     tests.push(
       "processEvent records the first charge of the link when it takes a trial or Free to active: first_charge_at is the provider's moment (a webhook two days late does not move it), the amount of the fact (or the price sent without one) and the ledger row; a renewal changes none of it"
+    );
+
+    // ------------------------------------------------ 3b. the charge in force (0118): only forward
+    const tenantN = await newTenant("charge in force");
+    await billing.attachProvider(
+      tenantN.organizationId,
+      "asaas",
+      ref("chk-n1"),
+      { firstChargeOn: "2026-10-01", priceAmount: "24.90", priceId: "pro-1" }
+    );
+    const nCharge = (
+      period: Date,
+      amount: string | null,
+      occurredAt: Date
+    ): BillingFact => ({
+      ...(amount === null
+        ? {}
+        : { amount: { currency: "BRL" as const, value: amount } }),
+      cycleMonths: 1,
+      occurredAt,
+      periodEndsAt: period,
+      type: "charge_succeeded",
+    });
+    const nPeriod1 = at(24 * 10);
+    const nPeriod2 = at(24 * 40);
+    const n1 = await apply(
+      tenantN,
+      ref("chk-n1"),
+      nCharge(nPeriod1, "24.90", at(-24 * 20)),
+      at(-24 * 20)
+    );
+    assert.equal(n1.status, "applied");
+    const inForce = async (tenant: TenantFixture) => {
+      const row = await record(tenant);
+      return [
+        row?.current_charge_amount ?? null,
+        row?.current_charge_event_id ?? null,
+        row?.current_charge_period_ends_at?.getTime() ?? null,
+      ];
+    };
+    assert.deepEqual(
+      await inForce(tenantN),
+      ["24.90", n1.id, nPeriod1.getTime()],
+      "the first charge sets the charge in force"
+    );
+    // the provider's second fact of the same charge (confirmed, then received), half a day later on the period
+    const n1Again = await apply(
+      tenantN,
+      ref("chk-n1"),
+      nCharge(new Date(nPeriod1.getTime() + 12 * HOUR), "99.90", at(-24 * 19)),
+      at(-24 * 19)
+    );
+    assert.equal(n1Again.status, "applied");
+    assert.deepEqual(
+      await inForce(tenantN),
+      ["24.90", n1.id, nPeriod1.getTime()],
+      "a second fact of the same period changes nothing that is there"
+    );
+    // the renewal, edited at the provider to another amount
+    const n2 = await apply(
+      tenantN,
+      ref("chk-n1"),
+      nCharge(nPeriod2, "29.90", at(24 * 9)),
+      at(24 * 9)
+    );
+    assert.equal(n2.status, "applied");
+    assert.deepEqual(
+      await inForce(tenantN),
+      ["29.90", n2.id, nPeriod2.getTime()],
+      "a renewal at another amount replaces the charge in force"
+    );
+    // the same event processed again: already applied, nothing written
+    const n2Again = await billing.processEvent(n2.id, at(24 * 9 + 1));
+    assert.notEqual(n2Again.status, "failed");
+    assert.deepEqual(await inForce(tenantN), [
+      "29.90",
+      n2.id,
+      nPeriod2.getTime(),
+    ]);
+    // the same provider event delivered again: the inbox keeps one row
+    const redelivered = await billing.recordEvent({
+      fact: nCharge(nPeriod2, "29.90", at(24 * 9)),
+      organizationId: tenantN.organizationId,
+      provider: "asaas",
+      providerEventId:
+        (
+          await owner.pool.query<{ provider_event_id: string }>(
+            "SELECT provider_event_id FROM public.billing_events WHERE id = $1",
+            [n2.id]
+          )
+        ).rows[0]?.provider_event_id ?? "",
+      providerRef: ref("chk-n1"),
+    });
+    assert.equal(redelivered.duplicate, true);
+    assert.equal(redelivered.id, n2.id);
+    // a late confirmation of the first period, after the renewal: the lifecycle never moves the access back, so it is
+    // ignored, and whatever its outcome the charge in force stays (`currentChargeAfter` keeps it even when applied)
+    const late = await apply(
+      tenantN,
+      ref("chk-n1"),
+      nCharge(nPeriod1, "21.90", at(-24 * 20)),
+      at(24 * 9 + 2)
+    );
+    assert.ok(["applied", "ignored"].includes(late.status), late.status);
+    assert.deepEqual(
+      await inForce(tenantN),
+      ["29.90", n2.id, nPeriod2.getTime()],
+      "a late confirmation of an older period does not move the charge in force back"
+    );
+    // a renewal without amount: the amount of the older period never stands for the new one
+    const nPeriod3 = at(24 * 70);
+    const n3 = await apply(
+      tenantN,
+      ref("chk-n1"),
+      nCharge(nPeriod3, null, at(24 * 39)),
+      at(24 * 39)
+    );
+    assert.equal(n3.status, "applied");
+    assert.deepEqual(
+      await inForce(tenantN),
+      [null, n3.id, nPeriod3.getTime()],
+      "a renewal without amount leaves it null, never the checkout's price"
+    );
+    // the second fact of that charge carries the amount: it fills the null, the event stays
+    const n3Received = await apply(
+      tenantN,
+      ref("chk-n1"),
+      nCharge(new Date(nPeriod3.getTime() + HOUR), "29.90", at(24 * 39 + 1)),
+      at(24 * 39 + 1)
+    );
+    assert.equal(n3Received.status, "applied");
+    assert.deepEqual(
+      await inForce(tenantN),
+      ["29.90", n3.id, nPeriod3.getTime()],
+      "the same period fills a missing amount and keeps its event"
+    );
+    // a fact of another link is ignored before any write (reference_mismatch)
+    const silencedMismatch = console.error;
+    console.error = () => undefined;
+    let foreign: Awaited<ReturnType<typeof apply>>;
+    try {
+      foreign = await apply(
+        tenantN,
+        ref("chk-n-other"),
+        nCharge(at(24 * 400), "999.90", at(24 * 40)),
+        at(24 * 40)
+      );
+    } finally {
+      console.error = silencedMismatch;
+    }
+    assert.notEqual(foreign.status, "applied");
+    assert.deepEqual(await inForce(tenantN), [
+      "29.90",
+      n3.id,
+      nPeriod3.getTime(),
+    ]);
+    // the billing role writes only its own store's row: a tenant writes none of the three
+    await expectSqlState(
+      () =>
+        withRuntimeSqlContext(tenantUrl, tenantN, (client) =>
+          client.query(
+            "UPDATE public.organization_billing SET current_charge_amount = 1.00 WHERE organization_id = $1",
+            [tenantN.organizationId]
+          )
+        ),
+      "42501",
+      "the tenant cannot write the charge in force"
+    );
+    tests.push(
+      "processEvent keeps the charge in force (0118) only forward by the end of the period paid for: the first charge sets it, a second fact of the same period changes nothing that is there and only fills a missing amount (keeping its event), a renewal at another amount replaces amount, period and event, the same event processed again or delivered again writes nothing, a late confirmation of an older period never moves it back, a renewal without amount leaves it null (never the checkout's price), a fact of another link writes nothing, a refund keeps it, a new link clears it, and the first charge without amount falls back to the price sent, as first_charge_amount"
+    );
+
+    // the backfill of 0118 (and `billing:current-charge-reconcile`): the migrator, never under SET ROLE
+    const tenantBackfill = await newTenant("backfill");
+    await billing.attachProvider(
+      tenantBackfill.organizationId,
+      "asaas",
+      ref("chk-r1"),
+      { firstChargeOn: "2026-10-01", priceAmount: "24.90", priceId: "pro-1" }
+    );
+    const r1 = await apply(
+      tenantBackfill,
+      ref("chk-r1"),
+      nCharge(at(24 * 5), null, at(-24 * 25)),
+      at(-24 * 25)
+    );
+    assert.equal(r1.status, "applied");
+    // what the previous Worker leaves in the expand window: applied renewals, the columns not written. Two of them end
+    // the same latest period written two ways: the text "T00:00-03:00" sorts before "T02:00Z", the instant after it
+    const backfillLedger = async (
+      providerRef: string,
+      fact: Record<string, unknown>
+    ) => {
+      const inserted = await owner.pool.query<{ id: string }>(
+        `INSERT INTO public.billing_events
+           (provider, provider_event_id, provider_ref, organization_id, fact, fact_type, occurred_at, status, received_at)
+         VALUES ('asaas', $1, $2, $3, $4::jsonb, 'charge_succeeded', $5, 'applied', $5)
+         RETURNING id::text AS id`,
+        [
+          `gate-${randomUUID()}`,
+          providerRef,
+          tenantBackfill.organizationId,
+          JSON.stringify(fact),
+          at(-24),
+        ]
+      );
+      return inserted.rows[0]?.id ?? "";
+    };
+    const factOf = (periodEndsAt: string, amount?: string) => ({
+      ...(amount ? { amount, currency: "BRL" } : {}),
+      cycleMonths: 1,
+      occurredAt: at(-24).toISOString(),
+      periodEndsAt,
+      type: "charge_succeeded",
+    });
+    const latestPeriod = "2099-01-01T00:00:00-03:00";
+    const latestId = await backfillLedger(
+      ref("chk-r1"),
+      factOf(latestPeriod, "31.90")
+    );
+    await backfillLedger(
+      ref("chk-r1"),
+      factOf("2099-01-01T02:00:00Z", "30.90")
+    );
+    await backfillLedger(
+      ref("chk-r1"),
+      factOf(at(24 * 35).toISOString(), "28.90")
+    );
+    // not this link, not an instant, not applied: never counted
+    await backfillLedger(
+      ref("chk-r-old"),
+      factOf("2199-01-01T00:00:00Z", "77.70")
+    );
+    await backfillLedger(
+      ref("chk-r1"),
+      factOf("9999-99-99T99:99:99Z", "88.80")
+    );
+    await owner.pool.query(
+      `INSERT INTO public.billing_events
+         (provider, provider_event_id, provider_ref, organization_id, fact, fact_type, occurred_at, status)
+       VALUES ('asaas', $1, $2, $3, $4::jsonb, 'charge_succeeded', now(), 'ignored')`,
+      [
+        `gate-${randomUUID()}`,
+        ref("chk-r1"),
+        tenantBackfill.organizationId,
+        JSON.stringify(factOf("2299-01-01T00:00:00Z", "66.60")),
+      ]
+    );
+    assert.deepEqual(
+      await inForce(tenantBackfill),
+      ["24.90", r1.id, at(24 * 5).getTime()],
+      "before the backfill: the first charge only (its amount the price sent)"
+    );
+    const reconcile = async () =>
+      as(adminUrl, async (client) => {
+        const role = await client.query<{ bypass: boolean; user: string }>(
+          "SELECT current_user AS user, (SELECT rolbypassrls OR rolsuper FROM pg_roles WHERE rolname = current_user) AS bypass"
+        );
+        assert.equal(
+          role.rows[0]?.bypass,
+          true,
+          "the migrator bypasses row security"
+        );
+        assert.equal(
+          (role.rows[0]?.user ?? "").startsWith("polaris_"),
+          false,
+          "never under a role switch"
+        );
+        return (await client.query(CURRENT_CHARGE_RECONCILE_SQL)).rowCount ?? 0;
+      });
+    const firstRun = await reconcile();
+    assert.ok(firstRun >= 1, "the backfill writes the store left behind");
+    assert.deepEqual(
+      await inForce(tenantBackfill),
+      ["31.90", latestId, new Date(latestPeriod).getTime()],
+      "the latest period by its instant, on this link, applied and an instant, with its amount"
+    );
+    // the first charge of a link whose fact had no amount: the backfill takes first_charge_amount, as processEvent
+    await owner.pool.query(
+      "UPDATE public.organization_billing SET current_charge_amount = NULL, current_charge_period_ends_at = NULL, current_charge_event_id = NULL WHERE organization_id = $1",
+      [tenantC.organizationId]
+    );
+    assert.ok((await reconcile()) >= 1);
+    current = await record(tenantC);
+    assert.equal(current?.current_charge_amount, "249.00");
+    assert.equal(current?.current_charge_event_id, c2.id);
+    assert.equal(
+      await reconcile(),
+      0,
+      "a second run writes nothing anywhere: every row already holds what the ledger says"
+    );
+    assert.deepEqual(await inForce(tenantN), [
+      "29.90",
+      n3.id,
+      nPeriod3.getTime(),
+    ]);
+    tests.push(
+      'the backfill of 0118 (the very statement of billing:current-charge-reconcile), run as the migrator and never under SET ROLE, writes the store whose renewals the previous Worker applied without the columns: the latest period by its instant ("T00:00-03:00" over "T02:00Z", the text order reversed), only facts of the record\'s own link, applied and with an ISO instant, with the fact\'s amount (or first_charge_amount for the first charge without one); a second run writes zero rows'
     );
 
     // ------------------------------------------------ 4. the owner's limit: 1 every 30 s, 10 an hour
@@ -1133,6 +1582,112 @@ async function run() {
       "an owner's refund still not completed 24 hours after the request becomes one occurrence of the incident billing_refund_pending, with one ledger row for the store and request: 25 hours makes one (a won dispute too), 23 hours none, a chargeback none, a second pass none, a completed refund none; only the billing role executes the function, and only with the causes refund_not_completed and refund_rearm_exhausted"
     );
 
+    // the incident of an amount in force that is not the provider's (0118; ADR 0105, ADR 0085)
+    const mismatchRow = async () =>
+      (
+        await owner.pool.query<Record<string, unknown>>(
+          "SELECT * FROM public.operational_incidents WHERE kind = 'billing_amount_mismatch'"
+        )
+      ).rows;
+    const mismatchBefore = Number(
+      (await mismatchRow())[0]?.occurrence_count ?? 0
+    );
+    const mismatchEvents = [randomUUID(), randomUUID()];
+    for (const event of mismatchEvents) {
+      await as(billingUrl, (client) =>
+        client.query(
+          "SELECT public.record_billing_amount_mismatch_incident($1::uuid, 'amount_mismatch')",
+          [event]
+        )
+      );
+    }
+    const mismatch = await mismatchRow();
+    assert.equal(mismatch.length, 1, "one row for the cause, never per store");
+    const [mismatchIncident] = mismatch;
+    assert.deepEqual(
+      Object.keys(mismatchIncident ?? {}).sort(),
+      [
+        "cause",
+        "first_seen_at",
+        "id",
+        "kind",
+        "last_reference",
+        "last_seen_at",
+        "occurrence_count",
+        "subject",
+      ],
+      "the row has no column for a store, an amount or a reference of the provider"
+    );
+    assert.equal(mismatchIncident?.cause, "amount_mismatch");
+    assert.equal(mismatchIncident?.subject, "billing.current_charge");
+    assert.equal(
+      mismatchIncident?.last_reference,
+      mismatchEvents[1],
+      "the last reference is the ledger row given (current_charge_event_id)"
+    );
+    assert.equal(
+      Number(mismatchIncident?.occurrence_count) - mismatchBefore,
+      2,
+      "each call adds one occurrence"
+    );
+    for (const [label, url] of [
+      ["the tenant", tenantUrl],
+      ["the Admin runtime", adminLoginUrl],
+      ["the privacy runtime", privacyUrl],
+    ] as const) {
+      await expectSqlState(
+        () =>
+          as(url, (client) =>
+            client.query(
+              "SELECT public.record_billing_amount_mismatch_incident($1::uuid, 'amount_mismatch')",
+              [randomUUID()]
+            )
+          ),
+        "42501",
+        `only the billing role records the incident, not ${label}`
+      );
+    }
+    for (const [event, cause] of [
+      [randomUUID(), "refund_not_completed"],
+      [randomUUID(), "reference_mismatch"],
+      [randomUUID(), null],
+      [null, "amount_mismatch"],
+    ] as const) {
+      await expectSqlState(
+        () =>
+          as(billingUrl, (client) =>
+            client.query(
+              "SELECT public.record_billing_amount_mismatch_incident($1::uuid, $2::text)",
+              [event, cause]
+            )
+          ),
+        "22023",
+        `the incident takes only amount_mismatch and an event (${String(cause)}, ${String(event)})`
+      );
+    }
+    const mismatchDefinition = await owner.pool.query<{
+      config: string[] | null;
+      definer: boolean;
+      executors: string[];
+      owner: string;
+    }>(
+      `SELECT p.prosecdef AS definer, pg_get_userbyid(p.proowner) AS owner, p.proconfig AS config,
+              ARRAY(SELECT CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(acl.grantee) END
+                      FROM aclexplode(p.proacl) AS acl
+                     WHERE acl.privilege_type = 'EXECUTE' AND acl.grantee <> p.proowner
+                     ORDER BY 1)::text[] AS executors
+         FROM pg_proc AS p WHERE p.oid = 'public.record_billing_amount_mismatch_incident(uuid, text)'::regprocedure`
+    );
+    assert.deepEqual(mismatchDefinition.rows[0], {
+      config: ["search_path=pg_catalog, public, pg_temp"],
+      definer: true,
+      executors: ["polaris_billing_runtime"],
+      owner: "polaris_outbox_owner",
+    });
+    tests.push(
+      "record_billing_amount_mismatch_incident (0118) is SECURITY DEFINER of polaris_outbox_owner with a fixed search_path, executed by the billing runtime alone (the tenant, Admin and privacy runtimes get 42501, PUBLIC nothing); it takes only the cause amount_mismatch and an event (22023 otherwise); every call adds one occurrence to the one row billing_amount_mismatch / amount_mismatch / billing.current_charge, whose last reference is the ledger row given and which has no column for a store, an amount or a reference of the provider"
+    );
+
     // ------------------------------------------------ 6. billing_cancellation_feedback
     const forced = await owner.pool.query<{
       relforcerowsecurity: boolean;
@@ -1570,6 +2125,7 @@ async function run() {
     assert.deepEqual(Object.keys(window).sort(), [
       "accessEndsAt",
       "cancelAtPeriodEnd",
+      "currentChargeAmount",
       "firstChargeAmount",
       "firstChargeAt",
       "method",
@@ -1580,6 +2136,18 @@ async function run() {
       "state",
     ]);
     assert.equal(window.firstChargeAmount, "249.00");
+    assert.equal(window.currentChargeAmount, "249.00");
+    // a store renewed at another amount: the charge in force, not the first one
+    const renewedWindow =
+      (
+        await readWindow(
+          operator,
+          await openCase(tenantN.organizationId),
+          tenantN.organizationId
+        )
+      ).rows[0]?.window ?? {};
+    assert.equal(renewedWindow.firstChargeAmount, "24.90");
+    assert.equal(renewedWindow.currentChargeAmount, "29.90");
     assert.equal(
       new Date(String(window.firstChargeAt)).getTime(),
       c2At.getTime()
@@ -1640,6 +2208,7 @@ async function run() {
     assert.equal(freeWindow.revokedReason, null);
     assert.equal(freeWindow.revokedThrough, null);
     assert.equal(freeWindow.method, null);
+    assert.equal(freeWindow.currentChargeAmount, null);
     const refundedWindow =
       (
         await readWindow(
@@ -1756,7 +2325,7 @@ async function run() {
       "exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111: no value of 0091 is gone"
     );
     tests.push(
-      "admin_read_refund_window answers, to an active operator under an open case of the same store, exactly firstChargeAt, firstChargeAmount, refundRequestedAt, state, method, now, accessEndsAt, cancelAtPeriodEnd, revokedThrough and revokedReason (no reference, provider, price ID or subscription; the four of the renewal come from the same row, for a store that renews, one whose renewal is cancelled, a Free one and a refunded one), audited in the same transaction with the operator, the store and the case; a case of another store, an inactive operator and a closed case get the same 42501 and leave no row; only the Admin runtime executes it; it is SECURITY DEFINER of polaris_admin_owner with a fixed search_path, and the platform audit check is exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111"
+      "admin_read_refund_window answers, to an active operator under an open case of the same store, exactly firstChargeAt, firstChargeAmount, currentChargeAmount (0118: the charge in force, 29.90 for a store whose first charge was 24.90, null for a Free one), refundRequestedAt, state, method, now, accessEndsAt, cancelAtPeriodEnd, revokedThrough and revokedReason (no reference, provider, price ID or subscription; the four of the renewal come from the same row, for a store that renews, one whose renewal is cancelled, a Free one and a refunded one), audited in the same transaction with the operator, the store and the case; a case of another store, an inactive operator and a closed case get the same 42501 and leave no row; only the Admin runtime executes it; it is SECURITY DEFINER of polaris_admin_owner with a fixed search_path, and the platform audit check is exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111"
     );
 
     console.log(
