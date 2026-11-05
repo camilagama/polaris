@@ -26,6 +26,9 @@ const SET_CLASS = new RegExp(
 const STRING_LITERAL = new RegExp(STRING, "g");
 const IDENTIFIER_ONLY = /^[A-Za-z_$][\w$.]*$/;
 const WHITESPACE = /\s+/;
+const TEST_SUPPORT = /\.test\.ts$|^test-/;
+const CALL = /[([]/;
+const OPEN_BRANCH = /[?:&|]$/;
 const TEMPLATE_HOLE = /\$\{[^}]*\}/;
 
 interface ScriptClasses {
@@ -53,7 +56,14 @@ export function classesOf(source: string): ScriptClasses {
   };
   for (const [, expression = ""] of source.matchAll(CLASS_ATTRIBUTE)) {
     const literals = [...expression.matchAll(STRING_LITERAL)];
-    if (literals.length === 0 && IDENTIFIER_ONLY.test(expression.trim())) {
+    const residue = expression.replace(STRING_LITERAL, "").trim();
+    const identifierOnly =
+      literals.length === 0 && IDENTIFIER_ONLY.test(expression.trim());
+    if (
+      identifierOnly ||
+      CALL.test(residue) ||
+      OPEN_BRANCH.test(expression.trim())
+    ) {
       dynamic.add(expression.trim());
     }
     for (const literal of literals) {
@@ -98,7 +108,7 @@ function scriptFiles(directory: string): string[] {
     if (entry.isDirectory()) {
       return scriptFiles(path);
     }
-    return entry.name.endsWith(".ts") && !entry.name.includes("test")
+    return entry.name.endsWith(".ts") && !TEST_SUPPORT.test(entry.name)
       ? [path]
       : [];
   });
@@ -167,7 +177,7 @@ describe("the classes the page's script creates have a rule in the sheet", () =>
     const callers = files
       .map((file) => readFileSync(file, "utf8"))
       .join("\n")
-      .matchAll(/\bline\([^)\n]*,\s*"([\w-]+)"\)/g);
+      .matchAll(/\bline\(.*,\s*"([\w-]+)"\)/g);
     const words = [...new Set([...callers].map(([, word]) => word ?? ""))];
     expect(words).toContain("warning");
     expect(withoutRule(adminSheet, ["hint", ...words])).toEqual([]);
@@ -191,6 +201,14 @@ describe("the scan of the script's classes (controls)", () => {
       prefixes: ["env-"],
       words: ["a", "b", "c", "d", "env", "funnel", "grid"],
     });
+  });
+
+  it("lists what it cannot read: a call that builds the class and a condition whose branches continue on the next line", () => {
+    expect(
+      classesOf(
+        ['dom.el("p", { class: pick("a", "b") });', 'dom.el("p", { class: a === b ?'].join("\n")
+      ).dynamic
+    ).toEqual(['a === b ?', 'pick("a"']);
   });
 
   it("fails on a class the sheet has no rule for", () => {

@@ -23,7 +23,9 @@ const web = fileURLToPath(new URL("../", import.meta.url));
 export const ADMIN_SHEET_SOURCE = "apps/admin/ui/admin.source.css";
 export const ADMIN_SHEET_OUTPUT = "apps/admin/ui/admin.css";
 const THEME = "packages/ui/src/theme.css";
-const requireFromWeb = createRequire(join(web, "package.json"));
+const requireFromAdmin = createRequire(
+  join(repository, "apps/admin/package.json")
+);
 const COMMAND = "bun run admin:sheet";
 const TARGET = ["chrome111", "edge111", "firefox128", "safari16.4"];
 
@@ -77,7 +79,7 @@ function stylesheetPath(id: string, base: string): string {
     return join(web, "node_modules", id);
   }
   if (id.startsWith("@polaris/")) {
-    return requireFromWeb.resolve(id);
+    return requireFromAdmin.resolve(id);
   }
   return resolve(base, id);
 }

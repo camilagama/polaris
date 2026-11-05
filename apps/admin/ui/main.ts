@@ -45,7 +45,7 @@ function contextOf(element: HTMLElement): ScreenContext | null {
   };
 }
 
-// the menu is on every page, also the one that mounts no screen (the operator may not open it)
+// the script loads on every page, also the one that mounts no screen, and the menu belongs to the shell, not to a screen
 closeCompactMenuOnEscapeAndOutsideTap(document);
 
 const root = document.getElementById("admin");
