@@ -206,9 +206,12 @@ describe("the scan of the script's classes (controls)", () => {
   it("lists what it cannot read: a call that builds the class and a condition whose branches continue on the next line", () => {
     expect(
       classesOf(
-        ['dom.el("p", { class: pick("a", "b") });', 'dom.el("p", { class: a === b ?'].join("\n")
+        [
+          'dom.el("p", { class: pick("a", "b") });',
+          'dom.el("p", { class: a === b ?',
+        ].join("\n")
       ).dynamic
-    ).toEqual(['a === b ?', 'pick("a"']);
+    ).toEqual(["a === b ?", 'pick("a"']);
   });
 
   it("fails on a class the sheet has no rule for", () => {
