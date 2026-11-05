@@ -470,7 +470,11 @@ export function KpiCardSkeleton({
         />
       </div>
       {Array.from({ length: footer }, (_, index) => (
-        <div className={cn(FOOTER_ROW, "flex items-center")} key={index}>
+        <div
+          className={cn(FOOTER_ROW, "flex items-center")}
+          data-kpi-skeleton-foot=""
+          key={index}
+        >
           <Skeleton className="h-3 w-full" />
         </div>
       ))}

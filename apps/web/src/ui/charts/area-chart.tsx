@@ -101,7 +101,7 @@ export interface AreaChartProps {
   formatSpoken?: (value: number) => string;
   /** The text of a value in the reading of the day in focus, in the tooltip and in the spoken value of the keyboard control. */
   formatValue: (value: number) => string;
-  /** The height of the plot in pixels: 180 for seven days, 220 for thirty or two series. The margins come on top of it. */
+  /** The height of the plot in pixels: 180 by default; a screen that reserves the box of its card passes one height for every period. The margins come on top of it. */
   height?: number;
   /** What the chart answers, with the figures that matter: it is the name of the image for a screen reader. */
   label: string;

@@ -75,18 +75,6 @@ export function comparisonPeriod(period: Period, today: string): Period | null {
 }
 
 /**
- * "1 a 25/10" within a month, "26/09 a 25/10" across two, "25/10" for one day; with the year on both ends when the
- * range crosses a year or its last day is not in `thisYear` ("05/11/2025 a 05/11/2026", "1 a 31/12/2025").
- */
-export function rangeText(
-  first: string,
-  last: string,
-  thisYear: string
-): string {
-  return periodShort(first, last, thisYear);
-}
-
-/**
  * What a reading says it goes up to: "Até 17/10", "Até 31/12/2025" when the day is not in `thisYear`. A month reads to
  * its last day.
  */
@@ -427,7 +415,7 @@ function priorReader(
     const compared = Math.min(at + 1, length);
     return {
       range: series
-        ? rangeText(
+        ? periodShort(
             series.period.from,
             addDays(series.period.from, compared - 1),
             thisYear
@@ -472,7 +460,7 @@ export function resultKpis({
   const result = resultKindOf(days);
   const whole = month
     ? `${month} inteiro`
-    : rangeText(period.from, period.to, thisYear);
+    : periodShort(period.from, period.to, thisYear);
 
   const read = (index: number | null) => {
     // an index of another series (the period changed under the pointer) reads the last day of this one
@@ -489,7 +477,7 @@ export function resultKpis({
       prior: priorResult(at),
       priorSales: priorSales(at),
       // a period that has not started has no day yet: its dates are the whole period
-      range: days.length > 0 ? rangeText(period.from, date, thisYear) : whole,
+      range: days.length > 0 ? periodShort(period.from, date, thisYear) : whole,
       result,
       sum: sums[at] ?? { count: 0, net: 0n, result: 0n },
       whole,

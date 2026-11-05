@@ -2167,3 +2167,76 @@ test.describe("a caixa inteira do cartão do gráfico não muda de altura entre 
     }
   }
 });
+
+test.describe("a caixa do cartão do gráfico no carregamento do pedaço é a mesma de depois do desenho", () => {
+  for (const size of SIZES) {
+    for (const name of ["completo", "valores de seis dígitos"] as const) {
+      test(`${name} (${size.width} px)`, async ({ page }) => {
+        await page.setViewportSize(size);
+        let release: () => void = () => undefined;
+        const arrives = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await page.route("**/assets/charts-*.js", async (route) => {
+          await arrives;
+          await route.continue();
+        });
+        const server = new MonthlyReportServer();
+        server.now = NOVEMBER_5;
+        server.fixture = CHART_BOX_FIXTURES[name];
+        await openDashboard(page, server);
+        await expect(
+          chartRegion(page).locator("[data-chart-loading]")
+        ).toBeAttached();
+        await expect(
+          chartRegion(page).getByRole("img", { name: DRAWN_CHART })
+        ).toHaveCount(0);
+        const loading = await chartPlaces(page);
+
+        release();
+        await expect(
+          chartRegion(page).getByRole("img", { name: DRAWN_CHART })
+        ).toBeVisible();
+        await expect(
+          chartRegion(page).locator("[data-chart-loading]")
+        ).toHaveCount(0);
+        expectSamePlaces(await chartPlaces(page), loading);
+      });
+    }
+  }
+});
+
+const JULY_6 = "2026-07-06T12:00:00.000Z";
+
+test.describe("Este ano até julho, sem custo por dia, e o mês na primeira semana têm a caixa dos 30 dias", () => {
+  for (const size of SIZES) {
+    test(`sete linhas sem custos (${size.width} px)`, async ({ page }) => {
+      await page.setViewportSize(size);
+      const server = new NoCostsOfTheYearServer();
+      server.now = JULY_6;
+      server.fixture = {
+        "2026-01": COMPLETE_MONTH,
+        "2026-06": COMPLETE_MONTH,
+        "2026-07": COMPLETE_MONTH,
+      };
+      await openDashboard(page, server);
+      const drawn = () =>
+        chartRegion(page).getByRole("img", { name: DRAWN_CHART });
+      await expect(drawn()).toBeVisible();
+      const month = await chartPlaces(page);
+
+      await choosePreset(page, "Este ano");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      await expect(drawn()).toBeVisible();
+      await expect(page.locator("[data-kpi-group]")).toContainText(
+        "01/01 a 06/07"
+      );
+      expectSameBox(await chartPlaces(page), month);
+
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      await expect(drawn()).toBeVisible();
+      expectSameBox(await chartPlaces(page), month);
+    });
+  }
+});

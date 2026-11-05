@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { StoredDay } from "../lib/period-summary-cache";
 import {
   comparisonPeriod,
-  rangeText,
   untilText,
   resultChipPeriod,
   resultKpis,
@@ -54,29 +53,6 @@ describe("the period the chips compare with", () => {
     expect(
       comparisonPeriod({ from: "2026-01-01", to: "2026-10-25" }, "2026-10-25")
     ).toBeNull();
-  });
-
-  it("writes its dates short", () => {
-    expect(rangeText("2026-10-01", "2026-10-25", "2026")).toBe("1 a 25/10");
-    expect(rangeText("2026-09-26", "2026-10-25", "2026")).toBe("26/09 a 25/10");
-    expect(rangeText("2026-10-25", "2026-10-25", "2026")).toBe("25/10");
-    expect(rangeText("2026-01-01", "2026-11-05", "2026")).toBe("01/01 a 05/11");
-  });
-
-  it("writes the year on both ends when the range crosses a year", () => {
-    expect(rangeText("2025-11-05", "2026-11-05", "2026")).toBe(
-      "05/11/2025 a 05/11/2026"
-    );
-  });
-
-  it("writes the year when the last day is not in this year, in the three shapes", () => {
-    expect(rangeText("2025-12-01", "2025-12-31", "2026")).toBe(
-      "1 a 31/12/2025"
-    );
-    expect(rangeText("2025-11-05", "2025-12-05", "2026")).toBe(
-      "05/11/2025 a 05/12/2025"
-    );
-    expect(rangeText("2025-11-05", "2025-11-05", "2026")).toBe("05/11/2025");
   });
 
   it("says up to which day a reading goes, with the year when it is not this year's", () => {
