@@ -1,5 +1,6 @@
-import { and, asc, eq, gt, inArray, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, type SQL, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { productCoverSubquery } from "./product-cover";
 import { categories } from "./schema/category";
 import { customers } from "./schema/customer";
 import { inventoryBalances } from "./schema/inventory";
@@ -246,10 +247,12 @@ async function readProducts(
   transaction: Transaction,
   request: PageRequest
 ): Promise<BootstrapPage> {
+  const cover = productCoverSubquery(transaction);
   const rows = await transaction
     .select({
       archivedAt: products.archivedAt,
       categoryId: products.categoryId,
+      coverAssetId: cover.coverAssetId,
       deletedAt: products.deletedAt,
       description: products.description,
       id: products.id,
@@ -258,6 +261,7 @@ async function readProducts(
       version: products.version,
     })
     .from(products)
+    .leftJoinLateral(cover, sql`true`)
     .where(
       and(
         eq(products.organizationId, request.organizationId),
@@ -273,6 +277,7 @@ async function readProducts(
     rows: page.map((row) => ({
       archivedAt: iso(row.archivedAt),
       categoryId: row.categoryId,
+      coverAssetId: row.coverAssetId,
       deletedAt: iso(row.deletedAt),
       description: row.description,
       id: row.id,

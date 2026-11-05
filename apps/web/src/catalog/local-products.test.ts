@@ -56,6 +56,21 @@ describe("local products", () => {
     expect(toLocalProductRow(model)).toEqual(local);
   });
 
+  it("keeps the cover both ways, and a row without one stays without one", () => {
+    const covered = product(1, { coverAssetId: uuid(201) });
+    const model = toProductReadModel(covered, ORG);
+    expect(model.coverAssetId).toBe(uuid(201));
+    expect(toLocalProductRow(model)).toEqual(covered);
+    const noImage = product(2, { coverAssetId: null });
+    expect(toLocalProductRow(toProductReadModel(noImage, ORG))).toEqual(
+      noImage
+    );
+    // a copy written before the field existed: not known yet, never "no image"
+    const older = toProductReadModel(product(3), ORG);
+    expect(older).not.toHaveProperty("coverAssetId");
+    expect(toLocalProductRow(older)).not.toHaveProperty("coverAssetId");
+  });
+
   it("derives the state from the archive and delete marks", () => {
     expect(toProductReadModel(product(1, { archivedAt: AT }), ORG).status).toBe(
       "archived"

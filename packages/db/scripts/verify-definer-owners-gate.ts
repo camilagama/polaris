@@ -168,6 +168,7 @@ const FUNCTIONS = {
   bump: "public.bump_user_authorization_epoch(text)",
   onboarding: "public.create_initial_organization(text,text,text,text,uuid)",
   record: "public.record_sync_change()",
+  recordProductMedia: "public.record_product_media_sync_change()",
 } as const;
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear gate script, scenario by scenario
@@ -315,10 +316,16 @@ async function run() {
           owner: SYNC_OWNER,
           secdef: true,
         },
+        {
+          executors: [SYNC_OWNER, migrator].sort(),
+          name: "record_product_media_sync_change()",
+          owner: SYNC_OWNER,
+          secdef: true,
+        },
       ].sort(byName)
     );
     tests.push(
-      `the two sync triggers belong to ${SYNC_OWNER} (EXECUTE: it and the migrator, for a future CREATE TRIGGER), the bump to ${EPOCH_OWNER} (EXECUTE: polaris_auth_runtime) and the onboarding to ${ONBOARDING_OWNER} (EXECUTE: polaris_onboarding_runtime); all four stay SECURITY DEFINER`
+      `the three sync triggers belong to ${SYNC_OWNER} (EXECUTE: it and the migrator, for a future CREATE TRIGGER), the bump to ${EPOCH_OWNER} (EXECUTE: polaris_auth_runtime) and the onboarding to ${ONBOARDING_OWNER} (EXECUTE: polaris_onboarding_runtime); all five stay SECURITY DEFINER`
     );
 
     // -------------------------------------------------- 3. the exact matrix
