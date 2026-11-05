@@ -19,12 +19,14 @@ const adminOwnerRole = "polaris_admin_owner";
 
 /**
  * Operational incidents (plan PR111, ADR 0085): something the platform itself must look at, kept
- * apart from any tenant. Today four kinds: a queue message that ended in the dead-letter queue, an
+ * apart from any tenant. Today five kinds: a queue message that ended in the dead-letter queue, an
  * outbox event that passed the cap of delivery attempts and a billing fact whose subscription reference
  * did not match the record's or never found a subscription (ADR 0087; the subject is
  * `billing.<fact type>`), and an owner's refund still not completed 24 hours after the request or a refund safety net stopped
  * after its 10th failure (ADR 0104; causes `refund_not_completed` and `refund_rearm_exhausted`, subjects
- * `billing.refund_pending` and `billing.refund_rearm`, the reference the ledger row of that store). One row per cause (kind, cause and subject, the event type or `unknown`),
+ * `billing.refund_pending` and `billing.refund_rearm`, the reference the ledger row of that store), and a charge in force
+ * whose recorded amount is not the provider's (ADR 0105, migration 0118; cause `amount_mismatch`, subject
+ * `billing.current_charge`, the reference the `current_charge_event_id` of that store). One row per cause (kind, cause and subject, the event type or `unknown`),
  * never per message: the next occurrence of a cause adds to the count and moves the last occurrence. It holds codes, counts, dates and one opaque reference, never the
  * body of a message or anything a person typed.
  *
@@ -59,14 +61,15 @@ export const operationalIncidents = pgTable(
     ),
     check(
       "operational_incidents_kind_allowed",
-      sql`${table.kind} IN ('queue_dead_letter', 'outbox_attempts_exhausted', 'billing_reference_mismatch', 'billing_refund_pending')`
+      sql`${table.kind} IN ('queue_dead_letter', 'outbox_attempts_exhausted', 'billing_reference_mismatch', 'billing_refund_pending', 'billing_amount_mismatch')`
     ),
     check(
       "operational_incidents_cause_allowed",
       sql`(${table.kind} = 'queue_dead_letter' AND ${table.cause} IN ('retries_exhausted', 'invalid_envelope', 'unknown_type', 'wrong_queue'))
         OR (${table.kind} = 'outbox_attempts_exhausted' AND ${table.cause} = 'attempts_exhausted')
         OR (${table.kind} = 'billing_reference_mismatch' AND ${table.cause} IN ('reference_mismatch', 'reference_unresolved'))
-        OR (${table.kind} = 'billing_refund_pending' AND ${table.cause} IN ('refund_not_completed', 'refund_rearm_exhausted'))`
+        OR (${table.kind} = 'billing_refund_pending' AND ${table.cause} IN ('refund_not_completed', 'refund_rearm_exhausted'))
+        OR (${table.kind} = 'billing_amount_mismatch' AND ${table.cause} = 'amount_mismatch')`
     ),
     check(
       "operational_incidents_subject_format",
