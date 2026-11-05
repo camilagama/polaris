@@ -124,6 +124,7 @@ function text(markup: string) {
 }
 
 const CUTS_TEXT = /max-h-|line-clamp/;
+const CONTENT_START_CLASS = /class="(?:[^"]* )?content-start(?: [^"]*)?"/;
 const DESCRIPTION = /<div[^>]*data-slot="card-description"[^>]*>(.*?)<\/div>/s;
 const support = (markup: string) =>
   text(markup.match(DESCRIPTION)?.[1] ?? "").replace("1 a 31 de outubro. ", "");
@@ -218,8 +219,11 @@ describe("the room the card keeps for its lines (lugar reservado)", () => {
     const legend = reserved("min-h-[3.5rem]");
     expect(reading).toHaveLength(1);
     expect(legend).toHaveLength(1);
-    expect(reading[0]).toContain("content-start");
-    expect(legend[0]).toContain("content-start");
+    expect(reading[0]).toMatch(CONTENT_START_CLASS);
+    expect(legend[0]).toMatch(CONTENT_START_CLASS);
+    expect('<div class="place-content-start min-h-[3.5rem]">').not.toMatch(
+      CONTENT_START_CLASS
+    );
   });
 
   it("reserves with min-h only: nothing is cut with max-h or a line clamp", () => {

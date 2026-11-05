@@ -180,7 +180,7 @@ Se o 404 aparecer mesmo com os dispositivos já matriculados, é defeito do Acce
 - *Conta Google perdida:* PIN temporário só numa **política separada, com o e-mail exato**, com o MFA independente ainda exigido (nunca "Disable MFA" nela), desfeita **no mesmo dia**; anotar o horário de criar e de desfazer.
 - *Suspeita de comprometimento:* é incidente, não recuperação. Primeiro `disabled` no principal; depois revogar as sessões do usuário no Zero Trust, tirar o e-mail da política e apagar os autenticadores; refazer os dois registros.
 - *Revogação comum:* `disabled` no principal, revogar as sessões do usuário no Zero Trust e tirar o e-mail da política (nessa ordem de urgência); se o operador não deve mais entrar no web do staging, tirá-lo também de Test users (seção 4).
-- Remover e readicionar o usuário no Zero Trust, ou trocar o provedor, muda o `sub`: recadastrar o principal (passos 2 e 3 de "Cadastrar um operador", e o passo 5).
+- Remover e readicionar o usuário no Zero Trust, ou trocar o provedor, muda o `sub`: recadastrar o principal é só trocar o `subject` da linha que já existe, não um novo `INSERT` (o do passo 3 de "Cadastrar um operador" criaria outra linha e deixaria a antiga ativa com o `sub` velho). Ordem: a pessoa entra de novo (passo 1), lê o `sub` novo no token (passo 2) e o dono do banco roda `UPDATE public.platform_principals SET subject = '<sub novo>' WHERE id = '<id>';` (passo 5); depois confere com o `whoami` (passo 4).
 
 **Cadastrar um operador (dono do banco do staging):**
 
