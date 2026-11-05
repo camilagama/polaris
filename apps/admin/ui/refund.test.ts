@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM_TEXT } from "./api";
+import { AUDIT_TEXT, SEPARATE_ACTIONS } from "./refund-words";
 import {
   allElements,
   buttons,
@@ -19,7 +20,6 @@ import {
   summary,
 } from "./test-page";
 import type { RefundWindowView, SupportCaseSummary } from "./types";
-import { AUDIT_TEXT, READ_ONLY_TEXT } from "./views/refund-window";
 
 /**
  * The refund area of the chosen store (corte admin-tela-v1, AC-9 to AC-11): the open cases of the store, listed on
@@ -60,6 +60,13 @@ function refundWindow(
     now: "2026-10-28T15:07:12.000Z",
     refundable: true,
     refundRequestedAt: null,
+    refundsHere: true,
+    renewal: {
+      accessUntil: null,
+      renewsOn: "2026-11-24",
+      resubscribeFrom: null,
+      status: "renewing",
+    },
     request: null,
     state: "active",
     window: { open: true, until: "2026-11-02T02:59:59.000Z" },
@@ -103,10 +110,11 @@ const refundCalls = (calls: Call[]) =>
   calls.filter((call) => call.path.endsWith("/refund-window"));
 
 describe("the refund area of the chosen store (AC-9)", () => {
-  it("says that it only shows the window, and reads nothing of the cases until asked", async () => {
+  it("no longer says that it refunds nothing, and reads nothing of the cases until asked", async () => {
     const { calls, section } = await chosen([]);
     expect(section.hasAttribute("hidden")).toBe(false);
-    expect(visibleText(section)).toContain(READ_ONLY_TEXT);
+    expect(visibleText(section)).not.toContain("Ela não devolve dinheiro");
+    expect(visibleText(section)).not.toContain("só mostra a janela");
     expect(visibleText(section)).not.toContain(AUDIT_TEXT);
     expect(
       calls.some((call) => call.path.startsWith("/api/support-cases"))
@@ -156,7 +164,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
         "28/10/2026 10:05",
         "Suporte",
         "Dono pediu reembolso por e-mail",
-        "Consultar janela",
+        "Ler a cobrança",
       ],
     ]);
     expect(visibleText(section)).toContain("1 caso aberto.");
@@ -168,9 +176,9 @@ describe("the refund area of the chosen store (AC-9)", () => {
     ]);
     await listCases();
     expect(visibleText(section)).toContain(
-      "Nenhum caso aberto desta loja. Abra um caso para consultar a janela."
+      "Nenhum caso aberto desta loja. Abra um caso para ler a cobrança."
     );
-    expect(buttons(section, "Consultar janela")).toEqual([]);
+    expect(buttons(section, "Ler a cobrança")).toEqual([]);
     expect(refundCalls(calls)).toEqual([]);
   });
 
@@ -211,7 +219,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
       reason,
     });
     expect(open?.path).not.toContain("reembolso");
-    const [read] = buttons(section, "Consultar janela");
+    const [read] = buttons(section, "Ler a cobrança");
     expect(document.activeElement).toBe(read);
     expect(byTag(section, "td").map((cell) => cell.textContent)).toContain(
       reason
@@ -337,7 +345,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
   it("asks only on the explicit click, by POST of the store's ID, next to the sentence of the audit", async () => {
     const { calls, section } = await listed([json(refundWindow())]);
     expect(refundCalls(calls)).toEqual([]);
-    const read = buttons(section, "Consultar janela")[0] as FakeElement;
+    const read = buttons(section, "Ler a cobrança")[0] as FakeElement;
     expect(read.getAttribute("aria-describedby")).toBe("reembolso-auditoria");
     expect(byId(section, "reembolso-auditoria").textContent).toBe(AUDIT_TEXT);
     // the sentence sits right above the list whose buttons make the read
@@ -363,22 +371,24 @@ describe("reading the refund window (AC-9, AC-10)", () => {
 
   it("shows the window as the server computed it, never one of its own", async () => {
     const { fact, section } = await listed([json(refundWindow())]);
-    buttons(section, "Consultar janela")[0]?.click();
+    buttons(section, "Ler a cobrança")[0]?.click();
     await flush();
     expect(fact("Janela de arrependimento")).toBe("Dentro do prazo");
     // the last minute of the day the server said, in Brasília: not one the page worked out from the first charge
     expect(fact("Prazo até")).toBe("01/11/2026 23:59");
     expect(fact("Primeira cobrança")).toBe("24/10/2026 15:30");
-    expect(fact("Valor da primeira cobrança")).toBe("R$ 1.234,50");
+    expect(fact("Valor da cobrança")).toBe("R$ 1.234,50");
     expect(fact("Forma de pagamento")).toBe("Cartão");
     expect(fact("Assinatura")).toBe("Pro ativo");
     expect(fact("A regra do Polaris ainda permite o reembolso")).toBe("Sim");
+    expect(fact("Renovação")).toBe("Viva: renova em 24/11/2026");
     expect(fact("Pedido de reembolso do dono")).toBe("Nenhum");
+    expect(visibleText(section)).toContain(SEPARATE_ACTIONS);
     expect(fact("Consulta feita em")).toBe(
       "28/10/2026 12:07 (relógio do servidor)"
     );
     expect(visibleText(section)).toContain(
-      "Janela lida. A consulta ficou registrada na auditoria."
+      "Cobrança lida. A consulta ficou registrada na auditoria."
     );
   });
 
@@ -412,7 +422,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     "says the window's verdict in words (%#)",
     async (view, verdict, refundable) => {
       const { fact, section } = await listed([json(view)]);
-      buttons(section, "Consultar janela")[0]?.click();
+      buttons(section, "Ler a cobrança")[0]?.click();
       await flush();
       expect(fact("Janela de arrependimento")).toBe(verdict);
       expect(fact("A regra do Polaris ainda permite o reembolso")).toBe(
@@ -438,7 +448,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
         })
       ),
     ]);
-    buttons(section, "Consultar janela")[0]?.click();
+    buttons(section, "Ler a cobrança")[0]?.click();
     await flush();
     expect(fact("Pedido de reembolso do dono")).toBe(
       "Feito em 25/10/2026 09:00; pode ser concluído pelo app até 28/10/2026 09:00 (prazo passou)"
@@ -447,12 +457,12 @@ describe("reading the refund window (AC-9, AC-10)", () => {
 
   it("shows no window from an answer of another shape, and says the Admin failed", async () => {
     const { fact, section } = await listed([json({ state: "active" })]);
-    buttons(section, "Consultar janela")[0]?.click();
+    buttons(section, "Ler a cobrança")[0]?.click();
     await flush();
     expect(alertOf(section)?.textContent).toBe(PROBLEM_TEXT.failed);
     expect(fact("Janela de arrependimento")).toBeUndefined();
     expect(
-      buttons(section, "Consultar janela")[0]?.getAttribute("aria-disabled")
+      buttons(section, "Ler a cobrança")[0]?.getAttribute("aria-disabled")
     ).toBe("false");
   });
 
@@ -464,7 +474,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
           answer = resolve;
         }),
     ]);
-    const read = buttons(section, "Consultar janela")[0] as FakeElement;
+    const read = buttons(section, "Ler a cobrança")[0] as FakeElement;
     read.click();
     read.click();
     expect(read.getAttribute("aria-disabled")).toBe("true");
@@ -479,7 +489,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     const { calls, document, section } = await listed([
       json({ error: "refund_window_read_refused" }, 403),
     ]);
-    buttons(section, "Consultar janela")[0]?.click();
+    buttons(section, "Ler a cobrança")[0]?.click();
     await flush();
     const alert = alertOf(section);
     expect(alert?.textContent).toBe(
@@ -498,7 +508,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     "says every other failure in its own words (%#)",
     async (failure, text) => {
       const { section } = await listed([failure]);
-      buttons(section, "Consultar janela")[0]?.click();
+      buttons(section, "Ler a cobrança")[0]?.click();
       await flush();
       expect(alertOf(section)?.textContent).toBe(text);
     }
@@ -509,12 +519,12 @@ describe("reading the refund window (AC-9, AC-10)", () => {
       json(refundWindow()),
       json({ error: "unavailable" }, 503),
     ]);
-    buttons(page.section, "Consultar janela")[0]?.click();
+    buttons(page.section, "Ler a cobrança")[0]?.click();
     await flush();
     buttons(page.root, "Ver loja")[0]?.click();
     await flush();
     expect(byTag(page.section, "dt")).toEqual([]);
-    expect(buttons(page.section, "Consultar janela")).toEqual([]);
+    expect(buttons(page.section, "Ler a cobrança")).toEqual([]);
   });
 });
 
@@ -527,9 +537,9 @@ describe("what the operator may do (AC-3)", () => {
     buttons(section, "Ver casos abertos desta loja")[0]?.click();
     await flush();
     expect(visibleText(section)).toContain(
-      "Sem permissão para consultar a janela."
+      "Sem permissão para ler a cobrança."
     );
-    expect(buttons(section, "Consultar janela")).toEqual([]);
+    expect(buttons(section, "Ler a cobrança")).toEqual([]);
     expect(refundCalls(calls)).toEqual([]);
   });
 

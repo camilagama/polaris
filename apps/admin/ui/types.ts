@@ -64,6 +64,14 @@ export interface RefundWindowView {
   now: string;
   refundable: boolean;
   refundRequestedAt: string | null;
+  /** True when the store's provider refunds through the Admin: the server's one rule, never inferred on the page. */
+  refundsHere: boolean;
+  renewal: {
+    accessUntil: string | null;
+    renewsOn: string | null;
+    resubscribeFrom: string | null;
+    status: "cancelled" | "none" | "renewing";
+  };
   request: {
     at: string;
     completable: boolean;
@@ -72,6 +80,19 @@ export interface RefundWindowView {
   state: string;
   window: { open: boolean; until: string } | null;
 }
+
+/** What the operator's two provider commands answer (ADR 0105): the code the page has a sentence for. */
+export type ProviderCommandResult =
+  | "already_cancelled"
+  | "amount_changed"
+  | "cancelled"
+  | "command_in_progress"
+  | "not_linked"
+  | "nothing_to_cancel"
+  | "nothing_to_refund"
+  | "provider_unavailable"
+  | "refund_not_supported"
+  | "refund_requested";
 
 /** What `GET /api/support-cases/:caseId` answers: the case, its temporary accesses and its audit trail. */
 export interface SupportCaseDetail {

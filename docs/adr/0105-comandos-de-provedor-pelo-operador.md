@@ -6,6 +6,8 @@ status: accepted
 
 > Número provisório até o merge (pode mudar se outro ADR entrar antes). Emenda o [ADR 0073](0073-admin-suspensao-e-comandos-de-cobranca.md) (os comandos de provedor entram no Admin) e o [ADR 0104](0104-autosservico-de-cobranca-do-dono.md) (o reembolso fora da janela do dono, que era "trabalho do operador" por script, passa a ter tela de operador); cita o [ADR 0066](0066-reembolso-e-chargeback.md) e o [ADR 0101](0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md).
 
+> **Emenda (tela da Parte 10, migration 0116, número provisório).** A leitura da janela de reembolso (`admin_read_refund_window`, ADR 0104, decisão 8) passa a devolver, da mesma linha de `organization_billing`, `accessEndsAt`, `cancelAtPeriodEnd`, `revokedThrough` e `revokedReason`: com elas o domínio monta o mesmo `PlanViewRecord` da tela do dono e a resposta da rota ganha `renewal` (`renewing`, `cancelled` ou `none`, com `accessUntil`, `renewsOn` e `resubscribeFrom` pelas mesmas `nextChargeOf` e `resubscribeFromOf` do produto) e `refundsHere`, que vem de `refundsEnabledFor(env, provedor)`, a regra que o comando de reembolso também usa (Asaas sempre; Woovi só com `WOOVI_REFUND_ENABLED` igual a `"true"`). O provedor bruto não sai na resposta, a leitura continua sem chamar o provedor e a recusa `refund_not_supported` do servidor segue valendo se a variável mudar entre a leitura e o clique. Só acrescenta (ADR 0096): o Worker anterior ignora as chaves novas. O valor mostrado e enviado como `expectedAmount` é o `firstChargeAmount` do registro: se o provedor tiver uma cobrança em vigor de valor diferente, o servidor recusa com `amount_changed` e nada é feito.
+
 ## Contexto
 
 O ADR 0073 deixou fora do Admin os comandos que dependem de provedor "até haver adaptador". O adaptador do Asaas (ADR 0101) e o da Woovi existem, e os comandos do operador `cancelRenewal` e `refundCurrentPeriod` já rodavam, mas só pelo script do Gate 7, executado por quem tem o ambiente na máquina. O suporte que recebe um pedido de reembolso fora dos 7 dias do dono, ou de cancelamento por e-mail, não tinha como agir sem esse script. O desenho da Parte 10 do Admin v2 (Filipe, com as condições do Rodrigo e a conta do Juan, 04/11/2026) fecha como levar esses dois comandos ao operador.
@@ -72,7 +74,7 @@ O ADR 0073 deixou fora do Admin os comandos que dependem de provedor "até haver
     - a porta montada só nos dois comandos;
     - nada do provedor na resposta nem no log (teste com o código real e um provedor falso que devolve dados marcados).
 - O segredo do provedor passa a existir em dois Workers por ambiente. A rotação gira os dois no mesmo passo e, na suspeita de vazamento, revoga primeiro no provedor ([billing-providers](../runbooks/billing-providers.md)).
-- A tela (seção Cobrança da loja no Admin v2) é outra entrega; até ela, as rotas existem sem tela.
+- A tela (aba Cobrança da loja no Admin v2, `ui/views/refund-window.ts` e `billing-actions.ts`) lê a cobrança com caso aberto e só então oferece as duas ações, cada uma com a sua confirmação; o texto de cada resultado do servidor está em `ui/refund-words.ts`.
 
 ## Limites aceitos
 

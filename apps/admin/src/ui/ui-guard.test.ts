@@ -128,6 +128,19 @@ function forbiddenIn(text: string): string[] {
   );
 }
 
+const MONEY_ON_ONE_LINE = /\.money\s*\{[^}]*white-space:\s*nowrap/;
+const BUTTON_ROW_WRAPS = /\.button-row\s*\{[^}]*flex-wrap:\s*wrap/;
+const BUTTON_LABEL_WRAPS =
+  /\.button-row button[^{]*\{[^}]*white-space:\s*normal/;
+
+describe("the narrow screen of the billing area (corte admin-v2 Parte 10)", () => {
+  it("keeps a refund amount on one line and lets the buttons wrap, so 360 px has no horizontal scroll", () => {
+    expect(sheet).toMatch(MONEY_ON_ONE_LINE);
+    expect(sheet).toMatch(BUTTON_ROW_WRAPS);
+    expect(sheet).toMatch(BUTTON_LABEL_WRAPS);
+  });
+});
+
 describe("the built script of the page", () => {
   it("is small: under 100 KB gzip with the sheet, one bundle (corte admin-v2, AC-C15)", () => {
     expect(bundle.length).toBeGreaterThan(1000);
@@ -184,7 +197,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access and reading the masked customers, and the purge and the legal hold: no other action of a case or a store (no reveal)", () => {
+  it("names, under those routes, only the diagnostics, the refund window, cancelling a renewal and refunding the period in force, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access and reading the masked customers, and the purge and the legal hold: no other action of a case or a store (no reveal)", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -204,7 +217,9 @@ describe("the built script of the page", () => {
     const expected = [
       "access",
       "actions",
+      "billing",
       "cancel",
+      "cancel-renewal",
       "classification",
       "close",
       "closure-notice",
@@ -219,6 +234,7 @@ describe("the built script of the page", () => {
       "purge",
       "reactivate",
       "read",
+      "refund",
       "refund-window",
       "reissue",
       "release",
