@@ -226,6 +226,8 @@ export function useSaleCatalog(
 
   const readLines = useCallback(
     async (variantIds: readonly string[]) => {
+      // this read supersedes the writes in flight: a refresh started without the cover would land later and drop it
+      generation.current += 1;
       const { current } = generation;
       const workspace = localRef.current;
       try {
@@ -254,7 +256,22 @@ export function useSaleCatalog(
           setStock((map) => stockAfterRefresh(map, variantIds, entries));
         }
         return entries;
-      } catch {
+      } catch (error) {
+        if (generation.current === current) {
+          // the refresh this read superseded left these lines loading and will not write again
+          setStock((map) => {
+            const next = { ...map };
+            for (const variantId of variantIds) {
+              if (next[variantId]?.status === "loading") {
+                next[variantId] = {
+                  message: loadErrorMessage(error, "o estoque"),
+                  status: "error",
+                };
+              }
+            }
+            return next;
+          });
+        }
         return null;
       }
     },

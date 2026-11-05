@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { __unstable__loadDesignSystem } from "tailwindcss";
@@ -19,6 +20,9 @@ import {
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (path: string) => readFileSync(join(repository, path), "utf8");
+const requireFromAdmin = createRequire(
+  join(repository, "apps/admin/package.json")
+);
 /** Whether a word is a class of Tailwind, with the dash's theme. */
 const isUtility = await tailwindUtility();
 
@@ -277,8 +281,8 @@ async function tailwindUtility() {
     if (id.startsWith("tailwindcss/")) {
       return join(tailwind, id.slice("tailwindcss/".length));
     }
-    if (id === "@polaris/ui/theme.css") {
-      return join(repository, "packages/ui/src/theme.css");
+    if (id.startsWith("@polaris/")) {
+      return requireFromAdmin.resolve(id);
     }
     return join(base, id);
   };

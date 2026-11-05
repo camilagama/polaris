@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -386,17 +387,25 @@ interface GuardOverride {
   plugins?: string[];
 }
 
-function guardOverride(): GuardOverride {
-  const biome = JSON.parse(
+interface BiomeConfig {
+  overrides: unknown[];
+}
+
+function repositoryBiome(): BiomeConfig & Record<string, unknown> {
+  return JSON.parse(
     readFileSync(join(repository, "biome.jsonc"), "utf8").replaceAll(
       /^\s*\/\/.*$/gm,
       ""
     )
-  ) as { overrides: GuardOverride[] };
-  const guard = biome.overrides.find((override) =>
-    override.plugins?.includes(
-      "./scripts/biome-plugins/admin-ui-text-only.grit"
-    )
+  ) as BiomeConfig & Record<string, unknown>;
+}
+
+function guardOverride(): GuardOverride {
+  const guard = (repositoryBiome().overrides as GuardOverride[]).find(
+    (override) =>
+      override.plugins?.includes(
+        "./scripts/biome-plugins/admin-ui-text-only.grit"
+      )
   );
   if (guard === undefined) {
     throw new Error("the Admin page guard is not in biome.jsonc");
@@ -405,23 +414,27 @@ function guardOverride(): GuardOverride {
 }
 
 /**
- * Plants the files under `apps/admin/ui` of a throwaway directory that carries the repository's own guard
- * (its override of biome.jsonc, with the plugin by absolute path) and lints them there, so the tree of the
- * repository is never written to while other tests walk it.
+ * Plants the files under `apps/admin/ui` of a throwaway directory and lints them there with the configuration the
+ * tree has: the repository's own biome.jsonc (its `extends` and every override, in order), without the ignore file
+ * of git (the directory is not a repository) and with `node_modules` and `scripts` linked so the extended preset
+ * and the plugin resolve as they do in the tree. An override added to
+ * biome.jsonc that turns a rule of the guard off therefore fails the planted files here. The tree itself is never
+ * written to while other tests walk it. `laterOverrides` come after all of the repository's, for the control.
  */
-function lintPlanted(files: Record<string, string>, extra: string[] = []) {
+function lintPlanted(
+  files: Record<string, string>,
+  extra: string[] = [],
+  laterOverrides: unknown[] = []
+) {
   const directory = mkdtempSync(join(tmpdir(), "polaris-admin-planted-"));
   try {
-    const override = {
-      ...guardOverride(),
-      plugins: [
-        join(repository, "scripts/biome-plugins/admin-ui-text-only.grit"),
-      ],
-    };
-    writeFileSync(
-      join(directory, "biome.json"),
-      JSON.stringify({ root: true, overrides: [override] })
-    );
+    const config = repositoryBiome();
+    config.vcs = { enabled: false };
+    config.overrides = [...config.overrides, ...laterOverrides];
+    writeFileSync(join(directory, "biome.jsonc"), JSON.stringify(config));
+    for (const link of ["node_modules", "scripts"]) {
+      symlinkSync(join(repository, link), join(directory, link));
+    }
     for (const [name, content] of Object.entries(files)) {
       const target = join(directory, "apps/admin/ui", name);
       mkdirSync(dirname(target), { recursive: true });
@@ -576,5 +589,33 @@ describe("the Biome guard of apps/admin/ui (AC-13)", () => {
     for (const name of names) {
       expect(output).toContain(`apps/admin/ui/${name}:1:1 plugin`);
     }
+  }, 120_000);
+
+  it("lints with the whole configuration of the tree: an override after the guard's that turns its rules off is seen (control)", () => {
+    const files = {
+      "zz-planted-late.ts":
+        'import type { Db } from "@polaris/db";\nconsole.log("x");\ndocument.body.innerHTML = "x";\nexport type T = Db;\n',
+    };
+    const refused = lintPlanted(files);
+    expect(refused).toContain("lint/suspicious/noConsole");
+    expect(refused).toContain("lint/style/noRestrictedImports");
+    const late = lintPlanted(
+      files,
+      [],
+      [
+        {
+          includes: ["apps/admin/ui/**"],
+          linter: {
+            rules: {
+              style: { noRestrictedImports: "off" },
+              suspicious: { noConsole: "off" },
+            },
+          },
+        },
+      ]
+    );
+    expect(late).toContain("zz-planted-late.ts:3:1 plugin");
+    expect(late).not.toContain("lint/suspicious/noConsole");
+    expect(late).not.toContain("lint/style/noRestrictedImports");
   }, 120_000);
 });
