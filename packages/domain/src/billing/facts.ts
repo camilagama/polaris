@@ -1004,7 +1004,6 @@ export interface CurrentCharge {
   periodEndsAt: Date;
 }
 
-/** What an applied `charge_succeeded` does to the stored charge of the period in force. */
 export type CurrentChargeChange =
   | { kind: "keep" }
   | { amount: string; kind: "fill_amount" }

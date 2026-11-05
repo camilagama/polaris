@@ -314,7 +314,6 @@ export const organizationBilling = pgTable(
       sql`(${table.firstChargeAt} IS NOT NULL OR (${table.firstChargeAmount} IS NULL AND ${table.firstChargeEventId} IS NULL))
         AND (${table.firstChargeAmount} IS NULL OR (${table.firstChargeAmount} > 0 AND scale(${table.firstChargeAmount}) = 2))`
     ),
-    // the amount and the event of the charge in force exist only with the end of its period
     check(
       "organization_billing_current_charge_coherent",
       sql`(${table.currentChargePeriodEndsAt} IS NOT NULL OR (${table.currentChargeAmount} IS NULL AND ${table.currentChargeEventId} IS NULL))

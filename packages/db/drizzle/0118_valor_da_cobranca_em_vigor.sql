@@ -11,7 +11,6 @@
 --   `first_charge_*` do.
 -- * `record_billing_amount_mismatch_incident`: a recorded amount in force that is not the provider's becomes an
 --   operational incident (ADR 0085), one row with a counter, no store, no amount, no reference of the provider.
--- * `admin_read_refund_window` also answers `currentChargeAmount`.
 -- * The backfill, after the last RESET ROLE (the migrator bypasses the forced row security; never under SET ROLE).
 -- The new check and the wider ones are added NOT VALID and validated apart: the strong lock is not held while reading.
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
@@ -27,10 +26,11 @@ ALTER TABLE "operational_incidents" ADD CONSTRAINT "operational_incidents_cause_
         OR ("operational_incidents"."kind" = 'outbox_attempts_exhausted' AND "operational_incidents"."cause" = 'attempts_exhausted')
         OR ("operational_incidents"."kind" = 'billing_reference_mismatch' AND "operational_incidents"."cause" IN ('reference_mismatch', 'reference_unresolved'))
         OR ("operational_incidents"."kind" = 'billing_refund_pending' AND "operational_incidents"."cause" IN ('refund_not_completed', 'refund_rearm_exhausted'))
-        OR ("operational_incidents"."kind" = 'billing_amount_mismatch' AND "operational_incidents"."cause" = 'amount_mismatch')) NOT VALID;--> statement-breakpointALTER TABLE "organization_billing" VALIDATE CONSTRAINT "organization_billing_current_charge_coherent";--> statement-breakpoint
+        OR ("operational_incidents"."kind" = 'billing_amount_mismatch' AND "operational_incidents"."cause" = 'amount_mismatch')) NOT VALID;--> statement-breakpoint
+ALTER TABLE "organization_billing" VALIDATE CONSTRAINT "organization_billing_current_charge_coherent";--> statement-breakpoint
 ALTER TABLE "operational_incidents" VALIDATE CONSTRAINT "operational_incidents_kind_allowed";--> statement-breakpoint
 ALTER TABLE "operational_incidents" VALIDATE CONSTRAINT "operational_incidents_cause_allowed";--> statement-breakpoint
--- only the billing role writes the charge in force, under the record's lock in `processEvent`
+-- written under the record's lock in `processEvent`
 GRANT UPDATE (current_charge_amount, current_charge_period_ends_at, current_charge_event_id) ON TABLE public.organization_billing TO polaris_billing_runtime;--> statement-breakpoint
 -- the Admin owner reads the amount alone, for `admin_read_refund_window` below (granted before the function is replaced)
 GRANT SELECT (current_charge_amount) ON TABLE public.organization_billing TO polaris_admin_owner;--> statement-breakpoint

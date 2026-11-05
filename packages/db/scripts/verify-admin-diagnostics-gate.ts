@@ -212,7 +212,6 @@ async function run() {
       organization_billing: [
         "access_ends_at",
         "cancel_at_period_end",
-        // the amount of the charge in force, for the same read (0118)
         "current_charge_amount",
         "cycle_months",
         // the three of the operator's read of the refund window (0100, ADR 0104, decision 8)
