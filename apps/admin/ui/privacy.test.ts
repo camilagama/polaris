@@ -845,6 +845,25 @@ describe("Abrir atendimento de privacidade (AC-P11.1)", () => {
       expect(byId(mounted.root, id).value).toBe("");
     }
   });
+
+  it("zeroes the counters and the limit warning with the fields, so a page restored from the back-forward cache shows none of it", async () => {
+    const mounted = await ready();
+    type(mounted.root, "privacidade-motivo", "a".repeat(501));
+    type(mounted.root, "privacidade-nota", "nota curta");
+    const [warning] = allElements(mounted.root).filter(
+      (element) => element.getAttribute("class") === "sr-only"
+    );
+    expect(warning?.textContent).not.toBe("");
+    mounted.document.defaultView.dispatch("pagehide");
+
+    expect(byId(mounted.root, "privacidade-motivo-contador").textContent).toBe(
+      "0 de 500 caracteres"
+    );
+    expect(byId(mounted.root, "privacidade-nota-contador").textContent).toBe(
+      "0 de 500 caracteres"
+    );
+    expect(warning?.textContent).toBe("");
+  });
 });
 
 describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
