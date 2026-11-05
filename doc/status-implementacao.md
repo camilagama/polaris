@@ -2955,6 +2955,17 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `ui/purge.test.ts` e `ui/legal-holds.test.ts` (DOM), `src/ui/privacy-lists.test.ts` (escopo e recusas = domínio), `src/ui/screens.test.ts` (rota `/retencoes`, menu, `?acao=purge`), `src/ui/ui-guard.test.ts` (rede: só as cinco rotas a mais), `src/route-surface.test.ts`, `src/support-routes.test.ts` (as rotas, que não mudaram). |
 | Limites | Registrado | A API não devolve a data do encerramento, os 90 dias, a renovação no provedor nem a leitura da cobrança antes do clique: a aba diz que o servidor os confere ao agendar e a recusa diz qual falta (AC-P7.1 em parte; exigiria rota nova, fora do AC-C10). "Em curso" e "começou a apagar arquivos" só aparecem na recusa do cancelamento. A data de início some ao reler (só a resposta do agendamento a traz). A lista de travas mostra a loja só pelo ID. Parecer do Rodrigo (AC-P7.6, AC-C11) e aceite no staging (AC-C14) pendentes. |
 
+### Privacidade: nota obrigatória na guarda por obrigação legal (t773; migration 0116)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Regra | Em revisão | Decisão com o motivo `legal_retention` exige nota de 10 a 500 code points depois do trim ([ADR 0077](../docs/adr/0077-casos-de-privacidade.md), emenda de 05/11/2026; [privacy.md](../docs/business-rules/privacy.md)). Recusa por `invalid_privacy_step` (400), sem código novo. Os outros motivos, `other` inclusive, não mudam. |
+| Domínio e rota | Em revisão | `normalizeDecisionStep` e `MIN_LEGAL_RETENTION_NOTE_LENGTH` em `packages/domain/src/admin/privacy-case.ts`; a rota não mudou. |
+| Banco | Em revisão | `0116_nota_da_guarda_legal.sql`: `CREATE OR REPLACE` de `admin_privacy_record_decision` com o teste novo, mesmo dono, `SECURITY DEFINER`, `search_path` da 0077 e grants. Sem CHECK na tabela (travaria os casos antigos). O número é provisório até o merge. |
+| Tela | Em revisão | Com o motivo escolhido, o campo diz "Obrigatória: diga a norma (de 10 a 500 caracteres)" e a nota vazia ou curta é recusada em palavras, sem POST. Caso antigo: "nota: não registrada (decidido antes desta regra)". Sem rota nova: o mapa de telas não muda. |
+| Provas | Em revisão | `privacy-case.test.ts`, `privacy-routes.test.ts`, `ui/privacy.test.ts` e o gate `privacy-cases` (nota nula, em branco, 9 caracteres e 9 emoji recusados; 10, 500 e 10 emoji aceitos; linha antiga sem nota ainda chega a `executed` e `resolved`; função com dono, `SECURITY DEFINER` e `search_path` da 0077). O gate `organization-purge` passou a mandar nota nessa decisão. |
+| Limites | Registrado | Sem backfill: os casos já gravados sem nota seguem sem ela. Quantos existem em staging e em produção é leitura que fica com a operação. Qual norma citar é decisão da revisão jurídica. |
+
 ### Admin v2, Parte 9: Configurações do operador, só leitura (t750; corte admin-v2; sem migration)
 
 | Item | Estado | Detalhe |

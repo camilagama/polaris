@@ -9,6 +9,8 @@ import {
   PRIVACY_POLARIS_ROLES,
   PRIVACY_REQUEST_TYPES,
   PRIVACY_REQUESTER_KINDS,
+  MAX_PRIVACY_NOTE_LENGTH,
+  MIN_LEGAL_RETENTION_NOTE_LENGTH,
   PRIVACY_STAGES,
 } from "@polaris/domain/admin/privacy-case";
 import { CLOSURE_NOTICE_DISMISSAL_REASONS } from "@polaris/domain/organization/closure-deadlines";
@@ -33,6 +35,10 @@ import {
   ROLES,
   STAGES,
 } from "../../ui/privacy";
+import {
+  MAX_NOTE_LENGTH,
+  MIN_LEGAL_RETENTION_NOTE_LENGTH as PAGE_MIN_LEGAL_NOTE,
+} from "../../ui/views/privacy-form";
 import {
   PURGE_REFUSALS,
   purgeRefusalText,
@@ -108,6 +114,13 @@ describe("the privacy lists of the page and of the contract", () => {
  */
 const CODE_LIKE = /[a-z]+_[a-z_]+/;
 const ORGANIZATION_WORD = /organiza[çc][ãa]o/i;
+
+describe("the note limits of the page and of the contract", () => {
+  it("asks for the same length the domain and the database take", () => {
+    expect(MAX_NOTE_LENGTH).toBe(MAX_PRIVACY_NOTE_LENGTH);
+    expect(PAGE_MIN_LEGAL_NOTE).toBe(MIN_LEGAL_RETENTION_NOTE_LENGTH);
+  });
+});
 
 describe("the closure notice refusals of the page and of the domain", () => {
   const domain: readonly string[] = ORGANIZATION_PURGE_REFUSALS;

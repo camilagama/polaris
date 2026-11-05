@@ -1,7 +1,7 @@
 import { PROBLEM_TEXT, type Problem } from "../api";
 import { environmentText, type ScreenTools } from "../app";
 import { facts } from "../blocks";
-import { labelName, storeName } from "../dom";
+import { type Dom, labelName, storeName } from "../dom";
 import { brasiliaMomentText } from "../format";
 import { createNotice, type Notice } from "../notice";
 import {
@@ -24,20 +24,24 @@ import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
 import { closureNoticeSection, mayShowClosureNotice } from "./closure-notice";
 import { dueCell } from "./privacy-cases";
-import { mayShowPurgeTab, purgeTab } from "./purge";
 import {
   choiceField,
   type Field,
   isUuidText,
   MAX_NOTE_LENGTH,
   MAX_REFERENCE_LENGTH,
+  MIN_LEGAL_RETENTION_NOTE_LENGTH,
   NO_PERSONAL_DATA,
   noteProblem,
   plainField,
   referenceProblem,
   textField,
 } from "./privacy-form";
+import { mayShowPurgeTab, purgeTab } from "./purge";
 
+const LEGAL_NOTE_MISSING = "nota: não registrada (decidido antes desta regra)";
+const LEGAL_NOTE_REQUIRED = `Obrigatória: diga a norma (de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres)`;
+const LEGAL_NOTE_REFUSED = `Com este motivo a nota é obrigatória: diga a norma, de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres.`;
 export const STEP_UNDO = "Não: cada etapa vale uma vez.";
 export const STEP_RECORD =
   "A etapa fica no registro do caso e na auditoria, com o seu e-mail. A nota não vai para a auditoria.";
@@ -248,6 +252,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         }
         if (privacy.decisionNote !== null) {
           parts.push(`nota: ${labelName(privacy.decisionNote, 120)}`);
+        } else if (privacy.decisionReason === "legal_retention") {
+          parts.push(LEGAL_NOTE_MISSING);
         }
         return parts.join(" · ");
       }
@@ -538,6 +544,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         MAX_NOTE_LENGTH,
         NO_PERSONAL_DATA
       );
+      legalNoteHint(dom, id("nota-obrigatoria"), reason, note);
       const caseFacts = dom.el(
         "p",
         { class: "hint" },
@@ -913,6 +920,40 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
   );
 }
 
+/** With a legal retention chosen the note is mandatory: the label and a hint say so, and the hint is read with the field. */
+function legalNoteHint(
+  dom: Dom,
+  hintId: string,
+  reason: Field<HTMLSelectElement>,
+  note: Field<HTMLInputElement>
+): void {
+  const label = note.element.querySelector("label");
+  const hint = dom.el(
+    "p",
+    { class: "hint", hidden: "", id: hintId },
+    LEGAL_NOTE_REQUIRED
+  );
+  note.element.append(hint);
+  const described = note.control.getAttribute("aria-describedby") ?? "";
+  reason.control.addEventListener("change", () => {
+    const mandatory = reason.control.value === "legal_retention";
+    if (label !== null) {
+      label.textContent = mandatory
+        ? "Nota da decisão (obrigatória)"
+        : "Nota da decisão (opcional)";
+    }
+    if (mandatory) {
+      hint.removeAttribute("hidden");
+    } else {
+      hint.setAttribute("hidden", "");
+    }
+    note.control.setAttribute(
+      "aria-describedby",
+      mandatory ? `${described} ${hintId}` : described
+    );
+  });
+}
+
 /** The decision's body and words, or null once the first field the server would refuse is marked. */
 function readDecision(
   decision: Field<HTMLSelectElement>,
@@ -939,6 +980,13 @@ function readDecision(
   const noteRefused = noteProblem(noteText, "A nota");
   if (noteRefused !== null) {
     note.refuse(noteRefused);
+    return null;
+  }
+  if (
+    why === "legal_retention" &&
+    [...noteText].length < MIN_LEGAL_RETENTION_NOTE_LENGTH
+  ) {
+    note.refuse(LEGAL_NOTE_REFUSED);
     return null;
   }
   const body: Record<string, string> = { decision: chosen };

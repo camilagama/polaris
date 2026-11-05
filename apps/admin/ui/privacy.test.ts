@@ -1024,6 +1024,141 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
     );
   });
 
+  describe("a legal retention asks for the norm in the note", () => {
+    const decisionPost = (mounted: Awaited<ReturnType<typeof openCase>>) =>
+      posts(mounted.calls).filter((call) => call.path.endsWith("/decision"));
+
+    it("refuses an empty, short or blank note in words and sends nothing", async () => {
+      const mounted = await openCase(detail("scoped"));
+      choose(mounted.root, "etapa-decision-decisao", "reject");
+      choose(mounted.root, "etapa-decision-motivo", "legal_retention");
+      const refuse = async (note: string) => {
+        type(mounted.root, "etapa-decision-nota", note);
+        await click(mounted.root, "Revisar decisão");
+        expect(byId(mounted.root, "etapa-decision-nota-erro").textContent).toBe(
+          "Com este motivo a nota é obrigatória: diga a norma, de 10 a 500 caracteres."
+        );
+        expect(
+          byId(mounted.root, "etapa-decision-nota").getAttribute("aria-invalid")
+        ).toBe("true");
+      };
+      await refuse("");
+      await refuse("   ");
+      await refuse("lei");
+      await refuse("123456789");
+      await refuse("📜".repeat(9));
+      expect(posts(mounted.calls)).toHaveLength(0);
+      expect(visibleText(mounted.root)).not.toContain(
+        "Revise antes de registrar"
+      );
+    });
+
+    it("says the note is mandatory only while that reason is chosen", async () => {
+      const mounted = await openCase(detail("scoped"));
+      const hint = () => byId(mounted.root, "etapa-decision-nota-obrigatoria");
+      const label = () =>
+        byTag(mounted.root, "label").find(
+          (item) => item.getAttribute("for") === "etapa-decision-nota"
+        );
+      expect(hint().hasAttribute("hidden")).toBe(true);
+      expect(label()?.textContent).toBe("Nota da decisão (opcional)");
+      choose(mounted.root, "etapa-decision-motivo", "legal_retention");
+      expect(hint().hasAttribute("hidden")).toBe(false);
+      expect(hint().textContent).toBe(
+        "Obrigatória: diga a norma (de 10 a 500 caracteres)"
+      );
+      expect(label()?.textContent).toBe("Nota da decisão (obrigatória)");
+      expect(
+        byId(mounted.root, "etapa-decision-nota").getAttribute(
+          "aria-describedby"
+        )
+      ).toContain("etapa-decision-nota-obrigatoria");
+      choose(mounted.root, "etapa-decision-motivo", "other");
+      expect(hint().hasAttribute("hidden")).toBe(true);
+      expect(label()?.textContent).toBe("Nota da decisão (opcional)");
+      expect(
+        byId(mounted.root, "etapa-decision-nota").getAttribute(
+          "aria-describedby"
+        )
+      ).not.toContain("etapa-decision-nota-obrigatoria");
+    });
+
+    it.each([
+      ["CTN art195", "CTN art195"],
+      ["a".repeat(500), "a".repeat(500)],
+      ["📜".repeat(10), "📜".repeat(10)],
+    ])(
+      "sends the decision with a note of 10 to 500 characters (%#)",
+      async (note, sent) => {
+        const mounted = await openCase(detail("scoped"), [
+          json({ id: CASE, stage: "decided" }),
+          json(detail("decided")),
+        ]);
+        choose(mounted.root, "etapa-decision-decisao", "reject");
+        choose(mounted.root, "etapa-decision-motivo", "legal_retention");
+        type(mounted.root, "etapa-decision-nota", `  ${note}  `);
+        await click(mounted.root, "Revisar decisão");
+        firstButton(mounted.root, "Registrar decisão").click();
+        await flush();
+        expect(decisionPost(mounted)).toHaveLength(1);
+        expect(bodyOf(decisionPost(mounted)[0])).toEqual({
+          decision: "reject",
+          note: sent,
+          reason: "legal_retention",
+        });
+        expect(mounted.calls.every((call) => !call.path.includes(sent))).toBe(
+          true
+        );
+      }
+    );
+
+    it("lets another reason go without a note", async () => {
+      const mounted = await openCase(detail("scoped"), [
+        json({ id: CASE, stage: "decided" }),
+        json(detail("decided")),
+      ]);
+      choose(mounted.root, "etapa-decision-decisao", "reject");
+      choose(mounted.root, "etapa-decision-motivo", "no_authority");
+      await click(mounted.root, "Revisar decisão");
+      firstButton(mounted.root, "Registrar decisão").click();
+      await flush();
+      expect(bodyOf(decisionPost(mounted)[0])).toEqual({
+        decision: "reject",
+        reason: "no_authority",
+      });
+    });
+
+    it("says an old decision without a note was taken before the rule, and a new one shows its note", async () => {
+      const old = await openCase(
+        detail("decided", {
+          decision: "reject",
+          decisionNote: null,
+          decisionReason: "legal_retention",
+        })
+      );
+      expect(visibleText(old.root)).toContain(
+        "nota: não registrada (decidido antes desta regra)"
+      );
+      const current = await openCase(
+        detail("decided", {
+          decision: "reject",
+          decisionNote: "CTN art195",
+          decisionReason: "legal_retention",
+        })
+      );
+      expect(visibleText(current.root)).toContain("nota: CTN art195");
+      expect(visibleText(current.root)).not.toContain("não registrada");
+      const other = await openCase(
+        detail("decided", {
+          decision: "reject",
+          decisionNote: null,
+          decisionReason: "no_authority",
+        })
+      );
+      expect(visibleText(other.root)).not.toContain("não registrada");
+    });
+  });
+
   it("refuses a reference that is not an opaque code, and an action's record that is not a UUID", async () => {
     const scope = await openCase(detail("role_determined"));
     byId(scope.root, "etapa-scope-account").checked = true;
