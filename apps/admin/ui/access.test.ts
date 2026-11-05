@@ -799,6 +799,26 @@ describe("ending the access now (AC-P5.3, AC-C2, AC-C4)", () => {
     expect(notice.split("Outro acesso seu").length).toBe(2);
   });
 
+  it("does not say the other access is in force when the page clock is already past its end", async () => {
+    const other = grantRow({ expiresAt: OTHER_ENDS, id: OTHER_GRANT });
+    const mounted = await open(
+      [
+        json({ revoked: true }),
+        json(detail([grantRow({ active: false, revokedAt: NOW }), other])),
+      ],
+      detail([grantRow(), other])
+    );
+    await click(mounted.root, "Encerrar acesso agora");
+    clock.now = new Date("2026-10-28T17:30:00.000Z");
+    await click(mounted.root, "Confirmar encerramento do acesso");
+
+    expect(shown(mounted)).toContain(
+      "Acesso encerrado. A lista de clientes saiu da tela."
+    );
+    expect(shown(mounted)).not.toContain("Outro acesso");
+    expect(shown(mounted)).not.toContain("continua ativo");
+  });
+
   it("says the other access too when nothing was ended because the line's access had already ended", async () => {
     const mounted = await open(
       [

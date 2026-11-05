@@ -655,7 +655,7 @@ export function accessView(
     element: section,
     say: (message) => {
       const text =
-        message.afterEnd && access !== null
+        message.afterEnd && stillActive() && access !== null
           ? `${message.text} ${OTHER_ACCESS(access.expiresAt)}`
           : message.text;
       if (message.kind === "success") {
