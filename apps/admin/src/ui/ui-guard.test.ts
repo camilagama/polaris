@@ -98,7 +98,8 @@ const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
  * (`/api/support-cases/:id/refund-window`), and the operational incidents (list, detail and the retry of one event,
  * `/api/operational-incidents/:id/events/:eventId/retry`; Parte 2), of a store, suspending and
  * reactivating it (`/api/support-cases/:id/suspend` and `/reactivate`) and marking it as internal
- * (`/api/organizations/:id/classification`; Parte 3), and the court's read of the access log
+ * (`/api/organizations/:id/classification`; Parte 3), giving and ending a temporary entitlement of a case
+ * (`/api/support-cases/:id/entitlement-grants` and `…/:grantId`; Parte 4), the court's read of the access log
  * (`/api/access-log/read`, a POST; Parte 8), and the privacy cases (list, detail, open and each of the six steps,
  * `/api/privacy-cases/:id/identity`, `/role`, `/scope`, `/decision`, `/actions` and `/resolve`; Parte 11), and the two acts on
  * the closure notice of a closed store (`/api/support-cases/:id/closure-notice/reissue` and `/dismiss`; Parte 12).
@@ -175,7 +176,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, the read of the access log, the six steps of a privacy case and the two acts on the closure notice: no other action of a case or a store (no purge or legal hold)", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case and the two acts on the closure notice: no other action of a case or a store (no purge or legal hold)", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -200,6 +201,7 @@ describe("the built script of the page", () => {
       "decision",
       "diagnostics",
       "dismiss",
+      "entitlement-grants",
       "events",
       "identity",
       "reactivate",
@@ -217,6 +219,16 @@ describe("the built script of the page", () => {
     expect(
       named(`${bundle}fetch(\`/api/support-cases/\${id}/purge\`)`)
     ).toEqual([...expected, "purge"].sort());
+  });
+});
+
+const DELETE_CALL = /method:\s*"DELETE"/g;
+const OTHER_WRITES = /method:\s*"(PUT|PATCH)"/;
+
+describe("the verbs of the built script", () => {
+  it("sends one DELETE, the end of a grant, and no PUT or PATCH", () => {
+    expect(bundle.match(DELETE_CALL)).toHaveLength(1);
+    expect(bundle).not.toMatch(OTHER_WRITES);
   });
 });
 

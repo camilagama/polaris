@@ -366,6 +366,7 @@ describe("a store's diagnostics (AC-5)", () => {
             {
               expiresAt: "2026-12-01T03:00:00.000Z",
               flagValue: null,
+              id: "0199c0c0-0000-7000-8000-0000000000a1",
               key: "variants.active.max",
               limitValue: 2000,
               revokedAt: null,

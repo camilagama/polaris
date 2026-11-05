@@ -11,6 +11,7 @@ import {
 import { createNotice } from "../notice";
 import type { ClosedSupportCase, SupportCaseDetail } from "../types";
 import { newCaseLink, storePath } from "./case-links";
+import { entitlementsView } from "./entitlements";
 import { storeActionsView } from "./store-actions";
 
 /** The server's limit for a resolution (`MAX_CASE_RESOLUTION_LENGTH`), in characters as a person counts them. */
@@ -162,7 +163,8 @@ export function caseView(tools: ScreenTools): HTMLElement {
       "div",
       { class: "case-actions" },
       closePanel(item),
-      mayAct ? storeActionsView(tools, item) : null
+      mayAct ? storeActionsView(tools, item) : null,
+      can("billing:operate") ? entitlementsView(tools, item) : null
     );
   };
 

@@ -75,7 +75,14 @@ export function screenContext(
 ): ScreenContext {
   return {
     environment: "staging",
+    flagKeys: ["offline.write", "public_catalog"],
     id: null,
+    limitKeys: [
+      "goals.active.max",
+      "images.active.max",
+      "images.per_product.max",
+      "variants.active.max",
+    ],
     listState: "abertos",
     screen: "lojas",
     store: null,

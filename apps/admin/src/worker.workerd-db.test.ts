@@ -514,10 +514,21 @@ describe("admin worker, whole chain, PostgreSQL", () => {
       );
       expect(diagnostics.body.grants).toEqual([
         expect.objectContaining({
+          id: commandId,
           key: "variants.active.max",
           limitValue: 300,
           revokedAt: null,
         }),
+      ]);
+      const [listed] = diagnostics.body.grants as object[];
+      expect(Object.keys(listed ?? {}).sort()).toEqual([
+        "expiresAt",
+        "flagValue",
+        "id",
+        "key",
+        "limitValue",
+        "revokedAt",
+        "startsAt",
       ]);
 
       const ended = await call("DELETE", `${path}/${commandId}`);
@@ -538,6 +549,52 @@ describe("admin worker, whole chain, PostgreSQL", () => {
           "billing.entitlement_revoked",
         ])
       );
+    });
+
+    it("ends nothing through the case of another store, and the grant stays in force", async () => {
+      const caseOfA = await openCase(fixture.organizations.a);
+      const caseOfOther = await openCase(fixture.organizations.suspend);
+      const commandId = crypto.randomUUID();
+      const given = await call(
+        "POST",
+        `/api/support-cases/${caseOfOther}/entitlement-grants`,
+        {
+          body: {
+            commandId,
+            hours: 24,
+            key: "goals.active.max",
+            reason: "Só da outra loja",
+            value: 40,
+          },
+        }
+      );
+      expect(given.status).toBe(201);
+
+      const refused = await call(
+        "DELETE",
+        `/api/support-cases/${caseOfA}/entitlement-grants/${commandId}`
+      );
+      expect(refused.status).toBe(200);
+      expect(refused.body).toMatchObject({ revoked: false });
+
+      const read = await call(
+        "GET",
+        `/api/organizations/${fixture.organizations.suspend}/diagnostics`
+      );
+      expect(read.body.grants).toEqual([
+        expect.objectContaining({ id: commandId, revokedAt: null }),
+      ]);
+
+      const ended = await call(
+        "DELETE",
+        `/api/support-cases/${caseOfOther}/entitlement-grants/${commandId}`
+      );
+      expect(ended.body).toMatchObject({ revoked: true });
+      const again = await call(
+        "DELETE",
+        `/api/support-cases/${caseOfOther}/entitlement-grants/${commandId}`
+      );
+      expect(again.body).toMatchObject({ revoked: false });
     });
 
     it("refuses a grant on a case that is closed, and writes nothing", async () => {

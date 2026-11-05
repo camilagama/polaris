@@ -125,7 +125,8 @@ function PresetChoice({ onChoose, preset }: PresetChoiceProps) {
 /**
  * The periods of the Resultado (AC-1, AC-2): "Este mês" (the one it opens on), "Mês passado", "Últimos 30 dias",
  * "Este ano" and "Período", a free range of up to 366 days. A preset reads at once. The range has its own fields and a
- * button: an invalid one says what is wrong under the field "Até" and asks the server for nothing.
+ * button: an invalid one says what is wrong under the field "Até" and asks the server for nothing. While the fields
+ * are open the choice says "Período", applied or not: the person is editing a free range, not the one on screen.
  */
 export function PeriodPicker({
   onCustom,
@@ -181,7 +182,7 @@ export function PeriodPicker({
 
   return (
     <div className="grid gap-4">
-      <PresetChoice onChoose={choose} preset={preset} />
+      <PresetChoice onChoose={choose} preset={open ? "custom" : preset} />
       {open ? (
         <form
           aria-label="Escolher o período"
