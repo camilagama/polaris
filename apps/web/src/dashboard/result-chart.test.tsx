@@ -123,6 +123,7 @@ function text(markup: string) {
   return out.replaceAll("&quot;", '"');
 }
 
+const CUTS_TEXT = /max-h-|line-clamp/;
 const DESCRIPTION = /<div[^>]*data-slot="card-description"[^>]*>(.*?)<\/div>/s;
 const support = (markup: string) =>
   text(markup.match(DESCRIPTION)?.[1] ?? "").replace("1 a 31 de outubro. ", "");
@@ -183,6 +184,34 @@ describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
 
   it("no longer says that the cost line is not drawn", () => {
     expect(chart(october([3]))).not.toContain("A linha de custos não aparece");
+  });
+});
+
+describe("the room the card keeps for its lines (lugar reservado)", () => {
+  const NOT_NET_PROFIT = "Não é lucro líquido nem dinheiro já recebido.";
+
+  it("keeps the line 'Não é lucro líquido' in the box, empty when every day is known", () => {
+    const complete = chart(october([]));
+    const incomplete = chart(october([3]));
+    expect(complete).not.toContain(NOT_NET_PROFIT);
+    expect(incomplete).toContain(NOT_NET_PROFIT);
+    const lines = (markup: string) =>
+      markup.match(/<p class="[^"]*min-h-\[1\.125rem\][^"]*"[^>]*>/g) ?? [];
+    expect(lines(complete)).toHaveLength(lines(incomplete).length);
+    expect(lines(complete).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("holds the same lines in the box that stands in for the drawing while its chunk loads", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain("data-chart-loading");
+    expect(markup).toContain("min-h-[calc(5*1.125rem)]");
+    expect(markup).toContain("min-h-[3.5rem]");
+  });
+
+  it("reserves with min-h only: nothing is cut with max-h or a line clamp", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain("min-h-[calc(");
+    expect(markup).not.toMatch(CUTS_TEXT);
   });
 });
 

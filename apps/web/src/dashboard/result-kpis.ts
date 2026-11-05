@@ -9,7 +9,12 @@ import {
   resultHelp,
   ticketHelp,
 } from "../home/home-kpis";
-import { salesCountText, shortDate } from "../home/home-model";
+import {
+  fullDate,
+  periodShort,
+  salesCountText,
+  shortDate,
+} from "../home/home-model";
 import {
   cogsCoverageOf,
   type StoredDay,
@@ -69,14 +74,28 @@ export function comparisonPeriod(period: Period, today: string): Period | null {
   return { from: addDays(period.from, -dayCount(period)), to: before };
 }
 
-/** "1 a 25/10" within a month, "26/09 a 25/10" across two, "25/10" for one day. */
-export function rangeText(first: string, last: string): string {
-  if (first === last) {
-    return shortDate(last);
-  }
-  return first.slice(0, 7) === last.slice(0, 7)
-    ? `${Number(first.slice(8, 10))} a ${shortDate(last)}`
-    : `${shortDate(first)} a ${shortDate(last)}`;
+/**
+ * "1 a 25/10" within a month, "26/09 a 25/10" across two, "25/10" for one day; with the year on both ends when the
+ * range crosses a year or its last day is not in `thisYear` ("05/11/2025 a 05/11/2026", "1 a 31/12/2025").
+ */
+export function rangeText(
+  first: string,
+  last: string,
+  thisYear: string
+): string {
+  return periodShort(first, last, thisYear);
+}
+
+/**
+ * What a reading says it goes up to: "Até 17/10", "Até 31/12/2025" when the day is not in `thisYear`. A month reads to
+ * its last day.
+ */
+export function untilText(
+  point: { date: string; to?: string | undefined } | undefined,
+  today: string
+): string {
+  const day = point?.to ?? point?.date ?? today;
+  return `Até ${day.slice(0, 4) === today.slice(0, 4) ? shortDate(day) : fullDate(day)}`;
 }
 
 /**
@@ -398,7 +417,10 @@ export interface PriorSeries {
  * The period before, as many days of it as from the first to the day read (at most all of it); a series with a gap
  * compares only as far as it goes.
  */
-function priorReader(series: PriorSeries | null): (at: number) => Prior {
+function priorReader(
+  series: PriorSeries | null,
+  thisYear: string
+): (at: number) => Prior {
   const sums = series ? cumulate(consecutive(series.days, series.period)) : [];
   const length = series ? dayCount(series.period) : 0;
   return (at) => {
@@ -407,7 +429,8 @@ function priorReader(series: PriorSeries | null): (at: number) => Prior {
       range: series
         ? rangeText(
             series.period.from,
-            addDays(series.period.from, compared - 1)
+            addDays(series.period.from, compared - 1),
+            thisYear
           )
         : "",
       sum:
@@ -440,13 +463,16 @@ export function resultKpis({
 }): ResultKpis {
   const days = daysUpToToday(daily, period, today);
   const sums = cumulate(days);
-  const priorResult = priorReader(previous);
-  const priorSales = priorReader(previousSales);
+  const thisYear = today.slice(0, 4);
+  const priorResult = priorReader(previous, thisYear);
+  const priorSales = priorReader(previousSales, thisYear);
   const month = isWholeMonth(period) ? monthName(period.from) : null;
 
   // the same day the chart hatches: the contract sends `costs` and `operatingResult` null together (AC-8)
   const result = resultKindOf(days);
-  const whole = month ? `${month} inteiro` : rangeText(period.from, period.to);
+  const whole = month
+    ? `${month} inteiro`
+    : rangeText(period.from, period.to, thisYear);
 
   const read = (index: number | null) => {
     // an index of another series (the period changed under the pointer) reads the last day of this one
@@ -463,7 +489,7 @@ export function resultKpis({
       prior: priorResult(at),
       priorSales: priorSales(at),
       // a period that has not started has no day yet: its dates are the whole period
-      range: days.length > 0 ? rangeText(period.from, date) : whole,
+      range: days.length > 0 ? rangeText(period.from, date, thisYear) : whole,
       result,
       sum: sums[at] ?? { count: 0, net: 0n, result: 0n },
       whole,

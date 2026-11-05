@@ -125,6 +125,12 @@ export interface AreaChartProps {
   readingAtRest?: boolean;
   /** Drawn finished, with no reveal and no tween (a phone, v7 § 7); `prefers-reduced-motion` does the same. */
   still?: boolean;
+  /**
+   * Classes that hold the room of the lines above the drawing whose length or presence changes with the data (`min-h` of
+   * the longest form, by width), so a change of period does not move the drawing: `reading` for the line of the day in
+   * focus, `legend` for the legend of the series (kept, empty, when there is no second series).
+   */
+  reserve?: { legend?: string; reading?: string };
   /** The block's own loading state (`status="loading"`): a pulsing line and a shimmering grid, then the reveal. */
   loading?: boolean;
   /** The text that shimmers in the middle of the chart while `loading` ("Carregando"). */
@@ -196,21 +202,19 @@ const READING_OVER_CLASS =
 function ReadingAt({
   place,
   reading,
+  reserve,
   where,
 }: {
   place: "above" | "over" | null;
   reading: DayReading;
+  reserve?: string | undefined;
   where: "above" | "over";
 }) {
   if (place !== where) {
     return null;
   }
-  return (
-    <Reading
-      {...reading}
-      {...(where === "over" ? { className: READING_OVER_CLASS } : {})}
-    />
-  );
+  const className = where === "over" ? READING_OVER_CLASS : reserve;
+  return <Reading {...reading} {...(className ? { className } : {})} />;
 }
 
 function EmptyChart({
@@ -283,6 +287,7 @@ function AreaTop({
   loadingAtRest,
   place,
   reading,
+  reserve,
   secondary,
   unseen,
 }: {
@@ -291,22 +296,33 @@ function AreaTop({
   loadingAtRest: boolean;
   place: "above" | "over" | null;
   reading: DayReading;
+  reserve: AreaChartProps["reserve"];
   secondary: AreaChartSecondary | undefined;
   unseen: boolean;
 }) {
+  const showsLegend = secondary && !secondary.subtle;
   return (
     <>
       {place === "above" ? (
         <Unseen on={unseen}>
-          <ReadingAt place={place} reading={reading} where="above" />
+          <ReadingAt
+            place={place}
+            reading={reading}
+            reserve={reserve?.reading}
+            where="above"
+          />
         </Unseen>
       ) : null}
       {loadingAtRest ? (
-        <p aria-hidden="true" className="min-h-[1.125rem]" />
+        <p
+          aria-hidden="true"
+          className={cn("min-h-[1.125rem]", reserve?.reading)}
+        />
       ) : null}
-      {secondary && !secondary.subtle ? (
+      {showsLegend ? (
         <Unseen on={unseen}>
           <Legend
+            className={reserve?.legend}
             color={color}
             dash={DASH}
             legend={legend}
@@ -318,6 +334,9 @@ function AreaTop({
             )}
           />
         </Unseen>
+      ) : null}
+      {!showsLegend && reserve?.legend ? (
+        <div aria-hidden="true" className={reserve.legend} />
       ) : null}
     </>
   );
@@ -507,6 +526,7 @@ export function AreaChart({
   rangeLabel = "Dia",
   readingAtRest = true,
   readingNote,
+  reserve,
   secondary,
   spokenNote,
   still = false,
@@ -601,6 +621,7 @@ export function AreaChart({
         loadingAtRest={loading && readingAtRest}
         place={place}
         reading={reading}
+        reserve={reserve}
         secondary={secondary}
         unseen={isEmpty}
       />
