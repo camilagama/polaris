@@ -133,12 +133,19 @@ Criar ou recriar (credencial com permissão de zona, nunca o token do CI):
 
 ## 3c. Admin: `admin.araute.app`, só atrás do Access (responsável)
 
-Decisão do usuário de 03/11/2026 ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md), emenda de 03/11; [ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md), emenda de 03/11). O Admin do staging é o mesmo código da produção, servido em `https://admin.araute.app` e alcançável **só** pela aplicação do Access.
+Decisão do usuário de 03/11/2026 ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md), emenda de 03/11; [ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md), emenda de 03/11), com o login trocado em 05/11/2026 para Google e passkey (ADR 0070, emenda de 05/11). O Admin do staging é o mesmo código da produção, servido em `https://admin.araute.app` e alcançável **só** pela aplicação do Access.
 
 **O que existe (criado pelo responsável, fora do repositório):**
 
 - Zero Trust Free na conta do staging, time `polaris-staging.cloudflareaccess.com`.
-- Aplicação self-hosted "Polaris Admin (staging)", hostname `admin.araute.app`: política só com os e-mails dos operadores, código por e-mail mais MFA independente (TOTP, chave de segurança ou biometria), sessão de 1 h, cookie binding e `SameSite` strict. A audience tag dela está no `env.staging` do Admin (`ACCESS_AUDIENCE`; não é segredo).
+- Aplicação self-hosted "Polaris Admin (staging)", hostname `admin.araute.app` (a mesma de 03/11: **nunca recriar**, porque a audience tag muda e o `ACCESS_AUDIENCE` deixaria de bater; se recriar for inevitável, atualizar o `ACCESS_AUDIENCE` do `env.staging` e implantar **antes** de ligar a aplicação nova). A audience tag está no `env.staging` do Admin (não é segredo). Configuração desde 05/11/2026 ([ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md), emenda de 05/11):
+  - provedor de identidade **só Google** (cliente OAuth próprio do Admin, com PKCE; seção 4) e *instant authentication* ligada;
+  - política Allow só com **e-mails exatos** dos operadores (nunca domínio, "qualquer conta Google" nem Everyone) e *Require login method* = Google;
+  - **MFA independente exigido**, só biometria e chave de segurança (TOTP fora) e *Use identity provider MFA* ligado;
+  - sessão da aplicação, duração do MFA e do AMR matching, todos **≤ 8 h** (o padrão do AMR é 24 h: ajustar);
+  - cookie binding ligado, HttpOnly e `SameSite` **Lax**;
+  - página de login com a marca, sem script, sem recurso de terceiros e sem link para fora; mensagem de bloqueio genérica.
+  - O segredo do cliente OAuth fica só no painel do Zero Trust, nunca em repositório, chat nem log.
 - Login `polaris_staging_admin`, membro só de `polaris_admin_runtime`, sem `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` nem `TEMP`, `CONNECTION LIMIT 5`, `statement_timeout` `10s`, `lock_timeout` `3s` e `idle_in_transaction_session_timeout` `15s` (no login, não no grupo; seção 1).
 - Hyperdrive `polaris-staging-admin` (caching desligado) no binding `ADMIN_HYPERDRIVE`; `ADMIN_BILLING_HYPERDRIVE` usa a `polaris-staging-billing` do web (a divisão que a verificação aceita, ADR 0073). A conta fica com 10 das 10 configurações do Free.
 
@@ -154,12 +161,34 @@ Decisão do usuário de 03/11/2026 ([ADR 0097](../adr/0097-staging-fixo-e-produc
 
 **Nunca use o `workers.dev`.** O endereço `polaris-admin-staging.<conta>.workers.dev` fica desligado (`workers_dev: false`) e nunca deve ser ligado, nem para testar: ele contornaria o Access, e o Worker passaria a ser a única barreira. Para um teste, entre pelo `https://admin.araute.app`.
 
+**Matricular as passkeys (ordem obrigatória):**
+
+O login do Admin só *pede* o MFA; matricular o primeiro dispositivo pelo próprio login faz o Access voltar sem o `kid` da aplicação e cair em 404 "It appears that you have attempted to reach an invalid URL". Por isso a matrícula vem **antes** do primeiro login no Admin.
+
+1. Com o TOTP ainda permitido, o operador abre `https://polaris-staging.cloudflareaccess.com/AddMfaDevice` e registra **duas** passkeys **antes** do primeiro login no Admin.
+2. **Pelo menos uma fora da conta Google do login**: iCloud/Keychain, Windows Hello do equipamento ou chave física. Duas passkeys sincronizadas pela mesma conta Google não contam como dois fatores. Opcional: restringir por AAGUID.
+3. O responsável confere em Zero Trust → Users → (o operador) → MFA devices que só existem os dispositivos esperados.
+4. Só então: desmarcar o TOTP nos autenticadores permitidos, apagar o TOTP antigo do operador e ligar "MFA exigido" na aplicação. O TOTP sai **só depois** da conferência do passo 3. A troca do provedor para só Google, com *instant authentication*, também fica para este passo: até lá o operador entra como antes (e-mail e código), e é assim que chega à matrícula.
+5. Operador novo: entra na política e registra as duas passkeys **no mesmo dia**, com o responsável conferindo a lista. O Access não pede MFA para o primeiro autenticador: quem tivesse o Google do operador antes disso registraria a passkey dele.
+
+Se o 404 aparecer mesmo com os dispositivos já matriculados, é defeito do Access: abrir chamado na Cloudflare com o Ray ID e a URL inteira da página de erro (o `kid` não é segredo; cortar o `meta`). O contorno é abrir `https://admin.araute.app` de novo, que já encontra a sessão.
+
+**Fator perdido e revogação:**
+
+- *Uma passkey perdida:* o operador entra com a outra, remove a perdida e adiciona uma nova (o Access exige o MFA existente e dá 10 min). Não precisa do responsável.
+- *As duas perdidas:* o responsável apaga os dispositivos do operador, e ele registra outro **na mesma hora**, com o responsável acompanhando (a mesma janela do passo 5 acima).
+- *Conta Google perdida:* PIN temporário só numa **política separada, com o e-mail exato**, com o MFA independente ainda exigido (nunca "Disable MFA" nela), desfeita **no mesmo dia**; anotar o horário de criar e de desfazer.
+- *Suspeita de comprometimento:* é incidente, não recuperação. Primeiro `disabled` no principal; depois revogar as sessões do usuário no Zero Trust, tirar o e-mail da política e apagar os autenticadores; refazer os dois registros.
+- *Revogação comum:* `disabled` no principal, revogar as sessões do usuário no Zero Trust e tirar o e-mail da política (nessa ordem de urgência); se o operador não deve mais entrar no web do staging, tirá-lo também de Test users (seção 4).
+- Remover e readicionar o usuário no Zero Trust, ou trocar o provedor, muda o `sub`: recadastrar o principal (passos 2 e 3 de "Cadastrar um operador", e o passo 5).
+
 **Cadastrar um operador (dono do banco do staging):**
 
-1. A pessoa entra em `https://admin.araute.app` pelo Access (e-mail permitido, código e MFA). Sem principal, a API responde 403, e a tela mostra a recusa.
+1. A pessoa entra em `https://admin.araute.app` pelo Access (e-mail permitido, Google e passkey), com as passkeys já matriculadas (bloco acima). Sem principal, a API responde 403, e a tela mostra a recusa.
 2. Ler o `iss` e o `sub` **do token**: no navegador, com a sessão aberta, copiar o cookie `CF_Authorization` de `admin.araute.app` (ou o cabeçalho `Cf-Access-Jwt-Assertion` de um pedido), decodificar a parte do meio (base64url) e ler `iss` (tem de ser `https://polaris-staging.cloudflareaccess.com`) e `sub`. Não usar o `id` de `/cdn-cgi/access/get-identity`, que é o identificador no provedor de identidade. O token não vai para chat, PR nem log; só o `sub`.
 3. Com o dono e a URL direta do banco de staging: `INSERT INTO public.platform_principals (issuer, subject, role, email_snapshot) VALUES ('https://polaris-staging.cloudflareaccess.com', '<sub>', 'platform_owner', '<e-mail>');`. Desativar: `UPDATE public.platform_principals SET status = 'disabled' WHERE id = '<id>';`. Um principal do staging não vale na produção.
 4. Conferir: `GET https://admin.araute.app/api/whoami` com a sessão responde o principal; sem login, o Access redireciona para `polaris-staging.cloudflareaccess.com` (o smoke confere isto a cada deploy).
+5. Depois de trocar o provedor, comparar o `sub` do token com o do principal. Se mudou, o dono do banco faz `UPDATE public.platform_principals SET subject = '<sub novo>' WHERE id = '<id>';` com o `sub` lido pelo próprio operador no token (nunca deduzido do e-mail). Até lá a API responde 403.
 
 **Tirar o Admin do ar:** para cortar o acesso na hora, tire as pessoas da política do Access ou desative os principais (passo 3). Para tirar o hostname, retire o Custom Domain no painel: como o config não declara o domínio, o próximo deploy não o recria.
 
@@ -176,6 +205,8 @@ Quem cria é o usuário ou o Arrascaeta, num projeto do Google Cloud só do stag
 7. Gravar o ID e o segredo como segredos do Worker, sem passar pelo repositório: `wrangler secret put GOOGLE_CLIENT_ID --env staging` e `wrangler secret put GOOGLE_CLIENT_SECRET --env staging`, em `apps/web`.
 8. Registrar só a data e quem criou.
 9. Para tirar alguém, removê-lo de **Test users** não basta: a conta e as sessões continuam válidas no staging. É preciso também, com o dono no banco de staging, apagar as sessões dela (`DELETE FROM "session" WHERE user_id = '<id>';`) e tirá-la das organizações de teste pelos fluxos do app (membership ou encerramento da organização). Um lease offline já emitido vale até expirar (no máximo 72 horas).
+
+**Segundo cliente: o do login do Admin (Access).** No mesmo projeto `polaris-staging`, **Clients → Create client → Web application**, nome "Polaris Admin (staging) Access", origem JavaScript autorizada `https://polaris-staging.cloudflareaccess.com` e URI de redirecionamento `https://polaris-staging.cloudflareaccess.com/cdn-cgi/access/callback`. O ID e o segredo são colados direto em **Zero Trust → Integrations → Identity providers → Google** (com PKCE ligado), **não** em `wrangler secret`: quem usa esse cliente é o Access, não um Worker. O e-mail de cada operador do Admin tem de estar em **Test users** (o app continua em Testing). Atenção: **Test users** é a mesma allowlist do login do web do staging (item 4), então quem entra nela também passa a poder entrar no web; e tirar um operador do Admin (bloco "Fator perdido e revogação", seção 3c) inclui tirá-lo daqui, além do item 9. Depois, ver a seção 3c.
 
 **O limite do controle.** A allowlist vive no Google, fora do repositório: nenhum teste prova que o modo Testing continua ligado. Se o app for publicado no Google, qualquer conta Google entra e cria organização no staging. Por isso o status de publicação não muda nunca, e uma allowlist também no código é um acompanhamento proposto (ADR 0097).
 
