@@ -77,7 +77,7 @@ export function closureNoticeSection(
   hooks: ClosureNoticeHooks
 ): HTMLElement {
   const { api, context, dom } = tools;
-  const slot = dom.el("div", { class: "closure-notice-slot" });
+  const slot = dom.el("div", { class: "closure-notice-slot", hidden: "" });
   const item = detail.case;
   let sending = false;
 
@@ -94,7 +94,20 @@ export function closureNoticeSection(
       organization?.id !== item.organizationId ||
       typeof organization.status !== "string"
     ) {
-      dom.fill(slot, dom.el("p", { class: "hint" }, NOTICE_READ_FAILED));
+      const again = dom.el(
+        "button",
+        { class: "secondary", type: "button" },
+        "Reler o caso"
+      );
+      again.addEventListener("click", () => {
+        hooks.reread();
+      });
+      slot.removeAttribute("hidden");
+      dom.fill(
+        slot,
+        dom.el("p", { class: "hint", role: "status" }, NOTICE_READ_FAILED),
+        again
+      );
       return;
     }
     if (organization.status === CLOSED) {
@@ -129,7 +142,7 @@ export function closureNoticeSection(
       ],
     ]);
 
-  const showActions = (focus?: HTMLElement) => {
+  const showActions = () => {
     const notice = createNotice(dom);
     const reissue = dom.el("button", { type: "button" }, "Reemitir o aviso");
     const dismiss = dom.el(
@@ -147,6 +160,7 @@ export function closureNoticeSection(
         dismissForm();
       }
     });
+    slot.removeAttribute("hidden");
     dom.fill(
       slot,
       wrap(
@@ -161,7 +175,6 @@ export function closureNoticeSection(
         notice.element
       )
     );
-    focus?.focus();
   };
 
   const reviewHeading = (text: string) =>
@@ -389,7 +402,7 @@ export function closureNoticeSection(
       return;
     }
     onlyReload(buttons);
-    notice.alert(
+    notice.status(
       `${outcome.text} Não deu para mostrar o caso de novo: use Reler o caso.`
     );
   };

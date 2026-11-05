@@ -463,6 +463,17 @@ describe("Aviso de encerramento: dismiss (AC-P12.2)", () => {
     }
   );
 
+  it("says a name every object has as an unknown refusal, never as the object's own text", () => {
+    for (const code of [
+      "constructor",
+      "toString",
+      "__proto__",
+      "hasOwnProperty",
+    ]) {
+      expect(refusalText(code)).toBe(NOTICE_REFUSED_GENERIC);
+    }
+  });
+
   it("says a refusal it does not know in a generic sentence, never the code", async () => {
     const mounted = await openCase([
       closedStore(),

@@ -11,7 +11,7 @@ export const DISMISS_EFFECT =
   "A dispensa conta como entregue para o apagamento, que ainda espera 7 dias. Isso não poderá ser desfeito.";
 export const DISMISS_UNDO = "Não.";
 export const DISMISS_RULES =
-  "Só vale sob um pedido de exclusão do dono da loja aceito por inteiro, e o motivo precisa bater com o que o sistema registrou: o servidor recusa o que não bate.";
+  "Só vale sob um pedido de exclusão aceito por inteiro, feito pelo dono da loja (ou, se a conta do dono foi apagada, por quem pede), e o motivo precisa bater com o que o sistema registrou: o servidor recusa o que não bate.";
 export const REISSUE_RECORD =
   "O ato fica na auditoria, com o seu e-mail e o caso.";
 export const DISMISS_RECORD =
@@ -57,5 +57,7 @@ export const NOTICE_REFUSALS: Readonly<Record<string, string>> = {
 
 /** The words of a refusal: the page's sentence for the code the server named, the generic one for any other. */
 export function refusalText(code: string): string {
-  return NOTICE_REFUSALS[code] ?? NOTICE_REFUSED_GENERIC;
+  return Object.hasOwn(NOTICE_REFUSALS, code)
+    ? (NOTICE_REFUSALS[code] ?? NOTICE_REFUSED_GENERIC)
+    : NOTICE_REFUSED_GENERIC;
 }
