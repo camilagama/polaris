@@ -96,6 +96,10 @@ As decisões acima não ligavam purge automático: o purge era só manual (agend
 - **Quem agendou.** `organization_purges.trigger` diz se foi o Admin ou o período. No período, `scheduled_by`, `support_case_id` e `privacy_case_id` ficam nulos, e a lápide do ledger vai sem caso. A auditoria do agendamento e da conclusão é do sistema (`platform_audit_events.actor = 'system'`, sem principal e sem caso). Com isso, a conclusão deixa de ser atribuída ao operador quando ninguém agendou.
 - **Trava solta.** Liberar a trava de um purge do período não o deixa seguir na execução seguinte: o `not_before` vai para a soltura mais 7 dias, no mínimo. Para um purge do Admin, a soltura continua liberando a execução seguinte.
 
+## Emenda de 05/11/2026: a tela do Admin
+
+Agendar e cancelar o purge, e pôr, mudar e liberar a trava legal, passam a ter tela no Admin, na aba "Purge e trava legal" do caso de privacidade, e as travas vigentes são listadas, só leitura, em `/retencoes`. As rotas e as funções não mudaram. Os detalhes da tela estão na emenda da Parte 7 do [ADR 0102](0102-apagamento-automatico-da-loja-encerrada.md).
+
 ## Decisão
 
 - **O gatilho é administrativo, nunca um job** (até a emenda de 20/10/2026: o período também agenda, [ADR 0102](0102-apagamento-automatico-da-loja-encerrada.md)). Enquanto `closed_organization` estiver em `proposta`, nada agenda um purge. Um operador do Admin, com a capacidade nova `organization:purge` e o caso de privacidade aberto da exclusão (ver abaixo), chama `admin_schedule_organization_purge` (`POST /support-cases/{caso}/purge`). O corpo nomeia a organização (`organizationId`): é uma confirmação, não a autoridade, porque a organização vem do caso no banco.
