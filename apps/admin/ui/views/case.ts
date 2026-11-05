@@ -148,6 +148,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
 
   const actions = (detail: SupportCaseDetail) => {
     const item = detail.case;
+    access?.discard();
     access = null;
     if (item.kind !== "support") {
       return dom.el(

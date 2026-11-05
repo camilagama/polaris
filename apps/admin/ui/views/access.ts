@@ -27,6 +27,7 @@ export const END_ACCESS_UNDO =
 const END_AUDIT = "O encerramento fica na auditoria com o seu e-mail e o caso.";
 export const READ_AUDIT =
   "Cada página de clientes que você lê fica na auditoria, com o seu e-mail e o caso (só a quantidade de clientes, nunca os dados).";
+const HIDDEN_PAGE = "Recarregue o caso para continuar.";
 export const NO_ACCESS = "O acesso acabou ou não foi dado.";
 const CASE_CLOSED = "O caso está fechado: o acesso acabou com ele.";
 export const NO_CUSTOMERS = "Esta loja não tem clientes.";
@@ -56,6 +57,8 @@ export interface AccessMessage {
 }
 
 export interface AccessView {
+  /** Throws away what was read (the case is shown again, or the page leaves): nothing of a customer stays in memory. */
+  discard: () => void;
   element: HTMLElement;
   /** Says how the action before ended, once the case is shown again. */
   say: (message: AccessMessage) => void;
@@ -86,7 +89,9 @@ function ownAccess(
       grant.principalId === principalId &&
       grant.active &&
       grant.revokedAt === null &&
-      (found === null || grant.expiresAt > found.expiresAt)
+      (found === null ||
+        new Date(grant.expiresAt).getTime() >
+          new Date(found.expiresAt).getTime())
     ) {
       found = { expiresAt: grant.expiresAt, id: grant.id };
     }
@@ -147,6 +152,7 @@ export function accessView(
   let next: string | null = null;
   let listed = false;
   let busy = false;
+  let writing = false;
   let turn = 0;
   let minutes = DEFAULT_MINUTES;
 
@@ -273,7 +279,9 @@ export function accessView(
   const leave = () => {
     turn += 1;
     access = null;
-    setBusy(false);
+    if (!writing) {
+      setBusy(false);
+    }
     dropList();
     dom.fill(actionBox);
     renderState();
@@ -296,6 +304,7 @@ export function accessView(
     if (await hooks.reload(message)) {
       return;
     }
+    writing = false;
     leave();
     dom.fill(
       stateBox,
@@ -314,6 +323,10 @@ export function accessView(
       leave();
       await reloadWith({ kind: "alert", text: NO_ACCESS });
       return;
+    }
+    if (failure.problem === "forbidden" || failure.problem === "session") {
+      dropList();
+      renderState();
     }
     notice.alert(failureText(failure, "Este caso não foi encontrado."));
   };
@@ -345,7 +358,7 @@ export function accessView(
     listed = true;
     renderState();
     renderList();
-    notice.status(
+    notice.success(
       more ? "Mais clientes lidos." : "Clientes lidos. Estão mascarados."
     );
   }
@@ -369,13 +382,11 @@ export function accessView(
       ["Fica na auditoria", audit],
     ]);
 
-  const sendGrant = async (confirm: HTMLElement, back: HTMLElement) => {
+  const sendGrant = async () => {
+    writing = true;
     setBusy(true);
-    confirm.setAttribute("aria-disabled", "true");
-    back.setAttribute("aria-disabled", "true");
     notice.status("Dando o acesso…");
     const answer = await giveAccess(api, item.id, minutes);
-    setBusy(false);
     if (answer.ok) {
       await reloadWith({
         kind: "success",
@@ -383,8 +394,8 @@ export function accessView(
       });
       return;
     }
-    confirm.setAttribute("aria-disabled", "false");
-    back.setAttribute("aria-disabled", "false");
+    writing = false;
+    setBusy(false);
     if (writeMayHaveHappened(answer)) {
       notice.alert(ACCESS_UNKNOWN);
       dom.fill(
@@ -414,7 +425,7 @@ export function accessView(
       "Revise antes de dar o acesso"
     );
     const confirm = control("Confirmar acesso", false, () => {
-      sendGrant(confirm, back);
+      sendGrant();
     });
     const back = control("Voltar", true, () => {
       openForm();
@@ -457,7 +468,6 @@ export function accessView(
       { class: "search", novalidate: "" },
       dom.el("label", { for: "acesso-minutos" }, "Duração do acesso"),
       select,
-      dom.el("p", {}, ACCESS_TEXT),
       dom.el("div", { class: "button-row" }, review, cancel)
     );
     form.addEventListener("submit", (event) => {
@@ -477,18 +487,13 @@ export function accessView(
     select.focus();
   }
 
-  const sendEnd = async (
-    grantId: string,
-    confirm: HTMLElement,
-    back: HTMLElement
-  ) => {
+  const sendEnd = async (grantId: string) => {
+    writing = true;
     setBusy(true);
-    confirm.setAttribute("aria-disabled", "true");
-    back.setAttribute("aria-disabled", "true");
     notice.status("Encerrando o acesso…");
     const answer = await endAccess(api, grantId);
-    setBusy(false);
     if (answer.ok) {
+      dropList();
       await reloadWith(
         answer.data.revoked
           ? {
@@ -499,8 +504,8 @@ export function accessView(
       );
       return;
     }
-    confirm.setAttribute("aria-disabled", "false");
-    back.setAttribute("aria-disabled", "false");
+    writing = false;
+    setBusy(false);
     if (writeMayHaveHappened(answer)) {
       notice.alert(END_UNKNOWN);
       dom.fill(
@@ -512,6 +517,7 @@ export function accessView(
       return;
     }
     if (answer.problem === "not_found") {
+      dropList();
       await reloadWith({ kind: "alert", text: NOTHING_ENDED });
       return;
     }
@@ -529,7 +535,7 @@ export function accessView(
       "Revise antes de encerrar o acesso"
     );
     const confirm = control("Confirmar encerramento do acesso", false, () => {
-      sendEnd(grantId, confirm, back);
+      sendEnd(grantId);
     });
     const back = control("Voltar", true, () => {
       dom.fill(actionBox);
@@ -569,12 +575,22 @@ export function accessView(
       stillActive();
     });
   }
-  dom.document.defaultView?.addEventListener("pagehide", () => {
-    dropList();
+  const discard = () => {
+    turn += 1;
     access = null;
-    renderState();
-  });
+    writing = false;
+    setBusy(false);
+    dropList();
+    dom.fill(actionBox);
+    dom.document.defaultView?.removeEventListener("pagehide", onHide);
+  };
+  const onHide = () => {
+    discard();
+    dom.fill(stateBox, dom.el("p", {}, HIDDEN_PAGE));
+  };
+  dom.document.defaultView?.addEventListener("pagehide", onHide);
   return {
+    discard,
     element: section,
     say: (message) => {
       if (message.kind === "success") {

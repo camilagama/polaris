@@ -577,12 +577,12 @@ describe("the list leaves the page (AC-P5.3)", () => {
     expect(alertOf(mounted.root)?.textContent).toBe(NO_ACCESS);
   });
 
-  it("says a missing capability as missing, and keeps the rows", async () => {
+  it("says a missing capability as missing, and takes the rows off", async () => {
     const mounted = await listed([refusal("forbidden", 403)]);
     await click(mounted.root, "Carregar mais");
 
     expect(alertOf(mounted.root)?.textContent).toBe(PROBLEM_TEXT.forbidden);
-    expect(shown(mounted)).toContain("M*** S***");
+    expect(shown(mounted)).not.toContain("M*** S***");
   });
 
   it("takes the rows off when the case is closed, and no customer is read again", async () => {
@@ -603,7 +603,82 @@ describe("the list leaves the page (AC-P5.3)", () => {
     const mounted = await listed();
     mounted.document.defaultView.dispatch("pagehide");
 
-    gone(mounted);
+    expect(shown(mounted)).not.toContain("M*** S***");
+    expect(shown(mounted)).toContain("Recarregue o caso para continuar.");
+    expect(buttons(mounted.root, "Carregar mais")).toHaveLength(0);
+  });
+});
+
+describe("the access in the middle of an answer", () => {
+  it("does not send a second grant while the case is read again", async () => {
+    const reread = pending();
+    const mounted = await open([accessGiven(), reread.answer]);
+    await toReview(mounted);
+    const confirm = firstButton(mounted.root, "Confirmar acesso");
+    confirm.click();
+    await flush();
+    confirm.click();
+    await flush();
+
+    expect(writes(mounted.calls)).toHaveLength(1);
+    reread.release(json(detail([grantRow()])));
+    await flush();
+    expect(writes(mounted.calls)).toHaveLength(1);
+  });
+
+  it("does not end twice while the case is read again", async () => {
+    const reread = pending();
+    const mounted = await open(
+      [json({ revoked: true }), reread.answer],
+      detail([grantRow()])
+    );
+    await click(mounted.root, "Encerrar acesso agora");
+    const confirm = firstButton(
+      mounted.root,
+      "Confirmar encerramento do acesso"
+    );
+    confirm.click();
+    await flush();
+    confirm.click();
+    await flush();
+
+    expect(writes(mounted.calls)).toHaveLength(1);
+    reread.release(json(detail([grantRow({ active: false })])));
+    await flush();
+    expect(writes(mounted.calls)).toHaveLength(1);
+  });
+
+  it("does not let a page read that comes back after the page was hidden put the rows back", async () => {
+    const slow = pending();
+    const mounted = await openActive([slow.answer]);
+    firstButton(mounted.root, "Ver clientes").click();
+    await flush();
+    mounted.document.defaultView.dispatch("pagehide");
+    slow.release(page([customer("M*** S***", "c1")]));
+    await flush();
+
+    expect(shown(mounted)).not.toContain("M*** S***");
+    expect(shown(mounted)).toContain("Recarregue o caso para continuar.");
+    expect(buttons(mounted.root, "Dar acesso aos clientes")).toHaveLength(0);
+  });
+
+  it("does not free the lock of a write that is still on its way when the end passes", async () => {
+    const slow = pending();
+    const mounted = await openActive([slow.answer]);
+    await click(mounted.root, "Encerrar acesso agora");
+    const confirm = firstButton(
+      mounted.root,
+      "Confirmar encerramento do acesso"
+    );
+    confirm.click();
+    await flush();
+    clock.now = new Date("2026-10-28T19:00:00.000Z");
+    sectionOf(mounted)?.dispatch("pointerdown");
+    await click(mounted.root, "Dar acesso aos clientes");
+    confirm.click();
+    await flush();
+
+    expect(writes(mounted.calls)).toHaveLength(1);
   });
 });
 
