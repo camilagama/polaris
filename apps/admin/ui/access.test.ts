@@ -46,6 +46,8 @@ const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
 const GRANT = "0199d0d0-0000-7000-8000-0000000000a1";
 const OTHER = "0199a0a0-0000-7000-8000-000000000002";
 const NEXT = "0199e0e0-0000-7000-8000-0000000000b2";
+const OTHER_GRANT = "0199d0d0-0000-7000-8000-0000000000a2";
+const OTHER_ENDS = "2026-10-28T17:00:00.000Z";
 const ENDS = "2026-10-28T18:45:00.000Z";
 const NOW = "2026-10-28T15:07:00.000Z";
 const OPERATOR = {
@@ -330,7 +332,7 @@ describe("giving an access (AC-P5.1, AC-C2, AC-C3)", () => {
     ["case_not_open", 400, "O atendimento já está fechado. Nada foi dado."],
     [
       "unknown_case",
-      400,
+      404,
       "Este atendimento não foi encontrado. Nada foi dado.",
     ],
     [
@@ -603,6 +605,50 @@ describe("the list leaves the page (AC-P5.3)", () => {
     expect(customerCalls(mounted.calls)).toHaveLength(1);
   });
 
+  it("takes the rows off when the tab becomes visible or the window is focused after the end", async () => {
+    const back = await listed();
+    back.document.hidden = true;
+    clock.now = new Date("2026-10-28T18:45:00.000Z");
+    back.document.dispatch("visibilitychange");
+    expect(shown(back)).toContain("M*** S***");
+    back.document.hidden = false;
+    back.document.dispatch("visibilitychange");
+    gone(back);
+    expect(customerCalls(back.calls)).toHaveLength(1);
+
+    const focused = await listed();
+    clock.now = new Date("2026-10-28T18:45:00.000Z");
+    focused.document.defaultView.dispatch("focus");
+    gone(focused);
+  });
+
+  it("keeps the rows when the tab comes back before the end", async () => {
+    const mounted = await listed();
+    clock.now = new Date("2026-10-28T18:44:59.000Z");
+    mounted.document.dispatch("visibilitychange");
+    mounted.document.defaultView.dispatch("focus");
+
+    expect(shown(mounted)).toContain("M*** S***");
+  });
+
+  it("stops listening for the tab and the window when the page is hidden, and keeps one listener of each after the case is read again", async () => {
+    const mounted = await listed([
+      json({ revoked: true }),
+      json(detail([grantRow({ active: false, revokedAt: NOW })])),
+    ]);
+    expect(mounted.document.listenerCount("visibilitychange")).toBe(1);
+    expect(mounted.document.defaultView.listeners.get("focus")).toHaveLength(1);
+
+    await click(mounted.root, "Encerrar acesso agora");
+    await click(mounted.root, "Confirmar encerramento do acesso");
+    expect(mounted.document.listenerCount("visibilitychange")).toBe(1);
+    expect(mounted.document.defaultView.listeners.get("focus")).toHaveLength(1);
+
+    mounted.document.defaultView.dispatch("pagehide");
+    expect(mounted.document.listenerCount("visibilitychange")).toBe(0);
+    expect(mounted.document.defaultView.listeners.get("focus")).toHaveLength(0);
+  });
+
   it("takes the rows off the page when the page is hidden", async () => {
     const mounted = await listed();
     mounted.document.defaultView.dispatch("pagehide");
@@ -725,7 +771,74 @@ describe("ending the access now (AC-P5.3, AC-C2, AC-C4)", () => {
     );
     expect(shown(mounted)).not.toContain("M*** S***");
     expect(shown(mounted)).toContain(NO_ACCESS);
+    expect(shown(mounted)).not.toContain("Outro acesso");
     expect(buttons(mounted.root, "Dar acesso aos clientes")).toHaveLength(1);
+  });
+
+  it("says another access of the operator is still in force, once, when two were active", async () => {
+    const other = grantRow({ expiresAt: OTHER_ENDS, id: OTHER_GRANT });
+    const mounted = await open(
+      [
+        json({ revoked: true }),
+        json(detail([grantRow({ active: false, revokedAt: NOW }), other])),
+      ],
+      detail([grantRow(), other])
+    );
+    await click(mounted.root, "Encerrar acesso agora");
+    await click(mounted.root, "Confirmar encerramento do acesso");
+
+    const [end] = writes(mounted.calls);
+    expect(end?.path).toBe(`/api/tenant-access/${GRANT}`);
+    const notice = shown(mounted);
+    expect(notice).toContain(
+      `Acesso encerrado. A lista de clientes saiu da tela. Outro acesso seu a esta loja continua ativo, até ${brasiliaMomentText(OTHER_ENDS)}.`
+    );
+    expect(notice).toContain(
+      `Acesso ativo até ${brasiliaMomentText(OTHER_ENDS)}.`
+    );
+    expect(notice.split("Outro acesso seu").length).toBe(2);
+  });
+
+  it("says the other access too when nothing was ended because the line's access had already ended", async () => {
+    const mounted = await open(
+      [
+        json({ revoked: false }),
+        json(
+          detail([
+            grantRow({ active: false }),
+            grantRow({ expiresAt: OTHER_ENDS, id: OTHER_GRANT }),
+          ])
+        ),
+      ],
+      detail([grantRow()])
+    );
+    await click(mounted.root, "Encerrar acesso agora");
+    await click(mounted.root, "Confirmar encerramento do acesso");
+
+    expect(alertOf(mounted.root)?.textContent).toBe(
+      `${NOTHING_ENDED} Outro acesso seu a esta loja continua ativo, até ${brasiliaMomentText(OTHER_ENDS)}.`
+    );
+  });
+
+  it("says the other access too when the end is answered with a 404 and another one is in force", async () => {
+    const mounted = await open(
+      [
+        refusal("not_found", 404),
+        json(
+          detail([
+            grantRow({ active: false }),
+            grantRow({ expiresAt: OTHER_ENDS, id: OTHER_GRANT }),
+          ])
+        ),
+      ],
+      detail([grantRow()])
+    );
+    await click(mounted.root, "Encerrar acesso agora");
+    await click(mounted.root, "Confirmar encerramento do acesso");
+
+    expect(alertOf(mounted.root)?.textContent).toBe(
+      `${NOTHING_ENDED} Outro acesso seu a esta loja continua ativo, até ${brasiliaMomentText(OTHER_ENDS)}.`
+    );
   });
 
   it("sends one request for a double click", async () => {

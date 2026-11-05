@@ -38,6 +38,8 @@ export const ACCESS_UNKNOWN =
   "Não deu para confirmar se o acesso foi dado. Releia o atendimento antes de tentar de novo.";
 export const END_UNKNOWN =
   "Não deu para confirmar se o acesso foi encerrado. Releia o atendimento antes de tentar de novo.";
+const OTHER_ACCESS = (expiresAt: string) =>
+  `Outro acesso seu a esta loja continua ativo, até ${brasiliaMomentText(expiresAt)}.`;
 const RELOAD_FAILED =
   "A ação foi enviada, mas não deu para reler o atendimento. Releia o atendimento antes de continuar.";
 
@@ -50,10 +52,11 @@ const REFUSED_ACCESS: Readonly<Record<string, string>> = {
   case_not_open: "O atendimento já está fechado. Nada foi dado.",
   invalid_duration:
     "A duração não foi aceita: use de 5 a 240 minutos. Nada foi dado.",
-  unknown_case: CASE_GONE,
 };
 
 export interface AccessMessage {
+  /** Set by an answer to the end of an access: the case is read again, and another access of the operator may be in force. */
+  afterEnd?: boolean;
   kind: "alert" | "success";
   text: string;
 }
@@ -541,10 +544,11 @@ export function accessView(
       await reloadWith(
         answer.data.revoked
           ? {
+              afterEnd: true,
               kind: "success",
               text: "Acesso encerrado. A lista de clientes saiu da tela.",
             }
-          : { kind: "alert", text: NOTHING_ENDED }
+          : { afterEnd: true, kind: "alert", text: NOTHING_ENDED }
       );
       return;
     }
@@ -562,7 +566,7 @@ export function accessView(
     }
     if (answer.problem === "not_found") {
       dropList();
-      await reloadWith({ kind: "alert", text: NOTHING_ENDED });
+      await reloadWith({ afterEnd: true, kind: "alert", text: NOTHING_ENDED });
       return;
     }
     notice.alert(failureText(answer, NOTHING_ENDED));
@@ -620,6 +624,14 @@ export function accessView(
       stillActive();
     });
   }
+  const onVisible = () => {
+    if (!dom.document.hidden) {
+      stillActive();
+    }
+  };
+  const onFocus = () => {
+    stillActive();
+  };
   const discard = () => {
     turn += 1;
     access = null;
@@ -628,20 +640,28 @@ export function accessView(
     dropList();
     dom.fill(actionBox);
     dom.document.defaultView?.removeEventListener("pagehide", onHide);
+    dom.document.defaultView?.removeEventListener("focus", onFocus);
+    dom.document.removeEventListener("visibilitychange", onVisible);
   };
   const onHide = () => {
     discard();
     dom.fill(stateBox, dom.el("p", {}, HIDDEN_PAGE));
   };
   dom.document.defaultView?.addEventListener("pagehide", onHide);
+  dom.document.defaultView?.addEventListener("focus", onFocus);
+  dom.document.addEventListener("visibilitychange", onVisible);
   return {
     discard,
     element: section,
     say: (message) => {
+      const text =
+        message.afterEnd && access !== null
+          ? `${message.text} ${OTHER_ACCESS(access.expiresAt)}`
+          : message.text;
       if (message.kind === "success") {
-        notice.success(message.text);
+        notice.success(text);
       } else {
-        notice.alert(message.text);
+        notice.alert(text);
       }
     },
   };
