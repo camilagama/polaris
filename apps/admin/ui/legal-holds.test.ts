@@ -103,6 +103,18 @@ describe("Retenções legais", () => {
     expect(rows.filter((row) => row.endsWith("Vigente"))).toHaveLength(1);
   });
 
+  it("says pendentes de revisão for two holds past their review, and keeps the singular on the row", async () => {
+    const mounted = await open([
+      page([hold(STORE, true), hold(OTHER, true)], null, 2),
+    ]);
+    const text = visibleText(sectionOf(mounted.root));
+    expect(text).toContain(
+      "2 travas estão pendentes de revisão: elas continuam valendo até serem liberadas."
+    );
+    expect(text).not.toContain("estão pendente de revisão");
+    expect(text).toContain("Vigente · pendente de revisão");
+  });
+
   it("is read only: the only button is Carregar mais, and it asks once for each cursor", async () => {
     const wait = (() => {
       let release: (response: Response) => void = () => undefined;

@@ -22,7 +22,7 @@ function countText(count: number, more: boolean): string {
 function dueText(due: number): string {
   return due === 1
     ? `1 trava está ${REVIEW_DUE}: ela continua valendo até ser liberada.`
-    : `${due} travas estão ${REVIEW_DUE}: elas continuam valendo até serem liberadas.`;
+    : `${due} travas estão pendentes de revisão: elas continuam valendo até serem liberadas.`;
 }
 
 /**

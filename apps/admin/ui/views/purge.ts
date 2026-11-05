@@ -52,6 +52,7 @@ import type {
 } from "../types";
 import {
   MAX_NOTE_LENGTH,
+  NO_PERSONAL_DATA,
   noteProblem,
   plainField,
   textField,
@@ -435,7 +436,6 @@ export function purgeTab(
       title,
       cancelled,
       line(SERVER_CHECKS),
-      line(HOLD_STOPS_PURGE),
       dom.el("div", { class: "button-row" }, schedule)
     );
   };
@@ -467,7 +467,11 @@ export function purgeTab(
       });
       row.append(release);
     }
-    return area(title, line(HOLD_STOPS_PURGE), row);
+    return area(
+      title,
+      hold === null || hold === undefined ? line(HOLD_STOPS_PURGE) : null,
+      row
+    );
   };
 
   const buttonsOf = (confirmText: string, submit = false): Buttons => ({
@@ -607,7 +611,7 @@ export function purgeTab(
       "purge-cancelar-motivo",
       "Motivo do cancelamento",
       MAX_NOTE_LENGTH,
-      "Obrigatório. Fica guardado com o cancelamento."
+      `Obrigatório. Fica guardado com o cancelamento. ${NO_PERSONAL_DATA}`
     );
     const next = dom.el("button", { type: "submit" }, "Revisar o cancelamento");
     const back = dom.el(
@@ -648,6 +652,7 @@ export function purgeTab(
       "Revise antes de cancelar o agendamento",
       [
         ["Motivo", reason],
+        ["Atenção", NO_PERSONAL_DATA],
         ["O que acontece", CANCEL_EFFECT],
         ["Dá para desfazer", CANCEL_UNDO],
         ["Fica no registro", CANCEL_RECORD],

@@ -41,6 +41,7 @@ import {
   screenContext,
 } from "./test-page";
 import type { PrivacyCaseDetail } from "./types";
+import { NO_PERSONAL_DATA } from "./views/privacy-form";
 import { purgeCaseProblem, sameStoreName } from "./views/purge";
 
 /**
@@ -584,6 +585,29 @@ describe("Purge tab: what a schedule says while it cannot run or after it ends",
   });
 });
 
+describe("Purge tab: the hold sentence appears once", () => {
+  const countOf = (root: FakeElement) =>
+    visibleText(root).split(HOLD_STOPS_PURGE).length - 1;
+
+  it("says it once with a hold in force, as a warning in the purge block", async () => {
+    const mounted = await open([store("closed"), page([hold()])]);
+    expect(countOf(mounted.root)).toBe(1);
+  });
+
+  it("says it once, in the hold block, without a hold", async () => {
+    const mounted = await open([store("closed"), page([])]);
+    expect(countOf(mounted.root)).toBe(1);
+    const parts = allElements(mounted.root).filter(
+      (element) => element.getAttribute("class") === "purge-part"
+    );
+    expect(parts).toHaveLength(2);
+    expect(visibleText(parts[0] as FakeElement)).not.toContain(
+      HOLD_STOPS_PURGE
+    );
+    expect(visibleText(parts[1] as FakeElement)).toContain(HOLD_STOPS_PURGE);
+  });
+});
+
 describe("Purge tab: cancelling the schedule", () => {
   const scheduled = () =>
     open(
@@ -599,6 +623,18 @@ describe("Purge tab: cancelling the schedule", () => {
     byId(root, "purge-cancelar-motivo").value = reason;
     await click(root, "Revisar o cancelamento");
   };
+
+  it("warns against personal data in the reason field and on the review line", async () => {
+    const mounted = await scheduled();
+    await click(mounted.root, "Cancelar o agendamento");
+    const form = visibleText(mounted.root);
+    expect(form).toContain("Obrigatório. Fica guardado com o cancelamento.");
+    expect(form).toContain(NO_PERSONAL_DATA);
+    await submitReason(mounted.root, "pedido do dono");
+    const review = visibleText(mounted.root);
+    expect(review).toContain("pedido do dono");
+    expect(review).toContain(NO_PERSONAL_DATA);
+  });
 
   it.each([
     ["empty", ""],
