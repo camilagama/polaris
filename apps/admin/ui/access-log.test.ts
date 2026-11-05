@@ -25,7 +25,6 @@ import {
   NO_MORE_ACCESS,
   periodOf,
   REGISTERED_TEXT,
-  USER_OR_IP_TEXT,
   WINDOW_TEXT,
 } from "./views/access-log";
 
@@ -553,13 +552,14 @@ describe("the answer (AC-P8.3, AC-P8.4, AC-C7, AC-C12)", () => {
 });
 
 describe("what the server refuses (AC-C3, AC-P8.1)", () => {
-  it("says invalid_filter beside the filter, with the sentence of the design", async () => {
+  it("says invalid_filter beside the filter, starting with the value", async () => {
     const page = await screen([json({ error: "invalid_filter" }, 400)]);
 
     await ask(page);
 
     const text = errorOf(page.root, "registro-valor-erro");
-    expect(text.startsWith(USER_OR_IP_TEXT)).toBe(true);
+    expect(text.startsWith("O valor não foi aceito.")).toBe(true);
+    expect(text.includes("não os dois")).toBe(false);
     expect(text).not.toMatch(TECHNICAL);
     expect(byId(page.root, "registro-valor").getAttribute("aria-invalid")).toBe(
       "true"

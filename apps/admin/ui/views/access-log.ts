@@ -16,7 +16,6 @@ export const NO_ACCESS =
 export const NO_MORE_ACCESS = "Não há mais acessos nessa janela.";
 export const REGISTERED_TEXT =
   "Esta consulta fica registrada na auditoria, com o número do processo.";
-export const USER_OR_IP_TEXT = "Escolha usuário ou IP, não os dois.";
 export const WINDOW_TEXT = "O período pode ter no máximo 31 dias.";
 export const CASE_FORMAT = "0000000-00.0000.0.00.0000";
 
@@ -60,7 +59,8 @@ const FILTERS: Readonly<
 const GENERIC_PROBLEM =
   "A consulta não foi aceita. Refaça a consulta; se continuar, avise a engenharia.";
 
-const FILTER_REFUSED = `${USER_OR_IP_TEXT} Confira também o valor: usuário só com letras, números, - e _ (até 64); IP inteiro, sem máscara.`;
+const FILTER_REFUSED =
+  "O valor não foi aceito. Usuário só com letras, números, - e _ (até 64); IP inteiro, sem máscara.";
 const REFERENCE_REFUSED = `O número do processo não foi aceito. Confira o formato (${CASE_FORMAT}) e os dígitos.`;
 
 const PROBLEMS: Readonly<Partial<Record<Problem, string>>> = {
