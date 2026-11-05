@@ -20,6 +20,8 @@ export type Problem =
   | "unavailable";
 
 export interface ApiFailure {
+  /** With a refusal the route names (`invalid_reason`): picks the sentence, never shown. */
+  code?: string;
   ok: false;
   problem: Problem;
   /** With `rate_limited`: the seconds the server said to wait (`Retry-After`), when it said. */
@@ -48,7 +50,11 @@ export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
 
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
+type PostBody = Readonly<Record<string, boolean | number | string>>;
+
 export interface Api {
+  /** A DELETE with no body, from this origin like the POST: the one way the page ends something the server holds. */
+  delete: <T>(path: string) => Promise<ApiResult<T>>;
   get: <T>(path: string) => Promise<ApiResult<T>>;
   /**
    * `answers` names the statuses besides 2xx whose JSON body is the answer, not a problem: a route that says what it
@@ -56,7 +62,7 @@ export interface Api {
    */
   post: <T>(
     path: string,
-    body: Readonly<Record<string, boolean | string>>,
+    body: PostBody,
     answers?: readonly number[]
   ) => Promise<ApiResult<T>>;
 }
@@ -84,7 +90,7 @@ async function errorCode(response: Response): Promise<string | null> {
   }
 }
 
-async function problemOf(response: Response): Promise<Problem> {
+function problemOf(response: Response, code: string | null): Problem {
   // With the Access session over, Access answers with a redirect to its own login, on another origin. The page
   // never follows it: `redirect: "manual"` turns it into an opaque answer, which here means the session ended.
   if (response.type === "opaqueredirect" || response.status === 0) {
@@ -94,15 +100,13 @@ async function problemOf(response: Response): Promise<Problem> {
   if (response.status === 403) {
     // the refund window's one refusal (a closed case, a case of another store, an inactive operator) is not a
     // missing capability: it has its own sentence, which does not say which of them it was (AC-10)
-    return (await errorCode(response)) === "refund_window_read_refused"
-      ? "refused"
-      : "forbidden";
+    return code === "refund_window_read_refused" ? "refused" : "forbidden";
   }
   if (known !== undefined) {
     return known;
   }
   if (response.status === 503) {
-    return (await errorCode(response)) === "plan_catalog_incomplete"
+    return code === "plan_catalog_incomplete"
       ? "plan_catalog_incomplete"
       : "unavailable";
   }
@@ -111,10 +115,17 @@ async function problemOf(response: Response): Promise<Problem> {
 
 const SECONDS = /^\d{1,6}$/;
 
+/** A refusal code is a lowercase token: anything else the server says is dropped, so no free text is kept. */
+const CODE_PATTERN = /^[a-z_]{1,64}$/;
+
 async function failureOf(response: Response): Promise<ApiFailure> {
-  const problem = await problemOf(response);
+  const named = await errorCode(response);
+  const code = named !== null && CODE_PATTERN.test(named) ? named : null;
+  const problem = problemOf(response, code);
   if (problem !== "rate_limited") {
-    return { ok: false, problem };
+    return code !== null && problem === "invalid"
+      ? { code, ok: false, problem }
+      : { ok: false, problem };
   }
   const wait = response.headers.get("retry-after") ?? "";
   return SECONDS.test(wait)
@@ -150,6 +161,11 @@ export function createApi(fetchJson: Fetch): Api {
     }
   };
   return {
+    delete: (path) =>
+      send(path, {
+        headers: { accept: "application/json" },
+        method: "DELETE",
+      }),
     get: (path) =>
       send(path, { headers: { accept: "application/json" }, method: "GET" }),
     post: (path, body, answers) =>

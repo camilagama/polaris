@@ -11,12 +11,21 @@ import type {
   SupportCasePage as ServerCasePage,
 } from "@polaris/db/admin-support-repository";
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
+import { ENTITLEMENT_KEYS } from "@polaris/domain/billing/entitlements";
+import {
+  MAX_GRANT_DAYS,
+  MAX_GRANT_REASON_LENGTH,
+} from "@polaris/domain/billing/grants";
 import type { RefundWindowView as ServerRefundWindow } from "@polaris/domain/admin/refund-window";
 import type { SupportDependencies } from "../support-routes";
 import { describe, expect, it } from "vitest";
+import { entitlementText } from "../../ui/format";
+import { MAX_HOURS, MAX_REASON_LENGTH } from "../../ui/grant-limits";
 import type {
   ClosedSupportCase,
   DeadEventSummary,
+  EndedEntitlement,
+  GrantedEntitlement,
   OpenedSupportCase,
   OperationalIncidentDetail,
   OperationalIncidentPage,
@@ -66,6 +75,18 @@ const incidentMatches: Same<ServerIncidentDetail, OperationalIncidentDetail> =
 const deadEventMatches: Same<ServerDeadEvent, DeadEventSummary> = true;
 // the page says each of the retry's results by its own sentence: a sixth one in the server fails here
 const retryResultsRead: Same<IncidentRetryResult, RetryResult> = true;
+// the page reads three fields of what giving a grant answers and both of what ending one answers
+const grantedRead: Same<
+  Pick<
+    Awaited<ReturnType<SupportDependencies["grantEntitlement"]>>,
+    "created" | "id" | "outcomeRecorded"
+  >,
+  GrantedEntitlement
+> = true;
+const endedMatches: Same<
+  Awaited<ReturnType<SupportDependencies["revokeEntitlement"]>>,
+  EndedEntitlement
+> = true;
 const capabilitiesRead: readonly PlatformCapability[] extends readonly string[]
   ? true
   : false = true;
@@ -86,6 +107,18 @@ describe("the page's types", () => {
       incidentMatches,
       deadEventMatches,
       retryResultsRead,
-    ]).toEqual(new Array(13).fill(true));
+      grantedRead,
+      endedMatches,
+    ]).toEqual(new Array(15).fill(true));
+  });
+});
+
+describe("the grant form's limits", () => {
+  it("name every key of the catalog in words, and are the server's own limits", () => {
+    for (const key of ENTITLEMENT_KEYS) {
+      expect(entitlementText(key)).not.toContain("desconhecido");
+    }
+    expect(MAX_REASON_LENGTH).toBe(MAX_GRANT_REASON_LENGTH);
+    expect(MAX_HOURS).toBe(MAX_GRANT_DAYS * 24);
   });
 });

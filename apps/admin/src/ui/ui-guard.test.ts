@@ -98,7 +98,8 @@ const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
  * (`/api/support-cases/:id/refund-window`), and the operational incidents (list, detail and the retry of one event,
  * `/api/operational-incidents/:id/events/:eventId/retry`; Parte 2), and, of a store, suspending and
  * reactivating it (`/api/support-cases/:id/suspend` and `/reactivate`) and marking it as internal
- * (`/api/organizations/:id/classification`; Parte 3).
+ * (`/api/organizations/:id/classification`; Parte 3), and, of a case, giving and ending a temporary entitlement
+ * (`/api/support-cases/:id/entitlement-grants` and `…/:grantId`; Parte 4).
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/funnel",
@@ -170,7 +171,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store and marking it as internal: no other action of a case or a store", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal and giving or ending an entitlement: no other action of a case or a store", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -191,6 +192,7 @@ describe("the built script of the page", () => {
       "classification",
       "close",
       "diagnostics",
+      "entitlement-grants",
       "events",
       "reactivate",
       "refund-window",

@@ -1,4 +1,8 @@
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
+import {
+  FLAG_KEYS,
+  LIMIT_KEYS,
+} from "@polaris/domain/billing/entitlements";
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
 
@@ -9,7 +13,8 @@ import type { HtmlEscapedString } from "hono/utils/html";
  *
  * What the Worker writes into a page is fixed text and what it already knows without reading a store: the screen,
  * the menu of the screens the principal's capabilities open (links, so the menu works without the script), the
- * environment and the UUID of the path or of `?loja=` once it passed the UUID test. No store name, e-mail, reason or
+ * environment, the UUID of the path or of `?loja=` once it passed the UUID test and, on the case screen, the two lists
+ * of keys a grant may name (fixed by the domain, nothing of a store). No store name, e-mail, reason or
  * bootstrap JSON is ever written: every datum reaches the page by `fetch` and is written as text. The two file names
  * carry a hash of their content, so a page opened during a deploy never pairs a new HTML with an old script (a stale
  * name answers 404).
@@ -298,6 +303,13 @@ function rootAttributes(request: PageRequest, environment: Environment) {
   }
   if (request.screen === "casos") {
     pairs.push(["data-estado", request.listState]);
+  }
+  if (request.screen === "caso") {
+    // the keys a grant may name come from the domain's lists, so the screen has no copy to drift
+    pairs.push(
+      ["data-chaves-limite", LIMIT_KEYS.join(" ")],
+      ["data-chaves-recurso", FLAG_KEYS.join(" ")]
+    );
   }
   return pairs.map(([name, value]) =>
     synchronous(html` ${raw(name)}="${value}"`)

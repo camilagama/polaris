@@ -155,6 +155,7 @@ describe("the organization report", () => {
     const grant = {
       expiresAt: "2026-11-01T00:00:00.000Z",
       flagValue: null,
+      id: "0199c0c0-0000-7000-8000-0000000000a1",
       key: "variants.active.max",
       limitValue: 100,
       revokedAt: null,
@@ -178,6 +179,29 @@ describe("the organization report", () => {
     expect(revoked.entitlements.raisedByGrant).toEqual([]);
   });
 
+  it("lists each grant with its ID and no field besides the ones it had", () => {
+    const grant = {
+      expiresAt: "2026-11-01T00:00:00.000Z",
+      flagValue: null,
+      id: "0199c0c0-0000-7000-8000-0000000000a1",
+      key: "variants.active.max",
+      limitValue: 100,
+      revokedAt: null,
+      startsAt: "2026-10-01T00:00:00.000Z",
+    };
+    const report = buildOrganizationDiagnostics(raw({ grants: [grant] }));
+    expect(report.grants).toEqual([grant]);
+    expect(Object.keys(report.grants[0] ?? {}).sort()).toEqual([
+      "expiresAt",
+      "flagValue",
+      "id",
+      "key",
+      "limitValue",
+      "revokedAt",
+      "startsAt",
+    ]);
+  });
+
   it("flags what an operator should look at", () => {
     const report = buildOrganizationDiagnostics(
       raw({
@@ -192,6 +216,7 @@ describe("the organization report", () => {
           {
             expiresAt: "2026-10-18T00:00:00.000Z",
             flagValue: true,
+            id: "0199c0c0-0000-7000-8000-0000000000a2",
             key: "public_catalog",
             limitValue: null,
             revokedAt: null,

@@ -153,3 +153,18 @@ export type RetryResult =
 export interface RetryAnswer {
   result?: string;
 }
+
+/** What `POST /api/support-cases/:caseId/entitlement-grants` answers, of which the page reads these three. */
+export interface GrantedEntitlement {
+  /** False when the same command ID repeated a grant already given. */
+  created: boolean;
+  id: string;
+  /** False when the grant was given but the record of its outcome could not be written. */
+  outcomeRecorded: boolean;
+}
+
+/** What `DELETE …/entitlement-grants/:grantId` answers: `revoked` is false when nothing was ended. */
+export interface EndedEntitlement {
+  outcomeRecorded: boolean;
+  revoked: boolean;
+}

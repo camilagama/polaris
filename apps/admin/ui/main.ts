@@ -11,6 +11,13 @@ function uuidOf(value: string | null): string | null {
   return value !== null && UUID.test(value) ? value : null;
 }
 
+const KEY = /^[a-z][a-z._]{0,63}$/;
+
+/** The keys the Worker wrote, space-separated; a token that is not a key is dropped. */
+function keysOf(value: string | null): string[] {
+  return (value ?? "").split(" ").filter((key) => KEY.test(key));
+}
+
 function contextOf(element: HTMLElement): ScreenContext | null {
   const screen = element.getAttribute("data-tela");
   if (screen === null) {
@@ -22,7 +29,9 @@ function contextOf(element: HTMLElement): ScreenContext | null {
       environment === "production" || environment === "staging"
         ? environment
         : "unknown",
+    flagKeys: keysOf(element.getAttribute("data-chaves-recurso")),
     id: uuidOf(element.getAttribute("data-id")),
+    limitKeys: keysOf(element.getAttribute("data-chaves-limite")),
     listState:
       element.getAttribute("data-estado") === "fechados"
         ? "fechados"

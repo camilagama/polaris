@@ -1,4 +1,9 @@
 import { PLATFORM_CAPABILITIES } from "@polaris/domain/admin/platform-capabilities";
+import {
+  ENTITLEMENT_KEYS,
+  FLAG_KEYS,
+  LIMIT_KEYS,
+} from "@polaris/domain/billing/entitlements";
 import { securityHeaders } from "@polaris/http-security";
 import { describe, expect, it, vi } from "vitest";
 import type { AccessClaims } from "../access-jwt";
@@ -415,5 +420,30 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
     expect(TITLE.exec(html)?.[1]).toBe(
       "PRODUÇÃO · Configurações · Polaris Admin"
     );
+  });
+});
+
+describe("the keys a grant may name (corte admin-v2, Parte 4)", () => {
+  const rootOf = async (path: string) =>
+    ROOT.exec(await (await setup("platform_owner", "staging")(path)).text())?.[1];
+
+  it("writes, on the case screen, the domain's own two lists, which together are the whole catalog", async () => {
+    const root = await rootOf(`/casos/${CASE}`);
+
+    expect(root).toContain(`data-chaves-limite="${LIMIT_KEYS.join(" ")}"`);
+    expect(root).toContain(`data-chaves-recurso="${FLAG_KEYS.join(" ")}"`);
+    expect([...LIMIT_KEYS, ...FLAG_KEYS].sort()).toEqual(
+      [...ENTITLEMENT_KEYS].sort()
+    );
+  });
+
+  it("writes them on no other screen", async () => {
+    const roots = await Promise.all(
+      ["/", "/lojas", `/lojas/${STORE}`, "/casos", "/funil"].map(rootOf)
+    );
+    for (const root of roots) {
+      expect(root).toContain("data-tela");
+      expect(root).not.toContain("data-chaves");
+    }
   });
 });
