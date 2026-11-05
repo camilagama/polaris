@@ -361,26 +361,10 @@ export function collectFiles(base = root) {
   return found.sort();
 }
 
-/** A test that plants and removes files in the tree can delete one between the walk and the read; a file that is gone has no comment to check. */
-function readSource(file) {
-  try {
-    return readFileSync(file, "utf8");
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
 export function checkRepository(base = root) {
   const failures = [];
   for (const file of collectFiles(base)) {
-    const source = readSource(file);
-    if (source === null) {
-      continue;
-    }
-    for (const violation of checkSource(source)) {
+    for (const violation of checkSource(readFileSync(file, "utf8"))) {
       failures.push({ file: path.relative(base, file), ...violation });
     }
   }
