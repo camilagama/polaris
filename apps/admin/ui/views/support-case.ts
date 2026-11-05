@@ -118,7 +118,6 @@ export function supportCasesView(
     "aria-describedby": "motivo-erro motivo-contador motivo-dica",
     autocomplete: "off",
     id: "motivo",
-    maxlength: String(MAX_REASON_LENGTH),
     name: "motivo",
     required: "",
     type: "text",
@@ -330,7 +329,7 @@ export function supportCasesView(
   });
   reason.addEventListener("input", () => {
     clearReasonError();
-    counter.textContent = `${[...reason.value].length} de ${MAX_REASON_LENGTH} caracteres`;
+    counter.textContent = `${[...reason.value.trim()].length} de ${MAX_REASON_LENGTH} caracteres`;
   });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
