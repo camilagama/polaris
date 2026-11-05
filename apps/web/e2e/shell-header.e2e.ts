@@ -453,6 +453,11 @@ test.describe("AC-2.3: teclado, foco e alvos", () => {
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("menuitemradio").first()).toBeFocused();
+    await menu.evaluate((element) =>
+      Promise.all(
+        element.getAnimations({ subtree: true }).map((a) => a.finished)
+      )
+    );
     for (const item of await menu
       .locator('[role="menuitem"], [role="menuitemradio"]')
       .all()) {
