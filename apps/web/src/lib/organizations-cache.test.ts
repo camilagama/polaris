@@ -6,7 +6,9 @@ import {
   type Organization,
   organizationLoadAfterFailure,
   type PreferenceStorage,
+  readMediaThumbsFlag,
   readOrganizationsCache,
+  writeMediaThumbsFlag,
   writeOrganizationsCache,
 } from "./current-organization-model";
 
@@ -88,6 +90,26 @@ describe("the organizations kept for opening offline", () => {
     expect(readOrganizationsCache(brokenStorage)).toEqual([]);
     expect(() => clearOrganizationsCache(brokenStorage)).not.toThrow();
     expect(() => writeOrganizationsCache(null, [alpha])).not.toThrow();
+  });
+});
+
+describe("what the last answer said about the thumbnails", () => {
+  it("is kept for an offline start, off by default, and goes with the list of stores", () => {
+    const { storage } = memoryStorage();
+    expect(readMediaThumbsFlag(storage)).toBe(false);
+    writeMediaThumbsFlag(storage, true);
+    expect(readMediaThumbsFlag(storage)).toBe(true);
+    writeMediaThumbsFlag(storage, false);
+    expect(readMediaThumbsFlag(storage)).toBe(false);
+    writeMediaThumbsFlag(storage, true);
+    clearOrganizationsCache(storage);
+    expect(readMediaThumbsFlag(storage)).toBe(false);
+  });
+
+  it("never throws on blocked or missing storage", () => {
+    expect(() => writeMediaThumbsFlag(brokenStorage, true)).not.toThrow();
+    expect(readMediaThumbsFlag(brokenStorage)).toBe(false);
+    expect(readMediaThumbsFlag(null)).toBe(false);
   });
 });
 

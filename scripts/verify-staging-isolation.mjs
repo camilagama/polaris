@@ -425,7 +425,11 @@ function checkBillingBaseUrls(where, vars, environment, problems) {
 
 function checkStagingBilling(where, staging, problems) {
   const vars = staging.vars ?? {};
-  for (const flag of ["BILLING_SELF_SERVICE_ENABLED", "WOOVI_REFUND_ENABLED"]) {
+  for (const flag of [
+    "BILLING_SELF_SERVICE_ENABLED",
+    "WOOVI_REFUND_ENABLED",
+    "MEDIA_THUMBS_ENABLED",
+  ]) {
     if (vars[flag] !== "true" && vars[flag] !== "false") {
       problems.push(`${where}: vars.${flag} must be "true" or "false"`);
     }

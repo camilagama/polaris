@@ -156,7 +156,6 @@ export function itemChangesForEntry(
   };
 }
 
-/** The line's balance, from the same read that listed the variant. */
 /**
  * A variant's balance as the sale keeps it in memory, with the cover of its product when the read carried it. The
  * cover is for drawing only: the sale draft, the queue and the snapshot never hold it.
@@ -165,6 +164,7 @@ export type SaleBalance = InventoryBalanceReadModel & {
   coverAssetId?: string | null;
 };
 
+/** The line's balance, from the same read that listed the variant. */
 export function balanceOfEntry(
   entry: InventoryBalanceEntryReadModel
 ): SaleBalance {

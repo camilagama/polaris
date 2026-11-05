@@ -136,10 +136,38 @@ export function readOrganizationsCache(
   }
 }
 
+/**
+ * What the last `listMine` said about the thumbnails, kept next to the list of stores so an offline start still shows
+ * the ones this device has. It goes with the list (`clearOrganizationsCache`), and is not an offline copy of data.
+ */
+export const MEDIA_THUMBS_FLAG_KEY = "polaris.mediaThumbs";
+
+export function writeMediaThumbsFlag(
+  storage: PreferenceStorage | null,
+  on: boolean
+): void {
+  try {
+    storage?.setItem(MEDIA_THUMBS_FLAG_KEY, on ? "1" : "0");
+  } catch {
+    // Without it an offline start shows the initials; online the server says it again.
+  }
+}
+
+export function readMediaThumbsFlag(
+  storage: PreferenceStorage | null
+): boolean {
+  try {
+    return storage?.getItem(MEDIA_THUMBS_FLAG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function clearOrganizationsCache(
   storage: PreferenceStorage | null
 ): void {
   try {
+    storage?.removeItem(MEDIA_THUMBS_FLAG_KEY);
     storage?.removeItem(ORGANIZATIONS_CACHE_KEY);
   } catch {
     // Nothing to clean when storage is unavailable.

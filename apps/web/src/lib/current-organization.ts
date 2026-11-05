@@ -17,10 +17,12 @@ import {
   clearOrganizationsCache,
   organizationLoadAfterFailure,
   readOrganizationsCache,
+  writeMediaThumbsFlag,
   writeOrganizationsCache,
   type Organization,
   type OrganizationLoad,
   organizationLoadFromList,
+  readMediaThumbsFlag,
   readPreferredOrganizationId,
   selectOrganization,
   writePreferredOrganizationId,
@@ -47,8 +49,8 @@ interface OrganizationContextValue {
   load: OrganizationLoad;
   /**
    * MEDIA_THUMBS_ENABLED is on, as `organization.listMine` said: the lists may show the capa of a product. False until
-   * the server says so. A list that fails to load (no connection) keeps what the last answer said, so the thumbnails
-   * the device already has stay; a session that ended turns it off.
+   * the server says so. A list that fails to load (no connection) uses what the last answer said, kept next to the
+   * device's list of stores, so the thumbnails the device already has stay; a session that ended turns it off.
    */
   mediaThumbs: boolean;
   /** Reads the user's organizations again, e.g. after onboarding. */
@@ -100,6 +102,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
             }
             if (OFFLINE_RUNTIME_ENABLED && !isSigningOut()) {
               writeOrganizationsCache(browserStorage(), organizations);
+              writeMediaThumbsFlag(browserStorage(), thumbs === true);
             }
             setLoad(
               organizationLoadFromList(
@@ -135,6 +138,9 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         });
         opened.current = true;
         fromCache.current = outcome.fromCache;
+        if (outcome.fromCache) {
+          setMediaThumbs(readMediaThumbsFlag(browserStorage()));
+        }
         setLoad(outcome.load);
       });
   }, []);

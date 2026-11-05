@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { readBootstrapPage } from "../src/bootstrap-repository";
 import { createDatabase } from "../src/client";
+import { readProductCovers } from "../src/product-cover";
 import { listInventoryBalances } from "../src/inventory-repository";
 import {
   type CreateProductMediaAssetInput,
@@ -389,6 +390,15 @@ async function run() {
         askedEntries.some((entry) => entry.coverAssetId === foreignCover),
       false,
       "another organization's product and cover never appear"
+    );
+    assert.equal(
+      (
+        await as(tenantA, (tx, identity) =>
+          readProductCovers(tx, identity.organizationId, [foreignProduct.id])
+        )
+      ).size,
+      0,
+      "asking for another organization's product id reads nothing"
     );
     assert.ok(
       (await balanceEntries(tenantA, false)).every(
