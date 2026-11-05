@@ -82,15 +82,6 @@ function resultText(
   }
 }
 
-/** What the lists ask to be read again once: the answers that say the list the operator saw is not the truth, or is about to stop being it (a sent event changes state and count on the server, which the screen never computes). */
-const REREAD: ReadonlySet<RetryResult> = new Set<RetryResult>([
-  "already_pending",
-  "busy",
-  "event_gone",
-  "retried",
-  "unknown_item",
-]);
-
 function setHidden(element: HTMLElement, hidden: boolean) {
   if (hidden) {
     element.setAttribute("hidden", "");
@@ -237,11 +228,9 @@ export function incidentView(tools: ScreenTools): HTMLElement {
   const settle = async (eventId: string, result: RetryResult) => {
     const at = brasiliaTime(now());
     say(eventId, resultText(result, at, true));
-    let reread = true;
+    let reread: boolean;
     try {
-      if (REREAD.has(result)) {
-        reread = await load(null);
-      }
+      reread = await load(null);
     } finally {
       setBusy(false);
     }
