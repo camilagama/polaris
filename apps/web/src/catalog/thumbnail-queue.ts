@@ -1,6 +1,6 @@
 import type { ThumbnailCache } from "./thumbnail-cache";
 import {
-  THUMBNAIL_BATCH_LIMIT,
+  THUMBS_BATCH_SIZE,
   type ThumbnailTransport,
 } from "./thumbnail-transport";
 
@@ -9,9 +9,9 @@ import {
  *
  * - Only a row on screen starts a request (`show`); nothing is asked for a row nobody sees, and the catalog is
  *   never preloaded.
- * - At most one batch in flight, of up to 24 ids. A batch that a visible row started is completed with the next
- *   rows of the list (`setSequence`) that this device does not have yet: rolling a list from top to bottom then asks
- *   in full batches (1.248 rows, 52 requests), and the completion never makes a request of its own.
+ * - At most one batch in flight, of up to `THUMBS_BATCH_SIZE` ids. A batch that a visible row started is completed with the
+ *   next rows of the list (`setSequence`) that this device does not have yet: rolling a list from top to bottom then asks
+ *   in full batches (1.248 rows, 156 requests), and the completion never makes a request of its own.
  * - An id this device already has is never asked again (an asset id is immutable), nor one the server answered as
  *   missing. Missing shows the marker; nothing falls back to the per-image route.
  * - Offline nothing is asked. A batch that failed (network, timeout, 429, 5xx) gives its ids back with a wait that
@@ -183,7 +183,7 @@ export class ThumbnailLoader {
 
   /** The rows after the last one on screen that this device does not have: the free seats of the batch. */
   private async completion(batch: readonly string[]): Promise<string[]> {
-    const free = THUMBNAIL_BATCH_LIMIT - batch.length;
+    const free = THUMBS_BATCH_SIZE - batch.length;
     const last = Math.max(
       -1,
       ...[...batch, ...this.visible.keys()].map(
@@ -223,7 +223,7 @@ export class ThumbnailLoader {
     if (!this.mayAsk()) {
       return;
     }
-    const visible = this.visibleWanted().slice(0, THUMBNAIL_BATCH_LIMIT);
+    const visible = this.visibleWanted().slice(0, THUMBS_BATCH_SIZE);
     if (visible.length === 0) {
       return;
     }
