@@ -25,6 +25,9 @@ function contextOf(element: HTMLElement): ScreenContext | null {
   }
   const environment = element.getAttribute("data-ambiente");
   return {
+    ...(element.getAttribute("data-acao") === "purge"
+      ? { action: "purge" as const }
+      : {}),
     environment:
       environment === "production" || environment === "staging"
         ? environment

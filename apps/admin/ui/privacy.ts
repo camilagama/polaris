@@ -200,3 +200,16 @@ export const CLOSURE_NOTICE_ORGANIZATION_STATUSES: readonly string[] = [
   "closed",
   "purge_pending",
 ];
+
+/**
+ * The categories an accepted deletion must cover, exactly, for the purge to be scheduled under it
+ * (`ORGANIZATION_PURGE_REQUIRED_SCOPE`): the screen offers the purge only to such a case and the server checks it
+ * again. `src/ui/privacy-lists.test.ts` ties this list to the domain's.
+ */
+export const PURGE_SCOPE: readonly string[] = [
+  "organization_profile",
+  "customers",
+  "sales",
+  "inventory_catalog",
+  "media",
+];

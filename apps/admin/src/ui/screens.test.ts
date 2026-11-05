@@ -148,7 +148,36 @@ const SCREENS = [
     "Privacidade",
     `data-id="${CASE}"`,
   ],
+  [
+    "/retencoes",
+    "Retenções legais",
+    "Retenções legais",
+    'data-tela="retencoes"',
+  ],
 ] as const;
+
+describe("the tab of the purge of a privacy case (corte admin-v2, Parte 7)", () => {
+  const rootOf = async (path: string) =>
+    ROOT.exec(await (await setup()(path)).text())?.[1] ?? "";
+
+  it("names ?acao=purge on the root of a privacy case, the one fixed value it takes", async () => {
+    expect(await rootOf(`/privacidade/${CASE}?acao=purge`)).toContain(
+      'data-acao="purge"'
+    );
+  });
+
+  it.each([
+    `/privacidade/${CASE}`,
+    `/privacidade/${CASE}?acao=aviso`,
+    `/privacidade/${CASE}?acao=PURGE`,
+    `/privacidade/${CASE}?acao=purge%22`,
+    `/casos/${CASE}?acao=purge`,
+    "/privacidade?acao=purge",
+    "/retencoes?acao=purge",
+  ])("writes no action for %s", async (path) => {
+    expect(await rootOf(path)).not.toContain("data-acao");
+  });
+});
 
 describe("one route per screen (AC-P1.2)", () => {
   it.each(SCREENS)(
@@ -219,7 +248,8 @@ describe("one route per screen (AC-P1.2)", () => {
     "/incidentes/123",
     "/registro/x",
     `/registro/${INCIDENT}`,
-    "/retencoes",
+    "/retencoes/x",
+    `/retencoes/${STORE}`,
     "/configuracoes/x",
     `/configuracoes/${CASE}`,
   ])(
@@ -318,6 +348,7 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
         "Incidentes /incidentes",
         "Funil /funil",
         "Registro de acessos /registro",
+        "Retenções legais /retencoes",
         "Configurações /configuracoes",
       ],
       ["Lojas", "Suporte", "Operação", "Auditoria"],
@@ -370,10 +401,15 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
       [],
       [],
     ],
-    // the items of later parts are not in the menu until their screens exist
     [
-      "only capabilities of screens that do not exist yet",
+      "organization:legal_hold",
       ["organization:legal_hold"],
+      ["Retenções legais /retencoes"],
+      ["Auditoria"],
+    ],
+    [
+      "only the purge, which opens no screen of its own",
+      ["organization:purge"],
       [],
       [],
     ],

@@ -86,6 +86,7 @@ describe("the Admin app's route surface", () => {
       "GET /registro",
       "GET /privacidade",
       "GET /privacidade/:caseId",
+      "GET /retencoes",
       "GET /ui/:file",
     ]);
   });

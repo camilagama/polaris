@@ -133,6 +133,7 @@ export const SCREEN_ROUTES = [
   "/registro",
   "/privacidade",
   "/privacidade/:caseId",
+  "/retencoes",
 ] as const;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
@@ -310,6 +311,9 @@ export function createAdminApp(
       );
       const store = context.req.query("loja") ?? "";
       const body = (await page()).render({
+        ...(context.req.query("acao") === "purge"
+          ? { action: "purge" as const }
+          : {}),
         capabilities: platformCapabilitiesForRole(role),
         environment: context.env.POLARIS_ENVIRONMENT,
         forbidden,
