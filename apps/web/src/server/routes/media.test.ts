@@ -1307,6 +1307,27 @@ describe("media thumbnail batch route", () => {
     ]);
   });
 
+  it("answers 503 with a stable code when a stored thumbnail cannot be read to the end", async () => {
+    const id = thumbId(41);
+    const { app, bindings, mediaBucket } = createTestApp({
+      listDeliverableMediaAssetIds: tenantImages(
+        new Map([[id, organizationId]])
+      ),
+    });
+    mediaBucket.get = vi.fn(() =>
+      Promise.resolve({
+        arrayBuffer: () => Promise.reject(new Error("r2 reset")),
+      } as never)
+    );
+
+    const response = await askThumbs(app, bindings, id);
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "media_processing_unavailable" },
+    });
+  });
+
   it("answers 503 with a stable code when storage cannot read the thumbnails", async () => {
     const id = thumbId(40);
     const { app, bindings, mediaBucket } = createTestApp({

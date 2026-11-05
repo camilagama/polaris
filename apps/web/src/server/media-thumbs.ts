@@ -7,7 +7,7 @@ import type { MediaBucketBinding } from "./environment";
  * the budget on the Workers Free plan. The client batch size follows this value.
  */
 export const MAX_MEDIA_THUMBS_PER_REQUEST = 5;
-/** A Worker invocation keeps at most six storage operations open at once; a higher cap must not exceed it. */
+/** A Worker invocation keeps at most six storage operations open at once; the pool keeps to that however many ids a caller passes. */
 const MEDIA_THUMBS_STORAGE_CONCURRENCY = 6;
 export const MEDIA_THUMBS_HEADER = "X-Polaris-Thumbs";
 const MEDIA_THUMBS_SIZE = 320;
