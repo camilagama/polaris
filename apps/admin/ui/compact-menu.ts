@@ -1,10 +1,11 @@
 /**
- * The ☰ of a narrow screen is a native `<details>` (the page has no framework and its policy no inline style), which
- * closes only by the same tap. A menu that covers the page also closes with Esc, giving the focus back to the ☰ unless it
- * is on a control outside the menu, and by a tap anywhere outside it (the focus stays where the person tapped).
+ * The ☰ of a narrow screen and the account menu are native `<details>` (the page has no framework and its policy no
+ * inline style), which close only by the same tap. A menu that opens over the page also closes with Esc, giving the focus
+ * back to its summary unless it is on a control outside the menu, and by a tap anywhere outside it (the focus stays where
+ * the person tapped).
  */
 
-const COMPACT_MENU_SELECTOR = "details.compact-menu";
+const COMPACT_MENU_SELECTOR = "details.compact-menu, details[data-conta]";
 
 function openMenus(page: Document): HTMLDetailsElement[] {
   return [

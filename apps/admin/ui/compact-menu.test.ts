@@ -15,13 +15,18 @@ class FakeSummary {
   }
 }
 
+const COMPACT = "details.compact-menu";
+const ACCOUNT = "details[data-conta]";
+
 class FakeMenu {
   open: boolean;
+  readonly kind: string;
   readonly inside = new Set<unknown>();
   readonly summary = new FakeSummary();
 
-  constructor(open: boolean) {
+  constructor(open: boolean, kind = COMPACT) {
     this.open = open;
+    this.kind = kind;
     this.inside.add(this.summary);
   }
 
@@ -51,7 +56,8 @@ class FakePage {
 
   querySelectorAll(selector: string) {
     this.selectors.push(selector);
-    return this.menus;
+    const wanted = selector.split(",").map((part) => part.trim());
+    return this.menus.filter((menu) => wanted.includes(menu.kind));
   }
 
   press(key: string, defaultPrevented = false) {
@@ -78,10 +84,23 @@ describe("the compact menu closes with Esc", () => {
     expect(menu.summary.focused).toBe(1);
   });
 
-  it("looks only at the compact menu", () => {
+  it("looks only at the compact menu and the account menu", () => {
     const page = mount(new FakeMenu(true));
     page.press("Escape");
-    expect(page.selectors).toEqual(["details.compact-menu"]);
+    expect(page.selectors).toEqual([
+      "details.compact-menu, details[data-conta]",
+    ]);
+  });
+
+  it("closes the account menu with Esc, giving the focus back to its summary, and leaves the compact menu closed alone", () => {
+    const account = new FakeMenu(true, ACCOUNT);
+    const compact = new FakeMenu(false);
+    const page = mount(account, compact);
+    page.press("Escape");
+    expect(account.open).toBe(false);
+    expect(account.summary.focused).toBe(1);
+    expect(compact.open).toBe(false);
+    expect(compact.summary.focused).toBe(0);
   });
 
   it("gives the focus back from a link inside the panel, and from the page body", () => {
@@ -163,5 +182,19 @@ describe("the compact menu closes with a tap outside", () => {
     const page = mount(menu);
     page.touch({});
     expect(menu.open).toBe(false);
+  });
+});
+
+describe("the account menu closes with a tap outside", () => {
+  it("closes it for a tap outside and keeps it open for a tap on its summary or inside the panel", () => {
+    const account = new FakeMenu(true, ACCOUNT);
+    const item = {};
+    account.inside.add(item);
+    const page = mount(account);
+    page.touch(account.summary);
+    page.touch(item);
+    expect(account.open).toBe(true);
+    page.touch({});
+    expect(account.open).toBe(false);
   });
 });
