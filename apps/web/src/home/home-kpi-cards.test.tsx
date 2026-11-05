@@ -47,8 +47,10 @@ function days(from: string, to: string, pick: (date: string) => Partial<Day>) {
 function figures({
   unknownCostDays = [],
   todaySold = true,
+  todayReturned = false,
 }: {
   unknownCostDays?: readonly string[];
+  todayReturned?: boolean;
   todaySold?: boolean;
 } = {}): HomeFigures {
   const sold = (net: string, result: string) => (date: string) => ({
@@ -57,10 +59,14 @@ function figures({
     costs: unknownCostDays.includes(date) ? null : "5.00",
     salesCount: 1,
   });
+  const returned = (date: string): Partial<Day> =>
+    todayReturned && date === TODAY
+      ? { netSales: "-8.00", operatingResult: "-8.00", salesCount: 0 }
+      : {};
   const month = days("2026-10-01", "2026-10-31", (date) =>
     date <= TODAY && (todaySold || date < TODAY)
       ? sold("20.00", "15.00")(date)
-      : {}
+      : returned(date)
   );
   const before = days("2026-09-01", "2026-09-30", sold("10.00", "5.00"));
   const known = unknownCostDays.length;
@@ -172,6 +178,16 @@ describe("Vendas hoje", () => {
   it("diz 'Nenhuma venda ainda' quando hoje não vendeu", () => {
     const today = card(render(figures({ todaySold: false })), "home-today");
     expect(words(today)).toContain("Nenhuma venda ainda");
+  });
+
+  it("com só devolução hoje, mostra o líquido negativo e 'Só devoluções até agora'", () => {
+    const today = card(
+      render(figures({ todayReturned: true, todaySold: false })),
+      "home-today"
+    );
+    expect(words(today)).toContain("Só devoluções até agora");
+    expect(words(today)).not.toContain("Nenhuma venda ainda");
+    expect(words(today)).toContain("8,00");
   });
 
   it("sem os números de hoje diz só 'Sem números de hoje'", () => {
