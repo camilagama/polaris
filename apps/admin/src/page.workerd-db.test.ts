@@ -400,12 +400,12 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     await stale.shows(
       "Esta etapa já foi registrada ou ainda não é a vez dela. Nada foi refeito."
     );
-    await stale.shows("Revisar papel do polaris");
+    await stale.shows("Revisar papel do Polaris");
 
     record(
       page,
-      "Revisar papel do polaris",
-      "Registrar papel do polaris",
+      "Revisar papel do Polaris",
+      "Registrar papel do Polaris",
       () => {
         byId(page.root, "etapa-role-papel").value = "controller";
       }

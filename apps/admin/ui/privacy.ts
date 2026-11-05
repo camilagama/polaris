@@ -139,9 +139,9 @@ export const PROVISIONAL = "prazo provisório";
 
 /**
  * How far the due date the server returned is, in words. The date is never computed here: it is the server's
- * `dueAt`; the case is said to be late by the server's `overdue`, or when that day is already past on the page's
- * clock (a page left open overnight). Only the count of calendar days between today in Brasília and that day is
- * taken, because the route returns the date and not the count.
+ * `dueAt`; the case is said to be late by the server's `overdue`, or when that moment is already past on the page's
+ * clock (a page left open overnight, or past the hour of the due day). Only the count of calendar days between today
+ * in Brasília and that day is taken, because the route returns the date and not the count.
  */
 export function dueText(dueAt: string, overdue: boolean, now: Date): DueText {
   const due = new Date(dueAt);
@@ -153,7 +153,7 @@ export function dueText(dueAt: string, overdue: boolean, now: Date): DueText {
     return { day, text: `prazo vencido em ${day}`, warn: true };
   }
   const days = dayNumber(due) - dayNumber(now);
-  if (days < 0) {
+  if (days < 0 || now.getTime() > due.getTime()) {
     return { day, text: `prazo vencido em ${day}`, warn: true };
   }
   if (days === 0) {
