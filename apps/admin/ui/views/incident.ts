@@ -247,7 +247,10 @@ export function incidentView(tools: ScreenTools): HTMLElement {
       setBusy(false);
     }
     if (!reread) {
-      say(eventId, resultText(result, at, false));
+      const line = lines.get(eventId);
+      if (line !== undefined) {
+        line.textContent = resultText(result, at, false);
+      }
       return;
     }
     const current = lines.get(eventId);

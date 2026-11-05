@@ -633,6 +633,47 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
     retryButton(root, EVENT)?.click();
     await flush();
 
+    expect(rowsOf(root)).toHaveLength(0);
+    expect(byTag(root, "table")[0]?.hasAttribute("hidden")).toBe(true);
+    expect(visibleText(root)).toContain("Reenviado às 12:07");
+  });
+
+  it("does not carry the warning of a failed read into a later list that was read", async () => {
+    const { root } = await detailScreen([
+      json(detail([eventOf(), eventOf({ eventId: OTHER_EVENT })])),
+      json({ result: "retried" }),
+      json({ error: "x" }, 503),
+      json({ result: "retried" }),
+      json(detail([eventOf(), eventOf({ eventId: OTHER_EVENT })])),
+    ]);
+
+    retryButton(root, EVENT)?.click();
+    await flush();
+    expect(lineOf(root, EVENT)?.textContent).toContain("desatualizado");
+    retryButton(root, OTHER_EVENT)?.click();
+    await flush();
+
+    expect(lineOf(root, EVENT)?.textContent).toBe(
+      "Reenviado às 12:07. O evento sai no próximo ciclo (até uma hora)."
+    );
+  });
+
+  it("goes back to the first page when the list is read again after a retry", async () => {
+    const { calls, root } = await detailScreen([
+      json(detail([eventOf()], {}, OTHER_EVENT)),
+      json(detail([eventOf({ eventId: OTHER_EVENT })])),
+      json({ result: "retried" }),
+      json(detail([eventOf()], {}, OTHER_EVENT)),
+    ]);
+
+    buttons(root, "Carregar mais")[0]?.click();
+    await flush();
+    expect(rowsOf(root)).toHaveLength(2);
+    retryButton(root, OTHER_EVENT)?.click();
+    await flush();
+
+    expect(rowsOf(root)).toHaveLength(1);
+    expect(search(calls[4]).get("after")).toBeNull();
     expect(visibleText(root)).toContain("Reenviado às 12:07");
   });
 
