@@ -14,6 +14,8 @@ export type SettledResult = Exclude<
 /** An amount as `money.md` writes it, above zero, with the two decimal places: the server refuses any other. */
 export const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,8})\.\d{2}$/;
 
+export const FIRST_CHARGE_AMOUNT_LABEL =
+  "Valor da primeira cobrança deste vínculo";
 export const AUDIT_TEXT = "Esta consulta fica registrada na auditoria.";
 export const SEPARATE_ACTIONS =
   "Cancelar a renovação e reembolsar são ações separadas, cada uma com a sua confirmação.";
@@ -37,13 +39,14 @@ export const RETRY_BUTTON = "Tentar de novo (mesmo pedido)";
 export const REREAD_BUTTON = "Reler a cobrança";
 
 const PERIOD_END = "o fim do período já pago";
+const PERIOD_END_BARE = "fim do período já pago";
 
 export function cancelEffectText(accessUntil: string | null): string {
   return `A renovação será cancelada no provedor. O acesso já pago continua até ${accessUntil ?? PERIOD_END}. O cliente não é avisado por esta tela.`;
 }
 
 export function cancelUndoText(resubscribeFrom: string | null): string {
-  return `Não pela renovação: o dono da loja só pode assinar de novo depois de ${resubscribeFrom ?? PERIOD_END}, quando o período pago termina.`;
+  return `Não. O dono da loja pode assinar de novo pelo app a partir ${resubscribeFrom === null ? `do ${PERIOD_END_BARE}` : `de ${resubscribeFrom}`}, quando o período pago termina.`;
 }
 
 export const CANCEL_AUDIT =
@@ -98,11 +101,11 @@ export function limitReachedText(wait: string | null): string {
 
 export function amountChangedText(now: string | null, same: boolean): string {
   if (now === null) {
-    return "O valor da cobrança mudou desde a leitura e não há mais cobrança a reembolsar. Nada foi feito.";
+    return "O valor da primeira cobrança deste vínculo mudou desde a leitura e não há mais cobrança a reembolsar. Nada foi feito.";
   }
   return same
-    ? `O provedor tem uma cobrança de valor diferente de ${now}, o que o registro da loja mostra. Nada foi feito. Se a diferença continuar, avise a engenharia.`
-    : `O valor da cobrança mudou desde a leitura: agora é ${now}. Nada foi feito. Revise de novo antes de reembolsar.`;
+    ? `A cobrança em vigor tem um valor diferente de ${now}, o da primeira cobrança deste vínculo, que é o que o registro da loja guarda. Nada foi feito. Por enquanto, o reembolso dela vai pelo painel do provedor.`
+    : `O valor da primeira cobrança deste vínculo mudou desde a leitura: agora é ${now}. Nada foi feito. Revise de novo antes de reembolsar.`;
 }
 
 export const RESULT_TEXT: Readonly<

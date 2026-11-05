@@ -130,7 +130,7 @@ export function buildRefundWindowView(
     firstChargeAmount: raw.firstChargeAmount,
     firstChargeAt: raw.firstChargeAt,
     firstChargeOn: null,
-    // every charge of a link costs what its first one did; the price only decides whether `nextChargeOf` names a day
+    // stands for the price only so `nextChargeOf` names a day; it is the first charge's amount, not the one in force
     priceAmount: raw.firstChargeAmount,
     provider: null,
     refundRequestedAt: raw.refundRequestedAt,

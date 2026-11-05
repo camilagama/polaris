@@ -377,7 +377,9 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     // the last minute of the day the server said, in Brasília: not one the page worked out from the first charge
     expect(fact("Prazo até")).toBe("01/11/2026 23:59");
     expect(fact("Primeira cobrança")).toBe("24/10/2026 15:30");
-    expect(fact("Valor da cobrança")).toBe("R$ 1.234,50");
+    expect(fact("Valor da primeira cobrança deste vínculo")).toBe(
+      "R$ 1.234,50"
+    );
     expect(fact("Forma de pagamento")).toBe("Cartão");
     expect(fact("Assinatura")).toBe("Pro ativo");
     expect(fact("A regra do Polaris ainda permite o reembolso")).toBe("Sim");

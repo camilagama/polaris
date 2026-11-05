@@ -243,7 +243,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     });
     expect(facts["Janela de arrependimento"]).toBe("Dentro do prazo");
     expect(facts["Primeira cobrança"]).toContain(brasilia.format(charged));
-    expect(facts["Valor da cobrança"]).toBe("R$ 49,90");
+    expect(facts["Valor da primeira cobrança deste vínculo"]).toBe("R$ 49,90");
     expect(facts.Assinatura).toBe("Pro ativo");
     expect(facts["Prazo até"]).toMatch(LAST_MINUTE_OF_A_DAY);
 

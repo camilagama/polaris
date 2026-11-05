@@ -71,6 +71,8 @@ export interface BillingActionsOptions {
   /** Turns the area's own buttons off while a command is on its way, so nothing else is asked meanwhile. */
   busy: (on: boolean) => void;
   choice: CaseChoice;
+  /** A confirmation opened (true) or closed (false): the page shows no other reason field beside an open one. */
+  confirming?: (open: boolean) => void;
   notice: Notice;
   organization: { id: string; name: string };
   settled: (after: After) => void;
@@ -97,8 +99,12 @@ const ALERT_RESULTS: ReadonlySet<SettledResult> = new Set([
   "refund_not_supported",
 ]);
 
-/** The amount that goes to the server is the one the read gave, as `money.md` writes it: nothing else is offered. */
-function refundableAmount(view: RefundWindowView): string | null {
+/**
+ * The amount that goes to the server is the first charge of this link as the read gave it, as `money.md` writes it:
+ * nothing else is offered, and it is not known to be the charge in force (a change of cycle prices the next ones
+ * apart), so the server's `amount_changed` is the check.
+ */
+function firstChargeAmountOf(view: RefundWindowView): string | null {
   const amount = view.firstChargeAmount;
   const paid = view.state === "active" || view.state === "grace";
   return paid &&
@@ -138,7 +144,7 @@ export { renewalLine };
 
 /**
  * The two actions of the billing of a support case (ADR 0105), each reviewed in a step of its
- * own: cancel the renewal, and refund the charge in force (which cancels the renewal first). The page offers only
+ * own: cancel the renewal, and refund the period in force at the amount of the link's first charge (which cancels the renewal first). The page offers only
  * what the read says is possible and the operator may do; the server decides again at every command. The command ID is
  * made when a confirmation opens and kept until a definite answer, so a repeat after "we do not know" is the same
  * command, and a new opening is a new one. The amount sent is the amount read and shown, never one typed or worked
@@ -150,7 +156,7 @@ export function billingActionsView(
 ): BillingActions {
   const { api, can, context, dom } = tools;
   const { choice, notice, organization, view } = options;
-  const amount = refundableAmount(view);
+  const amount = firstChargeAmountOf(view);
   const box = dom.el("div", { class: "grant-action" });
   let sending = false;
   const pathOf = (kind: Kind) => {
@@ -214,7 +220,6 @@ export function billingActionsView(
         "cobranca-motivo-erro cobranca-motivo-contador cobranca-motivo-dica",
       autocomplete: "off",
       id: "cobranca-motivo",
-      maxlength: String(MAX_REASON_LENGTH),
       name: "motivo",
       required: "",
       type: "text",
@@ -255,6 +260,7 @@ export function billingActionsView(
   };
 
   const close = () => {
+    options.confirming?.(false);
     dom.fill(box);
     buttonsRow.querySelector("button")?.focus();
   };
@@ -401,6 +407,7 @@ export function billingActionsView(
 
   const review = (kind: Kind, prefill = "") => {
     notice.clear();
+    options.confirming?.(true);
     const field = reasonField(prefill);
     const current: Draft = {
       commandId: crypto.randomUUID(),

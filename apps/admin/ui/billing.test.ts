@@ -183,7 +183,10 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
     expect(page.fact("Renovação (pelo registro da loja)")).toBe(
       "Viva: renova em 24/11/2026"
     );
-    expect(page.fact("Valor da cobrança")).toBe("R$ 249,00");
+    expect(page.fact("Valor da primeira cobrança deste vínculo")).toBe(
+      "R$ 249,00"
+    );
+    expect(page.fact("Valor da cobrança")).toBeUndefined();
     expect(
       buttons(page.section, "Cancelar a renovação").length +
         buttons(page.section, "Reembolsar R$ 249,00").length
@@ -341,6 +344,62 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
   });
 });
 
+const caseForm = (section: FakeElement) =>
+  byTag(section, "form").find((form) =>
+    form.textContent.includes("Motivo do novo caso")
+  ) as FakeElement;
+
+describe("one reason field at a time (a confirmation hides the form of a new case)", () => {
+  it("hides 'Motivo do novo caso' while the refund confirmation is open and shows it again on Voltar", async () => {
+    const page = await read(billing());
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
+    buttons(page.section, "Reembolsar R$ 249,00")[0]?.click();
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
+    expect(visibleText(page.section)).not.toContain("Motivo do novo caso");
+    expect(visibleText(page.section)).not.toContain("Abrir caso");
+    expect(visibleText(page.section)).toContain("Motivo");
+    buttons(page.section, "Voltar")[0]?.click();
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
+    expect(visibleText(page.section)).toContain("Motivo do novo caso");
+  });
+
+  it("hides it for the cancel confirmation too, and shows it again once the answer is definite", async () => {
+    const page = await read(billing(), [
+      cancelResult("cancelled"),
+      json(billing(cancelled())),
+    ]);
+    openCancel(page);
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
+    page.type("O dono pediu o cancelamento por e-mail");
+    buttons(page.section, "Confirmar o cancelamento da renovação")[0]?.click();
+    await flush();
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
+  });
+
+  it("shows it again after a definite refusal, and keeps it hidden while the outcome is unknown", async () => {
+    const page = await read(billing(), [
+      cancelResult("provider_unavailable", 503),
+    ]);
+    await confirmRefund(page);
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
+    const refused = await read(billing(), [
+      cancelResult("nothing_to_refund"),
+      json(billing()),
+    ]);
+    await confirmRefund(refused);
+    expect(caseForm(refused.section).hasAttribute("hidden")).toBe(false);
+  });
+
+  it("keeps it hidden when the amount changed and the confirmation opens again", async () => {
+    const page = await read(billing(), [
+      cancelResult("amount_changed", 409),
+      json(billing({ firstChargeAmount: "199.00" })),
+    ]);
+    await confirmRefund(page);
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
+  });
+});
+
 describe("cancelling the renewal (AC-P10.2, AC-P10.3)", () => {
   it("reviews first: environment, store, case, effect with the date, what cannot be undone, the audit and the reason, with nothing sent", async () => {
     const page = await read(billing());
@@ -354,7 +413,7 @@ describe("cancelling the renewal (AC-P10.2, AC-P10.3)", () => {
       "A renovação será cancelada no provedor. O acesso já pago continua até o fim do período já pago. O cliente não é avisado por esta tela."
     );
     expect(text).toContain(
-      "Não pela renovação: o dono da loja só pode assinar de novo depois de o fim do período já pago, quando o período pago termina."
+      "Não. O dono da loja pode assinar de novo pelo app a partir do fim do período já pago, quando o período pago termina."
     );
     expect(text).toContain(CANCEL_AUDIT);
     expect(text).toContain(REASON_HINT);
@@ -377,7 +436,7 @@ describe("cancelling the renewal (AC-P10.2, AC-P10.3)", () => {
     const text = visibleText(page.section);
     expect(text).toContain("O acesso já pago continua até 24/11/2026.");
     expect(text).toContain(
-      "só pode assinar de novo depois de 24/11/2026, quando o período pago termina."
+      "Não. O dono da loja pode assinar de novo pelo app a partir de 24/11/2026, quando o período pago termina."
     );
   });
 
@@ -395,6 +454,32 @@ describe("cancelling the renewal (AC-P10.2, AC-P10.3)", () => {
       "Escreva o motivo."
     );
     expect(page.commands()).toEqual([]);
+  });
+
+  it("has no native maxlength: an emoji counts as one, so 300 go through and 301 are refused by the page", async () => {
+    const page = await read(billing(), [
+      cancelResult("cancelled"),
+      json(billing(cancelled())),
+    ]);
+    openCancel(page);
+    expect(
+      byId(page.section, "cobranca-motivo").getAttribute("maxlength")
+    ).toBeNull();
+    page.type(`${"😀".repeat(299)}é`);
+    expect(byId(page.section, "cobranca-motivo-contador").textContent).toBe(
+      "300 de 300 caracteres"
+    );
+    page.type("😀".repeat(301));
+    buttons(page.section, "Confirmar o cancelamento da renovação")[0]?.click();
+    await flush();
+    expect(byId(page.section, "cobranca-motivo-erro").textContent).toBe(
+      "O motivo aceita até 300 caracteres."
+    );
+    expect(page.commands()).toEqual([]);
+    page.type(`${"😀".repeat(299)}é`);
+    buttons(page.section, "Confirmar o cancelamento da renovação")[0]?.click();
+    await flush();
+    expect(page.bodyOf(page.commands()[0]).reason).toBe(`${"😀".repeat(299)}é`);
   });
 
   it("sends one request: the command ID the review made, the trimmed reason and nothing else; the button is off meanwhile", async () => {
@@ -709,7 +794,7 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
     ]);
     await confirmRefund(page);
     expect(alertOf(page.section)?.textContent).toBe(
-      "O valor da cobrança mudou desde a leitura: agora é R$ 199,00. Nada foi feito. Revise de novo antes de reembolsar."
+      "O valor da primeira cobrança deste vínculo mudou desde a leitura: agora é R$ 199,00. Nada foi feito. Revise de novo antes de reembolsar."
     );
     expect(page.commands()).toHaveLength(1);
     const money = allElements(page.section).find(
@@ -734,9 +819,10 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
       json(billing()),
     ]);
     await confirmRefund(page);
-    expect(alertOf(page.section)?.textContent).toContain(
-      "O provedor tem uma cobrança de valor diferente de R$ 249,00"
+    expect(alertOf(page.section)?.textContent).toBe(
+      "A cobrança em vigor tem um valor diferente de R$ 249,00, o da primeira cobrança deste vínculo, que é o que o registro da loja guarda. Nada foi feito. Por enquanto, o reembolso dela vai pelo painel do provedor."
     );
+    expect(page.commands()).toHaveLength(1);
   });
 
   it("amount_changed with the same amount does not reopen the review, so it spends no other refund of the hour", async () => {
@@ -750,6 +836,17 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
         (heading) => heading.textContent === "Revise antes de reembolsar"
       )
     ).toBe(false);
+  });
+
+  it("amount_changed with the same amount sends one command, opens no confirmation and brings the form of a new case back", async () => {
+    const page = await read(billing(), [
+      cancelResult("amount_changed", 409),
+      json(billing()),
+    ]);
+    await confirmRefund(page);
+    expect(page.commands()).toHaveLength(1);
+    expect(buttons(page.section, "Reembolsar R$ 249,00")).toHaveLength(1);
+    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
   });
 
   it("an answer whose audit was not recorded does not say the action was done unless it was", async () => {

@@ -9,7 +9,12 @@ import {
   moneyText,
 } from "../format";
 import { createNotice } from "../notice";
-import { AUDIT_TEXT, RENEWAL_LABEL, SEPARATE_ACTIONS } from "../refund-words";
+import {
+  AUDIT_TEXT,
+  FIRST_CHARGE_AMOUNT_LABEL,
+  RENEWAL_LABEL,
+  SEPARATE_ACTIONS,
+} from "../refund-words";
 import type { RefundWindowView } from "../types";
 import {
   type After,
@@ -55,7 +60,7 @@ function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
     ["Assinatura", billingStateText(view.state)],
     [RENEWAL_LABEL, renewalLine(view.renewal)],
     ["Forma de pagamento", methodText(view.method)],
-    ["Valor da cobrança", moneyText(view.firstChargeAmount)],
+    [FIRST_CHARGE_AMOUNT_LABEL, moneyText(view.firstChargeAmount)],
     ["Primeira cobrança", brasiliaMomentText(view.firstChargeAt)],
     ["Janela de arrependimento", windowText(view.window)],
     ["Prazo até", brasiliaMomentText(view.window?.until ?? null)],
@@ -134,7 +139,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       const text =
         typeof next.text === "string"
           ? next.text
-          : "O valor da cobrança mudou desde a leitura. Nada foi feito.";
+          : "O valor da primeira cobrança deste vínculo mudou desde a leitura. Nada foi feito.";
       notice.alert(`Loja ${labelName(away.name)}: ${text}`);
     };
     try {
@@ -145,6 +150,13 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
           cases.busy(on);
         },
         choice,
+        confirming: (open) => {
+          if (open) {
+            cases.form.setAttribute("hidden", "");
+          } else {
+            cases.form.removeAttribute("hidden");
+          }
+        },
         notice,
         organization,
         settled: (next) => {
@@ -176,6 +188,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
     const mine = turn;
     reading = true;
     cases.busy(true);
+    cases.form.removeAttribute("hidden");
     result.replaceChildren();
     notice.status(
       after === null ? "Consultando a cobrança…" : "Lendo a cobrança de novo…"
@@ -259,6 +272,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       dom.fill(title, "Cobrança da loja: ", storeName(dom, next.name, next.id));
       notice.clear();
       result.replaceChildren();
+      cases.form.removeAttribute("hidden");
       cases.show(next.id);
     },
   };
