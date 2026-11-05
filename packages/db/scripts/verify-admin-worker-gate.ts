@@ -219,10 +219,14 @@ async function run() {
       ),
       trial: await screenStore(`Tela ${suffix} em teste`, "free", true),
     };
-    // the Pro store had its first charge yesterday: its refund window is open, and the page shows its date
+    // the Pro store had its first charge yesterday: its refund window is open, and the page shows its date. Its charge
+    // in force (0118) is another amount: the Admin of before the column reads the window with the extra key and ignores it
     const firstChargeAt = (
       await owner.pool.query<{ at: Date }>(
-        "UPDATE public.organization_billing SET first_charge_at = now() - interval '1 day', first_charge_amount = '49.90'::numeric WHERE organization_id = $1 RETURNING first_charge_at AS at",
+        `UPDATE public.organization_billing SET first_charge_at = now() - interval '1 day', first_charge_amount = '49.90'::numeric,
+                current_charge_amount = '59.90'::numeric, current_charge_period_ends_at = now() + interval '29 days',
+                current_charge_event_id = gen_random_uuid()
+          WHERE organization_id = $1 RETURNING first_charge_at AS at`,
         [screen.hostile.id]
       )
     ).rows[0]?.at;

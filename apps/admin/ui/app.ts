@@ -160,19 +160,14 @@ export async function mountAdmin(
   fetchJson: Fetch,
   now: () => Date,
   context: ScreenContext,
-  navigate: (path: string) => void
+  navigate: (path: string) => void,
+  operator: HTMLElement | null
 ) {
   const dom = createDom(root.ownerDocument);
   const api = createApi(fetchJson);
   const notice = createNotice(dom);
-  const operator = dom.el("p", { class: "operator" });
   const main = dom.el("div", { class: "areas" });
-  dom.fill(
-    root,
-    dom.el("div", { class: "top" }, operator),
-    notice.element,
-    main
-  );
+  dom.fill(root, notice.element, main);
 
   notice.status("Carregando…");
   const who = await api.get<WhoAmI>("/api/whoami");
@@ -181,8 +176,11 @@ export async function mountAdmin(
     return;
   }
   notice.clear();
-  // the operator's own e-mail is the only one the page shows (AC-6 of the v1)
-  operator.textContent = `Operador: ${who.data.principal.emailSnapshot ?? who.data.principal.id}`;
+  // the operator's own e-mail is the only one the page shows (AC-6 of the v1), in the menu of the account
+  if (operator !== null) {
+    operator.textContent =
+      who.data.principal.emailSnapshot ?? who.data.principal.id;
+  }
 
   const screen = SCREENS[context.screen];
   if (screen === undefined) {

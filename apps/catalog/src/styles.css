@@ -2,7 +2,7 @@
  * Public catalog (apps/catalog), v5.1 direction, in plain CSS.
  * No Tailwind, no Base UI, no external font or stylesheet (ADR 0103, security condition 7).
  * No color is written here: every color is a var(--…) of tokens.generated.css (imported below; the build inlines
- * it, so the page still gets one file), which is generated from the one source, apps/web/src/styles/theme.css
+ * it, so the page still gets one file), which is generated from the one source, packages/ui/src/theme.css
  * (DESIGN.md, "Changing a color"). Light by default, dark by the system setting (prefers-color-scheme) and nothing
  * else.
  *

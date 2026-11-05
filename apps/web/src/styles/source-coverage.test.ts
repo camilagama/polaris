@@ -241,7 +241,7 @@ function stylesheetPath(id: string, base: string): string {
 
 async function appUtility() {
   const design = await __unstable__loadDesignSystem(
-    '@import "tailwindcss/theme.css";\n@import "tailwindcss/utilities.css";\n@import "tw-animate-css";\n@import "./shadcn-tailwind.css";\n@import "./theme.css";',
+    '@import "tailwindcss/theme.css";\n@import "tailwindcss/utilities.css";\n@import "tw-animate-css";\n@import "./shadcn-tailwind.css";\n@import "../../../../packages/ui/src/theme.css";',
     {
       base: join(src, "styles"),
       loadStylesheet: (id, base) => {

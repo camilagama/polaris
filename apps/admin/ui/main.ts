@@ -58,6 +58,7 @@ if (root !== null && context !== null) {
       if (SCREEN_PATH.test(path)) {
         window.location.assign(path);
       }
-    }
+    },
+    document.querySelector<HTMLElement>("[data-operador]")
   );
 }
