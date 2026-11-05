@@ -11,6 +11,7 @@ import {
 import { createNotice } from "../notice";
 import type { ClosedSupportCase, SupportCaseDetail } from "../types";
 import { newCaseLink, storePath } from "./case-links";
+import { storeActionsView } from "./store-actions";
 
 /** The server's limit for a resolution (`MAX_CASE_RESOLUTION_LENGTH`), in characters as a person counts them. */
 const MAX_RESOLUTION_LENGTH = 500;
@@ -156,7 +157,13 @@ export function caseView(tools: ScreenTools): HTMLElement {
         newCaseLink(dom, item.organizationId)
       );
     }
-    return closePanel(item);
+    const mayAct = can("organization:suspend") || can("organization:classify");
+    return dom.el(
+      "div",
+      { class: "case-actions" },
+      closePanel(item),
+      mayAct ? storeActionsView(tools, item) : null
+    );
   };
 
   const render = (detail: SupportCaseDetail) => {

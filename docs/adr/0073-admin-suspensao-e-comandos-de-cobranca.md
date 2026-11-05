@@ -16,6 +16,13 @@ Os últimos itens da Fase 9 são dois poderes que mudam o estado de uma organiza
 - **Comandos que dependem de provedor** (reconciliar com o provedor, cancelar a renovação, reembolsar) **não existem ainda**: exigem o adaptador do provedor (PR77, PR78, PR80) e as contas sandbox do Gate 7, e não se simula um reembolso. Entram quando o adaptador existir, pelo mesmo padrão (registrar, fazer, registrar).
 - **Capacidades** (ADR 0070): `organization:suspend` para suspender e reativar, `billing:operate` para os comandos de cobrança.
 
+### Emenda de 04/11/2026: a tela de suspender e reativar existe (corte admin-v2, Parte 3)
+
+- **Onde.** No painel "Loja" da tela do caso de suporte aberto (`/casos/{uuid}`), só para quem tem `organization:suspend` e `organization:diagnose` (sem a segunda, a tela diz que precisa ver a situação da loja e não oferece o botão). Caso fechado, ou de privacidade, não mostra o painel; a Loja (`/lojas/{uuid}`) só diz que a ação mora no caso. A tela chama só `POST /api/support-cases/:caseId/suspend` e `/reactivate` e relê `GET /api/organizations/:id/diagnostics` (sem auditoria) ao abrir o painel e **uma vez** depois de cada resposta: o estado mostrado é o que o servidor devolve. Nenhuma rota, função de banco, migration, contrato ou capacidade mudou.
+- **Revisão em duas etapas.** Ambiente, loja e caso, "O que acontece", "Dá para desfazer" e "Fica na auditoria". Suspender diz, nesta ordem: a loja deixa de abrir para os próprios usuários; os aparelhos offline perdem a autorização (concessões offline revogadas) e o que estava guardado neles **pode ser recusado ao sincronizar**; a cobrança não muda; o cliente não é avisado; reativar não devolve as concessões revogadas. A recusa ao sincronizar é a **suposição** do achado do t674, ainda a confirmar com a engenharia e a revisão de segurança; a tela não diz que as vendas "ficam na fila até a reativação". Reativar diz "Reativar desfaz só a suspensão. Loja encerrada continua encerrada."; loja encerrada não mostra o botão, e uma resposta sem mudança diz "Nada mudou" com a situação devolvida.
+- **Um pedido por clique.** O botão de confirmar fica `aria-disabled` e o manipulador recusa o segundo clique. Resposta que a tela não consegue ler, falha de rede e 5xx não são ditas como falha: "Não deu para confirmar…", sem nova tentativa direta, só "Reler a situação".
+- **Sem segunda pessoa.** A tela não tenta suprir a aprovação de uma segunda pessoa: o limite aceito acima continua valendo.
+
 ## Consequências
 
 - Suspender uma organização para o acesso em tempo real (ela deixa de abrir para os próprios usuários) e invalida os aparelhos offline, sem alterar o que ela paga ou o que o plano dá; reativar a devolve sem ressuscitar o que foi revogado.

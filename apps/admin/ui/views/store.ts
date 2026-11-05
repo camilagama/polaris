@@ -16,7 +16,7 @@ const REASON_SHOWN = 80;
  * audited), each a link to the case, where the actions are; with none, the way to open one.
  */
 function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
-  const { api, dom } = tools;
+  const { api, can, dom } = tools;
   const notice = createNotice(dom);
   const list = dom.el("ul", { class: "case-list", hidden: "" });
   const load = async () => {
@@ -79,6 +79,13 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
     dom.el("h2", { id: "casos-loja-titulo" }, "Casos desta loja"),
     notice.element,
     list,
+    can("organization:suspend") || can("organization:classify")
+      ? dom.el(
+          "p",
+          { class: "hint" },
+          "Suspender, reativar e marcar a loja como interna são ações do caso aberto desta loja. Sem caso aberto, abra um para agir."
+        )
+      : null,
     newCaseLink(dom, organizationId),
     closedCasesLink(dom, organizationId)
   );
