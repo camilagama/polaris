@@ -67,7 +67,7 @@ const sectionOf = (root: FakeElement): FakeElement => {
 const posts = (calls: Call[]) =>
   calls.filter((call) => call.init.method === "POST");
 
-describe("Retenções legais", () => {
+describe("Lojas com trava legal", () => {
   it("says no permission, and asks for no hold, without organization:legal_hold", async () => {
     const mounted = await open([], OWNER);
     expect(visibleText(mounted.root)).toContain("Sem permissão para isto.");

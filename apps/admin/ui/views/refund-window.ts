@@ -74,7 +74,7 @@ function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
       `${brasiliaMomentText(view.now)} (relógio do servidor)`,
     ],
     [
-      "Caso usado",
+      "Atendimento usado",
       `Aberto em ${brasiliaMomentText(choice.openedAt)}: ${labelName(choice.reason, 120)}`,
     ],
   ]);
@@ -98,7 +98,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
   const title = dom.el(
     "h2",
     { id: "reembolso-titulo", tabindex: "-1" },
-    "Cobrança da loja"
+    "Cancelar renovação e reembolsar"
   );
   const result = dom.el("div", { class: "report" });
   let organization = { id: "", name: "" };
@@ -240,7 +240,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       dom.el(
         "p",
         { class: "hint" },
-        "Ler a cobrança exige um caso de suporte aberto desta loja."
+        "Ler a cobrança exige um atendimento de suporte aberto desta loja."
       ),
       ...(capabilities.readWindow
         ? []
@@ -269,7 +269,11 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       reading = false;
       locked = false;
       element.removeAttribute("hidden");
-      dom.fill(title, "Cobrança da loja: ", storeName(dom, next.name, next.id));
+      dom.fill(
+        title,
+        "Cancelar renovação e reembolsar: ",
+        storeName(dom, next.name, next.id)
+      );
       notice.clear();
       result.replaceChildren();
       cases.form.removeAttribute("hidden");

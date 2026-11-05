@@ -326,7 +326,7 @@ describe("Privacidade: the list (AC-P11.1)", () => {
     expect(text).toContain(
       "Atenção: vence em 2 dias (até 07/11/2026, prazo provisório)"
     );
-    expect(text).toContain("2 casos.");
+    expect(text).toContain("2 atendimentos.");
     const warned = allElements(mounted.root).filter(
       (element) => element.getAttribute("class") === "due due-warn"
     );
@@ -343,7 +343,7 @@ describe("Privacidade: the list (AC-P11.1)", () => {
   it("says when nothing is open, and offers to open a case", async () => {
     const mounted = await list([json({ cases: [], next: null })]);
     expect(visibleText(mounted.root)).toContain(
-      "Nenhum caso de privacidade aberto."
+      "Nenhum atendimento de privacidade aberto."
     );
     expect(
       byTag(mounted.root, "a").some(
@@ -367,7 +367,7 @@ describe("Privacidade: the list (AC-P11.1)", () => {
       "/api/privacy-cases?filter=closed&limit=25"
     );
     const text = visibleText(mounted.root);
-    expect(text).toContain("Caso fechado");
+    expect(text).toContain("Atendimento fechado");
     expect(text).not.toContain("faltam");
   });
 
@@ -419,7 +419,7 @@ describe("Privacidade: the list (AC-P11.1)", () => {
   });
 });
 
-describe("Abrir caso de privacidade (AC-P11.1)", () => {
+describe("Abrir atendimento de privacidade (AC-P11.1)", () => {
   const ready = async (answers: Answer[] = []) => {
     const mounted = await opening([
       json({ next: null, organizations: [{ id: STORE, name: "Loja da Ana" }] }),
@@ -442,7 +442,7 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
     );
     const warning = order.indexOf("privacidade-aviso");
     expect(byId(mounted.root, "privacidade-aviso").textContent).toBe(
-      "Não escreva nome, e-mail, documento nem valor de registro: o caso guarda só códigos e uma nota curta."
+      "Não escreva nome, e-mail, documento nem valor de registro: o atendimento guarda só códigos e uma nota curta."
     );
     for (const field of [
       "privacidade-motivo",
@@ -456,7 +456,7 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
     }
     expect(visibleText(mounted.root)).toContain(OPEN_EFFECT);
     expect(OPEN_EFFECT).toContain(
-      "Se a loja for apagada, o texto livre do caso some e o registro fica."
+      "Se a loja for apagada, o texto livre do atendimento some e o registro fica."
     );
   });
 
@@ -482,8 +482,8 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
   it("opens with one POST of the trimmed reason and the three codes, then goes to the case", async () => {
     const mounted = await ready([json({ id: CASE }, 201)]);
     fill(mounted.root);
-    firstButton(mounted.root, "Abrir caso de privacidade").click();
-    firstButton(mounted.root, "Abrir caso de privacidade").click();
+    firstButton(mounted.root, "Abrir atendimento de privacidade").click();
+    firstButton(mounted.root, "Abrir atendimento de privacidade").click();
     await flush();
 
     expect(posts(mounted.calls)).toHaveLength(1);
@@ -504,7 +504,7 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
     type(mounted.root, "privacidade-recebido", "2026-11-02");
     type(mounted.root, "privacidade-nota", "Chegou pelo chamado 88");
     expect(visibleText(mounted.root)).toContain("22 de 500 caracteres");
-    firstButton(mounted.root, "Abrir caso de privacidade").click();
+    firstButton(mounted.root, "Abrir atendimento de privacidade").click();
     await flush();
     expect(bodyOf(posts(mounted.calls)[0])).toMatchObject({
       note: "Chegou pelo chamado 88",
@@ -513,7 +513,7 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
   });
 
   it.each([
-    ["privacidade-motivo", "", "Escreva o motivo do caso."],
+    ["privacidade-motivo", "", "Escreva o motivo do atendimento."],
     ["privacidade-canal", "", "Escolha o canal."],
     ["privacidade-tipo", "", "Escolha o tipo de pedido."],
     ["privacidade-quem", "", "Escolha quem pede."],
@@ -534,7 +534,7 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
       fill(mounted.root);
       const field = byId(mounted.root, id);
       field.value = value;
-      firstButton(mounted.root, "Abrir caso de privacidade").click();
+      firstButton(mounted.root, "Abrir atendimento de privacidade").click();
       await flush();
       expect(posts(mounted.calls)).toHaveLength(0);
       expect(byId(mounted.root, `${id}-erro`).textContent).toBe(problem);
@@ -546,7 +546,7 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
   it.each([
     [
       json({ error: "invalid_privacy_request" }, 400),
-      "O caso não foi aberto: confira",
+      "O atendimento não foi aberto: confira",
     ],
     [
       json({ error: "unknown_organization" }, 404),
@@ -558,16 +558,17 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
     async (answer, said) => {
       const mounted = await ready([answer]);
       fill(mounted.root);
-      firstButton(mounted.root, "Abrir caso de privacidade").click();
+      firstButton(mounted.root, "Abrir atendimento de privacidade").click();
       await flush();
       const alert = alertOf(mounted.root)?.textContent ?? "";
       expect(alert).toContain(said);
       expect(alert).not.toMatch(TECHNICAL);
       expect(mounted.navigations).toEqual([]);
       expect(
-        firstButton(mounted.root, "Abrir caso de privacidade").getAttribute(
-          "aria-disabled"
-        )
+        firstButton(
+          mounted.root,
+          "Abrir atendimento de privacidade"
+        ).getAttribute("aria-disabled")
       ).toBe("false");
     }
   );
@@ -581,12 +582,15 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
     async (answer) => {
       const mounted = await ready([answer]);
       fill(mounted.root);
-      firstButton(mounted.root, "Abrir caso de privacidade").click();
+      firstButton(mounted.root, "Abrir atendimento de privacidade").click();
       await flush();
       expect(alertOf(mounted.root)?.textContent).toContain(
-        "Não deu para confirmar se o caso foi aberto."
+        "Não deu para confirmar se o atendimento foi aberto."
       );
-      const button = firstButton(mounted.root, "Abrir caso de privacidade");
+      const button = firstButton(
+        mounted.root,
+        "Abrir atendimento de privacidade"
+      );
       expect(button.getAttribute("aria-disabled")).toBe("true");
       button.click();
       await flush();
@@ -693,7 +697,7 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
       detail("scoped", { identityStatus: "failed", polarisRole: "processor" })
     );
     expect(visibleText(mounted.root)).toContain(
-      "Neste caso: identidade não confirmada; papel do Polaris operador; quem pede: titular dos dados."
+      "Neste atendimento: identidade não confirmada; papel do Polaris operador; quem pede: titular dos dados."
     );
   });
 
@@ -764,9 +768,9 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     });
     const text = visibleText(mounted.root);
     expect(text).toContain(
-      "Caso fechado em 03/11/2026 12:00, sem resolução no fluxo de privacidade"
+      "Atendimento fechado em 03/11/2026 12:00, sem resolução no fluxo de privacidade"
     );
-    expect(text).not.toContain("Caso resolvido");
+    expect(text).not.toContain("Atendimento resolvido");
     expect(text).toContain("fechado fora do fluxo de privacidade");
     expect(byTag(mounted.root, "button")).toHaveLength(0);
   });
@@ -794,7 +798,7 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     ).toEqual(new Array(6).fill("step step-done"));
     expect(byTag(mounted.root, "button")).toHaveLength(0);
     expect(visibleText(mounted.root)).toContain(
-      "Caso resolvido em 04/11/2026 12:00"
+      "Atendimento resolvido em 04/11/2026 12:00"
     );
     expect(visibleText(mounted.root)).toContain(
       "Cliente anonimizado (03/11/2026 12:00, por você)"
@@ -901,7 +905,7 @@ const STEP_CASES: readonly [string, StepCase][] = [
       body: { resolution: "Conta apagada pelo dono" },
       button: "Revisar resolução",
       effect:
-        "A resolução fica registrada como caso resolvido: “Conta apagada pelo dono”. O caso fecha e os acessos temporários dele são revogados.",
+        "A resolução fica registrada como atendimento resolvido: “Conta apagada pelo dono”. O atendimento fecha e os acessos temporários dele são revogados.",
       fill: (root) =>
         type(root, "etapa-resolve-texto", "Conta apagada pelo dono"),
       path: "/resolve",
@@ -928,7 +932,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
         "Revise antes de registrar",
         "STAGING",
         "Loja da Ana",
-        "Caso de privacidade aberto em 30/10/2026 12:00",
+        "Atendimento de privacidade aberto em 30/10/2026 12:00",
         step.effect,
         STEP_UNDO,
         STEP_RECORD,
@@ -1157,7 +1161,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
         })
       );
       expect(visibleText(old.root)).toContain(
-        "nota: não registrada (decidido antes desta regra ou apagada pelo purge)"
+        "nota: não registrada (decidido antes desta regra ou apagada com a loja)"
       );
       const current = await openCase(
         detail("decided", {
@@ -1252,7 +1256,7 @@ describe("the server's refusals (AC-P11.2, AC-P11.3, AC-C3)", () => {
       expect(
         firstButton(mounted.root, "Registrar identidade").hasAttribute("hidden")
       ).toBe(true);
-      await click(mounted.root, "Recarregar o caso");
+      await click(mounted.root, "Recarregar o atendimento");
       expect(posts(mounted.calls)).toHaveLength(1);
       expect(mounted.calls.at(-1)?.path).toBe(`/api/privacy-cases/${CASE}`);
     }
@@ -1273,7 +1277,7 @@ describe("the server's refusals (AC-P11.2, AC-P11.3, AC-C3)", () => {
       screenContext({ id: CASE, screen: "privacidade-caso" })
     );
     expect(alertOf(mounted.root)?.textContent).toBe(
-      "Este caso não foi encontrado."
+      "Este atendimento não foi encontrado."
     );
   });
 });

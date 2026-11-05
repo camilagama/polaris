@@ -128,7 +128,7 @@ async function read(
   buttons(page.root, "Ver loja")[0]?.click();
   await flush();
   const section = sectionOf(page.root);
-  buttons(section, "Ver casos abertos desta loja")[0]?.click();
+  buttons(section, "Ver atendimentos abertos desta loja")[0]?.click();
   await flush();
   buttons(section, "Ler a cobrança")[0]?.click();
   await flush();
@@ -216,7 +216,7 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
     buttons(page.root, "Ver loja")[0]?.click();
     await flush();
     const section = sectionOf(page.root);
-    buttons(section, "Ver casos abertos desta loja")[0]?.click();
+    buttons(section, "Ver atendimentos abertos desta loja")[0]?.click();
     await flush();
     expect(buttons(section, "Cancelar a renovação")).toEqual([]);
     expect(
@@ -242,7 +242,7 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
     buttons(page.root, "Ver loja")[0]?.click();
     await flush();
     const section = sectionOf(page.root);
-    buttons(section, "Ver casos abertos desta loja")[0]?.click();
+    buttons(section, "Ver atendimentos abertos desta loja")[0]?.click();
     await flush();
     expect(buttons(section, "Ler a cobrança")).toEqual([]);
     expect(buttons(section, "Cancelar a renovação")).toEqual([]);
@@ -268,12 +268,12 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
     buttons(page.root, "Ver loja")[0]?.click();
     await flush();
     const section = sectionOf(page.root);
-    buttons(section, "Ver casos abertos desta loja")[0]?.click();
+    buttons(section, "Ver atendimentos abertos desta loja")[0]?.click();
     await flush();
     buttons(section, "Ler a cobrança")[0]?.click();
     await flush();
     expect(alertOf(section)?.textContent).toBe(
-      "Consulta recusada: confira se o caso está aberto e é desta loja."
+      "Consulta recusada: confira se o atendimento está aberto e é desta loja."
     );
     expect(buttons(section, "Cancelar a renovação")).toEqual([]);
     expect(byTag(section, "dt")).toEqual([]);
@@ -346,21 +346,23 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
 
 const caseForm = (section: FakeElement) =>
   byTag(section, "form").find((form) =>
-    form.textContent.includes("Motivo do novo caso")
+    form.textContent.includes("Motivo do novo atendimento")
   ) as FakeElement;
 
 describe("one reason field at a time (a confirmation hides the form of a new case)", () => {
-  it("hides 'Motivo do novo caso' while the refund confirmation is open and shows it again on Voltar", async () => {
+  it("hides 'Motivo do novo atendimento' while the refund confirmation is open and shows it again on Voltar", async () => {
     const page = await read(billing());
     expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
     buttons(page.section, "Reembolsar R$ 249,00")[0]?.click();
     expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
-    expect(visibleText(page.section)).not.toContain("Motivo do novo caso");
-    expect(visibleText(page.section)).not.toContain("Abrir caso");
+    expect(visibleText(page.section)).not.toContain(
+      "Motivo do novo atendimento"
+    );
+    expect(visibleText(page.section)).not.toContain("Abrir atendimento");
     expect(visibleText(page.section)).toContain("Motivo");
     buttons(page.section, "Voltar")[0]?.click();
     expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
-    expect(visibleText(page.section)).toContain("Motivo do novo caso");
+    expect(visibleText(page.section)).toContain("Motivo do novo atendimento");
   });
 
   it("hides it for the cancel confirmation too, and shows it again once the answer is definite", async () => {
@@ -612,7 +614,7 @@ describe("cancelling the renewal (AC-P10.2, AC-P10.3)", () => {
   it.each([
     [
       json({ error: "not_found" }, 404),
-      "O caso não está aberto ou não é desta loja. Nada foi feito. Recarregue a página.",
+      "O atendimento não está aberto ou não é desta loja. Nada foi feito. Recarregue a página.",
     ],
     [json({ error: "forbidden" }, 403), "Sem permissão para isto."],
     [json({ error: "invalid_request" }, 400), NOT_ACCEPTED],

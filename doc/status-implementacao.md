@@ -3013,6 +3013,19 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Rota e tela | Em revisão | `GET /api/support-cases?kind=` valida contra `SUPPORT_CASE_KINDS` (desconhecido, vazio ou em maiúsculas: 400 `invalid`); o Início pede `kind=support&status=open` e conta o que vier. Casos e Privacidade seguem sem `kind`. |
 | Provas | Em revisão | `src/support-routes.test.ts`, `ui/home-store.test.ts` e o gate `admin-support` (filtro por tipo, NULL, tipo inválido, as duas assinaturas com dono, `search_path` e `EXECUTE`, e a chamada de quatro argumentos ainda lista todos os tipos). |
 
+### Admin: menu por tarefa, nomes de negócio e frase de propósito em cada tela (t783; corte sentido das telas, com a emenda do Petković; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Menu e títulos (AC-IA1) | Em revisão | `MENU` e `SCREENS` em `apps/admin/src/ui/page.ts`: Início; Atender uma loja (Lojas, Atendimentos); Privacidade (LGPD) (Pedidos de dados, Lojas com trava legal); Operação (Falhas de envio, Funil de ativação); Para o jurídico (Registro de acessos); no pé, Minha conta e permissões (vai para o cabeçalho na tarefa do visual). O grupo "Auditoria" saiu. O título da página é o rótulo do menu; o detalhe e o formulário voltam com "‹ {rótulo do pai}" (a mesma tabela). |
+| Frase de propósito (AC-IA2) | Em revisão | Um parágrafo `#tela-proposito` logo abaixo do `h1`, de até 90 caracteres (`PURPOSE_MAX_LENGTH`), em toda tela, inclusive a Loja, o Atendimento, o atendimento de privacidade e a falha de envio. O Petković valida o texto final. |
+| "Caso" vira "atendimento" (AC-IA6) | Em revisão | Em todo texto do Admin, inclusive os de confirmação e recusa aprovados, onde só essa palavra mudou. Caminhos (`/casos`), `data-tela`, ids, capacidades e contratos ficam. "Incidente" virou "falha de envio" e o título "Purge e trava legal" virou "Apagamento e trava legal", e "Purge agendado/cancelado", "Apagamento da loja (purge)", "Apagada (o purge terminou)" e "agendar o purge" (dica) trocaram "purge" por "apagamento"; a palavra "purge" fica só nas frases de confirmação e recusa do apagamento (lista exata no teste). |
+| Seções do atendimento | Em revisão | "Suspender ou reativar a loja", "Dar plano ou limite temporário", "Ver clientes da loja" (o acesso e a revelação de um campo já eram uma área só) e "O que foi feito neste atendimento". A área de cobrança da Lojas (a Parte 10, que entrou na main durante a tarefa) agora se chama "Cancelar renovação e reembolsar". |
+| A ação mora no atendimento (AC-IA5) | Em revisão | Na Loja, "Atendimentos desta loja" e "Cobrança" dizem que a ação é do atendimento aberto e levam a ele ou a "Abrir atendimento de suporte". |
+| Provas | Em revisão | `src/ui/menu-and-purpose.test.ts` (grupos, rótulos, ordem, `aria-current`, voltar, frase após o `h1`, até 90 caracteres, rotas e capacidades iguais), `src/ui/forbidden-terms.test.ts` (termos proibidos no menu, nos títulos, nas frases e em todo literal visível, com casos plantados e lista exata das exceções), `ui/home-store.test.ts` (AC-IA5 com e sem atendimento aberto), `ui/entitlements.test.ts` (seções). `route-surface.test.ts` e os testes de capacidade não mudaram. |
+| Nomes antigos | Registrado | Os blocos anteriores do Admin v2 acima citam as telas pelos nomes de antes (Buscar loja, Casos de suporte, Incidentes, Funil, Retenções legais em "Auditoria", Configurações, "Purge e trava legal"); valem os nomes deste bloco. |
+| Fora | Registrado | AC-IA7 (captura a 360 px, do Petković) e AC-IA8 (sessão com o usuário) não são deste PR. Nenhuma rota, capacidade, contrato ou migration mudou. |
+
 ### Admin v2, Parte 10: tela de cancelar a renovação e reembolsar (t776; corte admin-v2; migration 0117, número provisório)
 
 | Item | Estado | Detalhe |

@@ -181,7 +181,7 @@ describe("the list of incidents (AC-P2.1)", () => {
       "2",
     ]);
     expect(hrefs(root)).toEqual([`/incidentes/${INCIDENT}`]);
-    expect(visibleText(root)).toContain("1 incidente.");
+    expect(visibleText(root)).toContain("1 falha de envio.");
   });
 
   it("shows no message body, store, customer or reference, even when the server sends them", async () => {
@@ -223,7 +223,7 @@ describe("the list of incidents (AC-P2.1)", () => {
     expect(search(calls[2]).get("after")).toBe(OTHER_INCIDENT);
     expect(search(calls[2]).get("limit")).toBe("25");
     expect(rowsOf(root)).toHaveLength(2);
-    expect(visibleText(root)).toContain("2 incidentes.");
+    expect(visibleText(root)).toContain("2 falhas de envio.");
   });
 
   it("reads again only when asked (Atualizar), once per click", async () => {
@@ -355,7 +355,7 @@ describe("one incident (AC-P2.2, AC-P2.5)", () => {
       expect(visibleText(root)).toContain(
         reference.replace("\u202e", "\ufffd")
       );
-      expect(hrefs(root)).toEqual(["/incidentes"]);
+      expect(hrefs(root)).toEqual([]);
       expect(
         document.created.filter((tag) => NEVER_CREATED.includes(tag))
       ).toEqual([]);
@@ -520,7 +520,7 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
     [
       "unknown_item",
       404,
-      "Este evento não foi encontrado neste incidente. Nada foi mudado. A lista foi atualizada.",
+      "Este evento não foi encontrado nesta falha de envio. Nada foi mudado. A lista foi atualizada.",
       true,
     ],
   ] as const)(
@@ -576,7 +576,9 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
     retryButton(root, EVENT)?.click();
     await flush();
 
-    expect(visibleText(root)).toContain("não foi encontrado neste incidente");
+    expect(visibleText(root)).toContain(
+      "não foi encontrado nesta falha de envio"
+    );
   });
 
   it("shows the state the server says after a retry, with the sentence kept, and never a dead line beside it", async () => {
@@ -811,7 +813,9 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
       ["GET", "/api/whoami"],
       ["GET", "/api/operational-incidents?limit=50"],
     ]);
-    expect(visibleText(root)).toContain("2 incidentes com eventos a reenviar");
+    expect(visibleText(root)).toContain(
+      "2 falhas de envio com eventos a reenviar"
+    );
     expect(hrefs(root)).toEqual(["/incidentes"]);
   });
 
@@ -821,7 +825,9 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
       READ
     );
 
-    expect(visibleText(root)).toContain("1 incidente com eventos a reenviar");
+    expect(visibleText(root)).toContain(
+      "1 falha de envio com eventos a reenviar"
+    );
   });
 
   it('says "ou mais" when the server has another page', async () => {
@@ -831,7 +837,7 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
     );
 
     expect(visibleText(root)).toContain(
-      "1 ou mais incidentes com eventos a reenviar"
+      "1 ou mais falhas de envio com eventos a reenviar"
     );
   });
 
@@ -841,7 +847,7 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
       READ
     );
 
-    expect(visibleText(root)).toContain("Há incidentes na lista");
+    expect(visibleText(root)).toContain("Há falhas de envio na lista");
     expect(visibleText(root)).not.toContain("Nada esperando por você.");
   });
 
@@ -866,7 +872,7 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
     const { root } = await home([json({ error: "x" }, 503)], READ);
 
     expect(alertOf(root)?.textContent).toBe(
-      `Não foi possível contar os incidentes. ${PROBLEM_TEXT.unavailable}`
+      `Não foi possível contar as falhas de envio. ${PROBLEM_TEXT.unavailable}`
     );
     expect(visibleText(root)).not.toContain("Nada esperando por você.");
   });
@@ -894,8 +900,8 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
       ["support_case:manage", ...READ]
     );
 
-    expect(visibleText(root)).toContain("1 caso de suporte aberto");
-    expect(alertOf(root)?.textContent).toContain("incidentes");
+    expect(visibleText(root)).toContain("1 atendimento de suporte aberto");
+    expect(alertOf(root)?.textContent).toContain("falhas de envio");
   });
 });
 
@@ -912,7 +918,7 @@ describe("when the list cannot be read again after a retry", () => {
 
     expect(rowsOf(root)).toHaveLength(1);
     expect(lineOf(root, EVENT)?.textContent).toBe(
-      "Este evento não foi encontrado neste incidente. Nada foi mudado."
+      "Este evento não foi encontrado nesta falha de envio. Nada foi mudado."
     );
     expect(alertOf(root)?.textContent).toBe(PROBLEM_TEXT.unavailable);
     expect(retryButton(root, EVENT)?.getAttribute("aria-disabled")).toBe(
@@ -979,7 +985,7 @@ describe("Início when both counts fail", () => {
     );
 
     expect(alertOf(root)?.textContent).toBe(
-      `Não foi possível contar os casos abertos e os incidentes. ${PROBLEM_TEXT.unavailable}`
+      `Não foi possível contar os atendimentos abertos e as falhas de envio. ${PROBLEM_TEXT.unavailable}`
     );
     expect(visibleText(root)).not.toContain("Nada esperando por você.");
   });

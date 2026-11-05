@@ -5,6 +5,7 @@ import {
   allElements,
   buttons,
   byId,
+  byTag,
   type FakeElement,
   visibleText,
 } from "./test-dom";
@@ -186,7 +187,7 @@ describe("the panel's place on the case screen (AC-P4.1, AC-C1, AC-C5)", () => {
   it("appears for an open support case with billing:operate and asks for nothing besides the case", async () => {
     const mounted = await open([]);
 
-    expect(shown(mounted)).toContain("Plano e cobrança");
+    expect(shown(mounted)).toContain("Dar plano ou limite temporário");
     expect(buttons(mounted.root, "Dar uma concessão")).toHaveLength(1);
     expect(mounted.calls.map((call) => call.path)).toEqual([
       "/api/whoami",
@@ -199,17 +200,17 @@ describe("the panel's place on the case screen (AC-P4.1, AC-C1, AC-C5)", () => {
       ...OWNER,
       capabilities: ["support_case:manage", "organization:diagnose"],
     });
-    expect(shown(without)).not.toContain("Plano e cobrança");
+    expect(shown(without)).not.toContain("Dar plano ou limite temporário");
 
     const closed = await open(
       [],
       OWNER,
       detail({ closedAt: "2026-10-28T14:00:00.000Z", status: "closed" })
     );
-    expect(shown(closed)).not.toContain("Plano e cobrança");
+    expect(shown(closed)).not.toContain("Dar plano ou limite temporário");
 
     const privacy = await open([], OWNER, detail({ kind: "privacy" }));
-    expect(shown(privacy)).not.toContain("Plano e cobrança");
+    expect(shown(privacy)).not.toContain("Dar plano ou limite temporário");
   });
 
   it("offers only the keys the Worker named, with their words, and none from a list of its own", async () => {
@@ -454,7 +455,7 @@ describe("the review before giving (AC-C2, AC-C4, AC-P4.1)", () => {
       ", sem mudar a cobrança.",
       GRANT_RAISES,
       GRANT_UNDO,
-      "A concessão fica na auditoria com o seu e-mail e o caso.",
+      "A concessão fica na auditoria com o seu e-mail e o atendimento.",
     ].map((part) => text.indexOf(part));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -686,7 +687,9 @@ describe("the sentence of each answer to giving (AC-C3, AC-P4.3)", () => {
   it("a 400 without a code is the generic refusal, not a code", async () => {
     const mounted = await confirmWith([json({}, 400)]);
 
-    expect(shown(mounted)).toContain("Nada foi mudado. Recarregue o caso.");
+    expect(shown(mounted)).toContain(
+      "Nada foi mudado. Recarregue o atendimento."
+    );
     expect(shown(mounted)).not.toMatch(TECHNICAL_TEXT);
   });
 
@@ -705,7 +708,7 @@ describe("the sentence of each answer to giving (AC-C3, AC-P4.3)", () => {
     const mounted = await confirmWith([refusal("not_found", 404)]);
 
     expect(alertOf(mounted.root)?.textContent).toBe(
-      "Este caso não foi encontrado. Nada foi dado."
+      "Este atendimento não foi encontrado. Nada foi dado."
     );
   });
 
@@ -783,7 +786,7 @@ describe("ending a grant (AC-P4.4)", () => {
       "Dono pediu mais variantes por uma semana",
       "A loja volta ao que o plano dá para Variantes ativas.",
       END_UNDO,
-      "O encerramento fica na auditoria com o seu e-mail e o caso.",
+      "O encerramento fica na auditoria com o seu e-mail e o atendimento.",
     ]) {
       expect(text).toContain(part);
     }
@@ -929,4 +932,42 @@ describe("what the panel writes and keeps (AC-C6, AC-C7)", () => {
       ).toBe(false);
     }
   );
+});
+
+describe("the sections of an open atendimento name what they do (AC-IA, corte sentido das telas)", () => {
+  const headings = (root: FakeElement) =>
+    ["h2", "h3"].flatMap((tag) =>
+      byTag(root, tag).map((heading) => heading.textContent)
+    );
+
+  it("names each area with a verb, in the order of the page", async () => {
+    const { root } = await open([report([])], {
+      ...OWNER,
+      capabilities: [
+        ...OWNER.capabilities,
+        "organization:suspend",
+        "tenant_access:grant",
+        "tenant_data:read",
+      ],
+    });
+
+    const named = headings(root);
+    for (const verb of [
+      "Suspender ou reativar a loja",
+      "Dar plano ou limite temporário",
+      "Ver clientes da loja",
+      "O que foi feito neste atendimento",
+    ]) {
+      expect(named).toContain(verb);
+    }
+    expect(named).not.toContain("Plano e cobrança");
+    expect(named).not.toContain("Acesso aos clientes");
+    expect(named).not.toContain("Histórico do atendimento");
+    expect(named.indexOf("Suspender ou reativar a loja")).toBeLessThan(
+      named.indexOf("Dar plano ou limite temporário")
+    );
+    expect(named.indexOf("Dar plano ou limite temporário")).toBeLessThan(
+      named.indexOf("Ver clientes da loja")
+    );
+  });
 });

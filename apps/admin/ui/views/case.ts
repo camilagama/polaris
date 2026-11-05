@@ -19,13 +19,14 @@ import { storeActionsView } from "./store-actions";
 const MAX_RESOLUTION_LENGTH = 500;
 
 export const CLOSE_EFFECT =
-  "Fechar o caso revoga todos os acessos temporários dele. Caso fechado não reabre.";
+  "Fechar o atendimento revoga todos os acessos temporários dele. Atendimento fechado não reabre.";
 export const CLOSE_UNDO = "Não: isso não poderá ser desfeito.";
-const CLOSE_AUDIT = "O fechamento fica na auditoria com o seu e-mail e o caso.";
+const CLOSE_AUDIT =
+  "O fechamento fica na auditoria com o seu e-mail e o atendimento.";
 export const CLOSE_UNKNOWN =
-  "Não deu para confirmar se o caso foi fechado. Recarregue o caso para ver o estado antes de tentar de novo.";
+  "Não deu para confirmar se o atendimento foi fechado. Recarregue o atendimento para ver o estado antes de tentar de novo.";
 export const CLOSED_NOT_SHOWN =
-  "O caso foi fechado, mas não deu para mostrá-lo de novo. Use Recarregar o caso.";
+  "O atendimento foi fechado, mas não deu para mostrá-lo de novo. Use Recarregar o atendimento.";
 const RESOLUTION_REFUSED =
   "A resolução não foi aceita: use até 500 caracteres, sem caracteres de controle nem quebra de linha.";
 
@@ -44,7 +45,7 @@ function resolutionProblem(text: string): string | null {
 
 function problemText(problem: Problem): string {
   if (problem === "not_found") {
-    return "Este caso não foi encontrado.";
+    return "Este atendimento não foi encontrado.";
   }
   return PROBLEM_TEXT[problem === "invalid" ? "failed" : problem];
 }
@@ -129,9 +130,13 @@ export function caseView(tools: ScreenTools): HTMLElement {
     return dom.el(
       "section",
       { "aria-labelledby": "historico-titulo", class: "history" },
-      dom.el("h3", { id: "historico-titulo" }, "Histórico do caso"),
+      dom.el(
+        "h3",
+        { id: "historico-titulo" },
+        "O que foi feito neste atendimento"
+      ),
       grants.length === 0
-        ? dom.el("p", {}, "Nenhum acesso temporário neste caso.")
+        ? dom.el("p", {}, "Nenhum acesso temporário neste atendimento.")
         : dom.el("ul", {}, ...grants),
       events.length === 0
         ? dom.el("p", {}, "Nada registrado ainda.")
@@ -154,7 +159,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
       return dom.el(
         "p",
         { class: "hint" },
-        "Caso de privacidade: aqui ele é só leitura. Ele é conduzido e fechado no fluxo de privacidade."
+        "Atendimento de privacidade: aqui ele é só leitura. Ele é conduzido e fechado no fluxo de privacidade."
       );
     }
     if (item.status !== "open") {
@@ -164,7 +169,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
         dom.el(
           "p",
           {},
-          `Caso fechado em ${brasiliaMomentText(item.closedAt)}. Para agir de novo, abra outro caso.`
+          `Atendimento fechado em ${brasiliaMomentText(item.closedAt)}. Para agir de novo, abra outro atendimento.`
         ),
         newCaseLink(dom, item.organizationId),
         accessSection(detail)
@@ -193,7 +198,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
     turn += 1;
     const mine = turn;
     if (after === undefined) {
-      notice.status("Carregando o caso…");
+      notice.status("Carregando o atendimento…");
     }
     const answer = await api.get<SupportCaseDetail>(
       `/api/support-cases/${encodeURIComponent(caseId ?? "")}`
@@ -252,11 +257,11 @@ export function caseView(tools: ScreenTools): HTMLElement {
       dom.el("h3", { id: "fechar-titulo", tabindex: "-1" }, text);
 
     const start = () => {
-      const open = dom.el("button", { type: "button" }, "Fechar caso");
+      const open = dom.el("button", { type: "button" }, "Fechar atendimento");
       open.addEventListener("click", () => showForm());
       dom.fill(
         panel,
-        title("Caso em uso"),
+        title("Atendimento em uso"),
         dom.el("p", {}, CLOSE_EFFECT),
         open
       );
@@ -283,7 +288,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
         dom.el(
           "p",
           { class: "hint", id: "resolucao-dica" },
-          "Como o caso terminou, curto e sem dado pessoal do cliente. Fica no registro do caso."
+          "Como o atendimento terminou, curto e sem dado pessoal do cliente. Fica no registro do atendimento."
         ),
         dom.el("p", {}, CLOSE_EFFECT),
         dom.el("div", { class: "button-row" }, next, back)
@@ -301,7 +306,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
       });
       resolutionError.textContent = "";
       resolution.removeAttribute("aria-invalid");
-      dom.fill(panel, title("Fechar o caso"), form);
+      dom.fill(panel, title("Fechar o atendimento"), form);
       if (error === "") {
         resolution.focus();
       } else {
@@ -319,7 +324,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
       const confirm = dom.el(
         "button",
         { type: "button" },
-        "Confirmar o fechamento do caso"
+        "Confirmar o fechamento do atendimento"
       );
       const back = dom.el(
         "button",
@@ -329,7 +334,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
       const reload = dom.el(
         "button",
         { class: "secondary", hidden: "", type: "button" },
-        "Recarregar o caso"
+        "Recarregar o atendimento"
       );
       const heading = title("Revise antes de fechar");
       back.addEventListener("click", () => {
@@ -352,7 +357,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
           ["Ambiente", environmentText(context)],
           ["Loja", storeName(dom, item.organizationName, item.organizationId)],
           [
-            "Caso",
+            "Atendimento",
             `Aberto em ${brasiliaMomentText(item.openedAt)}: ${labelName(item.reason, 120)}`,
           ],
           ["Resolução", typed === "" ? "Sem resolução escrita." : typed],
@@ -385,15 +390,15 @@ export function caseView(tools: ScreenTools): HTMLElement {
       sending = true;
       buttons.confirm.setAttribute("aria-disabled", "true");
       buttons.back.setAttribute("aria-disabled", "true");
-      notice.status("Fechando o caso…");
+      notice.status("Fechando o atendimento…");
       const answer = await api.post<ClosedSupportCase>(
         `/api/support-cases/${encodeURIComponent(item.id)}/close`,
         { resolution: typed }
       );
       if (answer.ok && answer.data?.status === "closed") {
         const said = answer.data.changed
-          ? "Caso fechado. Os acessos temporários dele foram revogados."
-          : "Este caso já estava fechado.";
+          ? "Atendimento fechado. Os acessos temporários dele foram revogados."
+          : "Este atendimento já estava fechado.";
         if (!(await load(() => notice.success(said)))) {
           onlyReload(buttons);
           notice.alert(CLOSED_NOT_SHOWN);
@@ -432,14 +437,14 @@ export function caseView(tools: ScreenTools): HTMLElement {
   }
 
   if (caseId === null) {
-    notice.alert("Este caso não foi encontrado.");
+    notice.alert("Este atendimento não foi encontrado.");
   } else {
     load();
   }
   return dom.el(
     "section",
     { "aria-labelledby": "caso-titulo", class: "area" },
-    dom.el("h2", { id: "caso-titulo" }, "Dados do caso"),
+    dom.el("h2", { id: "caso-titulo" }, "Dados do atendimento"),
     notice.element,
     body
   );

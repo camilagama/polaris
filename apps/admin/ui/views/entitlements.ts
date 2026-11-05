@@ -35,9 +35,10 @@ const UUID =
 export const GRANT_UNDO =
   "Sim: Encerrar concessão. Uma nova concessão é outra decisão registrada.";
 const GRANT_AUDIT =
-  "A concessão fica na auditoria com o seu e-mail e o caso. O motivo digitado fica com ela.";
+  "A concessão fica na auditoria com o seu e-mail e o atendimento. O motivo digitado fica com ela.";
 export const END_UNDO = "Não: uma nova concessão é outra decisão registrada.";
-const END_AUDIT = "O encerramento fica na auditoria com o seu e-mail e o caso.";
+const END_AUDIT =
+  "O encerramento fica na auditoria com o seu e-mail e o atendimento.";
 export const NOTHING_ENDED = "Nada foi encerrado.";
 export const OUTCOME_NOT_RECORDED =
   "A ação foi feita, mas o registro do resultado na auditoria não foi confirmado. O pedido ficou registrado. Não repita a ação; avise a engenharia.";
@@ -50,9 +51,9 @@ export const END_UNKNOWN =
   "Não deu para confirmar se a concessão foi encerrada. Releia as concessões em vigor antes de tentar de novo.";
 export const GRANT_REPEATED =
   "Este pedido já tinha sido feito: a concessão é a mesma e nada novo foi dado.";
-const GRANT_CASE_GONE = "Este caso não foi encontrado. Nada foi dado.";
+const GRANT_CASE_GONE = "Este atendimento não foi encontrado. Nada foi dado.";
 const GRANT_NOT_ACCEPTED =
-  "O caso não está aberto ou não é desta loja, ou o pedido não foi aceito. Nada foi mudado. Recarregue o caso.";
+  "O atendimento não está aberto ou não é desta loja, ou o pedido não foi aceito. Nada foi mudado. Recarregue o atendimento.";
 
 const REFUSED_GRANT: Readonly<Record<string, string>> = {
   grant_too_long: "O prazo passa do máximo de 366 dias. Nada foi dado.",
@@ -189,7 +190,7 @@ export function entitlementsView(
       ["Ambiente", environmentText(context)],
       ["Loja", storeName(dom, item.organizationName, item.organizationId)],
       [
-        "Caso",
+        "Atendimento",
         `Aberto em ${brasiliaMomentText(item.openedAt)}: ${labelName(item.reason, 120)}`,
       ],
       ...lines,
@@ -517,7 +518,7 @@ export function entitlementsView(
   return dom.el(
     "section",
     { "aria-labelledby": "plano-titulo", class: "action-panel" },
-    dom.el("h3", { id: "plano-titulo" }, "Plano e cobrança"),
+    dom.el("h3", { id: "plano-titulo" }, "Dar plano ou limite temporário"),
     notice.element,
     dom.el("h4", {}, "Concessões em vigor"),
     tools.can("organization:diagnose")

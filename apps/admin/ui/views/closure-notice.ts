@@ -31,7 +31,7 @@ import { radioChoice } from "./privacy-form";
 
 function problemText(problem: Problem): string {
   if (problem === "not_found") {
-    return "Este caso não foi encontrado.";
+    return "Este atendimento não foi encontrado.";
   }
   return PROBLEM_TEXT[problem === "invalid" ? "failed" : problem];
 }
@@ -98,7 +98,7 @@ export function closureNoticeSection(
       const again = dom.el(
         "button",
         { class: "secondary", type: "button" },
-        "Reler o caso"
+        "Reler o atendimento"
       );
       again.addEventListener("click", () => {
         hooks.reread();
@@ -138,8 +138,8 @@ export function closureNoticeSection(
       ["Ambiente", environmentText(context)],
       ["Loja", storeName(dom, item.organizationName, item.organizationId)],
       [
-        "Caso",
-        `Caso de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
+        "Atendimento",
+        `Atendimento de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
       ],
     ]);
 
@@ -187,7 +187,7 @@ export function closureNoticeSection(
     reload: dom.el(
       "button",
       { class: "secondary", hidden: "", type: "button" },
-      "Reler o caso"
+      "Reler o atendimento"
     ),
   });
 
@@ -207,8 +207,8 @@ export function closureNoticeSection(
           ["Ambiente", environmentText(context)],
           ["Loja", storeName(dom, item.organizationName, item.organizationId)],
           [
-            "Caso",
-            `Caso de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
+            "Atendimento",
+            `Atendimento de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
           ],
           ["O que acontece", REISSUE_EFFECT],
           ["Dá para desfazer", REISSUE_UNDO],
@@ -282,8 +282,8 @@ export function closureNoticeSection(
           ["Ambiente", environmentText(context)],
           ["Loja", storeName(dom, item.organizationName, item.organizationId)],
           [
-            "Caso",
-            `Caso de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
+            "Atendimento",
+            `Atendimento de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
           ],
           ["Motivo", labelOf(CLOSURE_NOTICE_DISMISSALS, code)],
           ["O que acontece", DISMISS_EFFECT],
@@ -404,7 +404,7 @@ export function closureNoticeSection(
     }
     onlyReload(buttons);
     notice.status(
-      `${outcome.text} Não deu para mostrar o caso de novo: use Reler o caso.`
+      `${outcome.text} Não deu para mostrar o atendimento de novo: use Reler o atendimento.`
     );
   };
 

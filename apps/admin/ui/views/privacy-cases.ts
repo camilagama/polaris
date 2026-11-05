@@ -25,17 +25,17 @@ const HEADERS = [
   "Quem pede",
   "Etapa",
   "Prazo",
-  "Caso",
+  "Atendimento",
 ] as const;
 
 const STATES = {
   abertos: {
-    empty: "Nenhum caso de privacidade aberto.",
+    empty: "Nenhum atendimento de privacidade aberto.",
     label: "Abertos",
     value: "open",
   },
   fechados: {
-    empty: "Nenhum caso de privacidade fechado.",
+    empty: "Nenhum atendimento de privacidade fechado.",
     label: "Fechados",
     value: "closed",
   },
@@ -45,7 +45,7 @@ function countText(count: number, more: boolean, empty: string): string {
   if (count === 0) {
     return empty;
   }
-  const found = count === 1 ? "1 caso." : `${count} casos.`;
+  const found = count === 1 ? "1 atendimento." : `${count} atendimentos.`;
   return more ? `${found} Há mais: use Carregar mais.` : found;
 }
 
@@ -93,7 +93,7 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
     dom.el(
       "caption",
       { class: "sr-only" },
-      `Casos de privacidade ${state.label.toLowerCase()}`
+      `Atendimentos de privacidade ${state.label.toLowerCase()}`
     ),
     dom.el(
       "thead",
@@ -120,16 +120,16 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
       labelOf(REQUEST_TYPES, item.requestType),
       labelOf(REQUESTER_KINDS, item.requesterKind),
       labelOf(STAGES, item.stage),
-      open ? dueCell(dom, item, now()) : "Caso fechado",
+      open ? dueCell(dom, item, now()) : "Atendimento fechado",
       path === null
         ? "—"
         : dom.el(
             "a",
             {
-              "aria-label": `Ver caso de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
+              "aria-label": `Ver atendimento de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
               href: path,
             },
-            "Ver caso"
+            "Ver atendimento"
           ),
     ]);
   };
@@ -144,7 +144,7 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
     }
     loading = true;
     moreButton.setAttribute("aria-disabled", "true");
-    notice.status("Buscando casos de privacidade…");
+    notice.status("Buscando atendimentos de privacidade…");
     const answer = await api.get<PrivacyCasePage>(
       `/api/privacy-cases?${parameters.toString()}`
     );
@@ -201,11 +201,11 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
     dom.el(
       "h2",
       { id: "privacidade-titulo" },
-      `Casos de privacidade ${state.label.toLowerCase()}`
+      `Atendimentos de privacidade ${state.label.toLowerCase()}`
     ),
     dom.el(
       "ul",
-      { "aria-label": "Estado dos casos", class: "tabs" },
+      { "aria-label": "Estado dos atendimentos", class: "tabs" },
       tab("abertos", "/privacidade"),
       tab("fechados", "/privacidade?estado=fechados")
     ),
@@ -215,13 +215,13 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
       dom.el(
         "a",
         { class: "button-link", href: "/privacidade/novo" },
-        "Abrir caso de privacidade"
+        "Abrir atendimento de privacidade"
       )
     ),
     dom.el(
       "p",
       { class: "hint" },
-      "O prazo de resposta de cada caso é o que o servidor guardou ao abri-lo, contado do recebimento do pedido. É provisório até a revisão jurídica."
+      "O prazo de resposta de cada atendimento é o que o servidor guardou ao abri-lo, contado do recebimento do pedido. É provisório até a revisão jurídica."
     ),
     notice.element,
     dom.el("div", { class: "results" }, list),

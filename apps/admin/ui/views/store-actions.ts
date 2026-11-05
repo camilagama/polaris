@@ -14,15 +14,15 @@ export const SUSPEND_EFFECTS: readonly string[] = [
   "O cliente não é avisado.",
 ];
 export const SUSPEND_UNDO =
-  "Sim: Reativar, com um caso aberto desta loja. Reativar não devolve as concessões offline revogadas.";
+  "Sim: Reativar, com um atendimento aberto desta loja. Reativar não devolve as concessões offline revogadas.";
 const SUSPEND_AUDIT =
-  "A suspensão fica na auditoria com o seu e-mail e o caso.";
+  "A suspensão fica na auditoria com o seu e-mail e o atendimento.";
 export const REACTIVATE_EFFECT =
   "Reativar desfaz só a suspensão. Loja encerrada continua encerrada.";
 export const REACTIVATE_UNDO =
-  "Sim: suspender de novo, com um caso aberto desta loja.";
+  "Sim: suspender de novo, com um atendimento aberto desta loja.";
 const REACTIVATE_AUDIT =
-  "A reativação fica na auditoria com o seu e-mail e o caso.";
+  "A reativação fica na auditoria com o seu e-mail e o atendimento.";
 export const INTERNAL_EFFECT =
   "A loja sai do funil de ativação. Desmarcar a devolve ao funil.";
 const INTERNAL_AUDIT = "A marcação fica na auditoria com o seu e-mail.";
@@ -126,9 +126,9 @@ function refusalText(failure: ApiFailure): string {
     case "forbidden":
       return PROBLEM_TEXT.forbidden;
     case "not_found":
-      return "Este caso não foi encontrado.";
+      return "Este atendimento não foi encontrado.";
     case "invalid":
-      return "O caso não está mais aberto. Nada foi mudado. Recarregue o caso.";
+      return "O atendimento não está mais aberto. Nada foi mudado. Recarregue o atendimento.";
     case "rate_limited":
       return limitText(failure);
     case "session":
@@ -168,7 +168,7 @@ export function storeActionsView(
       ["Ambiente", environmentText(context)],
       ["Loja", storeName(dom, item.organizationName, item.organizationId)],
       [
-        "Caso",
+        "Atendimento",
         `Aberto em ${brasiliaMomentText(item.openedAt)}: ${labelName(item.reason, 120)}`,
       ],
       ["O que acontece", text.effect(tools)],
@@ -437,7 +437,7 @@ export function storeActionsView(
   return dom.el(
     "section",
     { "aria-labelledby": "loja-acoes-titulo", class: "action-panel" },
-    dom.el("h3", { id: "loja-acoes-titulo" }, "Loja"),
+    dom.el("h3", { id: "loja-acoes-titulo" }, "Suspender ou reativar a loja"),
     maySuspend && mayRead ? stateNotice.element : null,
     notice.element,
     suspensionBox,

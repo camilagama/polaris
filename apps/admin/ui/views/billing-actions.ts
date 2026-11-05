@@ -205,7 +205,7 @@ export function billingActionsView(
       ["Ambiente", environment()],
       ["Loja", storeName(dom, organization.name, organization.id)],
       [
-        "Caso",
+        "Atendimento",
         `Aberto em ${brasiliaMomentText(choice.openedAt)}: ${labelName(choice.reason, 120)}`,
       ],
       ...lines,

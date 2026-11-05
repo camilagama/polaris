@@ -26,8 +26,8 @@ export const FOREVER_TEXT =
   "As ocorrências somam para sempre: acompanhe os eventos a reenviar.";
 export const RETRY_EFFECT =
   "O evento volta para a fila e será enviado no próximo ciclo (até uma hora). Reenviar de novo é seguro. Fica na auditoria.";
-export const NO_EVENTS = "Nenhum evento morto neste incidente.";
-export const INCIDENT_NOT_FOUND = "Este incidente não foi encontrado.";
+export const NO_EVENTS = "Nenhum evento sem entrega nesta falha de envio.";
+export const INCIDENT_NOT_FOUND = "Esta falha de envio não foi encontrada.";
 export const RETRY_UNKNOWN =
   "Não deu para confirmar se o evento foi reenviado. Recarregue a página para ver o estado antes de tentar de novo.";
 
@@ -73,8 +73,8 @@ function resultText(
       return "Este evento não existe mais e não pode ser reenviado. Nada foi mudado.";
     case "unknown_item":
       return listUpdated
-        ? "Este evento não foi encontrado neste incidente. Nada foi mudado. A lista foi atualizada."
-        : "Este evento não foi encontrado neste incidente. Nada foi mudado.";
+        ? "Este evento não foi encontrado nesta falha de envio. Nada foi mudado. A lista foi atualizada."
+        : "Este evento não foi encontrado nesta falha de envio. Nada foi mudado.";
     default: {
       const unreachable: never = result;
       return unreachable;
@@ -152,17 +152,16 @@ export function incidentView(tools: ScreenTools): HTMLElement {
   const headers = canRetry ? HEADERS : HEADERS.slice(0, -1);
   const notice = createNotice(dom);
   const incidentId = context.id;
-  const back = dom.el(
-    "p",
-    {},
-    dom.el("a", { href: "/incidentes" }, "Voltar para os incidentes")
-  );
   const head = dom.el("div", { class: "incident" });
   const rows = dom.el("tbody");
   const table = dom.el(
     "table",
     { class: "grid incidents", hidden: "" },
-    dom.el("caption", { class: "sr-only" }, "Eventos mortos do incidente"),
+    dom.el(
+      "caption",
+      { class: "sr-only" },
+      "Eventos sem entrega da falha de envio"
+    ),
     dom.el(
       "thead",
       {},
@@ -391,11 +390,10 @@ export function incidentView(tools: ScreenTools): HTMLElement {
   return dom.el(
     "section",
     { "aria-labelledby": "incidente-titulo", class: "area" },
-    dom.el("h2", { id: "incidente-titulo" }, "Incidente operacional"),
-    back,
+    dom.el("h2", { id: "incidente-titulo" }, "Falha de envio"),
     head,
     notice.element,
-    dom.el("h3", {}, "Eventos mortos"),
+    dom.el("h3", {}, "Eventos sem entrega"),
     effect,
     dom.el("div", { class: "results" }, table),
     moreButton

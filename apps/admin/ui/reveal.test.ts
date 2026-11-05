@@ -589,11 +589,11 @@ describe("the value leaves the page (AC-P6.3)", () => {
         })
       ),
     ]);
-    await click(mounted.root, "Fechar caso");
+    await click(mounted.root, "Fechar atendimento");
     await click(mounted.root, "Revisar o fechamento");
-    await click(mounted.root, "Confirmar o fechamento do caso");
+    await click(mounted.root, "Confirmar o fechamento do atendimento");
 
-    expect(shown(mounted)).toContain("Caso fechado");
+    expect(shown(mounted)).toContain("Atendimento fechado");
     maskedAgain(mounted);
     expect(buttons(mounted.root, OPEN_MENU)).toHaveLength(0);
     expect(mounted.document.listenerCount("visibilitychange")).toBe(0);

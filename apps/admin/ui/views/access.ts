@@ -16,37 +16,38 @@ import { createReveal, type Reveal } from "./reveal";
 import type { StoreActionsCase } from "./store-actions";
 
 export const ACCESS_TEXT =
-  "Você passa a ver os clientes desta loja, com nome, e-mail e telefone mascarados. Somente leitura, só neste caso. Acaba no prazo, ao revogar ou ao fechar o caso. Não se prorroga.";
+  "Você passa a ver os clientes desta loja, com nome, e-mail e telefone mascarados. Somente leitura, só neste atendimento. Acaba no prazo, ao revogar ou ao fechar o atendimento. Não se prorroga.";
 export const ACCESS_UNDO =
   'Sim: "Encerrar acesso agora", ou acaba sozinho no prazo. Não se prorroga.';
 const ACCESS_AUDIT =
-  "O acesso dado fica na auditoria com o seu e-mail e o caso.";
+  "O acesso dado fica na auditoria com o seu e-mail e o atendimento.";
 const END_EFFECT =
   "O efeito é imediato: a lista de clientes sai da tela e nenhuma página nova é lida com este acesso.";
 export const END_ACCESS_UNDO =
   "Sim, com outro acesso: é uma nova decisão, registrada.";
-const END_AUDIT = "O encerramento fica na auditoria com o seu e-mail e o caso.";
+const END_AUDIT =
+  "O encerramento fica na auditoria com o seu e-mail e o atendimento.";
 export const READ_AUDIT =
-  "Cada página de clientes que você lê fica na auditoria, com o seu e-mail e o caso (só a quantidade de clientes, nunca os dados).";
-const HIDDEN_PAGE = "Recarregue o caso para continuar.";
+  "Cada página de clientes que você lê fica na auditoria, com o seu e-mail e o atendimento (só a quantidade de clientes, nunca os dados).";
+const HIDDEN_PAGE = "Recarregue o atendimento para continuar.";
 export const NO_ACCESS = "O acesso acabou ou não foi dado.";
-const CASE_CLOSED = "O caso está fechado: o acesso acabou com ele.";
+const CASE_CLOSED = "O atendimento está fechado: o acesso acabou com ele.";
 export const NO_CUSTOMERS = "Esta loja não tem clientes.";
 export const NOTHING_ENDED = "Nada foi encerrado: o acesso já tinha acabado.";
 export const ACCESS_UNKNOWN =
-  "Não deu para confirmar se o acesso foi dado. Releia o caso antes de tentar de novo.";
+  "Não deu para confirmar se o acesso foi dado. Releia o atendimento antes de tentar de novo.";
 export const END_UNKNOWN =
-  "Não deu para confirmar se o acesso foi encerrado. Releia o caso antes de tentar de novo.";
+  "Não deu para confirmar se o acesso foi encerrado. Releia o atendimento antes de tentar de novo.";
 const RELOAD_FAILED =
-  "A ação foi enviada, mas não deu para reler o caso. Releia o caso antes de continuar.";
+  "A ação foi enviada, mas não deu para reler o atendimento. Releia o atendimento antes de continuar.";
 
 /** The durations the page offers: a subset of the server's 5 to 240 minutes, which decides what it accepts. */
 export const ACCESS_MINUTES: readonly number[] = [5, 15, 30, 60, 120, 240];
 const DEFAULT_MINUTES = 60;
 
-const CASE_GONE = "Este caso não foi encontrado. Nada foi dado.";
+const CASE_GONE = "Este atendimento não foi encontrado. Nada foi dado.";
 const REFUSED_ACCESS: Readonly<Record<string, string>> = {
-  case_not_open: "O caso já está fechado. Nada foi dado.",
+  case_not_open: "O atendimento já está fechado. Nada foi dado.",
   invalid_duration:
     "A duração não foi aceita: use de 5 a 240 minutos. Nada foi dado.",
   unknown_case: CASE_GONE,
@@ -348,7 +349,7 @@ export function accessView(
     leave();
     dom.fill(
       stateBox,
-      control("Reler o caso", true, () => {
+      control("Reler o atendimento", true, () => {
         reloadWith({ kind: "alert", text: RELOAD_FAILED });
       })
     );
@@ -368,7 +369,7 @@ export function accessView(
       dropList();
       renderState();
     }
-    notice.alert(failureText(failure, "Este caso não foi encontrado."));
+    notice.alert(failureText(failure, "Este atendimento não foi encontrado."));
   };
 
   async function readPage(more: boolean) {
@@ -416,7 +417,7 @@ export function accessView(
       ["Ambiente", environmentText(context)],
       ["Loja", storeName(dom, item.organizationName, item.organizationId)],
       [
-        "Caso",
+        "Atendimento",
         `Aberto em ${brasiliaMomentText(item.openedAt)}: ${labelName(item.reason, 120)}`,
       ],
       ...lines,
@@ -443,7 +444,7 @@ export function accessView(
       notice.alert(ACCESS_UNKNOWN);
       dom.fill(
         actionBox,
-        control("Reler o caso", true, () => {
+        control("Reler o atendimento", true, () => {
           reloadWith({ kind: "alert", text: ACCESS_UNKNOWN });
         })
       );
@@ -478,7 +479,7 @@ export function accessView(
       heading,
       reviewFacts(
         [["Duração", `${minutes} minutos`]],
-        `Você passa a ver os clientes desta loja, com nome, e-mail e telefone mascarados, por ${minutes} minutos. Somente leitura, só neste caso. Não mostra vendas nem produtos.`,
+        `Você passa a ver os clientes desta loja, com nome, e-mail e telefone mascarados, por ${minutes} minutos. Somente leitura, só neste atendimento. Não mostra vendas nem produtos.`,
         ACCESS_UNDO,
         ACCESS_AUDIT
       ),
@@ -553,7 +554,7 @@ export function accessView(
       notice.alert(END_UNKNOWN);
       dom.fill(
         actionBox,
-        control("Reler o caso", true, () => {
+        control("Reler o atendimento", true, () => {
           reloadWith({ kind: "alert", text: END_UNKNOWN });
         })
       );
@@ -607,7 +608,7 @@ export function accessView(
   const section = dom.el(
     "section",
     { "aria-labelledby": "acesso-titulo", class: "action-panel" },
-    dom.el("h3", { id: "acesso-titulo" }, "Acesso aos clientes"),
+    dom.el("h3", { id: "acesso-titulo" }, "Ver clientes da loja"),
     notice.element,
     stateBox,
     actionBox,

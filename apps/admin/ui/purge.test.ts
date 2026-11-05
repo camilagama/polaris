@@ -50,7 +50,7 @@ import {
 } from "./views/purge";
 
 /**
- * The tab "Purge e trava legal" of a privacy case (corte admin-v2, Parte 7): what it offers by the store's state and
+ * The tab "Apagamento e trava legal" of a privacy case (corte admin-v2, Parte 7): what it offers by the store's state and
  * the case, the typed name that gates the scheduling, one request per click, the server's refusals said in words, and
  * the case read again after every answer.
  */
@@ -73,7 +73,7 @@ const SCOPE = [
 ];
 
 const CORTE_WHAT_HAPPENS =
-  "Os dados operacionais da loja (vendas, produtos e catálogo, estoque, clientes, despesas, metas, formas de pagamento, imagens, dados sincronizados com os aparelhos e cópias exportadas) serão apagados a partir de {data do servidor}. Ficam, sem texto livre: os registros de cobrança, pseudonimizados (sem os dados do pagador; as referências do provedor continuam e permitem localizá-lo lá), os casos de suporte e de privacidade, e os registros de auditoria e de exclusão. A conta de cada pessoa não é apagada com a loja.";
+  "Os dados operacionais da loja (vendas, produtos e catálogo, estoque, clientes, despesas, metas, formas de pagamento, imagens, dados sincronizados com os aparelhos e cópias exportadas) serão apagados a partir de {data do servidor}. Ficam, sem texto livre: os registros de cobrança, pseudonimizados (sem os dados do pagador; as referências do provedor continuam e permitem localizá-lo lá), os atendimentos de suporte e de privacidade, e os registros de auditoria e de exclusão. A conta de cada pessoa não é apagada com a loja.";
 const CORTE_UNDO =
   "Você pode cancelar o agendamento enquanto nenhuma execução estiver em curso e nada tiver sido apagado do armazenamento. Depois da primeira exclusão de arquivo, isso não poderá ser desfeito.";
 
@@ -257,7 +257,7 @@ describe("Purge tab: who sees it", () => {
     );
     expect(
       byTag(tabs.root, "a").filter(
-        (link) => link.textContent === "Purge e trava legal"
+        (link) => link.textContent === "Apagamento e trava legal"
       )
     ).toHaveLength(0);
 
@@ -276,7 +276,9 @@ describe("Purge tab: who sees it", () => {
     const tab = (text: string) =>
       links.find((link) => link.textContent === text)?.getAttribute("href");
     expect(tab("Etapas e aviso")).toBe(`/privacidade/${CASE}`);
-    expect(tab("Purge e trava legal")).toBe(`/privacidade/${CASE}?acao=purge`);
+    expect(tab("Apagamento e trava legal")).toBe(
+      `/privacidade/${CASE}?acao=purge`
+    );
     expect(buttons(mounted.root, "Reemitir o aviso").length).toBeGreaterThan(0);
 
     const purge = await openClosed();
@@ -517,7 +519,7 @@ describe("Purge tab: scheduling", () => {
     await submit(mounted.root);
     expect(alertOf(mounted.root)?.textContent).toBe(COMMAND_UNKNOWN);
     expect(mounted.calls).toHaveLength(5);
-    expect(panelButtons(mounted.root)).toEqual(["Reler o caso"]);
+    expect(panelButtons(mounted.root)).toEqual(["Reler o atendimento"]);
   });
 });
 
@@ -601,7 +603,7 @@ describe("Purge tab: the hold sentence appears once", () => {
     partsOf(root).find((part) => visibleText(part).startsWith(title)) as
       | FakeElement
       | undefined;
-  const PURGE_TITLE = "Apagamento da loja (purge)";
+  const PURGE_TITLE = "Apagamento da loja";
   const HOLD_TITLE = "Trava legal";
   const ONLY_HOLD = {
     ...OWNER,

@@ -31,11 +31,11 @@ const DAY_MS = 86_400_000;
 const BRASILIA_OFFSET_MS = 3 * 3_600_000;
 
 export const OPEN_EFFECT =
-  "Abrir o caso fica no registro e na auditoria com o seu e-mail. O registro do caso não se apaga por esta tela: ele fecha só pela resolução, na etapa 6. Se a loja for apagada, o texto livre do caso some e o registro fica.";
+  "Abrir o atendimento fica no registro e na auditoria com o seu e-mail. O registro do atendimento não se apaga por esta tela: ele fecha só pela resolução, na etapa 6. Se a loja for apagada, o texto livre do atendimento some e o registro fica.";
 const OPEN_REFUSED =
-  "O caso não foi aberto: confira o motivo, as três listas, a data de recebimento (até hoje, no máximo um ano atrás) e a nota.";
+  "O atendimento não foi aberto: confira o motivo, as três listas, a data de recebimento (até hoje, no máximo um ano atrás) e a nota.";
 const OPEN_UNKNOWN =
-  "Não deu para confirmar se o caso foi aberto. Veja a lista de casos de privacidade antes de abrir outro; para tentar de novo, recarregue esta página.";
+  "Não deu para confirmar se o atendimento foi aberto. Veja a lista de atendimentos de privacidade antes de abrir outro; para tentar de novo, recarregue esta página.";
 
 interface Choice {
   id: string;
@@ -77,7 +77,7 @@ function receivedOf(
 }
 
 /**
- * Abrir caso de privacidade (corte admin-v2, Parte 11, AC-P11.1): the store (from `?loja=` or the search), the reason
+ * Abrir atendimento de privacidade (corte admin-v2, Parte 11, AC-P11.1): the store (from `?loja=` or the search), the reason
  * (1 to 500, with its counter), the channel, the kind of request and who asks (only codes of the domain's closed
  * lists, nothing chosen for the operator), the optional day it arrived and a short note, with the fixed warning above
  * the fields. One request per click; the case opened is shown on its own screen.
@@ -95,7 +95,7 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
     "privacidade-motivo",
     "Motivo",
     MAX_REASON_LENGTH,
-    "Por que o caso existe, curto. Fica na auditoria."
+    "Por que o atendimento existe, curto. Fica na auditoria."
   );
   const channel = choiceField(dom, "privacidade-canal", "Canal", CHANNELS);
   const requestType = choiceField(
@@ -126,12 +126,12 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
   const openButton = dom.el(
     "button",
     { type: "submit" },
-    "Abrir caso de privacidade"
+    "Abrir atendimento de privacidade"
   );
   const form = dom.el(
     "form",
     { class: "case-form privacy-form", novalidate: "" },
-    dom.el("h3", {}, "Loja do caso"),
+    dom.el("h3", {}, "Loja do atendimento"),
     chosenLine,
     dom.el(
       "p",
@@ -218,7 +218,7 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
     }
     sending = true;
     openButton.setAttribute("aria-disabled", "true");
-    notice.status("Abrindo o caso de privacidade…");
+    notice.status("Abrindo o atendimento de privacidade…");
     const answer = await api.post<OpenedPrivacyCase>(
       "/api/privacy-cases",
       body
@@ -226,7 +226,9 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
     const path = answer.ok ? privacyCasePath(answer.data?.id) : null;
     if (answer.ok && path !== null) {
       // the button stays off: the screen of the case opened replaces this one
-      notice.success("Caso de privacidade aberto. Abrindo o caso…");
+      notice.success(
+        "Atendimento de privacidade aberto. Abrindo o atendimento…"
+      );
       navigate(path);
       return;
     }
@@ -257,7 +259,7 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
       return;
     }
     if (chosen === null) {
-      notice.alert("Escolha a loja antes de abrir o caso.");
+      notice.alert("Escolha a loja antes de abrir o atendimento.");
       return;
     }
     open(chosen);
@@ -285,7 +287,7 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
   } else {
     dom.fill(
       chosenLine,
-      "Sem permissão para buscar loja: abra o caso pela tela da loja."
+      "Sem permissão para buscar loja: abra o atendimento pela tela da loja."
     );
   }
 
@@ -322,7 +324,11 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
   return dom.el(
     "section",
     { "aria-labelledby": "privacidade-novo-titulo", class: "area" },
-    dom.el("h2", { id: "privacidade-novo-titulo" }, "Novo caso de privacidade"),
+    dom.el(
+      "h2",
+      { id: "privacidade-novo-titulo" },
+      "Novo atendimento de privacidade"
+    ),
     ...parts,
     form,
     notice.element

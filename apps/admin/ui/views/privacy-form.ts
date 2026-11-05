@@ -11,7 +11,7 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const NO_PERSONAL_DATA =
-  "Não escreva nome, e-mail, documento nem valor de registro: o caso guarda só códigos e uma nota curta.";
+  "Não escreva nome, e-mail, documento nem valor de registro: o atendimento guarda só códigos e uma nota curta.";
 
 export interface Field<T extends HTMLElement> {
   control: T;

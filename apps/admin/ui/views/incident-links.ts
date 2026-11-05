@@ -18,7 +18,7 @@ export function incidentLink(
   const path = incidentPath(item.id);
   return path === null
     ? null
-    : dom.el("a", { "aria-label": label, href: path }, "Ver incidente");
+    : dom.el("a", { "aria-label": label, href: path }, "Ver falha de envio");
 }
 
 /** True for a UUID: the only thing of the server's that a path of the Admin or a retry's URL carries (AC-C6). */

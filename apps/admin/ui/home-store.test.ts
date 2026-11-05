@@ -34,6 +34,7 @@ const HOSTILE = [
   "‮abc",
   '"><svg onload=1>',
 ];
+const ACTION_IN_ATENDIMENTO = /(ação|ações) do atendimento aberto desta loja/;
 const NEVER_CREATED = ["script", "img", "svg", "iframe"];
 const MANAGE_ONLY = {
   ...OWNER,
@@ -100,19 +101,19 @@ describe("Início (AC-P1.2b)", () => {
       json(page([summaryOf(), summaryOf({ id: OTHER_CASE })])),
     ]);
 
-    expect(visibleText(root)).toContain("2 casos de suporte abertos");
+    expect(visibleText(root)).toContain("2 atendimentos de suporte abertos");
     expect(visibleText(root)).not.toContain("Nada esperando por você.");
     const link = byTag(root, "a").find(
-      (item) => item.textContent === "Ver casos"
+      (item) => item.textContent === "Ver atendimentos"
     );
     expect(link?.getAttribute("href")).toBe("/casos");
   });
 
-  it("says 1 caso in the singular", async () => {
+  it("says 1 atendimento in the singular", async () => {
     const { root } = await home([json(page([summaryOf()]))]);
 
-    expect(visibleText(root)).toContain("1 caso de suporte aberto");
-    expect(visibleText(root)).not.toContain("1 casos");
+    expect(visibleText(root)).toContain("1 atendimento de suporte aberto");
+    expect(visibleText(root)).not.toContain("1 atendimentos");
   });
 
   it("takes the count from the answer to the support kind, never from a filter on the screen", async () => {
@@ -126,7 +127,9 @@ describe("Início (AC-P1.2b)", () => {
     ]);
 
     expect(search(calls[1]).get("kind")).toBe("support");
-    expect(visibleText(root)).toContain("3 ou mais casos de suporte abertos");
+    expect(visibleText(root)).toContain(
+      "3 ou mais atendimentos de suporte abertos"
+    );
     expect(visibleText(root)).not.toContain("0 ou mais");
   });
 
@@ -135,7 +138,7 @@ describe("Início (AC-P1.2b)", () => {
 
     expect(search(calls[1]).get("kind")).toBe("support");
     expect(visibleText(root)).toContain("Nada esperando por você.");
-    expect(visibleText(root)).not.toContain("casos de suporte abertos");
+    expect(visibleText(root)).not.toContain("atendimentos de suporte abertos");
     expect(visibleText(root)).not.toContain("0 ou mais");
   });
 
@@ -144,7 +147,9 @@ describe("Início (AC-P1.2b)", () => {
       json(page([summaryOf(), summaryOf({ id: OTHER_CASE })], "cursor-1")),
     ]);
 
-    expect(visibleText(root)).toContain("2 ou mais casos de suporte abertos");
+    expect(visibleText(root)).toContain(
+      "2 ou mais atendimentos de suporte abertos"
+    );
   });
 
   it("says nothing waits when there is no open case", async () => {
@@ -152,7 +157,7 @@ describe("Início (AC-P1.2b)", () => {
 
     expect(visibleText(root)).toContain("Nada esperando por você.");
     expect(
-      byTag(root, "a").some((link) => link.textContent === "Ver casos")
+      byTag(root, "a").some((link) => link.textContent === "Ver atendimentos")
     ).toBe(false);
   });
 
@@ -175,7 +180,7 @@ describe("Início (AC-P1.2b)", () => {
     const { root } = await home([json({ error: "database_down" }, 503)]);
 
     expect(alertOf(root)?.textContent).toBe(
-      `Não foi possível contar os casos abertos. ${PROBLEM_TEXT.unavailable}`
+      `Não foi possível contar os atendimentos abertos. ${PROBLEM_TEXT.unavailable}`
     );
     expect(visibleText(root)).not.toContain("database_down");
   });
@@ -250,7 +255,7 @@ describe("Loja", () => {
     expect(hrefs(root)).toContain(`/casos/${OTHER_CASE}`);
     expect(hrefs(root)).toContain(`/casos/novo?loja=${STORE}`);
     expect(hrefs(root)).toContain(`/casos?estado=fechados&loja=${STORE}`);
-    expect(visibleText(root)).toContain("2 casos abertos.");
+    expect(visibleText(root)).toContain("2 atendimentos abertos.");
     expect(visibleText(root)).toContain(`Aberto em ${OPENED_TEXT}`);
   });
 
@@ -274,7 +279,7 @@ describe("Loja", () => {
       diagnosticsFailure,
     ]);
 
-    expect(visibleText(root)).toContain("1 caso aberto.");
+    expect(visibleText(root)).toContain("1 atendimento aberto.");
     expect(
       hrefs(root).filter((href) => href?.startsWith("/casos/0199"))
     ).toEqual([`/casos/${CASE}`]);
@@ -283,9 +288,49 @@ describe("Loja", () => {
   it("still offers to open a case when the store has none", async () => {
     const { root } = await storeScreen([json(page([])), diagnosticsFailure]);
 
-    expect(visibleText(root)).toContain("Nenhum caso aberto desta loja.");
+    expect(visibleText(root)).toContain(
+      "Nenhum atendimento aberto desta loja."
+    );
     expect(hrefs(root)).toContain(`/casos/novo?loja=${STORE}`);
   });
+
+  it.each([
+    ["with an open atendimento", [summaryOf()], `/casos/${CASE}`],
+    ["with none open", [], `/casos/novo?loja=${STORE}`],
+  ])(
+    "says in each section that acts that the action is done inside an atendimento, and leads to it, %s (AC-IA5)",
+    async (_name, open, destination) => {
+      const { root } = await storeScreen(
+        [json(page(open)), diagnosticsFailure],
+        json({
+          ...OWNER,
+          capabilities: [
+            ...OWNER.capabilities,
+            "organization:suspend",
+            "organization:classify",
+          ],
+        })
+      );
+      const section = (id: string) =>
+        allElements(root).find(
+          (element) => element.getAttribute("aria-labelledby") === id
+        );
+
+      const stores = section("casos-loja-titulo");
+      const billing = section("cobranca-titulo");
+      expect(stores).toBeDefined();
+      expect(billing).toBeDefined();
+      for (const found of [stores, billing]) {
+        if (found === undefined) {
+          continue;
+        }
+        expect(visibleText(found)).toMatch(ACTION_IN_ATENDIMENTO);
+        expect(byTag(found, "a").map((l) => l.getAttribute("href"))).toContain(
+          found === billing ? `/casos/novo?loja=${STORE}` : destination
+        );
+      }
+    }
+  );
 
   it("reads only the diagnostics without the capability to manage cases", async () => {
     const { calls, root } = await storeScreen(

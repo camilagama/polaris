@@ -50,7 +50,7 @@ export function cancelUndoText(resubscribeFrom: string | null): string {
 }
 
 export const CANCEL_AUDIT =
-  "O pedido e o resultado ficam na auditoria com o seu e-mail e o caso. O motivo fica no registro de cobrança.";
+  "O pedido e o resultado ficam na auditoria com o seu e-mail e o atendimento. O motivo fica no registro de cobrança.";
 
 export function refundEffectText(amount: string): string {
   return `O pedido de reembolso de ${amount} vai ao provedor, pelo mesmo meio de pagamento. Se a renovação ainda estiver viva, ela é cancelada antes. Quando o provedor confirmar o estorno, o acesso Pro da loja acaba na hora, sem carência. O fato do reembolso chega depois, pelo provedor ou pela reconciliação, e aparece no registro da loja. O cliente não é avisado por esta tela.`;
@@ -60,7 +60,7 @@ export const REFUND_UNDO =
   "Não: isso não poderá ser desfeito. O valor volta ao cliente e a renovação é cancelada. Quando o provedor confirmar o estorno, o Pro acaba na hora e o dono pode assinar de novo; até essa confirmação, uma nova assinatura espera.";
 
 export const REFUND_AUDIT =
-  "O pedido e o resultado ficam na auditoria com o seu e-mail, o caso e o valor. O motivo fica no registro de cobrança.";
+  "O pedido e o resultado ficam na auditoria com o seu e-mail, o atendimento e o valor. O motivo fica no registro de cobrança.";
 
 export const REASON_HINT = "Obrigatório. Fica no registro de cobrança.";
 
@@ -91,7 +91,7 @@ export const IN_PROGRESS =
 export const OUTCOME_NOT_RECORDED =
   "A ação foi feita, mas o registro do resultado na auditoria não foi confirmado. O pedido ficou registrado. Não repita a ação; avise a engenharia.";
 export const CASE_GONE =
-  "O caso não está aberto ou não é desta loja. Nada foi feito. Recarregue a página.";
+  "O atendimento não está aberto ou não é desta loja. Nada foi feito. Recarregue a página.";
 export const NOT_ACCEPTED =
   "O pedido não foi aceito. Nada foi feito. Releia a cobrança e confira o motivo.";
 

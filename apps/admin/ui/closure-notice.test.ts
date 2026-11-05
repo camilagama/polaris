@@ -293,7 +293,7 @@ describe("Aviso de encerramento: reissue (AC-P12.1, AC-C2, AC-C4)", () => {
     expect(text).toContain("Revise antes de reemitir o aviso");
     expect(text).toContain("STAGING");
     expect(text).toContain("Loja da Ana");
-    expect(text).toContain("Caso de privacidade aberto em 30/10/2026");
+    expect(text).toContain("Atendimento de privacidade aberto em 30/10/2026");
     expect(text).toContain(
       "Um aviso novo é enviado ao dono atual. O aviso anterior não é alterado."
     );
@@ -374,7 +374,7 @@ describe("Aviso de encerramento: reissue (AC-P12.1, AC-C2, AC-C4)", () => {
         "hidden"
       )
     ).toBe("");
-    await click(mounted.root, "Reler o caso");
+    await click(mounted.root, "Reler o atendimento");
     expect(posts(mounted.calls)).toHaveLength(1);
     expect(mounted.calls).toHaveLength(6);
   });
@@ -552,7 +552,7 @@ describe("Aviso de encerramento: dismiss (AC-P12.2)", () => {
 
   it.each([
     [403, "Sem permissão para isto."],
-    [404, "Este caso não foi encontrado."],
+    [404, "Este atendimento não foi encontrado."],
   ])(
     "says a %s as the page's sentence and reads the case again",
     async (status, sentence) => {

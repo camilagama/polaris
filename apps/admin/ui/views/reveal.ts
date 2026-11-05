@@ -19,7 +19,7 @@ export const REVEAL_UNKNOWN =
   "Não deu para confirmar se o dado foi revelado. Nada foi mostrado; se tentar de novo, outra revelação fica na auditoria.";
 export const CUSTOMER_GONE = "Cliente não encontrado.";
 export const NO_ACCESS_NOW =
-  "O acesso acabou ou o caso foi fechado: nada foi revelado.";
+  "O acesso acabou ou o atendimento foi fechado: nada foi revelado.";
 const REVEAL_REFUSED = "O pedido não foi aceito. Nada foi revelado.";
 
 interface FieldText {
@@ -438,7 +438,7 @@ export function createReveal(host: RevealHost): Reveal {
         ],
         `${FIELD_TEXT[field].article[0]?.toUpperCase()}${FIELD_TEXT[field].article.slice(1)} deste cliente aparece na tela, só nesta linha, por até ${REVEAL_SECONDS} segundos. Some antes se o acesso acabar, se você sair da página ou esconder a aba, ou se revelar outro dado.`,
         REVEAL_UNDO,
-        `${REVEAL_AUDIT}, com o seu e-mail e o caso.`
+        `${REVEAL_AUDIT}, com o seu e-mail e o atendimento.`
       ),
       dom.el("div", { class: "button-row" }, confirm, back)
     );

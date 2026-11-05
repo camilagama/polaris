@@ -50,12 +50,13 @@ export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
     "A busca não foi aceita: use até 100 caracteres, sem caracteres de controle.",
   network: "Não foi possível falar com o Admin. Tente de novo.",
   not_allowed:
-    "O caso não permite esta escolha. Confira as regras desta etapa e escolha de novo.",
+    "O atendimento não permite esta escolha. Confira as regras desta etapa e escolha de novo.",
   not_found: "Loja não encontrada.",
   plan_catalog_incomplete:
     "O catálogo de planos está incompleto; avise a engenharia.",
   rate_limited: "Muitas consultas em pouco tempo. Espere e tente de novo.",
-  refused: "Consulta recusada: confira se o caso está aberto e é desta loja.",
+  refused:
+    "Consulta recusada: confira se o atendimento está aberto e é desta loja.",
   session: "Sua sessão do Access acabou. Recarregue a página.",
   unavailable:
     "O Admin está indisponível agora. Tente de novo em alguns minutos.",

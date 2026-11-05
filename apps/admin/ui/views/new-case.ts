@@ -21,7 +21,7 @@ interface Choice {
 }
 
 /**
- * Abrir caso de suporte (AC-P1.5): a store chosen (from the store's screen, `?loja=`, or by the search here) and a
+ * Abrir atendimento (AC-P1.5): a store chosen (from the store's screen, `?loja=`, or by the search here) and a
  * reason of 1 to 500 characters with its counter, sent as JSON in the body. Only the support kind is offered: a
  * privacy case has its own workflow. The case opened is shown on its own screen, which is where it is used.
  */
@@ -51,11 +51,11 @@ export function newCaseView(tools: ScreenTools): HTMLElement {
     { class: "hint", id: "motivo-contador" },
     `0 de ${MAX_REASON_LENGTH} caracteres`
   );
-  const openButton = dom.el("button", { type: "submit" }, "Abrir caso");
+  const openButton = dom.el("button", { type: "submit" }, "Abrir atendimento");
   const form = dom.el(
     "form",
     { class: "search case-form", novalidate: "" },
-    dom.el("h3", {}, "Loja do caso"),
+    dom.el("h3", {}, "Loja do atendimento"),
     chosenLine,
     dom.el("label", { for: "motivo" }, "Motivo"),
     dom.el("div", { class: "search-row" }, reason, openButton),
@@ -64,7 +64,7 @@ export function newCaseView(tools: ScreenTools): HTMLElement {
     dom.el(
       "p",
       { class: "hint", id: "motivo-dica" },
-      "O motivo fica na auditoria e justifica as ações deste caso. Curto e sem dado pessoal do cliente."
+      "O motivo fica na auditoria e justifica as ações deste atendimento. Curto e sem dado pessoal do cliente."
     )
   );
 
@@ -102,7 +102,7 @@ export function newCaseView(tools: ScreenTools): HTMLElement {
     clearReasonError();
     sending = true;
     openButton.setAttribute("aria-disabled", "true");
-    notice.status("Abrindo o caso…");
+    notice.status("Abrindo o atendimento…");
     const answer = await api.post<OpenedSupportCase>("/api/support-cases", {
       kind: "support",
       organizationId: choice.id,
@@ -111,7 +111,7 @@ export function newCaseView(tools: ScreenTools): HTMLElement {
     const path = answer.ok ? casePath(answer.data?.id) : null;
     if (answer.ok && path !== null) {
       // the button stays off: the screen of the case opened replaces this one
-      notice.success("Caso aberto. Abrindo o caso…");
+      notice.success("Atendimento aberto. Abrindo o atendimento…");
       navigate(path);
       return;
     }
@@ -138,7 +138,7 @@ export function newCaseView(tools: ScreenTools): HTMLElement {
       return;
     }
     if (chosen === null) {
-      notice.alert("Escolha a loja antes de abrir o caso.");
+      notice.alert("Escolha a loja antes de abrir o atendimento.");
       return;
     }
     open(chosen);
@@ -166,7 +166,7 @@ export function newCaseView(tools: ScreenTools): HTMLElement {
   } else {
     dom.fill(
       chosenLine,
-      "Sem permissão para buscar loja: abra o caso pela tela da loja."
+      "Sem permissão para buscar loja: abra o atendimento pela tela da loja."
     );
   }
 
@@ -195,7 +195,7 @@ export function newCaseView(tools: ScreenTools): HTMLElement {
   return dom.el(
     "section",
     { "aria-labelledby": "novo-caso-titulo", class: "area" },
-    dom.el("h2", { id: "novo-caso-titulo" }, "Novo caso de suporte"),
+    dom.el("h2", { id: "novo-caso-titulo" }, "Novo atendimento de suporte"),
     ...parts,
     form,
     notice.element
