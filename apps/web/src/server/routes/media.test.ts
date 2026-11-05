@@ -12,10 +12,7 @@ import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
-import {
-  MAX_MEDIA_THUMBS_PER_REQUEST,
-  readMediaThumbs,
-} from "../media-thumbs";
+import { MAX_MEDIA_THUMBS_PER_REQUEST, readMediaThumbs } from "../media-thumbs";
 import { requestIdMiddleware } from "../middleware/request-id";
 import { TenantRequestContextError } from "../request-context-error";
 import { createMediaRoutes, type MediaRouteDependencies } from "./media";
@@ -972,8 +969,9 @@ describe("media thumbnail batch route", () => {
   });
 
   it("answers the capped number of ids in the asked order, the body slicing into each WebP by the header and Content-Length, with one query and no head", async () => {
-    const ids = Array.from({ length: MAX_MEDIA_THUMBS_PER_REQUEST }, (_, index) =>
-      thumbId(index)
+    const ids = Array.from(
+      { length: MAX_MEDIA_THUMBS_PER_REQUEST },
+      (_, index) => thumbId(index)
     );
     const owners = new Map(ids.map((id) => [id, organizationId]));
     const listDeliverable = tenantImages(owners);
@@ -1029,7 +1027,11 @@ describe("media thumbnail batch route", () => {
     stored.set(thumbKey(first), Uint8Array.of(1, 2, 3));
     stored.set(thumbKey(last), Uint8Array.of(9, 8));
 
-    const response = await askThumbs(app, bindings, `${last},${absent},${first}`);
+    const response = await askThumbs(
+      app,
+      bindings,
+      `${last},${absent},${first}`
+    );
 
     expect(response.status).toBe(200);
     expect(response.headers.get("x-polaris-thumbs")).toBe(
@@ -1117,8 +1119,9 @@ describe("media thumbnail batch route", () => {
   });
 
   it("accepts exactly the cap", async () => {
-    const ids = Array.from({ length: MAX_MEDIA_THUMBS_PER_REQUEST }, (_, index) =>
-      thumbId(index)
+    const ids = Array.from(
+      { length: MAX_MEDIA_THUMBS_PER_REQUEST },
+      (_, index) => thumbId(index)
     );
     const { app, bindings } = createTestApp();
 
