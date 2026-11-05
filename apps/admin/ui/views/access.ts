@@ -126,9 +126,9 @@ function failureText(failure: ApiFailure, notFound: string): string {
  * access in force is the one the case's own read says is the operator's (by the database's clock); the end shown is
  * the one the server answered. Reading is a click, a page of at most 50 at a time, and the pages stay only in this
  * page's memory: they leave the DOM when the access ends, is refused, is found past its end or the page is hidden. With
- * no timer (the script has none), "past its end" is checked, against the end the server gave, at every
+ * no timer for the list, "past its end" is checked, against the end the server gave, at every
  * interaction with the section; the server refuses the read of an access that ended whatever the page shows.
- * Revealing a field is `reveal.ts`, which has the page's only timer.
+ * Revealing a field is `reveal.ts`, which holds the page's only timer and drops its value on its own.
  */
 export function accessView(
   tools: ScreenTools,
@@ -148,7 +148,7 @@ export function accessView(
   const stateBox = dom.el("div", { class: "access-state" });
   const actionBox = dom.el("div", { class: "access-action" });
   const listBox = dom.el("div", { class: "customers" });
-  const controls: HTMLElement[] = [];
+  const controls = new Set<HTMLElement>();
   let access = open ? ownAccess(grants, who.principal.id) : null;
   let customers: MaskedCustomer[] = [];
   let next: string | null = null;
@@ -179,7 +179,7 @@ export function accessView(
     if (busy) {
       element.setAttribute("aria-disabled", "true");
     }
-    controls.push(element);
+    controls.add(element);
     return element;
   };
 
@@ -197,6 +197,11 @@ export function accessView(
         isBusy: () => busy,
         notice,
         now,
+        release: (elements) => {
+          for (const element of elements) {
+            controls.delete(element);
+          }
+        },
         review: (lines, effect, undo, audit) =>
           reviewFacts(lines, effect, undo, audit),
         setBusy,

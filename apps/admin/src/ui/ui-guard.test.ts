@@ -129,8 +129,8 @@ function forbiddenIn(text: string, allowed: readonly string[] = []): string[] {
 }
 
 /**
- * The one timer of the page: the revealed customer value must leave the screen on its own after 30 seconds (the
- * security review's D-4), and nothing but a timer does that without a click. It is counted: one call, in one module.
+ * The one timer of the page: the revealed customer value must leave the screen on its own after 30 seconds, and
+ * nothing but a timer does that without a click. It is counted: one call, in one module.
  */
 const TIMER_MODULE = "ui/views/reveal.ts";
 const TIMER_CALL = /\bsetTimeout\(/g;
@@ -161,9 +161,7 @@ describe("the built script of the page", () => {
   });
 
   it("has that one timer in the module of the reveal and nowhere else, and counts a second one", () => {
-    const sources = uiFiles(ui).filter(
-      (file) => !(TEST_FILE.test(file) || file === "ui/test-dom.ts")
-    );
+    const sources = uiFiles(ui).filter((file) => !TEST_FILE.test(file));
     expect(timerCalls(sources)).toEqual({ [TIMER_MODULE]: 1 });
     expect("setTimeout(f,1);setTimeout(g,2)".match(TIMER_CALL)).toHaveLength(2);
     expect("clearTimeout(timer)".match(TIMER_CALL)).toBeNull();

@@ -18,7 +18,7 @@ import type { SupportCasePage, SupportCaseSummary } from "./types";
 /**
  * Início and Loja in a small DOM, against a simulated API (corte admin-v2, Parte 1): what waits for the operator
  * (AC-P1.2b), the store's own screen, hostile text (AC-C7) and what opening a screen asks (AC-C5). Nothing sets a
- * clock: the page has no timer and `mount` gives it a fixed one.
+ * clock: the page has no timer outside the reveal's and `mount` gives it a fixed one.
  */
 
 const CASE = "0199a0a0-0000-7000-8000-00000000c0de";

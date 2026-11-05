@@ -696,3 +696,60 @@ describe("no trace of a revealed value (AC-P6.3, AC-C6, AC-C7)", () => {
     ).toEqual([]);
   });
 });
+
+describe("what the review of the code found", () => {
+  const withValue = async (extra: Answer[]) => {
+    const mounted = await open([revealed(C1, "phone", PHONE), ...extra]);
+    await reveal(mounted, ROW_1, "phone");
+    expect(shown(mounted)).toContain(PHONE);
+    return mounted;
+  };
+
+  it("takes the value off the page while the list is read again, and keeps it off when that read fails", async () => {
+    const held = pending();
+    const mounted = await withValue([held.answer]);
+    await click(mounted.root, "Atualizar a lista");
+    expect(shown(mounted)).not.toContain(PHONE);
+
+    held.release(new Response("{}", { status: 500 }));
+    await flush();
+    expect(shown(mounted)).not.toContain(PHONE);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps the value off a page whose list read fails on the network", async () => {
+    const mounted = await withValue([new Error("offline")]);
+    await click(mounted.root, "Atualizar a lista");
+
+    expect(shown(mounted)).not.toContain(PHONE);
+    expect(
+      allElements(mounted.root).filter((element) =>
+        element.textContent.includes(PHONE)
+      )
+    ).toEqual([]);
+  });
+
+  it("does not put a value on the page when the answer comes with the tab hidden", async () => {
+    const held = pending();
+    const mounted = await open([held.answer]);
+    await click(mounted.root, OPEN_MENU, 0);
+    await click(mounted.root, "Telefone");
+    await click(mounted.root, "Revelar o telefone deste cliente");
+    mounted.document.hidden = true;
+    mounted.document.dispatch("visibilitychange");
+    held.release(revealed(C1, "phone", PHONE));
+    await flush();
+
+    expect(shown(mounted)).not.toContain(PHONE);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(mounted.document.listenerCount("visibilitychange")).toBe(0);
+  });
+
+  it("shows a Windows line break as one", async () => {
+    const mounted = await open([revealed(C1, "notes", "um\r\ndois")]);
+    await reveal(mounted, ROW_1, "notes");
+
+    expect(shown(mounted)).toContain("um\ndois");
+    expect(shown(mounted)).not.toContain("�");
+  });
+});

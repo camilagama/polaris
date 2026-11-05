@@ -4,7 +4,7 @@ import type { Notice } from "../notice";
 import { limitText, writeMayHaveHappened } from "../refusal";
 import type { MaskedCustomer, RevealableField } from "../types";
 
-/** The longest a revealed value stays on the screen (the security review's D-4); it leaves sooner on any of the events below. */
+/** The longest a revealed value stays on the screen; it leaves sooner on any of the events below. */
 export const REVEAL_SECONDS = 30;
 
 export const REVEAL_AUDIT =
@@ -89,6 +89,8 @@ export interface RevealHost {
   expiresAt: () => string | null;
   isBusy: () => boolean;
   notice: Notice;
+  /** Forgets buttons that left the page, so the section does not keep every one it ever made. */
+  release: (elements: readonly HTMLElement[]) => void;
   now: () => Date;
   /** Ambiente, loja and caso, then the three lines of the review (corte admin-v2, AC-C2). */
   review: (
@@ -145,6 +147,8 @@ export function createReveal(host: RevealHost): Reveal {
   const reviewBox = dom.el("div", { class: "reveal-review" });
   const cells = new Map<string, HTMLElement>();
   const customers = new Map<string, MaskedCustomer>();
+  const cellControls = new Map<string, HTMLElement[]>();
+  let reviewControls: HTMLElement[] = [];
   let phase: Phase | null = null;
   let epoch = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -177,8 +181,28 @@ export function createReveal(host: RevealHost): Reveal {
   const nameOf = (customerId: string) =>
     labelName(customers.get(customerId)?.name ?? "", 40);
 
+  /** A button of one row, remembered with it so that repainting the row lets it go. */
+  const rowControl = (
+    customerId: string,
+    text: string,
+    onClick: () => void
+  ) => {
+    const button = host.control(text, true, onClick);
+    cellControls.set(customerId, [
+      ...(cellControls.get(customerId) ?? []),
+      button,
+    ]);
+    return button;
+  };
+
+  const resetReview = () => {
+    host.release(reviewControls);
+    reviewControls = [];
+    dom.fill(reviewBox);
+  };
+
   const menuButton = (customerId: string, open: boolean) => {
-    const button = host.control("Revelar ▾", true, () => {
+    const button = rowControl(customerId, "Revelar ▾", () => {
       toggleMenu(customerId);
     });
     button.setAttribute("aria-expanded", String(open));
@@ -200,7 +224,7 @@ export function createReveal(host: RevealHost): Reveal {
         role: "group",
       },
       ...REVEAL_FIELDS.map((field) =>
-        host.control(FIELD_TEXT[field].label, true, () => {
+        rowControl(customerId, FIELD_TEXT[field].label, () => {
           openReview(customerId, field);
         })
       )
@@ -234,8 +258,9 @@ export function createReveal(host: RevealHost): Reveal {
             { class: "hint" },
             `${FIELD_TEXT[phase.field].label} · ${REVEALED_MARK}`
           ),
-          host.control("Esconder agora", true, () => {
+          rowControl(customerId, "Esconder agora", () => {
             hideValue("Valor escondido.");
+            cells.get(customerId)?.querySelector("button")?.focus();
           }),
         ];
       default: {
@@ -248,6 +273,8 @@ export function createReveal(host: RevealHost): Reveal {
   const paint = (customerId: string) => {
     const cell = cells.get(customerId);
     if (cell !== undefined) {
+      host.release(cellControls.get(customerId) ?? []);
+      cellControls.set(customerId, []);
       dom.fill(cell, ...cellContent(customerId));
     }
   };
@@ -268,9 +295,16 @@ export function createReveal(host: RevealHost): Reveal {
     stopTimer();
     watch(false);
     phase = null;
+    for (const cell of cells.values()) {
+      dom.fill(cell);
+    }
+    for (const list of cellControls.values()) {
+      host.release(list);
+    }
+    cellControls.clear();
     cells.clear();
     customers.clear();
-    dom.fill(reviewBox);
+    resetReview();
   };
 
   /** Drops a value that is on the screen and says so; the row stays masked, with the way to ask again. */
@@ -325,7 +359,6 @@ export function createReveal(host: RevealHost): Reveal {
     stopTimer();
     epoch += 1;
     const mine = epoch;
-    dom.fill(reviewBox);
     setPhase({ customerId, field, kind: "review" });
     host.setBusy(true);
     notice.status(`Revelando ${FIELD_TEXT[field].article} do cliente…`);
@@ -334,11 +367,17 @@ export function createReveal(host: RevealHost): Reveal {
       return;
     }
     host.setBusy(false);
+    resetReview();
     if (!answer.ok) {
       await fail(answer);
       return;
     }
     if (!host.stillActive()) {
+      return;
+    }
+    if (dom.document.hidden) {
+      setPhase({ customerId, kind: "gone" });
+      notice.status(REVEAL_GONE);
       return;
     }
     show(customerId, field, answer.data.value);
@@ -352,6 +391,7 @@ export function createReveal(host: RevealHost): Reveal {
       return;
     }
     notice.clear();
+    resetReview();
     setPhase({ customerId, field, kind: "review" });
     const heading = dom.el(
       "h4",
@@ -363,9 +403,10 @@ export function createReveal(host: RevealHost): Reveal {
     });
     const back = host.control("Voltar", true, () => {
       setPhase({ customerId, kind: "menu" });
-      dom.fill(reviewBox);
+      resetReview();
       cells.get(customerId)?.querySelector("button")?.focus();
     });
+    reviewControls = [confirm, back];
     dom.fill(
       reviewBox,
       heading,
@@ -387,7 +428,7 @@ export function createReveal(host: RevealHost): Reveal {
     if (!host.stillActive()) {
       return;
     }
-    dom.fill(reviewBox);
+    resetReview();
     notice.clear();
     const open = phase?.kind === "menu" && phase.customerId === customerId;
     setPhase(open ? null : { customerId, kind: "menu" });

@@ -68,5 +68,5 @@ or {
     }
   }
 } as $hit where {
-  register_diagnostic(span=$hit, message="apps/admin/ui writes only text: no HTML from a string, no eval, no inline style or script element, no timer and nothing kept in the browser (corte admin-tela-v1, AC-7, AC-11, AC-12).", severity="error")
+  register_diagnostic(span=$hit, message="apps/admin/ui writes only text: no HTML from a string, no eval, no inline style or script element, no timer (the one in views/reveal.ts is the counted exception) and nothing kept in the browser (corte admin-tela-v1, AC-7, AC-11, AC-12).", severity="error")
 }

@@ -24,7 +24,7 @@ import {
 /**
  * The Admin page in a small DOM (ui/test-dom.ts), against a simulated API: what it asks the server, what it shows
  * and how it fails (corte admin-tela-v1, AC-3 to AC-6, AC-11, AC-12 and AC-14). Nothing here sets a clock: the page
- * has no timer, and the dates are fixed instants checked in Brasília.
+ * has no timer but the reveal's, and the dates are fixed instants checked in Brasília.
  */
 
 /** A status code or an error code of the server: never shown to the operator. */

@@ -206,7 +206,7 @@ const REVEALED_LIMIT = 4000;
  */
 export function revealedText(value: string): string {
   let shown = "";
-  for (const character of value) {
+  for (const character of value.replaceAll("\r\n", "\n")) {
     const code = character.codePointAt(0) ?? 0;
     shown +=
       code === 0x0a || !(isControl(code) || isInvisible(code))
