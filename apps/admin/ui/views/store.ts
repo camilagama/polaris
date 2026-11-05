@@ -6,6 +6,7 @@ import { createNotice } from "../notice";
 import type { SupportCasePage } from "../types";
 import { caseLink, closedCasesLink, newCaseLink } from "./case-links";
 import { diagnosticsView } from "./diagnostics";
+import { refundWindowView } from "./refund-window";
 
 /** The most open cases of one store the box asks for; the server's page holds at most 50. */
 const CASES_PAGE = "50";
@@ -92,8 +93,34 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
 }
 
 /**
- * Loja (design §2.3): the store of the path, its open cases and the v1's diagnostics. The store's actions live in its
- * cases, so this screen reads and links, and changes nothing.
+ * Cobrança (design §2.3): the refund window of the v1, read by a click with an open case of the store, and the way
+ * to the concession, which is an action of the case. The grants in force are in the diagnostics below.
+ */
+function billingSection(tools: ScreenTools) {
+  const { api, can, dom } = tools;
+  const refund = refundWindowView(dom, api, {
+    manageCases: can("support_case:manage"),
+    readWindow: can("billing:operate"),
+  });
+  const element = dom.el(
+    "section",
+    { "aria-labelledby": "cobranca-titulo", class: "area" },
+    dom.el("h2", { id: "cobranca-titulo" }, "Cobrança"),
+    can("billing:operate")
+      ? dom.el(
+          "p",
+          { class: "hint" },
+          "Dar ou encerrar uma concessão de plano é ação do caso aberto desta loja. As concessões em vigor estão em Concessões, mais abaixo."
+        )
+      : null,
+    refund.element
+  );
+  return { element, refund };
+}
+
+/**
+ * Loja (design §2.3): the store of the path, its open cases, its billing and the v1's diagnostics. The store's actions
+ * live in its cases, so this screen reads and links, and changes nothing.
  */
 export function storeView(tools: ScreenTools): HTMLElement {
   const { api, can, context, dom, now } = tools;
@@ -106,10 +133,12 @@ export function storeView(tools: ScreenTools): HTMLElement {
   if (can("support_case:manage")) {
     parts.push(storeCases(tools, id));
   }
-  const diagnostics = diagnosticsView(dom, api, now, (organization) =>
-    dom.fill(head, storeName(dom, organization.name, organization.id))
-  );
+  const billing = billingSection(tools);
+  const diagnostics = diagnosticsView(dom, api, now, (organization) => {
+    dom.fill(head, storeName(dom, organization.name, organization.id));
+    billing.refund.show(organization);
+  });
   diagnostics.show({ id, name: "" });
-  parts.push(diagnostics.element);
+  parts.push(billing.element, diagnostics.element);
   return dom.el("div", { class: "areas" }, ...parts);
 }

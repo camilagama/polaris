@@ -1316,6 +1316,76 @@ describe("suspension and billing commands", () => {
     ).toBe(403);
   });
 
+  it("says a command ID that holds another grant as 409, and passes on that an outcome was not recorded", async () => {
+    const conflict = setup({
+      grantEntitlement: () =>
+        Promise.reject(new Error("entitlement_grant_id_conflict")),
+    });
+    const refused = await conflict.send(
+      "POST",
+      `/api/support-cases/${caseId}/entitlement-grants`,
+      {
+        commandId: grantId,
+        hours: 1,
+        key: "variants.active.max",
+        reason: "r",
+        value: 1,
+      }
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "grant_id_conflict" });
+
+    const unrecorded = setup({
+      grantEntitlement: () =>
+        Promise.resolve({
+          created: true,
+          id: grantId,
+          organizationId: "org-1",
+          outcomeRecorded: false,
+        }),
+      revokeEntitlement: () =>
+        Promise.resolve({ outcomeRecorded: false, revoked: true }),
+    });
+    const given = await unrecorded.send(
+      "POST",
+      `/api/support-cases/${caseId}/entitlement-grants`,
+      { hours: 1, key: "variants.active.max", reason: "r", value: 1 }
+    );
+    expect(given.status).toBe(201);
+    expect(await given.json()).toMatchObject({ outcomeRecorded: false });
+    const ended = await unrecorded.call(
+      `/api/support-cases/${caseId}/entitlement-grants/${grantId}`,
+      { method: "DELETE" }
+    );
+    expect(await ended.json()).toEqual({
+      outcomeRecorded: false,
+      revoked: true,
+    });
+  });
+
+  it("ends nothing for a grant ID that is not a UUID, and says nothing was ended for one that is not there", async () => {
+    const revokeEntitlement = vi.fn(() =>
+      Promise.resolve({ outcomeRecorded: true, revoked: false })
+    );
+    const { call } = setup({ revokeEntitlement });
+    const malformed = await call(
+      `/api/support-cases/${caseId}/entitlement-grants/not-a-uuid`,
+      { method: "DELETE" }
+    );
+    expect(malformed.status).toBe(404);
+    expect(revokeEntitlement).not.toHaveBeenCalled();
+
+    const absent = await call(
+      `/api/support-cases/${caseId}/entitlement-grants/${grantId}`,
+      { method: "DELETE" }
+    );
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toEqual({
+      outcomeRecorded: true,
+      revoked: false,
+    });
+  });
+
   it("refuses a malformed grant request, names the grant refusals and says when billing is not configured", async () => {
     const { send, support: calls } = setup();
     const bad = await Promise.all(
