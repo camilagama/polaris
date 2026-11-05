@@ -820,6 +820,27 @@ describe("ending the access now (AC-P5.3, AC-C2, AC-C4)", () => {
     );
   });
 
+  it("says the other access too when the end is answered with a 404 and another one is in force", async () => {
+    const mounted = await open(
+      [
+        refusal("not_found", 404),
+        json(
+          detail([
+            grantRow({ active: false }),
+            grantRow({ expiresAt: OTHER_ENDS, id: OTHER_GRANT }),
+          ])
+        ),
+      ],
+      detail([grantRow()])
+    );
+    await click(mounted.root, "Encerrar acesso agora");
+    await click(mounted.root, "Confirmar encerramento do acesso");
+
+    expect(alertOf(mounted.root)?.textContent).toBe(
+      `${NOTHING_ENDED} Outro acesso seu a esta loja continua ativo, até ${brasiliaMomentText(OTHER_ENDS)}.`
+    );
+  });
+
   it("sends one request for a double click", async () => {
     const slow = pending();
     const mounted = await open(
