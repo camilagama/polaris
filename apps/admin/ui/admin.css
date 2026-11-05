@@ -447,7 +447,7 @@ button {
     white-space: normal;
   }
 
-  /* at 320 px the 8 rem label column leaves a button less than one long word ("concessão") plus its padding: the label column narrows and the button gives up side padding so no word is split */
+  /* on a 320 px phone the 8 rem label column leaves a stacked button less than one long word ("concessão") plus its padding: every stacked table narrows its label column and its buttons give up side padding so no word is split */
   @media (max-width: 22.5rem) {
     .grid:not(.funnel) td {
       grid-template-columns: 6rem minmax(0, 1fr);

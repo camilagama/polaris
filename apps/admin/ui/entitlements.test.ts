@@ -746,7 +746,9 @@ describe("ending a grant (AC-P4.4)", () => {
     ]) {
       expect(text).toContain(part);
     }
-    expect(END_UNDO).toBe("Não: uma nova concessão é outra decisão registrada.");
+    expect(END_UNDO).toBe(
+      "Não: uma nova concessão é outra decisão registrada."
+    );
     expect(text.split("outra decisão registrada").length - 1).toBe(1);
     expect(text).not.toContain("poderá ser desfeito");
     expect(writes(mounted.calls)).toHaveLength(0);

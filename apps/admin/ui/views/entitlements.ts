@@ -36,8 +36,7 @@ export const GRANT_UNDO =
   "Sim: Encerrar concessão. Uma nova concessão é outra decisão registrada.";
 const GRANT_AUDIT =
   "A concessão fica na auditoria com o seu e-mail e o caso. O motivo digitado fica com ela.";
-export const END_UNDO =
-  "Não: uma nova concessão é outra decisão registrada.";
+export const END_UNDO = "Não: uma nova concessão é outra decisão registrada.";
 const END_AUDIT = "O encerramento fica na auditoria com o seu e-mail e o caso.";
 export const NOTHING_ENDED = "Nada foi encerrado.";
 export const OUTCOME_NOT_RECORDED =
