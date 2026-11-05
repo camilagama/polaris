@@ -23,6 +23,7 @@ import {
   balanceOfEntry,
   chunkIds,
   lineBalancesRequest,
+  rereadLinesForCover,
   type SaleBalance,
   stockAfterRefresh,
 } from "./sale-variant-picker-model";
@@ -68,7 +69,8 @@ function keepReady<T>(current: Loadable<T>): Loadable<T> {
 export function useSaleCatalog(
   organizationId: string,
   onProfilesLoaded: (profiles: PaymentProfileReadModel[]) => void,
-  local: LocalWorkspace | null = null
+  local: LocalWorkspace | null = null,
+  openVariantIds: () => readonly string[] = () => []
 ): SaleCatalog {
   const localRef = useRef(local);
   localRef.current = local;
@@ -258,6 +260,23 @@ export function useSaleCatalog(
     },
     [organizationId]
   );
+
+  const openVariantIdsRef = useRef(openVariantIds);
+  openVariantIdsRef.current = openVariantIds;
+  const readLinesRef = useRef(readLines);
+  readLinesRef.current = readLines;
+  const seenWithCover = useRef<boolean | null>(null);
+  useEffect(() => {
+    // organization.listMine can reload with the sale open and flip the flag: the lines already read keep the
+    // balances of the other reading until the next one, so they are read again here and only here
+    seenWithCover.current = rereadLinesForCover({
+      local: usesLocal,
+      openVariantIds: openVariantIdsRef.current(),
+      read: readLinesRef.current,
+      seen: seenWithCover.current,
+      withCover,
+    });
+  }, [usesLocal, withCover]);
 
   return { profiles, readLines, refresh, resetStock, seedStock, stock };
 }

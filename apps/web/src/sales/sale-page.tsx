@@ -413,10 +413,18 @@ export function SalePage() {
     },
     [attemptOutcomeUnknown]
   );
+  const openVariantIds = useCallback(
+    () =>
+      formRef.current.items
+        .map((item) => item.variantId)
+        .filter((variantId) => variantId !== ""),
+    []
+  );
   const catalog = useSaleCatalog(
     organizationId,
     handleProfilesLoaded,
-    offlineWorkspace
+    offlineWorkspace,
+    openVariantIds
   );
   const refreshRef = useRef(catalog.refresh);
   refreshRef.current = catalog.refresh;

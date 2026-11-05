@@ -1,11 +1,13 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   balanceOfEntry,
   chunkIds,
   coversOfStock,
   itemChangesForEntry,
   lineBalancesRequest,
+  linesToReadForCover,
+  rereadLinesForCover,
   PICKER_RESULT_LIMIT,
   pickerErrorMessage,
   pickerOptions,
@@ -321,5 +323,82 @@ describe("a capa no saldo da venda", () => {
     expect(without[kept.variantId]).toMatchObject({ status: "ready" });
     expect(coversOfStock(without)[other.variantId]).toBe(COVER);
     expect(coversOfStock(without)).not.toHaveProperty(kept.variantId);
+  });
+});
+
+describe("a capa das linhas abertas quando a chave muda", () => {
+  const lines = [entry(1).variantId, entry(2).variantId];
+
+  it("a chave que vira true com linhas abertas pede a releitura delas, e a capa aparece sem reabrir a Venda", () => {
+    const before = stockAfterRefresh({}, lines, [entry(1), entry(2)]);
+    expect(coversOfStock(before)).toEqual({});
+
+    const ids = linesToReadForCover(false, true, lines);
+    expect(ids).toEqual(lines);
+
+    const after = stockAfterRefresh(before, ids, [
+      entry(1, { coverAssetId: COVER }),
+      entry(2, { coverAssetId: null }),
+    ]);
+    expect(coversOfStock(after)).toEqual({
+      [lines[0] as string]: COVER,
+      [lines[1] as string]: null,
+    });
+  });
+
+  it("a chave igual, a primeira leitura da chave e a Venda sem linhas não pedem leitura", () => {
+    expect(linesToReadForCover(true, true, lines)).toEqual([]);
+    expect(linesToReadForCover(false, false, lines)).toEqual([]);
+    expect(linesToReadForCover(null, true, lines)).toEqual([]);
+    expect(linesToReadForCover(null, false, lines)).toEqual([]);
+    expect(linesToReadForCover(false, true, [])).toEqual([]);
+  });
+
+  it("a chave que desliga também pede a leitura, para as linhas voltarem ao que a leitura sem capa dá", () => {
+    expect(linesToReadForCover(true, false, lines)).toEqual(lines);
+  });
+});
+
+describe("a releitura das linhas pela chave da capa", () => {
+  const lines = [entry(1).variantId, entry(2).variantId];
+  const base = { local: false, openVariantIds: lines };
+
+  it("false → true lê as linhas abertas uma vez e guarda a chave nova; a mesma chave de novo não lê", () => {
+    const read = vi.fn(() => Promise.resolve(null));
+    const kept = rereadLinesForCover({
+      ...base,
+      read,
+      seen: false,
+      withCover: true,
+    });
+    expect(kept).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(lines);
+
+    expect(
+      rereadLinesForCover({ ...base, read, seen: kept, withCover: true })
+    ).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("na montagem, com a chave desligada estável e no aparelho sem conexão, não lê", () => {
+    const read = vi.fn(() => Promise.resolve(null));
+    rereadLinesForCover({ ...base, read, seen: null, withCover: true });
+    rereadLinesForCover({ ...base, read, seen: false, withCover: false });
+    rereadLinesForCover({
+      ...base,
+      local: true,
+      read,
+      seen: false,
+      withCover: true,
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("uma leitura que falha não vira rejeição solta", async () => {
+    const read = vi.fn(() => Promise.reject(new Error("offline")));
+    rereadLinesForCover({ ...base, read, seen: false, withCover: true });
+    await Promise.resolve();
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });

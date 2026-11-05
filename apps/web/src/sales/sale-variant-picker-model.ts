@@ -53,6 +53,42 @@ export function lineBalancesRequest(
   };
 }
 
+/**
+ * The lines that must be read again for their cover: the flag that asks for it changed since the last time it was
+ * seen (`seen` is null before the first one), so the balances already loaded were read without, or with, a cover the
+ * screen now treats differently. An unchanged flag is no reason for a read.
+ */
+export function linesToReadForCover(
+  seen: boolean | null,
+  withCover: boolean,
+  variantIds: readonly string[]
+): readonly string[] {
+  return seen === null || seen === withCover ? [] : variantIds;
+}
+
+/**
+ * What the sale does when the cover flag may have changed: reads the open lines again if it did, once, and only
+ * against the server (a local workspace already carries the cover of the device's copy). Returns the flag to keep as
+ * the last one seen.
+ */
+export function rereadLinesForCover(args: {
+  local: boolean;
+  openVariantIds: readonly string[];
+  read: (variantIds: readonly string[]) => Promise<unknown>;
+  seen: boolean | null;
+  withCover: boolean;
+}): boolean {
+  const ids = linesToReadForCover(
+    args.seen,
+    args.withCover,
+    args.openVariantIds
+  );
+  if (ids.length > 0 && !args.local) {
+    args.read(ids).catch(() => undefined);
+  }
+  return args.withCover;
+}
+
 export interface PickerOption {
   detail: string;
   entry: InventoryBalanceEntryReadModel;
