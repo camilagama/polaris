@@ -124,7 +124,6 @@ export function grantForm(
   const reason = dom.el("input", {
     autocomplete: "off",
     id: "concessao-motivo",
-    maxlength: String(MAX_REASON_LENGTH),
     name: "motivo",
     type: "text",
   });
