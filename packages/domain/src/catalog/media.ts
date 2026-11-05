@@ -211,6 +211,13 @@ export const MEDIA_DERIVATIVE_SIZES = [320, 640] as const;
 export type MediaDerivativeSize = (typeof MEDIA_DERIVATIVE_SIZES)[number];
 
 /**
+ * Most thumbnails one `GET /api/media/thumbs` answers. The server refuses more with a 400 and the client cuts every
+ * batch by this same value, so the two sides cannot drift. Each thumbnail costs one R2 `get` of Worker CPU; the
+ * value is provisional until the staging curve (5, 8 and 12 ids) is measured.
+ */
+export const MEDIA_THUMBS_MAX_PER_REQUEST = 5;
+
+/**
  * Where a derivative of an image is kept in the private bucket. The key carries
  * only the asset ID, so whoever serves it must have authorized that asset first;
  * it is removed together with the image (media cleanup).

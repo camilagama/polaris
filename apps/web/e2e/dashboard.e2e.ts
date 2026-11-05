@@ -303,7 +303,8 @@ function summaryOf(
   month: string,
   from: string,
   to: string,
-  fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE
+  fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE,
+  now: string = NOW
 ) {
   const data = fixture[month] ?? { expenses: [], sales: [] };
   const { sales } = data;
@@ -375,7 +376,7 @@ function summaryOf(
     },
     daily: dailyOf(data, from, to),
     // the server clock at the read: what the screen says it is updated until
-    generatedAt: NOW,
+    generatedAt: now,
     period: { from, to },
     quality: {
       anticipationFeesUnknown: unknownAnticipation,
@@ -411,6 +412,8 @@ class FakeReportServer {
   networkDown = false as boolean;
   /** The records of each month the answers are computed from. */
   fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE;
+  /** The server clock at each read: it fixes the store's today. */
+  now = NOW;
   private readonly holds = new Map<string, Promise<void>>();
 
   /** Holds the answer for a month until the returned function is called. */
@@ -445,7 +448,7 @@ class FakeReportServer {
       }
       return {
         body: {
-          json: summaryOf(from.slice(0, 7), from, to, this.fixture),
+          json: summaryOf(from.slice(0, 7), from, to, this.fixture, this.now),
           meta: [],
         },
         status: 200,
@@ -459,7 +462,10 @@ class FakeReportServer {
       return this.fail(this.failure.code, this.failure.status);
     }
     return {
-      body: { json: summaryOf(month, from, to, this.fixture), meta: [] },
+      body: {
+        json: summaryOf(month, from, to, this.fixture, this.now),
+        meta: [],
+      },
       status: 200,
     };
   }
@@ -473,7 +479,13 @@ class FakeReportServer {
     if (this.failure) {
       return this.fail(this.failure.code, this.failure.status);
     }
-    const { daily } = summaryOf(from.slice(0, 7), from, to, this.fixture);
+    const { daily } = summaryOf(
+      from.slice(0, 7),
+      from,
+      to,
+      this.fixture,
+      this.now
+    );
     return {
       body: {
         json: {
@@ -537,7 +549,7 @@ async function signIn(page: Page, user: string, extra = "") {
 /** Opens the screen as a new user and returns the user, to open it again later. */
 async function openDashboard(page: Page, server: FakeReportServer, extra = "") {
   // the screen reads today's date from the browser: October 2026
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(new Date(server.now));
   await installServer(page, server);
   const user = `user-${crypto.randomUUID()}`;
   await signIn(page, user, extra);
@@ -1720,11 +1732,36 @@ const settled = (page: Page) =>
       )
   );
 
+/**
+ * The largest vertical step between consecutive rows of the pieces of the reading and of the legend: room reserved
+ * below the text is no step, an empty row between two fragments is.
+ */
+const rowStep = (chart: Locator) =>
+  chart.evaluate((region) => {
+    let step = 0;
+    for (const lines of region.querySelectorAll(
+      "[data-chart-reading], [data-chart-legend]"
+    )) {
+      const tops = [
+        ...new Set(
+          [...lines.children].map((child) =>
+            Math.round(child.getBoundingClientRect().top)
+          )
+        ),
+      ].sort((a, b) => a - b);
+      for (let at = 1; at < tops.length; at += 1) {
+        step = Math.max(step, (tops[at] ?? 0) - (tops[at - 1] ?? 0));
+      }
+    }
+    return step;
+  });
+
 async function chartPlaces(page: Page) {
   await settled(page);
   const chart = chartRegion(page);
   return {
     card: await placeOf(chart),
+    rowStep: await rowStep(chart),
     next: await placeOf(chain(page)),
     numbers: await placeOf(
       chart.getByRole("button", { name: "Ver os números" })
@@ -1744,6 +1781,35 @@ function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
     expect(
       Math.abs(after[key].top - before[key].top),
       `topo de ${key}`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+/**
+ * The box of the chart's card and where its totals and its "Ver os números" sit inside it: what the card itself
+ * reserves, whatever the cards above it do.
+ */
+function insideTheCard(places: ChartPlaces) {
+  return {
+    height: places.card.height,
+    numbers: places.numbers.top - places.card.top,
+    totals: places.totals.top - places.card.top,
+  };
+}
+
+const ONE_ROW_AND_ITS_GAP = 28;
+
+function expectSameBox(after: ChartPlaces, before: ChartPlaces) {
+  expect(
+    after.rowStep,
+    "linha vazia entre os pedaços da leitura ou da legenda"
+  ).toBeLessThanOrEqual(ONE_ROW_AND_ITS_GAP);
+  const now = insideTheCard(after);
+  const was = insideTheCard(before);
+  for (const key of ["height", "numbers", "totals"] as const) {
+    expect(
+      Math.abs(now[key] - was[key]),
+      `${key} dentro do cartão do gráfico: ${was[key]} px antes, ${now[key]} px agora`
     ).toBeLessThanOrEqual(1);
   }
 }
@@ -1814,14 +1880,15 @@ function byMonth(summary: ReturnType<typeof summaryOf>) {
     to: (days.at(-1) as Day).date,
     unknownDays: days.filter((day) => day.costs === null).length,
   });
+  const today = summary.generatedAt.slice(0, 10);
   const months = new Map<string, Day[]>();
-  for (const day of summary.daily.filter((entry) => entry.date <= TODAY)) {
+  for (const day of summary.daily.filter((entry) => entry.date <= today)) {
     months.set(day.date.slice(0, 7), [
       ...(months.get(day.date.slice(0, 7)) ?? []),
       day,
     ]);
   }
-  const later = summary.daily.filter((day) => day.date > TODAY);
+  const later = summary.daily.filter((day) => day.date > today);
   return {
     ...summary,
     daily: [...months.values()].map(bucket),
@@ -1957,5 +2024,146 @@ test.describe("períodos longos por mês: trocar entre o mês, 30 dias e o ano n
       await expect(sales).toHaveAttribute("aria-valuetext", UNTIL_JULY_6);
       expectSameHeights(await resultHeights(page), days);
     });
+  }
+});
+
+/** The chart drawn (not the box that holds its place while the chunk comes). */
+const DRAWN_CHART = /^Vendas líquidas/;
+
+/** A store whose today is on November: the range from a year before to today crosses a year, 366 days. */
+const NOVEMBER_5 = "2026-11-05T12:00:00.000Z";
+const YEAR_AGO_TO_TODAY = ["2025-11-05", "2026-11-05"] as const;
+
+/**
+ * The record that opens each period of the sequence (the fake server reads the month the period starts in): the month,
+ * the 30 days, the year from January and the 366 days.
+ */
+/** The longest reading of a month: amounts of six digits and an expense of the same size on the day that closes it. */
+const BIG_MONTH: FixtureMonth = {
+  expenses: [{ amount: 99_999_999, linked: false }],
+  sales: [
+    {
+      anticipationFee: null,
+      cogs: null,
+      discount: 0,
+      gross: 99_999_999,
+      itemLines: 1,
+      items: 1,
+      processingFee: null,
+      returns: 0,
+      surcharge: 0,
+    },
+  ],
+};
+
+/** The server of a store whose copy of the year has no cost per day (the line of the costs is not drawn). */
+class NoCostsOfTheYearServer extends MonthlyReportServer {
+  override async handle(procedure: string, input: Record<string, unknown>) {
+    const answer = await super.handle(procedure, input);
+    const { json } = answer.body as {
+      json?: { daily?: Record<string, unknown>[] };
+    };
+    if (
+      procedure === "report/periodSummary" &&
+      answer.status === 200 &&
+      input.from === "2026-01-01" &&
+      json?.daily
+    ) {
+      for (const day of json.daily) {
+        day.costs = undefined;
+        day.operatingResult = undefined;
+      }
+    }
+    return answer;
+  }
+}
+
+const CHART_BOX_FIXTURES = {
+  completo: {
+    "2025-11": COMPLETE_MONTH,
+    "2026-01": COMPLETE_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+  incompleto: {
+    "2025-11": PARTIAL_MONTH,
+    "2026-01": PARTIAL_MONTH,
+    "2026-10": PARTIAL_MONTH,
+    "2026-11": PARTIAL_MONTH,
+  },
+  "só o ano incompleto": {
+    "2025-11": PARTIAL_MONTH,
+    "2026-01": PARTIAL_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+  "valores de seis dígitos": {
+    "2025-11": BIG_MONTH,
+    "2026-01": BIG_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+  "ano sem os custos por dia": {
+    "2025-11": COMPLETE_MONTH,
+    "2026-01": COMPLETE_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+} as const;
+
+test.describe("a caixa inteira do cartão do gráfico não muda de altura entre o mês, 30 dias, Este ano e um período de 366 dias", () => {
+  for (const size of SIZES) {
+    for (const hidden of [false, true]) {
+      for (const [name, fixture] of Object.entries(CHART_BOX_FIXTURES)) {
+        test(`${name}, ${hidden ? "com" : "sem"} Esconder valores (${size.width} px)`, async ({
+          page,
+        }) => {
+          await page.setViewportSize(size);
+          if (hidden) {
+            await page.addInitScript(() =>
+              localStorage.setItem("polaris-valores", "escondidos")
+            );
+          }
+          const server =
+            name === "ano sem os custos por dia"
+              ? new NoCostsOfTheYearServer()
+              : new MonthlyReportServer();
+          server.now = NOVEMBER_5;
+          server.fixture = fixture;
+          await openDashboard(page, server);
+          const drawn = () =>
+            chartRegion(page).getByRole("img", { name: DRAWN_CHART });
+          await expect(drawn()).toBeVisible();
+          const month = await chartPlaces(page);
+
+          await choosePreset(page, "Este ano");
+          await expect(chartRegion(page)).toContainText("Melhor mês");
+          await expect(drawn()).toBeVisible();
+          await expect(page.locator("[data-kpi-group]")).toContainText(
+            "01/01 a 05/11"
+          );
+          expectSameBox(await chartPlaces(page), month);
+
+          await choosePreset(page, "Últimos 30 dias");
+          await expect(chartRegion(page)).toContainText("Melhor dia");
+          await expect(drawn()).toBeVisible();
+          expectSameBox(await chartPlaces(page), month);
+
+          await choosePreset(page, "Este ano");
+          await expect(chartRegion(page)).toContainText("Melhor mês");
+          await expect(drawn()).toBeVisible();
+          expectSameBox(await chartPlaces(page), month);
+
+          await rangeFields(page, ...YEAR_AGO_TO_TODAY);
+          await expectPreset(page, "Período");
+          await expect(chartRegion(page)).toContainText("Melhor mês");
+          await expect(drawn()).toBeVisible();
+          await expect(page.locator("[data-kpi-group]")).toContainText(
+            "05/11/2025 a 05/11/2026"
+          );
+          expectSameBox(await chartPlaces(page), month);
+        });
+      }
+    }
   }
 });

@@ -1,14 +1,12 @@
 import { browserConnection } from "../lib/browser-connection";
 
 /**
- * The one way the client asks the server for thumbnails: `GET /api/media/thumbs`, up to `THUMBS_BATCH_SIZE` ids per
- * call. The server refuses more than that with a 400, and a refusal stops the loader, so this is the one number
- * every batch is cut by. The answer lists, in the order asked, `id:bytes` or `id:missing` in `X-Polaris-Thumbs`, and
- * the body is the WebPs of the `bytes` ones, one after the other. Nothing here falls back to the per-image route (`?size=320`): an id the server
- * does not answer with bytes shows the marker.
+ * The one way the client asks the server for thumbnails: `GET /api/media/thumbs`, up to
+ * `MEDIA_THUMBS_MAX_PER_REQUEST` ids per call (the domain value the server enforces too; a refusal stops the
+ * loader, so every batch is cut by it). The answer lists, in the order asked, `id:bytes` or `id:missing` in
+ * `X-Polaris-Thumbs`, and the body is the WebPs of the `bytes` ones, one after the other. Nothing here falls back
+ * to the per-image route (`?size=320`): an id the server does not answer with bytes shows the marker.
  */
-export const THUMBS_BATCH_SIZE = 8;
-
 const THUMBS_HEADER = "x-polaris-thumbs";
 const THUMBNAIL_TYPE = "image/webp";
 

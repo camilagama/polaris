@@ -3,6 +3,7 @@ import type { StoredDay } from "../lib/period-summary-cache";
 import {
   comparisonPeriod,
   rangeText,
+  untilText,
   resultChipPeriod,
   resultKpis,
 } from "./result-kpis";
@@ -56,9 +57,37 @@ describe("the period the chips compare with", () => {
   });
 
   it("writes its dates short", () => {
-    expect(rangeText("2026-10-01", "2026-10-25")).toBe("1 a 25/10");
-    expect(rangeText("2026-09-26", "2026-10-25")).toBe("26/09 a 25/10");
-    expect(rangeText("2026-10-25", "2026-10-25")).toBe("25/10");
+    expect(rangeText("2026-10-01", "2026-10-25", "2026")).toBe("1 a 25/10");
+    expect(rangeText("2026-09-26", "2026-10-25", "2026")).toBe("26/09 a 25/10");
+    expect(rangeText("2026-10-25", "2026-10-25", "2026")).toBe("25/10");
+    expect(rangeText("2026-01-01", "2026-11-05", "2026")).toBe("01/01 a 05/11");
+  });
+
+  it("writes the year on both ends when the range crosses a year", () => {
+    expect(rangeText("2025-11-05", "2026-11-05", "2026")).toBe(
+      "05/11/2025 a 05/11/2026"
+    );
+  });
+
+  it("writes the year when the last day is not in this year, in the three shapes", () => {
+    expect(rangeText("2025-12-01", "2025-12-31", "2026")).toBe(
+      "1 a 31/12/2025"
+    );
+    expect(rangeText("2025-11-05", "2025-12-05", "2026")).toBe(
+      "05/11/2025 a 05/12/2025"
+    );
+    expect(rangeText("2025-11-05", "2025-11-05", "2026")).toBe("05/11/2025");
+  });
+
+  it("says up to which day a reading goes, with the year when it is not this year's", () => {
+    expect(untilText({ date: "2026-10-17" }, "2026-11-05")).toBe("Até 17/10");
+    expect(
+      untilText({ date: "2026-12-01", to: "2026-12-31" }, "2026-12-31")
+    ).toBe("Até 31/12");
+    expect(
+      untilText({ date: "2025-12-01", to: "2025-12-31" }, "2026-01-10")
+    ).toBe("Até 31/12/2025");
+    expect(untilText(undefined, "2026-11-05")).toBe("Até 05/11");
   });
 });
 
@@ -382,6 +411,42 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       today: "2026-04-02",
     });
     expect(kpis.read(null).sales.delta?.against).toBe("vs. fevereiro");
+  });
+
+  it("writes the year in the chip that compares with days of the year before", () => {
+    const period = { from: "2026-01-05", to: "2026-01-14" };
+    const before = comparisonPeriod(period, "2026-01-14");
+    const prior = before
+      ? { days: days(before.from, 10), period: before }
+      : null;
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-01-05", 10),
+      period,
+      previous: prior,
+      previousSales: prior,
+      today: "2026-01-14",
+    });
+    expect(kpis.read(null).sales.delta?.against).toBe(
+      "vs. 26/12/2025 a 04/01/2026"
+    );
+  });
+
+  it("writes the year in the basis of a whole month compared with a month of the year before", () => {
+    const january = { from: "2026-01-01", to: "2026-01-10" };
+    const before = { from: "2025-12-01", to: "2025-12-31" };
+    const prior = { days: days(before.from, 31), period: before };
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-01-01", 10),
+      period: { from: "2026-01-01", to: "2026-01-31" },
+      previous: prior,
+      previousSales: prior,
+      today: january.to,
+    });
+    expect(kpis.read(null).sales.delta?.basis).toBe(
+      "em relação a dezembro (1 a 10/12/2025)"
+    );
   });
 
   it("names the whole period, never a range backwards, for a period that has not started", () => {
