@@ -226,6 +226,7 @@ export function useSaleCatalog(
 
   const readLines = useCallback(
     async (variantIds: readonly string[]) => {
+      generation.current += 1;
       const { current } = generation;
       const workspace = localRef.current;
       try {
@@ -254,7 +255,22 @@ export function useSaleCatalog(
           setStock((map) => stockAfterRefresh(map, variantIds, entries));
         }
         return entries;
-      } catch {
+      } catch (error) {
+        if (generation.current === current) {
+          // this read replaced a refresh still in flight, which will not answer anymore: its lines cannot stay loading
+          setStock((map) => {
+            const next = { ...map };
+            for (const variantId of variantIds) {
+              if (next[variantId]?.status === "loading") {
+                next[variantId] = {
+                  message: loadErrorMessage(error, "o estoque"),
+                  status: "error",
+                };
+              }
+            }
+            return next;
+          });
+        }
         return null;
       }
     },
