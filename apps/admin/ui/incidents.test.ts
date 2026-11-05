@@ -480,12 +480,13 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
     const { calls, root } = await detailScreen([
       json(detail()),
       json({ result: "retried" }),
+      json(detail()),
     ]);
 
     retryButton(root, EVENT)?.click();
     await flush();
 
-    expect(calls).toHaveLength(3);
+    expect(calls.filter((call) => call.init.method === "POST")).toHaveLength(1);
     expect(calls[2]?.init.method).toBe("POST");
     expect(calls[2]?.path).toBe(retryPath());
     expect(bodyOf(calls[2])).toEqual({});
@@ -496,13 +497,13 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
       "retried",
       200,
       "Reenviado às 12:07. O evento sai no próximo ciclo (até uma hora).",
-      false,
+      true,
     ],
     [
       "already_pending",
       200,
       "Este evento já estava na fila. Nada foi mudado; ele sai no próximo ciclo (até uma hora).",
-      false,
+      true,
     ],
     [
       "busy",
@@ -523,7 +524,7 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
       true,
     ],
   ] as const)(
-    "says %s on the event's own line, as a status with no code, and reads the list again only when the list is out of date",
+    "says %s on the event's own line, as a status with no code, and reads the list again after every answer",
     async (result, status, text, rereads) => {
       const answers = [json(detail()), json({ result }, status)];
       if (rereads) {
@@ -578,6 +579,63 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
     expect(visibleText(root)).toContain("não foi encontrado neste incidente");
   });
 
+  it("shows the state the server says after a retry, with the sentence kept, and never a dead line beside it", async () => {
+    const { root } = await detailScreen([
+      json(detail([eventOf(), eventOf({ eventId: OTHER_EVENT })])),
+      json({ result: "retried" }),
+      json(
+        detail([
+          eventOf({ retriedAt: LAST, retryCount: 1, state: "retried" }),
+          eventOf({ eventId: OTHER_EVENT }),
+        ])
+      ),
+    ]);
+
+    retryButton(root, EVENT)?.click();
+    await flush();
+
+    const row = rowOfEvent(root, EVENT);
+    expect(row?.textContent).toContain("Já reenviado");
+    expect(row?.textContent).not.toContain("Morto, a reenviar");
+    expect(row?.textContent).toContain(`1, o último em ${LAST_TEXT}`);
+    expect(lineOf(root, EVENT)?.textContent).toBe(
+      "Reenviado às 12:07. O evento sai no próximo ciclo (até uma hora)."
+    );
+    expect(rowOfEvent(root, OTHER_EVENT)?.textContent).toContain("Nenhum");
+    expect(lineOf(root, OTHER_EVENT)?.textContent).toBe("");
+  });
+
+  it("reads the list again after already_pending and shows the server's state", async () => {
+    const { calls, root } = await detailScreen([
+      json(detail()),
+      json({ result: "already_pending" }),
+      json(
+        detail([eventOf({ retriedAt: LAST, retryCount: 1, state: "retried" })])
+      ),
+    ]);
+
+    retryButton(root, EVENT)?.click();
+    await flush();
+
+    expect(calls).toHaveLength(4);
+    expect(calls[3]?.init.method).toBe("GET");
+    expect(rowOfEvent(root, EVENT)?.textContent).toContain("Já reenviado");
+    expect(lineOf(root, EVENT)?.textContent).toContain("já estava na fila");
+  });
+
+  it("says the sentence in the page's status when the retried event left the list that was read again", async () => {
+    const { root } = await detailScreen([
+      json(detail([eventOf()])),
+      json({ result: "retried" }),
+      json(detail([])),
+    ]);
+
+    retryButton(root, EVENT)?.click();
+    await flush();
+
+    expect(visibleText(root)).toContain("Reenviado às 12:07");
+  });
+
   it("sends one request for a double click and keeps every button off until the answer", async () => {
     const held = pending();
     const { calls, root } = await detailScreen([
@@ -611,7 +669,9 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
     const { calls, root } = await detailScreen([
       json(detail()),
       json({ result: "retried" }),
+      json(detail()),
       json({ result: "already_pending" }),
+      json(detail()),
     ]);
 
     retryButton(root, EVENT)?.click();
@@ -818,6 +878,36 @@ describe("when the list cannot be read again after a retry", () => {
       "false"
     );
   });
+
+  it.each([
+    [
+      "retried",
+      "Reenviado às 12:07. O evento sai no próximo ciclo (até uma hora). Não foi possível reler a lista: o estado desta linha pode estar desatualizado.",
+    ],
+    [
+      "already_pending",
+      "Este evento já estava na fila. Nada foi mudado; ele sai no próximo ciclo (até uma hora). Não foi possível reler a lista: o estado desta linha pode estar desatualizado.",
+    ],
+  ] as const)(
+    "keeps the sentence of %s with the warning that the list was not read again",
+    async (result, text) => {
+      const { root } = await detailScreen([
+        json(detail()),
+        json({ result }),
+        json({ error: "x" }, 503),
+      ]);
+
+      retryButton(root, EVENT)?.click();
+      await flush();
+
+      expect(rowsOf(root)).toHaveLength(1);
+      expect(lineOf(root, EVENT)?.textContent).toBe(text);
+      expect(alertOf(root)?.textContent).toBe(PROBLEM_TEXT.unavailable);
+      expect(retryButton(root, EVENT)?.getAttribute("aria-disabled")).toBe(
+        "false"
+      );
+    }
+  );
 
   it("frees the buttons when the list read again is malformed", async () => {
     const { root } = await detailScreen([

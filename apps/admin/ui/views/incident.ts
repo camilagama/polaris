@@ -54,6 +54,9 @@ function isResult(value: unknown): value is RetryResult {
   return typeof value === "string" && RESULTS.has(value);
 }
 
+const STALE_LIST =
+  " Não foi possível reler a lista: o estado desta linha pode estar desatualizado.";
+
 function resultText(
   result: RetryResult,
   at: string,
@@ -61,9 +64,9 @@ function resultText(
 ): string {
   switch (result) {
     case "retried":
-      return `Reenviado às ${at}. O evento sai no próximo ciclo (até uma hora).`;
+      return `Reenviado às ${at}. O evento sai no próximo ciclo (até uma hora).${listUpdated ? "" : STALE_LIST}`;
     case "already_pending":
-      return "Este evento já estava na fila. Nada foi mudado; ele sai no próximo ciclo (até uma hora).";
+      return `Este evento já estava na fila. Nada foi mudado; ele sai no próximo ciclo (até uma hora).${listUpdated ? "" : STALE_LIST}`;
     case "busy":
       return "Este evento está sendo processado agora. Nada foi mudado. Tente de novo mais tarde.";
     case "event_gone":
@@ -79,10 +82,12 @@ function resultText(
   }
 }
 
-/** What the lists ask to be read again once: the three answers that say the list the operator saw is not the truth. */
+/** What the lists ask to be read again once: the answers that say the list the operator saw is not the truth, or is about to stop being it (a sent event changes state and count on the server, which the screen never computes). */
 const REREAD: ReadonlySet<RetryResult> = new Set<RetryResult>([
+  "already_pending",
   "busy",
   "event_gone",
+  "retried",
   "unknown_item",
 ]);
 
