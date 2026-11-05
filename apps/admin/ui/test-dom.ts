@@ -211,6 +211,32 @@ class FakeWindow {
 export class FakeDocument {
   activeElement: FakeElement | null = null;
   readonly defaultView = new FakeWindow();
+  /** The tab's visibility, which a test turns over before it fires `visibilitychange`. */
+  hidden = false;
+  private readonly listeners = new Map<string, (() => void)[]>();
+
+  addEventListener(type: string, listener: () => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  removeEventListener(type: string, listener: () => void) {
+    this.listeners.set(
+      type,
+      (this.listeners.get(type) ?? []).filter((kept) => kept !== listener)
+    );
+  }
+
+  /** How many listeners of this type are still attached: a left-over one is a leak. */
+  listenerCount(type: string): number {
+    return (this.listeners.get(type) ?? []).length;
+  }
+
+  dispatch(type: string) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener();
+    }
+  }
+
   readonly body: FakeElement;
   /** Every tag the page asked for, in order. */
   readonly created: string[] = [];
