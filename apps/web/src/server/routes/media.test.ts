@@ -1021,15 +1021,29 @@ describe("media thumbnail batch route", () => {
   );
 
   it("keeps the single image route open whatever MEDIA_THUMBS_ENABLED says", async () => {
-    const { app, bindings } = createTestApp();
+    const storageKey = `media/v2/${encodeURIComponent(organizationId)}/${productId}/${uploadCommandId}/${"a".repeat(64)}/de305d54-75b4-431b-adb2-eb6b9e546015.webp`;
+    const { app, bindings, stored } = createTestApp({
+      getMediaAssetForDelivery: vi.fn(() =>
+        Promise.resolve({
+          assetId: mediaAsset.assetId,
+          byteSize: 4,
+          contentType: "image/webp" as const,
+          height: 200,
+          storageKey,
+          width: 600,
+        })
+      ),
+    });
+    stored.set(storageKey, new Uint8Array([82, 73, 70, 70]));
     const { MEDIA_THUMBS_ENABLED: _on, ...withoutFlag } = bindings;
     const response = await app.fetch(
       new Request(
-        `https://polaris.example.invalid/api/media/${thumbId(1)}?organizationId=${encodeURIComponent(organizationId)}&size=320`
+        `https://polaris.example.invalid/api/media/${mediaAsset.assetId}?organizationId=${encodeURIComponent(organizationId)}&size=320`
       ),
       withoutFlag
     );
-    expect(response.status).not.toBe(400);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/webp");
     expect(response.headers.get("x-polaris-thumbs")).toBeNull();
   });
 
