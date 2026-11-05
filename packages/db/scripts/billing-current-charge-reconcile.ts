@@ -1,18 +1,29 @@
 import { Client } from "pg";
 import { CURRENT_CHARGE_RECONCILE_SQL } from "./current-charge-reconcile-sql";
-import { poolerPattern, requiredEnvironment } from "./sales-gate-support";
+import { poolerPattern } from "./sales-gate-support";
+
+class Refusal extends Error {}
 
 /**
  * Runs the backfill of migration 0118 again (ADR 0104, §7), once after the deploy of the Worker that writes the
- * charge in force: a renewal applied by the previous Worker in the expand window left the columns behind. Only the
- * migrator runs it (the owner of `organization_billing`, which bypasses its forced row security), through the direct
- * URL; any other login is refused before writing. It prints counts only: how many rows it wrote, and how many records
- * with an active or grace link still have no amount in force (each one to explain, `billing-providers.md`).
+ * charge in force: a renewal applied, or a link replaced, by the previous Worker in the expand window left the columns
+ * behind. Only the migrator runs it (the owner of `organization_billing`, which bypasses its forced row security),
+ * through the direct URL; any other login is refused before writing. Every billing record is locked first, as
+ * `processEvent` locks the one it changes, so a webhook applied meanwhile waits and is never overwritten by an older
+ * reading. It prints counts only: how many rows it wrote, and how many records with an active or grace link still
+ * have no amount in force (each one to explain, `billing-providers.md`); a failure prints only its SQLSTATE, never a
+ * message that could carry the URL.
  */
 async function main() {
-  const url = requiredEnvironment("POLARIS_MIGRATOR_DATABASE_URL");
+  const url = process.env.POLARIS_MIGRATOR_DATABASE_URL;
+  if (!url) {
+    throw new Refusal("Missing POLARIS_MIGRATOR_DATABASE_URL.");
+  }
+  if (!URL.canParse(url)) {
+    throw new Refusal("POLARIS_MIGRATOR_DATABASE_URL is not a URL.");
+  }
   if (poolerPattern.test(new URL(url).hostname)) {
-    throw new Error("Use the direct URL, never the pooler.");
+    throw new Refusal("Use the direct URL, never the pooler.");
   }
   const client = new Client({ connectionString: url });
   await client.connect();
@@ -23,11 +34,15 @@ async function main() {
         WHERE r.rolname = current_user AND c.oid = 'public.organization_billing'::regclass`
     );
     if (who.rows[0]?.allowed !== true) {
-      throw new Error(
+      throw new Refusal(
         "Only the migrator (owner of organization_billing, with BYPASSRLS) runs the reconciliation."
       );
     }
     await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    await client.query(
+      "SELECT 1 FROM public.organization_billing ORDER BY organization_id FOR UPDATE"
+    );
     const written = await client.query(CURRENT_CHARGE_RECONCILE_SQL);
     const missing = await client.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM public.organization_billing
@@ -49,6 +64,14 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : "reconcile_failed");
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code: unknown }).code)
+      : null;
+  console.error(
+    error instanceof Refusal
+      ? error.message
+      : `reconcile_failed${code ? ` (${code})` : ""}`
+  );
   process.exitCode = 1;
 });

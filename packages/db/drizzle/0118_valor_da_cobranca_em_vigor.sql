@@ -12,7 +12,7 @@
 -- * `record_billing_amount_mismatch_incident`: a recorded amount in force that is not the provider's becomes an
 --   operational incident (ADR 0085), one row with a counter, no store, no amount, no reference of the provider.
 -- * The backfill, after the last RESET ROLE (the migrator bypasses the forced row security; never under SET ROLE).
--- The new check and the wider ones are added NOT VALID and validated apart: the strong lock is not held while reading.
+-- The new check and the wider ones are added NOT VALID and validated after, as their own statements.
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
 ALTER TABLE "operational_incidents" DROP CONSTRAINT "operational_incidents_kind_allowed";--> statement-breakpoint
 ALTER TABLE "operational_incidents" DROP CONSTRAINT "operational_incidents_cause_allowed";--> statement-breakpoint
@@ -179,24 +179,59 @@ WITH charges AS (
      AND charge.status = 'applied'
      AND charge.fact_type = 'charge_succeeded'
 ),
-latest AS (
-  SELECT DISTINCT ON (charges.organization_id)
-         charges.organization_id, charges.event_id, charges.period_ends_at, charges.amount
+latest_period AS (
+  SELECT charges.organization_id, max(charges.period_ends_at) AS period_ends_at
     FROM charges
    WHERE charges.period_ends_at IS NOT NULL
-   ORDER BY charges.organization_id, charges.period_ends_at DESC, charges.amount IS NULL, charges.received_at, charges.event_id
+   GROUP BY charges.organization_id
+),
+cluster AS (
+  SELECT charges.*
+    FROM charges
+    JOIN latest_period ON latest_period.organization_id = charges.organization_id
+   WHERE charges.period_ends_at >= latest_period.period_ends_at - interval '24 hours'
+),
+latest AS (
+  SELECT DISTINCT ON (head.organization_id)
+         head.organization_id, head.event_id, head.period_ends_at,
+         (SELECT priced.amount FROM cluster AS priced
+           WHERE priced.organization_id = head.organization_id AND priced.amount IS NOT NULL
+           ORDER BY priced.received_at, priced.event_id LIMIT 1) AS amount
+    FROM cluster AS head
+   ORDER BY head.organization_id, head.received_at, head.event_id
 ),
 decided AS (
-  SELECT latest.organization_id,
-         CASE WHEN kept.kept THEN COALESCE(billing.current_charge_amount, latest.amount) ELSE latest.amount END AS amount,
-         CASE WHEN kept.kept THEN billing.current_charge_period_ends_at ELSE latest.period_ends_at END AS period_ends_at,
-         CASE WHEN kept.kept THEN billing.current_charge_event_id ELSE latest.event_id END AS event_id
-    FROM latest
-    JOIN public.organization_billing AS billing ON billing.organization_id = latest.organization_id
+  SELECT billing.organization_id,
+         CASE WHEN latest.organization_id IS NULL THEN NULL
+              WHEN stored.later THEN billing.current_charge_amount
+              WHEN stored.same THEN COALESCE(billing.current_charge_amount, latest.amount)
+              ELSE latest.amount END AS amount,
+         CASE WHEN latest.organization_id IS NULL THEN NULL
+              WHEN stored.later OR stored.same THEN billing.current_charge_period_ends_at
+              ELSE latest.period_ends_at END AS period_ends_at,
+         CASE WHEN latest.organization_id IS NULL THEN NULL
+              WHEN stored.later OR stored.same THEN billing.current_charge_event_id
+              ELSE latest.event_id END AS event_id
+    FROM public.organization_billing AS billing
+    LEFT JOIN latest ON latest.organization_id = billing.organization_id
    CROSS JOIN LATERAL (
-     SELECT billing.current_charge_event_id IS NOT NULL
-            AND billing.current_charge_period_ends_at >= latest.period_ends_at - interval '1 day' AS kept
-   ) AS kept
+     SELECT own.own AND billing.current_charge_period_ends_at > latest.period_ends_at + interval '24 hours' AS later,
+            own.own AND billing.current_charge_period_ends_at BETWEEN latest.period_ends_at - interval '24 hours'
+                                                                  AND latest.period_ends_at + interval '24 hours' AS same
+       FROM (SELECT EXISTS (
+               SELECT 1 FROM public.billing_events AS stored_charge
+                WHERE stored_charge.id = billing.current_charge_event_id
+                  AND stored_charge.organization_id = billing.organization_id
+                  AND stored_charge.provider = billing.provider
+                  AND stored_charge.provider_ref = billing.provider_ref
+                  AND stored_charge.status = 'applied'
+                  AND stored_charge.fact_type = 'charge_succeeded'
+             ) AS own) AS own
+   ) AS stored
+   WHERE latest.organization_id IS NOT NULL
+      OR billing.current_charge_period_ends_at IS NOT NULL
+      OR billing.current_charge_event_id IS NOT NULL
+      OR billing.current_charge_amount IS NOT NULL
 )
 UPDATE public.organization_billing AS billing
    SET current_charge_amount = decided.amount,

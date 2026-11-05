@@ -851,7 +851,10 @@ async function run() {
       nCharge(nPeriod1, "21.90", at(-24 * 20)),
       at(24 * 9 + 2)
     );
-    assert.ok(["applied", "ignored"].includes(late.status), late.status);
+    assert.ok(
+      ["applied", "ignored"].includes(late.status),
+      `late confirmation ${late.status}: the keep of an applied older period is proved by current-charge.test.ts`
+    );
     assert.deepEqual(
       await inForce(tenantN),
       ["29.90", n2.id, nPeriod2.getTime()],
@@ -935,8 +938,9 @@ async function run() {
       at(-24 * 25)
     );
     assert.equal(r1.status, "applied");
-    // what the previous Worker leaves in the expand window: applied renewals, the columns not written. Two of them end
-    // the same latest period written two ways: the text "T00:00-03:00" sorts before "T02:00Z", the instant after it
+    // what the previous Worker leaves in the expand window: applied renewals, the columns not written. The latest end
+    // is written "2099-01-01T20:00:00-12:00" (02/01 08:00Z), which sorts as text before "2099-01-02T02:00:00Z": by the
+    // text, the day of samePeriod would reach back to 01/01 02:00Z and take in the fact of 01/01 06:00Z, received first
     const backfillLedger = async (
       providerRef: string,
       fact: Record<string, unknown>
@@ -963,14 +967,18 @@ async function run() {
       periodEndsAt,
       type: "charge_succeeded",
     });
-    const latestPeriod = "2099-01-01T00:00:00-03:00";
+    await backfillLedger(
+      ref("chk-r1"),
+      factOf("2099-01-01T06:00:00Z", "27.90")
+    );
+    const latestPeriod = "2099-01-01T20:00:00-12:00";
     const latestId = await backfillLedger(
       ref("chk-r1"),
       factOf(latestPeriod, "31.90")
     );
     await backfillLedger(
       ref("chk-r1"),
-      factOf("2099-01-01T02:00:00Z", "30.90")
+      factOf("2099-01-02T02:00:00Z", "30.90")
     );
     await backfillLedger(
       ref("chk-r1"),
@@ -1034,6 +1042,76 @@ async function run() {
     current = await record(tenantC);
     assert.equal(current?.current_charge_amount, "249.00");
     assert.equal(current?.current_charge_event_id, c2.id);
+    // the provider's two facts of one charge, within the day of samePeriod: the confirmation with the amount, then the
+    // receipt half an hour later on the period and without one; the previous Worker wrote neither
+    const tenantPair = await newTenant("backfill pair");
+    await billing.attachProvider(
+      tenantPair.organizationId,
+      "asaas",
+      ref("chk-pair"),
+      { firstChargeOn: "2026-10-01", priceAmount: "24.90", priceId: "pro-1" }
+    );
+    const pairLedger = async (
+      fact: Record<string, unknown>,
+      receivedAt: Date
+    ) =>
+      (
+        await owner.pool.query<{ id: string }>(
+          `INSERT INTO public.billing_events
+             (provider, provider_event_id, provider_ref, organization_id, fact, fact_type, occurred_at, status, received_at)
+           VALUES ('asaas', $1, $2, $3, $4::jsonb, 'charge_succeeded', $5, 'applied', $5)
+           RETURNING id::text AS id`,
+          [
+            `gate-${randomUUID()}`,
+            ref("chk-pair"),
+            tenantPair.organizationId,
+            JSON.stringify(fact),
+            receivedAt,
+          ]
+        )
+      ).rows[0]?.id ?? "";
+    const pairPeriod = at(24 * 30);
+    const confirmed = await pairLedger(
+      factOf(pairPeriod.toISOString(), "29.90"),
+      at(-3)
+    );
+    await pairLedger(
+      factOf(new Date(pairPeriod.getTime() + HOUR / 2).toISOString()),
+      at(-2)
+    );
+    // a link the previous Worker replaced without clearing the columns: the new link has no charge yet
+    const tenantOld = await newTenant("backfill old link");
+    await billing.attachProvider(
+      tenantOld.organizationId,
+      "asaas",
+      ref("chk-old-1"),
+      { firstChargeOn: "2026-10-01", priceAmount: "24.90", priceId: "pro-1" }
+    );
+    const oldCharge = await apply(
+      tenantOld,
+      ref("chk-old-1"),
+      nCharge(at(24 * 20), "24.90", at(-10)),
+      at(-10)
+    );
+    assert.equal(oldCharge.status, "applied");
+    await owner.pool.query(
+      `UPDATE public.organization_billing SET state = 'free', access_ends_at = NULL, cycle_months = NULL,
+              cancel_at_period_end = false, provider_ref = $2, provider_subscription_id = NULL
+        WHERE organization_id = $1`,
+      [tenantOld.organizationId, ref("chk-old-2")]
+    );
+    assert.equal((await inForce(tenantOld))[1], oldCharge.id);
+    assert.ok((await reconcile()) >= 2);
+    assert.deepEqual(
+      await inForce(tenantPair),
+      ["29.90", confirmed, pairPeriod.getTime()],
+      "two facts of one charge: the first received gives event and period, and the amount is the one that has it, as processEvent does"
+    );
+    assert.deepEqual(
+      await inForce(tenantOld),
+      [null, null, null],
+      "the charge of a link that is no longer the record's is cleared"
+    );
     assert.equal(
       await reconcile(),
       0,

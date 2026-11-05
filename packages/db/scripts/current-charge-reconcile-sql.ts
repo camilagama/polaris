@@ -1,15 +1,16 @@
 /**
- * The charge of the period in force recomputed from the ledger (ADR 0104, §7), for every record with a link: the
- * applied `charge_succeeded` of the same store and the same link (provider and reference) whose `periodEndsAt` is the
- * latest. The period goes through the ISO instant check of `readOwnerCommandRecord` and `pg_input_is_valid` before
- * it is cast, so a text that is not an instant (even one shaped like it, "2026-02-31T…") counts as no period and never
- * aborts the migration; the order is by the instant, never by the text. The amount is the fact's (`amount`, BRL, two
- * places, positive), else the first charge's when that fact is the first charge (the price the checkout sent, as
- * `recordFirstCharge`), else null: never the catalog's price. Of two facts with the same latest period, the one with
- * an amount wins. Then the rule of `currentChargeAfter`: a stored charge of the same period (within the day of
- * `samePeriod`) or a later one keeps its event and period and only gets a missing amount; an older one is replaced.
- * Only a row that changes is written, so running it again writes nothing. Migration 0118 runs this
- * same statement; `current-charge-reconcile-sql.test.ts` holds the two together.
+ * The charge of the period in force recomputed from the ledger (ADR 0104, §7), by the rule of `currentChargeAfter`.
+ * Only applied `charge_succeeded` facts of the record's own link (provider and reference) count. The period goes
+ * through the ISO instant check of `readOwnerCommandRecord` and `pg_input_is_valid` before it is cast, so a text that
+ * is not an instant (even one shaped like it, "2026-02-31T…") counts as no period and never aborts the migration; the
+ * order is by the instant, never by the text. The latest period is the cluster of facts within 24 hours of the
+ * latest end (`samePeriod`): its first received fact gives the event and the period, as the first one processed
+ * does, and its first amount fills the amount. An amount is the fact's (BRL, two places, positive), else the first
+ * charge's when that fact is the first charge (the price the checkout sent, as `recordFirstCharge`), else null. A
+ * stored charge of the link's own ledger in that period keeps its event and only gets a missing amount; one later
+ * than it is kept whole; anything else (older, of an old link, or a link with no charge) is replaced or cleared.
+ * Only a row that changes is written, so running it again writes nothing. Migration 0118 runs this same statement;
+ * `current-charge-reconcile-sql.test.ts` holds the two together.
  */
 export const CURRENT_CHARGE_RECONCILE_SQL = `WITH charges AS (
   SELECT billing.organization_id, charge.id AS event_id, charge.received_at,
@@ -34,24 +35,59 @@ export const CURRENT_CHARGE_RECONCILE_SQL = `WITH charges AS (
      AND charge.status = 'applied'
      AND charge.fact_type = 'charge_succeeded'
 ),
-latest AS (
-  SELECT DISTINCT ON (charges.organization_id)
-         charges.organization_id, charges.event_id, charges.period_ends_at, charges.amount
+latest_period AS (
+  SELECT charges.organization_id, max(charges.period_ends_at) AS period_ends_at
     FROM charges
    WHERE charges.period_ends_at IS NOT NULL
-   ORDER BY charges.organization_id, charges.period_ends_at DESC, charges.amount IS NULL, charges.received_at, charges.event_id
+   GROUP BY charges.organization_id
+),
+cluster AS (
+  SELECT charges.*
+    FROM charges
+    JOIN latest_period ON latest_period.organization_id = charges.organization_id
+   WHERE charges.period_ends_at >= latest_period.period_ends_at - interval '24 hours'
+),
+latest AS (
+  SELECT DISTINCT ON (head.organization_id)
+         head.organization_id, head.event_id, head.period_ends_at,
+         (SELECT priced.amount FROM cluster AS priced
+           WHERE priced.organization_id = head.organization_id AND priced.amount IS NOT NULL
+           ORDER BY priced.received_at, priced.event_id LIMIT 1) AS amount
+    FROM cluster AS head
+   ORDER BY head.organization_id, head.received_at, head.event_id
 ),
 decided AS (
-  SELECT latest.organization_id,
-         CASE WHEN kept.kept THEN COALESCE(billing.current_charge_amount, latest.amount) ELSE latest.amount END AS amount,
-         CASE WHEN kept.kept THEN billing.current_charge_period_ends_at ELSE latest.period_ends_at END AS period_ends_at,
-         CASE WHEN kept.kept THEN billing.current_charge_event_id ELSE latest.event_id END AS event_id
-    FROM latest
-    JOIN public.organization_billing AS billing ON billing.organization_id = latest.organization_id
+  SELECT billing.organization_id,
+         CASE WHEN latest.organization_id IS NULL THEN NULL
+              WHEN stored.later THEN billing.current_charge_amount
+              WHEN stored.same THEN COALESCE(billing.current_charge_amount, latest.amount)
+              ELSE latest.amount END AS amount,
+         CASE WHEN latest.organization_id IS NULL THEN NULL
+              WHEN stored.later OR stored.same THEN billing.current_charge_period_ends_at
+              ELSE latest.period_ends_at END AS period_ends_at,
+         CASE WHEN latest.organization_id IS NULL THEN NULL
+              WHEN stored.later OR stored.same THEN billing.current_charge_event_id
+              ELSE latest.event_id END AS event_id
+    FROM public.organization_billing AS billing
+    LEFT JOIN latest ON latest.organization_id = billing.organization_id
    CROSS JOIN LATERAL (
-     SELECT billing.current_charge_event_id IS NOT NULL
-            AND billing.current_charge_period_ends_at >= latest.period_ends_at - interval '1 day' AS kept
-   ) AS kept
+     SELECT own.own AND billing.current_charge_period_ends_at > latest.period_ends_at + interval '24 hours' AS later,
+            own.own AND billing.current_charge_period_ends_at BETWEEN latest.period_ends_at - interval '24 hours'
+                                                                  AND latest.period_ends_at + interval '24 hours' AS same
+       FROM (SELECT EXISTS (
+               SELECT 1 FROM public.billing_events AS stored_charge
+                WHERE stored_charge.id = billing.current_charge_event_id
+                  AND stored_charge.organization_id = billing.organization_id
+                  AND stored_charge.provider = billing.provider
+                  AND stored_charge.provider_ref = billing.provider_ref
+                  AND stored_charge.status = 'applied'
+                  AND stored_charge.fact_type = 'charge_succeeded'
+             ) AS own) AS own
+   ) AS stored
+   WHERE latest.organization_id IS NOT NULL
+      OR billing.current_charge_period_ends_at IS NOT NULL
+      OR billing.current_charge_event_id IS NOT NULL
+      OR billing.current_charge_amount IS NOT NULL
 )
 UPDATE public.organization_billing AS billing
    SET current_charge_amount = decided.amount,

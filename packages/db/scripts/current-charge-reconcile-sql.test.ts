@@ -43,7 +43,7 @@ describe("the backfill of the charge in force", () => {
       "charge.provider_ref = billing.provider_ref"
     );
     expect(CURRENT_CHARGE_RECONCILE_SQL).toContain(
-      "charges.period_ends_at DESC"
+      "max(charges.period_ends_at)"
     );
     expect(CURRENT_CHARGE_RECONCILE_SQL).not.toMatch(ORDER_BY_TEXT);
   });
