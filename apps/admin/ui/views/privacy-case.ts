@@ -43,18 +43,18 @@ import {
 const NOTE_OPTIONAL_LABEL = "Nota da decisão (opcional)";
 const NOTE_MANDATORY_LABEL = "Nota da decisão (obrigatória)";
 const LEGAL_NOTE_MISSING =
-  "nota: não registrada (decidido antes desta regra ou apagada pelo purge)";
+  "nota: não registrada (decidido antes desta regra ou apagada com a loja)";
 const LEGAL_NOTE_REQUIRED = `Obrigatória: diga a norma (de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres)`;
 const LEGAL_NOTE_REFUSED = `Com este motivo a nota é obrigatória: diga a norma, de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres.`;
 export const STEP_UNDO = "Não: cada etapa vale uma vez.";
 export const STEP_RECORD =
-  "A etapa fica no registro do caso e na auditoria, com o seu e-mail. A nota não vai para a auditoria.";
+  "A etapa fica no registro do atendimento e na auditoria, com o seu e-mail. A nota não vai para a auditoria.";
 export const STAGE_CONFLICT =
   "Esta etapa já foi registrada ou ainda não é a vez dela. Nada foi refeito.";
 export const ACTIONS_ONLY_RECORD =
   "Isto registra o que foi feito pelos comandos próprios; não altera dado da loja.";
 export const STEP_UNKNOWN =
-  "Não deu para confirmar se a etapa foi registrada. Recarregue o caso para ver o estado antes de tentar de novo.";
+  "Não deu para confirmar se a etapa foi registrada. Recarregue o atendimento para ver o estado antes de tentar de novo.";
 const STEP_REFUSED =
   "A etapa não foi aceita: confira os campos e as regras desta etapa.";
 
@@ -117,10 +117,10 @@ export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
   ],
   identity: [
     "Registre como a identidade de quem pede foi conferida. Um documento, se conferido, é visto fora do Polaris e não é guardado.",
-    "Com a identidade não confirmada, o caso só poderá ser recusado.",
+    "Com a identidade não confirmada, o atendimento só poderá ser recusado.",
   ],
   resolve: [
-    "Resolver fecha o caso e revoga os acessos temporários dele. Caso resolvido não reabre.",
+    "Resolver fecha o atendimento e revoga os acessos temporários dele. Atendimento resolvido não reabre.",
     "Uma aceitação só se resolve depois de ao menos uma ação registrada; uma recusa ou um encaminhamento se resolvem sem ação.",
   ],
   role: [
@@ -180,7 +180,7 @@ function stepStates(detail: Detail): Record<StepKey, StepState> {
 
 function problemText(problem: Problem): string {
   if (problem === "not_found") {
-    return "Este caso não foi encontrado.";
+    return "Este atendimento não foi encontrado.";
   }
   return PROBLEM_TEXT[problem === "invalid" ? "failed" : problem];
 }
@@ -300,7 +300,11 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
     return dom.el(
       "section",
       { "aria-labelledby": "privacidade-historico", class: "history" },
-      dom.el("h3", { id: "privacidade-historico" }, "Histórico do caso"),
+      dom.el(
+        "h3",
+        { id: "privacidade-historico" },
+        "O que foi feito neste atendimento"
+      ),
       events.length === 0
         ? dom.el("p", {}, "Nada registrado ainda.")
         : dom.el("ul", {}, ...events)
@@ -359,7 +363,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         ? dom.el(
             "p",
             { class: "warning" },
-            "Este caso foi fechado fora do fluxo de privacidade: as etapas que faltam não podem mais ser registradas."
+            "Este atendimento foi fechado fora do fluxo de privacidade: as etapas que faltam não podem mais ser registradas."
           )
         : null;
     const drawn = turn;
@@ -370,7 +374,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       dom.el(
         "section",
         { "aria-labelledby": "privacidade-etapas", class: "steps-area" },
-        dom.el("h3", { id: "privacidade-etapas" }, "Etapas do caso"),
+        dom.el("h3", { id: "privacidade-etapas" }, "Etapas do atendimento"),
         dom.el("ol", { class: "steps" }, ...items)
       ),
       actionTabs(detail),
@@ -410,9 +414,9 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       { class: "case-tabs" },
       dom.el(
         "ul",
-        { "aria-label": "Ações deste caso", class: "tabs" },
+        { "aria-label": "Ações deste atendimento", class: "tabs" },
         tab(base, "Etapas e aviso", !onPurgeTab),
-        tab(`${base}?acao=purge`, "Purge e trava legal", onPurgeTab)
+        tab(`${base}?acao=purge`, "Apagamento e trava legal", onPurgeTab)
       )
     );
   };
@@ -439,7 +443,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
     turn += 1;
     const mine = turn;
     if (after === undefined) {
-      notice.status("Carregando o caso…");
+      notice.status("Carregando o atendimento…");
     }
     const answer = await api.get<Detail>(
       `/api/privacy-cases/${encodeURIComponent(caseId ?? "")}`
@@ -561,7 +565,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const caseFacts = dom.el(
         "p",
         { class: "hint" },
-        `Neste caso: identidade ${labelOf(IDENTITY_STATUSES, detail.privacy.identityStatus).toLowerCase()}; papel do Polaris ${labelOf(ROLES, detail.privacy.polarisRole).split(":")[0]?.toLowerCase() ?? ""}; quem pede: ${labelOf(REQUESTER_KINDS, detail.privacy.requesterKind).toLowerCase()}.`
+        `Neste atendimento: identidade ${labelOf(IDENTITY_STATUSES, detail.privacy.identityStatus).toLowerCase()}; papel do Polaris ${labelOf(ROLES, detail.privacy.polarisRole).split(":")[0]?.toLowerCase() ?? ""}; quem pede: ${labelOf(REQUESTER_KINDS, detail.privacy.requesterKind).toLowerCase()}.`
       );
       return {
         fields: [caseFacts, decision.element, reason.element, note.element],
@@ -617,8 +621,11 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           return null;
         }
         return text === ""
-          ? { body: {}, value: "caso resolvido, sem texto de resolução" }
-          : { body: { resolution: text }, value: `caso resolvido: “${text}”` };
+          ? { body: {}, value: "atendimento resolvido, sem texto de resolução" }
+          : {
+              body: { resolution: text },
+              value: `atendimento resolvido: “${text}”`,
+            };
       },
     };
   }
@@ -758,7 +765,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
 
     const effect = (value: string) =>
       spec.key === "resolve"
-        ? `A resolução fica registrada como ${value}. O caso fecha e os acessos temporários dele são revogados.`
+        ? `A resolução fica registrada como ${value}. O atendimento fecha e os acessos temporários dele são revogados.`
         : `A etapa “${spec.title}” fica registrada como ${value}.`;
 
     const review = (read: {
@@ -778,7 +785,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const reload = dom.el(
         "button",
         { class: "secondary", hidden: "", type: "button" },
-        "Recarregar o caso"
+        "Recarregar o atendimento"
       );
       const heading = title(`Revise antes de registrar: ${label}`);
       back.addEventListener("click", () => {
@@ -805,8 +812,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           ),
         ],
         [
-          "Caso",
-          `Caso de privacidade aberto em ${brasiliaMomentText(detail.case.openedAt)}`,
+          "Atendimento",
+          `Atendimento de privacidade aberto em ${brasiliaMomentText(detail.case.openedAt)}`,
         ],
         ["O que acontece", effect(read.value)],
       ];
@@ -848,7 +855,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         if (!(await load(() => notice.success(said)))) {
           onlyReload(buttons);
           stepNotice.alert(
-            "A etapa foi registrada, mas não deu para mostrar o caso de novo. Use Recarregar o caso."
+            "A etapa foi registrada, mas não deu para mostrar o atendimento de novo. Use Recarregar o atendimento."
           );
         }
         return;
@@ -920,14 +927,18 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
   });
 
   if (caseId === null) {
-    notice.alert("Este caso não foi encontrado.");
+    notice.alert("Este atendimento não foi encontrado.");
   } else {
     load();
   }
   return dom.el(
     "section",
     { "aria-labelledby": "privacidade-caso-titulo", class: "area" },
-    dom.el("h2", { id: "privacidade-caso-titulo" }, "Caso de privacidade"),
+    dom.el(
+      "h2",
+      { id: "privacidade-caso-titulo" },
+      "Atendimento de privacidade"
+    ),
     notice.element,
     body
   );
@@ -1018,10 +1029,10 @@ function readDecision(
 /** How a case that is no longer open ended, as the server recorded it; null while it is open. */
 function closedText(detail: Detail): string | null {
   if (detail.privacy.stage === "resolved") {
-    return `Caso resolvido em ${brasiliaMomentText(detail.privacy.resolvedAt ?? detail.case.closedAt)}`;
+    return `Atendimento resolvido em ${brasiliaMomentText(detail.privacy.resolvedAt ?? detail.case.closedAt)}`;
   }
   if (detail.case.status !== "open") {
-    return `Caso fechado em ${brasiliaMomentText(detail.case.closedAt)}, sem resolução no fluxo de privacidade`;
+    return `Atendimento fechado em ${brasiliaMomentText(detail.case.closedAt)}, sem resolução no fluxo de privacidade`;
   }
   return null;
 }
@@ -1035,8 +1046,8 @@ const AUDIT_EVENTS: Readonly<Record<string, string>> = {
   "organization.purge_scheduled": "Apagamento da loja agendado",
   "privacy_case.action_recorded": "Ação registrada",
   "privacy_case.stage_recorded": "Etapa registrada",
-  "support_case.closed": "Caso fechado",
-  "support_case.opened": "Caso aberto",
+  "support_case.closed": "Atendimento fechado",
+  "support_case.opened": "Atendimento aberto",
   "tenant_access.granted": "Acesso aos dados dado",
   "tenant_access.revoked": "Acesso aos dados encerrado",
 };

@@ -45,7 +45,8 @@ const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
 const OPENED_AT = "2026-10-28T13:05:00.000Z";
 const CLOSED_AT = "2026-10-28T15:05:00.000Z";
 const CLOSED_TEXT = "28/10/2026 12:05";
-const CLOSE_DONE = "Caso fechado. Os acessos temporários dele foram revogados.";
+const CLOSE_DONE =
+  "Atendimento fechado. Os acessos temporários dele foram revogados.";
 const HOSTILE = [
   "<img src=x onerror=alert(1)>",
   "<script>alert(1)</script>",
@@ -240,7 +241,7 @@ describe("the list of cases (AC-P1.4)", () => {
     expect(text).toContain("Suporte");
     expect(text).toContain("Dono pediu ajuda com o estoque");
     expect(text).toContain("Aberto");
-    expect(text).toContain("Ver caso");
+    expect(text).toContain("Ver atendimento");
     expect(linksOf(root)).toContain(`/casos/${CASE}`);
   });
 
@@ -312,7 +313,7 @@ describe("the list of cases (AC-P1.4)", () => {
       listContext()
     );
 
-    expect(visibleText(root)).toContain("Nenhum caso aberto.");
+    expect(visibleText(root)).toContain("Nenhum atendimento aberto.");
     expect(
       byTag(root, "table").every((table) => table.hasAttribute("hidden"))
     ).toBe(true);
@@ -326,7 +327,7 @@ describe("the list of cases (AC-P1.4)", () => {
       listContext({ listState: "fechados" })
     );
 
-    expect(visibleText(root)).toContain("Nenhum caso fechado.");
+    expect(visibleText(root)).toContain("Nenhum atendimento fechado.");
   });
 
   it.each([
@@ -414,7 +415,7 @@ describe("opening a case (AC-P1.5)", () => {
   };
 
   const submit = async (root: FakeElement) => {
-    buttons(root, "Abrir caso")[0]?.click();
+    buttons(root, "Abrir atendimento")[0]?.click();
     await flush();
   };
 
@@ -519,7 +520,7 @@ describe("opening a case (AC-P1.5)", () => {
     type(root, "   ");
     await submit(root);
     expect(byId(root, "motivo-erro").textContent).toBe(
-      "Escreva o motivo do caso."
+      "Escreva o motivo do atendimento."
     );
 
     type(root, "linha um\nlinha dois");
@@ -561,7 +562,7 @@ describe("opening a case (AC-P1.5)", () => {
 
     expect(navigations).toEqual([]);
     expect(alertOf(root)?.textContent).toContain(
-      "Não foi possível confirmar se o caso foi aberto"
+      "Não foi possível confirmar se o atendimento foi aberto"
     );
   });
 
@@ -570,8 +571,8 @@ describe("opening a case (AC-P1.5)", () => {
     const { calls, navigations, root } = await ready([wait.answer]);
 
     type(root, "Dono pediu ajuda");
-    buttons(root, "Abrir caso")[0]?.click();
-    buttons(root, "Abrir caso")[0]?.click();
+    buttons(root, "Abrir atendimento")[0]?.click();
+    buttons(root, "Abrir atendimento")[0]?.click();
     await flush();
 
     expect(calls.filter((call) => call.init.method === "POST")).toHaveLength(1);
@@ -606,7 +607,7 @@ describe("opening a case (AC-P1.5)", () => {
     await submit(root);
 
     expect(alertOf(root)?.textContent).toContain(
-      "Não foi possível confirmar se o caso foi aberto"
+      "Não foi possível confirmar se o atendimento foi aberto"
     );
     expect(navigations).toEqual([]);
   });
@@ -659,7 +660,7 @@ describe("opening a case (AC-P1.5)", () => {
 
     expect(calls).toHaveLength(1);
     expect(alertOf(root)?.textContent).toBe(
-      "Escolha a loja antes de abrir o caso."
+      "Escolha a loja antes de abrir o atendimento."
     );
   });
 
@@ -708,7 +709,7 @@ describe("opening a case (AC-P1.5)", () => {
 
     expect(calls).toHaveLength(1);
     expect(visibleText(root)).toContain(
-      "Sem permissão para buscar loja: abra o caso pela tela da loja."
+      "Sem permissão para buscar loja: abra o atendimento pela tela da loja."
     );
     expect(
       byTag(root, "input").map((input) => input.getAttribute("id"))
@@ -733,14 +734,14 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     mounted: Awaited<ReturnType<typeof open>>,
     text = "Resolvido por telefone"
   ) {
-    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Fechar atendimento")[0]?.click();
     byId(mounted.root, "resolucao").value = text;
     buttons(mounted.root, "Revisar o fechamento")[0]?.click();
     await flush();
   }
 
   const confirm = async (root: FakeElement) => {
-    buttons(root, "Confirmar o fechamento do caso")[0]?.click();
+    buttons(root, "Confirmar o fechamento do atendimento")[0]?.click();
     await flush();
   };
 
@@ -754,15 +755,15 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     expect(factOf(root, "Motivo")).toBe("Dono pediu ajuda com o estoque");
   });
 
-  it("offers Fechar caso and says what closing does before anything is sent", async () => {
+  it("offers Fechar atendimento and says what closing does before anything is sent", async () => {
     const { calls, root } = await open([]);
 
-    expect(buttons(root, "Fechar caso")).toHaveLength(1);
+    expect(buttons(root, "Fechar atendimento")).toHaveLength(1);
     expect(visibleText(root)).toContain(
-      "Fechar o caso revoga todos os acessos temporários dele. Caso fechado não reabre."
+      "Fechar o atendimento revoga todos os acessos temporários dele. Atendimento fechado não reabre."
     );
     expect(CLOSE_EFFECT).toBe(
-      "Fechar o caso revoga todos os acessos temporários dele. Caso fechado não reabre."
+      "Fechar o atendimento revoga todos os acessos temporários dele. Atendimento fechado não reabre."
     );
     expect(posts(calls)).toHaveLength(0);
   });
@@ -774,7 +775,7 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     ]);
     const { calls, root } = mounted;
 
-    buttons(root, "Fechar caso")[0]?.click();
+    buttons(root, "Fechar atendimento")[0]?.click();
     expect(byId(root, "resolucao")).toBeDefined();
     expect(posts(calls)).toHaveLength(0);
 
@@ -836,10 +837,12 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     expect(calls[3]?.path).toBe(`/api/support-cases/${CASE}`);
     expect(calls[3]?.init.method).toBe("GET");
     expect(visibleText(root)).toContain(CLOSE_DONE);
-    expect(buttons(root, "Fechar caso")).toHaveLength(0);
-    expect(buttons(root, "Confirmar o fechamento do caso")).toHaveLength(0);
+    expect(buttons(root, "Fechar atendimento")).toHaveLength(0);
+    expect(buttons(root, "Confirmar o fechamento do atendimento")).toHaveLength(
+      0
+    );
     expect(visibleText(root)).toContain(
-      `Caso fechado em ${CLOSED_TEXT}. Para agir de novo, abra outro caso.`
+      `Atendimento fechado em ${CLOSED_TEXT}. Para agir de novo, abra outro atendimento.`
     );
     expect(factOf(root, "Resolução")).toBe("Resolvido por telefone");
     expect(linksOf(root)).toContain(`/casos/novo?loja=${STORE}`);
@@ -854,7 +857,9 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     await toReview(mounted);
     await confirm(mounted.root);
 
-    expect(visibleText(mounted.root)).toContain("Este caso já estava fechado.");
+    expect(visibleText(mounted.root)).toContain(
+      "Este atendimento já estava fechado."
+    );
     expect(visibleText(mounted.root)).not.toContain(CLOSE_DONE);
   });
 
@@ -865,7 +870,7 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     await toReview(mounted);
     const confirmButton = buttons(
       mounted.root,
-      "Confirmar o fechamento do caso"
+      "Confirmar o fechamento do atendimento"
     )[0] as FakeElement;
     confirmButton.click();
     confirmButton.click();
@@ -885,7 +890,7 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     const mounted = await open([wait.answer, json(closedDetail())]);
 
     await toReview(mounted);
-    buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.click();
+    buttons(mounted.root, "Confirmar o fechamento do atendimento")[0]?.click();
     buttons(mounted.root, "Voltar")[0]?.click();
     await flush();
 
@@ -907,13 +912,13 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     expect(posts(mounted.calls)).toHaveLength(0);
   });
 
-  it("cancels the form and offers Fechar caso again", async () => {
+  it("cancels the form and offers Fechar atendimento again", async () => {
     const mounted = await open([]);
 
-    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Fechar atendimento")[0]?.click();
     buttons(mounted.root, "Cancelar")[0]?.click();
 
-    expect(buttons(mounted.root, "Fechar caso")).toHaveLength(1);
+    expect(buttons(mounted.root, "Fechar atendimento")).toHaveLength(1);
     expect(posts(mounted.calls)).toHaveLength(0);
   });
 
@@ -921,7 +926,7 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     const mounted = await open([json(closedAnswer()), json(closedDetail())]);
     const { root } = mounted;
 
-    buttons(root, "Fechar caso")[0]?.click();
+    buttons(root, "Fechar atendimento")[0]?.click();
     byId(root, "resolucao").value = "a".repeat(501);
     buttons(root, "Revisar o fechamento")[0]?.click();
     await flush();
@@ -929,7 +934,9 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     expect(byId(root, "resolucao-erro").textContent).toBe(
       "A resolução aceita até 500 caracteres."
     );
-    expect(buttons(root, "Confirmar o fechamento do caso")).toHaveLength(0);
+    expect(buttons(root, "Confirmar o fechamento do atendimento")).toHaveLength(
+      0
+    );
     expect(mounted.calls).toHaveLength(2);
 
     byId(root, "resolucao").value = "a".repeat(500);
@@ -942,7 +949,7 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
   it("refuses a resolution with a control character without a request", async () => {
     const mounted = await open([]);
 
-    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Fechar atendimento")[0]?.click();
     byId(mounted.root, "resolucao").value = "um\ndois";
     buttons(mounted.root, "Revisar o fechamento")[0]?.click();
 
@@ -955,9 +962,9 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
   it("shows no action on a case that is already closed, and links to open another", async () => {
     const { calls, root } = await open([], closedDetail("Feito"));
 
-    expect(buttons(root, "Fechar caso")).toHaveLength(0);
+    expect(buttons(root, "Fechar atendimento")).toHaveLength(0);
     expect(visibleText(root)).toContain(
-      `Caso fechado em ${CLOSED_TEXT}. Para agir de novo, abra outro caso.`
+      `Atendimento fechado em ${CLOSED_TEXT}. Para agir de novo, abra outro atendimento.`
     );
     expect(posts(calls)).toHaveLength(0);
   });
@@ -968,7 +975,7 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
       detail({ kind: "privacy", reason: "pedido de apagamento do titular" })
     );
 
-    expect(buttons(root, "Fechar caso")).toHaveLength(0);
+    expect(buttons(root, "Fechar atendimento")).toHaveLength(0);
     expect(visibleText(root)).not.toContain("pedido de apagamento");
     expect(factOf(root, "Motivo")).toBe("Fica no fluxo de privacidade.");
     expect(visibleText(root)).toContain("só leitura");
@@ -1030,7 +1037,9 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
     );
 
     expect(calls).toHaveLength(1);
-    expect(alertOf(root)?.textContent).toBe("Este caso não foi encontrado.");
+    expect(alertOf(root)?.textContent).toBe(
+      "Este atendimento não foi encontrado."
+    );
   });
 
   it("says the case was not found on a 404 of the read", async () => {
@@ -1041,7 +1050,9 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
       caseContext()
     );
 
-    expect(alertOf(root)?.textContent).toBe("Este caso não foi encontrado.");
+    expect(alertOf(root)?.textContent).toBe(
+      "Este atendimento não foi encontrado."
+    );
     expect(visibleText(root)).not.toContain("support_case_not_found");
   });
 });
@@ -1056,10 +1067,10 @@ describe("what each answer of the close says (AC-C3)", () => {
       undefined,
       caseContext
     );
-    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Fechar atendimento")[0]?.click();
     byId(mounted.root, "resolucao").value = "Feito";
     buttons(mounted.root, "Revisar o fechamento")[0]?.click();
-    buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.click();
+    buttons(mounted.root, "Confirmar o fechamento do atendimento")[0]?.click();
     await flush();
     return mounted;
   }
@@ -1084,7 +1095,7 @@ describe("what each answer of the close says (AC-C3)", () => {
     [
       "404",
       json({ error: "support_case_not_found" }, 404),
-      "Este caso não foi encontrado.",
+      "Este atendimento não foi encontrado.",
     ],
     ["429", json({}, 429), PROBLEM_TEXT.rate_limited],
   ])(
@@ -1096,7 +1107,7 @@ describe("what each answer of the close says (AC-C3)", () => {
       expect(visibleText(root)).not.toContain("_code");
       expect(visibleText(root)).not.toContain("support_case_not_found");
       expect(
-        buttons(root, "Confirmar o fechamento do caso")[0]?.hasAttribute(
+        buttons(root, "Confirmar o fechamento do atendimento")[0]?.hasAttribute(
           "hidden"
         )
       ).toBe(false);
@@ -1115,43 +1126,43 @@ describe("what each answer of the close says (AC-C3)", () => {
 
       expect(alertOf(root)?.textContent).toBe(CLOSE_UNKNOWN);
       expect(CLOSE_UNKNOWN).toContain(
-        "Não deu para confirmar se o caso foi fechado"
+        "Não deu para confirmar se o atendimento foi fechado"
       );
       expect(
-        buttons(root, "Confirmar o fechamento do caso")[0]?.hasAttribute(
+        buttons(root, "Confirmar o fechamento do atendimento")[0]?.hasAttribute(
           "hidden"
         )
       ).toBe(true);
       expect(
-        buttons(root, "Recarregar o caso")[0]?.hasAttribute("hidden")
+        buttons(root, "Recarregar o atendimento")[0]?.hasAttribute("hidden")
       ).toBe(false);
       expect(visibleText(root)).not.toContain("database_down");
       expect(document.activeElement).toBe(alertOf(root));
     }
   );
 
-  it("reads the case again, once, when Recarregar o caso is used, and shows what the server has", async () => {
+  it("reads the case again, once, when Recarregar o atendimento is used, and shows what the server has", async () => {
     const mounted = await mount(
       [json(detail()), new Error("offline"), json(closedDetail())],
       undefined,
       undefined,
       caseContext
     );
-    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Fechar atendimento")[0]?.click();
     buttons(mounted.root, "Revisar o fechamento")[0]?.click();
-    buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.click();
+    buttons(mounted.root, "Confirmar o fechamento do atendimento")[0]?.click();
     await flush();
 
-    buttons(mounted.root, "Recarregar o caso")[0]?.click();
+    buttons(mounted.root, "Recarregar o atendimento")[0]?.click();
     await flush();
 
     expect(mounted.calls).toHaveLength(4);
     expect(mounted.calls[3]?.init.method).toBe("GET");
-    expect(buttons(mounted.root, "Fechar caso")).toHaveLength(0);
-    expect(visibleText(mounted.root)).toContain("Caso fechado em");
+    expect(buttons(mounted.root, "Fechar atendimento")).toHaveLength(0);
+    expect(visibleText(mounted.root)).toContain("Atendimento fechado em");
   });
 
-  it("says the case was closed when the read after the close fails, and leaves only Recarregar o caso", async () => {
+  it("says the case was closed when the read after the close fails, and leaves only Recarregar o atendimento", async () => {
     const mounted = await mount(
       [
         json(detail()),
@@ -1163,21 +1174,22 @@ describe("what each answer of the close says (AC-C3)", () => {
       undefined,
       caseContext
     );
-    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Fechar atendimento")[0]?.click();
     buttons(mounted.root, "Revisar o fechamento")[0]?.click();
-    buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.click();
+    buttons(mounted.root, "Confirmar o fechamento do atendimento")[0]?.click();
     await flush();
 
     expect(alertOf(mounted.root)?.textContent).toBe(CLOSED_NOT_SHOWN);
     expect(
-      buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.hasAttribute(
-        "hidden"
-      )
+      buttons(
+        mounted.root,
+        "Confirmar o fechamento do atendimento"
+      )[0]?.hasAttribute("hidden")
     ).toBe(true);
     expect(buttons(mounted.root, "Voltar")[0]?.hasAttribute("hidden")).toBe(
       true
     );
-    buttons(mounted.root, "Recarregar o caso")[0]?.click();
+    buttons(mounted.root, "Recarregar o atendimento")[0]?.click();
     await flush();
     expect(mounted.calls.map((call) => call.init.method)).toEqual([
       "GET",
@@ -1186,7 +1198,7 @@ describe("what each answer of the close says (AC-C3)", () => {
       "GET",
       "GET",
     ]);
-    expect(visibleText(mounted.root)).toContain("Caso fechado em");
+    expect(visibleText(mounted.root)).toContain("Atendimento fechado em");
   });
 
   it("allows the close again after a refusal that did not close it", async () => {
@@ -1201,11 +1213,11 @@ describe("what each answer of the close says (AC-C3)", () => {
       undefined,
       caseContext
     );
-    buttons(mounted.root, "Fechar caso")[0]?.click();
+    buttons(mounted.root, "Fechar atendimento")[0]?.click();
     buttons(mounted.root, "Revisar o fechamento")[0]?.click();
-    buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.click();
+    buttons(mounted.root, "Confirmar o fechamento do atendimento")[0]?.click();
     await flush();
-    buttons(mounted.root, "Confirmar o fechamento do caso")[0]?.click();
+    buttons(mounted.root, "Confirmar o fechamento do atendimento")[0]?.click();
     await flush();
 
     expect(
@@ -1268,7 +1280,7 @@ describe("hostile text is shown as text (AC-C7)", () => {
         screenContext({ id: CASE, screen: "caso" })
       );
 
-      buttons(root, "Fechar caso")[0]?.click();
+      buttons(root, "Fechar atendimento")[0]?.click();
       byId(root, "resolucao").value = hostile;
       buttons(root, "Revisar o fechamento")[0]?.click();
 
@@ -1312,7 +1324,7 @@ describe("hostile text is shown as text (AC-C7)", () => {
       await find("x");
       buttons(root, "Escolher loja")[0]?.click();
       byId(root, "motivo").value = hostile;
-      buttons(root, "Abrir caso")[0]?.click();
+      buttons(root, "Abrir atendimento")[0]?.click();
       await flush();
 
       expect(visibleText(byId(root, "caso-loja"))).toContain(hostile);

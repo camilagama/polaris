@@ -90,7 +90,7 @@ async function chosen(answers: Answer[], capabilities = OWNER.capabilities) {
   await flush();
   const section = sectionOf(page.root);
   const listCases = async () => {
-    buttons(section, "Ver casos abertos desta loja")[0]?.click();
+    buttons(section, "Ver atendimentos abertos desta loja")[0]?.click();
     await flush();
   };
   const fact = (label: string) =>
@@ -159,7 +159,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
         "Consultar janela",
       ],
     ]);
-    expect(visibleText(section)).toContain("1 caso aberto.");
+    expect(visibleText(section)).toContain("1 atendimento aberto.");
   });
 
   it("without an open case of the store offers no read, so the window's route is never called", async () => {
@@ -168,7 +168,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
     ]);
     await listCases();
     expect(visibleText(section)).toContain(
-      "Nenhum caso aberto desta loja. Abra um caso para consultar a janela."
+      "Nenhum atendimento aberto desta loja. Abra um atendimento para consultar a janela."
     );
     expect(buttons(section, "Consultar janela")).toEqual([]);
     expect(refundCalls(calls)).toEqual([]);
@@ -195,7 +195,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
     expect(byId(section, "motivo-contador").textContent).toBe(
       `${[...reason].length} de 500 caracteres`
     );
-    buttons(section, "Abrir caso")[0]?.click();
+    buttons(section, "Abrir atendimento")[0]?.click();
     await flush();
     const open = calls.at(-1);
     expect(open?.path).toBe("/api/support-cases");
@@ -221,8 +221,8 @@ describe("the refund area of the chosen store (AC-9)", () => {
   });
 
   it.each([
-    ["", "Escreva o motivo do caso."],
-    ["   ", "Escreva o motivo do caso."],
+    ["", "Escreva o motivo do atendimento."],
+    ["   ", "Escreva o motivo do atendimento."],
     ["a".repeat(501), "O motivo aceita até 500 caracteres."],
     ["😀".repeat(501), "O motivo aceita até 500 caracteres."],
     [
@@ -240,7 +240,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
       const before = calls.length;
       expect(byId(section, "motivo-erro").textContent).toBe("");
       byId(section, "motivo").value = reason;
-      buttons(section, "Abrir caso")[0]?.click();
+      buttons(section, "Abrir atendimento")[0]?.click();
       await flush();
       const field = byId(section, "motivo");
       const error = byId(section, "motivo-erro");
@@ -263,11 +263,11 @@ describe("the refund area of the chosen store (AC-9)", () => {
     const { calls, section } = await chosen([
       json({ ...supportCase(), reason: "x" }, 201),
     ]);
-    byId(section, "motivo").value = "  Motivo do caso \n";
-    buttons(section, "Abrir caso")[0]?.click();
+    byId(section, "motivo").value = "  Motivo do atendimento \n";
+    buttons(section, "Abrir atendimento")[0]?.click();
     await flush();
     expect(JSON.parse(String(calls.at(-1)?.init.body))).toMatchObject({
-      reason: "Motivo do caso",
+      reason: "Motivo do atendimento",
     });
   });
 
@@ -276,7 +276,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
       json({ ...supportCase(), reason: "x" }, 201),
     ]);
     byId(section, "motivo").value = "😀".repeat(500);
-    buttons(section, "Abrir caso")[0]?.click();
+    buttons(section, "Abrir atendimento")[0]?.click();
     await flush();
     expect(calls.at(-1)?.path).toBe("/api/support-cases");
   });
@@ -299,7 +299,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
       json({ error: "invalid_case_reason" }, 400),
     ]);
     byId(section, "motivo").value = "Motivo";
-    buttons(section, "Abrir caso")[0]?.click();
+    buttons(section, "Abrir atendimento")[0]?.click();
     await flush();
     expect(byId(section, "motivo-erro").textContent).toBe(
       "O motivo não foi aceito: use de 1 a 500 caracteres, sem caracteres de controle."
@@ -312,7 +312,7 @@ describe("the refund area of the chosen store (AC-9)", () => {
     await listCases();
     expect(alertOf(section)?.textContent).toBe(PROBLEM_TEXT.failed);
     expect(
-      buttons(section, "Ver casos abertos desta loja")[0]?.getAttribute(
+      buttons(section, "Ver atendimentos abertos desta loja")[0]?.getAttribute(
         "aria-disabled"
       )
     ).toBe("false");
@@ -328,10 +328,10 @@ describe("the refund area of the chosen store (AC-9)", () => {
     async (answer) => {
       const { section } = await chosen([answer]);
       byId(section, "motivo").value = "Motivo";
-      buttons(section, "Abrir caso")[0]?.click();
+      buttons(section, "Abrir atendimento")[0]?.click();
       await flush();
       expect(alertOf(section)?.textContent).toBe(
-        "Não foi possível confirmar se o caso foi aberto. Veja os casos abertos desta loja antes de tentar de novo."
+        "Não foi possível confirmar se o atendimento foi aberto. Veja os atendimentos abertos desta loja antes de tentar de novo."
       );
     }
   );
@@ -496,7 +496,7 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     await flush();
     const alert = alertOf(section);
     expect(alert?.textContent).toBe(
-      "Consulta recusada: confira se o caso está aberto e é desta loja."
+      "Consulta recusada: confira se o atendimento está aberto e é desta loja."
     );
     expect(document.activeElement).toBe(alert);
     expect(refundCalls(calls)).toHaveLength(1);
@@ -537,7 +537,7 @@ describe("what the operator may do (AC-3)", () => {
       [json({ cases: [supportCase()], next: null })],
       ["organization:diagnose", "support_case:manage"]
     );
-    buttons(section, "Ver casos abertos desta loja")[0]?.click();
+    buttons(section, "Ver atendimentos abertos desta loja")[0]?.click();
     await flush();
     expect(visibleText(section)).toContain(
       "Sem permissão para consultar a janela."
@@ -552,7 +552,7 @@ describe("what the operator may do (AC-3)", () => {
       ["organization:diagnose", "billing:operate"]
     );
     expect(visibleText(section)).toContain(PROBLEM_TEXT.forbidden);
-    expect(buttons(section, "Ver casos abertos desta loja")).toEqual([]);
+    expect(buttons(section, "Ver atendimentos abertos desta loja")).toEqual([]);
     expect(byTag(section, "form")).toEqual([]);
   });
 });

@@ -37,9 +37,10 @@ export interface SupportCasesView {
 
 function countText(count: number, more: boolean): string {
   if (count === 0) {
-    return "Nenhum caso aberto desta loja. Abra um caso para consultar a janela.";
+    return "Nenhum atendimento aberto desta loja. Abra um atendimento para consultar a janela.";
   }
-  const found = count === 1 ? "1 caso aberto." : `${count} casos abertos.`;
+  const found =
+    count === 1 ? "1 atendimento aberto." : `${count} atendimentos abertos.`;
   return more ? `${found} Mostrando os ${CASES_PAGE} mais recentes.` : found;
 }
 
@@ -56,7 +57,7 @@ export function openProblemText(problem: Problem): string {
     problem === "failed" ||
     problem === "unavailable"
   ) {
-    return "Não foi possível confirmar se o caso foi aberto. Veja os casos abertos desta loja antes de tentar de novo.";
+    return "Não foi possível confirmar se o atendimento foi aberto. Veja os atendimentos abertos desta loja antes de tentar de novo.";
   }
   return PROBLEM_TEXT[problem];
 }
@@ -65,7 +66,7 @@ export function openProblemText(problem: Problem): string {
 export function reasonProblem(reason: string): string | null {
   const trimmed = reason.trim();
   if (trimmed === "") {
-    return "Escreva o motivo do caso.";
+    return "Escreva o motivo do atendimento.";
   }
   if ([...trimmed].length > MAX_REASON_LENGTH) {
     return `O motivo aceita até ${MAX_REASON_LENGTH} caracteres.`;
@@ -96,13 +97,13 @@ export function supportCasesView(
   const listButton = dom.el(
     "button",
     { class: "secondary", type: "button" },
-    "Ver casos abertos desta loja"
+    "Ver atendimentos abertos desta loja"
   );
   const rows = dom.el("tbody");
   const list = dom.el(
     "table",
     { class: "grid", hidden: "" },
-    dom.el("caption", { class: "sr-only" }, "Casos abertos desta loja"),
+    dom.el("caption", { class: "sr-only" }, "Atendimentos abertos desta loja"),
     dom.el(
       "thead",
       {},
@@ -132,18 +133,18 @@ export function supportCasesView(
     { class: "hint", id: "motivo-contador" },
     `0 de ${MAX_REASON_LENGTH} caracteres`
   );
-  const openButton = dom.el("button", { type: "submit" }, "Abrir caso");
+  const openButton = dom.el("button", { type: "submit" }, "Abrir atendimento");
   const form = dom.el(
     "form",
     { class: "search case-form", novalidate: "" },
-    dom.el("label", { for: "motivo" }, "Motivo do novo caso"),
+    dom.el("label", { for: "motivo" }, "Motivo do novo atendimento"),
     dom.el("div", { class: "search-row" }, reason, openButton),
     reasonError,
     counter,
     dom.el(
       "p",
       { class: "hint", id: "motivo-dica" },
-      "Curto e sem dado pessoal do cliente: o motivo fica no registro do caso."
+      "Curto e sem dado pessoal do cliente: o motivo fica no registro do atendimento."
     )
   );
 
@@ -170,7 +171,7 @@ export function supportCasesView(
         "button",
         {
           "aria-describedby": options.readHint?.getAttribute("id") ?? "",
-          "aria-label": `Consultar janela: caso aberto em ${brasiliaMomentText(supportCase.openedAt)}`,
+          "aria-label": `Consultar janela: atendimento aberto em ${brasiliaMomentText(supportCase.openedAt)}`,
           type: "button",
         },
         "Consultar janela"
@@ -229,7 +230,7 @@ export function supportCasesView(
     const mine = turn;
     loading = true;
     refreshButtons();
-    notice.status("Buscando casos abertos…");
+    notice.status("Buscando atendimentos abertos…");
     const parameters = new URLSearchParams({
       limit: CASES_PAGE,
       organizationId,
@@ -283,7 +284,7 @@ export function supportCasesView(
     const mine = turn;
     loading = true;
     refreshButtons();
-    notice.status("Abrindo o caso…");
+    notice.status("Abrindo o atendimento…");
     const answer = await api.post<OpenedSupportCase>("/api/support-cases", {
       kind: "support",
       organizationId,
@@ -316,8 +317,8 @@ export function supportCasesView(
     counter.textContent = `0 de ${MAX_REASON_LENGTH} caracteres`;
     notice.status(
       options.canRead
-        ? "Caso aberto. Ele está na lista; use Consultar janela."
-        : "Caso aberto. Ele está na lista."
+        ? "Atendimento aberto. Ele está na lista; use Consultar janela."
+        : "Atendimento aberto. Ele está na lista."
     );
     added.querySelector("button")?.focus();
   };
@@ -346,7 +347,7 @@ export function supportCasesView(
     element: dom.el(
       "div",
       { class: "cases" },
-      dom.el("h3", {}, "Caso de suporte"),
+      dom.el("h3", {}, "Atendimento de suporte"),
       listButton,
       notice.element,
       dom.el("div", { class: "results" }, options.readHint, list)

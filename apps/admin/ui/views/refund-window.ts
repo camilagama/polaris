@@ -58,7 +58,7 @@ function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
       `${brasiliaMomentText(view.now)} (relógio do servidor)`,
     ],
     [
-      "Caso usado",
+      "Atendimento usado",
       `Aberto em ${brasiliaMomentText(choice.openedAt)}: ${labelName(choice.reason, 120)}`,
     ],
   ]);
@@ -145,7 +145,7 @@ export function refundWindowView(
       dom.el(
         "p",
         { class: "hint" },
-        "A consulta da janela exige um caso de suporte aberto desta loja."
+        "A consulta da janela exige um atendimento de suporte aberto desta loja."
       ),
       ...(capabilities.readWindow
         ? []

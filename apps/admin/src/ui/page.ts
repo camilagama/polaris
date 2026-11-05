@@ -43,40 +43,100 @@ export type ScreenId =
 
 interface Screen {
   capability: PlatformCapability;
+  purpose: string;
   /** The screen's name in the tab title and in its `h1`. */
   title: string;
 }
 
+export const PURPOSE_MAX_LENGTH = 90;
+
 export const SCREENS: Readonly<Record<ScreenId, Screen>> = {
-  caso: { capability: "support_case:manage", title: "Caso de suporte" },
+  caso: {
+    capability: "support_case:manage",
+    purpose:
+      "Aqui você age na loja: suspender, dar plano, ver clientes. Tudo fica registrado.",
+    title: "Atendimento",
+  },
   "caso-novo": {
     capability: "support_case:manage",
-    title: "Abrir caso de suporte",
+    purpose:
+      "Diga o motivo: o atendimento autoriza as ações na loja e registra cada uma.",
+    title: "Abrir atendimento",
   },
-  casos: { capability: "support_case:manage", title: "Casos de suporte" },
-  configuracoes: { capability: "platform:read", title: "Configurações" },
-  funil: { capability: "platform:read", title: "Funil de ativação" },
-  incidente: { capability: "operational_incident:read", title: "Incidente" },
+  casos: {
+    capability: "support_case:manage",
+    purpose:
+      "Para mexer em uma loja, abra um atendimento: ele autoriza e registra.",
+    title: "Atendimentos",
+  },
+  configuracoes: {
+    capability: "platform:read",
+    purpose:
+      "Quem você é neste painel, o que pode fazer e em que ambiente está. Só leitura.",
+    title: "Minha conta e permissões",
+  },
+  funil: {
+    capability: "platform:read",
+    purpose: "Quantas lojas criadas chegaram a vender, por semana. Só leitura.",
+    title: "Funil de ativação",
+  },
+  incidente: {
+    capability: "operational_incident:read",
+    purpose:
+      "Eventos desta falha que não foram entregues. Reenvie um por vez, se couber.",
+    title: "Falha de envio",
+  },
   incidentes: {
     capability: "operational_incident:read",
-    title: "Incidentes",
+    purpose:
+      "Eventos que não chegaram ao provedor ou ao app; reenvie um por vez.",
+    title: "Falhas de envio",
   },
-  inicio: { capability: "platform:read", title: "Início" },
-  loja: { capability: "organization:diagnose", title: "Loja" },
-  lojas: { capability: "organization:diagnose", title: "Buscar loja" },
-  privacidade: { capability: "privacy_case:manage", title: "Privacidade" },
+  inicio: {
+    capability: "platform:read",
+    purpose: "O que está esperando você hoje.",
+    title: "Início",
+  },
+  loja: {
+    capability: "organization:diagnose",
+    purpose:
+      "Plano, cobrança e situação desta loja. Só leitura; para agir, abra um atendimento.",
+    title: "Loja",
+  },
+  lojas: {
+    capability: "organization:diagnose",
+    purpose:
+      "Encontre uma loja e veja plano, cobrança e situação. Para agir, abra um atendimento.",
+    title: "Lojas",
+  },
+  privacidade: {
+    capability: "privacy_case:manage",
+    purpose:
+      "Pedidos do titular: acesso, correção e exclusão, etapa por etapa, com prazo.",
+    title: "Pedidos de dados",
+  },
   "privacidade-caso": {
     capability: "privacy_case:manage",
-    title: "Caso de privacidade",
+    purpose:
+      "Registre as etapas do pedido do titular e o apagamento da loja encerrada.",
+    title: "Atendimento de privacidade",
   },
   "privacidade-novo": {
     capability: "privacy_case:manage",
-    title: "Abrir caso de privacidade",
+    purpose:
+      "Registre o pedido de um titular dos dados; o prazo conta do dia em que ele chegou.",
+    title: "Abrir atendimento de privacidade",
   },
-  registro: { capability: "access_log:read", title: "Registro de acessos" },
+  registro: {
+    capability: "access_log:read",
+    purpose:
+      "Consulta sob ordem judicial (processo CNJ): quem acessou, de onde. Fica registrada.",
+    title: "Registro de acessos",
+  },
   retencoes: {
     capability: "organization:legal_hold",
-    title: "Retenções legais",
+    purpose: "Lojas cujos dados a lei manda guardar, e até quando. Só leitura.",
+    title: "Lojas com trava legal",
   },
 };
 
@@ -95,15 +155,15 @@ interface MenuGroup {
 }
 
 /**
- * The menu of the design (§1.1), with only the screens that exist: a group whose items the operator cannot open goes
- * with its label.
+ * The menu by task, with only the screens that exist: a group whose items the operator cannot open goes with its
+ * label.
  */
 const MENU: readonly MenuGroup[] = [
   {
     items: [
       {
         capability: "platform:read",
-        label: "Início",
+        label: SCREENS.inicio.title,
         path: "/",
         screens: ["inicio"],
       },
@@ -114,41 +174,47 @@ const MENU: readonly MenuGroup[] = [
     items: [
       {
         capability: "organization:diagnose",
-        label: "Buscar loja",
+        label: SCREENS.lojas.title,
         path: "/lojas",
         screens: ["lojas", "loja"],
       },
+      {
+        capability: "support_case:manage",
+        label: SCREENS.casos.title,
+        path: "/casos",
+        screens: ["casos", "caso-novo", "caso"],
+      },
     ],
-    label: "Lojas",
+    label: "Atender uma loja",
   },
   {
     items: [
       {
-        capability: "support_case:manage",
-        label: "Casos de suporte",
-        path: "/casos",
-        screens: ["casos", "caso-novo", "caso"],
-      },
-      {
         capability: "privacy_case:manage",
-        label: "Privacidade",
+        label: SCREENS.privacidade.title,
         path: "/privacidade",
         screens: ["privacidade", "privacidade-novo", "privacidade-caso"],
       },
+      {
+        capability: "organization:legal_hold",
+        label: SCREENS.retencoes.title,
+        path: "/retencoes",
+        screens: ["retencoes"],
+      },
     ],
-    label: "Suporte",
+    label: "Privacidade (LGPD)",
   },
   {
     items: [
       {
         capability: "operational_incident:read",
-        label: "Incidentes",
+        label: SCREENS.incidentes.title,
         path: "/incidentes",
         screens: ["incidentes", "incidente"],
       },
       {
         capability: "platform:read",
-        label: "Funil",
+        label: SCREENS.funil.title,
         path: "/funil",
         screens: ["funil"],
       },
@@ -159,25 +225,19 @@ const MENU: readonly MenuGroup[] = [
     items: [
       {
         capability: "access_log:read",
-        label: "Registro de acessos",
+        label: SCREENS.registro.title,
         path: "/registro",
         screens: ["registro"],
       },
-      {
-        capability: "organization:legal_hold",
-        label: "Retenções legais",
-        path: "/retencoes",
-        screens: ["retencoes"],
-      },
     ],
-    label: "Auditoria",
+    label: "Para o jurídico",
   },
   {
     foot: true,
     items: [
       {
         capability: "platform:read",
-        label: "Configurações",
+        label: SCREENS.configuracoes.title,
         path: "/configuracoes",
         screens: ["configuracoes"],
       },
@@ -185,6 +245,17 @@ const MENU: readonly MenuGroup[] = [
     label: null,
   },
 ];
+
+function parentOf(screen: ScreenId): { label: string; path: string } | null {
+  for (const group of MENU) {
+    for (const entry of group.items) {
+      if (entry.screens.includes(screen) && entry.screens[0] !== screen) {
+        return { label: entry.label, path: entry.path };
+      }
+    }
+  }
+  return null;
+}
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -377,6 +448,13 @@ function documentOf(
   const banner = synchronous(
     html`<p class="env env-${environment.kind}">${environment.banner}</p>`
   );
+  const parent = parentOf(request.screen);
+  const back =
+    parent === null
+      ? raw("")
+      : synchronous(
+          html`<p class="back"><a href="${parent.path}">‹ ${parent.label}</a></p>`
+        );
   const content = request.forbidden
     ? synchronous(html`<p>Sem permissão para isto.</p>`)
     : synchronous(html`<p>Carregando…</p>
@@ -408,7 +486,9 @@ function documentOf(
         </details>
       </header>
       <main class="content">
+        ${back}
         <h1 id="tela-titulo" tabindex="-1">${screen.title}</h1>
+        <p id="tela-proposito" class="purpose">${screen.purpose}</p>
         <div id="admin"${rootAttributes(request, environment)}>
           ${content}
         </div>

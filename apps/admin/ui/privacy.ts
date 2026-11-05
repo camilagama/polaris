@@ -87,7 +87,7 @@ export const ACTIONS: Choices = [
   ["customer_anonymized", "Cliente anonimizado"],
   ["organization_closed", "Loja encerrada"],
   ["export_delivered", "Exportação entregue"],
-  ["purge_scheduled", "Purge agendado"],
+  ["purge_scheduled", "Apagamento agendado"],
   ["redirected_to_reseller", "Encaminhado à loja"],
   ["no_action_required", "Nada a fazer"],
   ["other", "Outro"],

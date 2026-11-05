@@ -92,7 +92,7 @@ export function mayShowPurgeTab(can: (capability: string) => boolean): boolean {
 export function purgeCaseProblem(detail: Detail): string | null {
   const { privacy } = detail;
   if (privacy.requestType !== "deletion") {
-    return "Este caso não é um pedido de exclusão.";
+    return "Este atendimento não é um pedido de exclusão.";
   }
   if (privacy.requesterKind !== "organization_owner") {
     return "Este pedido de exclusão não foi feito pelo dono da loja.";
@@ -101,7 +101,7 @@ export function purgeCaseProblem(detail: Detail): string | null {
     !(privacy.stage === "decided" || privacy.stage === "executed") ||
     privacy.decision !== "accept"
   ) {
-    return "O pedido de exclusão deste caso ainda não foi decidido como aceito por inteiro.";
+    return "O pedido de exclusão deste atendimento ainda não foi decidido como aceito por inteiro.";
   }
   const scope = privacy.scopeCategories ?? [];
   const exact =
@@ -109,14 +109,14 @@ export function purgeCaseProblem(detail: Detail): string | null {
     PURGE_SCOPE.every((code) => scope.includes(code));
   return exact
     ? null
-    : "O escopo deste caso não é exatamente o que o purge apaga: dados da loja, clientes, vendas, estoque e catálogo, imagens.";
+    : "O escopo deste atendimento não é exatamente o que o purge apaga: dados da loja, clientes, vendas, estoque e catálogo, imagens.";
 }
 
 const PURGE_STATUSES: Readonly<Record<string, string>> = {
   closed: "Encerrada",
   closing: "Em encerramento",
   purge_pending: "Encerrada, com o apagamento agendado",
-  purged: "Apagada (o purge terminou)",
+  purged: "Apagada (o apagamento terminou)",
 };
 
 function statusText(status: string): string {
@@ -125,7 +125,7 @@ function statusText(status: string): string {
 
 function problemText(problem: Problem): string {
   if (problem === "not_found") {
-    return "Este caso não foi encontrado.";
+    return "Este atendimento não foi encontrado.";
   }
   return PROBLEM_TEXT[problem === "invalid" ? "failed" : problem];
 }
@@ -212,7 +212,7 @@ interface StoreState {
 }
 
 /**
- * "Purge e trava legal", the tab `?acao=purge` of a privacy case (corte admin-v2, Parte 7; ADR 0081 and 0102). It
+ * "Apagamento e trava legal", the tab `?acao=purge` of a privacy case (corte admin-v2, Parte 7; ADR 0081 and 0102). It
  * reads the store's status (diagnostics) and the holds in force, both without audit, and shows what the server said;
  * it never computes the 90 days or a date. Scheduling is the strongest confirmation of the Admin (the store's name
  * typed); cancelling asks for a reason; placing and releasing the hold are reviewed in two steps. One request per
@@ -235,7 +235,7 @@ export function purgeTab(
       dom.el(
         "h3",
         { id: "purge-titulo", tabindex: "-1" },
-        "Purge e trava legal"
+        "Apagamento e trava legal"
       ),
       ...children
     );
@@ -245,8 +245,8 @@ export function purgeTab(
       ["Ambiente", environmentText(context)],
       ["Loja", storeName(dom, item.organizationName, item.organizationId)],
       [
-        "Caso",
-        `Caso de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
+        "Atendimento",
+        `Atendimento de privacidade aberto em ${brasiliaMomentText(item.openedAt)}`,
       ],
       ...extra,
     ]);
@@ -258,7 +258,7 @@ export function purgeTab(
     const again = dom.el(
       "button",
       { class: "secondary", type: "button" },
-      "Reler o caso"
+      "Reler o atendimento"
     );
     again.addEventListener("click", () => {
       hooks.reread();
@@ -373,12 +373,12 @@ export function purgeTab(
     );
 
   const purgePart = (state: StoreState): HTMLElement => {
-    const title = "Apagamento da loja (purge)";
+    const title = "Apagamento da loja";
     if (state.status === null) {
       return area(
         title,
         line(
-          "Para ver a situação da loja e agendar o purge, é preciso a permissão de ver a loja."
+          "Para ver a situação da loja e agendar o apagamento, é preciso a permissão de ver a loja."
         )
       );
     }
@@ -526,7 +526,7 @@ export function purgeTab(
     reload: dom.el(
       "button",
       { class: "secondary", hidden: "", type: "button" },
-      "Reler o caso"
+      "Reler o atendimento"
     ),
   });
 
@@ -632,7 +632,10 @@ export function purgeTab(
       wrap(
         title,
         caseFacts([
-          ["Decisão do caso", "Exclusão aceita, pedida pelo dono da loja"],
+          [
+            "Decisão do atendimento",
+            "Exclusão aceita, pedida pelo dono da loja",
+          ],
           ["Quando", PURGE_NOT_NOW],
           ["O que é apagado", purgeErasedText(NEXT_PURGE_CYCLE)],
           ["O que fica", PURGE_KEPT],
@@ -925,7 +928,7 @@ export function purgeTab(
     }
     onlyReload(buttons);
     notice.status(
-      `${outcome.text} Não deu para mostrar o caso de novo: use Reler o caso.`
+      `${outcome.text} Não deu para mostrar o atendimento de novo: use Reler o atendimento.`
     );
   };
 
@@ -946,7 +949,7 @@ export function purgeTab(
       slot,
       wrap(
         line(
-          "Este caso está fechado: purge e trava legal precisam de um caso de privacidade aberto desta loja."
+          "Este atendimento está fechado: purge e trava legal precisam de um atendimento de privacidade aberto desta loja."
         ),
         dom.el("a", { href: "/privacidade" }, "Ir para Privacidade")
       )

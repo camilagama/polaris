@@ -165,7 +165,7 @@ describe("the review before suspending (AC-P3.1)", () => {
       "Dono pediu ajuda com o estoque",
       ...SUSPEND_EFFECTS,
       SUSPEND_UNDO,
-      "A suspensão fica na auditoria com o seu e-mail e o caso.",
+      "A suspensão fica na auditoria com o seu e-mail e o atendimento.",
     ].map((part) => text.indexOf(part));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -425,9 +425,12 @@ describe("what each answer of the suspension says (AC-C3)", () => {
   };
 
   it.each([
-    [400, "O caso não está mais aberto. Nada foi mudado. Recarregue o caso."],
+    [
+      400,
+      "O atendimento não está mais aberto. Nada foi mudado. Recarregue o atendimento.",
+    ],
     [403, "Sem permissão para isto."],
-    [404, "Este caso não foi encontrado."],
+    [404, "Este atendimento não foi encontrado."],
     [401, PROBLEM_TEXT.session],
   ])(
     "says the sentence of a %s, keeps the review and allows the click again",
@@ -745,7 +748,7 @@ describe("Loja points to the actions that live in the case (AC-P3.1)", () => {
     expect(posts(mounted.calls)).toHaveLength(0);
     expect(buttons(mounted.root, "Suspender a loja")).toHaveLength(0);
     expect(visibleText(mounted.root)).toContain(
-      "Suspender, reativar e marcar a loja como interna são ações do caso aberto desta loja."
+      "Suspender, reativar e marcar a loja como interna são ações do atendimento aberto desta loja."
     );
   });
 
@@ -763,7 +766,7 @@ describe("Loja points to the actions that live in the case (AC-P3.1)", () => {
       .map((element) => element.getAttribute("href"));
     expect(links.some((href) => href?.includes(other))).toBe(false);
     expect(visibleText(mounted.root)).toContain(
-      "Nenhum caso aberto desta loja."
+      "Nenhum atendimento aberto desta loja."
     );
   });
 

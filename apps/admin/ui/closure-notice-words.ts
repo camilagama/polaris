@@ -13,15 +13,15 @@ export const DISMISS_UNDO = "Não: isso não poderá ser desfeito.";
 export const DISMISS_RULES =
   "Só vale sob um pedido de exclusão aceito por inteiro, feito pelo dono da loja (ou, se a conta do dono foi apagada, por quem pede), e o motivo precisa bater com o que o sistema registrou: o servidor recusa o que não bate.";
 export const REISSUE_RECORD =
-  "O ato fica na auditoria, com o seu e-mail e o caso.";
+  "O ato fica na auditoria, com o seu e-mail e o atendimento.";
 export const DISMISS_RECORD =
-  "O ato fica na auditoria, com o seu e-mail, o caso e o motivo escolhido.";
+  "O ato fica na auditoria, com o seu e-mail, o atendimento e o motivo escolhido.";
 export const NOTICE_UNKNOWN =
-  "Não deu para confirmar se o ato foi registrado. Releia o caso antes de tentar de novo.";
+  "Não deu para confirmar se o ato foi registrado. Releia o atendimento antes de tentar de novo.";
 export const NOTICE_REFUSED_GENERIC =
-  "O ato não foi aceito no estado atual da loja e do caso. Nada foi feito.";
+  "O ato não foi aceito no estado atual da loja e do atendimento. Nada foi feito.";
 export const NOTICE_READ_FAILED =
-  "Não deu para ler a situação da loja agora, por isso o aviso de encerramento não aparece. Recarregue o caso.";
+  "Não deu para ler a situação da loja agora, por isso o aviso de encerramento não aparece. Recarregue o atendimento.";
 
 /**
  * The refusals the server names for these two acts (a 409), in the page's words: the code only picks the sentence and
@@ -45,12 +45,12 @@ export const NOTICE_REFUSALS: Readonly<Record<string, string>> = {
     "O motivo não bate com o que o sistema registrou: o dono já verificou o e-mail depois da última tentativa de envio.",
   closure_notice_pending:
     "Há um aviso deste encerramento esperando envio. Espere o envio.",
-  organization_mismatch: "A loja deste aviso não é a loja deste caso.",
+  organization_mismatch: "A loja deste aviso não é a loja deste atendimento.",
   organization_not_in_closure: "A loja não está em encerramento.",
   privacy_case_not_accepted:
-    "O pedido de exclusão deste caso ainda não foi decidido ou não foi aceito por inteiro.",
-  privacy_case_not_deletion: "Este caso não é um pedido de exclusão.",
-  privacy_case_required: "Este não é um caso de privacidade aberto.",
+    "O pedido de exclusão deste atendimento ainda não foi decidido ou não foi aceito por inteiro.",
+  privacy_case_not_deletion: "Este atendimento não é um pedido de exclusão.",
+  privacy_case_required: "Este não é um atendimento de privacidade aberto.",
   privacy_requester_not_owner:
     "Este pedido de exclusão não foi feito pelo dono da loja.",
 };

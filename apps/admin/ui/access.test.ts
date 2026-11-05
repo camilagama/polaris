@@ -213,7 +213,7 @@ describe("the section's place on the case screen (AC-C1)", () => {
       capabilities: ["support_case:manage"],
     });
 
-    expect(shown(mounted)).not.toContain("Acesso aos clientes");
+    expect(shown(mounted)).not.toContain("Ver clientes da loja");
     expect(mounted.calls.map((call) => call.path)).toEqual([
       "/api/whoami",
       `/api/support-cases/${CASE}`,
@@ -241,7 +241,7 @@ describe("the section's place on the case screen (AC-C1)", () => {
   it("is not on the screen of a privacy case", async () => {
     const mounted = await open([], detail([], { kind: "privacy" }));
 
-    expect(shown(mounted)).not.toContain("Acesso aos clientes");
+    expect(shown(mounted)).not.toContain("Ver clientes da loja");
   });
 });
 
@@ -327,8 +327,12 @@ describe("giving an access (AC-P5.1, AC-C2, AC-C3)", () => {
   });
 
   it.each([
-    ["case_not_open", 400, "O caso já está fechado. Nada foi dado."],
-    ["unknown_case", 400, "Este caso não foi encontrado. Nada foi dado."],
+    ["case_not_open", 400, "O atendimento já está fechado. Nada foi dado."],
+    [
+      "unknown_case",
+      400,
+      "Este atendimento não foi encontrado. Nada foi dado.",
+    ],
     [
       "invalid_duration",
       400,
@@ -362,7 +366,7 @@ describe("giving an access (AC-P5.1, AC-C2, AC-C3)", () => {
     await toReview(lost);
     await click(lost.root, "Confirmar acesso");
     expect(alertOf(lost.root)?.textContent).toBe(ACCESS_UNKNOWN);
-    expect(buttons(lost.root, "Reler o caso")).toHaveLength(1);
+    expect(buttons(lost.root, "Reler o atendimento")).toHaveLength(1);
   });
 
   it("reads the case again after a refusal that changes it (the case closed meanwhile)", async () => {
@@ -376,7 +380,7 @@ describe("giving an access (AC-P5.1, AC-C2, AC-C3)", () => {
     expect(mounted.calls.map((call) => call.path).at(-1)).toBe(
       `/api/support-cases/${CASE}`
     );
-    expect(shown(mounted)).toContain("O caso está fechado");
+    expect(shown(mounted)).toContain("O atendimento está fechado");
     expect(buttons(mounted.root, "Dar acesso aos clientes")).toHaveLength(0);
   });
 });
@@ -590,11 +594,11 @@ describe("the list leaves the page (AC-P5.3)", () => {
       json({ changed: true, id: CASE, status: "closed" }),
       json(closedDetail([grantRow({ active: false })])),
     ]);
-    await click(mounted.root, "Fechar caso");
+    await click(mounted.root, "Fechar atendimento");
     await click(mounted.root, "Revisar o fechamento");
-    await click(mounted.root, "Confirmar o fechamento do caso");
+    await click(mounted.root, "Confirmar o fechamento do atendimento");
 
-    expect(shown(mounted)).toContain("Caso fechado");
+    expect(shown(mounted)).toContain("Atendimento fechado");
     gone(mounted);
     expect(customerCalls(mounted.calls)).toHaveLength(1);
   });
@@ -604,7 +608,9 @@ describe("the list leaves the page (AC-P5.3)", () => {
     mounted.document.defaultView.dispatch("pagehide");
 
     expect(shown(mounted)).not.toContain("M*** S***");
-    expect(shown(mounted)).toContain("Recarregue o caso para continuar.");
+    expect(shown(mounted)).toContain(
+      "Recarregue o atendimento para continuar."
+    );
     expect(buttons(mounted.root, "Carregar mais")).toHaveLength(0);
   });
 });
@@ -658,7 +664,9 @@ describe("the access in the middle of an answer", () => {
     await flush();
 
     expect(shown(mounted)).not.toContain("M*** S***");
-    expect(shown(mounted)).toContain("Recarregue o caso para continuar.");
+    expect(shown(mounted)).toContain(
+      "Recarregue o atendimento para continuar."
+    );
     expect(buttons(mounted.root, "Dar acesso aos clientes")).toHaveLength(0);
   });
 

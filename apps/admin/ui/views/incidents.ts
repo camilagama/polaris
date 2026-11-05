@@ -15,7 +15,7 @@ import type {
 import { incidentLink } from "./incident-links";
 
 const PAGE_SIZE = "25";
-export const NO_INCIDENTS = "Nenhum incidente. Tudo foi entregue.";
+export const NO_INCIDENTS = "Nenhuma falha de envio. Tudo foi entregue.";
 
 const HEADERS = [
   "Tipo",
@@ -25,11 +25,11 @@ const HEADERS = [
   "Primeira",
   "Última",
   "A reenviar",
-  "Incidente",
+  "Falha de envio",
 ] as const;
 
 function countText(count: number, more: boolean): string {
-  const found = count === 1 ? "1 incidente." : `${count} incidentes.`;
+  const found = count === 1 ? "1 falha de envio." : `${count} falhas de envio.`;
   return more ? `${found} Há mais: use Carregar mais.` : found;
 }
 
@@ -46,7 +46,7 @@ export function incidentsView(tools: ScreenTools): HTMLElement {
   const list = dom.el(
     "table",
     { class: "grid incidents", hidden: "" },
-    dom.el("caption", { class: "sr-only" }, "Incidentes operacionais"),
+    dom.el("caption", { class: "sr-only" }, "Falhas de envio"),
     dom.el(
       "thead",
       {},
@@ -79,7 +79,7 @@ export function incidentsView(tools: ScreenTools): HTMLElement {
     const link = incidentLink(
       dom,
       item,
-      `Ver incidente: ${incidentCauseText(item.cause)}, ${labelName(item.subject, 80)}`
+      `Ver falha de envio: ${incidentCauseText(item.cause)}, ${labelName(item.subject, 80)}`
     );
     return tableRow(dom, HEADERS, [
       incidentKindText(item.kind),
@@ -105,7 +105,7 @@ export function incidentsView(tools: ScreenTools): HTMLElement {
       parameters.set("after", after);
     }
     busy(true);
-    notice.status("Buscando incidentes…");
+    notice.status("Buscando falhas de envio…");
     const answer = await api.get<OperationalIncidentPage>(
       `/api/operational-incidents?${parameters.toString()}`
     );
@@ -153,11 +153,11 @@ export function incidentsView(tools: ScreenTools): HTMLElement {
   return dom.el(
     "section",
     { "aria-labelledby": "incidentes-titulo", class: "area" },
-    dom.el("h2", { id: "incidentes-titulo" }, "Incidentes operacionais"),
+    dom.el("h2", { id: "incidentes-titulo" }, "Falhas de envio"),
     dom.el(
       "p",
       { class: "hint" },
-      "Um incidente por causa. A coluna A reenviar conta os eventos mortos que ainda esperam reenvio."
+      "Uma falha por causa. A coluna A reenviar conta os eventos que não foram entregues e esperam reenvio."
     ),
     dom.el("div", { class: "button-row" }, reloadButton),
     notice.element,

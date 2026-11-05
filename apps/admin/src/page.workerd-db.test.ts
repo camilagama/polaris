@@ -36,7 +36,7 @@ const ORIGIN = "https://admin.test";
 /** The Admin's own limit (ACTIVATION_FUNNEL_READS_PER_HOUR); the gate counts the events of these reads. */
 const FUNNEL_READS_PER_HOUR = 30;
 const WAIT = { interval: 50, timeout: 30_000 };
-const CASES_COUNT = /\d+ casos?\./;
+const CASES_COUNT = /\d+ atendimentos?\./;
 const LAST_MINUTE_OF_A_DAY = /^\d{2}\/\d{2}\/\d{4} 23:59$/;
 const LIMIT_SENTENCE =
   /Limite de leituras do funil por hora atingido\. Tente de novo em \d+ minutos?\./;
@@ -187,8 +187,8 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     );
 
     // no open case yet: the page offers no read, so the route is never called
-    buttons(refund, "Ver casos abertos desta loja")[0]?.click();
-    await page.shows("Nenhum caso aberto desta loja.");
+    buttons(refund, "Ver atendimentos abertos desta loja")[0]?.click();
+    await page.shows("Nenhum atendimento aberto desta loja.");
     expect(buttons(refund, "Consultar janela")).toEqual([]);
     expect(windowCalls(page.calls)).toEqual([]);
 
@@ -198,7 +198,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
         body: JSON.stringify({
           kind: "support",
           organizationId: trial.id,
-          reason: "Caso de outra loja",
+          reason: "Atendimento de outra loja",
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -219,8 +219,8 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
 
     // the page opens the case with the reason in the JSON body, then reads the window on one click
     byId(refund, "motivo").value = "Dono pediu reembolso por e-mail";
-    buttons(refund, "Abrir caso")[0]?.click();
-    await page.shows("Caso aberto.");
+    buttons(refund, "Abrir atendimento")[0]?.click();
+    await page.shows("Atendimento aberto.");
     const opened = page.calls.at(-1);
     expect(opened).toEqual({
       method: "POST",
@@ -275,7 +275,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     expect(closed.status).toBe(200);
     buttons(refund, "Consultar janela")[0]?.click();
     await page.shows(
-      "Consulta recusada: confira se o caso está aberto e é desta loja."
+      "Consulta recusada: confira se o atendimento está aberto e é desta loja."
     );
     expect(windowCalls(page.calls).map((call) => call.status)).toEqual([
       200, 403,
@@ -287,7 +287,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     await opening.shows("Loja: ");
     await vi.waitFor(() => expect(opening.text()).toContain(free.id), WAIT);
     byId(opening.root, "motivo").value = "Dono não consegue entrar";
-    buttons(opening.root, "Abrir caso")[0]?.click();
+    buttons(opening.root, "Abrir atendimento")[0]?.click();
     await vi.waitFor(() => expect(opening.navigations).toHaveLength(1), WAIT);
     expect(opening.calls.filter((call) => call.method === "POST")).toEqual([
       { method: "POST", path: "/api/support-cases", status: 201 },
@@ -299,24 +299,26 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     // two screens of the same open case: the first closes it, the second still shows it open
     const first = await openPage({ id: caseId, screen: "caso" });
     const second = await openPage({ id: caseId, screen: "caso" });
-    await first.shows("Caso em uso");
-    await second.shows("Caso em uso");
+    await first.shows("Atendimento em uso");
+    await second.shows("Atendimento em uso");
     const close = (page: Awaited<ReturnType<typeof openPage>>) => {
-      buttons(page.root, "Fechar caso")[0]?.click();
+      buttons(page.root, "Fechar atendimento")[0]?.click();
       byId(page.root, "resolucao").value = "Senha trocada pelo dono";
       buttons(page.root, "Revisar o fechamento")[0]?.click();
       expect(page.text()).toContain("Não: isso não poderá ser desfeito.");
-      buttons(page.root, "Confirmar o fechamento do caso")[0]?.click();
+      buttons(page.root, "Confirmar o fechamento do atendimento")[0]?.click();
     };
     close(first);
     await first.shows(
-      "Caso fechado. Os acessos temporários dele foram revogados."
+      "Atendimento fechado. Os acessos temporários dele foram revogados."
     );
-    expect(buttons(first.root, "Fechar caso")).toEqual([]);
-    expect(first.text()).toContain("Para agir de novo, abra outro caso.");
+    expect(buttons(first.root, "Fechar atendimento")).toEqual([]);
+    expect(first.text()).toContain(
+      "Para agir de novo, abra outro atendimento."
+    );
     expect(first.text()).toContain("Senha trocada pelo dono");
     close(second);
-    await second.shows("Este caso já estava fechado.");
+    await second.shows("Este atendimento já estava fechado.");
     expect(
       [...first.calls, ...second.calls].filter((call) => call.method === "POST")
     ).toEqual([
@@ -362,7 +364,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     byId(opening.root, "privacidade-canal").value = "email";
     byId(opening.root, "privacidade-tipo").value = "deletion";
     byId(opening.root, "privacidade-quem").value = "data_subject";
-    buttons(opening.root, "Abrir caso de privacidade")[0]?.click();
+    buttons(opening.root, "Abrir atendimento de privacidade")[0]?.click();
     await vi.waitFor(() => expect(opening.navigations).toHaveLength(1), WAIT);
     const [path] = opening.navigations;
     const caseId = String(path).replace("/privacidade/", "");
@@ -419,7 +421,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     record(page, "Revisar decisão", "Registrar decisão", () => {
       byId(page.root, "etapa-decision-decisao").value = "accept";
     });
-    await page.shows("O caso não permite esta escolha.");
+    await page.shows("O atendimento não permite esta escolha.");
     expect(page.text()).not.toContain("privacy_decision_not_allowed");
     record(page, "Revisar decisão", "Registrar decisão", () => {
       byId(page.root, "etapa-decision-decisao").value = "reject";
@@ -433,7 +435,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
       byId(page.root, "etapa-resolve-texto").value = "Recusado sem identidade";
     });
     await page.shows("Etapa “Resolução” registrada.");
-    expect(page.text()).toContain("Caso resolvido em");
+    expect(page.text()).toContain("Atendimento resolvido em");
 
     const posts = [...page.calls, ...stale.calls].filter(
       (call) => call.method === "POST"

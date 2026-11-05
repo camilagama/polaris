@@ -54,7 +54,7 @@ describe("Configurações: Você (AC-P9.1)", () => {
     expect(text).toContain("Dono da plataforma");
     expect(lines(root)).toEqual([
       "Ver o Início, o funil de ativação e estas Configurações",
-      "Abrir, ver e fechar casos de suporte",
+      "Abrir, ver e fechar atendimentos de suporte",
       "Agendar e cancelar o apagamento de uma loja e cuidar do aviso de encerramento",
     ]);
     expect(text).toContain(PERMISSIONS_NOTE);

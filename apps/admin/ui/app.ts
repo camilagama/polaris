@@ -69,7 +69,7 @@ function forbiddenArea(dom: Dom, name: string, id: string) {
   );
 }
 
-/** Buscar loja: the v1's search, diagnostics and refund window, in one screen (AC-P1.3). */
+/** Lojas: the v1's search, diagnostics and refund window, in one screen (AC-P1.3). */
 function storesScreen(tools: ScreenTools): HTMLElement[] {
   const { api, can, dom, now } = tools;
   if (!can("organization:diagnose")) {
@@ -103,7 +103,7 @@ function privacyScreen(
 ): HTMLElement[] {
   return tools.can("privacy_case:manage")
     ? [view(tools)]
-    : [forbiddenArea(tools.dom, "Privacidade", "privacidade-titulo")];
+    : [forbiddenArea(tools.dom, "Pedidos de dados", "privacidade-titulo")];
 }
 
 const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
@@ -115,15 +115,21 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
     incidente: (tools) =>
       tools.can("operational_incident:read")
         ? [incidentView(tools)]
-        : [forbiddenArea(tools.dom, "Incidente", "incidente-titulo")],
+        : [forbiddenArea(tools.dom, "Falha de envio", "incidente-titulo")],
     incidentes: (tools) =>
       tools.can("operational_incident:read")
         ? [incidentsView(tools)]
-        : [forbiddenArea(tools.dom, "Incidentes", "incidentes-titulo")],
+        : [forbiddenArea(tools.dom, "Falhas de envio", "incidentes-titulo")],
     configuracoes: (tools) =>
       tools.can("platform:read")
         ? settingsView(tools)
-        : [forbiddenArea(tools.dom, "Configurações", "configuracoes-titulo")],
+        : [
+            forbiddenArea(
+              tools.dom,
+              "Minha conta e permissões",
+              "configuracoes-titulo"
+            ),
+          ],
     inicio: (tools) => [homeView(tools)],
     loja: (tools) => [storeView(tools)],
     lojas: storesScreen,
@@ -137,7 +143,13 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
     retencoes: (tools) =>
       tools.can("organization:legal_hold")
         ? [legalHoldsView(tools)]
-        : [forbiddenArea(tools.dom, "Retenções legais", "retencoes-titulo")],
+        : [
+            forbiddenArea(
+              tools.dom,
+              "Lojas com trava legal",
+              "retencoes-titulo"
+            ),
+          ],
   };
 
 /**

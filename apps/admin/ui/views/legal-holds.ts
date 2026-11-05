@@ -8,9 +8,9 @@ import type { LegalHoldPage, LegalHoldSummary } from "../types";
 import { storePath } from "./case-links";
 
 const PAGE_SIZE = "25";
-export const NO_HOLDS = "Nenhuma loja com retenção legal.";
+export const NO_HOLDS = "Nenhuma loja com trava legal.";
 const HOLDS_READ_ONLY =
-  "Só leitura. Pôr, mudar a data de revisão e liberar a trava são ações de um caso de privacidade aberto da loja, na aba Purge e trava legal.";
+  "Só leitura. Pôr, mudar a data de revisão e liberar a trava são ações de um atendimento de privacidade aberto da loja, na aba Apagamento e trava legal.";
 
 const HEADERS = ["Loja (ID)", "Desde", "Revisão em", "Situação"] as const;
 
@@ -26,7 +26,7 @@ function dueText(due: number): string {
 }
 
 /**
- * Retenções legais (`/retencoes`, corte admin-v2, Parte 7, AC-P7.4): the holds in force, read only, as the server lists
+ * Lojas com trava legal (`/retencoes`, corte admin-v2, Parte 7, AC-P7.4): the holds in force, read only, as the server lists
  * them (the store by its ID, never by its name). A hold past its review date is marked "pendente de revisão" and is
  * still in force. Nothing here places or releases a hold: that is an act of a case.
  */

@@ -18,13 +18,17 @@ const HEADERS = [
   "Tipo",
   "Motivo",
   "Estado",
-  "Caso",
+  "Atendimento",
 ] as const;
 
 const STATES = {
-  abertos: { empty: "Nenhum caso aberto.", label: "Abertos", value: "open" },
+  abertos: {
+    empty: "Nenhum atendimento aberto.",
+    label: "Abertos",
+    value: "open",
+  },
   fechados: {
-    empty: "Nenhum caso fechado.",
+    empty: "Nenhum atendimento fechado.",
     label: "Fechados",
     value: "closed",
   },
@@ -34,7 +38,7 @@ function countText(count: number, more: boolean, empty: string): string {
   if (count === 0) {
     return empty;
   }
-  const found = count === 1 ? "1 caso." : `${count} casos.`;
+  const found = count === 1 ? "1 atendimento." : `${count} atendimentos.`;
   return more ? `${found} Há mais: use Carregar mais.` : found;
 }
 
@@ -49,7 +53,7 @@ function stateText(item: SupportCaseSummary): string {
 }
 
 /**
- * Casos de suporte (AC-P1.4): the open or the closed cases, of every store or of one, a page at a time, read when the
+ * Atendimentos (AC-P1.4): the open or the closed cases, of every store or of one, a page at a time, read when the
  * screen opens (the list is not audited). The store filter goes to the server as it was typed, never trimmed or
  * rewritten, and stays out of the URL; the tabs are links with a fixed value. A privacy case is listed for reading
  * only: its reason and its steps belong to the privacy workflow.
@@ -78,7 +82,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
   const list = dom.el(
     "table",
     { class: "grid", hidden: "" },
-    dom.el("caption", { class: "sr-only" }, `Casos ${state.label}`),
+    dom.el("caption", { class: "sr-only" }, `Atendimentos ${state.label}`),
     dom.el(
       "thead",
       {},
@@ -144,7 +148,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
       parameters.set("after", after);
     }
     busy(true);
-    notice.status("Buscando casos…");
+    notice.status("Buscando atendimentos…");
     const answer = await api.get<SupportCasePage>(
       `/api/support-cases?${parameters.toString()}`
     );
@@ -192,7 +196,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
     dom.el(
       "p",
       { class: "hint", id: "casos-loja-dica" },
-      "Vazio lista os casos de todas as lojas."
+      "Vazio lista os atendimentos de todas as lojas."
     )
   );
   form.addEventListener("submit", (event) => {
@@ -229,10 +233,14 @@ export function casesView(tools: ScreenTools): HTMLElement {
   return dom.el(
     "section",
     { "aria-labelledby": "casos-titulo", class: "area" },
-    dom.el("h2", { id: "casos-titulo" }, `Casos ${state.label.toLowerCase()}`),
+    dom.el(
+      "h2",
+      { id: "casos-titulo" },
+      `Atendimentos ${state.label.toLowerCase()}`
+    ),
     dom.el(
       "ul",
-      { "aria-label": "Estado dos casos", class: "tabs" },
+      { "aria-label": "Estado dos atendimentos", class: "tabs" },
       tab("abertos", suffix === "" ? "/casos" : `/casos?${suffix}`),
       tab(
         "fechados",

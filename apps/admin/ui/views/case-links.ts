@@ -29,10 +29,10 @@ export function caseLink(
     : dom.el(
         "a",
         {
-          "aria-label": `Ver caso aberto em ${brasiliaMomentText(item.openedAt)}`,
+          "aria-label": `Ver atendimento aberto em ${brasiliaMomentText(item.openedAt)}`,
           href: path,
         },
-        "Ver caso"
+        "Ver atendimento"
       );
 }
 
@@ -45,7 +45,7 @@ export function closedCasesLink(dom: Dom, store: string): HTMLElement | null {
         dom.el(
           "a",
           { href: `/casos?estado=fechados&loja=${store.toLowerCase()}` },
-          "Ver os casos fechados desta loja"
+          "Ver os atendimentos fechados desta loja"
         )
       )
     : null;
@@ -59,6 +59,10 @@ export function newCaseLink(dom: Dom, store: string | null): HTMLElement {
   return dom.el(
     "p",
     { class: "action-link" },
-    dom.el("a", { class: "button-link", href: path }, "Abrir caso de suporte")
+    dom.el(
+      "a",
+      { class: "button-link", href: path },
+      "Abrir atendimento de suporte"
+    )
   );
 }

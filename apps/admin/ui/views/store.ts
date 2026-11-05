@@ -21,7 +21,7 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
   const notice = createNotice(dom);
   const list = dom.el("ul", { class: "case-list", hidden: "" });
   const load = async () => {
-    notice.status("Buscando os casos abertos desta loja…");
+    notice.status("Buscando os atendimentos abertos desta loja…");
     const parameters = new URLSearchParams({
       limit: CASES_PAGE,
       organizationId,
@@ -65,11 +65,13 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
     );
     if (cases.length === 0) {
       list.setAttribute("hidden", "");
-      notice.status("Nenhum caso aberto desta loja.");
+      notice.status("Nenhum atendimento aberto desta loja.");
     } else {
       list.removeAttribute("hidden");
       notice.status(
-        cases.length === 1 ? "1 caso aberto." : `${cases.length} casos abertos.`
+        cases.length === 1
+          ? "1 atendimento aberto."
+          : `${cases.length} atendimentos abertos.`
       );
     }
   };
@@ -77,14 +79,14 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
   return dom.el(
     "section",
     { "aria-labelledby": "casos-loja-titulo", class: "area" },
-    dom.el("h2", { id: "casos-loja-titulo" }, "Casos desta loja"),
+    dom.el("h2", { id: "casos-loja-titulo" }, "Atendimentos desta loja"),
     notice.element,
     list,
     can("organization:suspend") || can("organization:classify")
       ? dom.el(
           "p",
           { class: "hint" },
-          "Suspender, reativar e marcar a loja como interna são ações do caso aberto desta loja. Sem caso aberto, abra um para agir."
+          "Suspender, reativar e marcar a loja como interna são ações do atendimento aberto desta loja. Sem atendimento aberto, abra um para agir."
         )
       : null,
     newCaseLink(dom, organizationId),
@@ -96,7 +98,7 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
  * Cobrança (design §2.3): the refund window of the v1, read by a click with an open case of the store, and the way
  * to the concession, which is an action of the case. The grants in force are in the diagnostics below.
  */
-function billingSection(tools: ScreenTools) {
+function billingSection(tools: ScreenTools, organizationId: string) {
   const { api, can, dom } = tools;
   const refund = refundWindowView(dom, api, {
     manageCases: can("support_case:manage"),
@@ -110,8 +112,11 @@ function billingSection(tools: ScreenTools) {
       ? dom.el(
           "p",
           { class: "hint" },
-          "Dar ou encerrar uma concessão de plano é ação do caso aberto desta loja. As concessões em vigor estão em Concessões, mais abaixo."
+          "Dar ou encerrar uma concessão de plano é ação do atendimento aberto desta loja. As concessões em vigor estão em Concessões, mais abaixo."
         )
+      : null,
+    can("billing:operate") && can("support_case:manage")
+      ? newCaseLink(dom, organizationId)
       : null,
     refund.element
   );
@@ -133,7 +138,7 @@ export function storeView(tools: ScreenTools): HTMLElement {
   if (can("support_case:manage")) {
     parts.push(storeCases(tools, id));
   }
-  const billing = billingSection(tools);
+  const billing = billingSection(tools, id);
   const diagnostics = diagnosticsView(dom, api, now, (organization) => {
     dom.fill(head, storeName(dom, organization.name, organization.id));
     billing.refund.show(organization);

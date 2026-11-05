@@ -100,33 +100,28 @@ function menuOf(html: string) {
 
 const SCREENS = [
   ["/", "Início", "Início", 'data-tela="inicio"'],
-  ["/lojas", "Buscar loja", "Buscar loja", 'data-tela="lojas"'],
-  [`/lojas/${STORE}`, "Loja", "Buscar loja", `data-id="${STORE}"`],
-  ["/casos", "Casos de suporte", "Casos de suporte", 'data-estado="abertos"'],
-  [
-    "/casos/novo",
-    "Abrir caso de suporte",
-    "Casos de suporte",
-    'data-tela="caso-novo"',
-  ],
-  [
-    `/casos/${CASE}`,
-    "Caso de suporte",
-    "Casos de suporte",
-    `data-id="${CASE}"`,
-  ],
-  ["/funil", "Funil de ativação", "Funil", 'data-tela="funil"'],
+  ["/lojas", "Lojas", "Lojas", 'data-tela="lojas"'],
+  [`/lojas/${STORE}`, "Loja", "Lojas", `data-id="${STORE}"`],
+  ["/casos", "Atendimentos", "Atendimentos", 'data-estado="abertos"'],
+  ["/casos/novo", "Abrir atendimento", "Atendimentos", 'data-tela="caso-novo"'],
+  [`/casos/${CASE}`, "Atendimento", "Atendimentos", `data-id="${CASE}"`],
+  ["/funil", "Funil de ativação", "Funil de ativação", 'data-tela="funil"'],
   [
     "/configuracoes",
-    "Configurações",
-    "Configurações",
+    "Minha conta e permissões",
+    "Minha conta e permissões",
     'data-tela="configuracoes"',
   ],
-  ["/incidentes", "Incidentes", "Incidentes", 'data-tela="incidentes"'],
+  [
+    "/incidentes",
+    "Falhas de envio",
+    "Falhas de envio",
+    'data-tela="incidentes"',
+  ],
   [
     `/incidentes/${INCIDENT}`,
-    "Incidente",
-    "Incidentes",
+    "Falha de envio",
+    "Falhas de envio",
     `data-id="${INCIDENT}"`,
   ],
   [
@@ -135,23 +130,28 @@ const SCREENS = [
     "Registro de acessos",
     'data-tela="registro"',
   ],
-  ["/privacidade", "Privacidade", "Privacidade", 'data-estado="abertos"'],
+  [
+    "/privacidade",
+    "Pedidos de dados",
+    "Pedidos de dados",
+    'data-estado="abertos"',
+  ],
   [
     "/privacidade/novo",
-    "Abrir caso de privacidade",
-    "Privacidade",
+    "Abrir atendimento de privacidade",
+    "Pedidos de dados",
     'data-tela="privacidade-novo"',
   ],
   [
     `/privacidade/${CASE}`,
-    "Caso de privacidade",
-    "Privacidade",
+    "Atendimento de privacidade",
+    "Pedidos de dados",
     `data-id="${CASE}"`,
   ],
   [
     "/retencoes",
-    "Retenções legais",
-    "Retenções legais",
+    "Lojas com trava legal",
+    "Lojas com trava legal",
     'data-tela="retencoes"',
   ],
 ] as const;
@@ -228,7 +228,7 @@ describe("one route per screen (AC-P1.2)", () => {
         await setup("platform_owner", environment)("/casos")
       ).text();
       expect(TITLE.exec(html)?.[1]).toBe(
-        `${title} · Casos de suporte · Polaris Admin`
+        `${title} · Atendimentos · Polaris Admin`
       );
       expect(html).toContain(`<p class="env ${kind}">${banner}</p>`);
     }
@@ -342,58 +342,62 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
       PLATFORM_CAPABILITIES,
       [
         "Início /",
-        "Buscar loja /lojas",
-        "Casos de suporte /casos",
-        "Privacidade /privacidade",
-        "Incidentes /incidentes",
-        "Funil /funil",
+        "Lojas /lojas",
+        "Atendimentos /casos",
+        "Pedidos de dados /privacidade",
+        "Lojas com trava legal /retencoes",
+        "Falhas de envio /incidentes",
+        "Funil de ativação /funil",
         "Registro de acessos /registro",
-        "Retenções legais /retencoes",
-        "Configurações /configuracoes",
+        "Minha conta e permissões /configuracoes",
       ],
-      ["Lojas", "Suporte", "Operação", "Auditoria"],
+      ["Atender uma loja", "Privacidade (LGPD)", "Operação", "Para o jurídico"],
     ],
     [
       "platform:read",
       ["platform:read"],
-      ["Início /", "Funil /funil", "Configurações /configuracoes"],
+      [
+        "Início /",
+        "Funil de ativação /funil",
+        "Minha conta e permissões /configuracoes",
+      ],
       ["Operação"],
     ],
     [
       "organization:diagnose",
       ["organization:diagnose"],
-      ["Buscar loja /lojas"],
-      ["Lojas"],
+      ["Lojas /lojas"],
+      ["Atender uma loja"],
     ],
     [
       "support_case:manage",
       ["support_case:manage"],
-      ["Casos de suporte /casos"],
-      ["Suporte"],
+      ["Atendimentos /casos"],
+      ["Atender uma loja"],
     ],
     [
       "the read of the cases and the stores, no platform:read",
       ["organization:diagnose", "support_case:manage"],
-      ["Buscar loja /lojas", "Casos de suporte /casos"],
-      ["Lojas", "Suporte"],
+      ["Lojas /lojas", "Atendimentos /casos"],
+      ["Atender uma loja"],
     ],
     [
       "operational_incident:read",
       ["operational_incident:read"],
-      ["Incidentes /incidentes"],
+      ["Falhas de envio /incidentes"],
       ["Operação"],
     ],
     [
       "access_log:read",
       ["access_log:read"],
       ["Registro de acessos /registro"],
-      ["Auditoria"],
+      ["Para o jurídico"],
     ],
     [
       "privacy_case:manage",
       ["privacy_case:manage"],
-      ["Privacidade /privacidade"],
-      ["Suporte"],
+      ["Pedidos de dados /privacidade"],
+      ["Privacidade (LGPD)"],
     ],
     [
       "only the retry, which opens no screen",
@@ -404,8 +408,8 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
     [
       "organization:legal_hold",
       ["organization:legal_hold"],
-      ["Retenções legais /retencoes"],
-      ["Auditoria"],
+      ["Lojas com trava legal /retencoes"],
+      ["Privacidade (LGPD)"],
     ],
     [
       "only the purge, which opens no screen of its own",
@@ -500,13 +504,13 @@ describe("the privacy screens (Parte 11: AC-C6, AC-P11.6)", () => {
       await setup("platform_owner", "production")(`/privacidade/${CASE}`)
     ).text();
     expect(TITLE.exec(html)?.[1]).toBe(
-      "PRODUÇÃO · Caso de privacidade · Polaris Admin"
+      "PRODUÇÃO · Atendimento de privacidade · Polaris Admin"
     );
-    expect(menuOf(html).current).toEqual(["Privacidade"]);
+    expect(menuOf(html).current).toEqual(["Pedidos de dados"]);
   });
 });
 
-describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
+describe("Minha conta e permissões in the foot of the menu (Parte 9: AC-C1)", () => {
   const render = async (capabilities: readonly string[]) => {
     const page = await createAdminPage(assets)();
     return page.render({
@@ -525,13 +529,15 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
     const menu = MENU.exec(html)?.[1] ?? "";
     expect(
       menu.endsWith(
-        '<ul class="menu-foot"><li><a href="/configuracoes" aria-current="page"><span aria-hidden="true">▸ </span>Configurações</a></li></ul>'
+        '<ul class="menu-foot"><li><a href="/configuracoes" aria-current="page"><span aria-hidden="true">▸ </span>Minha conta e permissões</a></li></ul>'
       )
     ).toBe(true);
     const others = await render(
       PLATFORM_CAPABILITIES.filter((c) => c !== "platform:read")
     );
-    expect(menuOf(others).links.join()).not.toContain("Configurações");
+    expect(menuOf(others).links.join()).not.toContain(
+      "Minha conta e permissões"
+    );
     expect(MENU.exec(others)?.[1] ?? "").not.toContain("menu-foot");
   });
 
@@ -544,8 +550,8 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
       ])
     );
     expect(menu.links).toEqual([
-      "Buscar loja /lojas",
-      "Casos de suporte /casos",
+      "Lojas /lojas",
+      "Atendimentos /casos",
       "Registro de acessos /registro",
     ]);
   });
@@ -575,7 +581,7 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
     expect(html).not.toContain("support_case:manage");
     expect(html).not.toContain("dona@example.com");
     expect(TITLE.exec(html)?.[1]).toBe(
-      "PRODUÇÃO · Configurações · Polaris Admin"
+      "PRODUÇÃO · Minha conta e permissões · Polaris Admin"
     );
   });
 });

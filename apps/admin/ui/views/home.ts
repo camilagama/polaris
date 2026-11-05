@@ -10,24 +10,24 @@ const COUNT_PAGE = "50";
 
 function openCasesText(count: number, more: boolean): string {
   if (more) {
-    return `${count} ou mais casos de suporte abertos`;
+    return `${count} ou mais atendimentos de suporte abertos`;
   }
   return count === 1
-    ? "1 caso de suporte aberto"
-    : `${count} casos de suporte abertos`;
+    ? "1 atendimento de suporte aberto"
+    : `${count} atendimentos de suporte abertos`;
 }
 
 /** The server orders incidents by ID, not by what is left to send: a page with none, but with another page after it, says only that there is more to look at. */
 function incidentsText(count: number, more: boolean): string {
   if (count === 0) {
-    return "Há incidentes na lista: veja se algum tem eventos a reenviar";
+    return "Há falhas de envio na lista: veja se alguma tem eventos a reenviar";
   }
   if (more) {
-    return `${count} ou mais incidentes com eventos a reenviar`;
+    return `${count} ou mais falhas de envio com eventos a reenviar`;
   }
   return count === 1
-    ? "1 incidente com eventos a reenviar"
-    : `${count} incidentes com eventos a reenviar`;
+    ? "1 falha de envio com eventos a reenviar"
+    : `${count} falhas de envio com eventos a reenviar`;
 }
 
 /**
@@ -67,7 +67,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
       `/api/support-cases?${parameters.toString()}`
     );
     if (!(answer.ok && Array.isArray(answer.data?.cases))) {
-      failed("os casos abertos", answer);
+      failed("os atendimentos abertos", answer);
       return null;
     }
     const count = answer.data.cases.length;
@@ -79,7 +79,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
       "li",
       {},
       `${openCasesText(count, more)} `,
-      dom.el("a", { href: "/casos" }, "Ver casos")
+      dom.el("a", { href: "/casos" }, "Ver atendimentos")
     );
   };
 
@@ -89,7 +89,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
       `/api/operational-incidents?${parameters.toString()}`
     );
     if (!(answer.ok && Array.isArray(answer.data?.incidents))) {
-      failed("os incidentes", answer);
+      failed("as falhas de envio", answer);
       return null;
     }
     const count = answer.data.incidents.filter(
@@ -103,7 +103,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
       "li",
       {},
       `${incidentsText(count, more)} `,
-      dom.el("a", { href: "/incidentes" }, "Ver incidentes")
+      dom.el("a", { href: "/incidentes" }, "Ver falhas de envio")
     );
   };
 
