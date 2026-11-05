@@ -1,12 +1,9 @@
-import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
+import {
+  MEDIA_THUMBS_MAX_PER_REQUEST,
+  mediaDerivativeKey,
+} from "@polaris/domain/catalog/media";
 import type { MediaBucketBinding } from "./environment";
 
-/**
- * Every thumbnail costs one R2 `get` and its copy, about 1 ms of Worker CPU in
- * the local workerd bench; five keep the batch about 5 ms above a single image,
- * the budget on the Workers Free plan. The client batch size follows this value.
- */
-export const MAX_MEDIA_THUMBS_PER_REQUEST = 5;
 /** A Worker invocation keeps at most six storage operations open at once; the pool keeps to that however many ids a caller passes. */
 const MEDIA_THUMBS_STORAGE_CONCURRENCY = 6;
 export const MEDIA_THUMBS_HEADER = "X-Polaris-Thumbs";
@@ -15,7 +12,7 @@ const MEDIA_THUMBS_SIZE = 320;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** The capped UUIDs and their commas; anything longer is refused before it is split. */
-const MAX_IDS_PARAMETER_LENGTH = MAX_MEDIA_THUMBS_PER_REQUEST * 37;
+const MAX_IDS_PARAMETER_LENGTH = MEDIA_THUMBS_MAX_PER_REQUEST * 37;
 
 export class InvalidMediaThumbsRequestError extends Error {
   readonly code = "invalid_media_thumbs_request";
@@ -27,7 +24,7 @@ export class InvalidMediaThumbsRequestError extends Error {
 }
 
 /**
- * Up to `MAX_MEDIA_THUMBS_PER_REQUEST` UUIDs separated by commas, lower-cased and
+ * Up to `MEDIA_THUMBS_MAX_PER_REQUEST` UUIDs separated by commas, lower-cased and
  * without repeats, in the order asked. A repeated id is answered once.
  */
 export function parseMediaThumbIds(value: string | undefined): string[] {
@@ -39,7 +36,7 @@ export function parseMediaThumbIds(value: string | undefined): string[] {
     throw new InvalidMediaThumbsRequestError();
   }
   const parts = value.split(",");
-  if (parts.length > MAX_MEDIA_THUMBS_PER_REQUEST) {
+  if (parts.length > MEDIA_THUMBS_MAX_PER_REQUEST) {
     throw new InvalidMediaThumbsRequestError();
   }
   const ids: string[] = [];

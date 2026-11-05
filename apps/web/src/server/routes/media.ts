@@ -995,7 +995,7 @@ async function handleMediaDelivery(
 }
 
 /**
- * Up to `MAX_MEDIA_THUMBS_PER_REQUEST` stored 320 px thumbnails in one answer: one session, one tenant
+ * Up to `MEDIA_THUMBS_MAX_PER_REQUEST` stored 320 px thumbnails in one answer: one session, one tenant
  * transaction and one query for the whole list. Whatever this organization
  * cannot serve (another organization's id, an unknown or removed image, an image
  * without its 320 px derivative) is the same `missing`, and nothing is ever

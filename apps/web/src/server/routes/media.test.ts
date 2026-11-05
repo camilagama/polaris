@@ -1,4 +1,5 @@
 import {
+  MEDIA_THUMBS_MAX_PER_REQUEST,
   InvalidMediaOrderError,
   MediaImageProcessingError,
   MediaTransformQuotaExceededError,
@@ -12,7 +13,7 @@ import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
-import { MAX_MEDIA_THUMBS_PER_REQUEST, readMediaThumbs } from "../media-thumbs";
+import { readMediaThumbs } from "../media-thumbs";
 import { requestIdMiddleware } from "../middleware/request-id";
 import { TenantRequestContextError } from "../request-context-error";
 import { createMediaRoutes, type MediaRouteDependencies } from "./media";
@@ -1014,7 +1015,7 @@ describe("media thumbnail batch route", () => {
 
   it("answers the capped number of ids in the asked order, the body slicing into each WebP by the header and Content-Length, with one query and no head", async () => {
     const ids = Array.from(
-      { length: MAX_MEDIA_THUMBS_PER_REQUEST },
+      { length: MEDIA_THUMBS_MAX_PER_REQUEST },
       (_, index) => thumbId(index)
     );
     const owners = new Map(ids.map((id) => [id, organizationId]));
@@ -1122,14 +1123,15 @@ describe("media thumbnail batch route", () => {
   it("refuses 0, more than the cap and malformed ids with a stable 400 before opening a transaction", async () => {
     const { app, bindings, dependencies } = createTestApp();
     const overCap = Array.from(
-      { length: MAX_MEDIA_THUMBS_PER_REQUEST + 1 },
+      { length: MEDIA_THUMBS_MAX_PER_REQUEST + 1 },
       (_, index) => thumbId(index)
     );
     const cases = [
       overCap.join(","),
-      Array.from({ length: 24 }, (_, index) => thumbId(index)).join(","),
-      Array.from({ length: 25 }, (_, index) => thumbId(index)).join(","),
-      Array.from({ length: MAX_MEDIA_THUMBS_PER_REQUEST + 1 }, () =>
+      Array.from({ length: MEDIA_THUMBS_MAX_PER_REQUEST * 2 }, (_, index) =>
+        thumbId(index)
+      ).join(","),
+      Array.from({ length: MEDIA_THUMBS_MAX_PER_REQUEST + 1 }, () =>
         thumbId(1)
       ).join(","),
       "",
@@ -1164,7 +1166,7 @@ describe("media thumbnail batch route", () => {
 
   it("accepts exactly the cap", async () => {
     const ids = Array.from(
-      { length: MAX_MEDIA_THUMBS_PER_REQUEST },
+      { length: MEDIA_THUMBS_MAX_PER_REQUEST },
       (_, index) => thumbId(index)
     );
     const { app, bindings } = createTestApp();
@@ -1172,7 +1174,7 @@ describe("media thumbnail batch route", () => {
     const response = await askThumbs(app, bindings, ids.join(","));
 
     expect(response.status).toBe(200);
-    expect(headerEntries(response)).toHaveLength(MAX_MEDIA_THUMBS_PER_REQUEST);
+    expect(headerEntries(response)).toHaveLength(MEDIA_THUMBS_MAX_PER_REQUEST);
   });
 
   it("answers a repeated id once", async () => {

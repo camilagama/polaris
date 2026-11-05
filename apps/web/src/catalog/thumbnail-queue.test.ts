@@ -1,10 +1,10 @@
+import { MEDIA_THUMBS_MAX_PER_REQUEST } from "@polaris/domain/catalog/media";
 import { describe, expect, it } from "vitest";
 import { ThumbnailCache } from "./thumbnail-cache";
 import { ThumbnailLoader } from "./thumbnail-queue";
-import {
-  THUMBS_BATCH_SIZE,
-  type ThumbnailBatchResult,
-  type ThumbnailTransport,
+import type {
+  ThumbnailBatchResult,
+  ThumbnailTransport,
 } from "./thumbnail-transport";
 
 /**
@@ -126,14 +126,14 @@ function setup(
 }
 
 const LIST_SIZE = 1248;
-const FULL_BATCHES = Math.ceil(LIST_SIZE / THUMBS_BATCH_SIZE);
+const FULL_BATCHES = Math.ceil(LIST_SIZE / MEDIA_THUMBS_MAX_PER_REQUEST);
 const MAX_REQUESTS = FULL_BATCHES + 1;
 
 const assetIds = (count: number, prefix = "a") =>
   Array.from({ length: count }, (_, index) => `${prefix}${index}`);
 
 describe("ThumbnailLoader", () => {
-  it("rolar 1.248 linhas de cima a baixo faz no máximo um pedido a mais que os lotes cheios, de até THUMBS_BATCH_SIZE ids, sem repetir id", async () => {
+  it("rolar 1.248 linhas de cima a baixo faz no máximo um pedido a mais que os lotes cheios, de até MEDIA_THUMBS_MAX_PER_REQUEST ids, sem repetir id", async () => {
     const { calls, loader } = setup();
     const list = assetIds(LIST_SIZE);
     loader.setSequence(list);
@@ -158,7 +158,7 @@ describe("ThumbnailLoader", () => {
     // The completion skips an id whose cache lookup is still running, so the tail of a scroll can add one short batch.
     expect(calls.length).toBeLessThanOrEqual(MAX_REQUESTS);
     expect(Math.max(...calls.map((batch) => batch.length))).toBeLessThanOrEqual(
-      THUMBS_BATCH_SIZE
+      MEDIA_THUMBS_MAX_PER_REQUEST
     );
     const asked = calls.flat();
     expect(new Set(asked).size).toBe(asked.length);
@@ -228,7 +228,7 @@ describe("ThumbnailLoader", () => {
     loader.setSequence(list);
     const first = loader.show("a3");
     await settle();
-    const end = 3 + THUMBS_BATCH_SIZE;
+    const end = 3 + MEDIA_THUMBS_MAX_PER_REQUEST;
     expect(calls[0]).toEqual(list.slice(3, end));
     first();
     loader.show("a2");
@@ -236,24 +236,24 @@ describe("ThumbnailLoader", () => {
     await settle();
     expect(calls[1]).toEqual([
       "a2",
-      ...list.slice(end, end + THUMBS_BATCH_SIZE - 1),
+      ...list.slice(end, end + MEDIA_THUMBS_MAX_PER_REQUEST - 1),
     ]);
-    expect(calls[1]).toHaveLength(THUMBS_BATCH_SIZE);
+    expect(calls[1]).toHaveLength(MEDIA_THUMBS_MAX_PER_REQUEST);
   });
 
-  it("nenhum lote passa de THUMBS_BATCH_SIZE ids, com mais linhas na tela do que cabem num lote", async () => {
+  it("nenhum lote passa de MEDIA_THUMBS_MAX_PER_REQUEST ids, com mais linhas na tela do que cabem num lote", async () => {
     const { calls, loader } = setup();
     const list = assetIds(60);
     loader.setSequence(list);
-    for (const id of list.slice(0, THUMBS_BATCH_SIZE * 3 + 1)) {
+    for (const id of list.slice(0, MEDIA_THUMBS_MAX_PER_REQUEST * 3 + 1)) {
       loader.show(id);
     }
     await settle();
     expect(calls.length).toBeGreaterThan(1);
     for (const batch of calls) {
-      expect(batch.length).toBeLessThanOrEqual(THUMBS_BATCH_SIZE);
+      expect(batch.length).toBeLessThanOrEqual(MEDIA_THUMBS_MAX_PER_REQUEST);
     }
-    expect(calls[0]).toHaveLength(THUMBS_BATCH_SIZE);
+    expect(calls[0]).toHaveLength(MEDIA_THUMBS_MAX_PER_REQUEST);
   });
 
   it("id sem miniatura (missing) fica no marcador e não volta a ser pedido", async () => {
@@ -373,18 +373,19 @@ describe("ThumbnailLoader", () => {
       answer: (input) =>
         network.fail ? Promise.resolve({ kind: "failed" }) : served()(input),
     });
-    loader.setSequence(assetIds(10));
+    const completed = `a${MEDIA_THUMBS_MAX_PER_REQUEST - 1}`;
+    loader.setSequence(assetIds(MEDIA_THUMBS_MAX_PER_REQUEST * 2));
     const hide = loader.show("a0");
     await settle();
     await clock.advance(3_600_000);
     expect(calls).toHaveLength(3);
-    expect(calls[0]).toContain("a5");
+    expect(calls[0]).toContain(completed);
     hide();
     network.fail = false;
-    loader.show("a5");
+    loader.show(completed);
     await settle();
-    expect(calls.at(-1)?.[0]).toBe("a5");
-    expect(loader.url("a5")).toMatch(BLOB_URL);
+    expect(calls.at(-1)?.[0]).toBe(completed);
+    expect(loader.url(completed)).toMatch(BLOB_URL);
   });
 
   it("descartar no meio de um pedido o cancela", async () => {
