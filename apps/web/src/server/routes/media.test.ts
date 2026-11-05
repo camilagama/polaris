@@ -20,6 +20,7 @@ const organizationId = "org/with space";
 const productId = "0199c2d0-0000-7000-8000-000000000001";
 const uploadCommandId = "de305d54-75b4-431b-adb2-eb6b9e546014";
 const stagingKeyPattern = /^media\/staging\/v1\//;
+const fingerprintPattern = /^[0-9a-f]{64}$/;
 interface TestIdentity {
   capability: string;
   organizationId: string;
@@ -317,6 +318,49 @@ describe("media upload route", () => {
     expect(mediaBucket.put).toHaveBeenCalledTimes(2);
     expect(mediaBucket.delete).toHaveBeenCalledTimes(2);
     expect(stored.size).toBe(0);
+  });
+
+  it("answers a retry of the same prepared file with the stored image and the same id with another file with 409", async () => {
+    const prepared = new Uint8Array([255, 216, 255, 1, 2, 3]);
+    const first = createTestApp();
+    const created = await first.app.fetch(
+      uploadRequest({ body: prepared }),
+      first.bindings
+    );
+    expect(created.status).toBe(201);
+    const [, , command] =
+      vi.mocked(first.dependencies.createProductMediaAsset).mock.calls[0] ?? [];
+    const { inputFingerprint } = command as { inputFingerprint: string };
+    expect(inputFingerprint).toMatch(fingerprintPattern);
+
+    const stored = { asset: mediaAsset, inputFingerprint, productId };
+    const retry = createTestApp({
+      findMediaUploadCommand: vi.fn(() => Promise.resolve(stored)),
+    });
+    const replayed = await retry.app.fetch(
+      uploadRequest({ body: prepared.slice() }),
+      retry.bindings
+    );
+    expect(replayed.status).toBe(200);
+    await expect(replayed.json()).resolves.toMatchObject({
+      asset: mediaAsset,
+      replayed: true,
+    });
+    expect(retry.dependencies.processMediaImage).not.toHaveBeenCalled();
+    expect(retry.mediaBucket.put).not.toHaveBeenCalled();
+
+    const other = createTestApp({
+      findMediaUploadCommand: vi.fn(() => Promise.resolve(stored)),
+    });
+    const conflict = await other.app.fetch(
+      uploadRequest({ body: new Uint8Array([255, 216, 255, 1, 2, 4]) }),
+      other.bindings
+    );
+    expect(conflict.status).toBe(409);
+    await expect(conflict.json()).resolves.toMatchObject({
+      error: { code: "media_upload_command_conflict" },
+    });
+    expect(other.dependencies.processMediaImage).not.toHaveBeenCalled();
   });
 
   it.each([320, 640] as const)(

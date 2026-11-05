@@ -35,6 +35,60 @@ describe("media upload command", () => {
     expect(differentFile).not.toBe(first);
   });
 
+  it("hashes the metadata followed by the SHA-256 of the bytes, never the bytes next to the metadata", async () => {
+    const hex = (bytes: ArrayBuffer) =>
+      [...new Uint8Array(bytes)]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+    const metadata = new TextEncoder().encode(
+      JSON.stringify({
+        crop,
+        organizationId: command.organizationId,
+        productId: command.productId,
+        transformVersion: 1,
+        variantIds: [],
+      })
+    );
+    const sourceDigest = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", command.sourceBytes)
+    );
+    const expected = await crypto.subtle.digest(
+      "SHA-256",
+      new Uint8Array([...metadata, 0, ...sourceDigest])
+    );
+    const whole = await crypto.subtle.digest(
+      "SHA-256",
+      new Uint8Array([...metadata, 0, ...command.sourceBytes])
+    );
+
+    const fingerprint = await mediaUploadFingerprint(command);
+
+    expect(fingerprint).toBe(hex(expected));
+    expect(fingerprint).not.toBe(hex(whole));
+  });
+
+  it("changes with the crop, the product, and the variants, but not with the order of the variants", async () => {
+    const variants = {
+      ...command,
+      variantIds: ["v-b", "v-a"],
+    };
+    const base = await mediaUploadFingerprint(command);
+
+    await expect(
+      mediaUploadFingerprint({ ...command, crop: { ...crop, x: 0.2 } })
+    ).resolves.not.toBe(base);
+    await expect(
+      mediaUploadFingerprint({
+        ...command,
+        productId: "0199c2d0-0000-7000-8000-000000000009",
+      })
+    ).resolves.not.toBe(base);
+    await expect(mediaUploadFingerprint(variants)).resolves.not.toBe(base);
+    await expect(
+      mediaUploadFingerprint({ ...variants, variantIds: ["v-a", "v-b"] })
+    ).resolves.toBe(await mediaUploadFingerprint(variants));
+  });
+
   it("creates unique private R2 keys for physical attempts", () => {
     const commandId = "de305d54-75b4-431b-adb2-eb6b9e546014";
     const attemptId = "de305d54-75b4-431b-adb2-eb6b9e546015";
