@@ -104,9 +104,11 @@ const NAME_WRAPS = /\.purge label bdi\s*\{[^}]*overflow-wrap:\s*anywhere/;
  * (`/api/access-log/read`, a POST; Parte 8), and the privacy cases (list, detail, open and each of the six steps,
  * `/api/privacy-cases/:id/identity`, `/role`, `/scope`, `/decision`, `/actions` and `/resolve`; Parte 11), and the two acts on
  * the closure notice of a closed store (`/api/support-cases/:id/closure-notice/reissue` and `/dismiss`; Parte 12), and
- * scheduling and cancelling the purge of a closed store, placing and releasing its legal hold, and the list of the
- * holds in force (`/api/support-cases/:id/purge`, `/purge/cancel`, `/legal-hold`, `/legal-hold/release` and
- * `/api/legal-holds`; Parte 7).
+ * the temporary access to a case's customers: giving it (`/api/support-cases/:id/access`), reading them masked
+ * (`/api/support-cases/:id/customers`) and ending it (`/api/tenant-access/:grantId`; Parte 5), and scheduling and
+ * cancelling the purge of a closed store, placing and releasing its legal hold, and the list of the holds in force
+ * (`/api/support-cases/:id/purge`, `/purge/cancel`, `/legal-hold`, `/legal-hold/release` and `/api/legal-holds`;
+ * Parte 7). Revealing a field (`…/customers/:customerId/reveal`) is not in the cut.
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/access-log",
@@ -116,6 +118,7 @@ const ROUTES_OF_THIS_CUT = [
   "/api/organizations",
   "/api/privacy-cases",
   "/api/support-cases",
+  "/api/tenant-access",
   "/api/whoami",
 ];
 
@@ -181,7 +184,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, and the purge and the legal hold: no other action of a case or a store (no customers or reveal)", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access and reading the masked customers, and the purge and the legal hold: no other action of a case or a store (no reveal)", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -199,11 +202,13 @@ describe("the built script of the page", () => {
         .filter((segment) => new RegExp(`/${segment}(?![a-z-])`).test(text))
         .sort();
     const expected = [
+      "access",
       "actions",
       "cancel",
       "classification",
       "close",
       "closure-notice",
+      "customers",
       "decision",
       "diagnostics",
       "dismiss",
@@ -226,8 +231,10 @@ describe("the built script of the page", () => {
     expect(named(bundle)).toEqual(expected);
     // a planted call to another action of a case is seen
     expect(
-      named(`${bundle}fetch(\`/api/support-cases/\${id}/customers\`)`)
-    ).toEqual([...expected, "customers"].sort());
+      named(
+        `${bundle}fetch(\`/api/support-cases/\${id}/customers/\${c}/reveal\`)`
+      )
+    ).toEqual([...expected, "reveal"].sort());
   });
 });
 
@@ -235,7 +242,7 @@ const DELETE_CALL = /method:\s*"DELETE"/g;
 const OTHER_WRITES = /method:\s*"(PUT|PATCH)"/;
 
 describe("the verbs of the built script", () => {
-  it("sends one DELETE, the end of a grant, and no PUT or PATCH", () => {
+  it("sends one DELETE, the end of a grant or of an access, and no PUT or PATCH", () => {
     expect(bundle.match(DELETE_CALL)).toHaveLength(1);
     expect(bundle).not.toMatch(OTHER_WRITES);
   });

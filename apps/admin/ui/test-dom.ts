@@ -194,6 +194,13 @@ class FakeWindow {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
 
+  removeEventListener(type: string, listener: () => void) {
+    this.listeners.set(
+      type,
+      (this.listeners.get(type) ?? []).filter((kept) => kept !== listener)
+    );
+  }
+
   dispatch(type: string) {
     for (const listener of this.listeners.get(type) ?? []) {
       listener();

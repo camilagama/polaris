@@ -54,7 +54,7 @@ A Fase 9 cria o Admin: a aplicação de quem opera o Polaris (não de um cliente
 - Sem MFA aplicado pelo Worker: o MFA obrigatório é uma política do Access (runbook); o Worker só verifica o token que o Access emitiu.
 - Um token roubado vale até expirar (a duração da sessão do Access é configurada lá).
 - O isolate guarda as chaves em memória; várias instâncias buscam cada uma a sua.
-- A tela do Admin (emendas de 28/10 e de 04/11) cobre buscar loja, o diagnóstico, o funil, listar, abrir e fechar caso de suporte e ler a janela de reembolso; acesso temporário, revelação de dados pessoais, comandos de cobrança, suspensão, privacidade, incidentes e registro de acessos seguem só na API até as partes seguintes do corte admin-v2.
+- A tela do Admin (emendas de 28/10 e de 04/11) cobre buscar loja, o diagnóstico, o funil, listar, abrir e fechar caso de suporte e ler a janela de reembolso e, desde a Parte 5, dar, ler (mascarado) e encerrar o acesso temporário; revelação de dados pessoais, comandos de cobrança, suspensão, privacidade, incidentes e registro de acessos seguem só na API até as partes seguintes do corte admin-v2.
 
 ## Alternativas rejeitadas
 
