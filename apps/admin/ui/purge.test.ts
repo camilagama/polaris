@@ -588,23 +588,65 @@ describe("Purge tab: what a schedule says while it cannot run or after it ends",
 describe("Purge tab: the hold sentence appears once", () => {
   const countOf = (root: FakeElement) =>
     visibleText(root).split(HOLD_STOPS_PURGE).length - 1;
+  const partsOf = (root: FakeElement) =>
+    allElements(root).filter(
+      (element) => element.getAttribute("class") === "purge-part"
+    );
+  const ONLY_HOLD = {
+    ...OWNER,
+    capabilities: [
+      ...OWNER.capabilities,
+      "privacy_case:manage",
+      "organization:legal_hold",
+    ],
+  };
+  const ONLY_PURGE = {
+    ...OWNER,
+    capabilities: [
+      ...OWNER.capabilities,
+      "privacy_case:manage",
+      "organization:purge",
+    ],
+  };
 
-  it("says it once with a hold in force, as a warning in the purge block", async () => {
+  it("says it once with a hold in force, as the warning of the purge block only", async () => {
     const mounted = await open([store("closed"), page([hold()])]);
     expect(countOf(mounted.root)).toBe(1);
+    const parts = partsOf(mounted.root);
+    expect(parts).toHaveLength(2);
+    expect(visibleText(parts[0] as FakeElement)).toContain(HOLD_STOPS_PURGE);
+    expect(visibleText(parts[1] as FakeElement)).not.toContain(
+      HOLD_STOPS_PURGE
+    );
   });
 
   it("says it once, in the hold block, without a hold", async () => {
     const mounted = await open([store("closed"), page([])]);
     expect(countOf(mounted.root)).toBe(1);
-    const parts = allElements(mounted.root).filter(
-      (element) => element.getAttribute("class") === "purge-part"
-    );
+    const parts = partsOf(mounted.root);
     expect(parts).toHaveLength(2);
     expect(visibleText(parts[0] as FakeElement)).not.toContain(
       HOLD_STOPS_PURGE
     );
     expect(visibleText(parts[1] as FakeElement)).toContain(HOLD_STOPS_PURGE);
+  });
+
+  it("keeps it once, in the hold block, when the purge block cannot say it", async () => {
+    const active = await open([store("active"), page([hold()])]);
+    expect(countOf(active.root)).toBe(1);
+    const notAccepted = await open(
+      [store("closed"), page([hold()])],
+      MAY,
+      detail({ privacy: { decision: "reject" } })
+    );
+    expect(countOf(notAccepted.root)).toBe(1);
+    const onlyHold = await open([store("closed"), page([hold()])], ONLY_HOLD);
+    expect(countOf(onlyHold.root)).toBe(1);
+  });
+
+  it("keeps it once, in the purge block, for an operator who cannot read holds", async () => {
+    const mounted = await open([store("closed")], ONLY_PURGE);
+    expect(countOf(mounted.root)).toBe(1);
   });
 });
 

@@ -296,6 +296,8 @@ export function purgeTab(
     draw({ hold, status });
   };
 
+  let holdStatedInPurge = false;
+
   const holdText = (hold: StoreState["hold"]): string => {
     if (hold === undefined) {
       return "O servidor confere ao agendar.";
@@ -314,6 +316,7 @@ export function purgeTab(
     }
     pairs.push(["Trava legal", holdText(state.hold)]);
     const parts: (HTMLElement | null)[] = [caseFacts(pairs)];
+    holdStatedInPurge = false;
     if (can("organization:purge")) {
       parts.push(purgePart(state));
     }
@@ -420,6 +423,7 @@ export function purgeTab(
           )
         : null;
     if (state.hold !== null && state.hold !== undefined) {
+      holdStatedInPurge = true;
       return area(title, cancelled, line(HOLD_STOPS_PURGE, "warning"));
     }
     const schedule = dom.el(
@@ -436,6 +440,7 @@ export function purgeTab(
       title,
       cancelled,
       line(SERVER_CHECKS),
+      can("organization:legal_hold") ? null : line(HOLD_STOPS_PURGE),
       dom.el("div", { class: "button-row" }, schedule)
     );
   };
@@ -467,11 +472,7 @@ export function purgeTab(
       });
       row.append(release);
     }
-    return area(
-      title,
-      hold === null || hold === undefined ? line(HOLD_STOPS_PURGE) : null,
-      row
-    );
+    return area(title, holdStatedInPurge ? null : line(HOLD_STOPS_PURGE), row);
   };
 
   const buttonsOf = (confirmText: string, submit = false): Buttons => ({
