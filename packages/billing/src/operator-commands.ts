@@ -255,8 +255,9 @@ class AmountMismatchError extends Error {
 /**
  * Why the charge the provider has is not the amount the operator saw, decided here and never by the screen (ADR
  * 0105). The record holds the same amount as the provider: the operator only read it before it changed (a renewal, a
- * repeat), `amount_changed`. The record holds another: the amount in force it keeps is wrong, which the write of every
- * charge should never let happen; one occurrence of the incident `billing_amount_mismatch` names its ledger row, and
+ * repeat), `amount_changed`. The record holds another: the amount in force it keeps is wrong, or behind (a charge at
+ * the provider whose fact is not applied yet), and either way a person looks; one occurrence of the incident
+ * `billing_amount_mismatch` names its ledger row, and
  * the log names the store's opaque ID and the provider, no amount and no reference. Without an amount recorded there
  * is nothing to disagree with (the Admin offers no refund then), so no incident.
  */

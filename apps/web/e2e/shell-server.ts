@@ -220,7 +220,7 @@ export const TRIAL_PLAN = {
   kept: { historyMonths: 3, products: 18, sales: 47 },
   limits: { goals: 3, images: 5000, variants: 2000 },
   method: "card",
-  nextCharge: { amount: "24.90", on: "2026-11-10" },
+  nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-10" },
   offer: {
     methods: ["card", "pix_automatic"],
     prices: [

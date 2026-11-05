@@ -744,6 +744,17 @@ describe("refundCurrentPeriod, the operator's order (read, check the amount, can
           ([event]) => event === "billing_amount_mismatch_incident_failed"
         )
       ).toHaveLength(1);
+      const logged = JSON.stringify(error.mock.calls);
+      for (const leak of [
+        link.providerRef,
+        CURRENT_CHARGE_EVENT,
+        decision.reason,
+        "19.90",
+        "24.90",
+        "database down",
+      ]) {
+        expect(logged).not.toContain(leak);
+      }
     });
   });
 
