@@ -372,6 +372,25 @@ describe("pullLocalChanges", () => {
     expect(writer.meta).toMatchObject({ cursor: "3", status: "ready" });
   });
 
+  it("brings a new cover to a copy made before the field existed, with the version and the variants as they were", async () => {
+    // the seeded rows have no coverAssetId: the snapshot of a Worker of the previous version
+    const { server, writer } = await readyStore();
+    expect(writer.data.products.get(uuid(1001))).not.toHaveProperty(
+      "coverAssetId"
+    );
+    server.put("products", { ...product(1), coverAssetId: uuid(5001) });
+    server.change("product", uuid(1001));
+
+    await pullLocalChanges(server, writer, "0");
+
+    expect(writer.data.products.get(uuid(1001))).toEqual({
+      ...product(1),
+      coverAssetId: uuid(5001),
+    });
+    expect(writer.data.products.get(uuid(1002))).toEqual(product(2));
+    expect(writer.data.variants.get(uuid(2001))).toEqual(variant(1, 1));
+  });
+
   it("re-reads variants by product and removes variants that disappeared", async () => {
     const { server, writer } = await readyStore();
     server.collections.variants.delete(uuid(2002));

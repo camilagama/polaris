@@ -111,6 +111,12 @@ const SCREENS = [
     `data-id="${CASE}"`,
   ],
   ["/funil", "Funil de ativação", "Funil", 'data-tela="funil"'],
+  [
+    "/configuracoes",
+    "Configurações",
+    "Configurações",
+    'data-tela="configuracoes"',
+  ],
   ["/incidentes", "Incidentes", "Incidentes", 'data-tela="incidentes"'],
   [
     `/incidentes/${INCIDENT}`,
@@ -192,7 +198,8 @@ describe("one route per screen (AC-P1.2)", () => {
     "/registro/x",
     `/registro/${INCIDENT}`,
     "/retencoes",
-    "/configuracoes",
+    "/configuracoes/x",
+    `/configuracoes/${CASE}`,
   ])(
     "answers %s, not a screen of this part, with 404 and the inert policy",
     async (path) => {
@@ -283,13 +290,14 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
         "Incidentes /incidentes",
         "Funil /funil",
         "Registro de acessos /registro",
+        "Configurações /configuracoes",
       ],
       ["Lojas", "Suporte", "Operação", "Auditoria"],
     ],
     [
       "platform:read",
       ["platform:read"],
-      ["Início /", "Funil /funil"],
+      ["Início /", "Funil /funil", "Configurações /configuracoes"],
       ["Operação"],
     ],
     [
@@ -377,5 +385,79 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
     expect(html).toContain("Sem permissão para isto.");
     expect(ROOT.exec(html)?.[1]).toBe("");
     expect(menuOf(html).links).toEqual([]);
+  });
+});
+
+describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
+  const render = async (capabilities: readonly string[]) => {
+    const page = await createAdminPage(assets)();
+    return page.render({
+      capabilities,
+      environment: "staging",
+      forbidden: false,
+      id: null,
+      listState: "abertos",
+      screen: "configuracoes",
+      store: null,
+    });
+  };
+
+  it("is the last item, in a group of its own with no label, only with platform:read", async () => {
+    const html = await render(PLATFORM_CAPABILITIES);
+    const menu = MENU.exec(html)?.[1] ?? "";
+    expect(
+      menu.endsWith(
+        '<ul class="menu-foot"><li><a href="/configuracoes" aria-current="page"><span aria-hidden="true">▸ </span>Configurações</a></li></ul>'
+      )
+    ).toBe(true);
+    const others = await render(
+      PLATFORM_CAPABILITIES.filter((c) => c !== "platform:read")
+    );
+    expect(menuOf(others).links.join()).not.toContain("Configurações");
+    expect(MENU.exec(others)?.[1] ?? "").not.toContain("menu-foot");
+  });
+
+  it("is not in the menu of an operator who holds other capabilities but not platform:read", async () => {
+    const menu = menuOf(
+      await render([
+        "organization:diagnose",
+        "support_case:manage",
+        "access_log:read",
+      ])
+    );
+    expect(menu.links).toEqual([
+      "Buscar loja /lojas",
+      "Casos de suporte /casos",
+      "Registro de acessos /registro",
+    ]);
+  });
+
+  it("answers the operator without platform:read like any other screen: 403, the shell, the sentence, no script data", async () => {
+    const response = await setup("unknown_role", "staging")("/configuracoes");
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-security-policy")).toBe(DOCUMENT);
+    const html = await response.text();
+    expect(html).toContain("Sem permissão para isto.");
+    expect(ROOT.exec(html)?.[1]).toBe("");
+    expect(menuOf(html).links).toEqual([]);
+    expect(html).not.toContain("owner@example.com");
+  });
+
+  it("writes only the fixed environment, never an e-mail, a role or a permission code, and no query value (AC-C6)", async () => {
+    const html = await (
+      await setup(
+        "platform_owner",
+        "production"
+      )("/configuracoes?q=dona@example.com&loja=<b>x</b>")
+    ).text();
+    expect(ROOT.exec(html)?.[1]).toBe(
+      ' data-tela="configuracoes" data-ambiente="production"'
+    );
+    expect(html).not.toContain("platform_owner");
+    expect(html).not.toContain("support_case:manage");
+    expect(html).not.toContain("dona@example.com");
+    expect(TITLE.exec(html)?.[1]).toBe(
+      "PRODUÇÃO · Configurações · Polaris Admin"
+    );
   });
 });
