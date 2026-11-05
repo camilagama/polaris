@@ -41,6 +41,9 @@ export const SERVER_CHECKS =
 export const HOLD_STOPS_PURGE =
   "Com trava legal vigente, o purge não é agendado nem roda, nem o automático.";
 
+export const HELD_WHILE_SCHEDULED =
+  "Há uma trava legal vigente: o apagamento agendado não roda enquanto ela não for liberada.";
+
 export const CANCEL_RULE =
   "Só dá para cancelar enquanto nenhuma execução estiver em curso e nada tiver sido apagado do armazenamento: o servidor confere.";
 

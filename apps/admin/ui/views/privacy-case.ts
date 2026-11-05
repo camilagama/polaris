@@ -15,6 +15,7 @@ import {
   IDENTITY_STATUSES,
   isCode,
   labelOf,
+  privacyCasePath,
   REQUEST_TYPES,
   REQUESTER_KINDS,
   ROLES,
@@ -373,10 +374,10 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
 
   /** The two tabs of the case's acts, as links of fixed values (`?acao=purge`); the current one is marked. */
   const actionTabs = (detail: Detail) => {
-    if (!mayShowPurgeTab(can)) {
+    const base = privacyCasePath(detail.case.id);
+    if (!mayShowPurgeTab(can) || base === null) {
       return null;
     }
-    const base = `/privacidade/${encodeURIComponent(detail.case.id)}`;
     const tab = (href: string, text: string, current: boolean) =>
       dom.el(
         "li",

@@ -20,6 +20,7 @@ import {
   HOLD_RECORD,
   HOLD_RULE,
   HOLD_STOPS_PURGE,
+  HELD_WHILE_SCHEDULED,
   HOLD_UNDO,
   holdEffectText,
   NEXT_PURGE_CYCLE,
@@ -29,6 +30,7 @@ import {
   PURGE_NOT_NOW,
   PURGE_RECORD,
   PURGE_UNDO,
+  PURGE_REFUSALS,
   purgeErasedText,
   purgeRefusalText,
   READ_FAILED,
@@ -350,15 +352,17 @@ export function purgeTab(
       );
     }
     if (state.status === "purge_pending") {
-      return scheduledPart(title);
+      return scheduledPart(title, state);
     }
+    // the start the server gave belongs to that schedule only: once the store is no longer scheduled it is dropped
+    hooks.memory.notBefore = null;
     if (state.status !== "closed") {
       return area(title, line(ONLY_CLOSED));
     }
     return closedPart(title, state);
   };
 
-  const scheduledPart = (title: string): HTMLElement => {
+  const scheduledPart = (title: string, state: StoreState): HTMLElement => {
     const scheduled = lastEvent(detail, ["organization.purge_scheduled"]);
     const from =
       hooks.memory.notBefore === null
@@ -382,7 +386,9 @@ export function purgeTab(
           : `O apagamento desta loja foi agendado em ${brasiliaMomentText(scheduled.at)}.`,
         "warning"
       ),
-      line(`Os dados serão apagados ${from}.`),
+      state.hold === null || state.hold === undefined
+        ? line(`Os dados serão apagados ${from}.`)
+        : line(HELD_WHILE_SCHEDULED, "warning"),
       line(CANCEL_RULE),
       dom.el("div", { class: "button-row" }, cancel)
     );
@@ -817,7 +823,8 @@ export function purgeTab(
       api,
       command.path,
       command.body,
-      command.isAnswer
+      command.isAnswer,
+      (code) => Object.hasOwn(PURGE_REFUSALS, code)
     );
     if (outcome.kind === "done") {
       await finish(

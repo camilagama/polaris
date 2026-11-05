@@ -276,23 +276,23 @@ export type StoreCommandOutcome<T> =
   | { kind: "problem"; problem: Problem }
   | { kind: "refused"; code: string };
 
-/** The 503 that says only that the Admin is not set up: no refusal of the store's state, the page's own problem. */
-const NOT_CONFIGURED = "admin_not_configured";
-
 /**
  * One POST of a purge or legal hold command, never repeated by itself. The 409 and the 503 carry the refusal's code
- * in their body, so those statuses are read as answers; a body that is neither the command's answer nor a code is a
- * failure whose outcome the page cannot confirm.
+ * in their body, so those statuses are read as answers; only a code `isRefusal` names is a refusal, and a body that is
+ * neither the command's answer nor such a code is a failure whose outcome the page cannot confirm.
  */
 export async function sendStoreCommand<T>(
   api: Api,
   path: string,
   body: PostBody,
-  isAnswer: (value: unknown) => value is T
+  isAnswer: (value: unknown) => value is T,
+  isRefusal: (code: string) => boolean
 ): Promise<StoreCommandOutcome<T>> {
   const answer = await api.post<unknown>(path, body, [409, 503]);
   if (!answer.ok) {
-    return answer.problem === "invalid" && answer.code !== undefined
+    return answer.problem === "invalid" &&
+      answer.code !== undefined &&
+      isRefusal(answer.code)
       ? { code: answer.code, kind: "refused" }
       : { kind: "problem", problem: answer.problem };
   }
@@ -303,7 +303,9 @@ export async function sendStoreCommand<T>(
   if (code === null || !CODE_PATTERN.test(code)) {
     return { kind: "problem", problem: "failed" };
   }
-  return code === NOT_CONFIGURED
-    ? { kind: "problem", problem: "unavailable" }
-    : { code, kind: "refused" };
+  // a code the screen does not name (the Access check or the principal unavailable, the Admin not set up) is not a
+  // refusal of the store's state: the outcome is the page's problem, never "nothing was done"
+  return isRefusal(code)
+    ? { code, kind: "refused" }
+    : { kind: "problem", problem: "unavailable" };
 }

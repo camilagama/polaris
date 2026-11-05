@@ -478,7 +478,7 @@ describe("Purge tab: scheduling", () => {
     }
   );
 
-  it("says the other store for a mismatch and the generic sentence for a code it does not know", async () => {
+  it("says the other store for a mismatch, and does not call a code it does not know a refusal", async () => {
     const mismatch = await openClosed([
       refusal("organization_mismatch"),
       ...reread(),
@@ -487,17 +487,22 @@ describe("Purge tab: scheduling", () => {
     await submit(mismatch.root);
     expect(alertOf(mismatch.root)?.textContent).toContain("outra loja");
 
-    const unknown = await openClosed([refusal("something_new"), ...reread()]);
+    const unknown = await openClosed([refusal("something_new")]);
     await toReview(unknown);
     await submit(unknown.root);
-    expect(alertOf(unknown.root)?.textContent).toBe(REFUSED_GENERIC);
-    expect(unknown.calls).toHaveLength(8);
+    expect(alertOf(unknown.root)?.textContent).toBe(COMMAND_UNKNOWN);
+    expect(alertOf(unknown.root)?.textContent).not.toBe(REFUSED_GENERIC);
+    expect(unknown.calls).toHaveLength(5);
   });
 
   it.each([
     [
       "a 503 that only says the Admin is not set up",
       json({ error: "admin_not_configured" }, 503),
+    ],
+    [
+      "a 503 of the Access check, not of the store's state",
+      json({ error: "unavailable" }, 503),
     ],
     ["a network error", new Error("offline")],
   ])("offers only to read the case again after %s", async (_name, answer) => {
@@ -539,6 +544,43 @@ describe("Purge tab: the states the store can be in", () => {
     const mounted = await open([store("purged"), page()]);
     expect(visibleText(panelOf(mounted.root))).toContain(PURGE_DONE);
     expect(panelButtons(mounted.root)).toEqual([]);
+  });
+});
+
+describe("Purge tab: what a schedule says while it cannot run or after it ends", () => {
+  it("says a scheduled purge does not run under a hold in force, without the sentence of when it erases", async () => {
+    const mounted = await open([store("purge_pending"), page([hold()])]);
+    const text = visibleText(panelOf(mounted.root));
+    expect(text).toContain("não roda enquanto ela não for liberada");
+    expect(text).not.toContain("Os dados serão apagados");
+  });
+
+  it("forgets the start the server gave once that schedule was cancelled", async () => {
+    const mounted = await openClosed([
+      json({
+        changed: true,
+        notBefore: "2026-11-12T15:00:00.000Z",
+        status: "purge_pending",
+      }),
+      ...reread("purge_pending"),
+    ]);
+    await toReview(mounted);
+    await submit(mounted.root);
+    expect(visibleText(panelOf(mounted.root))).toContain("12/11/2026");
+    mounted.queue.push(
+      json({ changed: true, status: "closed" }),
+      ...reread("closed"),
+      ...reread("purge_pending")
+    );
+    await click(mounted.root, "Cancelar o agendamento");
+    byId(mounted.root, "purge-cancelar-motivo").value = "pedido do dono";
+    await click(mounted.root, "Revisar o cancelamento");
+    await click(mounted.root, "Confirmar o cancelamento do agendamento");
+    // another schedule, made elsewhere, is read when the operator goes back from a review
+    await click(mounted.root, "Agendar o apagamento");
+    await click(mounted.root, "Voltar");
+    expect(visibleText(panelOf(mounted.root))).toContain(NEXT_PURGE_CYCLE);
+    expect(visibleText(panelOf(mounted.root))).not.toContain("12/11/2026");
   });
 });
 
