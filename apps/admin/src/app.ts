@@ -129,6 +129,7 @@ export const SCREEN_ROUTES = [
   "/funil",
   "/incidentes",
   "/incidentes/:incidentId",
+  "/registro",
 ] as const;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;

@@ -366,3 +366,49 @@ const DEAD_EVENT_STATES: Readonly<Record<string, string>> = {
 export function deadEventStateText(state: string): string {
   return DEAD_EVENT_STATES[state] ?? `estado desconhecido: ${state}`;
 }
+
+const momentSecondsFormat = (timeZone: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric",
+  });
+const BRASILIA_SECONDS = momentSecondsFormat("America/Sao_Paulo");
+const UTC_SECONDS = momentSecondsFormat("UTC");
+
+function secondsText(format: Intl.DateTimeFormat, moment: string): string {
+  const date = new Date(moment);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+  const parts = format.formatToParts(date);
+  const part = (type: string) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("day")}/${part("month")}/${part("year")} ${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
+/** A moment as dd/mm/aaaa HH:mm:ss in Brasília: an access is told to the second, as the court asks for it. */
+export function brasiliaSecondsText(moment: string): string {
+  return secondsText(BRASILIA_SECONDS, moment);
+}
+
+/** The same moment in UTC, the zone the database clock writes (ADR 0092, R6). */
+export function utcSecondsText(moment: string): string {
+  return secondsText(UTC_SECONDS, moment);
+}
+
+const ACCESS_EVENTS: Readonly<Record<string, string>> = {
+  login_failed: "Entrada recusada",
+  login_succeeded: "Entrada",
+  logout: "Saída",
+  session_refreshed: "Sessão renovada",
+};
+
+export function accessEventText(event: string): string {
+  return ACCESS_EVENTS[event] ?? `evento desconhecido: ${event}`;
+}

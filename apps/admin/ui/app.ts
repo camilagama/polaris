@@ -2,6 +2,7 @@ import { type Api, createApi, type Fetch, PROBLEM_TEXT } from "./api";
 import { createDom, type Dom } from "./dom";
 import { createNotice } from "./notice";
 import type { WhoAmI } from "./types";
+import { accessLogView } from "./views/access-log";
 import { caseView } from "./views/case";
 import { casesView } from "./views/cases";
 import { diagnosticsView } from "./views/diagnostics";
@@ -102,6 +103,10 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
     inicio: (tools) => [homeView(tools)],
     loja: (tools) => [storeView(tools)],
     lojas: storesScreen,
+    registro: (tools) =>
+      tools.can("access_log:read")
+        ? [accessLogView(tools)]
+        : [forbiddenArea(tools.dom, "Registro de acessos", "registro-titulo")],
   };
 
 /**

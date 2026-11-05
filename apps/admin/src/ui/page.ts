@@ -31,7 +31,8 @@ export type ScreenId =
   | "incidentes"
   | "inicio"
   | "loja"
-  | "lojas";
+  | "lojas"
+  | "registro";
 
 interface Screen {
   capability: PlatformCapability;
@@ -55,6 +56,7 @@ export const SCREENS: Readonly<Record<ScreenId, Screen>> = {
   inicio: { capability: "platform:read", title: "Início" },
   loja: { capability: "organization:diagnose", title: "Loja" },
   lojas: { capability: "organization:diagnose", title: "Buscar loja" },
+  registro: { capability: "access_log:read", title: "Registro de acessos" },
 };
 
 interface MenuItem {
@@ -66,8 +68,7 @@ interface MenuItem {
 
 /**
  * The menu of the design (§1.1), with only the screens that exist: a group whose items the operator cannot open goes
- * with its label. The other items of the design (Privacidade, Registro de acessos, Retenções legais,
- * Configurações) enter with their parts.
+ * with its label. The other items of the design (Privacidade, Retenções legais, Configurações) enter with their parts.
  */
 const MENU: readonly { items: readonly MenuItem[]; label: string | null }[] = [
   {
@@ -120,6 +121,17 @@ const MENU: readonly { items: readonly MenuItem[]; label: string | null }[] = [
     ],
     label: "Operação",
   },
+  {
+    items: [
+      {
+        capability: "access_log:read",
+        label: "Registro de acessos",
+        path: "/registro",
+        screens: ["registro"],
+      },
+    ],
+    label: "Auditoria",
+  },
 ];
 
 const UUID =
@@ -140,6 +152,7 @@ export function screenOfPath(
     "/funil": "funil",
     "/incidentes": "incidentes",
     "/lojas": "lojas",
+    "/registro": "registro",
   };
   const screen = fixed[path];
   if (screen !== undefined) {
