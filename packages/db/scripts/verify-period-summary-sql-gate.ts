@@ -12,6 +12,7 @@ import {
   periodResult,
   saleEconomics,
 } from "@polaris/domain/economics/sale-economics";
+import { Money } from "@polaris/domain/money/money";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import fc from "fast-check";
 import { createDatabase } from "../src/client";
@@ -20,6 +21,8 @@ import {
   InvalidEconomicsPeriodError,
   InvalidTopProductsError,
   MAX_ECONOMICS_PERIOD_DAYS,
+  MONTHLY_SERIES_ABOVE_DAYS,
+  type PeriodBucket,
   type PeriodSummaryRead,
   periodSummaryQuery,
   readPeriodFacts,
@@ -79,6 +82,14 @@ import {
  * of a command switched off while they go in: a gate fixture, never done with
  * real data. The database time of the statement (`EXPLAIN ANALYZE`) on the
  * largest window is printed as a `gate-note`.
+ *
+ * Every window is also read by month (`granularity` "month", the answer above
+ * 62 days) in the same snapshot, and the months must be the dates added up in
+ * cents: one entry per calendar month up to the store's today, the months at
+ * the ends cut, the dates after today apart (`afterToday`), `costs` and the
+ * result null when a date of the month is, `unknownDays` the count of those
+ * dates, and the result, the cards, the quality and the ranking the same as
+ * the daily read's.
  */
 const expectedDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -96,6 +107,9 @@ const GENERATED_SALES_PER_STORE = 24;
 /** Sales moved back by an UPDATE of their dates, so that a year has something at its far end. */
 const MOVED_BACK_DAYS = 300;
 const MOVED_BACK_PER_STORE = 6;
+/** Long windows drawn per store, ending up to this many days before or after today. */
+const LONG_WINDOWS_PER_STORE = 6;
+const AFTER_TODAY_DAYS = 50;
 const ZONES = ["America/Sao_Paulo", "Asia/Tokyo", "Pacific/Auckland"];
 /** The triggers that check a command's own rows (stock movements included): off only while the drawn facts go in. */
 const COMMAND_TRIGGERS: [string, string][] = [
@@ -228,6 +242,14 @@ async function engineSummary(
 class Tally {
   comparisons = 0;
   days = 0;
+  /** Monthly reads compared with the daily read of the same window. */
+  monthly = 0;
+  readonly monthlySeen = {
+    afterTodayExpenses: false,
+    crossesMonths: false,
+    cutAtToday: false,
+    unknownMonth: false,
+  };
   daysWithSales = 0;
   rankedProducts = 0;
   readonly seen = {
@@ -265,16 +287,132 @@ class Tally {
   }
 }
 
-/** The SQL summary equals the engine's in every field, in one snapshot, as the runtime role under RLS. */
+/** The dates of a read added up, one sum per text, in exact cents. */
+function moneySum(amounts: readonly string[]): string {
+  return amounts
+    .reduce(
+      (sum, amount) => sum.add(Money.from(amount)),
+      Money.fromMinorUnits(0n)
+    )
+    .toString();
+}
+
+/** Some dates of the daily series added up as a month of the monthly one: unknown when any date is. */
+function bucketOfDays(days: PeriodSummaryRead["daily"]): PeriodBucket {
+  const [first] = days;
+  const last = days.at(-1);
+  assert.ok(first && last);
+  const unknownDays = days.filter((day) => day.costs === null).length;
+  const known = days.every(
+    (day) => day.costs !== null && day.operatingResult !== null
+  );
+  return {
+    costs: known ? moneySum(days.map((day) => day.costs as string)) : null,
+    date: first.date,
+    days: days.length,
+    netSales: moneySum(days.map((day) => day.netSales)),
+    operatingExpenses: moneySum(days.map((day) => day.operatingExpenses)),
+    operatingResult: known
+      ? moneySum(days.map((day) => day.operatingResult as string))
+      : null,
+    salesCount: days.reduce((sum, day) => sum + day.salesCount, 0),
+    to: last.date,
+    unknownDays,
+  };
+}
+
+/**
+ * The monthly read of a window is its daily read added up: one entry per
+ * calendar month up to today, the ends cut, the dates after today apart, and
+ * every figure of the period the same.
+ */
+function assertMonthly(
+  daily: PeriodSummaryRead,
+  monthly: PeriodSummaryRead,
+  today: string,
+  where: string,
+  tally: Tally
+) {
+  const months = new Map<string, PeriodSummaryRead["daily"]>();
+  const later: PeriodSummaryRead["daily"] = [];
+  for (const day of daily.daily) {
+    if (day.date > today) {
+      later.push(day);
+    } else {
+      const key = day.date.slice(0, 7);
+      months.set(key, [...(months.get(key) ?? []), day]);
+    }
+  }
+  const expected = [...months.values()].map(bucketOfDays);
+  assert.equal(monthly.granularity, "month", `${where}: granularity`);
+  assert.deepEqual(monthly.daily, expected, `${where}: the months`);
+  assert.deepEqual(
+    monthly.afterToday,
+    later.length > 0 ? bucketOfDays(later) : undefined,
+    `${where}: the dates after today`
+  );
+  assert.ok(monthly.daily.length <= 13, `${where}: at most 13 months`);
+  assert.equal(
+    (monthly.daily as PeriodBucket[]).reduce(
+      (sum, bucket) => sum + bucket.unknownDays,
+      monthly.afterToday?.unknownDays ?? 0
+    ),
+    daily.daily.filter((day) => day.costs === null).length,
+    `${where}: the unknown days`
+  );
+  assert.deepEqual(monthly.result, daily.result, `${where}: monthly result`);
+  assert.deepEqual(
+    monthly.topProducts,
+    daily.topProducts,
+    `${where}: monthly ranking`
+  );
+  const { daily: _days, ...figures } = answerOf(monthly);
+  const { daily: _dates, ...dailyFigures } = answerOf(daily);
+  assert.equal(
+    JSON.stringify(figures),
+    JSON.stringify(dailyFigures),
+    `${where}: the chain, the cards and the quality, byte by byte`
+  );
+  assert.deepEqual(monthly.reads, {
+    days: monthly.daily.length + (monthly.afterToday ? 1 : 0),
+    products: monthly.topProducts?.length ?? 0,
+  });
+  tally.monthly += 1;
+  const seen = tally.monthlySeen;
+  seen.afterTodayExpenses ||=
+    (monthly.afterToday?.operatingExpenses ?? "0.00") !== "0.00";
+  seen.crossesMonths ||= monthly.daily.length > 1;
+  seen.cutAtToday ||= (monthly.daily as PeriodBucket[]).some(
+    (bucket) => bucket.to === today && later.length > 0
+  );
+  seen.unknownMonth ||= monthly.daily.some((bucket) => bucket.costs === null);
+}
+
+/**
+ * The SQL summary equals the engine's in every field, in one snapshot, as the
+ * runtime role under RLS; the monthly read of the same window is its daily
+ * read added up (`assertMonthly`). Up to 62 days the read with no
+ * granularity asked is the daily one, above it the monthly one.
+ */
 async function assertSame(
   db: RuntimeDb,
-  tenant: TenantFixture,
+  store: { tenant: TenantFixture; today: string },
   period: EconomicsPeriod,
   limit: number | undefined,
   label: string,
   tally: Tally
 ) {
-  const [aggregated, engine] = await withAuthorizedTenantTransaction(
+  const { tenant } = store;
+  const asOf = runClock().toISOString();
+  const long =
+    Math.round(
+      (Date.parse(`${period.to}T00:00:00Z`) -
+        Date.parse(`${period.from}T00:00:00Z`)) /
+        86_400_000
+    ) +
+      1 >
+    MONTHLY_SERIES_ABOVE_DAYS;
+  const [aggregated, engine, monthly] = await withAuthorizedTenantTransaction(
     db,
     {
       authenticatedUserId: tenant.userId,
@@ -283,11 +421,22 @@ async function assertSame(
       requestedOrganizationId: tenant.organizationId,
     },
     async (tx, identity) => [
-      await readPeriodSummary(tx, identity, period, { topProducts: limit }),
+      await readPeriodSummary(tx, identity, period, {
+        asOf,
+        ...(long ? { granularity: "day" as const } : {}),
+        topProducts: limit,
+      }),
       await engineSummary(tx, identity, period, limit),
+      await readPeriodSummary(tx, identity, period, {
+        asOf,
+        ...(long ? {} : { granularity: "month" as const }),
+        topProducts: limit,
+      }),
     ]
   );
   const where = `${label} ${period.from}..${period.to} top ${limit ?? "-"}`;
+  assert.equal(aggregated.granularity, undefined, `${where}: daily`);
+  assert.equal(aggregated.afterToday, undefined, `${where}: nothing apart`);
   assert.deepEqual(aggregated.result, engine.result, `${where}: result`);
   assert.deepEqual(aggregated.daily, engine.daily, `${where}: daily`);
   assert.deepEqual(
@@ -304,6 +453,7 @@ async function assertSame(
     days: aggregated.daily.length,
     products: aggregated.topProducts?.length ?? 0,
   });
+  assertMonthly(aggregated, monthly, store.today, where, tally);
   tally.add(aggregated);
   return aggregated;
 }
@@ -791,6 +941,8 @@ async function seedMainStore(scenarios: Scenarios): Promise<Store> {
     true
   );
   await scenarios.expense(store, "1000.00", shiftDay(store.today, -200), null);
+  // after today: kept apart from the months by the monthly read
+  await scenarios.expense(store, "300.00", shiftDay(store.today, 20), null);
   for (let index = 0; index < GENERATED_SALES_PER_STORE; index += 1) {
     // biome-ignore lint/performance/noAwaitInLoops: the generator is sequential, so the seed replays the same sales
     await scenarios.generatedSale(
@@ -916,8 +1068,27 @@ async function moveSomeBack(admin: AdminPool, stores: Store[]) {
   assert.equal(moved.rowCount, MOVED_BACK_PER_STORE * stores.length);
 }
 
-/** The windows of a store: a year, a month, single days (each day with sales of the last weeks), and the far end. */
-function windowsOf(store: Store): EconomicsPeriod[] {
+/** Windows of 63 to 366 days drawn by the seed, some ending before today, some at it and some after it. */
+function drawnLongWindows(today: string, pick: (n: number) => number) {
+  return Array.from({ length: LONG_WINDOWS_PER_STORE }, () => {
+    const length =
+      MONTHLY_SERIES_ABOVE_DAYS +
+      1 +
+      pick(MAX_ECONOMICS_PERIOD_DAYS - MONTHLY_SERIES_ABOVE_DAYS);
+    const to = shiftDay(today, pick(AFTER_TODAY_DAYS * 2) - AFTER_TODAY_DAYS);
+    return { from: shiftDay(to, 1 - length), to };
+  });
+}
+
+/**
+ * The windows of a store: a year, 63 days (the first monthly length), a range
+ * that passes today, a month, single days (each day with sales of the last
+ * weeks), the far end, and long windows drawn by the seed.
+ */
+function windowsOf(
+  store: Store,
+  pick: (n: number) => number
+): EconomicsPeriod[] {
   const { today } = store;
   const days = Array.from({ length: 30 }, (_, index) => {
     const day = shiftDay(today, -1 - index);
@@ -925,6 +1096,12 @@ function windowsOf(store: Store): EconomicsPeriod[] {
   });
   return [
     { from: shiftDay(today, 1 - MAX_ECONOMICS_PERIOD_DAYS), to: today },
+    { from: shiftDay(today, -MONTHLY_SERIES_ABOVE_DAYS), to: today },
+    { from: shiftDay(today, -40), to: shiftDay(today, AFTER_TODAY_DAYS) },
+    {
+      from: shiftDay(today, 1),
+      to: shiftDay(today, 1 + MONTHLY_SERIES_ABOVE_DAYS),
+    },
     { from: shiftDay(today, -30), to: today },
     { from: shiftDay(today, -30), to: shiftDay(today, -1) },
     ...days,
@@ -932,15 +1109,22 @@ function windowsOf(store: Store): EconomicsPeriod[] {
       from: shiftDay(today, -MOVED_BACK_DAYS - GENERATED_DAYS - 3),
       to: shiftDay(today, -MOVED_BACK_DAYS),
     },
+    ...drawnLongWindows(today, pick),
   ];
 }
 
-async function assertScenarios(db: RuntimeDb, stores: Store[], tally: Tally) {
+async function assertScenarios(
+  db: RuntimeDb,
+  stores: Store[],
+  tally: Tally,
+  seed: number
+) {
+  const pick = generator(seed + 1);
   for (const store of stores) {
-    for (const [index, period] of windowsOf(store).entries()) {
+    for (const [index, period] of windowsOf(store, pick).entries()) {
       const limit = index % 3 === 0 ? undefined : 1 + (index % 10);
       // biome-ignore lint/performance/noAwaitInLoops: each window is its own pair of reads
-      await assertSame(db, store.tenant, period, limit, store.timezone, tally);
+      await assertSame(db, store, period, limit, store.timezone, tally);
     }
   }
 }
@@ -951,7 +1135,7 @@ async function assertRanking(db: RuntimeDb, store: Store, tally: Tally) {
     // biome-ignore lint/performance/noAwaitInLoops: one limit after the other
     const read = await assertSame(
       db,
-      store.tenant,
+      store,
       { from: day, to: day },
       limit,
       "ranking",
@@ -1003,14 +1187,7 @@ async function assertEmptyAndIsolated(
       },
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: each window is its own pair of reads
-      const read = await assertSame(
-        db,
-        store.tenant,
-        period,
-        3,
-        "empty",
-        tally
-      );
+      const read = await assertSame(db, store, period, 3, "empty", tally);
       assert.equal(read.result.salesCount, 0);
       assert.deepEqual(read.topProducts, []);
     }
@@ -1037,6 +1214,15 @@ async function assertEmptyAndIsolated(
     )
   );
   assert.equal(rows[0]?.top_products, "[]");
+  // the monthly statement needs the store's own row for its today: in another context it has no row at all
+  const crossedMonths = await scenarios.as(other.tenant, "report:read", (tx) =>
+    tx.execute(
+      periodSummaryQuery(main.tenant.organizationId, year, 10, {
+        asOf: runClock().toISOString(),
+      })
+    )
+  );
+  assert.equal(crossedMonths.rows.length, 0);
   const own = await admin.query<{ count: string }>(
     "SELECT count(*)::text AS count FROM public.sales WHERE organization_id = $1",
     [main.tenant.organizationId]
@@ -1186,7 +1372,7 @@ async function assertVolume(
     "ANALYZE public.sales, public.sale_items, public.sale_adjustments, public.sale_payments, public.sale_return_items, public.sale_cancellations, public.expenses"
   );
   const period = { from: VOLUME_FROM, to: shiftDay(VOLUME_FROM, 30) };
-  const read = await assertSame(db, store.tenant, period, 3, "volume", tally);
+  const read = await assertSame(db, store, period, 3, "volume", tally);
   assert.ok(read.result.salesCount > VOLUME_SALES * 0.95);
   const ranked = await explainVolume(scenarios, store.tenant, period, 3);
   const plain = await explainVolume(scenarios, store.tenant, period, undefined);
@@ -1379,6 +1565,7 @@ interface PropertyStore {
   profileId: string;
   ruleId: string;
   tenant: TenantFixture;
+  today: string;
 }
 
 type Row = Record<string, unknown>;
@@ -1735,6 +1922,7 @@ async function propertyStore(
     profileId: profile.id,
     ruleId: rule.rows[0].id,
     tenant: store.tenant,
+    today: store.today,
   };
 }
 
@@ -1816,7 +2004,7 @@ async function assertProperty(
     const end = shiftDay(from, drawn.period.length);
     await assertSame(
       db,
-      store.tenant,
+      store,
       { from, to: end < last ? end : last },
       drawn.limit ?? undefined,
       `property slot ${slot}`,
@@ -1902,7 +2090,7 @@ async function run() {
       zones.push(await seedZoneStore(scenarios, timezone));
     }
     await moveSomeBack(admin.pool, zones);
-    await assertScenarios(db, zones, tally);
+    await assertScenarios(db, zones, tally, seed);
     tests.push(
       `the SQL summary equals the engine in every field (result, cards, quality, daily date by date, ranking, the answer byte by byte) in ${tally.comparisons} windows of 1 to 366 days of stores in São Paulo, Tokyo and Auckland: a discount split with a tie, a percentage discount, returns partial, repeated and full with and without restocking, costs unknown in part and in all of the items, costs of six places, the processing and the anticipation fee unknown and known, surcharge, freight and payment surcharge, an expense linked to a live sale, one voided, one of a cancelled sale (operating by competence), cancellations, sales a second before and after midnight, sales at the far end of the year`
     );
@@ -1915,7 +2103,7 @@ async function run() {
 
     await assertEmptyAndIsolated(admin.pool, scenarios, db, zones, tally);
     tests.push(
-      "a store without sales and one with only expenses equal the engine for 1, 31 and 366 days; the statement for one store run in another's context finds nothing (RLS)"
+      "a store without sales and one with only expenses equal the engine for 1, 31 and 366 days; the statement for one store run in another's context finds nothing (RLS), and the monthly one returns no row"
     );
     await assertRefusals(scenarios, zones[0] as Store);
     tests.push(
@@ -1938,6 +2126,13 @@ async function run() {
     for (const [name, value] of Object.entries(tally.seen)) {
       assert.ok(value, `the fixture never had ${name}`);
     }
+    for (const [name, value] of Object.entries(tally.monthlySeen)) {
+      assert.ok(value, `no monthly read had ${name}`);
+    }
+    assert.equal(tally.monthly, tally.comparisons);
+    tests.push(
+      `the monthly read equals the daily read added up in cents in all ${tally.monthly} windows (63 and 366 days, a range past today with an expense after it, a range wholly after today, ${LONG_WINDOWS_PER_STORE} drawn long windows per store and every drawn case): one entry per month up to today with its ends cut, the dates after today apart, costs and result null for a month with an unknown date, unknownDays the count of those dates, and the result, cards, quality and ranking byte by byte; up to 62 days the read with no granularity asked is the daily one, above it the monthly one`
+    );
     assert.ok(
       tally.daysWithSales >= 60,
       `only ${tally.daysWithSales} dates had sales`

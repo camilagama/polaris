@@ -11,6 +11,7 @@ import {
 import { logger, opaqueId } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
+import { jsonByteLength } from "./json-bytes";
 
 interface ReportRpcContext {
   bindings: WorkerBindings;
@@ -24,8 +25,6 @@ interface ReportRpcDependencies {
   toRpcError: (error: unknown) => never;
   withTenantRequestContext: typeof withTenantRequestContext;
 }
-
-const encoder = new TextEncoder();
 
 /**
  * The period summary of the dashboard: the organization's confirmed records
@@ -59,7 +58,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               transaction,
               identity,
               { from: input.from, to: input.to },
-              { topProducts: input.topProducts }
+              { asOf: generatedAt, topProducts: input.topProducts }
             );
             const { result } = summary;
             const output = {
@@ -80,6 +79,10 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
                 returns: result.returns,
               },
               daily: summary.daily,
+              ...(summary.afterToday ? { afterToday: summary.afterToday } : {}),
+              ...(summary.granularity
+                ? { granularity: summary.granularity }
+                : {}),
               generatedAt,
               period: { from: input.from, to: input.to },
               quality: resultQuality(result),
@@ -102,7 +105,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               organizationId: opaqueId(identity.organizationId),
               reads: { ...summary.reads },
               requestId: context.requestId,
-              responseBytes: encoder.encode(JSON.stringify(output)).byteLength,
+              responseBytes: jsonByteLength(output),
               topProducts: input.topProducts ?? 0,
             });
             return output;
@@ -139,7 +142,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               durationMs: Date.now() - started,
               organizationId: opaqueId(identity.organizationId),
               requestId: context.requestId,
-              responseBytes: encoder.encode(JSON.stringify(output)).byteLength,
+              responseBytes: jsonByteLength(output),
             });
             return output;
           },

@@ -484,6 +484,22 @@ function periodSummaryDays(from: string, to: string): number {
   );
 }
 
+/** A date of the summary's series, or some dates of it added up (`granularity` "month"). */
+const periodSummaryEntry = z.object({
+  costs: z.string().nullable(),
+  date: z.string(),
+  netSales: z.string(),
+  operatingExpenses: z.string(),
+  operatingResult: z.string().nullable(),
+  salesCount: z.number().int().nonnegative(),
+  /** Monthly only: how many dates the entry adds up. */
+  days: z.number().int().positive().optional(),
+  /** Monthly only: the last date the entry adds up. */
+  to: z.string().optional(),
+  /** Monthly only: how many of its dates have an unknown cost. */
+  unknownDays: z.number().int().nonnegative().optional(),
+});
+
 const periodSummary = z.object({
   /** The server clock when this retrieval of the confirmed records was made ("updated until"). */
   generatedAt: z.string().datetime(),
@@ -529,16 +545,23 @@ const periodSummary = z.object({
    * costs add up to the chain's cogs, fees and expenses and the results to
    * `chain.estimatedOperatingResult`.
    */
-  daily: z.array(
-    z.object({
-      costs: z.string().nullable(),
-      date: z.string(),
-      netSales: z.string(),
-      operatingExpenses: z.string(),
-      operatingResult: z.string().nullable(),
-      salesCount: z.number().int().nonnegative(),
-    })
-  ),
+  daily: z.array(periodSummaryEntry),
+  /**
+   * Only with `granularity` "month", and only when the period goes past the
+   * store's today: the dates after today added up, apart from `daily` (which
+   * ends at today), so that what is still to come is never drawn in a month.
+   * `daily` plus this add up to the cards.
+   */
+  afterToday: periodSummaryEntry.optional(),
+  /**
+   * "month" when the period has more than 62 days: each entry of `daily` is
+   * then a calendar month up to the store's today (the date of `generatedAt`
+   * in its time zone), the months at the ends cut by the period and by today,
+   * with `to`, `days` and `unknownDays`; `date` is its first date and the
+   * amounts are the sums of its dates, `costs` and `operatingResult` null when
+   * any of its dates is. Absent (one entry per date) for 62 days or fewer.
+   */
+  granularity: z.enum(["day", "month"]).optional(),
   period: z.object({ from: z.string(), to: z.string() }),
   /**
    * The most sold products of the period, by units net of returns, only when

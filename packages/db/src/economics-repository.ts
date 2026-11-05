@@ -13,7 +13,16 @@ import {
 } from "@polaris/domain/economics/sale-economics";
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
 import { Money } from "@polaris/domain/money/money";
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { expenses } from "./schema/expense";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
@@ -32,6 +41,12 @@ import {
 const REPORT_CAPABILITIES: readonly string[] = ["report:read", "goal:manage"];
 /** A period of at most this many days (the sales of it are read into memory). */
 export const MAX_ECONOMICS_PERIOD_DAYS = 366;
+/**
+ * Above this many days the summary's series is one entry per calendar month
+ * (at most 13) instead of one per date: the Worker's work grows with the
+ * entries, and the dashboard draws a long period by month anyway.
+ */
+export const MONTHLY_SERIES_ABOVE_DAYS = 62;
 
 export class InvalidEconomicsPeriodError extends Error {
   readonly code = "invalid_economics_period";
@@ -456,9 +471,32 @@ export interface PeriodSummaryReadCounts {
   products: number;
 }
 
+/**
+ * Some consecutive dates of a period added up: a calendar month, cut by the
+ * period at its ends and by the store's today, or the dates after today. The
+ * amounts are the sums of the dates' (`date` is the first date); `costs` and
+ * `operatingResult` are null when any of its dates has them null.
+ */
+export interface PeriodBucket extends DailyEconomics {
+  /** How many dates it adds up. */
+  days: number;
+  /** The last date it adds up. */
+  to: string;
+  /** How many of its dates have an unknown cost (`costs` null). */
+  unknownDays: number;
+}
+
 export interface PeriodSummaryRead {
-  /** One entry per date of the period, in order, with its costs and result (ADR 0056, D2). */
+  /**
+   * One entry per date of the period, in order, with its costs and result
+   * (ADR 0056, D2); with `granularity` "month", one `PeriodBucket` per month up
+   * to the store's today instead.
+   */
   daily: DailyEconomics[];
+  /** Only for a monthly series: the dates of the period after the store's today, added up, when it has any. */
+  afterToday?: PeriodBucket;
+  /** "month" when `daily` is made of months; absent for one entry per date. */
+  granularity?: "month";
   reads: PeriodSummaryReadCounts;
   result: PeriodResult;
   /** Present only when asked for. */
@@ -638,15 +676,20 @@ function seriesOf(period: EconomicsPeriod) {
  *
  * With `topProducts`, the first date also carries the ranking of the period
  * (`rankingCtes`) as JSON text, so that the items are read once for both.
+ *
+ * With `month`, the same dates are added up by calendar month instead
+ * (`monthSelect`): one row per month up to the store's today, the months at
+ * the ends cut by the period and by today, and the dates after today in one
+ * row of their own.
  */
 export function periodSummaryQuery(
   organization: string,
   period: EconomicsPeriod,
-  topProducts?: number
+  topProducts?: number,
+  month?: { asOf: string }
 ) {
   const ranking = topProducts !== undefined;
-  return sql`
-    WITH ${countedCte(organization, period)},
+  const ctes = sql`${countedCte(organization, period)},
     ${lineCte(organization)},
     ${grossCte},
     ${adjustmentCte(organization)},
@@ -735,7 +778,27 @@ export function periodSummaryQuery(
         ? sql`,
     ${rankingCtes(organization, topProducts)}`
         : sql``
-    }
+    }`;
+  return month
+    ? monthSelect(organization, period, ctes, ranking, month.asOf)
+    : daySelect(period, ctes, ranking);
+}
+
+/** The ranking of the period as JSON text, in the order of its rank. */
+const rankingJson = sql`(
+        SELECT coalesce(json_agg(json_build_object(
+            'deleted', top.deleted,
+            'name', top.name,
+            'netCents', round(top.net_cents, 0)::text,
+            'productId', top.product_id::text,
+            'quantity', top.units::bigint
+          ) ORDER BY top.rank), '[]'::json)::text
+        FROM top
+      )`;
+
+function daySelect(period: EconomicsPeriod, ctes: SQL, ranking: boolean) {
+  return sql`
+    WITH ${ctes}
     SELECT to_char(series.day, 'YYYY-MM-DD') AS date,
       coalesce(per_day.sales, 0)::integer AS sales,
       round(coalesce(per_day.gross, 0), 0)::text AS gross,
@@ -758,22 +821,107 @@ export function periodSummaryQuery(
       coalesce(operating.count, 0)::integer AS operating_count${
         ranking
           ? sql`,
-      CASE WHEN series.day = ${period.from}::date THEN (
-        SELECT coalesce(json_agg(json_build_object(
-            'deleted', top.deleted,
-            'name', top.name,
-            'netCents', round(top.net_cents, 0)::text,
-            'productId', top.product_id::text,
-            'quantity', top.units::bigint
-          ) ORDER BY top.rank), '[]'::json)::text
-        FROM top
-      ) END AS top_products`
+      CASE WHEN series.day = ${period.from}::date THEN ${rankingJson} END AS top_products`
           : sql``
       }
     FROM ${seriesOf(period)}
     LEFT JOIN per_day ON per_day.occurred_on = series.day::date
     LEFT JOIN operating ON operating.competence_on = series.day::date
     ORDER BY series.day`;
+}
+
+/**
+ * The dates of the period added up by calendar month (`periodSummaryQuery`
+ * with `month`): each date is rounded to whole cents first, as the daily
+ * series rounds it, so the months add up to exactly what the dates add up to.
+ * A month is cut by the period at its ends and by the store's today (the date
+ * of `asOf` in the organization's time zone, the same instant the answer says
+ * it was generated at); the dates after today, if the period has any, are one
+ * row of their own (`after_today`). Each row says its first and last date, how
+ * many dates it has and how many of them have an unknown input
+ * (`unknown_days`); `unknown_sales` is summed, so a row is unknown when any of
+ * its dates is. With a ranking, the row that holds the first date carries it.
+ */
+function monthSelect(
+  organization: string,
+  period: EconomicsPeriod,
+  ctes: SQL,
+  ranking: boolean,
+  asOf: string
+) {
+  return sql`
+    WITH ${ctes},
+    day_row AS (
+      SELECT series.day::date AS day,
+        coalesce(per_day.sales, 0) AS sales,
+        round(coalesce(per_day.gross, 0), 0) AS gross,
+        round(coalesce(per_day.discounts, 0), 0) AS discounts,
+        round(coalesce(per_day.returns, 0), 0) AS returns,
+        round(coalesce(per_day.cogs, 0), 0) AS cogs,
+        round(coalesce(per_day.surcharges, 0), 0) AS surcharges,
+        round(coalesce(per_day.processing, 0), 0) AS processing,
+        round(coalesce(per_day.anticipation, 0), 0) AS anticipation,
+        round(coalesce(per_day.linked, 0), 0) AS linked,
+        coalesce(per_day.linked_count, 0) AS linked_count,
+        coalesce(per_day.lines, 0) AS lines,
+        coalesce(per_day.units, 0) AS units,
+        coalesce(per_day.unknown_cost, 0) AS unknown_cost,
+        coalesce(per_day.unknown_processing, 0) AS unknown_processing,
+        coalesce(per_day.unknown_anticipation, 0) AS unknown_anticipation,
+        coalesce(per_day.unknown_sales, 0) AS unknown_sales,
+        coalesce(per_day.invalid, 0) AS invalid,
+        round(coalesce(operating.cents, 0), 0) AS operating,
+        coalesce(operating.count, 0) AS operating_count
+      FROM ${seriesOf(period)}
+      LEFT JOIN per_day ON per_day.occurred_on = series.day::date
+      LEFT JOIN operating ON operating.competence_on = series.day::date
+    ),
+    store_today AS (
+      SELECT (${asOf}::timestamptz AT TIME ZONE organization.timezone)::date AS day
+      FROM public.organizations AS organization
+      WHERE organization.id = ${organization}
+    ),
+    bucket AS (
+      SELECT day_row.*, store_today.day AS today,
+        day_row.day > store_today.day AS after_today,
+        date_trunc('month', day_row.day)::date AS month
+      FROM day_row
+      CROSS JOIN store_today
+    )
+    SELECT to_char(min(bucket.day), 'YYYY-MM-DD') AS date,
+      to_char(max(bucket.day), 'YYYY-MM-DD') AS last_date,
+      count(*)::integer AS days,
+      count(*) FILTER (WHERE bucket.unknown_sales > 0)::integer AS unknown_days,
+      to_char(min(bucket.today), 'YYYY-MM-DD') AS today,
+      bucket.after_today,
+      sum(bucket.sales)::integer AS sales,
+      sum(bucket.gross)::text AS gross,
+      sum(bucket.discounts)::text AS discounts,
+      sum(bucket.returns)::text AS returns,
+      sum(bucket.cogs)::text AS cogs,
+      sum(bucket.surcharges)::text AS surcharges,
+      sum(bucket.processing)::text AS processing,
+      sum(bucket.anticipation)::text AS anticipation,
+      sum(bucket.linked)::text AS linked,
+      sum(bucket.linked_count)::integer AS linked_count,
+      sum(bucket.lines)::integer AS lines,
+      sum(bucket.units)::text AS units,
+      sum(bucket.unknown_cost)::integer AS unknown_cost,
+      sum(bucket.unknown_processing)::integer AS unknown_processing,
+      sum(bucket.unknown_anticipation)::integer AS unknown_anticipation,
+      sum(bucket.unknown_sales)::integer AS unknown_sales,
+      sum(bucket.invalid)::integer AS invalid,
+      sum(bucket.operating)::text AS operating,
+      sum(bucket.operating_count)::integer AS operating_count${
+        ranking
+          ? sql`,
+      CASE WHEN min(bucket.day) = ${period.from}::date THEN ${rankingJson} END AS top_products`
+          : sql``
+      }
+    FROM bucket
+    GROUP BY bucket.after_today,
+      CASE WHEN bucket.after_today THEN NULL ELSE bucket.month END
+    ORDER BY min(bucket.day)`;
 }
 
 /**
@@ -839,6 +987,15 @@ interface SummaryDayRow {
   unknown_cost: number;
   unknown_processing: number;
   unknown_sales: number;
+}
+
+/** A row of the monthly series (`monthSelect`): the sums of some dates, which ones, and the store's today. */
+interface SummaryMonthRow extends SummaryDayRow {
+  after_today: boolean;
+  days: number;
+  last_date: string;
+  today: string;
+  unknown_days: number;
 }
 
 /** An entry of `top_products`, the JSON text of the ranking on the first date. */
@@ -964,7 +1121,13 @@ export async function readPeriodSummary(
   transaction: TenantRequestTransaction,
   identity: TenantRequestIdentity,
   period: EconomicsPeriod,
-  options: { topProducts?: number | undefined } = {}
+  options: {
+    /** The instant whose date in the store's time zone is "today" for a monthly series; now when absent. */
+    asOf?: string | undefined;
+    /** One entry per date or per month; by the length of the period (`MONTHLY_SERIES_ABOVE_DAYS`) when absent. */
+    granularity?: "day" | "month" | undefined;
+    topProducts?: number | undefined;
+  } = {}
 ): Promise<PeriodSummaryRead> {
   if (!REPORT_CAPABILITIES.includes(identity.capability)) {
     throw new TenantAuthorizationError("capability_denied");
@@ -977,10 +1140,44 @@ export async function readPeriodSummary(
     throw new InvalidTopProductsError();
   }
   assertPeriod(period);
+  const monthly =
+    (options.granularity ??
+      (daysBetween(period.from, period.to) + 1 > MONTHLY_SERIES_ABOVE_DAYS
+        ? "month"
+        : "day")) === "month";
   const read = await transaction.execute(
-    periodSummaryQuery(identity.organizationId, period, limit)
+    periodSummaryQuery(
+      identity.organizationId,
+      period,
+      limit,
+      monthly ? { asOf: options.asOf ?? new Date().toISOString() } : undefined
+    )
   );
-  const rows = read.rows as unknown as SummaryDayRow[];
+  const series = monthly
+    ? monthlySeries(period, read.rows as unknown as SummaryMonthRow[])
+    : dailySeries(period, read.rows as unknown as SummaryDayRow[]);
+  const { rows } = series;
+  const result = resultOf(rows, series.cents);
+  const shape = {
+    ...(series.afterToday ? { afterToday: series.afterToday } : {}),
+    daily: series.daily,
+    ...(monthly ? { granularity: "month" as const } : {}),
+  };
+  const first = rows.find((row) => row.date === period.from);
+  if (limit === undefined) {
+    return { ...shape, reads: { days: rows.length, products: 0 }, result };
+  }
+  const ranked = rankedOf(first?.top_products);
+  return {
+    ...shape,
+    reads: { days: rows.length, products: ranked.length },
+    result,
+    topProducts: ranked,
+  };
+}
+
+/** One row per date of the period, from its first, none of them invalid; else the facts cannot be read. */
+function dailySeries(period: EconomicsPeriod, rows: SummaryDayRow[]) {
   if (
     rows.length !== daysBetween(period.from, period.to) + 1 ||
     rows[0]?.date !== period.from ||
@@ -988,19 +1185,98 @@ export async function readPeriodSummary(
   ) {
     throw new InvalidSaleFactError();
   }
-  const days = rows.map(centsOf);
-  const daily = rows.map((row, index) => dayOf(row, days[index] as DayCents));
-  const result = resultOf(rows, days);
-  if (limit === undefined) {
-    return { daily, reads: { days: rows.length, products: 0 }, result };
-  }
-  const ranked = rankedOf(rows[0]?.top_products);
+  const cents = rows.map(centsOf);
   return {
-    daily,
-    reads: { days: rows.length, products: ranked.length },
-    result,
-    topProducts: ranked,
+    afterToday: undefined,
+    cents,
+    daily: rows.map((row, index) => dayOf(row, cents[index] as DayCents)),
+    rows,
   };
+}
+
+/** The date after `day`. */
+function nextDay(day: string): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** The last date of the month of `day`. */
+function lastOfMonth(day: string): string {
+  const year = Number(day.slice(0, 4));
+  const month = Number(day.slice(5, 7));
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+/**
+ * The rows a monthly series must have, in order: one per calendar month from
+ * the first date to today (or to the last date, when it is before today), the
+ * months at the ends cut, then the dates after today as one, when there are.
+ */
+function expectedBuckets(period: EconomicsPeriod, today: string) {
+  const end = period.to < today ? period.to : today;
+  const buckets: { afterToday: boolean; from: string; to: string }[] = [];
+  let { from } = period;
+  while (from <= end) {
+    const monthEnd = lastOfMonth(from);
+    const to = monthEnd < end ? monthEnd : end;
+    buckets.push({ afterToday: false, from, to });
+    from = nextDay(to);
+  }
+  if (period.to > today) {
+    buckets.push({
+      afterToday: true,
+      from: period.from > today ? period.from : nextDay(today),
+      to: period.to,
+    });
+  }
+  return buckets;
+}
+
+/** A row of the monthly series as the answer says it: the dates' entry, with which dates it adds up. */
+function bucketOf(row: SummaryMonthRow, cents: DayCents): PeriodBucket {
+  return {
+    ...dayOf(row, cents),
+    days: row.days,
+    to: row.last_date,
+    unknownDays: row.unknown_days,
+  };
+}
+
+/**
+ * The months of the period up to the store's today and the dates after it, as
+ * `expectedBuckets` says they must be (each row its first and last date and
+ * its count of dates), none of them invalid; else the facts cannot be read.
+ */
+function monthlySeries(period: EconomicsPeriod, rows: SummaryMonthRow[]) {
+  const today = rows[0]?.today;
+  if (today === undefined || !isValidCalendarDate(today)) {
+    throw new InvalidSaleFactError();
+  }
+  const expected = expectedBuckets(period, today);
+  if (
+    rows.length !== expected.length ||
+    rows.some((row, index) => {
+      const bucket = expected[index];
+      return (
+        bucket === undefined ||
+        row.today !== today ||
+        row.after_today !== bucket.afterToday ||
+        row.date !== bucket.from ||
+        row.last_date !== bucket.to ||
+        row.days !== daysBetween(bucket.from, bucket.to) + 1 ||
+        row.invalid > 0
+      );
+    })
+  ) {
+    throw new InvalidSaleFactError();
+  }
+  const cents = rows.map(centsOf);
+  const buckets = rows.map((row, index) =>
+    bucketOf(row, cents[index] as DayCents)
+  );
+  const later = rows.at(-1)?.after_today ? buckets.pop() : undefined;
+  return { afterToday: later, cents, daily: buckets, rows };
 }
 
 /** The longest period of the daily sales series: 182 days, half a year of the Início's map. */
