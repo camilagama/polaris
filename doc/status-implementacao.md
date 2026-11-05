@@ -3023,6 +3023,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Rota e tela | Em revisão | `GET /api/support-cases?kind=` valida contra `SUPPORT_CASE_KINDS` (desconhecido, vazio ou em maiúsculas: 400 `invalid`); o Início pede `kind=support&status=open` e conta o que vier. Casos e Privacidade seguem sem `kind`. |
 | Provas | Em revisão | `src/support-routes.test.ts`, `ui/home-store.test.ts` e o gate `admin-support` (filtro por tipo, NULL, tipo inválido, as duas assinaturas com dono, `search_path` e `EXECUTE`, e a chamada de quatro argumentos ainda lista todos os tipos). |
 
+### Admin, fim da assinatura de quatro argumentos da lista de casos (t805; migration 0119, contract)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Migration 0119 | Em revisão | `DROP FUNCTION public.admin_list_support_cases(text, text, integer, uuid)`, com o marcador `-- expand-contract: contract`; só a função de quatro argumentos (0063, endurecida na 0077) sai, e a de cinco (0115) segue com o mesmo corpo, dono e grants. Os chamadores foram conferidos antes: `git grep` em `apps/` e `packages/` só acha a chamada de cinco argumentos em `admin-support-repository.ts`, e o Admin do staging já roda código posterior ao filtro por tipo (deploy do staging do head `4ee22b40`, descendente do merge do filtro). O número pode mudar no merge. |
+| Provas | Em revisão | Os gates `admin-support` e `admin-diagnostics` voltam a esperar uma entrada por nome (`admin_list_support_cases`), o `admin-support` confere que a assinatura de cinco argumentos é a única, com dono, `search_path` e `EXECUTE`, e que a chamada de quatro argumentos falha com `42883`. Gates de banco e CI rodam no PostgreSQL 18 do CI. |
+
 ### Admin: menu por tarefa, nomes de negócio e frase de propósito em cada tela (t783; corte sentido das telas, com a emenda do Petković; sem migration)
 
 | Item | Estado | Detalhe |
