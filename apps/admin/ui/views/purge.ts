@@ -164,6 +164,40 @@ function typedDay(value: string): string | null {
   return parts === null ? null : `${parts[3]}/${parts[2]}/${parts[1]}`;
 }
 
+const HOLD_REVIEW_MAX_DAYS = 366;
+const HOLD_REVIEW_SKEW_MS = 3_600_000;
+const BRASILIA_OFFSET_MS = 3 * 3_600_000;
+
+const brasiliaDayOf = (at: number): string =>
+  new Date(at - BRASILIA_OFFSET_MS).toISOString().slice(0, 10);
+
+/**
+ * The instant sent for a chosen review day: the end of that day in Brasília, but never later than the server's limit
+ * (now plus 366 days) minus a margin for clock skew, because the end of the last permitted day can lie past that limit.
+ * Null for a day after the last one that can be sent; days in the past are left to the server.
+ */
+export function holdReviewAt(day: string, now: Date): string | null {
+  if (!DAY_INPUT.test(day)) {
+    return null;
+  }
+  const ceiling =
+    now.getTime() + HOLD_REVIEW_MAX_DAYS * 86_400_000 - HOLD_REVIEW_SKEW_MS;
+  if (day > brasiliaDayOf(ceiling)) {
+    return null;
+  }
+  const endOfDay = `${day}T23:59:59-03:00`;
+  return new Date(endOfDay).getTime() > ceiling
+    ? new Date(ceiling).toISOString()
+    : endOfDay;
+}
+
+/** The last day the review field offers: the same ceiling as `holdReviewAt`. */
+export function lastHoldReviewDay(now: Date): string {
+  return brasiliaDayOf(
+    now.getTime() + HOLD_REVIEW_MAX_DAYS * 86_400_000 - HOLD_REVIEW_SKEW_MS
+  );
+}
+
 /** Same name: both sides in NFC, only the ends trimmed, case kept; an empty name never matches. */
 export function sameStoreName(typed: string, name: string): boolean {
   const expected = name.trim().normalize("NFC");
@@ -296,7 +330,12 @@ export function purgeTab(
     draw({ hold, status });
   };
 
-  let holdStatedInPurge = false;
+  const holdStatedInPurge = (state: StoreState): boolean =>
+    can("organization:purge") &&
+    state.status === "closed" &&
+    purgeCaseProblem(detail) === null &&
+    state.hold !== null &&
+    state.hold !== undefined;
 
   const holdText = (hold: StoreState["hold"]): string => {
     if (hold === undefined) {
@@ -316,7 +355,6 @@ export function purgeTab(
     }
     pairs.push(["Trava legal", holdText(state.hold)]);
     const parts: (HTMLElement | null)[] = [caseFacts(pairs)];
-    holdStatedInPurge = false;
     if (can("organization:purge")) {
       parts.push(purgePart(state));
     }
@@ -422,8 +460,7 @@ export function purgeTab(
             `O agendamento anterior foi cancelado em ${brasiliaMomentText(last.at)}. A loja não será apagada enquanto não houver outro.`
           )
         : null;
-    if (state.hold !== null && state.hold !== undefined) {
-      holdStatedInPurge = true;
+    if (holdStatedInPurge(state)) {
       return area(title, cancelled, line(HOLD_STOPS_PURGE, "warning"));
     }
     const schedule = dom.el(
@@ -472,7 +509,11 @@ export function purgeTab(
       });
       row.append(release);
     }
-    return area(title, holdStatedInPurge ? null : line(HOLD_STOPS_PURGE), row);
+    return area(
+      title,
+      holdStatedInPurge(state) ? null : line(HOLD_STOPS_PURGE),
+      row
+    );
   };
 
   const buttonsOf = (confirmText: string, submit = false): Buttons => ({
@@ -681,6 +722,7 @@ export function purgeTab(
       "date",
       HOLD_RULE
     );
+    day.control.setAttribute("max", lastHoldReviewDay(new Date()));
     const next = dom.el(
       "button",
       { type: "submit" },
@@ -705,7 +747,12 @@ export function purgeTab(
         day.refuse("Escolha a data de revisão.");
         return;
       }
-      holdReview(value, shown, renewing);
+      const reviewAt = holdReviewAt(value, new Date());
+      if (reviewAt === null) {
+        day.refuse(purgeRefusalText("invalid_review_at"));
+        return;
+      }
+      holdReview(reviewAt, shown, renewing);
     });
     back.addEventListener("click", goBack);
     dom.fill(
@@ -720,7 +767,7 @@ export function purgeTab(
     day.control.focus();
   };
 
-  const holdReview = (value: string, shown: string, renewing: boolean) => {
+  const holdReview = (reviewAt: string, shown: string, renewing: boolean) => {
     const effect = renewing
       ? `${holdEffectText(shown)} Uma data igual ou mais cedo que a atual não muda nada.`
       : holdEffectText(shown);
@@ -736,11 +783,7 @@ export function purgeTab(
       ],
       renewing ? "Confirmar a nova data de revisão" : "Confirmar a trava legal",
       {
-        // the end of the chosen day in Brasília; the server checks it is in the future and within 366 days
-        body: {
-          organizationId: item.organizationId,
-          reviewAt: `${value}T23:59:59-03:00`,
-        },
+        body: { organizationId: item.organizationId, reviewAt },
         doing: "Registrando a trava legal…",
         done: holdDone,
         isAnswer: isHoldAnswer,
