@@ -69,9 +69,17 @@ const category = z.object({
 
 export type CategoryReadModel = z.infer<typeof category>;
 
+/**
+ * The image of lowest position of a product (its cover), null without one. Optional while a device or a Worker of
+ * the previous version may still be on the other side (ADR 0096): an answer without it means "not known yet", never
+ * "no image". Only the list and the device's collection carry it; a command's answer leaves it out.
+ */
+const coverAssetId = z.string().uuid().nullable().optional();
+
 const product = z.object({
   archivedAt: z.string().nullable(),
   categoryId: z.string().uuid().nullable(),
+  coverAssetId,
   createdAt: z.string(),
   deletedAt: z.string().nullable(),
   description: z.string().nullable(),
@@ -1346,6 +1354,7 @@ const localCustomer = z.object({
 const localProduct = z.object({
   archivedAt: z.string().datetime().nullable(),
   categoryId: z.string().uuid().nullable(),
+  coverAssetId,
   deletedAt: z.string().datetime().nullable(),
   description: z.string().nullable(),
   id: z.string().uuid(),

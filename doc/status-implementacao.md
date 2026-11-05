@@ -2805,6 +2805,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Unidade: `src/ui/screens.test.ts` (rotas, título, ambiente, menu com 8 conjuntos de capacidade, 404, 401, `data-*`), `ui/cases.test.ts`, `ui/home-store.test.ts`, `src/ui/ui-guard.test.ts` (o script nomeia `close`; 100 KB gzip), `src/ui/ui-types.test.ts`, `src/route-surface.test.ts`. Workerd-db (gate `admin-worker`): `src/page.workerd-db.test.ts` abre o caso pela tela, fecha numa tela e uma segunda tela do mesmo caso ouve "já estava fechado"; o banco tem um `support_case.closed`. |
 | Limites | Registrado | A lista e o detalhe não dizem quem abriu por e-mail (o detalhe traz o ID do principal: a tela diz "Você" ou "Outro operador"); as abas de ação do caso, Privacidade, Incidentes, Registro, Retenções e Configurações são das partes seguintes; o ambiente depende de `POLARIS_ENVIRONMENT` (D-3 c). |
 
+### Miniaturas de produto, T1: a capa no modelo de leitura e no sync (t744; corte miniaturas-de-produto; migration 0113)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Campo | Em revisão | `coverAssetId` (UUID ou `null`), opcional no contrato, em `ProductReadModel` (`product.list`) e `localProduct` (`sync.bootstrapPage`, página e releitura por ids do pull): a imagem de menor posição, por `LEFT JOIN LATERAL … LIMIT 1` (`packages/db/src/product-cover.ts`). As respostas dos comandos de produto não o trazem; o pull seguinte o repõe. |
+| Sync | Em revisão | Migration 0113: `record_product_media_sync_change()` (`polaris_sync_owner`) e três gatilhos por comando em `product_media`; uma mudança `product` por envio, reordenação e remoção, sem `products.version` (ADR 0030 e 0093, emendas). |
+| Provas | Em revisão | Gate `product-cover` (capa com 0, 1 e 3 imagens; reordenar; remover a capa e a última; uma mudança por operação; savepoint; pull; edição com a versão antiga; RLS entre duas lojas; plano da lista de 1.248 produtos no índice `(organization_id, product_id, position)`); gates `definer-owners` e `bootstrap` ajustados. Unidade: `product-cover.test.ts` (contrato), `product-cover-router.test.ts`, `local-products.test.ts`, `bootstrap.test.ts`. |
+| Fora | Registrado | Rota em lote (T2), cache e componente (T3a) e telas (T3b). |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |
