@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { PLATFORM_CAPABILITIES } from "@polaris/domain/admin/platform-capabilities";
 import {
   ENTITLEMENT_KEYS,
@@ -79,16 +81,21 @@ function setup(role = "platform_owner", environment?: string) {
 }
 
 const TITLE = /<title>([^<]*)<\/title>/;
-const MENU = /<nav aria-label="Admin" class="menu">(.*?)<\/nav>/s;
+const MENU = /<nav aria-label="Admin">(.*?)<\/nav>/s;
+const ACCOUNT = /<details[^>]* data-conta="">(.*?)<\/details>/s;
 const LINK =
-  /<a href="([^"]*)"( aria-current="page")?>(?:<span[^>]*>[^<]*<\/span>)?([^<]*)<\/a>/g;
-const GROUP = /<p class="menu-group">([^<]*)<\/p>/g;
+  /<a class="[^"]*"(?: data-active="")?(?: data-sidebar="menu-button")? href="([^"]*)"( aria-current="page")?><svg[^>]*>.*?<\/svg>(?:<span>)?([^<]*)/g;
+const GROUP = /data-sidebar="group-label">([^<]*)<\/div>/g;
 const ROOT = /<div id="admin"([^>]*)>/;
 const NAV = /<nav aria-label="Admin"/g;
 const DIGIT = /\d/;
+const TAG = /<[^>]*>/g;
+const OPERATOR_SLOT =
+  /<summary[^>]*>.*<span class="[^"]*" data-operador=""><\/span><\/summary>/s;
 
+/** The side menu and the menu of the account in the header, which holds Minha conta e permissões. */
 function menuOf(html: string) {
-  const menu = MENU.exec(html)?.[1] ?? "";
+  const menu = `${MENU.exec(html)?.[1] ?? ""}${ACCOUNT.exec(html)?.[1] ?? ""}`;
   return {
     current: [...menu.matchAll(LINK)]
       .filter((match) => match[2] !== undefined)
@@ -193,13 +200,13 @@ describe("one route per screen (AC-P1.2)", () => {
       const html = await response.text();
       expect(TITLE.exec(html)?.[1]).toBe(`STAGING · ${title} · Polaris Admin`);
       expect(html).toContain(
-        `<h1 id="tela-titulo" tabindex="-1">${title}</h1>`
+        `<h1 class="text-title" id="tela-titulo" tabindex="-1">${title}</h1>`
       );
       expect(ROOT.exec(html)?.[1]).toContain(attribute);
       // the same menu twice (the side one and the <details> of a narrow screen), the current item marked in each
       expect(html.match(NAV)).toHaveLength(2);
       expect(menuOf(html).current).toEqual([item]);
-      expect(html).toContain('<details class="compact-menu">');
+      expect(html).toContain('<details class="compact-menu md:hidden">');
       for (const forbidden of HTML_FORBIDDEN) {
         expect(html).not.toMatch(forbidden);
       }
@@ -439,7 +446,8 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
       screen: "casos",
       store: null,
     });
-    expect(MENU.exec(html)?.[1]).not.toMatch(DIGIT);
+    // the text of the menu: its classes and the drawings of its icons have numbers of their own
+    expect(MENU.exec(html)?.[1]?.replaceAll(TAG, "")).not.toMatch(DIGIT);
   });
 
   it("gives an operator with no capability the shell and the sentence, with no screen for the script (403)", async () => {
@@ -510,7 +518,7 @@ describe("the privacy screens (Parte 11: AC-C6, AC-P11.6)", () => {
   });
 });
 
-describe("Minha conta e permissões in the foot of the menu (Parte 9: AC-C1)", () => {
+describe("Minha conta e permissões in the menu of the account (Parte 9: AC-C1)", () => {
   const render = async (capabilities: readonly string[]) => {
     const page = await createAdminPage(assets)();
     return page.render({
@@ -524,21 +532,32 @@ describe("Minha conta e permissões in the foot of the menu (Parte 9: AC-C1)", (
     });
   };
 
-  it("is the last item, in a group of its own with no label, only with platform:read", async () => {
+  it("is the one item of the menu of the account in the header, out of the side menu, only with platform:read", async () => {
     const html = await render(PLATFORM_CAPABILITIES);
-    const menu = MENU.exec(html)?.[1] ?? "";
-    expect(
-      menu.endsWith(
-        '<ul class="menu-foot"><li><a href="/configuracoes" aria-current="page"><span aria-hidden="true">▸ </span>Minha conta e permissões</a></li></ul>'
-      )
-    ).toBe(true);
+    expect(MENU.exec(html)?.[1]).not.toContain("/configuracoes");
+    expect(menuOf(`<nav aria-label="Admin"></nav>${html}`)).toEqual({
+      current: ["Minha conta e permissões"],
+      groups: [],
+      links: ["Minha conta e permissões /configuracoes"],
+    });
     const others = await render(
       PLATFORM_CAPABILITIES.filter((c) => c !== "platform:read")
     );
     expect(menuOf(others).links.join()).not.toContain(
       "Minha conta e permissões"
     );
-    expect(MENU.exec(others)?.[1] ?? "").not.toContain("menu-foot");
+    expect(ACCOUNT.exec(others)?.[1]).not.toContain("<a ");
+  });
+
+  it("has, in the button of the account, the slot where the script writes the operator's e-mail", async () => {
+    const html = await render(PLATFORM_CAPABILITIES);
+    expect(ACCOUNT.exec(html)?.[1]).toMatch(OPERATOR_SLOT);
+    expect(
+      readFileSync(
+        fileURLToPath(new URL("../../ui/main.ts", import.meta.url)),
+        "utf8"
+      )
+    ).toContain('querySelector<HTMLElement>("[data-operador]")');
   });
 
   it("is not in the menu of an operator who holds other capabilities but not platform:read", async () => {

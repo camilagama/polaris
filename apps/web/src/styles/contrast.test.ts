@@ -6,7 +6,10 @@ import { describe, expect, it } from "vitest";
  * measured again from theme.css, OKLCH to sRGB, WCAG 2.x. A pair fails below its target or when it drifts from
  * the ratio the document states, so a token change cannot leave the map behind.
  */
-const theme = readFileSync(new URL("./theme.css", import.meta.url), "utf8");
+const theme = readFileSync(
+  new URL("../../../../packages/ui/src/theme.css", import.meta.url),
+  "utf8"
+);
 const map = readFileSync(
   new URL("../../../../docs/design/contraste-v5.1.md", import.meta.url),
   "utf8"

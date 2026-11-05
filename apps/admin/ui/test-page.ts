@@ -99,7 +99,8 @@ export async function mount(
 ) {
   const document = new FakeDocument();
   const root = document.createElement("div");
-  document.body.append(root);
+  const operator = document.createElement("span");
+  document.body.append(operator, root);
   const calls: Call[] = [];
   const queue = [who, ...answers];
   const fetchJson = (path: string, init: RequestInit) => {
@@ -121,7 +122,8 @@ export async function mount(
     context,
     (path) => {
       navigations.push(path);
-    }
+    },
+    operator as unknown as HTMLElement
   );
   await flush();
   const search = async (text: string) => {
@@ -129,7 +131,7 @@ export async function mount(
     buttons(root, "Buscar")[0]?.click();
     await flush();
   };
-  return { calls, document, navigations, queue, root, search };
+  return { calls, document, navigations, operator, queue, root, search };
 }
 
 export const alertOf = (root: FakeElement) =>

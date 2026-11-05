@@ -157,7 +157,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
   });
 
   it("the variables of the blocks are mapped once, to the tokens, in the sheet of the theme", () => {
-    const theme = read("src/styles/theme.css");
+    const theme = read("../../packages/ui/src/theme.css");
     for (const [variable, token] of [
       ["--chart-line-primary", "var(--chart-5)"],
       ["--chart-line-secondary", "var(--chart-3)"],
@@ -187,7 +187,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     expect(read("src/ui/charts/chart-bridge.tsx")).toContain(
       "r={mark.index === best ? 5.5 : 3.5}"
     );
-    const theme = read("src/styles/theme.css");
+    const theme = read("../../packages/ui/src/theme.css");
     for (const token of [
       "--chart-sales",
       "--chart-result",

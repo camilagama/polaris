@@ -1,6 +1,6 @@
 # Contraste dos tokens da v5.1
 
-Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o repositório pelo PR de base do [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Os valores dos tokens estão em `apps/web/src/styles/theme.css` (`:root` e `.dark`), e o [DESIGN.md](../../DESIGN.md) é a fonte das diretrizes.
+Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o repositório pelo PR de base do [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Os valores dos tokens estão em `packages/ui/src/theme.css` (`:root` e `.dark`), e o [DESIGN.md](../../DESIGN.md) é a fonte das diretrizes.
 
 **Como se mede.** WCAG 2.x: razão entre as luminâncias relativas, com cada token convertido de OKLCH para sRGB. Um par escrito `x/NN sobre y` é o token `x` com opacidade NN% (como a utilidade `bg-x/NN` do Tailwind) composto sobre `y`. Meta: 7:1 para texto e valores, 4,5:1 para texto menor em estado, 3:1 para borda de controle, foco e ícone; bordas decorativas ficam abaixo disso de propósito.
 

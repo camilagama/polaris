@@ -91,6 +91,8 @@ const NO_DEPENDENCIES = new Proxy(
   {},
   { get: () => NEVER }
 ) as AdminDependencies;
+const SIDEBAR_WIDTH = /--sidebar-width:\s*16rem;/;
+const HEADER_HEIGHT = /--app-header:\s*3\.5rem;/;
 const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
 const NAME_WRAPS = /\.purge label bdi\s*\{[^}]*overflow-wrap:\s*anywhere/;
 /**
@@ -348,12 +350,10 @@ describe("the sheet of the page", () => {
     expect(sheet).toMatch(NAME_WRAPS);
   });
 
-  it("gives the shell grid rows, so a short page does not stretch the menu row over the screen", () => {
-    const shell = [...sheet.matchAll(/\.shell \{([^}]*)\}/g)];
-    expect(shell).toHaveLength(2);
-    for (const [, body] of shell) {
-      expect(body).toContain("grid-template-rows:");
-    }
+  it("sets the width of the dash's sidebar and the height of its header in the sheet, never in a style attribute", () => {
+    expect(sheet).toMatch(SIDEBAR_WIDTH);
+    expect(sheet).toContain(".w-\\(--sidebar-width\\) {");
+    expect(sheet).toMatch(HEADER_HEIGHT);
   });
 });
 

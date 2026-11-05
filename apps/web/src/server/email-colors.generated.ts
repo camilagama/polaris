@@ -1,4 +1,4 @@
-// Generated from apps/web/src/styles/theme.css. Do not edit.
+// Generated from packages/ui/src/theme.css. Do not edit.
 // To generate again: bun run tokens:generate
 // The light theme as sRGB hex: most e-mail clients read neither OKLCH nor CSS variables.
 

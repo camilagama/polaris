@@ -20,7 +20,7 @@ const componentFiles = uiFiles.filter((file) => !file.endsWith(".test.tsx"));
 const AXE_IMPORT = /["'`]axe-core["'`/]/;
 const BASE_CSS = [
   "src/styles/index.css",
-  "src/styles/theme.css",
+  "../../packages/ui/src/theme.css",
   "src/styles/shadcn-tailwind.css",
 ];
 // a `//` comment starts a line or follows a space, so the `//` of a URL inside a string is not one

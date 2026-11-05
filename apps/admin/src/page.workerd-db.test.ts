@@ -98,7 +98,8 @@ async function openPage(screen: Partial<ScreenContext> & { screen: string }) {
     },
     (path) => {
       navigations.push(path);
-    }
+    },
+    null
   );
   const text = () => visibleText(root);
   const shows = (sentence: string | RegExp) =>

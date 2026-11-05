@@ -2,6 +2,7 @@ import type { PlatformCapability } from "@polaris/domain/admin/platform-capabili
 import { FLAG_KEYS, LIMIT_KEYS } from "@polaris/domain/billing/entitlements";
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
+import { type IconName, icon } from "./icons";
 
 /**
  * The operator's pages of the Admin (corte admin-v2, Parte 1): one route per screen, each a whole HTML document the
@@ -142,14 +143,13 @@ export const SCREENS: Readonly<Record<ScreenId, Screen>> = {
 
 interface MenuItem {
   capability: PlatformCapability;
+  icon: IconName;
   label: string;
   path: string;
   screens: readonly ScreenId[];
 }
 
 interface MenuGroup {
-  /** The foot of the menu: set apart from the groups above it. */
-  foot?: true;
   items: readonly MenuItem[];
   label: string | null;
 }
@@ -163,6 +163,7 @@ const MENU: readonly MenuGroup[] = [
     items: [
       {
         capability: "platform:read",
+        icon: "house",
         label: SCREENS.inicio.title,
         path: "/",
         screens: ["inicio"],
@@ -174,12 +175,14 @@ const MENU: readonly MenuGroup[] = [
     items: [
       {
         capability: "organization:diagnose",
+        icon: "store",
         label: SCREENS.lojas.title,
         path: "/lojas",
         screens: ["lojas", "loja"],
       },
       {
         capability: "support_case:manage",
+        icon: "message-square-text",
         label: SCREENS.casos.title,
         path: "/casos",
         screens: ["casos", "caso-novo", "caso"],
@@ -191,12 +194,14 @@ const MENU: readonly MenuGroup[] = [
     items: [
       {
         capability: "privacy_case:manage",
+        icon: "shield-check",
         label: SCREENS.privacidade.title,
         path: "/privacidade",
         screens: ["privacidade", "privacidade-novo", "privacidade-caso"],
       },
       {
         capability: "organization:legal_hold",
+        icon: "lock-keyhole",
         label: SCREENS.retencoes.title,
         path: "/retencoes",
         screens: ["retencoes"],
@@ -208,12 +213,14 @@ const MENU: readonly MenuGroup[] = [
     items: [
       {
         capability: "operational_incident:read",
+        icon: "triangle-alert",
         label: SCREENS.incidentes.title,
         path: "/incidentes",
         screens: ["incidentes", "incidente"],
       },
       {
         capability: "platform:read",
+        icon: "funnel",
         label: SCREENS.funil.title,
         path: "/funil",
         screens: ["funil"],
@@ -225,6 +232,7 @@ const MENU: readonly MenuGroup[] = [
     items: [
       {
         capability: "access_log:read",
+        icon: "scroll-text",
         label: SCREENS.registro.title,
         path: "/registro",
         screens: ["registro"],
@@ -232,19 +240,16 @@ const MENU: readonly MenuGroup[] = [
     ],
     label: "Para o jurídico",
   },
-  {
-    foot: true,
-    items: [
-      {
-        capability: "platform:read",
-        label: SCREENS.configuracoes.title,
-        path: "/configuracoes",
-        screens: ["configuracoes"],
-      },
-    ],
-    label: null,
-  },
 ];
+
+/** "Minha conta e permissões" is in the menu of the account, in the header, as the dash has its account there. */
+const ACCOUNT: MenuItem = {
+  capability: "platform:read",
+  icon: "user-round",
+  label: SCREENS.configuracoes.title,
+  path: "/configuracoes",
+  screens: ["configuracoes"],
+};
 
 function parentOf(screen: ScreenId): { label: string; path: string } | null {
   for (const group of MENU) {
@@ -379,6 +384,21 @@ function synchronous(
   return rendered;
 }
 
+/*
+ * The class strings of the dash's shell (`apps/web/src/ui/sidebar.tsx`, `app-shell/app-shell.tsx` and
+ * `app-shell/shell-header.tsx`), less what folds the column (the Admin does not fold it): the same markup, compiled by
+ * the same Tailwind into the Admin's sheet. `apps/web/scripts/admin-sheet.test.ts` holds each one to the dash's files.
+ */
+const SIDEBAR_GROUP = "relative flex w-full min-w-0 flex-col p-2";
+const SIDEBAR_GROUP_LABEL =
+  "flex h-8 shrink-0 items-center rounded-md px-2 font-medium text-sidebar-foreground text-xs";
+const SIDEBAR_GROUP_CONTENT = "w-full text-sm";
+const SIDEBAR_MENU = "flex w-full min-w-0 flex-col gap-0";
+const SIDEBAR_MENU_ITEM = "group/menu-item relative";
+const SIDEBAR_MENU_BUTTON =
+  "peer/menu-button focus-ring relative flex h-8 touch:h-11 items-center w-full gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0";
+const CURRENT_DOT = "ml-auto size-1.5 shrink-0 rounded-full bg-mark";
+
 function menuOf(screen: ScreenId, capabilities: readonly string[]) {
   const groups = MENU.map((group) => ({
     ...group,
@@ -390,16 +410,18 @@ function menuOf(screen: ScreenId, capabilities: readonly string[]) {
     const current = entry.screens.includes(screen);
     return synchronous(
       current
-        ? html`<li><a href="${entry.path}" aria-current="page"><span aria-hidden="true">▸ </span>${entry.label}</a></li>`
-        : html`<li><a href="${entry.path}">${entry.label}</a></li>`
+        ? html`<li class="${SIDEBAR_MENU_ITEM}"><a class="${SIDEBAR_MENU_BUTTON}" data-active="" data-sidebar="menu-button" href="${entry.path}" aria-current="page">${icon(entry.icon)}<span>${entry.label}</span><span aria-hidden="true" class="${CURRENT_DOT}"></span></a></li>`
+        : html`<li class="${SIDEBAR_MENU_ITEM}"><a class="${SIDEBAR_MENU_BUTTON}" data-sidebar="menu-button" href="${entry.path}">${icon(entry.icon)}<span>${entry.label}</span></a></li>`
     );
   };
   return synchronous(
-    html`<nav aria-label="Admin" class="menu">${groups.map((group) =>
+    html`<nav aria-label="Admin">${groups.map((group) =>
       synchronous(
-        group.label === null
-          ? html`<ul${group.foot ? raw(' class="menu-foot"') : raw("")}>${group.items.map(itemOf)}</ul>`
-          : html`<p class="menu-group">${group.label}</p><ul>${group.items.map(itemOf)}</ul>`
+        html`<div class="${SIDEBAR_GROUP}" data-sidebar="group">${
+          group.label === null
+            ? raw("")
+            : html`<div class="${SIDEBAR_GROUP_LABEL}" data-sidebar="group-label">${group.label}</div>`
+        }<div class="${SIDEBAR_GROUP_CONTENT}"><ul class="${SIDEBAR_MENU}">${group.items.map(itemOf)}</ul></div></div>`
       )
     )}</nav>`
   );
@@ -434,6 +456,70 @@ function rootAttributes(request: PageRequest, environment: Environment) {
   }
   return pairs.map(([name, value]) =>
     synchronous(html` ${raw(name)}="${value}"`)
+  );
+}
+
+const LOGO = raw(
+  '<svg aria-hidden="true" class="size-6" viewBox="0 0 24 24"><rect fill="currentColor" height="13" rx="1.2" width="2.4" x="10.8" y="9.2"/><circle cx="12" cy="4.4" fill="var(--mark)" r="2.7"/></svg>'
+);
+const SKIP_LINK =
+  "focus-ring not-focus:sr-only fixed top-2 left-2 z-50 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm no-underline";
+const SHELL = "group/sidebar-wrapper flex min-h-svh w-full bg-sidebar";
+const SIDEBAR = "group peer hidden text-sidebar-foreground md:block";
+const SIDEBAR_GAP = "relative w-(--sidebar-width) bg-transparent";
+const SIDEBAR_CONTAINER =
+  "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) left-0 md:flex";
+const SIDEBAR_INNER = "flex size-full flex-col bg-sidebar";
+const SIDEBAR_HEADER = "flex flex-col gap-2 px-4 pt-2 pb-2";
+const BRAND_ROW = "flex min-h-10 items-center justify-between gap-2";
+const BRAND =
+  "touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight";
+const BADGE =
+  "inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-full border px-2 font-medium text-xs leading-none border-border bg-card text-muted-foreground";
+const SIDEBAR_CONTENT = "flex min-h-0 flex-1 flex-col gap-0 overflow-auto";
+const SIDEBAR_INSET = "relative flex w-full min-w-0 flex-1 flex-col";
+const HEADER =
+  "@container/header sticky top-0 z-20 h-(--app-header) shrink-0 bg-sidebar text-sidebar-foreground";
+const HEADER_ROW =
+  "flex h-full items-center gap-2 pr-2 pl-(--gutter) md:pr-4 md:pl-6";
+const HEADER_BRAND =
+  "touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold text-foreground tracking-tight md:hidden";
+const HEADER_END = "ml-auto flex min-w-0 items-center gap-2 md:gap-3";
+const HEADER_BUTTON =
+  "touch-hit focus-ring inline-flex size-10 shrink-0 cursor-pointer list-none items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-accent-foreground [&::-webkit-details-marker]:hidden [&_svg]:size-[18px]";
+const MOBILE_MENU =
+  "absolute inset-x-0 top-full max-h-[calc(100dvh-var(--app-header))] overflow-y-auto bg-sidebar pb-2 shadow-lg";
+const ACCOUNT_BUTTON =
+  "touch-hit focus-ring flex h-10 min-w-0 max-w-[18rem] cursor-pointer list-none items-center gap-2 rounded-md px-1 text-foreground hover:bg-sidebar-hover [&::-webkit-details-marker]:hidden";
+const ACCOUNT_AVATAR =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground [&_svg]:size-4";
+const ACCOUNT_POPUP =
+  "absolute top-full right-0 z-30 mt-1 w-64 max-w-[calc(100vw-1rem)] rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/[0.06]";
+const ACCOUNT_ITEM =
+  "focus-ring flex h-8 touch:h-11 w-full items-center gap-2 rounded-md px-2 text-sm no-underline hover:bg-accent data-active:font-medium [&_svg]:size-4 [&_svg]:shrink-0";
+const ACCOUNT_MENU = "relative min-w-0";
+const ACCOUNT_EMAIL = "hidden min-w-0 truncate text-sm md:block";
+const COMPACT_MENU = "compact-menu md:hidden";
+const COMPACT_ENV = "compact-env md:hidden";
+const TITLE = "text-title";
+const PANEL =
+  "flex flex-1 flex-col bg-background md:rounded-tl-xl md:border-(--card-ring) md:border-t md:border-l";
+const MAIN =
+  "content mx-auto w-[min(100%_-_2rem,72rem)] pt-[clamp(1.5rem,5vw,4.25rem)] pb-14";
+
+/** The menu of the account, in the header: the operator's e-mail, written by the script, and their page. */
+function accountOf(screen: ScreenId, capabilities: readonly string[]) {
+  let link: HtmlEscapedString | Promise<HtmlEscapedString> = raw("");
+  if (capabilities.includes(ACCOUNT.capability)) {
+    link = ACCOUNT.screens.includes(screen)
+      ? html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" data-active="" href="${ACCOUNT.path}" aria-current="page">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`
+      : html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" href="${ACCOUNT.path}">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`;
+  }
+  return synchronous(
+    html`<details class="${ACCOUNT_MENU}" data-conta="">
+            <summary class="${ACCOUNT_BUTTON}"><span class="${ACCOUNT_AVATAR}">${icon("user-round")}</span><span class="sr-only">Conta</span><span class="${ACCOUNT_EMAIL}" data-operador=""></span></summary>
+            ${link}
+          </details>`
   );
 }
 
@@ -472,27 +558,46 @@ function documentOf(
     <script type="module" src="${scriptPath}"></script>
   </head>
   <body>
-    <div class="shell">
-      <aside class="side">
-        ${banner}
-        <p class="brand">Polaris Admin</p>
-        ${menu}
-      </aside>
-      <header class="compact">
-        ${banner}
-        <details class="compact-menu">
-          <summary><span aria-hidden="true">☰</span> Menu <span class="brand">Polaris Admin</span></summary>
-          ${menu}
-        </details>
-      </header>
-      <main class="content">
-        ${back}
-        <h1 id="tela-titulo" tabindex="-1">${screen.title}</h1>
-        <p id="tela-proposito" class="purpose">${screen.purpose}</p>
-        <div id="admin"${rootAttributes(request, environment)}>
-          ${content}
+    <a class="${SKIP_LINK}" href="#conteudo">Ir para o conteúdo</a>
+    <div class="admin-shell ${SHELL}">
+      <div class="${SIDEBAR}" data-slot="sidebar">
+        <div class="${SIDEBAR_GAP}"></div>
+        <aside class="${SIDEBAR_CONTAINER}" aria-label="Menu do Admin">
+          <div class="${SIDEBAR_INNER}">
+            <div class="${SIDEBAR_HEADER}">
+              <div class="${BRAND_ROW}">
+                <a class="${BRAND}" href="/">${LOGO}<span>Polaris</span></a>
+                <span class="${BADGE}">ADMIN</span>
+              </div>
+              ${banner}
+            </div>
+            <div class="${SIDEBAR_CONTENT}">${menu}</div>
+          </div>
+        </aside>
+      </div>
+      <div class="${SIDEBAR_INSET}">
+        <header class="${HEADER}" data-app-header="">
+          <div class="${HEADER_ROW}">
+            <details class="${COMPACT_MENU}">
+              <summary class="${HEADER_BUTTON}">${icon("menu")}<span class="sr-only">Menu</span></summary>
+              <div class="${MOBILE_MENU}">${menu}</div>
+            </details>
+            <a class="${HEADER_BRAND}" href="/">${LOGO}Polaris<span class="${BADGE}">ADMIN</span></a>
+            <div class="${HEADER_END}">${accountOf(request.screen, request.capabilities)}</div>
+          </div>
+        </header>
+        <div class="${PANEL}" data-app-panel="">
+          <div class="${COMPACT_ENV}">${banner}</div>
+          <main class="${MAIN}" id="conteudo" tabindex="-1">
+            ${back}
+            <h1 class="${TITLE}" id="tela-titulo" tabindex="-1">${screen.title}</h1>
+            <p id="tela-proposito" class="purpose">${screen.purpose}</p>
+            <div id="admin"${rootAttributes(request, environment)}>
+              ${content}
+            </div>
+          </main>
         </div>
-      </main>
+      </div>
     </div>
   </body>
 </html>

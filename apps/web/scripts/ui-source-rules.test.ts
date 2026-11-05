@@ -11,7 +11,7 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
  * e2e-pwa/ui-guardrails.e2e.ts. Each rule has a control case: `sourceFaults` runs on a text that has the fault.
  *
  * 4. only OKLCH and only tokens: no `#hex`, `rgb(`, `hsl(` and the like; no color keyword nor Tailwind palette
- *    class; an `oklch(…)` literal lives only in the token sheet (`src/styles/theme.css`).
+ *    class; an `oklch(…)` literal lives only in the token sheet (`packages/ui/src/theme.css`).
  * 5. motion: the components use the animation they bring (shadcn, Bklit UI); the CSS of an animation lives only in
  *    the sheets of the base; and the sheet of the base zeroes every animation under `prefers-reduced-motion: reduce`.
  *    On the phone (ADR 0103 "Níveis de movimento") only the essential motion runs: every `animate-*`,
@@ -21,7 +21,7 @@ import { SCREENS } from "../e2e-pwa/ui-screens";
 const web = fileURLToPath(new URL("..", import.meta.url));
 
 /** The one sheet that may write an `oklch(…)` literal: the tokens. */
-const TOKEN_SHEET = "src/styles/theme.css";
+const TOKEN_SHEET = "../../packages/ui/src/theme.css";
 
 // a `//` comment starts a line or follows a space, so the `//` of a URL inside a string is not one
 const COMMENT = /\/\*[\s\S]*?\*\/|(?:^|\s)\/\/[^\n]*/gm;
@@ -209,6 +209,7 @@ const SCOPE = [
   ...new Set([
     ...sourcesUnder("src/ui"),
     ...sourcesUnder("src/styles"),
+    TOKEN_SHEET,
     ...SCREENS.flatMap((screen) => screen.sourceDirs.flatMap(sourcesUnder)),
   ]),
 ];
@@ -354,7 +355,7 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
       expect.arrayContaining([
         "src/ui/button.tsx",
         "src/ui/dialog.tsx",
-        "src/styles/theme.css",
+        "../../packages/ui/src/theme.css",
         "src/ui-gallery/ui-gallery.tsx",
       ])
     );
@@ -515,11 +516,11 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     expect(faultsOf(text, "src/ui/x.css").join("\n")).toContain(
       "animação própria"
     );
-    expect(faultsOf(text, "src/styles/theme.css")).toEqual([]);
+    expect(faultsOf(text, "../../packages/ui/src/theme.css")).toEqual([]);
   });
 
   it.each([
-    ["color: oklch(0.2 0.01 85);", "src/styles/theme.css"],
+    ["color: oklch(0.2 0.01 85);", "../../packages/ui/src/theme.css"],
     [
       "mask-image: linear-gradient(oklch(0 0 0), transparent);",
       "src/styles/shadcn-tailwind.css",
@@ -544,7 +545,10 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ['<a href="#add-item">Adicionar</a>', "src/ui/x.tsx"],
     ["white-space: nowrap; --white: 1; color: var(--white);", "src/ui/x.css"],
     ['className="bg-white-glove text-red-hot"', "src/ui/x.tsx"],
-    ["@keyframes rise { to { opacity: 1 } }", "src/styles/theme.css"],
+    [
+      "@keyframes rise { to { opacity: 1 } }",
+      "../../packages/ui/src/theme.css",
+    ],
   ])("%s passa", (text, path) => {
     expect(faultsOf(text, path)).toEqual([]);
   });

@@ -9,7 +9,9 @@
   "files": {
     // Bklit UI as the registry distributes it (ADR 0103, amendment "Gráficos"): code of someone else, kept byte for byte so a
     // `shadcn add` shows its diff. Not linted nor formatted here; the adaptations of Polaris live in apps/web/src/ui/charts/.
-    "includes": ["!apps/web/src/ui/bklit"]
+    // The Admin's sheet is generated too: apps/web/scripts/admin-sheet.ts writes it from admin.source.css, and
+    // admin-sheet.test.ts compares it with what the script writes now.
+    "includes": ["!apps/web/src/ui/bklit", "!apps/admin/ui/admin.css"]
   },
   "overrides": [
     {

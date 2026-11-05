@@ -13,7 +13,7 @@ import {
   renderManifest,
 } from "./generate-color-tokens.mjs";
 
-// One source of color: apps/web/src/styles/theme.css (DESIGN.md, "Changing a color"). The catalog and the e-mails
+// One source of color: packages/ui/src/theme.css (DESIGN.md, "Changing a color"). The catalog and the e-mails
 // read files generated from it, and the manifest has two colors written by it; these tests fail when one of them is stale, and when a color is written by hand
 // anywhere else under apps/web/src or apps/catalog/src.
 const FOREGROUND_VALUE = /--foreground: oklch\([^)]*\);/;
@@ -38,17 +38,14 @@ describe("the files generated from theme.css", () => {
     // the manifest is JSON: it has no comment to carry a header
     for (const path of [CATALOG_OUTPUT, EMAIL_OUTPUT]) {
       const content = expected[path];
-      expect(content).toContain("Generated from apps/web/src/styles/theme.css");
+      expect(content).toContain("Generated from packages/ui/src/theme.css");
       expect(content).toContain("Do not edit.");
       expect(content).toContain("bun run tokens:generate");
     }
   });
 
   it("a changed value in theme.css changes both files (control)", () => {
-    const css = readFileSync(
-      join(root, "apps/web/src/styles/theme.css"),
-      "utf8"
-    );
+    const css = readFileSync(join(root, "packages/ui/src/theme.css"), "utf8");
     // whatever the current values are: the first --foreground (light) and the --ring of .dark (the last one)
     const changed = css
       .replace(FOREGROUND_VALUE, "--foreground: oklch(0.3 0.04 250);")
@@ -64,10 +61,7 @@ describe("the files generated from theme.css", () => {
   });
 
   it("a changed --background changes the colors of the manifest and nothing else (control)", () => {
-    const css = readFileSync(
-      join(root, "apps/web/src/styles/theme.css"),
-      "utf8"
-    );
+    const css = readFileSync(join(root, "packages/ui/src/theme.css"), "utf8");
     const current = readFileSync(join(root, MANIFEST_OUTPUT), "utf8");
     const changed = css.replace(LIGHT_BACKGROUND_VALUE, "$1oklch(0.5 0 0);");
     expect(changed).not.toBe(css);
@@ -104,7 +98,7 @@ describe("the files generated from theme.css", () => {
     expect(missing).toEqual([]);
     expect(tokens).toContain("@media (prefers-color-scheme: dark)");
     const { dark, light } = readTheme(
-      readFileSync(join(root, "apps/web/src/styles/theme.css"), "utf8")
+      readFileSync(join(root, "packages/ui/src/theme.css"), "utf8")
     );
     expect(tokens).toContain(`--background: ${light.background};`);
     expect(tokens).toContain(`--background: ${dark.background};`);
@@ -114,7 +108,7 @@ describe("the files generated from theme.css", () => {
 describe("the theme-color metas of index.html", () => {
   it("are the --background of each theme in theme.css", () => {
     const { dark, light } = readTheme(
-      readFileSync(join(root, "apps/web/src/styles/theme.css"), "utf8")
+      readFileSync(join(root, "packages/ui/src/theme.css"), "utf8")
     );
     const html = readFileSync(join(root, "apps/web/index.html"), "utf8");
     const content = (theme) =>
@@ -127,7 +121,7 @@ describe("the theme-color metas of index.html", () => {
 describe("the colors of the manifest", () => {
   it("are the light --background of theme.css, as hex", () => {
     const { light } = readTheme(
-      readFileSync(join(root, "apps/web/src/styles/theme.css"), "utf8")
+      readFileSync(join(root, "packages/ui/src/theme.css"), "utf8")
     );
     const manifest = JSON.parse(
       readFileSync(join(root, MANIFEST_OUTPUT), "utf8")
@@ -166,7 +160,7 @@ const SOURCE_DIRECTORIES = ["apps/web/src", "apps/catalog/src"];
 const SCANNED = /\.(?:css|ts|tsx)$/;
 const TEST_FILE = /\.(?:test|e2e)\.(?:ts|tsx)$/;
 const GENERATED = /\.generated\.(?:css|ts)$/;
-const THEME = "apps/web/src/styles/theme.css";
+const THEME = "packages/ui/src/theme.css";
 // the scroll-fade masks: opaque black as the mask, not a color of the brand
 const MASKS = "apps/web/src/styles/shadcn-tailwind.css";
 const MASK_COLOR = /oklch\(0 0 0\)/gi;

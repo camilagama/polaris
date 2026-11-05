@@ -11,11 +11,12 @@ import {
 
 const assets = { css: "body{}", js: "export{};" };
 const STORE = "0199a0a0-0000-7000-8000-00000000beef";
-const NAV = /<nav aria-label="Admin" class="menu">(.*?)<\/nav>/s;
+const NAV = /<nav aria-label="Admin">(.*?)<\/nav>/s;
+const ACCOUNT = /<details[^>]* data-conta="">(.*?)<\/details>/s;
 const ITEM =
-  /<p class="menu-group">([^<]*)<\/p>|<ul( class="menu-foot")?>|<a href="([^"]*)"( aria-current="page")?>(?:<span[^>]*>[^<]*<\/span>)?([^<]*)<\/a>/g;
+  /<div class="[^"]*" data-sidebar="(group)">|<div class="[^"]*" data-sidebar="group-label">([^<]*)<\/div>|<a class="[^"]*"(?: data-active="")?(?: data-sidebar="menu-button")? href="([^"]*)"( aria-current="page")?><svg[^>]*>.*?<\/svg>(?:<span>)?([^<]*)/g;
 const H1_AND_PURPOSE =
-  /<h1 id="tela-titulo" tabindex="-1">([^<]*)<\/h1>\s*<p id="tela-proposito" class="purpose">([^<]*)<\/p>/;
+  /<h1 class="text-title" id="tela-titulo" tabindex="-1">([^<]*)<\/h1>\s*<p id="tela-proposito" class="purpose">([^<]*)<\/p>/;
 const BILLING = /cobrança/i;
 const TOOLTIP = /title="[^"]*abra um atendimento/;
 const HIDDEN_PURPOSE = /aria-hidden="true"[^>]*>\s*Para mexer/;
@@ -41,33 +42,27 @@ async function render(
 }
 
 interface Entry {
+  account: boolean;
   current: boolean;
-  foot: boolean;
   group: string | null;
   label: string;
   path: string;
 }
 
-function menuEntries(html: string): Entry[] {
-  const menu = NAV.exec(html)?.[1] ?? "";
+function entriesOf(text: string, account: boolean): Entry[] {
   const entries: Entry[] = [];
   let group: string | null = null;
-  let foot = false;
-  for (const [, heading, footClass, path, current, label] of [
-    ...menu.matchAll(ITEM),
+  for (const [, start, heading, path, current, label] of [
+    ...text.matchAll(ITEM),
   ]) {
-    if (heading !== undefined) {
+    if (start !== undefined) {
+      group = null;
+    } else if (heading !== undefined) {
       group = heading;
-      foot = false;
-    } else if (path === undefined) {
-      if (footClass !== undefined) {
-        group = null;
-        foot = true;
-      }
-    } else {
+    } else if (path !== undefined) {
       entries.push({
+        account,
         current: current !== undefined,
-        foot,
         group,
         label: label ?? "",
         path,
@@ -75,6 +70,14 @@ function menuEntries(html: string): Entry[] {
     }
   }
   return entries;
+}
+
+/** The side menu, then the menu of the account in the header. */
+function menuEntries(html: string): Entry[] {
+  return [
+    ...entriesOf(NAV.exec(html)?.[1] ?? "", false),
+    ...entriesOf(ACCOUNT.exec(html)?.[1] ?? "", true),
+  ];
 }
 
 describe("the menu by task (AC-IA1)", () => {
@@ -93,6 +96,10 @@ describe("the menu by task (AC-IA1)", () => {
       ["Para o jurídico", "Registro de acessos", "/registro"],
       [null, "Minha conta e permissões", "/configuracoes"],
     ]);
+    expect(entries.map((entry) => entry.account)).toEqual([
+      ...new Array(8).fill(false),
+      true,
+    ]);
   });
 
   it("has no group named Auditoria and no item of billing", async () => {
@@ -101,12 +108,13 @@ describe("the menu by task (AC-IA1)", () => {
     expect(NAV.exec(html)?.[1]).not.toMatch(BILLING);
   });
 
-  it("keeps Minha conta e permissões alone in the foot of the menu", async () => {
-    const entries = menuEntries(await render("inicio"));
-    expect(entries.filter((entry) => entry.foot)).toEqual([
+  it("puts Minha conta e permissões alone in the menu of the account, in the header, as the dash does", async () => {
+    const html = await render("inicio");
+    expect(NAV.exec(html)?.[1]).not.toContain("Minha conta");
+    expect(menuEntries(html).filter((entry) => entry.account)).toEqual([
       {
+        account: true,
         current: false,
-        foot: true,
         group: null,
         label: "Minha conta e permissões",
         path: "/configuracoes",

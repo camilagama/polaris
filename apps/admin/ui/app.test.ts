@@ -45,10 +45,11 @@ const queryOf = (path: string) =>
   new URL(path, "https://admin.example.invalid").searchParams;
 
 describe("opening the page", () => {
-  it("asks only who the operator is, shows their e-mail and reads nothing else until asked", async () => {
-    const { calls, root } = await mount([]);
+  it("asks only who the operator is, shows their e-mail in the menu of the account and reads nothing else until asked", async () => {
+    const { calls, operator, root } = await mount([]);
     expect(calls.map((call) => call.path)).toEqual(["/api/whoami"]);
-    expect(visibleText(root)).toContain("Operador: dona@polaris.example");
+    expect(operator.textContent).toBe("dona@polaris.example");
+    expect(visibleText(root)).not.toContain("dona@polaris.example");
     expect(byId(root, "busca").getAttribute("maxlength")).toBe("100");
   });
 
