@@ -140,7 +140,7 @@ export function readOrganizationsCache(
  * What the last `listMine` said about the thumbnails, kept next to the list of stores so an offline start still shows
  * the ones this device has. It goes with the list (`clearOrganizationsCache`), and is not an offline copy of data.
  */
-export const MEDIA_THUMBS_FLAG_KEY = "polaris.mediaThumbs";
+const MEDIA_THUMBS_FLAG_KEY = "polaris.mediaThumbs";
 
 export function writeMediaThumbsFlag(
   storage: PreferenceStorage | null,
