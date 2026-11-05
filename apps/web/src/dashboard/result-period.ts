@@ -19,12 +19,30 @@ export type PeriodPreset =
   | "this-month"
   | "year";
 
+/** The key of the browser storage with which the e2e build alone turns the long periods on (the geometry tests). */
+const E2E_LONG_PERIODS_KEY = "polaris.e2e.longPeriods";
+
+/**
+ * Only the build of the e2e (`offline-poc` mode, never a deployed one) can open the long periods, and only for a test
+ * that writes `E2E_LONG_PERIODS_KEY` before the page loads: the rest of the suite sees them closed, as a store does.
+ */
+function longPeriodsInE2e(): boolean {
+  if (import.meta.env.MODE !== "offline-poc") {
+    return false;
+  }
+  try {
+    return globalThis.localStorage?.getItem(E2E_LONG_PERIODS_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * "Este ano" and any range above 62 days wait for the CPU measure of the `periodSummary` of 366 days in staging
- * (AC-23). The grouping by month (`groupByMonth`) is ready and tested; turning this on is the one
- * change that opens the long periods. Until the measure is registered it stays off.
+ * (AC-23). The server already sends them by month (`granularity` "month"); turning this on is the one change that
+ * opens the long periods. Until the measure is registered it stays off.
  */
-export const LONG_PERIODS_ENABLED = false;
+export const LONG_PERIODS_ENABLED = longPeriodsInE2e();
 
 /** The longest range the contract accepts (AC-2). */
 export const MAX_PERIOD_DAYS = 366;
