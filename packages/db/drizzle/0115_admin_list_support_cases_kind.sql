@@ -3,12 +3,12 @@
 -- open support cases from this list, so the page and its `next` cursor must hold only that kind.
 -- Same function in every other way: SECURITY DEFINER owned by `polaris_admin_owner` with the search_path pinned to end
 -- in pg_temp (0077), EXECUTE only for `polaris_admin_runtime` (0063), the same rows, the same order and the same cursor.
--- A new argument is a new signature, so the previous one is dropped instead of left as an overload with its own grant.
--- expand-contract: janela a lista de casos do Admin chama a assinatura de quatro argumentos; entre a migration e o deploy do Admin a tela de Casos e o Início respondem erro de leitura (só leitura, nenhum dado muda, o Admin é de uso interno e a tela refaz o pedido ao recarregar)
+-- A new argument is a new signature, created beside the four-argument one: the Admin of the previous version, still
+-- running until its deploy, keeps calling that one (ADR 0096). Dropping it is the contract step, a later migration once
+-- no Admin of the previous version is left.
 GRANT CREATE ON SCHEMA public TO polaris_admin_owner;--> statement-breakpoint
 GRANT polaris_admin_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE;--> statement-breakpoint
 SET ROLE polaris_admin_owner;--> statement-breakpoint
-DROP FUNCTION public.admin_list_support_cases(text, text, integer, uuid);--> statement-breakpoint
 CREATE FUNCTION public.admin_list_support_cases(p_status text, p_organization_id text, p_limit integer, p_after uuid, p_kind text)
 RETURNS jsonb
 LANGUAGE plpgsql
