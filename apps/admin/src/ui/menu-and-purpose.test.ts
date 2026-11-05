@@ -20,6 +20,9 @@ const H1_AND_PURPOSE =
 const BILLING = /cobrança/i;
 const TOOLTIP = /title="[^"]*abra um atendimento/;
 const HIDDEN_PURPOSE = /aria-hidden="true"[^>]*>\s*Para mexer/;
+const CONTA = /data-conta="">/;
+const SUMMARY = /<summary/g;
+const COMPACT = /compact-menu/;
 const BACK = /<p class="back"><a href="([^"]*)">([^<]*)<\/a><\/p>/;
 
 const ALL_SCREENS = Object.keys(SCREENS) as ScreenId[];
@@ -174,6 +177,36 @@ describe("the menu by task (AC-IA1)", () => {
       await render("inicio", { capabilities: ["access_log:read"] })
     );
     expect(entries.map((entry) => entry.group)).toEqual(["Para o jurídico"]);
+  });
+});
+
+describe("a header control that would open nothing is not drawn", () => {
+  it("shows the account of an operator without platform:read as avatar and e-mail, not as a <details>", async () => {
+    const html = await render("registro", {
+      capabilities: ["access_log:read"],
+    });
+    expect(html).toMatch(CONTA);
+    expect(html).not.toMatch(ACCOUNT);
+    expect(html).toContain('data-operador=""');
+    expect(html).not.toContain("/configuracoes");
+    expect(html.match(SUMMARY)).toHaveLength(1);
+    expect(html).toMatch(COMPACT);
+  });
+
+  it("keeps the account as a <details> with its link for an operator with platform:read", async () => {
+    const html = await render("inicio");
+    expect(html).toMatch(ACCOUNT);
+    expect(ACCOUNT.exec(html)?.[1]).toContain('href="/configuracoes"');
+    expect(html.match(SUMMARY)).toHaveLength(2);
+  });
+
+  it("draws neither the ☰ nor the empty menu when no item is open to the operator", async () => {
+    const html = await render("inicio", { capabilities: [], forbidden: true });
+    expect(html).not.toMatch(COMPACT);
+    expect(html).not.toContain("<nav");
+    expect(html).not.toContain("<summary");
+    expect(html).toMatch(CONTA);
+    expect(html).toContain("Sem permissão para isto.");
   });
 });
 

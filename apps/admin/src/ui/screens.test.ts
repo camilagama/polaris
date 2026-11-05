@@ -550,7 +550,8 @@ describe("Minha conta e permissões in the menu of the account (Parte 9: AC-C1)"
     expect(menuOf(others).links.join()).not.toContain(
       "Minha conta e permissões"
     );
-    expect(ACCOUNT.exec(others)?.[1]).not.toContain("<a ");
+    expect(ACCOUNT.exec(others)).toBeNull();
+    expect(others).not.toContain('href="/configuracoes"');
   });
 
   it("has, in the button of the account, the slot where the script writes the operator's e-mail", async () => {

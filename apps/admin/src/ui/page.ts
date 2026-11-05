@@ -414,6 +414,9 @@ function menuOf(screen: ScreenId, capabilities: readonly string[]) {
         : html`<li class="${SIDEBAR_MENU_ITEM}"><a class="${SIDEBAR_MENU_BUTTON}" data-sidebar="menu-button" href="${entry.path}">${icon(entry.icon)}<span>${entry.label}</span></a></li>`
     );
   };
+  if (groups.length === 0) {
+    return null;
+  }
   return synchronous(
     html`<nav aria-label="Admin">${groups.map((group) =>
       synchronous(
@@ -491,6 +494,8 @@ const MOBILE_MENU =
   "absolute inset-x-0 top-full max-h-[calc(100dvh-var(--app-header))] overflow-y-auto bg-sidebar pb-2 shadow-lg";
 const ACCOUNT_BUTTON =
   "touch-hit focus-ring flex h-10 min-w-0 max-w-[18rem] cursor-pointer list-none items-center gap-2 rounded-md px-1 text-foreground hover:bg-sidebar-hover [&::-webkit-details-marker]:hidden";
+const ACCOUNT_STATIC =
+  "flex h-10 min-w-0 max-w-[18rem] items-center gap-2 px-1 text-foreground";
 const ACCOUNT_AVATAR =
   "inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground [&_svg]:size-4";
 const ACCOUNT_POPUP =
@@ -507,19 +512,38 @@ const PANEL =
 const MAIN =
   "content mx-auto w-[min(100%_-_2rem,72rem)] pt-[clamp(1.5rem,5vw,4.25rem)] pb-14";
 
-/** The menu of the account, in the header: the operator's e-mail, written by the script, and their page. */
+/**
+ * The menu of the account, in the header: the operator's e-mail, written by the script, and their page. Without the
+ * capability of that page there is nothing to open, so the account is only the avatar and the e-mail, with no control.
+ */
 function accountOf(screen: ScreenId, capabilities: readonly string[]) {
-  let link: HtmlEscapedString | Promise<HtmlEscapedString> = raw("");
-  if (capabilities.includes(ACCOUNT.capability)) {
-    link = ACCOUNT.screens.includes(screen)
-      ? html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" data-active="" href="${ACCOUNT.path}" aria-current="page">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`
-      : html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" href="${ACCOUNT.path}">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`;
+  const who = html`<span class="${ACCOUNT_AVATAR}">${icon("user-round")}</span><span class="sr-only">Conta</span><span class="${ACCOUNT_EMAIL}" data-operador=""></span>`;
+  if (!capabilities.includes(ACCOUNT.capability)) {
+    return synchronous(
+      html`<div class="${ACCOUNT_MENU} ${ACCOUNT_STATIC}" data-conta="">${who}</div>`
+    );
   }
+  const link = ACCOUNT.screens.includes(screen)
+    ? html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" data-active="" href="${ACCOUNT.path}" aria-current="page">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`
+    : html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" href="${ACCOUNT.path}">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`;
   return synchronous(
     html`<details class="${ACCOUNT_MENU}" data-conta="">
-            <summary class="${ACCOUNT_BUTTON}"><span class="${ACCOUNT_AVATAR}">${icon("user-round")}</span><span class="sr-only">Conta</span><span class="${ACCOUNT_EMAIL}" data-operador=""></span></summary>
+            <summary class="${ACCOUNT_BUTTON}">${who}</summary>
             ${link}
           </details>`
+  );
+}
+
+/** The ☰ of a narrow screen opens the menu; with no item open to the operator it would open a blank strip, so it is not drawn. */
+function compactMenuOf(menu: HtmlEscapedString | null) {
+  if (menu === null) {
+    return raw("");
+  }
+  return synchronous(
+    html`<details class="${COMPACT_MENU}">
+              <summary class="${HEADER_BUTTON}">${icon("menu")}<span class="sr-only">Menu</span></summary>
+              <div class="${MOBILE_MENU}">${menu}</div>
+            </details>`
   );
 }
 
@@ -571,17 +595,14 @@ function documentOf(
               </div>
               ${banner}
             </div>
-            <div class="${SIDEBAR_CONTENT}">${menu}</div>
+            <div class="${SIDEBAR_CONTENT}">${menu ?? raw("")}</div>
           </div>
         </aside>
       </div>
       <div class="${SIDEBAR_INSET}">
         <header class="${HEADER}" data-app-header="">
           <div class="${HEADER_ROW}">
-            <details class="${COMPACT_MENU}">
-              <summary class="${HEADER_BUTTON}">${icon("menu")}<span class="sr-only">Menu</span></summary>
-              <div class="${MOBILE_MENU}">${menu}</div>
-            </details>
+            ${compactMenuOf(menu)}
             <a class="${HEADER_BRAND}" href="/">${LOGO}Polaris<span class="${BADGE}">ADMIN</span></a>
             <div class="${HEADER_END}">${accountOf(request.screen, request.capabilities)}</div>
           </div>
