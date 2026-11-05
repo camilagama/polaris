@@ -751,3 +751,83 @@ describe("forgetting the copies of one organization (clearOrganizationResultCopi
     expect(() => clearOrganizationResultCopies(refusing, ORG)).not.toThrow();
   });
 });
+
+describe("a summary of a long period, by month", () => {
+  const entry = (date: string, to: string, days: number) => ({
+    costs: "1.00",
+    date,
+    days,
+    netSales: "2.00",
+    operatingExpenses: "0.00",
+    operatingResult: "1.00",
+    salesCount: 1,
+    to,
+    unknownDays: 0,
+  });
+  const months = [
+    entry("2026-08-15", "2026-08-31", 17),
+    entry("2026-09-01", "2026-09-30", 30),
+    entry("2026-10-01", "2026-10-25", 25),
+  ];
+  const long = (
+    daily: unknown[],
+    extra: Record<string, unknown> = {}
+  ): unknown => ({
+    ...summaryOf("2026-10"),
+    daily,
+    granularity: "month",
+    period: { from: "2026-08-15", to: "2026-10-25" },
+    ...extra,
+  });
+
+  it("takes the months that follow each other from the first day to the last", () => {
+    expect(isPeriodSummary(long(months))).toBe(true);
+  });
+
+  it("takes the days after today apart, up to the last day of the period", () => {
+    expect(
+      isPeriodSummary(
+        long(months, {
+          afterToday: entry("2026-10-26", "2026-12-18", 54),
+          period: { from: "2026-08-15", to: "2026-12-18" },
+        })
+      )
+    ).toBe(true);
+    expect(
+      isPeriodSummary(
+        long([], {
+          afterToday: entry("2026-08-15", "2026-10-25", 72),
+        })
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ["a gap between months", [months[0], months[2]]],
+    ["a month across two", [entry("2026-08-15", "2026-09-30", 47), months[2]]],
+    [
+      "a wrong count of days",
+      [months[0], entry("2026-09-01", "2026-09-30", 29), months[2]],
+    ],
+    [
+      "more unknown days than days",
+      [months[0], { ...months[1], unknownDays: 31 }, months[2]],
+    ],
+    ["no `to`", [months[0], { ...months[1], to: undefined }, months[2]]],
+    ["months that stop before the end", months.slice(0, 2)],
+  ])("refuses %s", (_, daily) => {
+    expect(isPeriodSummary(long(daily))).toBe(false);
+  });
+
+  it("refuses days after today on a series by date, and months not said to be months", () => {
+    expect(
+      isPeriodSummary({
+        ...summaryOf("2026-10"),
+        afterToday: entry("2026-10-29", "2026-10-31", 3),
+      })
+    ).toBe(false);
+    expect(isPeriodSummary(long(months, { granularity: undefined }))).toBe(
+      false
+    );
+  });
+});

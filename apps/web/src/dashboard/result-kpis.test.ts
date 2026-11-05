@@ -526,3 +526,133 @@ describe("the period before that the result's chip asks the engine for", () => {
     expect(resultChipPeriod(summary(unsent as StoredDay[]), TODAY)).toBeNull();
   });
 });
+
+describe("the cards of a long period, by month as the server adds it up (D1-1 to D1-8)", () => {
+  const YEAR = { from: "2026-01-15", to: "2026-11-04" };
+  const TODAY = "2026-11-04";
+  /** A month of the server's monthly series: R$ 50,00 and one sale a day, R$ 40,00 of result a day. */
+  const month = (
+    date: string,
+    to: string,
+    extra: Partial<StoredDay> = {}
+  ): StoredDay => {
+    const count =
+      Math.round(
+        (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) /
+          86_400_000
+      ) + 1;
+    return {
+      costs: `${10 * count}.00`,
+      date,
+      days: count,
+      netSales: `${50 * count}.00`,
+      operatingResult: `${40 * count}.00`,
+      salesCount: count,
+      to,
+      unknownDays: 0,
+      ...extra,
+    };
+  };
+  const months = [
+    month("2026-01-15", "2026-01-31"),
+    month("2026-02-01", "2026-02-28"),
+    month("2026-03-01", "2026-03-31", {
+      netSales: "0.00",
+      operatingResult: "0.00",
+      salesCount: 0,
+    }),
+    ...["04", "05", "06", "07", "08", "09", "10"].map((number) =>
+      month(
+        `2026-${number}-01`,
+        addDays(`2026-${String(Number(number) + 1).padStart(2, "0")}-01`, -1)
+      )
+    ),
+    month("2026-11-01", TODAY),
+  ];
+
+  it("has one point per month, the month without sales at the height of the one before", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months,
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.monthly).toBe(true);
+    expect(kpis.days).toHaveLength(11);
+    expect(kpis.series.sales).toHaveLength(11);
+    expect(kpis.series.sales[2]).toBe(kpis.series.sales[1]);
+    expect(kpis.result).toEqual({ kind: "known" });
+  });
+
+  it("reads a month up to its last day, the first one from the first day of the period, with no chip (D1-2, D1-7)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months,
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.read(0).sales).toMatchObject({
+      date: "15 a 31/01",
+      delta: null,
+      value: "850.00",
+    });
+    expect(kpis.read(2).sales.date).toBe("15/01 a 31/03");
+    expect(kpis.read(1).result.value).toBe(`${40 * (17 + 28)}.00`);
+    // the month of today ends today
+    expect(kpis.read(10).sales.date).toBe("15/01 a 04/11");
+  });
+
+  it("counts the days of the months with an unknown cost: no sparkline nor chip of the result, sales and ticket keep theirs (D1-4)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months.map((entry, index) =>
+        index === 4
+          ? { ...entry, costs: null, operatingResult: null, unknownDays: 2 }
+          : entry
+      ),
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.result).toEqual({
+      kind: "incomplete",
+      total: 17 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31 + 4,
+      unknown: 2,
+    });
+    expect(kpis.series.result).toBeNull();
+    expect(kpis.series.sales).toHaveLength(11);
+  });
+
+  it("draws no month that starts after today (D1-5)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months.slice(0, 10),
+      period: { from: YEAR.from, to: "2026-12-31" },
+      previous: null,
+      previousSales: null,
+      today: "2026-10-31",
+    });
+    expect(kpis.days.at(-1)?.date).toBe("2026-10-01");
+    expect(kpis.read(null).sales.date).toBe("15/01 a 31/10");
+  });
+
+  it("is a straight line of two points for a long period across two months (D1-8)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: [
+        month("2026-09-01", "2026-09-30"),
+        month("2026-10-01", "2026-10-31"),
+      ],
+      period: { from: "2026-09-01", to: "2026-10-31" },
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.series.sales).toHaveLength(2);
+  });
+});
