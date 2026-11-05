@@ -484,10 +484,12 @@ async function run() {
         "billing.entitlement_granted",
         "billing.entitlement_revoke_requested",
         "billing.entitlement_revoked",
+        // ending another store's grant through this case: the request is recorded and nothing is ended (no outcome)
+        "billing.entitlement_revoke_requested",
       ]
     );
     tests.push(
-      "the billing command is recorded before and after (the repeat too), is one grant per command ID, attributed to the operator, and ended"
+      "the billing command is recorded before and after (the repeat too), is one grant per command ID, attributed to the operator, and ended; a grant of another store is not ended through this case"
     );
 
     // the suspension: the organization no longer opens for its own users, once; the reactivation does not bring the epoch back

@@ -23,6 +23,8 @@ import {
 export interface RawGrant {
   expiresAt: string;
   flagValue: boolean | null;
+  /** The only identifier of a grant the report carries: what ending it by the case's own route takes. */
+  id: string;
   key: string;
   limitValue: number | null;
   revokedAt: string | null;

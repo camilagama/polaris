@@ -25,7 +25,10 @@ import { storeView } from "./views/store";
  */
 export interface ScreenContext {
   environment: "production" | "staging" | "unknown";
+  /** The capability keys the Worker names, from the domain's own lists: the page keeps no list of its own. */
+  flagKeys: readonly string[];
   id: string | null;
+  limitKeys: readonly string[];
   listState: "abertos" | "fechados";
   screen: string;
   store: string | null;
