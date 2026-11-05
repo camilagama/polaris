@@ -887,6 +887,56 @@ describe("offline.issueLease", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("logs the domain code of a 409 refusal, and nothing of the device or the organization", async () => {
+    const { EntitlementDeniedError } = await import(
+      "@polaris/domain/billing/entitlements"
+    );
+    const { logger } = await import("@polaris/observability/logger");
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      for (const [error, reason] of [
+        [new EntitlementDeniedError("offline.write"), "entitlement_denied"],
+        [new DeviceRevokedError(), "device_revoked"],
+        [new OfflineLeaseNotAvailableError(), "offline_lease_not_available"],
+      ] as const) {
+        const client = createClient({
+          issueOfflineLeaseGrant: () => Promise.reject(error),
+          withTenantRequestContext: tenantContext(),
+        });
+        // biome-ignore lint/performance/noAwaitInLoops: each refusal is verified on its own
+        await expect(
+          client.offline.issueLease({ deviceId, organizationId })
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+        expect(warn).toHaveBeenLastCalledWith("offline_lease_refused", {
+          reason,
+        });
+      }
+      expect(warn).toHaveBeenCalledTimes(3);
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).not.toContain(deviceId);
+      expect(logged).not.toContain(organizationId);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not log a refusal that is not a 409", async () => {
+    const { logger } = await import("@polaris/observability/logger");
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      const client = createClient({
+        issueOfflineLeaseGrant: () => Promise.reject(new DeviceNotFoundError()),
+        withTenantRequestContext: tenantContext(),
+      });
+      await expect(
+        client.offline.issueLease({ deviceId, organizationId })
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("maps a session ended by a device revocation to UNAUTHORIZED", async () => {
     const client = createClient({
       issueOfflineLeaseGrant: () =>

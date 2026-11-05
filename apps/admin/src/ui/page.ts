@@ -2,6 +2,7 @@ import type { PlatformCapability } from "@polaris/domain/admin/platform-capabili
 import { FLAG_KEYS, LIMIT_KEYS } from "@polaris/domain/billing/entitlements";
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
+import { ENVIRONMENT_BANNER } from "../../ui/environment-banner";
 import { type IconName, icon } from "./icons";
 
 /**
@@ -319,20 +320,20 @@ interface Environment {
 function environmentOf(name: string | undefined): Environment {
   if (name === "production") {
     return {
-      banner: "PRODUÇÃO · dados reais",
+      banner: ENVIRONMENT_BANNER.production,
       kind: "production",
       title: "PRODUÇÃO",
     };
   }
   if (name === "staging") {
     return {
-      banner: "STAGING · dados de teste",
+      banner: ENVIRONMENT_BANNER.staging,
       kind: "staging",
       title: "STAGING",
     };
   }
   return {
-    banner: "Ambiente não informado",
+    banner: ENVIRONMENT_BANNER.unknown,
     kind: "unknown",
     title: "AMBIENTE NÃO INFORMADO",
   };

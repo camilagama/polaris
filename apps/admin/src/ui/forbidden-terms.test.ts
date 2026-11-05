@@ -49,6 +49,7 @@ const TEXT_WORDS = wordsOf(
 
 const WHITESPACE = /\s/;
 const CAPITAL = /^\p{Lu}/u;
+const ONE_LOWERCASE_WORD = /^\p{Ll}+[.,:;!?…]?$/u;
 const TEST_HELPER = /(^|\/)test-[a-z-]+\.ts$/;
 
 interface Kept {
@@ -151,6 +152,29 @@ const KEPT: readonly Kept[] = [
   },
 ];
 
+interface Identifier {
+  file: string;
+  word: string;
+}
+
+/**
+ * Lowercase single words the scan would read as a label but that are code: a route segment, a kind, a screen id, a key
+ * of the domain. Every entry must still be found by the scan, so none outlives the code it excuses.
+ */
+const IDENTIFIERS: readonly Identifier[] = [
+  { file: "ui/app.ts", word: "purge" },
+  { file: "ui/main.ts", word: "purge" },
+  { file: "ui/views/access.ts", word: "grants" },
+  { file: "ui/views/entitlements.ts", word: "grants" },
+  { file: "ui/views/privacy-case.ts", word: "purge" },
+  { file: "ui/views/purge.ts", word: "hold" },
+  { file: "src/ui/page.ts", word: "caso" },
+  { file: "src/ui/page.ts", word: "casos" },
+  { file: "src/ui/page.ts", word: "incidente" },
+  { file: "src/ui/page.ts", word: "incidentes" },
+  { file: "src/ui/page.ts", word: "purge" },
+];
+
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));
 const admin = join(repository, "apps/admin");
 
@@ -170,7 +194,10 @@ function sourcesUnder(directory: string): string[] {
 
 function visibleLiterals(source: string): string[] {
   return stringLiterals(source).filter(
-    (literal) => WHITESPACE.test(literal) || CAPITAL.test(literal)
+    (literal) =>
+      WHITESPACE.test(literal) ||
+      CAPITAL.test(literal) ||
+      ONE_LOWERCASE_WORD.test(literal)
   );
 }
 
@@ -183,14 +210,25 @@ interface Hit {
 function hitsIn(
   files: { file: string; source: string }[],
   words: RegExp,
-  kept: readonly Kept[]
-): { hits: Hit[]; keptUsed: Set<number> } {
+  kept: readonly Kept[],
+  identifiers: readonly Identifier[] = []
+): { hits: Hit[]; identifiersUsed: Set<number>; keptUsed: Set<number> } {
   const hits: Hit[] = [];
   const keptUsed = new Set<number>();
+  const identifiersUsed = new Set<number>();
   for (const { file, source } of files) {
     for (const literal of visibleLiterals(source)) {
       const first = words.exec(literal)?.[1];
       if (first === undefined) {
+        continue;
+      }
+      const identifier = ONE_LOWERCASE_WORD.test(literal)
+        ? identifiers.findIndex(
+            (item) => item.file === file && item.word === literal
+          )
+        : -1;
+      if (identifier !== -1) {
+        identifiersUsed.add(identifier);
         continue;
       }
       const index = kept.findIndex(
@@ -208,7 +246,7 @@ function hitsIn(
       }
     }
   }
-  return { hits, keptUsed };
+  return { hits, identifiersUsed, keptUsed };
 }
 
 const screenFiles = [
@@ -232,7 +270,7 @@ describe("the words the operator does not read (AC-IA3)", () => {
   });
 
   it("keeps them out of every text the screens write, but for the exact texts kept", () => {
-    const { hits } = hitsIn(screenFiles, TEXT_WORDS, KEPT);
+    const { hits } = hitsIn(screenFiles, TEXT_WORDS, KEPT, IDENTIFIERS);
     expect(
       hits.map(
         (hit) => `${hit.file}: ${hit.word} in "${hit.literal.slice(0, 80)}"`
@@ -247,11 +285,24 @@ describe("the words the operator does not read (AC-IA3)", () => {
     );
   });
 
-  it("keeps the case of the cut: the word caso is kept nowhere", () => {
+  it("keeps no identifier that the scan no longer finds in the list of identifiers", () => {
+    const { identifiersUsed } = hitsIn(
+      screenFiles,
+      TEXT_WORDS,
+      KEPT,
+      IDENTIFIERS
+    );
+    expect([...identifiersUsed].sort((a, b) => a - b)).toEqual(
+      IDENTIFIERS.map((_, index) => index)
+    );
+  });
+
+  it("keeps the case of the cut: the word caso is kept nowhere as a text", () => {
     const { hits } = hitsIn(
       screenFiles,
       wordsOf("casos?"),
-      KEPT.filter((entry) => entry.allowed !== PURGE)
+      KEPT.filter((entry) => entry.allowed !== PURGE),
+      IDENTIFIERS
     );
     expect(
       hits.map((hit) => `${hit.file}: ${hit.literal.slice(0, 60)}`)
@@ -263,8 +314,12 @@ const template = (before: string, expression: string, after: string) =>
   ["const a = `", before, "$", "{", expression, "}", after, "`;"].join("");
 
 describe("the scan reads what it should (a planted word in each shape of text)", () => {
-  const scan = (source: string, kept: typeof KEPT = []) =>
-    hitsIn([{ file: "x.ts", source }], TEXT_WORDS, kept).hits.map(
+  const scan = (
+    source: string,
+    kept: typeof KEPT = [],
+    identifiers: typeof IDENTIFIERS = []
+  ) =>
+    hitsIn([{ file: "x.ts", source }], TEXT_WORDS, kept, identifiers).hits.map(
       (hit) => hit.word
     );
 
@@ -279,6 +334,12 @@ describe("the scan reads what it should (a planted word in each shape of text)",
     ['const a = "Dar um grant à loja";', ["grant"]],
     ['const a = "Abrir o Diagnóstico";', ["Diagnóstico"]],
     ['const a = "Só vale nesse caso.";', ["caso"]],
+    ['const a = "purge";', ["purge"]],
+    ["const a = { label: 'caso' };", ["caso"]],
+    ['const a = "retry";', ["retry"]],
+    ['const a = "diagnóstico";', ["diagnóstico"]],
+    ['const a = "caso.";', ["caso"]],
+    ['const a = "retry?";', ["retry"]],
   ])("finds the word in %s", (source, words) => {
     expect(scan(source)).toEqual(words);
   });
@@ -293,6 +354,16 @@ describe("the scan reads what it should (a planted word in each shape of text)",
     [template("", "casos.length", " atendimentos")],
   ])("finds nothing in %s", (source) => {
     expect(scan(source)).toEqual([]);
+  });
+
+  it("lets a lowercase single word through only when the file and the word are listed as an identifier", () => {
+    const source = 'const a = "purge";';
+    const listed = { file: "x.ts", word: "purge" };
+    expect(scan(source)).toEqual(["purge"]);
+    expect(scan(source, [], [listed])).toEqual([]);
+    expect(scan(source, [], [{ ...listed, file: "y.ts" }])).toEqual(["purge"]);
+    expect(scan(source, [], [{ ...listed, word: "caso" }])).toEqual(["purge"]);
+    expect(scan('const a = "O purge";', [], [listed])).toEqual(["purge"]);
   });
 
   it("lets a text through only when the file and the start of the text are listed, and only its allowed word", () => {
