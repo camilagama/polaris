@@ -71,7 +71,7 @@ describe("HeroValue", () => {
   });
 });
 
-const TAGS = /<[^>]*>/g;
+const TEXT_BETWEEN_TAGS = />[^<]+</;
 const SKELETON_FOOT = /data-kpi-skeleton-foot=""/g;
 
 describe("KpiCardSkeleton", () => {
@@ -92,7 +92,7 @@ describe("KpiCardSkeleton", () => {
       <KpiCardSkeleton action footer={2} size="md" />
     );
     expect(markup.startsWith('<div aria-hidden="true"')).toBe(true);
-    expect(markup.replace(TAGS, "")).toBe("");
+    expect(markup.match(TEXT_BETWEEN_TAGS)).toBeNull();
     expect(markup.match(SKELETON_FOOT)).toHaveLength(2);
   });
 });
