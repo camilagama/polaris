@@ -2910,3 +2910,10 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Gate `period-summary-sql` (PG18): toda janela lida também por mês e igual aos dias somados em centavos (63, 366, passando de hoje, toda depois de hoje, sorteadas e o teste de propriedade). Unidade: `economics-repository.test.ts`, `report-router.test.ts`, `json-bytes.test.ts`, `result-series.test.ts`, `result-kpis.test.ts`, `result-cards.test.tsx`, `period-summary-cache.test.ts`. Navegador: `e2e/dashboard.e2e.ts`, altura dos cartões e do gráfico ≤ 1 px em 30 dias → ano → 30 dias → ano e em 63 dias, a 360 e 1280 px. |
 | Pendente | Feito | Reteste do AC-23 no staging com a série mensal (Diego e Juan): mês com mediana de 21 ms e p90 de 35,3 ms; ano com mediana de 21 ms e p90 de 31 ms; 0 `exceededCpu`. "Este ano" foi ligado sem a chave. Falta só a conferência da tela no staging depois do deploy. |
 
+
+### Resultado: o seletor de período diz "Período" com o formulário De/Até aberto (t761; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Seletor | Em revisão | `PeriodPicker` passa `open ? "custom" : preset` ao `PresetChoice`: com os campos "De" e "Até" abertos, válidos ou não, o `Select` do celular diz "Período" e a faixa pressiona "Período"; ao escolher outro período os campos fecham e o seletor volta a ele. O período aplicado, o endereço e a consulta ao servidor não mudam. |
+| Provas | Em revisão | `e2e/dashboard.e2e.ts` (desktop e celular emulado): de "Este ano" abre "Período", aplica 367 dias, o seletor segue em "Período" com "Escolha até 1 ano." e sem consulta nova; "Este mês" fecha o formulário e o seletor volta; falha sem a correção nos dois projetos (rodado local, Chromium). O web não tem ambiente DOM para teste de componente. |
