@@ -99,13 +99,15 @@ const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
  * `/api/operational-incidents/:id/events/:eventId/retry`; Parte 2), of a store, suspending and
  * reactivating it (`/api/support-cases/:id/suspend` and `/reactivate`) and marking it as internal
  * (`/api/organizations/:id/classification`; Parte 3), and the court's read of the access log
- * (`/api/access-log/read`, a POST; Parte 8).
+ * (`/api/access-log/read`, a POST; Parte 8), and the privacy cases (list, detail, open and each of the six steps,
+ * `/api/privacy-cases/:id/identity`, `/role`, `/scope`, `/decision`, `/actions` and `/resolve`; Parte 11).
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/access-log",
   "/api/funnel",
   "/api/operational-incidents",
   "/api/organizations",
+  "/api/privacy-cases",
   "/api/support-cases",
   "/api/whoami",
 ];
@@ -172,7 +174,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal and the read of the access log: no other action of a case or a store", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, the read of the access log and the six steps of a privacy case: no other action of a case or a store (no purge, closure notice or legal hold)", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -190,14 +192,20 @@ describe("the built script of the page", () => {
         .filter((segment) => new RegExp(`/${segment}(?![a-z-])`).test(text))
         .sort();
     const expected = [
+      "actions",
       "classification",
       "close",
+      "decision",
       "diagnostics",
       "events",
+      "identity",
       "reactivate",
       "read",
       "refund-window",
+      "resolve",
       "retry",
+      "role",
+      "scope",
       "suspend",
     ];
     expect(named(bundle)).toEqual(expected);

@@ -49,6 +49,7 @@ export class FakeElement extends FakeNode {
   readonly listeners = new Map<string, Listener[]>();
   readonly tagName: string;
   value = "";
+  checked = false;
 
   constructor(document: FakeDocument, tagName: string) {
     super(document);

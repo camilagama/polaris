@@ -12,6 +12,9 @@ import { incidentView } from "./views/incident";
 import { incidentsView } from "./views/incidents";
 import { newCaseView } from "./views/new-case";
 import { organizationsView } from "./views/organizations";
+import { privacyCaseView } from "./views/privacy-case";
+import { privacyCasesView } from "./views/privacy-cases";
+import { privacyNewView } from "./views/privacy-new";
 import { refundWindowView } from "./views/refund-window";
 import { settingsView } from "./views/settings";
 import { storeView } from "./views/store";
@@ -87,6 +90,16 @@ function funnelScreen(tools: ScreenTools): HTMLElement[] {
     : [forbiddenArea(tools.dom, "Funil de ativação", "funil-titulo")];
 }
 
+/** The privacy screens (Parte 11): each shown only to an operator with `privacy_case:manage`; the server asks again. */
+function privacyScreen(
+  tools: ScreenTools,
+  view: (tools: ScreenTools) => HTMLElement
+): HTMLElement[] {
+  return tools.can("privacy_case:manage")
+    ? [view(tools)]
+    : [forbiddenArea(tools.dom, "Privacidade", "privacidade-titulo")];
+}
+
 const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
   {
     caso: (tools) => [caseView(tools)],
@@ -108,6 +121,9 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
     inicio: (tools) => [homeView(tools)],
     loja: (tools) => [storeView(tools)],
     lojas: storesScreen,
+    privacidade: (tools) => privacyScreen(tools, privacyCasesView),
+    "privacidade-caso": (tools) => privacyScreen(tools, privacyCaseView),
+    "privacidade-novo": (tools) => privacyScreen(tools, privacyNewView),
     registro: (tools) =>
       tools.can("access_log:read")
         ? [accessLogView(tools)]
