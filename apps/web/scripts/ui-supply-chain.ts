@@ -89,6 +89,7 @@ export const BASELINE_PACKAGES = [
   "@polaris/domain",
   "@polaris/http-security",
   "@polaris/observability",
+  "@polaris/ui",
   "@sentry/react",
   "@tanstack/browser-db-sqlite-persistence",
   "@tanstack/db",

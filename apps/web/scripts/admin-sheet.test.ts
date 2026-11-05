@@ -273,14 +273,21 @@ function scriptClasses(sources: readonly string[]): string[] {
 
 async function tailwindUtility() {
   const tailwind = join(repository, "apps/web/node_modules/tailwindcss");
+  const stylesheetOf = (id: string, base: string) => {
+    if (id.startsWith("tailwindcss/")) {
+      return join(tailwind, id.slice("tailwindcss/".length));
+    }
+    if (id === "@polaris/ui/theme.css") {
+      return join(repository, "packages/ui/src/theme.css");
+    }
+    return join(base, id);
+  };
   const design = await __unstable__loadDesignSystem(
-    '@import "tailwindcss/theme.css";\n@import "tailwindcss/utilities.css";\n@import "../../../packages/ui/src/theme.css";',
+    '@import "tailwindcss/theme.css";\n@import "tailwindcss/utilities.css";\n@import "@polaris/ui/theme.css";',
     {
       base: join(repository, "apps/admin/ui"),
       loadStylesheet: (id, base) => {
-        const path = id.startsWith("tailwindcss/")
-          ? join(tailwind, id.slice("tailwindcss/".length))
-          : join(base, id);
+        const path = stylesheetOf(id, base);
         return Promise.resolve({
           base: dirname(path),
           content: readFileSync(path, "utf8"),

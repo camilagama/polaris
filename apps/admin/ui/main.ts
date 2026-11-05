@@ -1,4 +1,5 @@
 import { mountAdmin, type ScreenContext } from "./app";
+import { closeCompactMenuOnEscapeAndOutsideTap } from "./compact-menu";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -43,6 +44,9 @@ function contextOf(element: HTMLElement): ScreenContext | null {
     store: uuidOf(element.getAttribute("data-loja")),
   };
 }
+
+// the script loads on every page, also the one that mounts no screen, and the menu belongs to the shell, not to a screen
+closeCompactMenuOnEscapeAndOutsideTap(document);
 
 const root = document.getElementById("admin");
 // a page without a screen (the operator may not open it) has nothing for the script to do

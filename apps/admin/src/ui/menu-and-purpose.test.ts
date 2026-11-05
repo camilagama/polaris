@@ -23,6 +23,8 @@ const HIDDEN_PURPOSE = /aria-hidden="true"[^>]*>\s*Para mexer/;
 const CONTA = /data-conta="">/;
 const SUMMARY = /<summary/g;
 const COMPACT = /compact-menu/;
+const COMPACT_DETAILS =
+  /<details class="compact-menu[^"]*">\s*<summary[^>]*>[\s\S]*?<\/summary>/;
 const BACK = /<p class="back"><a href="([^"]*)">([^<]*)<\/a><\/p>/;
 
 const ALL_SCREENS = Object.keys(SCREENS) as ScreenId[];
@@ -198,6 +200,11 @@ describe("a header control that would open nothing is not drawn", () => {
     expect(html).toMatch(ACCOUNT);
     expect(ACCOUNT.exec(html)?.[1]).toContain('href="/configuracoes"');
     expect(html.match(SUMMARY)).toHaveLength(2);
+  });
+
+  it("writes the ☰ as the `details.compact-menu` whose first child is the summary, which is what the script closes with Esc", async () => {
+    const html = await render("inicio");
+    expect(html).toMatch(COMPACT_DETAILS);
   });
 
   it("draws neither the ☰ nor the empty menu when no item is open to the operator", async () => {

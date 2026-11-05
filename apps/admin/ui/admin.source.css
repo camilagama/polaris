@@ -9,7 +9,7 @@
  * above it, the files of the dash whose classes it uses: `admin-sheet.test.ts` holds every class to them.
  */
 @import "tailwindcss" source(none);
-@import "../../../packages/ui/src/theme.css";
+@import "@polaris/ui/theme.css";
 
 @source "../src/ui/page.ts";
 
