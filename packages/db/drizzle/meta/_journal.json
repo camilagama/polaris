@@ -785,6 +785,13 @@
       "when": 1793814632902,
       "tag": "0112_hash_de_senha_no_postgres",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1793827508047,
+      "tag": "0113_capa_do_produto_no_sync",
+      "breakpoints": true
     }
   ]
 }

@@ -126,6 +126,7 @@ export const SCREEN_ROUTES = [
   "/lojas/:organizationId",
   "/casos",
   "/casos/:caseId",
+  "/configuracoes",
   "/funil",
   "/incidentes",
   "/incidentes/:incidentId",

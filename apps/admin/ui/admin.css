@@ -542,6 +542,17 @@ a {
   list-style: none;
 }
 
+.menu .menu-foot {
+  padding-top: 0.5rem;
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.permissions {
+  padding-left: 1.25rem;
+  margin: 0 0 0.75rem;
+}
+
 .menu-group {
   margin: 0.5rem 0 0.25rem;
   font-size: 0.75rem;

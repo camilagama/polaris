@@ -2805,6 +2805,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Unidade: `src/ui/screens.test.ts` (rotas, título, ambiente, menu com 8 conjuntos de capacidade, 404, 401, `data-*`), `ui/cases.test.ts`, `ui/home-store.test.ts`, `src/ui/ui-guard.test.ts` (o script nomeia `close`; 100 KB gzip), `src/ui/ui-types.test.ts`, `src/route-surface.test.ts`. Workerd-db (gate `admin-worker`): `src/page.workerd-db.test.ts` abre o caso pela tela, fecha numa tela e uma segunda tela do mesmo caso ouve "já estava fechado"; o banco tem um `support_case.closed`. |
 | Limites | Registrado | A lista e o detalhe não dizem quem abriu por e-mail (o detalhe traz o ID do principal: a tela diz "Você" ou "Outro operador"); as abas de ação do caso, Privacidade, Incidentes, Registro, Retenções e Configurações são das partes seguintes; o ambiente depende de `POLARIS_ENVIRONMENT` (D-3 c). |
 
+### Miniaturas de produto, T1: a capa no modelo de leitura e no sync (t744; corte miniaturas-de-produto; migration 0113)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Campo | Em revisão | `coverAssetId` (UUID ou `null`), opcional no contrato, em `ProductReadModel` (`product.list`) e `localProduct` (`sync.bootstrapPage`, página e releitura por ids do pull): a imagem de menor posição, por `LEFT JOIN LATERAL … LIMIT 1` (`packages/db/src/product-cover.ts`). As respostas dos comandos de produto não o trazem; o pull seguinte o repõe. |
+| Sync | Em revisão | Migration 0113: `record_product_media_sync_change()` (`polaris_sync_owner`) e três gatilhos por comando em `product_media`; uma mudança `product` por envio, reordenação e remoção, sem `products.version` (ADR 0030 e 0093, emendas). |
+| Provas | Em revisão | Gate `product-cover` (capa com 0, 1 e 3 imagens; reordenar; remover a capa e a última; uma mudança por operação; savepoint; pull; edição com a versão antiga; RLS entre duas lojas; plano da lista de 1.248 produtos no índice `(organization_id, product_id, position)`); gates `definer-owners` e `bootstrap` ajustados. Unidade: `product-cover.test.ts` (contrato), `product-cover-router.test.ts`, `local-products.test.ts`, `bootstrap.test.ts`. |
+| Fora | Registrado | Rota em lote (T2), cache e componente (T3a) e telas (T3b). |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |
@@ -2833,3 +2842,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Loja (`/lojas/{uuid}`) | Em revisão | Só a frase de que as ações moram no caso aberto da loja; sem ação própria. |
 | Provas | Em revisão | `ui/store-actions.test.ts` (estados `active`, `suspended`, `closed` e desconhecido, ordem dos efeitos, sem caso e sem capacidade, 400, 401, 403, 404, 409, 429, 503, rede e resposta ilegível, releitura que falha, duplo clique, cadeias hostis), `src/support-routes.test.ts` (400 `case_not_open`, 404 `unknown_case`, `internal` que não é booleano), `src/ui/ui-guard.test.ts` (rede: segmentos `suspend`, `reactivate` e `classification`). |
 | Limites | Registrado | O texto sobre o que estava guardado nos aparelhos offline segue a suposição do AC-P3.1 (achado t674), a confirmar com o Filipe e o Rodrigo. Suspender não tem segunda pessoa (ADR 0073). As rotas não devolvem `outcomeRecorded` (só as concessões). Sem abas no caso ainda: o painel é uma seção da página. Aceite no staging (AC-C14) e parecer do Rodrigo (AC-C11) pendentes. |
+
+### Admin v2, Parte 9: Configurações do operador, só leitura (t750; corte admin-v2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Tela | Em revisão | `GET /configuracoes` (`apps/admin/src/ui/page.ts`, `src/app.ts`), atrás do login da API e com a CSP `admin-document`; item "Configurações" no pé do menu, só com `platform:read`. Três áreas em `ui/views/settings.ts`: Você (o operador com o mesmo rótulo do topo, o papel e as permissões em palavras, uma por linha, de uma tabela fixa; código sem tradução vira "Permissão {código}"; "Estas permissões vêm do cadastro do Admin; não se mudam por aqui."), Ambiente (a mesma faixa do menu, de `POLARIS_ENVIRONMENT`) e Sessão ("Para sair, encerre a sessão no Access."). |
+| Sem rede nova, sem rastro | Em revisão | Usa o `whoami` que a casca já leu: nenhuma chamada a mais, nenhum campo, botão ou link, nada no navegador. Nenhuma rota de API, migration, contrato ou capacidade muda. |
+| Provas | Em revisão | `ui/settings.test.ts` (o operador, o papel, a tradução e o código sem tradução, cadeias hostis como texto, ambiente nos três valores sem inventar, só o `whoami`, nenhum controle, sem `platform:read` só "Sem permissão para isto."), `src/ui/settings-permissions.test.ts` (a tabela cobre exatamente as capacidades do domínio), `src/ui/settings-environment.test.ts` (a faixa da tela diz as mesmas palavras da do menu), `src/ui/screens.test.ts` (rota, título, item do pé só com `platform:read`, 403 sem a capacidade, nada do login no HTML), `src/route-surface.test.ts` (401 sem token). |
+| Limites | Registrado | D-3 c não se abre: o Worker informa o ambiente (`POLARIS_ENVIRONMENT`) e, sem ele, a tela diz "Ambiente não informado". D-3 d segue aberto (Filipe e Rodrigo): não há endereço de saída do Access no código nem na configuração, então não há botão "Sair". Aceite no staging (AC-C14) e capturas do Petković pendentes. |
