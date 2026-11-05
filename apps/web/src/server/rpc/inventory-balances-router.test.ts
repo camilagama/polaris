@@ -257,4 +257,75 @@ describe("inventory.listBalances", () => {
       data: { reason: "invalid_inventory_balance_cursor" },
     });
   });
+
+  describe("withCover", () => {
+    const COVER = "0199c2d0-0000-7000-8000-0000000000c1";
+    const setup = (entries: Record<string, unknown>[] = []) => {
+      const listInventoryBalances = vi.fn(
+        async (
+          _transaction: unknown,
+          _identity: typeof identity,
+          _options: unknown
+        ) => ({ entries, nextCursor: null })
+      );
+      const client = createClient({
+        listInventoryBalances,
+        withTenantRequestContext: (request: TenantContextRequest) =>
+          request.operation({}, identity),
+      });
+      return { client, listInventoryBalances };
+    };
+
+    it("sem withCover, o repositório é chamado sem a chave e a resposta não tem coverAssetId", async () => {
+      const { client, listInventoryBalances } = setup([entry]);
+
+      const result = await client.inventory.listBalances({ organizationId });
+
+      expect(listInventoryBalances.mock.calls[0]?.[2]).not.toHaveProperty(
+        "withCover"
+      );
+      expect(result.entries[0]).not.toHaveProperty("coverAssetId");
+    });
+
+    it("com withCover false, também não repassa a chave", async () => {
+      const { client, listInventoryBalances } = setup();
+
+      await client.inventory.listBalances({ organizationId, withCover: false });
+
+      expect(listInventoryBalances.mock.calls[0]?.[2]).not.toHaveProperty(
+        "withCover"
+      );
+    });
+
+    it("com withCover true, repassa a chave e devolve a capa de cada entrada, inclusive o null", async () => {
+      const { client, listInventoryBalances } = setup([
+        { ...entry, coverAssetId: COVER },
+        {
+          ...entry,
+          coverAssetId: null,
+          variantId: "0199c2d0-0000-7000-8000-000000000003",
+        },
+      ]);
+
+      const result = await client.inventory.listBalances({
+        organizationId,
+        withCover: true,
+      });
+
+      expect(listInventoryBalances.mock.calls[0]?.[2]).toMatchObject({
+        withCover: true,
+      });
+      expect(result.entries[0]).toHaveProperty("coverAssetId", COVER);
+      expect(result.entries[1]).toHaveProperty("coverAssetId", null);
+    });
+
+    it("recusa withCover que não é booleano, sem tocar o repositório", async () => {
+      const { client, listInventoryBalances } = setup();
+
+      await expect(
+        client.inventory.listBalances({ organizationId, withCover: "true" })
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(listInventoryBalances).not.toHaveBeenCalled();
+    });
+  });
 });

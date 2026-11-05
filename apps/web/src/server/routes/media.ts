@@ -44,6 +44,7 @@ import {
 import {
   InvalidMediaThumbsRequestError,
   MEDIA_THUMBS_HEADER,
+  mediaThumbsEnabled,
   mediaThumbsHeaderValue,
   parseMediaThumbIds,
   readMediaThumbs,
@@ -1008,6 +1009,10 @@ async function handleMediaThumbs(
     tenantRequest: TenantRunner;
   }
 ): Promise<Response> {
+  // first of all: off, the route is not there, so no session, transaction or bucket is touched
+  if (!mediaThumbsEnabled(context.env)) {
+    return mediaNotFoundResponse(context);
+  }
   const organizationId =
     context.req.query("organizationId") ??
     context.req.header("x-organization-id") ??

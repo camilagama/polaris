@@ -163,6 +163,7 @@ function uploadRequest(input: {
 const testBindings: ServerEnv["Bindings"] = {
   HYPERDRIVE: { connectionString: "postgresql://test.invalid/neondb" },
   IMAGES: {} as never,
+  MEDIA_THUMBS_ENABLED: "true",
 };
 
 describe("media upload route", () => {
@@ -981,6 +982,56 @@ describe("media thumbnail batch route", () => {
           new Set(ids.filter((id) => owners.get(id) === requestedOrganization))
         )
     );
+
+  it.each([
+    ["absent", undefined],
+    ["false", "false"],
+    ["empty", ""],
+    ["another case of true", "TRUE"],
+    ["a number", "1"],
+  ])(
+    "answers 404 not_found before any session, transaction or bucket read when MEDIA_THUMBS_ENABLED is %s",
+    async (_label, value) => {
+      const id = thumbId(1);
+      const { app, bindings, dependencies, mediaBucket } = createTestApp({
+        listDeliverableMediaAssetIds: tenantImages(
+          new Map([[id, organizationId]])
+        ),
+      });
+      const { MEDIA_THUMBS_ENABLED: _on, ...withoutFlag } = bindings;
+      const off =
+        value === undefined
+          ? withoutFlag
+          : { ...withoutFlag, MEDIA_THUMBS_ENABLED: value };
+
+      for (const ids of [id, "not-a-uuid", ""]) {
+        // biome-ignore lint/performance/noAwaitInLoops: one request at a time, for a clear failure
+        const response = await askThumbs(app, off, ids);
+        expect(response.status).toBe(404);
+        await expect(response.json()).resolves.toMatchObject({
+          error: { code: "not_found" },
+        });
+        expect(response.headers.get("x-polaris-thumbs")).toBeNull();
+      }
+      expect(dependencies.withTenantRequestContext).not.toHaveBeenCalled();
+      expect(dependencies.listDeliverableMediaAssetIds).not.toHaveBeenCalled();
+      expect(mediaBucket.get).not.toHaveBeenCalled();
+      expect(dependencies.processMediaDerivative).not.toHaveBeenCalled();
+    }
+  );
+
+  it("keeps the single image route open whatever MEDIA_THUMBS_ENABLED says", async () => {
+    const { app, bindings } = createTestApp();
+    const { MEDIA_THUMBS_ENABLED: _on, ...withoutFlag } = bindings;
+    const response = await app.fetch(
+      new Request(
+        `https://polaris.example.invalid/api/media/${thumbId(1)}?organizationId=${encodeURIComponent(organizationId)}&size=320`
+      ),
+      withoutFlag
+    );
+    expect(response.status).not.toBe(400);
+    expect(response.headers.get("x-polaris-thumbs")).toBeNull();
+  });
 
   it("answers one stored thumbnail with the private binary headers, in one transaction under catalog:read", async () => {
     const id = thumbId(1);

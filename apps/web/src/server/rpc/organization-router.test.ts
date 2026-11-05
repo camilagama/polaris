@@ -76,6 +76,7 @@ describe("organization.listMine", () => {
 
     await expect(client.organization.listMine()).resolves.toEqual({
       billingSelfService: false,
+      mediaThumbs: false,
       organizations: [],
     });
   });
@@ -103,6 +104,30 @@ describe("organization.listMine", () => {
     }
   });
 
+  it("says whether the thumbnails are on, only for the exact text true, apart from the billing flag", async () => {
+    const listFor = (flag: string | undefined) =>
+      createClient(
+        {
+          listUserOrganizations: () => Promise.resolve([]),
+          withAuthenticatedRequestContext: authenticated(),
+        },
+        flag === undefined
+          ? testBindings
+          : { ...testBindings, MEDIA_THUMBS_ENABLED: flag }
+      ).organization.listMine();
+
+    await expect(listFor("true")).resolves.toMatchObject({
+      billingSelfService: false,
+      mediaThumbs: true,
+    });
+    for (const flag of [undefined, "false", "TRUE", "1", " true"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one flag value at a time, for a clear failure
+      await expect(listFor(flag)).resolves.toMatchObject({
+        mediaThumbs: false,
+      });
+    }
+  });
+
   it("lists only what the repository returns for the session user, ignoring the input", async () => {
     const mine = {
       id: "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0",
@@ -123,7 +148,11 @@ describe("organization.listMine", () => {
         organizationId: "someone-elses-organization",
         userId: "attacker-controlled-id",
       })
-    ).resolves.toEqual({ billingSelfService: false, organizations: [mine] });
+    ).resolves.toEqual({
+      billingSelfService: false,
+      mediaThumbs: false,
+      organizations: [mine],
+    });
     expect(listUserOrganizations).toHaveBeenCalledTimes(1);
     expect(listUserOrganizations.mock.calls[0]?.[1]).toBe(session.user.id);
   });

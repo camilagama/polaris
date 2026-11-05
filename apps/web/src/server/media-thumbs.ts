@@ -2,7 +2,7 @@ import {
   MEDIA_THUMBS_MAX_PER_REQUEST,
   mediaDerivativeKey,
 } from "@polaris/domain/catalog/media";
-import type { MediaBucketBinding } from "./environment";
+import type { MediaBucketBinding, WorkerBindings } from "./environment";
 
 /** A Worker invocation keeps at most six storage operations open at once; the pool keeps to that however many ids a caller passes. */
 const MEDIA_THUMBS_STORAGE_CONCURRENCY = 6;
@@ -13,6 +13,13 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** The capped UUIDs and their commas; anything longer is refused before it is split. */
 const MAX_IDS_PARAMETER_LENGTH = MEDIA_THUMBS_MAX_PER_REQUEST * 37;
+
+/** Only the exact string `true` turns the batch route and the thumbnails of the screens on; absent is off. */
+export function mediaThumbsEnabled(
+  bindings: Pick<WorkerBindings, "MEDIA_THUMBS_ENABLED">
+): boolean {
+  return bindings.MEDIA_THUMBS_ENABLED === "true";
+}
 
 export class InvalidMediaThumbsRequestError extends Error {
   readonly code = "invalid_media_thumbs_request";

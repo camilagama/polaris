@@ -6,7 +6,9 @@ import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { FieldDescription } from "@/ui/field";
+import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { stockEntryHref } from "../inventory/stock-entry-link";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { focusLater } from "../lib/focus";
 import { QuantityStepper, TextField } from "./sale-fields";
 import {
@@ -29,6 +31,8 @@ type LocalSearch = (query: string) => Promise<{
 interface ItemEditorProps {
   canAdjustStock: boolean;
   canRemove: boolean;
+  /** The capa of the chosen variant's product; absent until a read that carried it, `null` without an image. */
+  cover?: string | null | undefined;
   errors: Record<string, string>;
   index: number;
   item: ItemDraft;
@@ -53,6 +57,7 @@ interface ItemEditorProps {
 export function ItemEditor({
   canAdjustStock,
   canRemove,
+  cover,
   errors,
   index,
   item,
@@ -125,6 +130,7 @@ export function ItemEditor({
           ) : (
             <ChosenVariant
               changeId={changeId}
+              cover={cover}
               item={item}
               offline={localSearch !== undefined}
               onChange={handleChange}
@@ -176,6 +182,7 @@ export function ItemEditor({
 
 interface ChosenVariantProps {
   changeId: string;
+  cover?: string | null | undefined;
   item: ItemDraft;
   /** Without a connection the cost on this device is not shown. */
   offline: boolean;
@@ -186,18 +193,28 @@ interface ChosenVariantProps {
 /** "✓ Camiseta · Preta · Saldo 6   Trocar": the chosen variant in one line, the cost under it. */
 function ChosenVariant({
   changeId,
+  cover,
   item,
   offline,
   onChange,
   stockState,
 }: ChosenVariantProps) {
   const costText = offline ? null : stockState?.costText;
+  const thumbs = useMediaThumbsEnabled();
   return (
     <div className="grid gap-0.5">
-      <div className="flex items-start gap-2">
+      <div
+        className={cn("flex gap-2", thumbs ? "items-center" : "items-start")}
+      >
+        {thumbs ? (
+          <ProductThumbnail assetId={cover} name={item.label} size={32} />
+        ) : null}
         <CircleCheckIcon
           aria-hidden="true"
-          className="mt-0.5 size-4 shrink-0 text-foreground"
+          className={cn(
+            "size-4 shrink-0 text-foreground",
+            thumbs ? "" : "mt-0.5"
+          )}
         />
         <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
           <span className="font-medium">{item.label}</span>
@@ -233,7 +250,14 @@ function ChosenVariant({
         </Button>
       </div>
       {costText ? (
-        <p className="pl-6 text-muted-foreground text-support">{costText}</p>
+        <p
+          className={cn(
+            "text-muted-foreground text-support",
+            thumbs ? "pl-16" : "pl-6"
+          )}
+        >
+          {costText}
+        </p>
       ) : null}
     </div>
   );

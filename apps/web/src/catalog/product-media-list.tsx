@@ -1,7 +1,9 @@
 import type { ProductMediaAssetReadModel } from "@polaris/contracts";
 import { useCallback } from "react";
+import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { productMediaAssetUrl } from "../lib/media-upload";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import {
   type ImageActionAvailability,
   imageActionAvailability,
@@ -94,6 +96,7 @@ function ProductMediaItem({
     }
   }, [assetId, confirming, onKeep]);
   const variantCount = asset.variantIds.length;
+  const showCover = useMediaThumbsEnabled() && position === 1;
   const confirmRunning = confirming !== null && running === confirming;
 
   return (
@@ -111,8 +114,11 @@ function ProductMediaItem({
         width={asset.width}
       />
       <div className="grid min-w-0 gap-0.5 [overflow-wrap:anywhere]">
-        <p className="font-medium">
-          Imagem {position} de {count}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+          <span>
+            Imagem {position} de {count}
+          </span>
+          {showCover ? <Badge data-cover="">Capa</Badge> : null}
         </p>
         <span className="text-muted-foreground text-support">
           {asset.width} × {asset.height} · {formatBytes(asset.byteSize)}

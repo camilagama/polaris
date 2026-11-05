@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MediaUploadHttpError } from "../lib/media-upload";
 import {
+  COVER_NOTICE,
   describeMediaFailure,
   imageActionAvailability,
   imageActionLabel,
@@ -330,5 +331,17 @@ describe("describeMediaFailure", () => {
     expect(
       describeMediaFailure("prepare", new TypeError("x")).message
     ).toContain("Escolha outro arquivo");
+  });
+});
+
+describe("o aviso da capa no painel de imagens", () => {
+  it("diz que a primeira imagem é a capa, onde ela aparece e que a miniatura mostra o centro", () => {
+    expect(COVER_NOTICE).toContain("primeira imagem é a capa");
+    expect(COVER_NOTICE).toContain("Produtos e na Venda");
+    expect(COVER_NOTICE).toContain("centro da imagem");
+  });
+
+  it("não promete nada que o plano ou o servidor decidem: sem número, sem limite", () => {
+    expect(COVER_NOTICE).not.toMatch(NOT_IN_LIMIT_TEXT);
   });
 });
