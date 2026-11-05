@@ -50,6 +50,11 @@ export function addDays(day: string, days: number): string {
   return new Date(utcTime(day) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
+/** The last day of the month of `day`. */
+export function lastOfMonth(day: string): string {
+  return addDays(`${addDays(`${day.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1);
+}
+
 /** How many calendar days a period has, both ends counted. */
 export function dayCount(period: Period): number {
   return Math.round((utcTime(period.to) - utcTime(period.from)) / DAY_MS) + 1;

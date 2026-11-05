@@ -58,6 +58,14 @@ Registro datado. Pedida pela CPU do `periodSummary` no staging (de 25 a 28/10, p
 - **O registro `report_period_summary_read`** passa a dizer em `reads` as linhas que o banco mandou: `days` (uma por data) e `products` (uma por produto do ranking, 0 sem ranking). As contagens por tabela saem, porque o Worker não lê mais as tabelas.
 - **Fica de fora:** tabela de resumo mantida na escrita, cache no servidor, índice novo (um índice de cobertura em `sale_items` e `sale_payments` reduziu o tempo de banco local em cerca de 10%, menos que o custo de escrita que poria em cada venda), `sync/pull`, `bootstrapPage` e a releitura da janela anterior pelo Início (decisão de produto à parte).
 
+## Emenda (04/11/2026): acima de 62 dias, a série do resumo vem por mês
+
+- **Por quê.** A medida de CPU do AC-23 no staging (366 dias contra 31) reprovou: o CPU do Worker cresce com as linhas da série (cerca de 0,039 ms por linha) e a resposta também (de 4,9 para 45 KB), não com as vendas.
+- **O SQL soma por mês acima de 62 dias** (`MONTHLY_SERIES_ABOVE_DAYS`), sobre a mesma agregação diária, com cada data arredondada ao centavo antes da soma: um balde por mês do calendário até o "hoje" da loja (a data de `generatedAt` no fuso da organização, lida de `organizations.timezone` na mesma consulta), os meses das pontas cortados pelo período e por hoje, e as datas depois de hoje num balde à parte. Até 62 dias a consulta e a resposta são as de antes.
+- **Contrato, só acrescentando (ADR 0096):** `granularity` opcional (`"month"` acima de 62 dias; ausente, uma entrada por data); na forma mensal cada entrada de `daily` traz `to`, `days` e `unknownDays`, `costs` e `operatingResult` nulos se algum dia do balde é nulo; `afterToday`, o balde das datas depois de hoje, quando o período passa de hoje. `daily` mais `afterToday` somam os cartões.
+- **Mesmo resultado.** O gate `period-summary-sql` lê cada janela também por mês, no mesmo instante, e exige que os baldes sejam os dias somados em centavos (incluindo `unknownDays` e o balde depois de hoje), com o resultado, os cartões, a qualidade e o ranking iguais aos da leitura diária, em janelas de 63 e 366 dias, uma que passa de hoje com despesa depois dele, uma toda depois de hoje, janelas longas sorteadas e todos os casos do teste de propriedade. `readPeriodSummary` confere o número, as datas e os dias de cada balde antes de somar.
+- **O log** (`report_period_summary_read`) mede o tamanho da resposta sem serializá-la de novo (`jsonByteLength`).
+
 ## Consequências
 
 - O painel e o resultado de um período sempre concordam, porque vêm da mesma leitura; desde a emenda de 28/10 o resumo é a SQL e as metas são o motor, e quem garante que os dois concordam é o gate `period-summary-sql`.

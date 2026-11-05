@@ -481,6 +481,7 @@ function categoryReadModel(category: {
 function productReadModel(product: {
   archivedAt: Date | null;
   categoryId: string | null;
+  coverAssetId?: string | null;
   createdAt: Date;
   deletedAt: Date | null;
   description: string | null;
@@ -502,6 +503,9 @@ function productReadModel(product: {
     status: deriveProductLifecycle(product.archivedAt, product.deletedAt),
     updatedAt: product.updatedAt.toISOString(),
     version: product.version,
+    ...(product.coverAssetId === undefined
+      ? {}
+      : { coverAssetId: product.coverAssetId }),
   };
 }
 

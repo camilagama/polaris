@@ -38,6 +38,7 @@
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
 | [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed` | 60 min | 1 | critical | sim |
+| [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
 
@@ -146,9 +147,11 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 ### r2-e-midia — falha do R2 ou da mídia
 
-**O que significa.** A limpeza de imagens removidas falhou ou o catálogo público não leu um arquivo do R2: `media_removed_asset_failed` (apagar objetos ou finalizar o ativo), `media_removed_asset_not_finalized` (o ativo ganhou vínculo depois de seus objetos serem apagados; **uma imagem pode ter perdido arquivos**), `media_removed_reconciliation_incomplete` (a execução terminou com falhas) e `catalog_media_read_failed` (leitura de objeto no catálogo). Falhas de rota de mídia do app aparecem como `server_error` nas rotas `/api/products/:productId/media` e `/api/media/:assetId`, e entram no sinal [http-5xx](#http-5xx).
+**O que significa.** A limpeza de imagens removidas falhou ou o catálogo público não leu um arquivo do R2: `media_removed_asset_failed` (apagar objetos ou finalizar o ativo), `media_removed_asset_not_finalized` (o ativo ganhou vínculo depois de seus objetos serem apagados; **uma imagem pode ter perdido arquivos**), `media_removed_reconciliation_incomplete` (a execução terminou com falhas) e `catalog_media_read_failed` (leitura de objeto no catálogo). Falhas de rota de mídia do app aparecem como `server_error` nas rotas `/api/products/:productId/media`, `/api/media/thumbs` e `/api/media/:assetId`, e entram no sinal [http-5xx](#http-5xx).
 
-**Como confirmar.** Workers Logs: os quatro eventos por `errorClass`/`errorCode`; confira o status do R2 e do binding `MEDIA_BUCKET` no console. O procedimento de reconciliação está em [media-storage-reconciliation.md](./media-storage-reconciliation.md).
+Fora do alerta, só para investigar: `media_thumbs_stream_aborted`, quando o lote de miniaturas cortou uma resposta já começada (`reason = thumb_changed`: um derivado sumiu ou mudou de tamanho entre a medida e a leitura; `stream_failed`: a leitura do R2 caiu ou o aparelho fechou a conexão, o que acontece toda vez que alguém sai da tela no meio da resposta). O aparelho vê falha de rede e tenta de novo depois. Muitos `stream_failed` junto com falhas de R2 apontam o bucket; sozinhos, são abas fechadas.
+
+**Como confirmar.** Workers Logs: os quatro eventos do alerta por `errorClass`/`errorCode`; confira o status do R2 e do binding `MEDIA_BUCKET` no console. O procedimento de reconciliação está em [media-storage-reconciliation.md](./media-storage-reconciliation.md).
 
 **O que fazer.** `not_finalized` é prioridade: o ativo e o produto afetados precisam de conferência (o evento traz o `assetId` do ativo, id opaco). Falha repetida de um ativo: ele sai do resto da execução e volta na seguinte; corrija a causa (chave inválida, permissão do binding) e espere o tick. R2 fora do ar: aguarde; as imagens servidas dependem dele, e os derivados de 320 e 640 px vêm do mesmo bucket.
 
@@ -281,3 +284,13 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 **Como confirmar.** Workers Logs: `event = "billing_refund_pending_incident_failed"`, por `cause` e `sqlState`. Com `sqlState`, veja também [erros-de-banco](#erros-de-banco).
 
 **O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)).
+
+<a id="comando-de-cobranca-do-operador"></a>
+
+### comando-de-cobranca-do-operador — operador cancelou uma renovação ou reembolsou pelo Admin
+
+**O que significa.** Uma pessoa do Access cancelou a renovação ou pediu o reembolso de uma loja pela seção Cobrança do Admin, e o comando chegou ao provedor ([ADR 0105](../adr/0105-comandos-de-provedor-pelo-operador.md)). O evento é `billing_operator_command` (aviso, no Worker `polaris-admin`, não no `polaris-web`), com `operation` (`billing.cancel_renewal` ou `billing.refund`), `reason` (o resultado: `cancelled`, `already_cancelled`, `nothing_to_cancel`, `refund_requested`, `nothing_to_refund`), `provider` e `organizationId` opaco. Não há segunda aprovação no Admin: o alerta existe para a **outra** pessoa do Access ver cada comando na hora. O e-mail do alerta tem de chegar às duas pessoas do Access.
+
+**Como confirmar.** Workers Logs do `polaris-admin`: `event = "billing_operator_command"`. No Admin, o caso da loja mostra a auditoria `billing.operator_*_requested` e `…_recorded`, com o ID do comando; o motivo digitado está no ledger de cobrança (`billing_events`, `provider_event_id = command:operator_<tipo>:<commandId>`).
+
+**O que fazer.** Se foi a outra pessoa, confira o caso e o motivo; nada a fazer. Se ninguém reconhece o comando, trate como sessão de operador comprometida: desligue o operador (`platform_principals.status`), revogue a sessão no Access e siga [suspeita de vazamento da chave](./billing-providers.md#suspeita-de-vazamento-da-chave). Um `admin.operator_refund_rate_limited` no mesmo Worker diz que alguém passou do limite de 3 reembolsos por hora.

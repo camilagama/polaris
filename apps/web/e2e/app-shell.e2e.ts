@@ -1,162 +1,37 @@
 /// <reference lib="dom" />
 
-import type { Page, Route } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
-import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { SUPPORT_ADDRESS } from "./support-address";
-import { serveHealth, WORKER_MARK } from "./worker-mark";
+import {
+  authMethods,
+  EMAIL,
+  json,
+  leaveOneRefused,
+  ORGANIZATIONS,
+  SECOND_ORGANIZATION,
+  serve,
+  serveFoot,
+  TRIAL_PLAN,
+} from "./shell-server";
+import { WORKER_MARK } from "./worker-mark";
+
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
 
 /**
- * The shell v5.1: the sidebar of the desktop, the bottom bar and "Mais" of the phone, the theme and "Sair",
+ * The shell: the sidebar of the desktop, the bottom bar and "Mais" of the phone, the header with the menu of the store
+ * (the theme, Ajuda, the legal pages and "Sair"),
  * against a server played by network interception with the offline runtime on (the devices screen has the same).
  */
 
-const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
-const ORGANIZATIONS = [
-  {
-    id: ORGANIZATION_ID,
-    name: "Loja do teste",
-    role: "owner",
-    timezone: "America/Sao_Paulo",
-  },
-];
-const SECOND_ORGANIZATION = {
-  id: "0199c2d0-0000-7000-8000-00000000a002",
-  name: "Loja da filial",
-  role: "owner",
-  timezone: "America/Sao_Paulo",
-};
 /** The hint of the connection chip on a screen that needs the network. */
 const NEEDS_INTERNET_TITLE = /esta tela precisa de internet/;
-const USER_ID = "user-do-teste";
-const EMAIL = "contato@exemplo.com.br";
-const LEASE_KEY = {
-  id: "teste",
-  secret: "teste-secret-teste-secret-teste-secret-0123456789",
-};
-const HOUR = 3_600_000;
 const DARK = /\bdark\b/;
 /** A count of days, which the trial at the foot of the menu never says (AS-3, AC-12). */
 const DAYS = /\d+ dias?\b/;
 const ENTRAR = /\/entrar(\?.*)?$/;
 const LEFT_TO_START = /\/(entrar\?motivo=saiu.*)?$/;
-const DEVICE = {
-  createdAt: "2026-10-01T12:00:00.000Z",
-  id: "0199c2d0-0000-7000-8000-000000000001",
-  label: "Caixa da loja",
-  lastSeenAt: "2026-10-14T12:00:00.000Z",
-  revokedAt: null,
-};
-
-const json = (body: unknown) => ({
-  body: JSON.stringify({ json: body, meta: [] }),
-  contentType: "application/json",
-  headers: { ...WORKER_MARK },
-});
-const inputOf = (route: Route) =>
-  (route.request().postDataJSON() as { json: Record<string, unknown> }).json;
-
-/** What the server says of the ways to sign in (the latest route wins over the one `serve` set). */
-const authMethods = (page: Page, emailPassword: boolean) =>
-  page.route("**/api/auth-methods", (route) =>
-    route.fulfill({
-      body: JSON.stringify({
-        emailPassword,
-        google: true,
-        turnstileSiteKey: null,
-      }),
-      contentType: "application/json",
-      headers: { ...WORKER_MARK },
-    })
-  );
-
-/** The server of a test: a signed-in person with one store, and nothing queued. */
-async function serve(page: Page, organizations = ORGANIZATIONS) {
-  const state = { signOutCalls: 0 };
-  // the Início reads in vain here (every other /rpc is cut): the probe finds the Worker, so it is not "offline"
-  await serveHealth(page);
-  await page.route("**/rpc/**", (route) => route.abort("internetdisconnected"));
-  await page.route("**/rpc/organization/listMine", (route) =>
-    route.fulfill(json({ organizations }))
-  );
-  // the password is off unless a test says otherwise: Senha is not a tab of Configurações then
-  await authMethods(page, false);
-  await page.route("**/api/auth/get-session", (route) =>
-    route.fulfill({
-      body: JSON.stringify(
-        state.signOutCalls > 0 ? null : { user: { email: EMAIL, id: USER_ID } }
-      ),
-      contentType: "application/json",
-      headers: { ...WORKER_MARK },
-    })
-  );
-  await page.route("**/api/auth/sign-out", (route) => {
-    state.signOutCalls += 1;
-    return route.fulfill({
-      body: "{}",
-      contentType: "application/json",
-      headers: { ...WORKER_MARK },
-    });
-  });
-  await page.route("**/rpc/device/list", (route) =>
-    route.fulfill(json({ devices: [DEVICE] }))
-  );
-  await page.route("**/rpc/device/register", (route) =>
-    route.fulfill(json({ device: DEVICE }))
-  );
-  await page.route("**/rpc/device/check", (route) =>
-    route.fulfill(json({ device: DEVICE }))
-  );
-  await page.route("**/rpc/offline/issueLease", async (route) => {
-    const input = inputOf(route) as {
-      deviceId: string;
-      organizationId: string;
-    };
-    const issuedAt = new Date();
-    const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
-    const lease = await signOfflineLease(
-      buildOfflineLeaseClaims({
-        capabilities: ["customer:create", "customer:update"],
-        deviceId: input.deviceId,
-        epoch: 0,
-        expiresAt,
-        grantId: "0199c2d0-0000-7000-8000-000000000901",
-        issuedAt,
-        organizationId: input.organizationId,
-        userId: USER_ID,
-      }),
-      LEASE_KEY
-    );
-    await route.fulfill(
-      json({
-        expiresAt: expiresAt.toISOString(),
-        grantId: "0199c2d0-0000-7000-8000-000000000901",
-        issuedAt: issuedAt.toISOString(),
-        lease,
-      })
-    );
-  });
-  await page.route("**/rpc/sync/getCursor", (route) =>
-    route.fulfill(json({ cursor: "0" }))
-  );
-  await page.route("**/rpc/sync/bootstrapPage", (route) =>
-    route.fulfill(
-      json({
-        collection: (inputOf(route) as { collection: string }).collection,
-        nextAfterId: null,
-        rows: [],
-      })
-    )
-  );
-  await page.route("**/rpc/sync/pull", (route) =>
-    route.fulfill(json({ changes: [], hasMore: false, nextCursor: "0" }))
-  );
-  await page.route("**/rpc/sale/list", (route) =>
-    route.fulfill(json({ sales: [] }))
-  );
-  return state;
-}
 
 const sidebar = (page: Page) =>
   page.getByRole("navigation", { exact: true, name: "Principal" });
@@ -166,7 +41,9 @@ const more = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Mais" });
 const chip = (page: Page) => page.locator(".sync-status");
 const storeMenu = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Loja, tema e Sair" });
+  page.getByRole("button", { name: STORE_MENU_NAME });
+/** The store and the e-mail at the top of the open menu of the header. */
+const identity = (page: Page) => page.locator("[data-store-identity]");
 
 /** The eight destinations of the menu, in order (map of navigation, § 1). */
 const DESTINATIONS = [
@@ -185,7 +62,7 @@ test.describe("desktop (1280 px)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
   });
 
-  test("a lateral tem os grupos da v5.1, marca o item atual e o chip fica no alto do conteúdo", async ({
+  test("a lateral tem os grupos da v5.1, marca o item atual e o chip fica no cabeçalho", async ({
     page,
   }) => {
     await serve(page);
@@ -228,36 +105,55 @@ test.describe("desktop (1280 px)", () => {
       page.getByRole("link", { exact: true, name: "Polaris" })
     ).toHaveCSS("text-decoration-line", "none");
 
-    // the top of the sidebar: the mark and "Polaris"; the foot: the card of the store, with the e-mail and the menu
-    // of the theme and "Sair" (v7 § 3 item 12)
+    // the top of the sidebar: the mark and "Polaris"; the header: the menu of the store, with its initials and name,
+    // that holds the e-mail, the theme, Ajuda, the legal pages and "Sair"; the sidebar has nothing of the account
     await expect(
       page.getByRole("link", { exact: true, name: "Polaris" })
     ).toBeVisible();
-    const card = page.locator("[data-store-card]");
-    await expect(card).toContainText("Loja do teste");
-    await expect(card.getByText(EMAIL, { exact: true })).toBeVisible();
-    await expect(card).toContainText("LT");
+    // the name of the button starts with what the menu holds and ends with the store, its visible label
+    await expect(storeMenu(page)).toHaveAccessibleName(
+      "Loja, conta e ajuda: Loja do teste"
+    );
+    await expect(storeMenu(page).locator("[data-initials]")).toHaveAttribute(
+      "data-initials",
+      "LT"
+    );
+    await expect(storeMenu(page)).toContainText("Loja do teste");
+    await expect(page.locator('[data-slot="sidebar"]')).not.toContainText(
+      EMAIL
+    );
     await expect(
       page.getByRole("button", { exact: true, name: "Sair" })
     ).toHaveCount(0);
     await storeMenu(page).click();
     const menu = page.getByRole("menu");
+    await expect(identity(page)).toContainText("Loja do teste");
+    await expect(
+      identity(page).getByText(EMAIL, { exact: true })
+    ).toBeVisible();
     await expect(menu.getByRole("menuitemradio")).toHaveText([
       "Automático",
       "Claro",
       "Escuro",
     ]);
-    // "Sair" is the last item, with its own separator before it; one store: nothing to switch to
-    await expect(menu.getByRole("menuitem")).toHaveText(["Sair"]);
-    await expect(menu.getByRole("separator")).toHaveCount(1);
+    // one store: nothing to switch to; "Sair" is the last item, with its own separator before it
+    await expect(menu.getByRole("menuitem")).toHaveText([
+      "Ajuda e contato",
+      "Termos de Uso (abre em outra aba)",
+      "Política de Privacidade (abre em outra aba)",
+      "Sair",
+    ]);
+    await expect(menu.getByRole("separator")).toHaveCount(3);
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
     await expect(storeMenu(page)).toBeFocused();
 
-    // the chip is in the top right corner of the content, right of the sidebar
+    // the chip is in the header, at its right, before "?" and the menu of the store
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
+    const header = page.locator("[data-app-header]");
+    await expect(header.locator(".sync-status")).toHaveCount(1);
     const box = await chip(page).boundingBox();
     const side = await nav.boundingBox();
     expect(box?.x ?? 0).toBeGreaterThan(
@@ -272,13 +168,12 @@ test.describe("desktop (1280 px)", () => {
     );
   });
 
-  test("com duas lojas, o menu do cartão troca a loja, separado do tema e do Sair", async ({
+  test("com duas lojas, o menu da loja troca a loja, separado do tema e do Sair", async ({
     page,
   }) => {
     await serve(page, [...ORGANIZATIONS, SECOND_ORGANIZATION]);
     await page.goto("/products");
-    const card = page.locator("[data-store-card]");
-    await expect(card).toContainText("Loja do teste");
+    await expect(storeMenu(page)).toContainText("Loja do teste");
     await storeMenu(page).click();
     const menu = page.getByRole("menu");
     const stores = menu.getByRole("group", { name: "Trocar de loja" });
@@ -289,19 +184,17 @@ test.describe("desktop (1280 px)", () => {
     await expect(
       stores.getByRole("menuitemradio", { name: "Loja do teste" })
     ).toHaveAttribute("aria-checked", "true");
-    // the theme, the stores and "Sair": two separators, "Sair" last
-    await expect(menu.getByRole("separator")).toHaveCount(2);
+    // the stores, the theme, the links and "Sair": four separators, "Sair" last
+    await expect(menu.getByRole("separator")).toHaveCount(4);
     await expect(menu.getByRole("menuitem").last()).toHaveText("Sair");
     await stores.getByRole("menuitemradio", { name: "Loja da filial" }).click();
-    await expect(card).toContainText("Loja da filial");
+    await expect(storeMenu(page)).toContainText("Loja da filial");
     // the choice is the one kept for the next visit
     await page.reload();
-    await expect(page.locator("[data-store-card]")).toContainText(
-      "Loja da filial"
-    );
+    await expect(storeMenu(page)).toContainText("Loja da filial");
   });
 
-  test("só com o e-mail (a leitura das lojas falhou), o cartão e o Sair continuam lá", async ({
+  test("só com o e-mail (a leitura das lojas falhou), o menu da loja e o Sair continuam lá", async ({
     page,
   }) => {
     await serve(page);
@@ -317,15 +210,14 @@ test.describe("desktop (1280 px)", () => {
       })
     );
     await page.goto("/products");
-    const card = page.locator("[data-store-card]");
-    await expect(card).toContainText(EMAIL);
+    await expect(storeMenu(page)).toContainText(EMAIL);
     await storeMenu(page).click();
     await expect(
       page.getByRole("menuitem", { exact: true, name: "Sair" })
     ).toBeVisible();
   });
 
-  test("o tema escolhido no menu do cartão troca a classe do <html> e a cor da barra do navegador", async ({
+  test("o tema escolhido no menu da loja troca a classe do <html> e a cor da barra do navegador", async ({
     page,
   }) => {
     await serve(page);
@@ -356,7 +248,7 @@ test.describe("desktop (1280 px)", () => {
     ).toHaveAttribute("media", "(prefers-color-scheme: light)");
   });
 
-  test("Sair no menu do cartão encerra a sessão e vai para o início", async ({
+  test("Sair no menu da loja encerra a sessão e vai para o início", async ({
     page,
   }) => {
     const state = await serve(page);
@@ -442,9 +334,15 @@ test.describe("celular (360 px)", () => {
     ]);
     const current = panel.locator('[aria-current="page"]');
     await expect(current).toHaveText("Produtos");
+    // only navigation: the store, the theme and "Sair" are in the menu of the header; the legal pages at its foot
     await expect(
       panel.getByRole("button", { exact: true, name: "Sair" })
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(panel.getByRole("radiogroup")).toHaveCount(0);
+    await expect(panel).not.toContainText(EMAIL);
+    await expect(
+      panel.locator("[data-sheet-legal]").getByRole("link")
+    ).toHaveText(["Termos de Uso", "Política de Privacidade"]);
     await panel.getByRole("link", { name: "Clientes" }).click();
     await page.waitForURL("**/customers");
     await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
@@ -463,7 +361,7 @@ test.describe("celular (360 px)", () => {
     }
   });
 
-  test("em Mais, o menu da loja abre acima da folha (que é um diálogo modal), cabe na tela e troca a loja", async ({
+  test("o menu da loja do cabeçalho cabe na tela, mostra a loja e o e-mail inteiros e troca a loja", async ({
     page,
   }) => {
     const long = {
@@ -471,24 +369,33 @@ test.describe("celular (360 px)", () => {
       id: "0199c2d0-0000-7000-8000-00000000a003",
       name: "Loja do centro da cidade com um nome bem comprido para quebrar linha no menu",
     };
-    await serve(page, [...ORGANIZATIONS, SECOND_ORGANIZATION, long]);
+    await serve(page, [long, ...ORGANIZATIONS, SECOND_ORGANIZATION]);
     await page.goto("/products");
-    await more(page).click();
-    const store = page.getByRole("combobox", { exact: true, name: "Loja" });
-    await store.click();
-    // a click only lands if nothing (the sheet or its veil) covers the option: Playwright checks what is hit
-    const option = page.getByRole("option", { exact: true, name: long.name });
+    await storeMenu(page).click();
+    // a click only lands if nothing covers the option: Playwright checks what is hit
+    const option = page.getByRole("menuitemradio", {
+      exact: true,
+      name: "Loja do teste",
+    });
     await expect(option).toBeVisible();
-    const box = await option.boundingBox();
-    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
-    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(360);
-    // Escape closes the menu only: the sheet (the dialog around it) stays open
+    const menu = await page.getByRole("menu").boundingBox();
+    expect(menu?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((menu?.x ?? 0) + (menu?.width ?? 0)).toBeLessThanOrEqual(360);
+    // the name of the store wraps, never cut; the e-mail is whole
+    await expect(identity(page)).toContainText(long.name);
+    await expect(
+      identity(page).getByText(EMAIL, { exact: true })
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(option).toBeHidden();
-    await expect(page.getByRole("dialog", { name: "Mais" })).toBeVisible();
-    await store.click();
+    await expect(storeMenu(page)).toBeFocused();
+    await storeMenu(page).click();
     await option.click();
-    await expect(store).toContainText("Loja do centro da cidade");
+    // a radio item keeps the menu open
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await storeMenu(page).click();
+    await expect(identity(page)).toContainText("Loja do teste");
   });
 
   test("Mais abre e fecha com o teclado, e o foco volta para o botão", async ({
@@ -525,17 +432,16 @@ test.describe("celular (360 px)", () => {
     await expect(more(page)).toBeFocused();
   });
 
-  test("Sair em Mais encerra a sessão", async ({ page }) => {
+  test("Sair no menu da loja do cabeçalho encerra a sessão, em 2 toques", async ({
+    page,
+  }) => {
     const state = await serve(page);
     await page.goto("/");
     await expect(chip(page)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
-    await more(page).click();
-    await page
-      .getByRole("dialog", { name: "Mais" })
-      .getByRole("button", { exact: true, name: "Sair" })
-      .click();
+    await storeMenu(page).click();
+    await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
     await expect.poll(() => state.signOutCalls).toBe(1);
     await expect(page).toHaveURL(LEFT_TO_START);
   });
@@ -549,66 +455,6 @@ const pathOf = (page: Page) => {
   const url = new URL(page.url());
   return `${url.pathname}${url.search}`;
 };
-
-/**
- * One command of this device that the server refused (as `sync.push` leaves it): written into the outbox of the
- * runtime, which opened with the page, and read again on a reload. The screens of this harness have no copy of their
- * own to queue with, so the record is made here, in the shape the outbox keeps.
- */
-async function leaveOneRefused(page: Page) {
-  await page.goto("/");
-  await expect(chip(page)).toContainText("Tudo sincronizado", {
-    timeout: 20_000,
-  });
-  await page.evaluate(
-    async ({ deviceId, organizationId }) => {
-      const names = (await indexedDB.databases())
-        .map(({ name }) => name ?? "")
-        .filter((name) => name.startsWith("polaris-outbox-"));
-      for (const name of names) {
-        // biome-ignore lint/performance/noAwaitInLoops: one database, the one of this person
-        await new Promise<void>((resolve, reject) => {
-          const opening = indexedDB.open(name);
-          opening.onerror = () => reject(opening.error);
-          opening.onsuccess = () => {
-            const tx = opening.result.transaction(
-              ["commands", "meta"],
-              "readwrite"
-            );
-            const at = new Date().toISOString();
-            tx.objectStore("commands").put({
-              attempts: 1,
-              baseVersion: null,
-              commandId: crypto.randomUUID(),
-              createdAt: at,
-              deviceId,
-              lastAttemptAt: at,
-              lease: "lease",
-              organizationId,
-              payload: { name: "Bia Souza" },
-              rejection: { at, code: "validation_failed" },
-              seq: 1,
-              status: "rejected",
-              type: "customer.create",
-            });
-            tx.objectStore("meta").put(1, "lastSeq");
-            tx.oncomplete = () => {
-              opening.result.close();
-              resolve();
-            };
-            tx.onerror = () => reject(tx.error);
-          };
-        });
-      }
-      return names.length;
-    },
-    { deviceId: DEVICE.id, organizationId: ORGANIZATION_ID }
-  );
-  await page.reload();
-  await expect(chip(page)).toContainText("precisa de atenção", {
-    timeout: 20_000,
-  });
-}
 
 /** The text of the Pendências link: its name and the drawn count (its accessible name says the count in words). */
 const PENDENCIAS_WITH_COUNT = "Pendências1";
@@ -1007,10 +853,12 @@ test.describe("lateral recolhível (a partir de 1024 px)", () => {
     await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
       "Clientes"
     );
-    // the legal links leave the folded column for the foot of the content
+    // folded, the column has no help nor legal link, and the header does not change
     await expect(
-      page.getByRole("link", { exact: true, name: "Termos de Uso" })
-    ).toBeVisible();
+      page.locator('[data-slot="sidebar"]').getByRole("link", { name: "Ajuda" })
+    ).toHaveCount(0);
+    await expect(page.getByRole("contentinfo")).toHaveCount(0);
+    await expect(page.locator("[data-header-help]")).toBeVisible();
     // kept on the device: a reload opens it folded
     await page.reload();
     await expect(expand(page)).toBeVisible();
@@ -1102,9 +950,10 @@ test.describe("barra do celular a 360 e 320 px", () => {
         "Configurações",
         "Ajuda e contato",
       ]);
+      // "Sair" is in the menu of the header, not in "Mais"
       await expect(
         panel.getByRole("button", { exact: true, name: "Sair" })
-      ).toBeVisible();
+      ).toHaveCount(0);
       // no folding on the phone
       await expect(
         page.getByRole("button", { name: "Recolher menu" })
@@ -1114,84 +963,16 @@ test.describe("barra do celular a 360 e 320 px", () => {
 });
 
 test.describe("pé do menu: primeiros passos e teste grátis", () => {
-  /** A trial with its first charge set, as the server reads it (every key: the answer is strict). */
-  const TRIAL_PLAN = {
-    accessEndsAt: "2026-11-11T03:00:00.000Z",
-    cycleMonths: 1,
-    kept: { historyMonths: 3, products: 18, sales: 47 },
-    limits: { goals: 3, images: 5000, variants: 2000 },
-    method: "card",
-    nextCharge: { amount: "24.90", on: "2026-11-10" },
-    offer: {
-      methods: ["card", "pix_automatic"],
-      prices: [
-        { amount: "249.00", cycleMonths: 12 },
-        { amount: "24.90", cycleMonths: 1 },
-      ],
-    },
-    recovery: null,
-    refund: null,
-    refundPending: false,
-    refundWindowEndedOn: null,
-    renewalCancelled: false,
-    resubscribeFrom: null,
-    state: "trialing",
-    trialAvailable: false,
-    usage: { goals: 1, images: 12, variants: 38 },
-  };
   const STEPS_NAME = "Primeiros passos, 2 de 3 concluídos";
   const TRIAL_NAME =
     "Teste grátis, primeira cobrança em 10/11, abrir Assinatura";
-
-  /**
-   * The shell of a store in its trial: `steps` is what the Início read of the first steps in this tab, `role` and
-   * `billingSelfService` say whether this person manages the billing. Counts the reads of the plan.
-   */
-  async function serveFoot(
-    page: Page,
-    {
-      billingSelfService = true,
-      role = "owner",
-      steps = 2,
-    }: { billingSelfService?: boolean; role?: string; steps?: number | null }
-  ) {
-    const organizations = [
-      {
-        id: ORGANIZATION_ID,
-        name: "Loja do teste",
-        role,
-        timezone: "America/Sao_Paulo",
-      },
-    ];
-    await serve(page, organizations);
-    await page.route("**/rpc/organization/listMine", (route) =>
-      route.fulfill(json({ billingSelfService, organizations }))
-    );
-    const reads = { plan: 0 };
-    await page.route("**/rpc/billing/readPlan", (route) => {
-      reads.plan += 1;
-      return route.fulfill(json(TRIAL_PLAN));
-    });
-    if (steps !== null) {
-      await page.addInitScript(
-        ([organizationId, done]) => {
-          sessionStorage.setItem(
-            "polaris.home.firstSteps",
-            JSON.stringify({ done, organizationId })
-          );
-        },
-        [ORGANIZATION_ID, steps] as const
-      );
-    }
-    return reads;
-  }
 
   const stepsLink = (page: Page) =>
     page.getByRole("link", { exact: true, name: STEPS_NAME });
   const trialLink = (page: Page) =>
     page.getByRole("link", { exact: true, name: TRIAL_NAME });
 
-  test("1280 px: os dois itens acima do cartão da loja, cada um levando ao seu lugar", async ({
+  test("1280 px: os dois itens no pé da lateral, cada um levando ao seu lugar", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -1210,17 +991,16 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     await expect(trialLink(page)).toContainText("Assinatura");
     // the date, never a count of days (AS-3, AC-12)
     await expect(page.locator("[data-menu-progress]")).not.toContainText(DAYS);
-    // out of the destinations, at the foot, in order: steps, trial, the card of the store
+    // out of the destinations, at the foot, in order: steps, then trial, and nothing after them
     await expect(
       sidebar(page).getByRole("link", { name: "Primeiros passos" })
     ).toHaveCount(0);
     const steps = await stepsLink(page).boundingBox();
     const trial = await trialLink(page).boundingBox();
-    const card = await page.locator("[data-store-card]").boundingBox();
     expect(steps?.y ?? 0).toBeLessThan(trial?.y ?? 0);
-    expect((trial?.y ?? 0) + (trial?.height ?? 0)).toBeLessThanOrEqual(
-      card?.y ?? 0
-    );
+    await expect(
+      page.locator('[data-sidebar="footer"]').getByRole("link")
+    ).toHaveCount(2);
     // two lines each, taller than a destination (32 px) and not cut by it
     expect(steps?.height ?? 0).toBeGreaterThan(40);
     expect(trial?.height ?? 0).toBeGreaterThan(48);
@@ -1274,18 +1054,16 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       steps: null,
     });
     await page.goto("/products");
-    // the store is loaded (the card is there with or without one) and the network is quiet: only then is the
+    // the store is loaded (the menu of the header has its name) and the network is quiet: only then is the
     // absence worth something
-    await expect(page.locator("[data-store-card]")).toContainText(
-      "Loja do teste"
-    );
+    await expect(storeMenu(page)).toContainText("Loja do teste");
     await page.waitForLoadState("networkidle");
     await expect(page.locator("[data-menu-progress]")).toHaveCount(0);
     await expect(page.getByText("Teste grátis")).toHaveCount(0);
     expect(reads.plan).toBe(0);
   });
 
-  test("sem passos lidos (a loja já vendeu) e fora do teste: o pé fica só com o cartão", async ({
+  test("sem passos lidos (a loja já vendeu) e fora do teste: o pé da lateral fica vazio", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -1300,11 +1078,9 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     await page.goto("/products");
     // the plan was read and answered: only then is the absence of the trial worth something
     await expect.poll(() => reads.active).toBe(1);
-    // the store is loaded (the card is there with or without one) and the network is quiet: only then is the
+    // the store is loaded (the menu of the header has its name) and the network is quiet: only then is the
     // absence worth something
-    await expect(page.locator("[data-store-card]")).toContainText(
-      "Loja do teste"
-    );
+    await expect(storeMenu(page)).toContainText("Loja do teste");
     await page.waitForLoadState("networkidle");
     await expect(page.locator("[data-menu-progress]")).toHaveCount(0);
   });
@@ -1338,7 +1114,47 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     }
   });
 
-  test("360 px: as duas linhas ficam em Mais, antes do tema", async ({
+  test("AC-4.3: no pior caso (Pendências, primeiros passos e teste grátis), Mais cabe em 360×640 sem rolar", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 640, width: 360 });
+    await serveFoot(page, {});
+    await leaveOneRefused(page);
+    await page.goto("/products");
+    await expect(bottomBar(page)).toBeVisible();
+    await more(page).click();
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    await expect(
+      panel.getByRole("link", {
+        exact: true,
+        name: "Pendências, 1 registro recusado",
+      })
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("link", { exact: true, name: STEPS_NAME })
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("link", { exact: true, name: TRIAL_NAME })
+    ).toBeVisible();
+    const scroller = panel.locator(":scope > div");
+    await expect
+      .poll(() =>
+        scroller.evaluate((node) => node.scrollHeight <= node.clientHeight)
+      )
+      .toBe(true);
+    // nor does the list of destinations scroll inside it: Ajuda e contato is whole
+    expect(
+      await panel
+        .locator('[data-sidebar="content"]')
+        .evaluate((node) => node.scrollHeight <= node.clientHeight)
+    ).toBe(true);
+    // the last line of the sheet, the legal pages, is on the screen
+    await expect(panel.locator("[data-sheet-legal]")).toBeInViewport({
+      ratio: 1,
+    });
+  });
+
+  test("360 px: as duas linhas ficam em Mais, antes dos links legais", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -1351,13 +1167,13 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     const trial = panel.getByRole("link", { exact: true, name: TRIAL_NAME });
     await expect(steps).toBeVisible();
     await expect(trial).toBeVisible();
-    const theme = panel.getByRole("group", { name: "Aparência" });
+    const legal = panel.locator("[data-sheet-legal]");
     const stepsBox = await steps.boundingBox();
     const trialBox = await trial.boundingBox();
-    const themeBox = await theme.boundingBox();
+    const legalBox = await legal.boundingBox();
     expect(stepsBox?.y ?? 0).toBeLessThan(trialBox?.y ?? 0);
     expect((trialBox?.y ?? 0) + (trialBox?.height ?? 0)).toBeLessThanOrEqual(
-      themeBox?.y ?? 0
+      legalBox?.y ?? 0
     );
     // a touch target of the phone, and nothing out of the sheet's width
     expect(trialBox?.height ?? 0).toBeGreaterThanOrEqual(44);
@@ -1407,8 +1223,10 @@ test.describe("Ajuda e contato", () => {
     await more(page).click();
     taps += 1;
     const panel = page.getByRole("dialog", { name: "Mais" });
-    // after the destinations (Configurações is the last of them) and before the foot: the theme and "Sair"
-    const links = panel.getByRole("link");
+    // after the destinations (Configurações is the last of them), before the foot
+    const links = panel
+      .getByRole("navigation", { name: "Principal" })
+      .getByRole("link");
     await expect(links.last()).toHaveText("Ajuda e contato");
     await expect(links.nth(-2)).toHaveText("Configurações");
     await panel
@@ -1476,49 +1294,64 @@ test.describe("Ajuda e contato", () => {
     await expect.poll(sizes).toEqual({ height: true, tall: true, width: true });
   });
 
-  test("no desktop, o terceiro link ao lado dos legais abre Ajuda, na lateral aberta e na recolhida", async ({
+  test("no desktop, o ? do cabeçalho abre Ajuda em 1 toque, na lateral aberta e na recolhida", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await serve(page);
     await page.goto("/products");
     await expect(sidebar(page).getByRole("link")).toHaveText(DESTINATIONS);
-    const legal = page.locator("[data-sidebar=footer] ul");
-    await expect(legal.getByRole("link")).toHaveText([
-      "Termos de Uso",
-      "Política de Privacidade",
-      "Ajuda e contato",
-    ]);
-    await legal
-      .getByRole("link", { exact: true, name: "Ajuda e contato" })
-      .click();
-    await expectHelpPage(page);
+    // the column has no help nor legal link: they are in the header
     await expect(
-      page
-        .locator("[data-sidebar=footer] ul")
-        .getByRole("link", { name: "Ajuda e contato" })
-    ).toHaveAttribute("aria-current", "page");
+      page.locator('[data-slot="sidebar"]').getByRole("link", {
+        name: "Ajuda e contato",
+      })
+    ).toHaveCount(0);
+    const help = page.locator("[data-app-header]").getByRole("link", {
+      exact: true,
+      name: "Ajuda e contato",
+    });
+    const box = await help.boundingBox();
+    expect(box?.width).toBe(40);
+    expect(box?.height).toBe(40);
+    await help.click();
+    await expectHelpPage(page);
+    await expect(help).toHaveAttribute("aria-current", "page");
+    // no destination of the sidebar is marked on Ajuda
+    await expect(sidebar(page).locator("[aria-current]")).toHaveCount(0);
 
-    // folded: the icon of the foot, with its name, and the same link under the content
+    // folded: the same "?", and the column has no link of its own for it
     await page.keyboard.press("Control+b");
-    await expect(helpLink(page)).toHaveCount(2);
-    await expect(helpLink(page).first()).toBeVisible();
-    await expect(helpLink(page).last()).toBeVisible();
+    await expect(helpLink(page)).toHaveCount(1);
+    await expect(help).toBeVisible();
   });
 
-  test("o rodapé de toda página tem o terceiro link, também no celular", async ({
+  test("nenhuma página tem rodapé legal; no celular, Ajuda, Termos e Política ficam a 2 toques no menu da loja", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     await serve(page);
     await page.goto("/customers");
-    const footer = page.getByRole("contentinfo");
-    await expect(footer.getByRole("link")).toHaveText([
-      "Termos de Uso",
-      "Política de Privacidade",
-      "Ajuda e contato",
-    ]);
-    await footer.getByRole("link", { name: "Ajuda e contato" }).click();
+    await expect(storeMenu(page)).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { exact: true, name: "Termos de Uso" })
+    ).toHaveCount(0);
+    await storeMenu(page).click();
+    const menu = page.getByRole("menu");
+    for (const [name, href] of [
+      ["Termos de Uso (abre em outra aba)", "/termos"],
+      ["Política de Privacidade (abre em outra aba)", "/privacidade"],
+    ] as const) {
+      const item = menu.getByRole("menuitem", { exact: true, name });
+      // biome-ignore lint/performance/noAwaitInLoops: one link at a time
+      await expect(item).toHaveAttribute("href", href);
+      await expect(item).toHaveAttribute("target", "_blank");
+      await expect(item).toHaveAttribute("rel", "noopener noreferrer");
+    }
+    await menu
+      .getByRole("menuitem", { exact: true, name: "Ajuda e contato" })
+      .click();
     await expectHelpPage(page);
   });
 
@@ -1680,25 +1513,27 @@ test.describe("Ajuda e contato", () => {
   });
 });
 
-test.describe("o rodapé legal não pula enquanto a tela carrega", () => {
-  test("no celular o conteúdo ocupa a janela e os links legais começam na dobra", async ({
+test.describe("a altura mínima do conteúdo vem do cabeçalho", () => {
+  test("no celular o conteúdo ocupa a janela entre o cabeçalho e a barra, e a página curta não rola", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     await serve(page);
     await page.goto("/ajuda");
     await expectHelpPage(page);
-    const main = await page.locator("main#conteudo").boundingBox();
-    const terms = await page
-      .getByRole("contentinfo")
-      .getByRole("link", { exact: true, name: "Termos de Uso" })
-      .boundingBox();
-    // the header is 48 px: the content fills the rest of the window, so the footer is under the fold
-    expect((main?.y ?? 0) + (main?.height ?? 0)).toBeGreaterThanOrEqual(740);
-    expect(terms?.y ?? 0).toBeGreaterThanOrEqual(740);
+    const header = await page.locator("[data-app-header]").boundingBox();
+    expect(header?.height).toBe(48);
+    const main = await page.locator("main#conteudo").evaluate((element) => ({
+      minHeight: Number.parseFloat(getComputedStyle(element).minHeight),
+    }));
+    // the window minus the header (`--app-header`) and the 3.25 rem the bar reserves (`--app-bottom-bar`)
+    expect(main.minHeight).toBeCloseTo(740 - 48 - 52, 0);
+    // the panel of the content fills the window down to the bar
+    const panel = await page.locator("[data-app-panel]").boundingBox();
+    expect(panel?.height ?? 0).toBeGreaterThanOrEqual(740 - 48 - 52);
   });
 
-  test("a 1280 px não há altura mínima: o rodapé fica na lateral", async ({
+  test("a 1280 px não há altura mínima e o cabeçalho tem 56 px", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -1710,5 +1545,8 @@ test.describe("o rodapé legal não pula enquanto a tela carrega", () => {
         .locator("main#conteudo")
         .evaluate((main) => getComputedStyle(main).minHeight)
     ).toBe("auto");
+    expect(
+      (await page.locator("[data-app-header]").boundingBox())?.height
+    ).toBe(56);
   });
 });

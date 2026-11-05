@@ -72,3 +72,84 @@ export interface RefundWindowView {
   state: string;
   window: { open: boolean; until: string } | null;
 }
+
+/** What `GET /api/support-cases/:caseId` answers: the case, its temporary accesses and its audit trail. */
+export interface SupportCaseDetail {
+  audit: {
+    createdAt: string;
+    detail: string | null;
+    entityId: string | null;
+    entityType: string | null;
+    eventType: string;
+    id: string;
+    principalId: string;
+  }[];
+  case: SupportCaseSummary & {
+    closedAt: string | null;
+    context: string | null;
+    openedBy: string;
+    resolution: string | null;
+  };
+  grants: {
+    active: boolean;
+    expiresAt: string;
+    id: string;
+    principalId: string;
+    revokedAt: string | null;
+    startsAt: string;
+  }[];
+}
+
+/** What `POST /api/support-cases/:caseId/close` answers: `changed` is false when the case was already closed. */
+export interface ClosedSupportCase {
+  changed: boolean;
+  id: string;
+  status: string;
+}
+
+export interface OperationalIncidentSummary {
+  cause: string;
+  deadEvents: number;
+  firstSeenAt: string;
+  id: string;
+  kind: string;
+  lastReference: string | null;
+  lastSeenAt: string;
+  occurrenceCount: number;
+  subject: string;
+}
+
+export interface OperationalIncidentPage {
+  incidents: OperationalIncidentSummary[];
+  next: string | null;
+}
+
+/** One event of an incident; `organizationId` comes with it and is never shown (the screen names no store). */
+export interface DeadEventSummary {
+  eventId: string;
+  eventType: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  occurrences: number;
+  organizationId: string;
+  retriedAt: string | null;
+  retryCount: number;
+  state: "dead" | "retried";
+}
+
+export interface OperationalIncidentDetail {
+  events: DeadEventSummary[];
+  incident: Omit<OperationalIncidentSummary, "deadEvents">;
+  next: string | null;
+}
+
+export type RetryResult =
+  | "already_pending"
+  | "busy"
+  | "event_gone"
+  | "retried"
+  | "unknown_item";
+
+export interface RetryAnswer {
+  result?: string;
+}

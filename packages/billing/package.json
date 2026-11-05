@@ -7,7 +7,9 @@
     "./asaas/port": "./src/asaas/port.ts",
     "./asaas/webhook": "./src/asaas/webhook.ts",
     "./http": "./src/http.ts",
+    "./operator-commands": "./src/operator-commands.ts",
     "./provider-port": "./src/provider-port.ts",
+    "./provider-ports": "./src/provider-ports.ts",
     "./woovi/client": "./src/woovi/client.ts",
     "./woovi/customer": "./src/woovi/customer.ts",
     "./woovi/port": "./src/woovi/port.ts",
@@ -20,6 +22,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@polaris/domain": "workspace:*"
+    "@polaris/db": "workspace:*",
+    "@polaris/domain": "workspace:*",
+    "@polaris/observability": "workspace:*"
   }
 }

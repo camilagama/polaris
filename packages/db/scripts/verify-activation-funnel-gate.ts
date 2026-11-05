@@ -740,10 +740,14 @@ async function run() {
         "organization.marked_internal",
         "organization.unmarked_internal",
         "activation_funnel.read",
+        "billing.operator_refund_recorded",
+        "billing.operator_refund_requested",
+        "billing.operator_renewal_cancel_recorded",
+        "billing.operator_renewal_cancel_requested",
       ].sort()
     );
     tests.push(
-      "an active operator marks and unmarks a store, each change audited in the same transaction (operator, store, no case, no detail) and a repeated call changes and writes nothing; an inactive or unknown operator (42501), an unknown store and a null choice (22023) are refused with no audit; the marker leaves with the organization (cascade); the audit check is the list of 0100 plus the two types of the marker and the read of the funnel"
+      "an active operator marks and unmarks a store, each change audited in the same transaction (operator, store, no case, no detail) and a repeated call changes and writes nothing; an inactive or unknown operator (42501), an unknown store and a null choice (22023) are refused with no audit; the marker leaves with the organization (cascade); the audit check is the list of 0100 plus the two types of the marker, the read of the funnel and the four of the operator's provider commands"
     );
 
     // ------------------------------------------------- 2b. the audited read

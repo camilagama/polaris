@@ -122,6 +122,7 @@ function TodayCard({
       help={{ about: "Vendas hoje", text: reading.help }}
       id="home-today"
       note={support}
+      noteLines={2}
       range={range}
       spark={
         <OnDemandSparkline
@@ -312,6 +313,7 @@ export function KpiCards({
           className="md:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2"
           entity="sales"
           id="home-today"
+          noteLines={2}
           title="Vendas hoje"
           value={<p className="text-muted-foreground">Sem números de hoje</p>}
         />
@@ -345,6 +347,7 @@ export function NoFiguresCards({ today }: { today: string }) {
         entity="sales"
         id="home-today"
         note={NO_CONNECTION_NOTE}
+        noteLines={2}
         spark={EMPTY_SPARK}
         title="Vendas hoje"
         value={empty}
@@ -400,7 +403,10 @@ export function NoFiguresCards({ today }: { today: string }) {
 export function KpiCardsSkeleton() {
   return (
     <div className={KPI_GRID} data-kpi-row="">
-      <KpiCardSkeleton className="md:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2" />
+      <KpiCardSkeleton
+        className="md:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2"
+        noteLines={2}
+      />
       <div
         aria-hidden="true"
         className="flex h-[1.125rem] items-center md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"

@@ -46,6 +46,8 @@ export interface MediaBucketBinding {
   /** One key, or up to 1000 keys in one call (R2 `delete` accepts both). */
   delete: (keys: string | string[]) => Promise<void>;
   get: (key: string) => Promise<MediaBucketObject | null>;
+  /** Metadata only (R2 `head`): sizes an object without opening its body. */
+  head: (key: string) => Promise<{ size: number } | null>;
   list: (options: {
     cursor?: string;
     limit: number;
@@ -120,6 +122,12 @@ export interface WorkerBindings {
    * leaves every notice owed, neither sent nor failed. Off in every environment until the responsible turns it on.
    */
   CLOSURE_NOTICE_EMAIL_ENABLED?: string;
+  /**
+   * The pepper of the password hash (ADR 0100, amended): a Worker secret of each environment, 32 random bytes in
+   * base64, never a var. Without it (or shorter than 32 characters) the password is off, as if
+   * `EMAIL_PASSWORD_AUTH_ENABLED` were not `true`, and the authentication routes log `auth_password_pepper_missing`.
+   */
+  AUTH_PASSWORD_PEPPER?: string;
   BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;

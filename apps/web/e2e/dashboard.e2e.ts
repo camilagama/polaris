@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -155,7 +155,45 @@ const NO_COST_MONTH: FixtureMonth = {
   ],
 };
 
+/** May: one sale with every cost known and no expense recorded, so the estimate is partial like June's. */
+const MAY_MONTH: FixtureMonth = {
+  expenses: [],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: 2000,
+      discount: 0,
+      gross: 6000,
+      itemLines: 1,
+      items: 2,
+      processingFee: 120,
+      returns: 0,
+      surcharge: 0,
+    },
+  ],
+};
+
+/** June: one sale that was returned whole, so the month has a sale and nothing to draw (the net of every day is zero). */
+const RETURNED_MONTH: FixtureMonth = {
+  expenses: [],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: 0,
+      discount: 0,
+      gross: 10_000,
+      itemLines: 1,
+      items: 0,
+      processingFee: 0,
+      returns: 10_000,
+      surcharge: 0,
+    },
+  ],
+};
+
 const FIXTURE: Readonly<Record<string, FixtureMonth>> = {
+  "2026-05": MAY_MONTH,
+  "2026-06": RETURNED_MONTH,
   "2026-07": NO_SURCHARGE_MONTH,
   "2026-09": PARTIAL_MONTH,
   "2026-10": COMPLETE_MONTH,
@@ -1615,4 +1653,265 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
     await page.waitForTimeout(500);
     expect(server.periods).toHaveLength(2);
   });
+});
+
+const SIZES = [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+] as const;
+
+/** Where a box is on the page, whatever the scroll: the height and the top in document coordinates. */
+const placeOf = (locator: Locator) =>
+  locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { height: box.height, top: box.top + window.scrollY };
+  });
+
+/** Two frames with nothing moving between them: the layout the page settled on. */
+const settled = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+
+async function chartPlaces(page: Page) {
+  await settled(page);
+  const chart = chartRegion(page);
+  return {
+    card: await placeOf(chart),
+    next: await placeOf(chain(page)),
+    numbers: await placeOf(
+      chart.getByRole("button", { name: "Ver os números" })
+    ),
+    totals: await placeOf(chart.locator("dl")),
+  };
+}
+
+type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
+
+function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
+  for (const key of ["card", "next", "numbers", "totals"] as const) {
+    expect(
+      Math.abs(after[key].height - before[key].height),
+      `altura de ${key}`
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(after[key].top - before[key].top),
+      `topo de ${key}`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+test.describe("Vendas × custos por dia: trocar de período não muda a altura do cartão nem o que vem depois", () => {
+  // May and June are both partial estimates (no expense recorded): May has a sale to draw, June one returned whole
+  const periods = [
+    {
+      data: ["2026-05-05", "2026-05-11"],
+      empty: ["2026-06-05", "2026-06-11"],
+      name: "7 dias",
+    },
+    {
+      data: ["2026-05-05", "2026-05-14"],
+      empty: ["2026-06-05", "2026-06-14"],
+      name: "10 dias",
+    },
+  ] as const;
+
+  for (const size of SIZES) {
+    for (const { data, empty, name } of periods) {
+      test(`${name}: com venda, sem venda e com venda de novo (${size.width} px)`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(size);
+        await openDashboard(page, new FakeReportServer());
+        await rangeFields(page, data[0], data[1]);
+        await expect(chartRegion(page)).toContainText("Melhor dia");
+        const withSales = await chartPlaces(page);
+
+        await rangeFields(page, empty[0], empty[1]);
+        await expect(chartRegion(page)).toContainText("Sem vendas no período.");
+        expectSamePlaces(await chartPlaces(page), withSales);
+
+        await rangeFields(page, data[0], data[1]);
+        await expect(chartRegion(page)).toContainText("Melhor dia");
+        expectSamePlaces(await chartPlaces(page), withSales);
+      });
+    }
+  }
+});
+
+/** The store's today at `NOW` (09:00 in São Paulo). */
+const TODAY = "2026-10-14";
+/** The reading of a monthly curve at rest, to today, and at the end of a range of 63 days (D1-2). */
+const UNTIL_TODAY = /^Até 14\/10: /;
+const UNTIL_JULY_6 = /^Até 06\/07: /;
+
+/**
+ * A summary of a period above 62 days as the server sends it (`granularity` "month"): the days added up by calendar
+ * month up to today, the ends cut, each month with its last day, its days and its unknown days, and the days after
+ * today apart.
+ */
+function byMonth(summary: ReturnType<typeof summaryOf>) {
+  type Day = (typeof summary.daily)[number];
+  const add = (values: ReadonlyArray<string | null>) =>
+    values.some((value) => value === null)
+      ? null
+      : money(sum(values.map((value) => Math.round(Number(value) * 100))));
+  const bucket = (days: Day[]) => ({
+    costs: add(days.map((day) => day.costs)),
+    date: (days[0] as Day).date,
+    days: days.length,
+    netSales: add(days.map((day) => day.netSales)) as string,
+    operatingExpenses: add(days.map((day) => day.operatingExpenses)) as string,
+    operatingResult: add(days.map((day) => day.operatingResult)),
+    salesCount: sum(days.map((day) => day.salesCount)),
+    to: (days.at(-1) as Day).date,
+    unknownDays: days.filter((day) => day.costs === null).length,
+  });
+  const months = new Map<string, Day[]>();
+  for (const day of summary.daily.filter((entry) => entry.date <= TODAY)) {
+    months.set(day.date.slice(0, 7), [
+      ...(months.get(day.date.slice(0, 7)) ?? []),
+      day,
+    ]);
+  }
+  const later = summary.daily.filter((day) => day.date > TODAY);
+  return {
+    ...summary,
+    daily: [...months.values()].map(bucket),
+    granularity: "month",
+    ...(later.length > 0 ? { afterToday: bucket(later) } : {}),
+  };
+}
+
+/** The server of `FakeReportServer` that answers a period above 62 days by month, as the real one does. */
+class MonthlyReportServer extends FakeReportServer {
+  override async handle(procedure: string, input: Record<string, unknown>) {
+    const answer = await super.handle(procedure, input);
+    const from = String(input.from);
+    const to = String(input.to);
+    const { json } = answer.body as { json?: unknown };
+    if (
+      procedure !== "report/periodSummary" ||
+      answer.status !== 200 ||
+      datesBetween(from, to).length <= 62
+    ) {
+      return answer;
+    }
+    return {
+      ...answer,
+      body: {
+        json: byMonth(json as ReturnType<typeof summaryOf>),
+        meta: [],
+      },
+    };
+  }
+}
+
+/** The heights of the KPI row, of each KPI card and of the chart's card: what must not move between periods. */
+async function resultHeights(page: Page) {
+  await settled(page);
+
+  const cards = await kpiCards(page).evaluateAll((elements) =>
+    elements.map((element) => element.getBoundingClientRect().height)
+  );
+  return {
+    cards,
+    chart: (await placeOf(chartRegion(page))).height,
+    row: (await placeOf(page.locator("[data-kpi-row]"))).height,
+  };
+}
+
+function expectSameHeights(
+  after: Awaited<ReturnType<typeof resultHeights>>,
+  before: Awaited<ReturnType<typeof resultHeights>>
+) {
+  expect(
+    Math.abs(after.row - before.row),
+    "altura da linha de KPI"
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(after.chart - before.chart),
+    "altura do gráfico"
+  ).toBeLessThanOrEqual(1);
+  expect(after.cards).toHaveLength(before.cards.length);
+  for (const [index, height] of after.cards.entries()) {
+    expect(
+      Math.abs(height - (before.cards[index] ?? 0)),
+      `altura do cartão ${index}`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+test.describe("períodos longos por mês: trocar entre o mês, 30 dias e o ano não muda a altura dos cartões nem do gráfico", () => {
+  // the same complete records at the start of every period read (the month, the 30 days from September, the year from
+  // January and 63 days from May): only the granularity changes between them, not the quality nor its badge
+  const fixture = {
+    ...FIXTURE,
+    "2026-01": COMPLETE_MONTH,
+    "2026-05": COMPLETE_MONTH,
+    "2026-09": COMPLETE_MONTH,
+  };
+
+  for (const size of SIZES) {
+    test(`Últimos 30 dias → Este ano → Últimos 30 dias → Este ano (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const server = new MonthlyReportServer();
+      server.fixture = fixture;
+      await openDashboard(page, server);
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      await expect(
+        card(page, CARD.netSales).getByRole("slider")
+      ).toHaveAccessibleName("Vendas líquidas, acumulado por dia");
+      const days = await resultHeights(page);
+
+      await choosePreset(page, "Este ano");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      expect(server.periods.at(-1)).toEqual({ from: "2026-01-01", to: TODAY });
+      const sales = card(page, CARD.netSales).getByRole("slider");
+      await expect(sales).toHaveAccessibleName(
+        "Vendas líquidas, acumulado por mês"
+      );
+      await expect(sales).toHaveAttribute("max", "9");
+      await expect(sales).toHaveAttribute("aria-valuetext", UNTIL_TODAY);
+      // no comparison above 62 days: the chip line is empty and keeps its place
+      await expect(
+        card(page, CARD.netSales).locator("[data-kpi-delta]")
+      ).toHaveCount(0);
+      const year = await resultHeights(page);
+      expectSameHeights(year, days);
+
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      expectSameHeights(await resultHeights(page), days);
+
+      await choosePreset(page, "Este ano");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      expectSameHeights(await resultHeights(page), year);
+    });
+
+    test(`63 dias, três meses, com a mesma altura de 30 dias (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const server = new MonthlyReportServer();
+      server.fixture = fixture;
+      await openDashboard(page, server);
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      const days = await resultHeights(page);
+
+      await rangeFields(page, "2026-05-05", "2026-07-06");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      const sales = card(page, CARD.netSales).getByRole("slider");
+      await expect(sales).toHaveAttribute("max", "2");
+      await expect(sales).toHaveAttribute("aria-valuetext", UNTIL_JULY_6);
+      expectSameHeights(await resultHeights(page), days);
+    });
+  }
 });

@@ -23,15 +23,16 @@ import {
   GoogleButton,
   INLINE_LINK,
   OrSeparator,
-  PasswordInput,
   Progressive,
   SubmitButton,
   useProgressive,
   useReveal,
 } from "./entry-ui";
 import { useGoogleStart } from "./google-start";
+import { heldByRequirements, NewPasswordField } from "./new-password-field";
 import {
   emailProblem,
+  isRequirementProblem,
   newPasswordProblem,
   postAuth,
   signUpLegalAcceptance,
@@ -50,7 +51,6 @@ import {
   HAVE_ACCOUNT,
   newPasswordText,
   PASSWORD_LABEL,
-  PASSWORD_RULE,
   SIGN_UP_BUTTON,
   SIGN_UP_BUTTON_PENDING,
   SIGN_UP_PAGE_TITLE,
@@ -83,6 +83,7 @@ function SignUpForm({
   const [visible, toggleVisible, hide] = useReveal();
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordFlagged, setPasswordFlagged] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -143,7 +144,12 @@ function SignUpForm({
       // the button is never off for want of the box (V6): the screen says what is missing
       const acceptIssue = accepted ? null : ACCEPT_REQUIRED;
       setEmailError(emailIssue);
-      setPasswordError(passwordIssue ? newPasswordText(passwordIssue) : null);
+      const ruleMissing =
+        passwordIssue !== null && isRequirementProblem(passwordIssue);
+      setPasswordFlagged(ruleMissing);
+      setPasswordError(
+        passwordIssue && !ruleMissing ? newPasswordText(passwordIssue) : null
+      );
       setAcceptError(acceptIssue);
       if (emailIssue) {
         emailRef.current?.focus();
@@ -245,11 +251,10 @@ function SignUpForm({
           value={email}
         />
         <Progressive open={progressive.open}>
-          <PasswordInput
-            autoComplete="new-password"
+          <NewPasswordField
             error={passwordError}
             fieldRef={passwordRef}
-            hint={PASSWORD_RULE}
+            flagged={passwordFlagged}
             id={`${formId}-password`}
             label={PASSWORD_LABEL}
             name="new-password"
@@ -312,6 +317,7 @@ function SignUpForm({
             alertId={challengeAlertId(formId)}
             challenge={challenge}
             disabled={challenge.state === "loading"}
+            heldBy={heldByRequirements(`${formId}-password`, password)}
             pending={pending}
             pendingText={SIGN_UP_BUTTON_PENDING}
           >

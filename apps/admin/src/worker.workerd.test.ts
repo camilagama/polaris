@@ -88,6 +88,8 @@ describe("admin worker in workerd", () => {
 
   it.each([
     "/",
+    "/incidentes",
+    "/incidentes/0199a0a0-0000-7000-8000-00000000f00d",
     "/ui/admin-0000000000000000.js",
     "/ui/admin-0000000000000000.css",
   ])(
@@ -116,6 +118,21 @@ describe("admin worker in workerd", () => {
     });
     expect(valid.status).toBe(503);
     expect(await valid.text()).not.toContain("<html");
+    // the screens of the incidents are behind the same lookup: no operator is known, so no HTML either
+    const token = await signAccessToken();
+    const screens = await Promise.all(
+      ["/incidentes", "/incidentes/0199a0a0-0000-7000-8000-00000000f00d"].map(
+        (path) =>
+          exports.default.fetch(`https://admin.test${path}`, {
+            headers: { "cf-access-jwt-assertion": token },
+          })
+      )
+    );
+    expect(screens.map((screen) => screen.status)).toEqual([503, 503]);
+    const bodies = await Promise.all(screens.map((screen) => screen.text()));
+    for (const body of bodies) {
+      expect(body).not.toContain("<html");
+    }
   });
 
   it.each(["/health", "/nada", "/ui/admin-0000000000000000.js"])(

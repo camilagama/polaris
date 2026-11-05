@@ -130,7 +130,8 @@ function subheading(dom: Dom, text: string) {
 export function diagnosticsView(
   dom: Dom,
   api: Api,
-  now: () => Date
+  now: () => Date,
+  onRead?: (organization: { id: string; name: string }) => void
 ): DiagnosticsView {
   const notice = createNotice(dom);
   const title = dom.el("h2", { id: "loja-titulo", tabindex: "-1" }, "Loja");
@@ -190,6 +191,7 @@ export function diagnosticsView(
       }
       notice.status(`Lida em ${brasiliaMoment(now())}`);
       render(answer.data);
+      onRead?.(answer.data.organization);
     },
   };
 }

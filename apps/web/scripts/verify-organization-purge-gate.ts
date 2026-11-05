@@ -116,6 +116,9 @@ const CASE_TEXT = `Dono ligou de 81 ${CASE_PHONE} (Joana)`;
 /** The reason an operator typed when giving an entitlement grant: free text, with someone's contact in it. */
 const GRANT_REASON = `Compensação combinada com Rita (81 ${GRANT_PHONE})`;
 
+/** The reason an operator typed for a refund from the Admin (ADR 0105): it goes to the billing ledger, with a contact. */
+const OPERATOR_REASON = `Joana pediu o reembolso por telefone (81 ${CASE_PHONE})`;
+
 /** The call is refused with this code (SQLSTATE 55000), and nothing else. */
 async function expectBlocked(
   operation: () => Promise<unknown>,
@@ -1055,6 +1058,21 @@ async function run() {
           tenant.organizationId,
           JSON.stringify(billingFact),
           `gate-command-${randomUUID()}`,
+        ]
+      );
+      // the operator's decision to refund from the Admin (ADR 0105): the actor stays, the reason typed does not
+      await owner.pool.query(
+        `INSERT INTO public.billing_events (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, processed_at)
+         VALUES ('polaris', $1, $2, $3::jsonb, 'command', '2026-09-02T12:00:00Z', 'applied', now())`,
+        [
+          `command:operator_refund:${randomUUID()}`,
+          tenant.organizationId,
+          JSON.stringify({
+            actor: "admin:gate",
+            occurredAt: "2026-09-02T12:00:00.000Z",
+            reason: `${OPERATOR_REASON} ${suffix}`,
+            type: "operator_refund_requested",
+          }),
         ]
       );
       // a temporary grant with the reason the operator typed (the grant stays, its reason does not)
@@ -2540,6 +2558,18 @@ async function run() {
     const charge = billingAfter.rows.find(
       (row) => row.fact_type === "charge_succeeded"
     );
+    // the operator's decision keeps who and when, never the reason typed
+    assert.deepEqual(
+      billingAfter.rows.find((row) =>
+        row.provider_event_id.startsWith("command:operator_refund:")
+      )?.fact,
+      {
+        actor: "admin:gate",
+        occurredAt: "2026-09-02T12:00:00.000Z",
+        type: "operator_refund_requested",
+      },
+      "the purge takes the operator's reason out of the ledger"
+    );
     // the amount and its currency stay: they are the fiscal record (migration 0084)
     assert.deepEqual(charge?.fact, {
       amount: "24.90",
@@ -2592,7 +2622,7 @@ async function run() {
       "the owner's trial claim survives the purge of the organization, as it was (the trial is once per person)"
     );
     tests.push(
-      "the billing events of the purged organization stay, every one, pseudonymized: values (the amount and its currency included), dates, types and opaque references in the fact, without the payer's name, document, e-mail, phone, address or ID there, and with provider_ref and provider_event_id still in their columns; another organization's are untouched"
+      "the billing events of the purged organization stay, every one, pseudonymized: values (the amount and its currency included), dates, types and opaque references in the fact, without the payer's name, document, e-mail, phone, address or ID there, nor the reason an operator typed for a refund, and with provider_ref and provider_event_id still in their columns; another organization's are untouched"
     );
 
     // the entitlement grants stay (key, value, dates, who gave it) and lose the reason the operator typed

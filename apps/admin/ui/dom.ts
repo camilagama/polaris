@@ -37,6 +37,7 @@ const TAGS = new Set([
   "h1",
   "h2",
   "h3",
+  "h4",
   "header",
   "input",
   "label",

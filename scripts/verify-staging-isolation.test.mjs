@@ -490,6 +490,36 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it("refuses the pepper of the password as a var in any block: it is a Worker secret of each environment", () => {
+    const entries = repositoryEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
+    }));
+    expect(findIsolationProblems(entries)).toEqual([]);
+    const web = entryOf(entries, "web");
+    web.config.vars = { ...web.config.vars, AUTH_PASSWORD_PEPPER: "" };
+    web.config.env.staging.vars.AUTH_PASSWORD_PEPPER = "planted";
+    web.config.env.production.vars.AUTH_PASSWORD_PEPPER = "planted";
+    web.built = {
+      ...web.built,
+      vars: { ...web.built.vars, AUTH_PASSWORD_PEPPER: "planted" },
+    };
+    expect(
+      findIsolationProblems(entries).filter((problem) =>
+        problem.includes("AUTH_PASSWORD_PEPPER")
+      )
+    ).toEqual([
+      "web: top level: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: env.staging: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: env.production: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: built wrangler.json: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+    ]);
+  });
+
   it("refuses two staging roles on the same Hyperdrive configuration", () => {
     const entries = repositoryEntries();
     const web = entryOf(entries, "web").config.env.staging;
@@ -917,6 +947,46 @@ describe("the staging isolation check", () => {
         })
       ).toEqual([
         'admin: env.staging hyperdrive "0123456789abcdef0123456789abcdef" is also used by admin env.production',
+      ]);
+    });
+
+    it("requires the sandboxes of the providers in the Admin of staging, and the production hosts in production", () => {
+      const entries = repositoryEntries();
+      const { production, staging } = adminOf(entries);
+      staging.vars.ASAAS_BASE_URL = "https://api.asaas.com/v3";
+      staging.vars.WOOVI_BASE_URL = undefined;
+      staging.vars.WOOVI_REFUND_ENABLED = "yes";
+      production.vars.ASAAS_BASE_URL = "https://api-sandbox.asaas.com/v3";
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.production: vars.ASAAS_BASE_URL must be exactly https://api.asaas.com/v3 (the production host of the provider)",
+        "admin: env.production: vars.ASAAS_BASE_URL must not name a sandbox host of Asaas or Woovi",
+        "admin: env.staging: vars.ASAAS_BASE_URL must be exactly https://api-sandbox.asaas.com/v3 (the sandbox of the provider)",
+        "admin: env.staging: vars.WOOVI_BASE_URL must be exactly https://api.woovi-sandbox.com (the sandbox of the provider)",
+        'admin: env.staging: vars.WOOVI_REFUND_ENABLED must be "true" or "false"',
+        "admin: env.staging: vars.ASAAS_BASE_URL must not name the production API of Asaas or Woovi",
+      ]);
+    });
+
+    it("refuses a setting of the webhooks in the Admin, and a provider's secret written as a variable anywhere", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.vars.ASAAS_WEBHOOK_TOKEN = "token";
+      staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS = "key";
+      staging.vars.ASAAS_API_KEY = "$aact_hmlg_key";
+      entryOf(entries, "web").config.env.production.vars.WOOVI_APP_ID = "app";
+      entryOf(entries, "admin").config.vars = {
+        ASAAS_API_KEY: "$aact_hmlg_key",
+      };
+      expect(findIsolationProblems(entries)).toEqual([
+        "web: env.production: vars.WOOVI_APP_ID is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: top level: vars.ASAAS_API_KEY is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: env.production lacks vars.ASAAS_WEBHOOK_TOKEN, which env.staging sets",
+        "admin: env.production lacks vars.WOOVI_WEBHOOK_PUBLIC_KEYS, which env.staging sets",
+        "admin: env.production lacks vars.ASAAS_API_KEY, which env.staging sets",
+        "admin: env.staging: vars.ASAAS_WEBHOOK_TOKEN belongs to the webhooks of the web; the Admin never receives a provider's call",
+        "admin: env.staging: vars.WOOVI_WEBHOOK_PUBLIC_KEYS belongs to the webhooks of the web; the Admin never receives a provider's call",
+        "admin: env.staging: vars.ASAAS_API_KEY is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: env.staging: vars.ASAAS_WEBHOOK_TOKEN is a secret of the Worker (wrangler secret put, per environment), never a variable",
       ]);
     });
 

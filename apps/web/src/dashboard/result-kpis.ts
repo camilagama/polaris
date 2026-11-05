@@ -15,7 +15,13 @@ import {
   type StoredDay,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
-import { addDays, dayCount, monthName, type Period } from "./result-period";
+import {
+  addDays,
+  dayCount,
+  lastOfMonth,
+  monthName,
+  type Period,
+} from "./result-period";
 
 /**
  * The row of KPI cards of the Resultado (revisão de UI v7, § 8), in the mold of the Início's (home-kpis.ts): Resultado
@@ -30,18 +36,18 @@ import { addDays, dayCount, monthName, type Period } from "./result-period";
  * no chip.
  */
 
+/** A day, or a month of a long period (`to`, `days` and `unknownDays`, as the server adds it up). */
 type Day = Pick<StoredDay, "date" | "netSales" | "salesCount"> &
-  Partial<Pick<StoredDay, "operatingResult">>;
+  Partial<Pick<StoredDay, "days" | "operatingResult" | "to" | "unknownDays">>;
+
+/** The last day an entry adds up: its own date, or the last day of a month. */
+const lastDayOf = (day: Day): string => day.to ?? day.date;
 
 const cents = (amount: string): bigint => Money.from(amount).minorUnits;
 const drawing = (amount: bigint): number => Number(amount) / 100;
 
 /** Above this many days a period groups by month (AC-7): its cards compare with nothing. */
 const LONGEST_COMPARED = 62;
-
-function lastOfMonth(day: string): string {
-  return addDays(`${addDays(`${day.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1);
-}
 
 /** True when the period is one whole calendar month ("Este mês", "Mês passado", or a range given as one). */
 function isWholeMonth(period: Period): boolean {
@@ -122,16 +128,21 @@ function cumulate(days: readonly Day[]): Cumulative[] {
   return sums;
 }
 
-/** The days of `period` in order from its first one, while the series has each of them: a gap ends it. */
+/**
+ * The entries of `period` in order from its first day, each starting the day after the one before ends (a day, or a
+ * month that ends on its `to`), while the series has each of them: a gap ends it.
+ */
 function consecutive(days: readonly Day[], period: Period): Day[] {
   const byDate = new Map(days.map((day) => [day.date, day]));
   const out: Day[] = [];
-  for (let date = period.from; date <= period.to; date = addDays(date, 1)) {
+  let date = period.from;
+  while (date <= period.to) {
     const day = byDate.get(date);
     if (!day) {
       break;
     }
     out.push(day);
+    date = addDays(lastDayOf(day), 1);
   }
   return out;
 }
@@ -148,11 +159,27 @@ function daysUpToToday(
   });
 }
 
-/** Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9). */
+/** How many days an entry adds up, and how many of them have an unknown cost (a month says it; a day is one). */
+function dayCounts(day: Day): { total: number; unknown: number } {
+  if (day.days !== undefined && day.unknownDays !== undefined) {
+    return { total: day.days, unknown: day.unknownDays };
+  }
+  return { total: 1, unknown: day.operatingResult === null ? 1 : 0 };
+}
+
+/**
+ * Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9): with a month that has an
+ * unknown day, "N de M dias" counts the days of the months (D1-4).
+ */
 function resultKindOf(days: readonly Day[]): ResultKind {
-  const unknown = days.filter((day) => day.operatingResult === null).length;
-  if (unknown > 0) {
-    return { kind: "incomplete", total: days.length, unknown };
+  const counts = days.map(dayCounts);
+  const unknown = counts.reduce((sum, count) => sum + count.unknown, 0);
+  if (unknown > 0 || days.some((day) => day.operatingResult === null)) {
+    return {
+      kind: "incomplete",
+      total: counts.reduce((sum, count) => sum + count.total, 0),
+      unknown: Math.max(unknown, 1),
+    };
   }
   if (
     days.length === 0 ||
@@ -198,8 +225,13 @@ type ResultKind =
   | { kind: "unsent" };
 
 export interface ResultKpis {
-  /** The days from the first of the period to today: one point of each sparkline, the index the cards read together. */
+  /**
+   * The days (or, above 62 days, the months) from the first of the period to today: one point of each sparkline, the
+   * index the cards read together.
+   */
   days: Day[];
+  /** True when each point is a month (the server's `granularity` "month"): the curve adds up by month (D1-3). */
+  monthly: boolean;
   /** "outubro" for a whole month, null for any other range: the title of the sales card and the words of the counts. */
   month: string | null;
   read: (index: number | null) => {
@@ -419,7 +451,9 @@ export function resultKpis({
   const read = (index: number | null) => {
     // an index of another series (the period changed under the pointer) reads the last day of this one
     const at = Math.min(index ?? sums.length - 1, sums.length - 1);
-    const date = days[at]?.date ?? today;
+    // a month is read to its last day, which the server cuts at today (D1-2, D1-5)
+    const point = days[at];
+    const date = point ? lastDayOf(point) : today;
     const context: ReadContext = {
       atRest: index === null,
       cards,
@@ -447,6 +481,7 @@ export function resultKpis({
   return {
     days,
     month,
+    monthly: days.some((day) => day.to !== undefined),
     read,
     result,
     series: {

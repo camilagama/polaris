@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
+import { testPasswordPepper } from "./password-hash-test-support";
 import {
   protectAuthLinkRequest,
   protectAuthRequest,
@@ -283,6 +284,7 @@ describe("auth abuse protection", () => {
     });
     const bindings = {
       AUTH_EMAIL_FROM: "Polaris <auth@example.invalid>",
+      AUTH_PASSWORD_PEPPER: testPasswordPepper,
       EMAIL_PASSWORD_AUTH_ENABLED: "true",
       RESEND_API_KEY: "re_test_only",
       ...createBindings(),
@@ -324,6 +326,7 @@ describe("auth abuse protection", () => {
         AUTH_ABUSE_PROTECTION_ENABLED: "false",
         AUTH_EMAIL_FROM: "Polaris <auth@example.invalid>",
         BETTER_AUTH_BASE_URL: baseURL,
+        AUTH_PASSWORD_PEPPER: testPasswordPepper,
         BETTER_AUTH_SECRET: "test-only-better-auth-secret-32-bytes",
         EMAIL_PASSWORD_AUTH_ENABLED: "true",
         HYPERDRIVE: { connectionString: "" },

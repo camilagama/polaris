@@ -19,7 +19,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  *   or equal to production's, or an ADMIN_HYPERDRIVE missing or shared with another binding of staging;
  * - the billing base URLs of staging are not exactly the sandboxes of Asaas and Woovi, a staging variable names the
  *   production API of either, billing is on without the support box on araute.app or the Woovi key, or production has
- *   other than the production base URLs or names a sandbox host;
+ *   other than the production base URLs or names a sandbox host; the same for the Admin, which calls the providers for
+ *   the operator's commands, and which never carries a setting of the webhooks; in any Worker, a secret of a provider
+ *   written as a variable;
  * - any block (top level, staging, production or the build) still declares a switch of the database proof routes
  *   (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`): those routes and tables left the app (ADR 0027).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
@@ -295,7 +297,71 @@ function checkStagingBlock(app, where, staging, production, problems) {
     checkStagingAbuseProtection(where, staging, problems);
     checkStagingBilling(where, staging, problems);
   }
+  if (app === "admin") {
+    checkAdminBilling(where, staging, "staging", problems);
+  }
+  checkBillingSecretsNotVars(where, staging, problems);
   checkStagingExposure(app, where, staging, production, problems);
+}
+
+// The secrets of the providers are Worker secrets, per environment, never variables: a variable is in the repository
+// and in every build (ADR 0105, condition 1 of the review of security).
+const PROVIDER_SECRETS = [
+  "ASAAS_API_KEY",
+  "ASAAS_WEBHOOK_TOKEN",
+  "ASAAS_WEBHOOK_TOKEN_NEXT",
+  "BILLING_PAYER_KEY",
+  "WOOVI_APP_ID",
+];
+// What only receives the providers' calls never reaches the Admin, which only calls them (ADR 0105, condition 2).
+const WEBHOOK_SETTINGS = [
+  "ASAAS_WEBHOOK_TOKEN",
+  "ASAAS_WEBHOOK_TOKEN_NEXT",
+  "WOOVI_WEBHOOK_PUBLIC_KEYS",
+];
+
+function checkBillingSecretsNotVars(where, block, problems) {
+  for (const name of PROVIDER_SECRETS) {
+    if (Object.hasOwn(block.vars ?? {}, name)) {
+      problems.push(
+        `${where}: vars.${name} is a secret of the Worker (wrangler secret put, per environment), never a variable`
+      );
+    }
+  }
+}
+
+/**
+ * The Admin calls the providers only for the operator's two commands (ADR 0105): staging reaches only the sandboxes and
+ * production only the production hosts, exactly as the web of the same environment; the switch of the Pix refund is
+ * "true" or "false"; no setting of the webhooks is there.
+ */
+function checkAdminBilling(where, block, environment, problems) {
+  const vars = block.vars ?? {};
+  checkBillingBaseUrls(where, vars, environment, problems);
+  if (
+    vars.WOOVI_REFUND_ENABLED !== "true" &&
+    vars.WOOVI_REFUND_ENABLED !== "false"
+  ) {
+    problems.push(
+      `${where}: vars.WOOVI_REFUND_ENABLED must be "true" or "false"`
+    );
+  }
+  const forbiddenHost =
+    environment === "staging" ? PRODUCTION_BILLING_HOST : SANDBOX_BILLING_HOST;
+  for (const [variable, value] of Object.entries(vars)) {
+    if (stringsOf(value).some(([, text]) => namesHost(forbiddenHost, text))) {
+      problems.push(
+        `${where}: vars.${variable} must not name ${environment === "staging" ? "the production API" : "a sandbox host"} of Asaas or Woovi`
+      );
+    }
+  }
+  for (const name of WEBHOOK_SETTINGS) {
+    if (Object.hasOwn(vars, name)) {
+      problems.push(
+        `${where}: vars.${name} belongs to the webhooks of the web; the Admin never receives a provider's call`
+      );
+    }
+  }
 }
 
 // Billing runs in staging against the providers' sandboxes only (ADR 0097, amended): the base URLs are compared as
@@ -684,6 +750,33 @@ function checkNoProofSwitches(app, config, built, problems) {
   }
 }
 
+// Values that exist only as Worker secrets, one per environment (`wrangler secret put <NAME> --env <env>`, runbook
+// staging.md): a var with the name would put the value in the repository and in the built wrangler.json, and the
+// var would shadow nothing, because a secret and a var of one name cannot both exist. The pepper of the password
+// hash (ADR 0100, amended) is the first; without it the password is off and the routes log
+// `auth_password_pepper_missing`, which no file can prove, so this check only keeps it out of the files.
+const SECRET_ONLY = ["AUTH_PASSWORD_PEPPER"];
+
+function checkSecretsNotVars(app, config, built, problems) {
+  const blocks = [
+    ["top level", config],
+    ...Object.entries(config.env ?? {}).map(([name, block]) => [
+      `env.${name}`,
+      block,
+    ]),
+    ["built wrangler.json", built ?? undefined],
+  ];
+  for (const [where, block] of blocks) {
+    for (const name of SECRET_ONLY) {
+      if (block?.vars && Object.hasOwn(block.vars, name)) {
+        problems.push(
+          `${app}: ${where}: vars.${name} must not exist: it is a Worker secret of each environment (wrangler secret put ${name})`
+        );
+      }
+    }
+  }
+}
+
 /**
  * `entries`: one `{ app, config, built }` per Worker, `config` the parsed wrangler.jsonc and `built`
  * the parsed wrangler.json of the staging build (or undefined when not checked). Returns the problems.
@@ -692,6 +785,7 @@ export function findIsolationProblems(entries) {
   const problems = [];
   for (const { app, config, built } of entries) {
     checkTopLevel(app, config, problems);
+    checkBillingSecretsNotVars(`${app}: top level`, config, problems);
     if (app === "web") {
       checkWorkerFirst(`${app}: top level`, config.assets, problems);
       for (const [name, environment] of Object.entries(config.env ?? {})) {
@@ -701,6 +795,7 @@ export function findIsolationProblems(entries) {
       }
     }
     checkNoProofSwitches(app, config, built, problems);
+    checkSecretsNotVars(app, config, built, problems);
     const staging = config.env?.staging;
     const production = config.env?.production;
     if (!(staging && production)) {
@@ -874,6 +969,15 @@ function checkProductionBlock(app, production, staging, problems) {
   if (app === "web") {
     checkProductionBilling(app, production, problems);
   }
+  if (app === "admin") {
+    checkAdminBilling(
+      `${app}: env.production`,
+      production,
+      "production",
+      problems
+    );
+  }
+  checkBillingSecretsNotVars(`${app}: env.production`, production, problems);
   checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
   if (

@@ -8,8 +8,19 @@ import {
   type FakeElement,
   visibleText,
 } from "./test-dom";
-import { alertOf, type Call, flush, json, mount, OWNER } from "./test-page";
+import {
+  alertOf,
+  type Call,
+  flush,
+  json,
+  mount,
+  OWNER,
+  screenContext,
+} from "./test-page";
 import type { ActivationFunnelResponse } from "./types";
+
+/** The funnel is mounted on its own screen, `/funil`. */
+const FUNNEL = screenContext({ screen: "funil" });
 
 /**
  * The funnel's area (corte admin-tela-v1, AC-7 and AC-8): one read when the area is opened and one per click on
@@ -99,7 +110,7 @@ const funnelCalls = (calls: Call[]) =>
   calls.filter((call) => call.path.startsWith("/api/funnel"));
 
 async function openFunnel(answers: Parameters<typeof mount>[0]) {
-  const page = await mount(answers);
+  const page = await mount(answers, undefined, undefined, FUNNEL);
   toggleOf(page.root)?.click();
   await flush();
   return page;
@@ -124,7 +135,7 @@ afterEach(() => {
 
 describe("reading the funnel (AC-7)", () => {
   it("reads nothing until the area is opened, then once, with the default 12 weeks", async () => {
-    const page = await mount([json(funnel(12))]);
+    const page = await mount([json(funnel(12))], undefined, undefined, FUNNEL);
     expect(funnelCalls(page.calls)).toEqual([]);
     expect(byId(page.root, "funil-corpo").hasAttribute("hidden")).toBe(true);
     toggleOf(page.root)?.click();
@@ -256,7 +267,9 @@ describe("reading the funnel (AC-7)", () => {
   it("shows no funnel to an operator without platform:read, and says why (AC-3)", async () => {
     const page = await mount(
       [],
-      json({ ...OWNER, capabilities: ["organization:diagnose"] })
+      json({ ...OWNER, capabilities: ["organization:diagnose"] }),
+      undefined,
+      FUNNEL
     );
     expect(toggleOf(page.root)).toBeUndefined();
     const area = byTag(page.root, "section").find((section) =>

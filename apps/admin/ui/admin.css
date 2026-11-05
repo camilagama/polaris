@@ -54,14 +54,8 @@ body {
   background: var(--background);
 }
 
-#admin {
-  max-width: 72rem;
-  padding: 1rem;
-  margin: 0 auto;
-}
-
 h1 {
-  margin: 0;
+  margin: 0 0 0.75rem;
   font-size: 1.25rem;
 }
 
@@ -73,6 +67,11 @@ h2 {
 h3 {
   margin: 1.25rem 0 0.5rem;
   font-size: 1rem;
+}
+
+h4 {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.9375rem;
 }
 
 .top {
@@ -220,6 +219,11 @@ button[aria-disabled="true"] {
   overflow-wrap: anywhere;
 }
 
+.store-head {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
 .store-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8125rem;
@@ -283,6 +287,16 @@ button {
 .notes {
   padding-left: 1.25rem;
   margin: 0;
+}
+
+/* the incidents' tables have more columns than the card has room for on a desktop: headers and cells wrap by word */
+.grid.incidents th,
+.grid.incidents td:not(:first-child) {
+  white-space: normal;
+}
+
+.grid.incidents code {
+  overflow-wrap: anywhere;
 }
 
 /* the funnel's tables scroll sideways inside their own region, never the page; the week column stays in view */
@@ -424,4 +438,252 @@ button {
     max-width: 7.5rem;
     overflow-wrap: normal;
   }
+}
+
+a {
+  color: var(--foreground);
+  text-underline-offset: 0.2em;
+}
+
+.brand {
+  margin: 0.5rem 0 1rem;
+  font-weight: 700;
+}
+
+/* The shell (corte admin-v2, design §1.3): a side menu from 40rem up; below it, the environment and a closed
+ * <details> menu on top, which pushes the content down when opened instead of covering it. */
+/* explicit rows: with only min-height, auto rows share the spare height and a short page opens with an empty menu row */
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.side {
+  display: none;
+}
+
+.compact {
+  padding: 0.5rem 1rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.compact-menu summary {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 2.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compact-menu .brand {
+  margin: 0;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+
+.content {
+  min-width: 0;
+  max-width: 72rem;
+  padding: 1rem;
+}
+
+@media (min-width: 40rem) {
+  .shell {
+    grid-template-columns: 16rem minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .side {
+    position: sticky;
+    top: 0;
+    display: block;
+    height: 100dvh;
+    padding: 1rem;
+    overflow-y: auto;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+  }
+
+  .compact {
+    display: none;
+  }
+}
+
+/* the environment is said in words, and production also differs by weight and a solid border, never only by colour */
+.env {
+  padding: 0.25rem 0.5rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  border-radius: var(--radius);
+}
+
+.env-staging {
+  border: 1px dashed var(--input);
+}
+
+.env-production {
+  font-weight: 700;
+  color: var(--destructive);
+  border: 2px solid var(--destructive);
+}
+
+.env-unknown {
+  font-weight: 600;
+  border: 1px solid var(--foreground);
+}
+
+.menu ul {
+  padding: 0;
+  margin: 0 0 0.75rem;
+  list-style: none;
+}
+
+.menu .menu-foot {
+  padding-top: 0.5rem;
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.permissions {
+  padding-left: 1.25rem;
+  margin: 0 0 0.75rem;
+}
+
+.menu-group {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.menu a {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  color: var(--foreground);
+  text-decoration: none;
+  border-radius: var(--radius);
+}
+
+.menu a:hover {
+  background: var(--secondary);
+}
+
+.menu a[aria-current="page"] {
+  font-weight: 700;
+  background: var(--secondary);
+}
+
+@media (pointer: coarse) {
+  .menu a {
+    min-height: 2.75rem;
+  }
+}
+
+/* a link that starts an action looks like the button it leads to; it is still a link (a GET, never a write) */
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-lg);
+  padding: 0 1rem;
+  font-weight: 600;
+  color: var(--primary-foreground);
+  text-decoration: none;
+  background: var(--primary);
+  border-radius: var(--radius);
+}
+
+.action-link {
+  margin: 0.75rem 0;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  list-style: none;
+}
+
+.tabs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-lg);
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.tabs a[aria-current="page"] {
+  font-weight: 700;
+  border-color: var(--foreground);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* a long verb ("Confirmar o fechamento do caso") wraps at 320 px instead of running out of the card */
+.button-row button,
+.button-link {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.action-panel,
+.history {
+  padding-top: 0.75rem;
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.action-panel .facts {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.internal {
+  padding-top: 0.75rem;
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.internal:empty {
+  display: none;
+}
+
+.effects {
+  padding-left: 1.25rem;
+  margin: 0;
+}
+
+.effects li {
+  overflow-wrap: anywhere;
+}
+
+.history ul,
+.case-list,
+.waiting {
+  padding-left: 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.case-list li,
+.waiting li {
+  overflow-wrap: anywhere;
+}
+
+.chosen {
+  margin: 0 0 0.75rem;
 }

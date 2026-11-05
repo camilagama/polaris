@@ -88,6 +88,7 @@ function setup(overrides: Partial<AdminDependencies> = {}) {
       list: vi.fn(() => Promise.resolve({ next: null, organizations: [] })),
     },
     privacy: {},
+    providerCommands: {},
     refundWindow: {},
     report: vi.fn(),
     resolvePrincipal: vi.fn(() => Promise.resolve(owner)),

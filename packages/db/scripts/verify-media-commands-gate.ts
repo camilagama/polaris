@@ -15,6 +15,7 @@ import {
   type CreateProductMediaAssetInput,
   createProductMediaAsset,
   getMediaAssetForDelivery,
+  listDeliverableMediaAssetIds,
   listProductMedia,
   removeProductMedia,
   reorderProductMedia,
@@ -266,6 +267,41 @@ async function run() {
     assert.equal(await auditCount(tenantA, "product.media_removed"), 1);
     tests.push(
       "removing an image drops its product and variant links and keeps the asset, stops serving it, is safe to repeat and leaves one audit event"
+    );
+
+    // ------------------------------------- 1b. the thumbnail batch
+    const productOfB = await newProduct(tenantB);
+    const imageOfB = await upload(tenantB, productOfB.id);
+    const unknownId = randomUUID();
+    const mixed = [
+      third.asset.assetId,
+      imageOfB.asset.assetId,
+      second.asset.assetId,
+      unknownId,
+      first.asset.assetId.toUpperCase(),
+    ];
+    const deliverableToA = await as(tenantA, (tx) =>
+      listDeliverableMediaAssetIds(tx, tenantA.organizationId, mixed)
+    );
+    assert.deepEqual(
+      [...deliverableToA].sort(),
+      [first.asset.assetId, third.asset.assetId].sort(),
+      "the batch answers only the images of this organization's products"
+    );
+    const askedForA = await as(tenantB, (tx) =>
+      listDeliverableMediaAssetIds(tx, tenantA.organizationId, mixed)
+    );
+    assert.equal(
+      askedForA.size,
+      0,
+      "under B's tenant context, the row level policy hides A's images even when A's id is passed"
+    );
+    const deliverableToB = await as(tenantB, (tx) =>
+      listDeliverableMediaAssetIds(tx, tenantB.organizationId, mixed)
+    );
+    assert.deepEqual([...deliverableToB], [imageOfB.asset.assetId]);
+    tests.push(
+      "the thumbnail batch resolves a mixed list in one query: another organization's, unknown and removed ids are absent alike, and the row level policy holds without the organization filter"
     );
 
     // ----------------------------------------------- 2. the order

@@ -21,7 +21,7 @@ const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 const SITE_KEY = "1x00000000000000000000AA";
 const SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 const REQUIRED = process.env.TURNSTILE_REAL === "1";
-const PASSWORD = "uma frase longa de teste";
+const PASSWORD = "Uma frase longa de teste 2026";
 const HEADERS = readFileSync(
   new URL("../public/_headers", import.meta.url),
   "utf8"

@@ -36,7 +36,7 @@ import {
   handleBillingNotice,
   handOverOwedBillingNotices,
 } from "../src/server/billing/notice-consumer";
-import { billingProviderPortOf } from "../src/server/billing/provider-ports";
+import { billingProviderPortOf } from "@polaris/billing/provider-ports";
 import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,

@@ -5,6 +5,7 @@ import {
   createProductMediaAsset,
   findMediaUploadCommand,
   getMediaAssetForDelivery,
+  listDeliverableMediaAssetIds,
   listProductMedia,
   removeProductMedia,
   reorderProductMedia,
@@ -41,6 +42,15 @@ import {
   processMediaImage,
 } from "../media-image-pipeline";
 import {
+  InvalidMediaThumbsRequestError,
+  MEDIA_THUMBS_HEADER,
+  MediaThumbChangedError,
+  mediaThumbsHeaderValue,
+  parseMediaThumbIds,
+  sizeMediaThumbs,
+  streamMediaThumbs,
+} from "../media-thumbs";
+import {
   InvalidMediaUploadCommandIdError,
   mediaObjectKey,
   mediaStagingMarkerKey,
@@ -66,6 +76,7 @@ export interface MediaRouteDependencies {
   createProductMediaAsset: typeof createProductMediaAsset;
   findMediaUploadCommand: typeof findMediaUploadCommand;
   getMediaAssetForDelivery: typeof getMediaAssetForDelivery;
+  listDeliverableMediaAssetIds: typeof listDeliverableMediaAssetIds;
   listProductMedia: typeof listProductMedia;
   processMediaImage: ImageProcessor;
   processMediaDerivative: DerivativeProcessor;
@@ -300,6 +311,12 @@ function processingErrorResponse(
 }
 
 function errorResponse(context: Context<ServerEnv>, error: unknown): Response {
+  if (error instanceof InvalidMediaThumbsRequestError) {
+    return context.json(
+      { error: { code: error.code }, requestId: context.get("requestId") },
+      400
+    );
+  }
   if (error instanceof InvalidMediaCropError) {
     return context.json(
       {
@@ -977,6 +994,81 @@ async function handleMediaDelivery(
   }
 }
 
+/**
+ * Up to 24 stored 320 px thumbnails in one answer: one session, one tenant
+ * transaction and one query for the whole list. Whatever this organization
+ * cannot serve (another organization's id, an unknown or removed image, an image
+ * without its 320 px derivative) is the same `missing`, and nothing is ever
+ * transformed: the Images binding is not reached from here.
+ */
+async function handleMediaThumbs(
+  context: Context<ServerEnv>,
+  dependencies: {
+    listDeliverable: typeof listDeliverableMediaAssetIds;
+    tenantRequest: TenantRunner;
+  }
+): Promise<Response> {
+  const organizationId =
+    context.req.query("organizationId") ??
+    context.req.header("x-organization-id") ??
+    "";
+  if (!organizationId.trim() || organizationId !== organizationId.trim()) {
+    return errorResponse(context, new InvalidMediaThumbsRequestError());
+  }
+  let ids: string[];
+  try {
+    ids = parseMediaThumbIds(context.req.query("ids"));
+  } catch (error) {
+    return errorResponse(context, error);
+  }
+  const mediaBucket = context.env.MEDIA_BUCKET;
+  if (!mediaBucket) {
+    return errorResponse(context, new MediaImageProcessingError());
+  }
+
+  try {
+    const authorizedIds = await dependencies.tenantRequest({
+      bindings: context.env,
+      capability: "catalog:read",
+      operation: (transaction, identity) =>
+        dependencies.listDeliverable(transaction, identity.organizationId, ids),
+      request: context.req.raw,
+      requestedOrganizationId: organizationId,
+    });
+    let entries: Awaited<ReturnType<typeof sizeMediaThumbs>>;
+    try {
+      entries = await sizeMediaThumbs({
+        authorizedIds,
+        bucket: mediaBucket,
+        ids,
+      });
+    } catch (cause: unknown) {
+      // biome-ignore lint/style/useErrorCause: Preserve storage details internally while returning a stable processing error.
+      throw new MediaImageProcessingError({ cause });
+    }
+    const body = streamMediaThumbs({
+      bucket: mediaBucket,
+      entries,
+      // The response is already under way: only a log can say why it was cut.
+      onAbort: (error) =>
+        logServerEvent("media_thumbs_stream_aborted", context, {
+          reason:
+            error instanceof MediaThumbChangedError
+              ? "thumb_changed"
+              : "stream_failed",
+        }),
+    });
+    return context.body(body, 200, {
+      "Cache-Control": "private, no-store",
+      "Content-Type": "application/octet-stream",
+      "X-Content-Type-Options": "nosniff",
+      [MEDIA_THUMBS_HEADER]: mediaThumbsHeaderValue(entries),
+    });
+  } catch (error) {
+    return errorResponse(context, error);
+  }
+}
+
 async function cleanupRejectedMediaAttempt(input: {
   mediaBucket: MediaBucketBinding;
   objectCreated: boolean;
@@ -1060,6 +1152,8 @@ export function createMediaRoutes(
   const findUpload = overrides.findMediaUploadCommand ?? findMediaUploadCommand;
   const getAsset =
     overrides.getMediaAssetForDelivery ?? getMediaAssetForDelivery;
+  const listDeliverable =
+    overrides.listDeliverableMediaAssetIds ?? listDeliverableMediaAssetIds;
   const listMedia = overrides.listProductMedia ?? listProductMedia;
   const imageProcessor = overrides.processMediaImage ?? processMediaImage;
   const derivativeProcessor =
@@ -1180,6 +1274,13 @@ export function createMediaRoutes(
       return errorResponse(context, error);
     }
   });
+
+  // Registered before `/api/media/:assetId`, which would otherwise take `thumbs` as an id.
+  app.get(
+    "/api/media/thumbs",
+    async (context) =>
+      await handleMediaThumbs(context, { listDeliverable, tenantRequest })
+  );
 
   app.get(
     "/api/media/:assetId",

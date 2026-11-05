@@ -291,3 +291,78 @@ export function brasiliaMomentText(moment: string | null): string {
   const date = new Date(moment);
   return Number.isNaN(date.getTime()) ? "—" : brasiliaMoment(date);
 }
+
+const CASE_STATES: Readonly<Record<string, string>> = {
+  closed: "Fechado",
+  open: "Aberto",
+};
+
+export function caseStatusText(status: string): string {
+  return CASE_STATES[status] ?? `estado desconhecido: ${status}`;
+}
+
+/** The events a support case's audit names (`admin_record_audit`), in words; the detail of an event is not shown. */
+const AUDIT_EVENTS: Readonly<Record<string, string>> = {
+  "billing.entitlement_grant_requested": "Concessão de plano pedida",
+  "billing.entitlement_granted": "Concessão de plano dada",
+  "billing.entitlement_revoke_requested": "Encerramento de concessão pedido",
+  "billing.entitlement_revoked": "Concessão de plano encerrada",
+  "billing.refund_window_read": "Janela de reembolso consultada",
+  "organization.legal_hold_placed": "Trava legal posta",
+  "organization.legal_hold_released": "Trava legal tirada",
+  "organization.legal_hold_reviewed": "Trava legal revista",
+  "organization.purge_cancelled": "Purge cancelado",
+  "organization.purge_scheduled": "Purge agendado",
+  "organization.reactivated": "Loja reativada",
+  "organization.suspended": "Loja suspensa",
+  "pii.revealed": "Dado pessoal revelado (o campo, não o valor)",
+  "support_case.closed": "Caso fechado",
+  "support_case.opened": "Caso aberto",
+  "tenant_access.granted": "Acesso aos dados dado",
+  "tenant_access.revoked": "Acesso aos dados encerrado",
+};
+
+export function auditEventText(eventType: string): string {
+  return AUDIT_EVENTS[eventType] ?? "Outra ação registrada";
+}
+
+const TIME = new Intl.DateTimeFormat("pt-BR", {
+  hour: "2-digit",
+  hourCycle: "h23",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+export function brasiliaTime(moment: Date): string {
+  return TIME.format(moment);
+}
+
+const INCIDENT_KINDS: Readonly<Record<string, string>> = {
+  outbox_attempts_exhausted: "Envio da caixa de saída",
+  queue_dead_letter: "Fila de mensagens",
+};
+
+export function incidentKindText(kind: string): string {
+  return INCIDENT_KINDS[kind] ?? `tipo desconhecido: ${kind}`;
+}
+
+const INCIDENT_CAUSES: Readonly<Record<string, string>> = {
+  attempts_exhausted: "Tentativas esgotadas",
+  invalid_envelope: "Mensagem inválida",
+  retries_exhausted: "Tentativas esgotadas",
+  unknown_type: "Tipo de mensagem desconhecido",
+  wrong_queue: "Mensagem na fila errada",
+};
+
+export function incidentCauseText(cause: string): string {
+  return INCIDENT_CAUSES[cause] ?? `causa desconhecida: ${cause}`;
+}
+
+const DEAD_EVENT_STATES: Readonly<Record<string, string>> = {
+  dead: "Morto, a reenviar",
+  retried: "Já reenviado",
+};
+
+export function deadEventStateText(state: string): string {
+  return DEAD_EVENT_STATES[state] ?? `estado desconhecido: ${state}`;
+}

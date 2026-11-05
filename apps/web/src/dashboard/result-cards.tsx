@@ -105,6 +105,17 @@ function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
   return hidden ? maskMoney(text, MASKED_SPOKEN) : text;
 }
 
+/**
+ * The day read (or today at rest), never the range of the card: "Até 17/10"; a month reads to its last day, which is
+ * today for the month of today (D1-2).
+ */
+function untilText(
+  point: { date: string; to?: string | undefined } | undefined,
+  today: string
+): string {
+  return `Até ${shortDate(point?.to ?? point?.date ?? today)}`;
+}
+
 /** The height of a sparkline: 64 px from 760 px, 52 on a phone. */
 function sparkHeight(still: boolean): number {
   return still ? 52 : 64;
@@ -166,8 +177,8 @@ export function ResultCards({
   const last = kpis.days.length - 1;
   const read = kpis.read(index);
   const rest = kpis.read(null);
-  // the day read (or today at rest), never the range of the card: "Até 17/10: R$ 1.926,30"
-  const until = `Até ${shortDate(kpis.days[Math.min(index ?? last, last)]?.date ?? today)}`;
+  const until = untilText(kpis.days[Math.min(index ?? last, last)], today);
+  const unit = kpis.monthly ? "mês" : "dia";
   const range = (reading: KpiReading, label: string): KpiRange => ({
     label,
     max: last,
@@ -233,7 +244,7 @@ export function ResultCards({
             ? {
                 range: range(
                   read.result,
-                  "Resultado estimado, acumulado por dia"
+                  `Resultado estimado, acumulado por ${unit}`
                 ),
                 spark: spark(
                   kpis.series.result,
@@ -256,7 +267,7 @@ export function ResultCards({
             ? {
                 range: range(
                   read.sales,
-                  `${salesName(kpis.month)}, acumulado por dia`
+                  `${salesName(kpis.month)}, acumulado por ${unit}`
                 ),
                 spark: spark(kpis.series.sales, "var(--chart-sales)", "zero"),
               }
@@ -272,7 +283,10 @@ export function ResultCards({
           id="result-kpi-ticket"
           {...(drawn
             ? {
-                range: range(read.ticket, "Ticket médio, por dia do período"),
+                range: range(
+                  read.ticket,
+                  `Ticket médio, por ${unit} do período`
+                ),
                 spark: spark(
                   kpis.series.ticket,
                   "var(--chart-ticket)",

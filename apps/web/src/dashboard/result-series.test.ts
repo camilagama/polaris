@@ -55,6 +55,57 @@ const withoutCosts = (list: StoredDay[]): StoredDay[] =>
     salesCount,
   }));
 
+/**
+ * The days as the server sends a long period (`granularity` "month"): one entry per calendar month up to today, the
+ * ends cut, `costs` and the result null when a day of the month is, and the days after today apart. The same rule the
+ * gate `period-summary-sql` proves on the server.
+ */
+function serverMonths(daily: readonly StoredDay[], today: string) {
+  const add = (values: ReadonlyArray<string | null | undefined>) => {
+    if (values.some((value) => value === undefined)) {
+      return;
+    }
+    return values.some((value) => value === null) ? null : sum(values);
+  };
+  const bucket = (members: StoredDay[]): StoredDay => {
+    const first = members[0] as StoredDay;
+    const costs = add(members.map((day) => day.costs));
+    const operatingResult = add(members.map((day) => day.operatingResult));
+    return {
+      date: first.date,
+      days: members.length,
+      netSales: sum(members.map((day) => day.netSales)),
+      salesCount: members.reduce((total, day) => total + day.salesCount, 0),
+      to: (members.at(-1) as StoredDay).date,
+      unknownDays: members.filter((day) => day.costs === null).length,
+      ...(costs === undefined ? {} : { costs }),
+      ...(operatingResult === undefined ? {} : { operatingResult }),
+      ...(members.every((day) => day.operatingExpenses !== undefined)
+        ? {
+            operatingExpenses: sum(members.map((day) => day.operatingExpenses)),
+          }
+        : {}),
+    };
+  };
+  const months = new Map<string, StoredDay[]>();
+  for (const day of daily.filter((entry) => entry.date <= today)) {
+    const key = day.date.slice(0, 7);
+    months.set(key, [...(months.get(key) ?? []), day]);
+  }
+  const later = daily.filter((day) => day.date > today);
+  return {
+    daily: [...months.values()].map(bucket),
+    granularity: "month" as const,
+    ...(later.length > 0 ? { afterToday: bucket(later) } : {}),
+  };
+}
+
+/** The series of the screen for a long period, from the server's months. */
+function longSeries(daily: readonly StoredDay[], today: string) {
+  const months = serverMonths(daily, today);
+  return resultSeries(months.daily, today, months);
+}
+
 const sum = (values: ReadonlyArray<string | null | undefined>) =>
   values
     .reduce(
@@ -182,7 +233,7 @@ describe("a day with an unknown cost is hatched and breaks the cost line only on
     expect(after[2]).toBeNull();
     expect(after[3]).toBeNull();
     const month = costSeries(
-      resultSeries(
+      longSeries(
         [...october([3], "2026-10-31"), ...days("2026-11-01", "2027-01-05")],
         "2027-01-05"
       ).rows
@@ -386,7 +437,7 @@ describe("the expenses of the day come from the server when it sends them (opera
   });
 });
 
-describe("long periods group by month with Money (AC-7)", () => {
+describe("long periods come by month from the server, used as they come (AC-7)", () => {
   /** A year, every day selling R$ 10,10 with a cost of R$ 4,05 and a result of R$ 6,05. */
   const year = days("2026-01-01", "2026-12-31", () => ({
     costs: "4.05",
@@ -396,7 +447,7 @@ describe("long periods group by month with Money (AC-7)", () => {
   }));
 
   it("groups a period above 62 days into at most 13 months", () => {
-    const series = resultSeries(year, "2026-12-31");
+    const series = longSeries(year, "2026-12-31");
     expect(series.grouped).toBe(true);
     expect(series.rows).toHaveLength(12);
     expect(series.rows[0]).toMatchObject({
@@ -407,17 +458,75 @@ describe("long periods group by month with Money (AC-7)", () => {
     expect(series.rows[11]?.label).toBe("dez");
   });
 
-  it("keeps 62 days daily and groups 63", () => {
-    expect(
-      resultSeries(days("2026-09-01", "2026-11-01"), "2026-11-01").grouped
-    ).toBe(false);
+  it("groups only what the server sent by month: a series by date stays by date, whatever its length", () => {
     expect(
       resultSeries(days("2026-09-01", "2026-11-02"), "2026-11-02").grouped
+    ).toBe(false);
+    expect(
+      longSeries(days("2026-09-01", "2026-11-02"), "2026-11-02").grouped
     ).toBe(true);
   });
 
+  it("names a month cut by the period or by today with its days, and a whole one by its name", () => {
+    const series = longSeries(
+      days("2026-03-15", "2026-06-10", () => ({ salesCount: 1 })),
+      "2026-06-10"
+    );
+    expect(series.rows.map((row) => row.tableLabel)).toEqual([
+      "março de 2026, de 15 a 31",
+      "abril de 2026",
+      "maio de 2026",
+      "junho de 2026, de 1 a 10",
+    ]);
+    expect(series.days).toEqual({ total: 88, unknown: 0 });
+  });
+
+  it("counts the unknown days of the months and says them in the reading of the month, never a cost of zero (AC-9, AC-11)", () => {
+    const series = longSeries(
+      days("2026-01-01", "2026-03-31", (date) =>
+        date === "2026-02-10" || date === "2026-02-11"
+          ? { costs: null, operatingExpenses: "0.00", operatingResult: null }
+          : {
+              costs: "1.00",
+              operatingExpenses: date === "2026-02-20" ? "1.00" : "0.00",
+            }
+      ),
+      "2026-03-31"
+    );
+    expect(series.days).toEqual({ total: 90, unknown: 2 });
+    expect(readingNote(series.rows[1])).toBe(
+      "2 de 28 dias sem custo informado · inclui R$ 1,00 de despesas do período"
+    );
+    expect(readingNote(series.rows[0])).toBeNull();
+  });
+
+  it("keeps the line after today from the server's days after today, and none when a month is unknown (AC-9, AC-10)", () => {
+    const crossing = days("2026-09-20", "2026-12-18", (date) =>
+      date === "2026-11-20"
+        ? { costs: "300.00", operatingExpenses: "300.00" }
+        : {}
+    );
+    const series = longSeries(crossing, "2026-11-04");
+    expect(series.rows.map((row) => row.key)).toEqual([
+      "2026-09",
+      "2026-10",
+      "2026-11",
+    ]);
+    expect(series.rows.at(-1)?.tableLabel).toBe("novembro de 2026, de 1 a 4");
+    expect(series.afterToday).toBe("300.00");
+    const unknown = longSeries(
+      crossing.map((day) =>
+        day.date === "2026-10-02"
+          ? { ...day, costs: null, operatingResult: null }
+          : day
+      ),
+      "2026-11-04"
+    );
+    expect(unknown.afterToday).toBeNull();
+  });
+
   it("adds up to the total of the days, to the cent, in sales, costs and result", () => {
-    const series = resultSeries(year, "2026-12-31");
+    const series = longSeries(year, "2026-12-31");
     expect(sum(series.rows.map((row) => row.netSales))).toBe(
       sum(year.map((day) => day.netSales))
     );
@@ -433,7 +542,7 @@ describe("long periods group by month with Money (AC-7)", () => {
   });
 
   it("turns the year: a period from December into January has two months, in order", () => {
-    const series = resultSeries(days("2025-12-01", "2026-02-15"), "2026-02-15");
+    const series = longSeries(days("2025-12-01", "2026-02-15"), "2026-02-15");
     expect(series.rows.map((row) => row.key)).toEqual([
       "2025-12",
       "2026-01",
@@ -447,7 +556,7 @@ describe("long periods group by month with Money (AC-7)", () => {
     const daily = days("2026-01-01", "2026-12-31", (date) =>
       date === "2026-12-31" ? { costs: "500.00" } : { costs: "1.00" }
     );
-    const series = resultSeries(daily, "2026-10-15");
+    const series = longSeries(daily, "2026-10-15");
     expect(series.rows.at(-1)?.key).toBe("2026-10");
     expect(series.rows.at(-1)?.netSales).toBe("0.00");
     // the days after today cost 16 days of October + 30 + 31 of the end of the year, the last one 500.00
@@ -459,7 +568,7 @@ describe("long periods group by month with Money (AC-7)", () => {
   });
 
   it("is unknown in a month with one unknown day, and the unknown is not summed", () => {
-    const { rows } = resultSeries(
+    const { rows } = longSeries(
       days("2026-01-01", "2026-03-31", (date) =>
         date === "2026-02-10"
           ? { costs: null, operatingResult: null }
@@ -474,7 +583,7 @@ describe("long periods group by month with Money (AC-7)", () => {
   });
 
   it("has no cost in a month made of days that never sent one", () => {
-    const { rows } = resultSeries(
+    const { rows } = longSeries(
       withoutCosts(days("2026-01-01", "2026-03-31")),
       "2026-03-31"
     );
@@ -499,7 +608,7 @@ describe("the best day and the numbers written above the drawing (AC-5)", () => 
   });
 
   it("is a month for the long periods", () => {
-    const long = resultSeries(
+    const long = longSeries(
       days("2026-01-01", "2026-12-31", (date) =>
         date.startsWith("2026-05") ? { netSales: "10.00" } : {}
       ),

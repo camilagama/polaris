@@ -1,21 +1,35 @@
 import type { AdminOrganizationPage } from "@polaris/db/admin-diagnostics-repository";
 import type {
+  DeadEventSummary as ServerDeadEvent,
+  IncidentRetryResult,
+  OperationalIncidentDetail as ServerIncidentDetail,
+  OperationalIncidentPage as ServerIncidentPage,
+} from "@polaris/db/admin-incident-repository";
+import type {
   openSupportCase,
+  SupportCaseDetail as ServerCaseDetail,
   SupportCasePage as ServerCasePage,
 } from "@polaris/db/admin-support-repository";
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
 import type { RefundWindowView as ServerRefundWindow } from "@polaris/domain/admin/refund-window";
+import type { SupportDependencies } from "../support-routes";
 import { describe, expect, it } from "vitest";
 import type {
+  ClosedSupportCase,
+  DeadEventSummary,
   OpenedSupportCase,
+  OperationalIncidentDetail,
+  OperationalIncidentPage,
   OrganizationPage,
   RefundWindowView,
+  SupportCaseDetail,
+  RetryResult,
   SupportCasePage,
   WhoAmI,
 } from "../../ui/types";
 
 /**
- * The page writes the shapes of the store list, `whoami`, the support cases and the refund window itself (its script imports nothing of the database).
+ * The page writes the shapes of the store list, `whoami`, the support cases (list, detail and close) and the refund window itself (its script imports nothing of the database).
  * This file fails to compile when the server's answer and the page's reading of it drift apart, in either direction.
  */
 
@@ -31,6 +45,11 @@ const whoamiMatches: Same<
   Omit<WhoAmI, "capabilities"> & { capabilities: readonly PlatformCapability[] }
 > = true;
 const casesMatch: Same<ServerCasePage, SupportCasePage> = true;
+const detailMatches: Same<ServerCaseDetail, SupportCaseDetail> = true;
+const closedMatches: Same<
+  NonNullable<Awaited<ReturnType<SupportDependencies["close"]>>>,
+  ClosedSupportCase
+> = true;
 const openedMatches: Same<
   NonNullable<Awaited<ReturnType<typeof openSupportCase>>>,
   OpenedSupportCase
@@ -41,6 +60,12 @@ const refundWindowRead: ServerRefundWindow extends RefundWindowView
   : false = true;
 const refundWindowKeys: Same<keyof ServerRefundWindow, keyof RefundWindowView> =
   true;
+const incidentsMatch: Same<ServerIncidentPage, OperationalIncidentPage> = true;
+const incidentMatches: Same<ServerIncidentDetail, OperationalIncidentDetail> =
+  true;
+const deadEventMatches: Same<ServerDeadEvent, DeadEventSummary> = true;
+// the page says each of the retry's results by its own sentence: a sixth one in the server fails here
+const retryResultsRead: Same<IncidentRetryResult, RetryResult> = true;
 const capabilitiesRead: readonly PlatformCapability[] extends readonly string[]
   ? true
   : false = true;
@@ -51,10 +76,16 @@ describe("the page's types", () => {
       listMatches,
       whoamiMatches,
       casesMatch,
+      detailMatches,
+      closedMatches,
       openedMatches,
       refundWindowRead,
       refundWindowKeys,
       capabilitiesRead,
-    ]).toEqual([true, true, true, true, true, true, true]);
+      incidentsMatch,
+      incidentMatches,
+      deadEventMatches,
+      retryResultsRead,
+    ]).toEqual(new Array(13).fill(true));
   });
 });

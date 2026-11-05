@@ -499,7 +499,7 @@ async function serveTwoStores(page: Page, testInfo: TestInfo) {
 }
 
 async function chooseStore(page: Page, name: string) {
-  await page.getByRole("button", { name: "Loja, tema e Sair" }).click();
+  await page.getByRole("button", { name: "Loja, conta e ajuda" }).click();
   await page.getByRole("menuitemradio", { name }).click();
   // a radio item keeps the menu open
   await page.keyboard.press("Escape");
