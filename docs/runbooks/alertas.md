@@ -37,7 +37,7 @@
 | [`purge-parado`](#purge-parado) | `organization_purge_stalled` | 24 h | 1 | warning | não |
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
-| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed` | 60 min | 1 | critical | sim |
+| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed`, `billing_amount_mismatch_incident_failed` | 60 min | 1 | critical | sim |
 | [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
@@ -279,11 +279,11 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 
 ### incidente-de-reembolso-nao-gravado — incidente do reembolso não gravado
 
-**O que significa.** O banco falhou ao gravar o incidente de um reembolso pendente há 24 h (`refund_not_completed`) ou de uma rede parada (`refund_rearm_exhausted`, campo `cause`). O evento é `billing_refund_pending_incident_failed` (erro, com `organizationId` opaco e o erro). Sem o incidente, o operador não vê o caso pela lista do Admin; a passada seguinte tenta de novo.
+**O que significa.** O banco falhou ao gravar o incidente de um reembolso pendente há 24 h (`refund_not_completed`) ou de uma rede parada (`refund_rearm_exhausted`, campo `cause`). O evento é `billing_refund_pending_incident_failed` (erro, com `organizationId` opaco e o erro). Sem o incidente, o operador não vê o caso pela lista do Admin; a passada seguinte tenta de novo. O mesmo sinal conta `billing_amount_mismatch_incident_failed` (erro, no Worker `polaris-admin`, com `organizationId` opaco, `provider` e o erro): o reembolso do operador foi recusado porque o valor registrado da cobrança em vigor não é o do provedor, e o incidente `billing_amount_mismatch` não foi gravado; nenhuma passada grava depois.
 
 **Como confirmar.** Workers Logs: `event = "billing_refund_pending_incident_failed"`, por `cause` e `sqlState`. Com `sqlState`, veja também [erros-de-banco](#erros-de-banco).
 
-**O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)).
+**O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)). Para `billing_amount_mismatch_incident_failed`, o `billing_refund_amount_mismatch` logo antes no mesmo Worker nomeia a loja (ID opaco): trate como o incidente de divergência ([billing-providers](./billing-providers.md)).
 
 <a id="comando-de-cobranca-do-operador"></a>
 

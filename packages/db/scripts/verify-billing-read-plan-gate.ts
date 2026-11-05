@@ -376,10 +376,12 @@ async function run() {
     assert.deepEqual(empty, {
       accessEndsAt: null,
       cancelAtPeriodEnd: false,
+      currentChargeAmount: null,
       cycleMonths: null,
       firstChargeAmount: null,
       firstChargeAt: null,
       firstChargeOn: null,
+      pendingCycleMonths: null,
       priceAmount: null,
       provider: null,
       refundRequestedAt: null,
@@ -439,13 +441,27 @@ async function run() {
       {
         expect: {
           cancelAtPeriodEnd: false,
+          currentChargeAmount: null,
           firstChargeAmount: "24.90",
           firstChargeAt,
+          pendingCycleMonths: null,
           provider: "asaas",
           state: "active",
         },
         label: "active",
         set: "state = 'active', access_ends_at = now() + interval '28 days', cycle_months = 1, provider = 'asaas', provider_ref = $2, price_amount = 24.90, price_id = 'pro-1', first_charge_on = '2026-10-10', first_charge_at = $3, first_charge_amount = 24.90",
+      },
+      {
+        expect: {
+          currentChargeAmount: "29.90",
+          cycleMonths: 1,
+          firstChargeAmount: "24.90",
+          pendingCycleMonths: 12,
+          priceAmount: "24.90",
+          state: "active",
+        },
+        label: "active, renewed at another amount, a change of cycle waiting",
+        set: "state = 'active', access_ends_at = now() + interval '28 days', cycle_months = 1, pending_cycle_months = 12, provider = 'asaas', provider_ref = $2, price_amount = 24.90, price_id = 'pro-1', first_charge_on = '2026-10-10', first_charge_at = $3, first_charge_amount = 24.90, current_charge_amount = 29.90, current_charge_period_ends_at = now() + interval '28 days'",
       },
       {
         expect: {
@@ -513,7 +529,7 @@ async function run() {
       );
     }
     tests.push(
-      "the billing role reads each state with the columns of 0100: the price and the first charge as text with two decimals, the moments as dates, the refund memory"
+      "the billing role reads each state with the columns of 0100 and 0118: the price, the first charge and the charge in force as text with two decimals, the pending cycle, the moments as dates, the refund memory"
     );
 
     console.log(

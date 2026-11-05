@@ -1,5 +1,5 @@
 import { type BillingState, grantsPro } from "./entitlements";
-import type { RevokedPayment } from "./facts";
+import type { BillingCycleMonths, RevokedPayment } from "./facts";
 import { saoPauloDateOf } from "./provider-period";
 
 /**
@@ -22,12 +22,21 @@ export const REFUND_REQUEST_VALID_HOURS = 72;
 export interface PlanViewRecord {
   accessEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
+  /**
+   * The amount of the charge of the period paid most recently under the current link (migration 0118), as the
+   * provider charged it; null without a charge or when its fact carried no amount. It only feeds the screens: a refund
+   * reads the charge again at the provider.
+   */
+  currentChargeAmount: string | null;
+  cycleMonths: BillingCycleMonths | null;
   /** The moment and the amount of the first charge paid under the current link (`fact.occurredAt`). */
   firstChargeAmount: string | null;
   firstChargeAt: Date | null;
   /** The day of the first charge set at the provider by the checkout (`AAAA-MM-DD`). */
   firstChargeOn: string | null;
-  /** The price the checkout sent to the provider: the amount of every charge of this subscription. */
+  /** A cycle the provider will charge from the next renewal on (`cycle_change_scheduled`); null without a change. */
+  pendingCycleMonths: BillingCycleMonths | null;
+  /** The price the checkout sent to the provider: the amount of the first charge, not of the renewals. */
   priceAmount: string | null;
   provider: string | null;
   /** The owner's first refund request accepted under the current link. */
@@ -42,7 +51,10 @@ export type PlanMethod = "card" | "pix_automatic";
 export type RefundVia = "app" | "suporte";
 
 export interface NextCharge {
-  amount: string;
+  /** Null only when the next charge is of another cycle whose amount the record does not hold: never invented. */
+  amount: string | null;
+  /** The cycle the charge pays for: the pending one when a change of cycle waits for the renewal. */
+  cycleMonths: BillingCycleMonths;
   /** The day, in São Paulo (`AAAA-MM-DD`). */
   on: string;
 }
@@ -72,37 +84,86 @@ function saoPauloDayStart(date: string): Date {
   return new Date(`${date}T00:00:00.000${SAO_PAULO_OFFSET}`);
 }
 
+/** The cycle of the next renewal: the pending one when the provider changes it at the renewal, the current otherwise. */
+function renewalCycleOf(
+  record: Pick<PlanViewRecord, "cycleMonths" | "pendingCycleMonths">
+): BillingCycleMonths | null {
+  return record.pendingCycleMonths ?? record.cycleMonths;
+}
+
 /**
- * The next charge (AS-3): in a trial, the day of the first charge set at the provider (never the end of the trial,
- * which for a Pix approved late falls after it); while paid and renewing, the last day of the paid period (the day
- * the renewal is charged). None with the renewal cancelled, in grace, on Free, once the access ran out, or without
- * the price the checkout recorded (a link older than migration 0100): nothing is invented.
+ * The amount of the next renewal: the charge in force when the renewal keeps its cycle. A change of cycle waiting for
+ * the renewal has no amount in the record (its fact carries none), so it is null, never the old cycle's amount; the
+ * notices of a renewal (the annual reminder) follow the same rule.
  */
-export function nextChargeOf(
+export function renewalAmountOf(
+  record: Pick<
+    PlanViewRecord,
+    "currentChargeAmount" | "cycleMonths" | "pendingCycleMonths"
+  >
+): string | null {
+  return record.pendingCycleMonths === null ||
+    record.pendingCycleMonths === record.cycleMonths
+    ? record.currentChargeAmount
+    : null;
+}
+
+/**
+ * The day of the next charge (AS-3), in São Paulo: in a trial, the day of the first charge set at the provider (never
+ * the end of the trial, which for a Pix approved late falls after it); while paid and renewing, the last day of the
+ * paid period (the day the renewal is charged). None with the renewal cancelled, in grace, on Free or once the access
+ * ran out. The Admin names the renewal's day with it, whatever the amount.
+ */
+export function nextChargeDayOf(
   record: PlanViewRecord,
   now: Date
-): NextCharge | null {
+): string | null {
   if (
     record.cancelAtPeriodEnd ||
-    record.priceAmount === null ||
     record.accessEndsAt === null ||
     record.accessEndsAt.getTime() <= now.getTime()
   ) {
     return null;
   }
   if (record.state === "trialing") {
-    return record.firstChargeOn === null
-      ? null
-      : { amount: record.priceAmount, on: record.firstChargeOn };
+    return record.firstChargeOn;
   }
   if (record.state === "active") {
     // the period runs through the whole of its last day, and the renewal is charged on that day
-    return {
-      amount: record.priceAmount,
-      on: saoPauloDateOf(new Date(record.accessEndsAt.getTime() - 1)),
-    };
+    return saoPauloDateOf(new Date(record.accessEndsAt.getTime() - 1));
   }
   return null;
+}
+
+/**
+ * The next charge (AS-3) on `nextChargeDayOf`'s day. In a trial the amount is the price the checkout recorded (the
+ * first charge is that price); while paid, the charge in force (`renewalAmountOf`), and with a change of cycle
+ * waiting, the day and the new cycle with no amount. None without the cycle, and none without the amount when the
+ * renewal keeps its cycle (a link older than migration 0100, or a charge whose fact carried no amount): nothing is
+ * invented.
+ */
+export function nextChargeOf(
+  record: PlanViewRecord,
+  now: Date
+): NextCharge | null {
+  const on = nextChargeDayOf(record, now);
+  if (on === null) {
+    return null;
+  }
+  if (record.state === "trialing") {
+    return record.priceAmount === null || record.cycleMonths === null
+      ? null
+      : { amount: record.priceAmount, cycleMonths: record.cycleMonths, on };
+  }
+  const cycleMonths = renewalCycleOf(record);
+  const amount = renewalAmountOf(record);
+  if (
+    cycleMonths === null ||
+    (amount === null && cycleMonths === record.cycleMonths)
+  ) {
+    return null;
+  }
+  return { amount, cycleMonths, on };
 }
 
 /**

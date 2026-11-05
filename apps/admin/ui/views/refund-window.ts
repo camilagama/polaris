@@ -10,7 +10,11 @@ import {
 } from "../format";
 import { createNotice } from "../notice";
 import {
+  AMOUNT_CHANGED_AWAY,
   AUDIT_TEXT,
+  amountMismatchText,
+  CURRENT_CHARGE_AMOUNT_LABEL,
+  CURRENT_CHARGE_NOT_RECORDED,
   FIRST_CHARGE_AMOUNT_LABEL,
   RENEWAL_LABEL,
   SEPARATE_ACTIONS,
@@ -28,6 +32,32 @@ export interface RefundWindowArea {
   element: HTMLElement;
   /** Another store was chosen: the cases and the window of the one before are gone. */
   show: (organization: { id: string; name: string }) => void;
+}
+
+/** What an answer says once another store is shown: the new read is not made, so a text that needs it is not used. */
+function awayText(after: After): string {
+  const { holdRefund, text } = after;
+  if (typeof text === "string") {
+    return text;
+  }
+  return holdRefund ? amountMismatchText(null) : AMOUNT_CHANGED_AWAY;
+}
+
+/** Whether the refund's confirmation opens again after the read that followed `after`, and whether it is held. */
+function afterRead(
+  after: After | null,
+  fresh: RefundWindowView
+): { hold: boolean; reopen: boolean } {
+  const reopenRefund = after?.reopenRefund;
+  // the same amount read again would only spend another of the 3 refunds an hour on the same refusal: the refund is
+  // held, as after a divergence the server found
+  const reopen =
+    reopenRefund !== undefined &&
+    fresh.currentChargeAmount !== reopenRefund.from;
+  return {
+    hold: after?.holdRefund === true || (reopenRefund !== undefined && !reopen),
+    reopen,
+  };
 }
 
 /** The read after an action failed: what the action did is still said, since it was done whatever the read says. */
@@ -60,6 +90,12 @@ function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
     ["Assinatura", billingStateText(view.state)],
     [RENEWAL_LABEL, renewalLine(view.renewal)],
     ["Forma de pagamento", methodText(view.method)],
+    [
+      CURRENT_CHARGE_AMOUNT_LABEL,
+      view.currentChargeAmount === null
+        ? CURRENT_CHARGE_NOT_RECORDED
+        : moneyText(view.currentChargeAmount),
+    ],
     [FIRST_CHARGE_AMOUNT_LABEL, moneyText(view.firstChargeAmount)],
     ["Primeira cobrança", brasiliaMomentText(view.firstChargeAt)],
     ["Janela de arrependimento", windowText(view.window)],
@@ -105,6 +141,8 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
   let reading = false;
   let turn = 0;
   let locked = false;
+  /** Stores whose refund is held until the page is loaded again (`After.holdRefund`). */
+  const held = new Set<string>();
 
   const cases = supportCasesView(dom, api, {
     canRead: capabilities.readWindow,
@@ -136,11 +174,10 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
     const builtFor = turn;
     const away = organization;
     const sayAway = (next: After) => {
-      const text =
-        typeof next.text === "string"
-          ? next.text
-          : "O valor da primeira cobrança deste vínculo mudou desde a leitura. Nada foi feito.";
-      notice.alert(`Loja ${labelName(away.name)}: ${text}`);
+      if (next.holdRefund) {
+        held.add(away.id);
+      }
+      notice.alert(`Loja ${labelName(away.name)}: ${awayText(next)}`);
     };
     try {
       const shown = windowFacts(dom, view, choice);
@@ -159,6 +196,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
         },
         notice,
         organization,
+        refundHeld: held.has(organization.id),
         settled: (next) => {
           if (builtFor === turn) {
             read(choice, next);
@@ -214,6 +252,10 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       );
       return;
     }
+    const next = afterRead(after, answer.data);
+    if (next.hold) {
+      held.add(organization.id);
+    }
     const actions = show(choice, answer.data);
     if (actions === null) {
       // an answer of another shape is not shown as a window (the read was made and audited all the same)
@@ -224,11 +266,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       notice.status("Cobrança lida. A consulta ficou registrada na auditoria.");
       return;
     }
-    // the same amount read again would only spend another of the 3 refunds an hour on the same refusal
-    if (
-      after.reopenRefund &&
-      answer.data.firstChargeAmount !== after.reopenRefund.from
-    ) {
+    if (next.reopen && after.reopenRefund) {
       actions.openRefund(after.reopenRefund.reason);
     }
     say(after, answer.data);

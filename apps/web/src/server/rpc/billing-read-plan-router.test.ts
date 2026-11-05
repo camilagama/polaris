@@ -65,6 +65,7 @@ const PLAN_KEYS = [
   "method",
   "nextCharge",
   "nextCharge.amount",
+  "nextCharge.cycleMonths",
   "nextCharge.on",
   "offer",
   "offer.methods",
@@ -104,10 +105,12 @@ function keysOf(value: unknown, prefix = ""): string[] {
 const freeRecord: OwnerPlanRecord = {
   accessEndsAt: null,
   cancelAtPeriodEnd: false,
+  currentChargeAmount: null,
   cycleMonths: null,
   firstChargeAmount: null,
   firstChargeAt: null,
   firstChargeOn: null,
+  pendingCycleMonths: null,
   priceAmount: null,
   provider: null,
   refundRequestedAt: null,
@@ -120,6 +123,7 @@ const freeRecord: OwnerPlanRecord = {
 const activeRecord: OwnerPlanRecord = {
   ...freeRecord,
   accessEndsAt: sp("2026-11-11T00:00:00"),
+  currentChargeAmount: "24.90",
   cycleMonths: 1,
   firstChargeAmount: "24.90",
   firstChargeAt: sp("2026-10-10T15:00:00"),
@@ -476,10 +480,31 @@ describe("billing.readPlan: what it answers", () => {
 
     await expect(read(setup({ record }))).resolves.toMatchObject({
       method: "pix_automatic",
-      nextCharge: { amount: "24.90", on: "2026-10-17" },
+      nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-17" },
       refund: null,
       state: "trialing",
       trialAvailable: false,
+    });
+  });
+
+  it("names the next charge with the amount in force and its cycle, not the checkout's price (renewed at another amount)", async () => {
+    const renewed: OwnerPlanRecord = {
+      ...activeRecord,
+      currentChargeAmount: "29.90",
+      priceAmount: "24.90",
+    };
+    await expect(read(setup({ record: renewed }))).resolves.toMatchObject({
+      nextCharge: { amount: "29.90", cycleMonths: 1, on: "2026-11-10" },
+      refund: { amount: "24.90" },
+    });
+  });
+
+  it("with a change of cycle waiting names the day and the new cycle, with no amount", async () => {
+    await expect(
+      read(setup({ record: { ...activeRecord, pendingCycleMonths: 12 } }))
+    ).resolves.toMatchObject({
+      cycleMonths: 1,
+      nextCharge: { amount: null, cycleMonths: 12, on: "2026-11-10" },
     });
   });
 

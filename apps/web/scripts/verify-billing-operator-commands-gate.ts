@@ -36,8 +36,9 @@ import {
  *   1. the refund decides by the state of the charge, never by the command ID: a repeat with another command ID, a
  *      repeat with the same one after the provider accepted and the answer was lost, and a repeat while the charge is
  *      being refunded (before it is refunded) all refund once;
- *   2. the amount the operator saw is checked under the lock before anything: another one is `amount_changed`, with
- *      no cancellation and no decision written;
+ *   2. the amount the operator saw is checked under the lock before anything: another one is `amount_changed` when
+ *      the record holds the provider's amount, and `amount_mismatch` with one occurrence of the incident
+ *      `billing_amount_mismatch` when the record holds another, with no cancellation and no decision written;
  *   3. the decision (actor and reason) is written once per command ID in the ledger, before the provider is asked;
  *   4. the operator's cancellation: one fact per command ID, the lock of another command refuses it at once.
  * The fixtures stay, as in the other gates; the logins are dropped at the end.
@@ -317,23 +318,75 @@ async function run() {
     );
 
     // ------------------------------------------------ 2. the amount the operator saw
+    const mismatchIncident = async () =>
+      (
+        await owner.pool.query<{
+          last_reference: string | null;
+          occurrence_count: number;
+        }>(
+          "SELECT occurrence_count, last_reference FROM public.operational_incidents WHERE kind = 'billing_amount_mismatch' AND cause = 'amount_mismatch' AND subject = 'billing.current_charge'"
+        )
+      ).rows[0] ?? null;
+    const currentChargeEvent = async (tenant: TenantFixture) =>
+      (
+        await owner.pool.query<{ current_charge_event_id: string | null }>(
+          "SELECT current_charge_event_id::text AS current_charge_event_id FROM public.organization_billing WHERE organization_id = $1",
+          [tenant.organizationId]
+        )
+      ).rows[0]?.current_charge_event_id ?? null;
+
+    // the record holds the provider's amount (24.90): the operator's 19.90 is only an old read
     const shopC = await paidStore("amount changed");
-    const providerC = fakeProvider("49.80");
+    const providerC = fakeProvider("24.90");
+    const before = await mismatchIncident();
     assert.equal(
-      await refund(providerC, shopC, randomUUID(), "24.90"),
+      await refund(providerC, shopC, randomUUID(), "19.90"),
       "amount_changed"
     );
     assert.deepEqual(providerC.calls, ["readCharge"]);
     assert.equal(providerC.refunds, 0);
     assert.equal((await record(shopC))?.cancel_at_period_end, false);
     assert.deepEqual(await ledger(shopC, "command:"), []);
-    assert.equal(
-      await refund(providerC, shopC, randomUUID(), "49.80"),
-      "refund_requested",
-      "with the amount it holds, the same charge is refunded"
+    assert.deepEqual(
+      await mismatchIncident(),
+      before,
+      "an old read is no divergence: no incident"
     );
     tests.push(
-      "a refund whose expected amount is not the charge's answers amount_changed, with no cancellation, no refund and nothing in the ledger"
+      "a refund whose expected amount is not the charge's, with the record holding the provider's amount, answers amount_changed, with no cancellation, no refund, nothing in the ledger and no incident"
+    );
+
+    // the record holds 24.90 and the provider charged 49.80 (an edit at the provider): the server says it
+    const shopM = await paidStore("amount mismatch");
+    const providerM = fakeProvider("49.80");
+    const recordedEvent = await currentChargeEvent(shopM);
+    assert.ok(recordedEvent, "the charge applied wrote the charge in force");
+    assert.equal(
+      await refund(providerM, shopM, randomUUID(), "24.90"),
+      "amount_mismatch"
+    );
+    assert.deepEqual(providerM.calls, ["readCharge"]);
+    assert.equal(providerM.refunds, 0);
+    assert.equal((await record(shopM))?.cancel_at_period_end, false);
+    assert.deepEqual(await ledger(shopM, "command:"), []);
+    const after = await mismatchIncident();
+    assert.equal(
+      after?.occurrence_count,
+      (before?.occurrence_count ?? 0) + 1,
+      "one occurrence of the incident"
+    );
+    assert.equal(
+      after?.last_reference,
+      recordedEvent,
+      "the incident names the store's ledger row of the charge in force, nothing else of it"
+    );
+    assert.equal(
+      await refund(providerM, shopM, randomUUID(), "49.80"),
+      "refund_requested",
+      "with the amount the provider holds, the same charge is refunded"
+    );
+    tests.push(
+      "a refund whose recorded amount in force is not the provider's answers amount_mismatch, with no cancellation, no refund and nothing in the ledger, and adds one occurrence to the incident billing_amount_mismatch whose last reference is the store's current_charge_event_id"
     );
 
     // ------------------------------------------------ 3. the lock of another command

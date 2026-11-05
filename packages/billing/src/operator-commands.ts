@@ -5,6 +5,7 @@ import type {
 import { grantsPro } from "@polaris/domain/billing/entitlements";
 import { Money } from "@polaris/domain/money/money";
 import { logger, opaqueId } from "@polaris/observability/logger";
+import { describeError } from "@polaris/observability/wide-event";
 import type { BillingProviderPort } from "./provider-port";
 
 /**
@@ -32,8 +33,10 @@ export interface RefundCommandDependencies extends ProviderCommandDependencies {
   store: Pick<
     BillingStore,
     | "processEvent"
+    | "readCurrentCharge"
     | "readProviderLink"
     | "readRecord"
+    | "recordAmountMismatchIncident"
     | "recordEvent"
     | "recordOperatorDecision"
     | "withOrganizationLock"
@@ -67,6 +70,7 @@ export type CancelRenewalResult =
 
 export type RefundResult =
   | "amount_changed"
+  | "amount_mismatch"
   | "nothing_to_refund"
   | "not_linked"
   | "refund_not_supported"
@@ -237,6 +241,54 @@ class AmountChangedError extends Error {
   }
 }
 
+/**
+ * The amount the record holds for the charge in force is not the one the provider has for it: nothing was cancelled
+ * or refunded, and the divergence is an operational incident.
+ */
+class AmountMismatchError extends Error {
+  constructor() {
+    super("amount_mismatch");
+    this.name = "AmountMismatchError";
+  }
+}
+
+/**
+ * Why the charge the provider has is not the amount the operator saw, decided here and never by the screen (ADR
+ * 0105). The record holds the same amount as the provider: the operator only read it before it changed (a renewal, a
+ * repeat), `amount_changed`. The record holds another: the amount in force it keeps is wrong, which the write of every
+ * charge should never let happen; one occurrence of the incident `billing_amount_mismatch` names its ledger row, and
+ * the log names the store's opaque ID and the provider, no amount and no reference. Without an amount recorded there
+ * is nothing to disagree with (the Admin offers no refund then), so no incident.
+ */
+async function amountRefusal(
+  store: RefundCommandDependencies["store"],
+  input: { charged: bigint; organizationId: string; provider: string }
+): Promise<Error> {
+  const recorded = await store.readCurrentCharge(input.organizationId);
+  if (
+    recorded.eventId === null ||
+    recorded.amount === null ||
+    Money.from(recorded.amount).minorUnits === input.charged
+  ) {
+    return new AmountChangedError();
+  }
+  const fields = {
+    organizationId: opaqueId(input.organizationId),
+    provider: input.provider,
+  };
+  logger.warn("billing_refund_amount_mismatch", fields);
+  try {
+    await store.recordAmountMismatchIncident(recorded.eventId);
+  } catch (error: unknown) {
+    // the refund stays refused either way; the alert of this event stands for the incident that was not written
+    logger.error("billing_amount_mismatch_incident_failed", {
+      ...describeError(error),
+      ...fields,
+    });
+  }
+  return new AmountMismatchError();
+}
+
 /** The amount as `money.md` writes it, or a refusal before anything is read. */
 function expectedMinorUnits(expectedAmount: string | undefined): bigint | null {
   if (expectedAmount === undefined) {
@@ -254,9 +306,11 @@ function expectedMinorUnits(expectedAmount: string | undefined): bigint | null {
  * renewal (ADR 0066): a refund leaves the subscription alive at the provider,
  * and its next charge would give Pro back and charge again. Under the
  * organization's lock, in this order: the charge to refund is read; when the
- * caller names `expectedAmount` (the Admin always does: the amount the operator
- * saw) and the charge's is another, it answers `amount_changed` and nothing is
- * cancelled or refunded; the operator's decision is written in the ledger; the
+ * caller names `expectedAmount` (the Admin always does: the amount in force the
+ * operator saw) and the charge's is another, it answers `amount_changed`, or
+ * `amount_mismatch` with an incident when the record itself holds another
+ * amount than the provider (`amountRefusal`), and nothing is cancelled or
+ * refunded; the operator's decision is written in the ledger; the
  * renewal is cancelled, unless the record already shows it cancelled (by the
  * owner, an earlier request whose refund failed, or the closure); and that same
  * charge is refunded. A charge already refunded, or being refunded, is not one
@@ -292,11 +346,13 @@ export async function refundCurrentPeriod(
     }
     let renewal = "not_reached";
     const beforeRefund = async (charge: { amount: string }) => {
-      if (
-        expected !== null &&
-        Money.from(charge.amount).minorUnits !== expected
-      ) {
-        throw new AmountChangedError();
+      const charged = Money.from(charge.amount).minorUnits;
+      if (expected !== null && charged !== expected) {
+        throw await amountRefusal(store, {
+          charged,
+          organizationId: input.organizationId,
+          provider: port.provider,
+        });
       }
       if (input.decision) {
         await store.recordOperatorDecision(
@@ -334,7 +390,11 @@ export async function refundCurrentPeriod(
       reason: result,
       renewal,
     });
-    if (input.decision && result !== "amount_changed") {
+    if (
+      input.decision &&
+      result !== "amount_changed" &&
+      result !== "amount_mismatch"
+    ) {
       operatorCommandDone("refund", input.organizationId, port, result);
     }
     return result;
@@ -351,7 +411,12 @@ async function refundCharge(
     organizationId: string;
     port: BillingProviderPort;
   }
-): Promise<"amount_changed" | "nothing_to_refund" | "refund_requested"> {
+): Promise<
+  | "amount_changed"
+  | "amount_mismatch"
+  | "nothing_to_refund"
+  | "refund_requested"
+> {
   const { link, now, port } = input;
   let outcome: Awaited<ReturnType<BillingProviderPort["refundCurrentPeriod"]>>;
   try {
@@ -365,6 +430,9 @@ async function refundCharge(
   } catch (error: unknown) {
     if (error instanceof AmountChangedError) {
       return "amount_changed";
+    }
+    if (error instanceof AmountMismatchError) {
+      return "amount_mismatch";
     }
     throw error;
   }

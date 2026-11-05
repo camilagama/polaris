@@ -54,6 +54,7 @@ function refundWindow(
   overrides: Partial<RefundWindowView> = {}
 ): RefundWindowView {
   return {
+    currentChargeAmount: "1234.5",
     firstChargeAmount: "1234.5",
     firstChargeAt: "2026-10-24T18:30:00.000Z",
     method: "card",

@@ -59,6 +59,7 @@ const FIRST_CHARGE_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
 const activeRecord: OwnerCommandRecord = {
   accessEndsAt: sp("2026-11-11T00:00:00"),
   cancelAtPeriodEnd: false,
+  currentChargeAmount: "24.90",
   cycleMonths: 12,
   firstCharge: {
     eventId: FIRST_CHARGE_EVENT,
@@ -68,6 +69,7 @@ const activeRecord: OwnerCommandRecord = {
   firstChargeAt: sp("2026-10-10T15:00:00"),
   firstChargeOn: "2026-10-10",
   link,
+  pendingCycleMonths: null,
   priceAmount: "29.90",
   provider: "asaas",
   refundRequestedAt: null,

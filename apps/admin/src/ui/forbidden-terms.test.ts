@@ -142,6 +142,13 @@ const KEPT: readonly Kept[] = [
     file: "ui/views/privacy-case.ts",
     start: "Com a identidade não confirmada, só se recusa",
   },
+  {
+    // the server's divergence, in the words of the UX review: the incident is what engineering receives
+    allowed: /incidente/gi,
+    file: "ui/refund-words.ts",
+    start:
+      " não é o que o provedor tem. Nada foi feito. A engenharia recebe um incidente;",
+  },
 ];
 
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));

@@ -1,6 +1,6 @@
 import { type BillingState, grantsPro } from "../billing/entitlements";
 import {
-  nextChargeOf,
+  nextChargeDayOf,
   type PlanMethod,
   type PlanViewRecord,
   refundRequestValidUntil,
@@ -22,6 +22,8 @@ export interface RawRefundWindow {
   /** When the Pro access already paid for ends; null in the free states. */
   accessEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
+  /** The amount of the charge in force (migration 0118): what a refund of the current period sends as `expectedAmount`. */
+  currentChargeAmount: string | null;
   firstChargeAmount: string | null;
   firstChargeAt: Date | null;
   method: PlanMethod | null;
@@ -37,13 +39,13 @@ export interface RawRefundWindow {
 /**
  * Where the renewal stands, from the same record the owner's plan reads: `renewing` (the next charge is coming),
  * `cancelled` (the access already paid for runs to `accessUntil` and nothing renews) or `none` (Free, no record or the
- * period is over). The dates are the product's: `renewsOn` is `nextChargeOf`'s day (`AAAA-MM-DD`), `accessUntil` and
+ * period is over). The dates are the product's: `renewsOn` is `nextChargeDayOf`'s day (`AAAA-MM-DD`), `accessUntil` and
  * `resubscribeFrom` are instants whose São Paulo last day the screen shows, as the owner's screen does.
  */
 export interface RefundWindowRenewal {
   /** The end of the access already paid for while the renewal is cancelled; null otherwise. */
   accessUntil: string | null;
-  /** The day the renewal is charged; null when the product names none (a link recorded before its price). */
+  /** The day the renewal is charged; null when the product names none. */
   renewsOn: string | null;
   /** When the owner may subscribe again (`resubscribeFromOf`); null while nothing waits and after a refund. */
   resubscribeFrom: string | null;
@@ -51,6 +53,12 @@ export interface RefundWindowRenewal {
 }
 
 export interface RefundWindowView {
+  /**
+   * The amount of the charge in force, the one the refund of the current period refunds; null without a charge paid
+   * or when its fact carried no amount (the Admin then offers no refund). The server reads the charge again at the
+   * provider before refunding: this amount is never the authority.
+   */
+  currentChargeAmount: string | null;
   firstChargeAmount: string | null;
   firstChargeAt: string | null;
   method: PlanMethod | null;
@@ -107,7 +115,7 @@ function renewalOf(record: PlanViewRecord, now: Date): RefundWindowRenewal {
   if (live && grantsPro(record.state)) {
     return {
       accessUntil: null,
-      renewsOn: nextChargeOf(record, now)?.on ?? null,
+      renewsOn: nextChargeDayOf(record, now),
       resubscribeFrom: null,
       status: "renewing",
     };
@@ -127,11 +135,14 @@ export function buildRefundWindowView(
   const record: PlanViewRecord = {
     accessEndsAt: raw.accessEndsAt,
     cancelAtPeriodEnd: raw.cancelAtPeriodEnd,
+    currentChargeAmount: raw.currentChargeAmount,
+    // the Admin reads no cycle: the renewal's day does not depend on it
+    cycleMonths: null,
     firstChargeAmount: raw.firstChargeAmount,
     firstChargeAt: raw.firstChargeAt,
     firstChargeOn: null,
-    // stands for the price only so `nextChargeOf` names a day; it is the first charge's amount, not the one in force
-    priceAmount: raw.firstChargeAmount,
+    pendingCycleMonths: null,
+    priceAmount: null,
     provider: null,
     refundRequestedAt: raw.refundRequestedAt,
     revoked:
@@ -147,6 +158,7 @@ export function buildRefundWindowView(
       ? null
       : refundRequestValidUntil(raw.refundRequestedAt);
   return {
+    currentChargeAmount: raw.currentChargeAmount,
     firstChargeAmount: raw.firstChargeAmount,
     firstChargeAt: raw.firstChargeAt?.toISOString() ?? null,
     method: raw.method,

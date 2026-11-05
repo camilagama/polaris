@@ -387,6 +387,7 @@ describe("refundCommand", () => {
 
   it.each([
     "amount_changed",
+    "amount_mismatch",
     "nothing_to_refund",
     "not_linked",
     "refund_not_supported",
