@@ -2862,6 +2862,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `ui/store-actions.test.ts` (estados `active`, `suspended`, `closed` e desconhecido, ordem dos efeitos, sem caso e sem capacidade, 400, 401, 403, 404, 409, 429, 503, rede e resposta ilegível, releitura que falha, duplo clique, cadeias hostis), `src/support-routes.test.ts` (400 `case_not_open`, 404 `unknown_case`, `internal` que não é booleano), `src/ui/ui-guard.test.ts` (rede: segmentos `suspend`, `reactivate` e `classification`). |
 | Limites | Registrado | O texto sobre o que estava guardado nos aparelhos offline segue a suposição do AC-P3.1 (achado t674), a confirmar com o Filipe e o Rodrigo. Suspender não tem segunda pessoa (ADR 0073). As rotas não devolvem `outcomeRecorded` (só as concessões). Sem abas no caso ainda: o painel é uma seção da página. Aceite no staging (AC-C14) e parecer do Rodrigo (AC-C11) pendentes. |
 
+### Admin v2, Parte 8: registro de acessos, a consulta do juízo (t749; corte admin-v2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Tela | Em revisão | `GET /registro` (`apps/admin/src/ui/page.ts`, `src/app.ts`), atrás do login da API e com a CSP `admin-document`; item "Registro de acessos" no menu (grupo Auditoria) só com `access_log:read`. A query da URL não entra na página (nem `?loja=`): nada de `?caso=` nem de dado do juízo no endereço. |
+| Consulta | Em revisão | `ui/views/access-log.ts`: número do processo (a tela só indica o formato CNJ), **um** filtro (seletor Usuário ou IP), período em dias de Brasília de no máximo 31 (31 cabem, 32 não, sem pedido), "Esta consulta fica registrada na auditoria, com o número do processo." acima do botão, um `POST /api/access-log/read` por clique com `aria-disabled` e "Consultando…", "Próxima página" como outro clique. Abrir a tela não lê o registro. |
+| Resposta | Em revisão | Tabela (cartões a 360 px) com hora em Brasília e em UTC, com segundos, evento, IP, usuário e requisição, tudo como texto; vazio diz "Nenhum acesso encontrado nessa janela."; `invalid_filter`, `invalid_window` e `invalid_reference` junto do campo e as demais recusas, 401, 403, 404, 409, 429 e 503 em frase própria, sem código. Mudar um campo ou esconder a página (`pagehide`) apaga o número, o filtro e as linhas. |
+| Provas | Em revisão | `ui/access-log.test.ts` (46 casos de DOM), `src/ui/screens.test.ts` (rota, menu por capacidade, 403 sem capacidade, query sem dado), `src/ui/ui-guard.test.ts` (rede: `/api/access-log`, segmento `read`), `src/ui/ui-types.test.ts`, `src/route-surface.test.ts`, `src/worker.workerd.test.ts`. |
+| Limites | Registrado | O seletor de filtro troca a caixa dupla do desenho (rádio) por um `select`, porque `fieldset`, `legend` e `checked` não estão na lista do `dom.ts`; o `invalid_filter` do servidor, que a tela só recebe por valor mal formado, começa pelo valor ("O valor não foi aceito.") e traz o formato, sem "não os dois". Parecer do Rodrigo (AC-P8.5, AC-C11) e aceite no staging (AC-C14) pendentes. |
+
 ### Admin v2, Parte 9: Configurações do operador, só leitura (t750; corte admin-v2; sem migration)
 
 | Item | Estado | Detalhe |

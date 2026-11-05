@@ -1,3 +1,7 @@
+import type {
+  AccessLogEntryView,
+  AccessLogReadResult,
+} from "@polaris/db/admin-access-log-repository";
 import type { AdminOrganizationPage } from "@polaris/db/admin-diagnostics-repository";
 import type {
   DeadEventSummary as ServerDeadEvent,
@@ -15,6 +19,8 @@ import type { RefundWindowView as ServerRefundWindow } from "@polaris/domain/adm
 import type { SupportDependencies } from "../support-routes";
 import { describe, expect, it } from "vitest";
 import type {
+  AccessLogEntry,
+  AccessLogPage,
   ClosedSupportCase,
   DeadEventSummary,
   OpenedSupportCase,
@@ -66,6 +72,13 @@ const incidentMatches: Same<ServerIncidentDetail, OperationalIncidentDetail> =
 const deadEventMatches: Same<ServerDeadEvent, DeadEventSummary> = true;
 // the page says each of the retry's results by its own sentence: a sixth one in the server fails here
 const retryResultsRead: Same<IncidentRetryResult, RetryResult> = true;
+const accessEntryMatches: Same<AccessLogEntryView, AccessLogEntry> = true;
+const accessPageMatches: Extract<
+  AccessLogReadResult,
+  { result: "ok" }
+> extends { entries: AccessLogPage["entries"]; next: AccessLogPage["next"] }
+  ? true
+  : false = true;
 const capabilitiesRead: readonly PlatformCapability[] extends readonly string[]
   ? true
   : false = true;
@@ -86,6 +99,8 @@ describe("the page's types", () => {
       incidentMatches,
       deadEventMatches,
       retryResultsRead,
-    ]).toEqual(new Array(13).fill(true));
+      accessEntryMatches,
+      accessPageMatches,
+    ]).toEqual(new Array(15).fill(true));
   });
 });
