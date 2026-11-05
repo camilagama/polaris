@@ -12,6 +12,7 @@ import {
   REQUEST_TYPES,
   REQUESTER_KINDS,
   ROLES,
+  STAGES,
 } from "./privacy";
 import {
   allElements,
@@ -36,6 +37,7 @@ import {
   ACTIONS_ONLY_RECORD,
   RULES,
   STAGE_CONFLICT,
+  STAGE_ORDER,
   STEP_RECORD,
   STEP_UNDO,
   STEP_UNKNOWN,
@@ -238,6 +240,13 @@ const stepItems = (root: FakeElement) =>
     (item.getAttribute("class") ?? "").startsWith("step ")
   );
 
+describe("the stage order of the case screen", () => {
+  it("is the order of STAGES, the same codes", () => {
+    expect(STAGE_ORDER).toEqual(STAGES.map(([code]) => code));
+    expect(STAGE_ORDER).toHaveLength(7);
+  });
+});
+
 describe("the due date in words (AC-P11.1, AC-P11.6)", () => {
   it.each([
     ["2026-11-14T15:00:00.000Z", false, "faltam 9 dias", false],
@@ -264,6 +273,16 @@ describe("the due date in words (AC-P11.1, AC-P11.6)", () => {
     const justAfter = new Date("2026-11-06T03:10:00.000Z");
     expect(dueText("2026-11-07T03:30:00.000Z", false, justAfter).text).toBe(
       "vence em 1 dia"
+    );
+  });
+
+  it("says it is due today before the hour of the due moment and late after it, though the server still reads overdue=false", () => {
+    const dueAt = "2026-11-05T18:00:00.000Z";
+    expect(dueText(dueAt, false, new Date("2026-11-05T17:59:59.000Z"))).toEqual(
+      { day: "05/11/2026", text: "vence hoje", warn: true }
+    );
+    expect(dueText(dueAt, false, new Date("2026-11-05T18:00:01.000Z"))).toEqual(
+      { day: "05/11/2026", text: "prazo vencido em 05/11/2026", warn: true }
     );
   });
 
@@ -814,7 +833,7 @@ const STEP_CASES: readonly [string, StepCase][] = [
     {
       answer: () => json({ id: CASE, stage: "role_determined" }),
       body: { role: "processor" },
-      button: "Revisar papel do polaris",
+      button: "Revisar papel do Polaris",
       effect:
         "A etapa “Papel do Polaris” fica registrada como Operador: o Polaris só processa, pela loja.",
       fill: (root) => choose(root, "etapa-role-papel", "processor"),
@@ -933,7 +952,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
       const mounted = await reviewOf(step, [wait.answer, json(after)]);
       const confirm = firstButton(
         mounted.root,
-        `Registrar ${name.toLowerCase()}`
+        step.button.replace("Revisar", "Registrar")
       );
       confirm.click();
       confirm.click();
@@ -976,7 +995,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
     ],
     [
       "identity_checked",
-      "Revisar papel do polaris",
+      "Revisar papel do Polaris",
       "etapa-role-papel-erro",
       "Escolha o papel do Polaris.",
     ],
@@ -1050,7 +1069,7 @@ describe("the server's refusals (AC-P11.2, AC-P11.3, AC-C3)", () => {
       json({ error: "privacy_stage_conflict" }, 409),
       json(detail("role_determined")),
     ]);
-    await click(mounted.root, "Registrar papel do polaris");
+    await click(mounted.root, "Registrar papel do Polaris");
 
     expect(alertOf(mounted.root)?.textContent).toBe(STAGE_CONFLICT);
     expect(posts(mounted.calls)).toHaveLength(1);

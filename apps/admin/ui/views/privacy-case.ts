@@ -19,6 +19,7 @@ import {
   REQUEST_TYPES,
   REQUESTER_KINDS,
   ROLES,
+  STAGES,
 } from "../privacy";
 import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
@@ -64,27 +65,21 @@ interface StepSpec {
   /** The last part of the route, `/api/privacy-cases/:caseId{segment}`, written whole so the route guard sees it. */
   segment: string;
   title: string;
+  /** The title as it reads mid-sentence in a button or status: only a common word is lowered, a proper name is not. */
+  lower: string;
 }
 
 /** The six steps of ADR 0077, in the server's order. */
 const STEPS: readonly StepSpec[] = [
-  { key: "identity", segment: "/identity", title: "Identidade" },
-  { key: "role", segment: "/role", title: "Papel do Polaris" },
-  { key: "scope", segment: "/scope", title: "Escopo" },
-  { key: "decision", segment: "/decision", title: "Decisão" },
-  { key: "actions", segment: "/actions", title: "Ações" },
-  { key: "resolve", segment: "/resolve", title: "Resolução" },
+  { key: "identity", segment: "/identity", title: "Identidade", lower: "identidade" },
+  { key: "role", segment: "/role", title: "Papel do Polaris", lower: "papel do Polaris" },
+  { key: "scope", segment: "/scope", title: "Escopo", lower: "escopo" },
+  { key: "decision", segment: "/decision", title: "Decisão", lower: "decisão" },
+  { key: "actions", segment: "/actions", title: "Ações", lower: "ações" },
+  { key: "resolve", segment: "/resolve", title: "Resolução", lower: "resolução" },
 ];
 
-const STAGE_ORDER = [
-  "requested",
-  "identity_checked",
-  "role_determined",
-  "scoped",
-  "decided",
-  "executed",
-  "resolved",
-];
+export const STAGE_ORDER: readonly string[] = STAGES.map(([code]) => code);
 
 /** The rules the server enforces, said in words; the screen enforces none of them for the operator (AC-P11.3). */
 export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
@@ -713,7 +708,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const next = dom.el(
         "button",
         { type: "submit" },
-        `Revisar ${spec.title.toLowerCase()}`
+        `Revisar ${spec.lower}`
       );
       const element = dom.el(
         "form",
@@ -748,7 +743,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const confirm = dom.el(
         "button",
         { type: "button" },
-        `Registrar ${spec.title.toLowerCase()}`
+        `Registrar ${spec.lower}`
       );
       const back = dom.el(
         "button",
@@ -818,7 +813,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       sending = true;
       buttons.confirm.setAttribute("aria-disabled", "true");
       buttons.back.setAttribute("aria-disabled", "true");
-      stepNotice.status(`Registrando ${spec.title.toLowerCase()}…`);
+      stepNotice.status(`Registrando ${spec.lower}…`);
       const answer = await api.post<PrivacyStepAnswer>(
         `/api/privacy-cases/${encodeURIComponent(detail.case.id)}${spec.segment}`,
         read.body
