@@ -2170,10 +2170,7 @@ test.describe("a caixa inteira do cartão do gráfico não muda de altura entre 
 
 test.describe("a caixa do cartão do gráfico no carregamento do pedaço é a mesma de depois do desenho", () => {
   for (const size of SIZES) {
-    for (const name of [
-      "ano sem os custos por dia",
-      "valores de seis dígitos",
-    ]) {
+    for (const name of ["completo", "valores de seis dígitos"] as const) {
       test(`${name} (${size.width} px)`, async ({ page }) => {
         await page.setViewportSize(size);
         let release: () => void = () => undefined;
@@ -2184,13 +2181,9 @@ test.describe("a caixa do cartão do gráfico no carregamento do pedaço é a me
           await arrives;
           await route.continue();
         });
-        const server =
-          name === "ano sem os custos por dia"
-            ? new NoCostsOfTheYearServer()
-            : new MonthlyReportServer();
+        const server = new MonthlyReportServer();
         server.now = NOVEMBER_5;
-        server.fixture =
-          CHART_BOX_FIXTURES[name as keyof typeof CHART_BOX_FIXTURES];
+        server.fixture = CHART_BOX_FIXTURES[name];
         await openDashboard(page, server);
         await expect(
           chartRegion(page).locator("[data-chart-loading]")
