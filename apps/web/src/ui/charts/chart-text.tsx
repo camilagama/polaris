@@ -190,6 +190,7 @@ function HatchKey() {
  * not drawn.
  */
 export function Legend({
+  className,
   color,
   dash,
   hatched = false,
@@ -198,6 +199,7 @@ export function Legend({
   secondaryColor,
   secondaryDrawn = true,
 }: {
+  className?: string | undefined;
   color: string;
   dash: string;
   hatched?: boolean;
@@ -208,7 +210,10 @@ export function Legend({
 }) {
   return (
     <ul
-      className="flex flex-wrap gap-x-4 gap-y-1 justify-self-end text-muted-foreground text-xs"
+      className={cn(
+        "flex flex-wrap gap-x-4 gap-y-1 justify-self-end text-muted-foreground text-xs",
+        className
+      )}
       data-chart-legend=""
     >
       <li className="flex items-center gap-1.5">

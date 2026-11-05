@@ -273,6 +273,19 @@ describe("pickGoal (AC-10, AC-11, § 5.3)", () => {
     expect(periodShort("2026-09-26", "2026-10-25")).toBe("26/09 a 25/10");
     expect(periodShort("2026-10-25", "2026-10-25")).toBe("25/10");
   });
+
+  it("writes the year on both ends when the range crosses a year or ends outside this year", () => {
+    expect(periodShort("2025-11-05", "2026-11-05")).toBe(
+      "05/11/2025 a 05/11/2026"
+    );
+    expect(periodShort("2026-01-01", "2026-11-05", "2026")).toBe(
+      "01/01 a 05/11"
+    );
+    expect(periodShort("2025-12-01", "2025-12-31", "2026")).toBe(
+      "1 a 31/12/2025"
+    );
+    expect(periodShort("2025-11-05", "2025-11-05", "2026")).toBe("05/11/2025");
+  });
 });
 
 describe("attentionLines (AC-12 to AC-14)", () => {

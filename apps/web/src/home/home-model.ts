@@ -303,14 +303,32 @@ export function pastGoalSummary(
   return `${label}: ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)} (${outcome})`;
 }
 
-/** "1 a 31/10" within a month, "26/09 a 25/10" across two, "25/10" for one day: a period written the short way. */
-export function periodShort(first: string, last: string): string {
+/** "18/10/2026" for "2026-10-18". */
+export function fullDate(day: string): string {
+  return `${shortDate(day)}/${day.slice(0, 4)}`;
+}
+
+/**
+ * A period written the short way: "1 a 31/10" within a month, "26/09 a 25/10" across two, "25/10" for one day. The year
+ * goes on both ends ("05/11/2025 a 05/11/2026", "1 a 31/12/2025") when they are in different years or, given
+ * `thisYear`, when the last day is not in that year: without it a range that crosses a year reads as a single day.
+ */
+export function periodShort(
+  first: string,
+  last: string,
+  thisYear?: string
+): string {
+  const withYear =
+    first.slice(0, 4) !== last.slice(0, 4) ||
+    (thisYear !== undefined && last.slice(0, 4) !== thisYear);
+  const write = withYear ? fullDate : shortDate;
   if (first === last) {
-    return shortDate(last);
+    return write(last);
   }
-  return first.slice(0, 7) === last.slice(0, 7)
-    ? `${Number(first.slice(8, 10))} a ${shortDate(last)}`
-    : `${shortDate(first)} a ${shortDate(last)}`;
+  if (first.slice(0, 7) === last.slice(0, 7)) {
+    return `${Number(first.slice(8, 10))} a ${write(last)}`;
+  }
+  return `${write(first)} a ${write(last)}`;
 }
 
 /** "1 a 31/10": the period of a goal (AC-10). */

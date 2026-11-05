@@ -15,7 +15,6 @@ import {
   unknownDaysFit,
   unknownDaysText,
 } from "../home/home-kpis";
-import { shortDate } from "../home/home-model";
 import { formatBrlAmount } from "../lib/format";
 import {
   MASKED_SPOKEN,
@@ -32,7 +31,7 @@ import {
   isIncompleteEstimate,
   NO_KNOWN_COST_RESULT,
 } from "./dashboard-model";
-import { resultKpis } from "./result-kpis";
+import { resultKpis, untilText } from "./result-kpis";
 import type { ComparisonDays, ComparisonSales } from "./use-period-summary";
 
 export function IncompleteBadge() {
@@ -103,17 +102,6 @@ function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
     reading.value === null ? "sem valor" : formatBrlAmount(reading.value);
   const text = `${prefix}: ${amount}`;
   return hidden ? maskMoney(text, MASKED_SPOKEN) : text;
-}
-
-/**
- * The day read (or today at rest), never the range of the card: "Até 17/10"; a month reads to its last day, which is
- * today for the month of today (D1-2).
- */
-function untilText(
-  point: { date: string; to?: string | undefined } | undefined,
-  today: string
-): string {
-  return `Até ${shortDate(point?.to ?? point?.date ?? today)}`;
 }
 
 /** The height of a sparkline: 64 px from 760 px, 52 on a phone. */
