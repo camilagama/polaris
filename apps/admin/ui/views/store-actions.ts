@@ -2,13 +2,9 @@ import { type ApiFailure, PROBLEM_TEXT } from "../api";
 import { environmentText, type ScreenTools } from "../app";
 import { facts } from "../blocks";
 import { labelName, storeName } from "../dom";
-import {
-  brasiliaMomentText,
-  brasiliaTime,
-  minutesText,
-  storeStatusText,
-} from "../format";
+import { brasiliaMomentText, brasiliaTime, storeStatusText } from "../format";
 import { createNotice } from "../notice";
+import { limitText, writeMayHaveHappened } from "../refusal";
 import type { OrganizationDiagnostics } from "../types";
 
 export const SUSPEND_EFFECTS: readonly string[] = [
@@ -118,12 +114,6 @@ function isClassification(
   );
 }
 
-function limitText(failure: ApiFailure): string {
-  return failure.retryAfterSeconds === undefined
-    ? PROBLEM_TEXT.rate_limited
-    : `Limite de consultas por hora atingido. Tente de novo em ${minutesText(failure.retryAfterSeconds)}.`;
-}
-
 /**
  * What a refused command says, in words. 400 here is the case that is no longer open (the page sends no input). A 409
  * is not something these routes answer (they say `changed: false`); it is read as a state that moved, defensively.
@@ -145,15 +135,6 @@ function refusalText(failure: ApiFailure): string {
     default:
       return PROBLEM_TEXT.conflict;
   }
-}
-
-function writeMayHaveHappened(failure: ApiFailure): boolean {
-  return (
-    failure.problem === "network" ||
-    failure.problem === "failed" ||
-    failure.problem === "unavailable" ||
-    failure.problem === "plan_catalog_incomplete"
-  );
 }
 
 /**

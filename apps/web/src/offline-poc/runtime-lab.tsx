@@ -1,8 +1,10 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { type ChangeEvent, useCallback, useMemo, useState } from "react";
 import { signOfflineLease } from "../lib/offline-lease-token";
-import { wipeLocalStore } from "../offline/local-store";
-import { purgeNamespace } from "../offline/logout-purge";
+import {
+  purgeNamespace,
+  wipeNamespaceCollections,
+} from "../offline/logout-purge";
 import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import { localNamespace } from "../offline/namespace";
 import { createOfflineProduct } from "../offline/product-create";
@@ -79,9 +81,7 @@ export function RuntimeLab() {
         openStores: openRuntimeStores,
         outboxOnDisk: anyOutboxOnDisk,
         purge: purgeNamespace,
-        wipeCollections: async (namespace) => {
-          await wipeLocalStore(namespace);
-        },
+        wipeCollections: wipeNamespaceCollections,
       }),
     [network, server]
   );

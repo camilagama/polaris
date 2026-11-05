@@ -21,8 +21,10 @@ import { InventoryPage } from "../inventory/inventory-page";
 import { addConnectionTry, browserConnection } from "../lib/browser-connection";
 import { StaticOrganizationProvider } from "../lib/current-organization";
 import { signOfflineLease } from "../lib/offline-lease-token";
-import { wipeLocalStore } from "../offline/local-store";
-import { purgeNamespace } from "../offline/logout-purge";
+import {
+  purgeNamespace,
+  wipeNamespaceCollections,
+} from "../offline/logout-purge";
 import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
 import { localNamespace } from "../offline/namespace";
 import { openBrowserDataChannel } from "../offline/runtime/data-channel";
@@ -268,9 +270,7 @@ export function ScreensLab() {
         openStores: openRuntimeStores,
         outboxOnDisk: anyOutboxOnDisk,
         purge: purgeNamespace,
-        wipeCollections: async (namespace) => {
-          await wipeLocalStore(namespace);
-        },
+        wipeCollections: wipeNamespaceCollections,
       }),
     [legal, network, server]
   );

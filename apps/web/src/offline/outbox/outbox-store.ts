@@ -4,6 +4,7 @@ import {
   IndexedDbOutboxStorage,
   outboxDatabaseName,
 } from "./indexeddb-storage";
+import { wipeThumbnails } from "../thumbnail-store";
 import { Outbox } from "./outbox";
 
 /**
@@ -50,7 +51,8 @@ export async function openOutboxStore(
  * `PendingCommandsError` unless the caller passes the explicit discard flag the
  * person chose in the interface. Counting and clearing are one IndexedDB
  * transaction, so a command another tab queues lands either before it (and is
- * counted) or after it (and stays); the database is never deleted.
+ * counted) or after it (and stays); the database is never deleted. The thumbnails of
+ * the namespace go with it: an emptied queue is a namespace being left.
  */
 export async function wipeOutboxStore(
   namespace: LocalNamespace,
@@ -64,5 +66,8 @@ export async function wipeOutboxStore(
       }
     }
   );
+  // the queue is already empty: a thumbnails database that will not go is tried again by the purge, never a reason
+  // to report the queue as not emptied
+  await wipeThumbnails(namespace.key).catch(() => undefined);
   return { discarded };
 }

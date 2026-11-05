@@ -88,7 +88,9 @@ async function openPage(screen: Partial<ScreenContext> & { screen: string }) {
     () => new Date(fixture.screen.firstChargeAt),
     {
       environment: "unknown",
+      flagKeys: [],
       id: null,
+      limitKeys: [],
       listState: "abertos",
       store: null,
       ...screen,
