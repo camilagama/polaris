@@ -1,7 +1,7 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
 import PackageIcon from "lucide-react/dist/esm/icons/package";
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -12,7 +12,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import type { PendingProduct } from "../offline/product-create";
+import { ProductThumbnail, useThumbnailSequence } from "./product-thumbnail";
 import { productInitials } from "./product-search-model";
 import { OFFLINE_NOTICE_ID } from "./products-page-parts";
 import { OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
@@ -162,6 +164,32 @@ function supportLine(
   return [categoryName ?? "Sem categoria", text].filter(Boolean).join(" · ");
 }
 
+function RowMark({
+  product,
+  thumbs,
+}: {
+  product: ProductReadModel;
+  thumbs: boolean;
+}) {
+  if (thumbs) {
+    return (
+      <ProductThumbnail
+        assetId={product.coverAssetId}
+        name={product.name}
+        size={40}
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
+    >
+      {productInitials(product.name)}
+    </span>
+  );
+}
+
 function ProductRow({
   categoryName,
   lockedReason,
@@ -185,6 +213,7 @@ function ProductRow({
     .filter(Boolean)
     .join(" ");
   const hasExtras = Boolean(syncState || pendingLabel);
+  const thumbs = useMediaThumbsEnabled();
   return (
     <li
       className={`grid px-3 md:px-4 ${OPENABLE_ROW_CLASS}`}
@@ -196,12 +225,7 @@ function ProductRow({
           locked={lockedReason !== null || pending}
           onOpen={handleOpen}
         >
-          <span
-            aria-hidden="true"
-            className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
-          >
-            {productInitials(product.name)}
-          </span>
+          <RowMark product={product} thumbs={thumbs} />
           <span className="grid min-w-0 flex-1 gap-0.5">
             <span className="font-medium [overflow-wrap:anywhere]">
               <span className="sr-only">Editar </span>
@@ -225,7 +249,7 @@ function ProductRow({
       </div>
       {hasExtras ? (
         // under the text of the row, out of its button: a status and a link are their own parts
-        <div className="grid gap-0.5 pb-2.5 pl-12">
+        <div className={`grid gap-0.5 pb-2.5 ${thumbs ? "pl-13" : "pl-12"}`}>
           {syncState ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Badge
@@ -308,6 +332,11 @@ export function ProductList({
   total,
   ...actions
 }: ProductListProps) {
+  const coverIds = useMemo(
+    () => products.map((product) => product.coverAssetId),
+    [products]
+  );
+  useThumbnailSequence(coverIds);
   if (isLoading) {
     return (
       <ListNotice>

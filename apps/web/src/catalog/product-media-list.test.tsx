@@ -2,6 +2,7 @@ import type { ProductMediaAssetReadModel } from "@polaris/contracts";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
 import { ProductMediaList } from "./product-media-list";
 
 /**
@@ -129,5 +130,45 @@ describe("the list of images of a product", () => {
         running: { assetId, kind: "replace" },
       })
     ).toContain("Substituindo…");
+  });
+});
+
+describe("o selo de capa", () => {
+  const COVER_BADGE = /<[^>]*data-cover=""[^>]*>Capa</g;
+  const renderOn = () =>
+    renderToStaticMarkup(
+      <MediaThumbsFlagProvider value>
+        <ProductMediaList {...base} />
+      </MediaThumbsFlagProvider>
+    );
+
+  it("sem a flag, nenhuma imagem tem o selo", () => {
+    const html = render();
+    expect(html).not.toContain("data-cover");
+    expect(html).not.toContain("Capa");
+  });
+
+  it("com a flag, só a imagem da posição 1 tem o selo, dentro da linha do título", () => {
+    const html = renderOn();
+    expect(html.match(COVER_BADGE)).toHaveLength(1);
+    const [first, second] = html.split("Imagem 2 de 3");
+    expect(first).toContain("Imagem 1 de 3");
+    expect(first).toContain('data-cover=""');
+    expect(second).not.toContain('data-cover=""');
+  });
+
+  it("com a flag e uma imagem só, ela é a capa", () => {
+    const html = renderToStaticMarkup(
+      <MediaThumbsFlagProvider value>
+        <ProductMediaList {...base} assets={[asset(0)]} />
+      </MediaThumbsFlagProvider>
+    );
+    expect(html.match(COVER_BADGE)).toHaveLength(1);
+  });
+
+  it("o selo não muda os nomes das ações nem o texto da posição", () => {
+    const html = renderOn();
+    expect(html).toContain("Imagem 1 de 3");
+    expect(button(html, "Mover imagem 1 para depois")).not.toContain(OFF);
   });
 });

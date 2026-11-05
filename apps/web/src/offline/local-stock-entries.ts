@@ -48,6 +48,9 @@ export function localStockEntries(
       variant.id
     );
     entries.push({
+      ...(product.coverAssetId === undefined
+        ? {}
+        : { coverAssetId: product.coverAssetId }),
       isDefaultVariant: variant.isDefault,
       listPrice: variant.listPrice,
       movingAverageCost: null,

@@ -37,6 +37,7 @@ import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 import { and, asc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { inventoryBalances, stockMovements } from "./schema/inventory";
 import { organizations } from "./schema/organization";
+import { readProductCovers } from "./product-cover";
 import { assertVariantsOperational } from "./operational-selection-repository";
 import { products, productVariants } from "./schema/product";
 import {
@@ -955,12 +956,15 @@ export interface ListInventoryBalancesOptions {
   /** Archived products stay listed (their stock may still need a write-off). */
   includeArchived?: boolean;
   limit?: number;
+  /** Adds `coverAssetId` (the image of lowest position of the product, null without one) to each entry. */
+  withCover?: boolean;
   query?: string | null;
   stock?: InventoryStockFilter;
   variantIds?: readonly string[] | undefined;
 }
 
 export interface InventoryBalanceEntry {
+  coverAssetId?: string | null;
   isDefaultVariant: boolean;
   /** The variant's optional list price (BRL, two decimals). */
   listPrice: string | null;
@@ -1228,9 +1232,17 @@ export async function listInventoryBalances(
     valuesByVariant.set(optionRow.variantId, values);
   }
 
+  const covers = options.withCover
+    ? await readProductCovers(
+        transaction,
+        identity.organizationId,
+        rows.map((row) => row.productId)
+      )
+    : null;
   const lastRow = rows.at(-1);
   return {
     entries: rows.map((row) => ({
+      ...(covers ? { coverAssetId: covers.get(row.productId) ?? null } : {}),
       isDefaultVariant: row.isDefault,
       listPrice: normalizeVariantListPrice(row.listPrice),
       movingAverageCost:

@@ -12,6 +12,7 @@ import {
   stockView,
   timeOfDay,
 } from "./sale-form-model";
+import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
 import { ItemEditor } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
 import { SummaryPanel } from "./sale-summary-panel";
@@ -369,5 +370,82 @@ describe("o Resumo só mostra o que já foi escolhido", () => {
     expect(html).toContain(">Pagamento<");
     expect(html).toContain("Pix");
     expect(html).toContain("Sem perfil de pagamento");
+  });
+});
+
+describe("a capa do produto no item escolhido", () => {
+  const COVER = "0199c2d0-0000-7000-8000-0000000000c1";
+  const withCost = {
+    [variantId]: {
+      status: "ready" as const,
+      value: {
+        movingAverageCost: "12.000000",
+        quantity: 6,
+        variantId,
+        version: 1,
+      },
+    },
+  };
+  const editor = (cover?: string | null) => (
+    <ItemEditor
+      canAdjustStock
+      canRemove
+      cover={cover}
+      errors={{}}
+      index={0}
+      item={chosenItem}
+      localSearch={undefined}
+      onChange={noop}
+      onPick={noop}
+      onRemove={noop}
+      organizationId="org"
+      priceHint={null}
+      stock={withCost}
+      stockWarning={undefined}
+      summaryLine={undefined}
+    />
+  );
+  const on = (cover?: string | null) =>
+    renderToStaticMarkup(
+      <MediaThumbsFlagProvider value>{editor(cover)}</MediaThumbsFlagProvider>
+    );
+  const off = (cover?: string | null) => renderToStaticMarkup(editor(cover));
+
+  it("sem a flag, o item é o de hoje: nenhuma caixa, mesmo com a capa conhecida", () => {
+    const html = off(COVER);
+    expect(html).not.toContain("data-thumbnail");
+    expect(html).not.toContain("size-8 rounded-sm");
+    expect(html).toContain("items-start");
+    expect(html).toContain("mt-0.5");
+    expect(html).toContain("pl-6");
+    expect(html).toBe(off(undefined));
+  });
+
+  it("com a flag, a caixa de 32 px fica antes da marca, com as iniciais do produto, e a linha de baixo recua", () => {
+    const html = on(COVER);
+    expect(html).toContain("size-8 rounded-sm");
+    expect(html).toContain('data-thumbnail="marker"');
+    expect(html).toContain(">CA<");
+    expect(html.indexOf("data-thumbnail")).toBeLessThan(
+      html.indexOf("Camiseta · Preta")
+    );
+    expect(html).toContain("items-center");
+    expect(html).toContain("pl-16");
+    expect(html).not.toContain("<img");
+  });
+
+  it("com a flag e sem capa conhecida ou sem imagem, a caixa existe do mesmo jeito, com o marcador", () => {
+    for (const cover of [undefined, null]) {
+      const html = on(cover);
+      expect(html, String(cover)).toContain('data-thumbnail="marker"');
+      expect(html, String(cover)).toContain("size-8 rounded-sm");
+    }
+    expect(on(undefined)).toBe(on(null));
+  });
+
+  it("a caixa é decorativa: não entra nos nomes dos botões nem no texto do item", () => {
+    const html = on(COVER);
+    expect(html).toContain('aria-label="Mais uma unidade de Camiseta · Preta"');
+    expect(html).toContain('aria-label="Remover Camiseta · Preta"');
   });
 });

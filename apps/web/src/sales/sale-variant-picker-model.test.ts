@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   balanceOfEntry,
   chunkIds,
+  coversOfStock,
   itemChangesForEntry,
   lineBalancesRequest,
   PICKER_RESULT_LIMIT,
@@ -201,5 +202,124 @@ describe("stockAfterRefresh", () => {
       status: "error",
     });
     expect(next.other).toBe(previous.other);
+  });
+});
+
+const COVER = "0199c2d0-0000-7000-8000-0000000000c1";
+
+describe("a capa nos pedidos de saldo", () => {
+  it("sem pedir a capa, os pedidos são exatamente os de antes, sem a chave", () => {
+    expect(variantSearchRequest(organizationId, "  azul ")).toEqual({
+      limit: PICKER_RESULT_LIMIT,
+      organizationId,
+      productStatus: "active",
+      query: "azul",
+      stock: "all",
+    });
+    expect(
+      variantSearchRequest(organizationId, "azul", false)
+    ).not.toHaveProperty("withCover");
+    expect(lineBalancesRequest(organizationId, ["a"])).toEqual({
+      limit: 100,
+      organizationId,
+      productStatus: "all",
+      stock: "all",
+      variantIds: ["a"],
+    });
+    expect(
+      lineBalancesRequest(organizationId, ["a"], false)
+    ).not.toHaveProperty("withCover");
+  });
+
+  it("pedindo a capa, acrescenta withCover true e mantém o resto", () => {
+    expect(variantSearchRequest(organizationId, "azul", true)).toEqual({
+      ...variantSearchRequest(organizationId, "azul"),
+      withCover: true,
+    });
+    expect(lineBalancesRequest(organizationId, ["a", "b"], true)).toEqual({
+      ...lineBalancesRequest(organizationId, ["a", "b"]),
+      withCover: true,
+    });
+    expect(variantSearchRequest(organizationId, "  ", true)).not.toHaveProperty(
+      "query"
+    );
+  });
+});
+
+describe("a capa no saldo da venda", () => {
+  it("balanceOfEntry só leva a capa quando a leitura a trouxe, inclusive o null de produto sem imagem", () => {
+    expect(balanceOfEntry(entry(1))).toEqual({
+      movingAverageCost: "12.340000",
+      quantity: 3,
+      variantId: entry(1).variantId,
+      version: 2,
+    });
+    expect(balanceOfEntry(entry(1))).not.toHaveProperty("coverAssetId");
+    expect(balanceOfEntry(entry(1, { coverAssetId: COVER }))).toMatchObject({
+      coverAssetId: COVER,
+    });
+    expect(balanceOfEntry(entry(1, { coverAssetId: null }))).toHaveProperty(
+      "coverAssetId",
+      null
+    );
+  });
+
+  it("coversOfStock devolve variante para capa só das linhas prontas que a trazem", () => {
+    const withCover = entry(1, { coverAssetId: COVER });
+    const noImage = entry(2, { coverAssetId: null });
+    const unknown = entry(3);
+    const covers = coversOfStock({
+      [withCover.variantId]: {
+        status: "ready",
+        value: balanceOfEntry(withCover),
+      },
+      [noImage.variantId]: { status: "ready", value: balanceOfEntry(noImage) },
+      [unknown.variantId]: { status: "ready", value: balanceOfEntry(unknown) },
+      loading: { status: "loading" },
+    });
+    expect(covers).toEqual({
+      [withCover.variantId]: COVER,
+      [noImage.variantId]: null,
+    });
+    expect(coversOfStock({})).toEqual({});
+  });
+
+  it("duas variantes do mesmo produto ficam com a mesma capa, a do produto", () => {
+    const small = entry(1, { coverAssetId: COVER });
+    const large = entry(2, { coverAssetId: COVER });
+    const covers = coversOfStock({
+      [small.variantId]: { status: "ready", value: balanceOfEntry(small) },
+      [large.variantId]: { status: "ready", value: balanceOfEntry(large) },
+    });
+    expect(covers[small.variantId]).toBe(COVER);
+    expect(covers[large.variantId]).toBe(COVER);
+  });
+
+  it("stockAfterRefresh leva a capa da nova leitura e, sem ela, não inventa uma nem apaga a que a linha já tinha em outra variante", () => {
+    const kept = entry(1, { coverAssetId: COVER });
+    const other = entry(2, { coverAssetId: COVER });
+    const previous = {
+      [kept.variantId]: {
+        status: "ready" as const,
+        value: balanceOfEntry(kept),
+      },
+      [other.variantId]: {
+        status: "ready" as const,
+        value: balanceOfEntry(other),
+      },
+    };
+    const next = stockAfterRefresh(
+      previous,
+      [kept.variantId],
+      [entry(1, { coverAssetId: null, quantity: 9 })]
+    );
+    expect(coversOfStock(next)).toEqual({
+      [kept.variantId]: null,
+      [other.variantId]: COVER,
+    });
+    const without = stockAfterRefresh(previous, [kept.variantId], [entry(1)]);
+    expect(without[kept.variantId]).toMatchObject({ status: "ready" });
+    expect(coversOfStock(without)[other.variantId]).toBe(COVER);
+    expect(coversOfStock(without)).not.toHaveProperty(kept.variantId);
   });
 });

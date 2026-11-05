@@ -1,6 +1,5 @@
 import type {
   InventoryBalanceEntryReadModel,
-  InventoryBalanceReadModel,
   PaymentProfileReadModel,
 } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,8 +23,10 @@ import {
   balanceOfEntry,
   chunkIds,
   lineBalancesRequest,
+  type SaleBalance,
   stockAfterRefresh,
 } from "./sale-variant-picker-model";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 
 type LoadableMap<T> = Record<string, Loadable<T>>;
 
@@ -48,7 +49,7 @@ interface SaleCatalog {
   resetStock: () => void;
   /** Keeps the balances a search already returned, so lines need no read. */
   seedStock: (entries: readonly InventoryBalanceEntryReadModel[]) => void;
-  stock: LoadableMap<InventoryBalanceReadModel>;
+  stock: LoadableMap<SaleBalance>;
 }
 
 function keepReady<T>(current: Loadable<T>): Loadable<T> {
@@ -72,12 +73,13 @@ export function useSaleCatalog(
   const localRef = useRef(local);
   localRef.current = local;
   const usesLocal = local !== null;
+  const withCover = useMediaThumbsEnabled();
+  const withCoverRef = useRef(withCover);
+  withCoverRef.current = withCover;
   const [profiles, setProfiles] = useState<Loadable<PaymentProfileReadModel[]>>(
     { status: "loading" }
   );
-  const [stock, setStock] = useState<LoadableMap<InventoryBalanceReadModel>>(
-    {}
-  );
+  const [stock, setStock] = useState<LoadableMap<SaleBalance>>({});
   const generation = useRef(0);
   /** Only the latest read of the profiles may speak: an older answer arrives after the mode changed. */
   const profilesRequest = useRef(0);
@@ -193,7 +195,7 @@ export function useSaleCatalog(
       for (const chunk of chunkIds(variantIds)) {
         readWithRetry(() =>
           orpcClient.inventory.listBalances(
-            lineBalancesRequest(organizationId, chunk)
+            lineBalancesRequest(organizationId, chunk, withCoverRef.current)
           )
         )
           .then(({ entries }) => {
@@ -240,7 +242,7 @@ export function useSaleCatalog(
           chunkIds(variantIds).map((chunk) =>
             readWithRetry(() =>
               orpcClient.inventory.listBalances(
-                lineBalancesRequest(organizationId, chunk)
+                lineBalancesRequest(organizationId, chunk, withCoverRef.current)
               )
             )
           )

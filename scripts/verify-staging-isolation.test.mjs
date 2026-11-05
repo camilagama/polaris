@@ -1189,6 +1189,14 @@ describe("billing in staging, against the sandboxes only", () => {
     ]);
   });
 
+  it("refuses the thumbnails flag of staging when it is neither true nor false", () => {
+    const entries = repositoryEntries();
+    webOf(entries).env.staging.vars.MEDIA_THUMBS_ENABLED = "True";
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.MEDIA_THUMBS_ENABLED must be "true" or "false"`,
+    ]);
+  });
+
   it("wants the support box of staging, one bare address on araute.app, while billing is on", () => {
     const refused = `${STAGING}: vars.BILLING_SUPPORT_EMAIL must be one bare address on @araute.app (it is the reply-to of the billing e-mails)`;
     for (const [value, expected] of [

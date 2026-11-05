@@ -17,10 +17,12 @@ import {
   clearOrganizationsCache,
   organizationLoadAfterFailure,
   readOrganizationsCache,
+  writeMediaThumbsFlag,
   writeOrganizationsCache,
   type Organization,
   type OrganizationLoad,
   organizationLoadFromList,
+  readMediaThumbsFlag,
   readPreferredOrganizationId,
   selectOrganization,
   writePreferredOrganizationId,
@@ -45,6 +47,12 @@ interface OrganizationContextValue {
    */
   billingSelfService: boolean;
   load: OrganizationLoad;
+  /**
+   * MEDIA_THUMBS_ENABLED is on, as `organization.listMine` said: the lists may show the capa of a product. False until
+   * the server says so. A list that fails to load (no connection) uses what the last answer said, kept next to the
+   * device's list of stores, so the thumbnails the device already has stay; a session that ended turns it off.
+   */
+  mediaThumbs: boolean;
   /** Reads the user's organizations again, e.g. after onboarding. */
   reload: () => void;
   select: (organizationId: string) => void;
@@ -67,6 +75,7 @@ interface OrganizationProviderProps {
 export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const [load, setLoad] = useState<OrganizationLoad>({ status: "loading" });
   const [billingSelfService, setBillingSelfService] = useState(false);
+  const [mediaThumbs, setMediaThumbs] = useState(false);
   const latestRequest = useRef(0);
   const fromCache = useRef<boolean>(false);
   const opened = useRef(false);
@@ -76,25 +85,34 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     const request = latestRequest.current;
     orpcClient.organization
       .listMine()
-      .then(({ billingSelfService: billing, organizations }) => {
-        if (request === latestRequest.current) {
-          opened.current = true;
-          setBillingSelfService(billing === true);
-          fromCache.current = false;
-          if (!isSigningOut()) {
-            writeSessionMarker("ativa");
+      .then(
+        ({
+          billingSelfService: billing,
+          mediaThumbs: thumbs,
+          organizations,
+        }) => {
+          if (request === latestRequest.current) {
+            opened.current = true;
+            setBillingSelfService(billing === true);
+            // an answer from a Worker of the previous version has no such field: off
+            setMediaThumbs(thumbs === true);
+            fromCache.current = false;
+            if (!isSigningOut()) {
+              writeSessionMarker("ativa");
+            }
+            if (OFFLINE_RUNTIME_ENABLED && !isSigningOut()) {
+              writeOrganizationsCache(browserStorage(), organizations);
+              writeMediaThumbsFlag(browserStorage(), thumbs === true);
+            }
+            setLoad(
+              organizationLoadFromList(
+                organizations,
+                readPreferredOrganizationId(browserStorage())
+              )
+            );
           }
-          if (OFFLINE_RUNTIME_ENABLED && !isSigningOut()) {
-            writeOrganizationsCache(browserStorage(), organizations);
-          }
-          setLoad(
-            organizationLoadFromList(
-              organizations,
-              readPreferredOrganizationId(browserStorage())
-            )
-          );
         }
-      })
+      )
       .catch((error: unknown) => {
         if (request !== latestRequest.current) {
           return;
@@ -105,6 +123,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
           clearClosedStores(browserStorage());
           clearPaymentProfileCaches(browserStorage());
           clearPeriodSummaryCaches(browserStorage());
+          setMediaThumbs(false);
           clearSaleDrafts(sessionStorageOrNull());
           clearSaleAttempts(sessionStorageOrNull());
         }
@@ -119,6 +138,9 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
         });
         opened.current = true;
         fromCache.current = outcome.fromCache;
+        if (outcome.fromCache) {
+          setMediaThumbs(readMediaThumbsFlag(browserStorage()));
+        }
         setLoad(outcome.load);
       });
   }, []);
@@ -166,8 +188,8 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   }, []);
 
   const value = useMemo(
-    () => ({ billingSelfService, load, reload, select }),
-    [billingSelfService, load, reload, select]
+    () => ({ billingSelfService, load, mediaThumbs, reload, select }),
+    [billingSelfService, load, mediaThumbs, reload, select]
   );
   return createElement(OrganizationContext.Provider, { value }, children);
 }
@@ -232,6 +254,7 @@ export function StaticOrganizationProvider({
         organizations: [organization],
         status: "ready",
       },
+      mediaThumbs: false,
       reload: () => undefined,
       select: () => undefined,
     }),

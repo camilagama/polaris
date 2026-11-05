@@ -218,3 +218,38 @@ describe("the queue applied to many variants", () => {
     );
   });
 });
+
+describe("a capa do produto nas entradas locais", () => {
+  const coverId = uuid(700);
+  const entriesOf = (products: LocalProductReadModel[]) =>
+    localStockEntries(
+      rows({
+        inventory: [stock(11, 1, 5), stock(12, 2, 1), stock(13, 2, 3)],
+        products,
+      })
+    );
+  const byVariant = (
+    entries: ReturnType<typeof localStockEntries>,
+    n: number
+  ) => entries.find((entry) => entry.variantId === uuid(n));
+
+  it("copia a capa do produto para cada variante dele, inclusive o null", () => {
+    const entries = entriesOf([
+      product(1, "Camiseta", { coverAssetId: null }),
+      product(2, "Calça Jeans", { coverAssetId: coverId }),
+    ]);
+    expect(byVariant(entries, 11)).toHaveProperty("coverAssetId", null);
+    expect(byVariant(entries, 12)).toHaveProperty("coverAssetId", coverId);
+    expect(byVariant(entries, 13)).toHaveProperty("coverAssetId", coverId);
+  });
+
+  it("sem a capa no produto (cópia de uma versão anterior), a entrada não tem a chave", () => {
+    const entries = entriesOf([
+      product(1, "Camiseta"),
+      product(2, "Calça Jeans"),
+    ]);
+    for (const entry of entries) {
+      expect(entry).not.toHaveProperty("coverAssetId");
+    }
+  });
+});

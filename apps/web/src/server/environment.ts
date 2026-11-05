@@ -97,6 +97,13 @@ export interface WorkerBindings {
    */
   BILLING_SELF_SERVICE_ENABLED?: string;
   /**
+   * `true` opens `GET /api/media/thumbs` and tells the client (`organization.listMine`) to show the capa of a product
+   * in Produtos and in the sale. Anything else (and absent) leaves both off: the route answers 404 before it opens a
+   * transaction or reaches the bucket, and the screens ask for nothing. Off in production until the CPU of the batch
+   * is measured.
+   */
+  MEDIA_THUMBS_ENABLED?: string;
+  /**
    * The support box of the billing e-mails and the welcome (ADR 0104, decision 7): the footer names it and it is the
    * reply-to. Required: without it (or without `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `BETTER_AUTH_BASE_URL` and
    * `AUTH_HYPERDRIVE`) those e-mails stay off and their notices are skipped `email_not_configured`. Not a secret.

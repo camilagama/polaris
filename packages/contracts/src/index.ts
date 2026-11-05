@@ -908,6 +908,8 @@ export type InventoryCountMovementReadModel = z.infer<
 >;
 
 const inventoryBalanceEntry = z.object({
+  // only when the list was asked `withCover`; same meaning as on the product (the image of lowest position)
+  coverAssetId,
   isDefaultVariant: z.boolean(),
   listPrice: listPriceText.nullable(),
   movingAverageCost: normalizedBrlCost.nullable(),
@@ -2339,6 +2341,8 @@ export const polarisContract = {
           // Re-reads exactly these variants (e.g. the lines of a sale in
           // progress) in one call, regardless of the other filters.
           variantIds: z.array(z.string().uuid()).min(1).max(100).optional(),
+          // Adds the cover of each product to the entries (one more read for the page); the sale search asks.
+          withCover: z.boolean().optional(),
         })
       )
       .output(
@@ -2429,9 +2433,11 @@ export const polarisContract = {
     // user's active memberships, so the client learns its organizations here
     // instead of remembering an ID.
     // `billingSelfService`: BILLING_SELF_SERVICE_ENABLED is on (ADR 0104), so the owner's "Assinatura" may show.
+    // `mediaThumbs`: MEDIA_THUMBS_ENABLED is on, so the lists may show the capa of a product (ADR 0018).
     listMine: readProcedure.output(
       z.object({
         billingSelfService: z.boolean(),
+        mediaThumbs: z.boolean(),
         organizations: z.array(organizationMembership),
       })
     ),
