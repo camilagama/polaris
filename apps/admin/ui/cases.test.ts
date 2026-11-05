@@ -471,6 +471,48 @@ describe("opening a case (AC-P1.5)", () => {
     );
   });
 
+  it("lets the field hold 500 emoji: no UTF-16 limit, the counter and the refusal count code points", async () => {
+    const { calls, root } = await ready([json(opened, 201)]);
+
+    expect(byId(root, "motivo").getAttribute("maxlength")).toBeNull();
+
+    type(root, "😀".repeat(500));
+    expect(byId(root, "motivo-contador").textContent).toBe(
+      "500 de 500 caracteres"
+    );
+    await submit(root);
+    expect(bodyOf(calls[2])).toEqual({
+      kind: "support",
+      organizationId: STORE,
+      reason: "😀".repeat(500),
+    });
+  });
+
+  it("does not count the spaces around the reason, because the check and the sent text trim them", async () => {
+    const { root } = await ready();
+
+    type(root, ` ${"😀".repeat(500)} `);
+
+    expect(byId(root, "motivo-contador").textContent).toBe(
+      "500 de 500 caracteres"
+    );
+  });
+
+  it("refuses 501 emoji and the counter says 501", async () => {
+    const { calls, root } = await ready();
+
+    type(root, "😀".repeat(501));
+    expect(byId(root, "motivo-contador").textContent).toBe(
+      "501 de 500 caracteres"
+    );
+    await submit(root);
+
+    expect(calls).toHaveLength(2);
+    expect(byId(root, "motivo-erro").textContent).toBe(
+      "O motivo aceita até 500 caracteres."
+    );
+  });
+
   it("refuses an empty reason and a reason with a control character without a request", async () => {
     const { calls, root } = await ready();
 
