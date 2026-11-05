@@ -590,16 +590,19 @@ test("uma foto JPEG em retrato com recorte sai só com a área recortada, do lug
     name: "Área de recorte. Arraste ou use as setas para ajustar.",
   });
   await expect(area).toBeVisible();
-  const box = await area.boundingBox();
-  if (!box) {
-    throw new Error("the crop area has no box");
+  // by keyboard, the same on a phone and on a desktop: Alt moves the near edge by 5%, an arrow alone shrinks by 5%
+  await area.focus();
+  for (const [key, times] of [
+    ["Alt+ArrowRight", 11],
+    ["ArrowLeft", 1],
+    ["Alt+ArrowDown", 11],
+    ["ArrowUp", 4],
+  ] as const) {
+    for (let press = 0; press < times; press += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each key changes the crop the next one starts from
+      await page.keyboard.press(key);
+    }
   }
-  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.55);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.95, box.y + box.height * 0.8, {
-    steps: 4,
-  });
-  await page.mouse.up();
   await sendImage(page);
 
   expect(sent).toHaveLength(1);
@@ -607,9 +610,9 @@ test("uma foto JPEG em retrato com recorte sai só com a área recortada, do lug
     [0.5, 0.5],
     [0.05, 0.05],
   ]);
-  // the whole photo would be 900 × 1200; the crop of 1200 × 1000 px is not scaled (the drag lands within a few pixels)
-  expect(Math.abs(image.width - 1200)).toBeLessThanOrEqual(4);
-  expect(Math.abs(image.height - 1000)).toBeLessThanOrEqual(4);
+  // the whole photo would be 900 × 1200; the crop, x 55–95% and y 55–80%, is 1200 × 1000 px and is not scaled
+  expect(Math.abs(image.width - 1200)).toBeLessThanOrEqual(1);
+  expect(Math.abs(image.height - 1000)).toBeLessThanOrEqual(1);
   // all of it comes from the bottom right quadrant, never from the top left corner of the photo
   expectColor(image.colors[0], YELLOW);
   expectColor(image.colors[1], YELLOW);
