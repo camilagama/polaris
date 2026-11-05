@@ -10,6 +10,7 @@ import {
 import type { NormalizedMediaCropRect } from "@polaris/domain/catalog/media";
 import {
   cropRectToPixels,
+  InvalidMediaCropError,
   MAX_MEDIA_INPUT_BYTES,
   MAX_MEDIA_OUTPUT_EDGE,
   MediaImageTooLargeError,
@@ -509,6 +510,9 @@ async function renderMediaUploadMasterInBrowser(
     );
     return await canvasJpeg(canvas, MASTER_JPEG_QUALITY);
   } catch (cause: unknown) {
+    if (cause instanceof InvalidMediaCropError) {
+      throw cause;
+    }
     // biome-ignore lint/style/useErrorCause: This wrapper preserves decoder details as Error.cause without exposing them in the UI.
     throw new UnsupportedMediaImageError({ cause });
   } finally {

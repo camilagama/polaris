@@ -404,15 +404,115 @@ test("enviar sem internet diz 'Sem internet' e que repetir é seguro, e a imagem
   ).toBeEnabled();
 });
 
-/** The width, height and type the browser decodes from a body the panel sent. */
-function decodedSize(page: Page, body: Buffer) {
-  return page.evaluate(async (base64) => {
-    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-    const bitmap = await createImageBitmap(new Blob([bytes]));
-    const size = { height: bitmap.height, width: bitmap.width };
-    bitmap.close();
-    return size;
-  }, body.toString("base64"));
+type Rgb = [number, number, number];
+
+/** What the browser decodes from a body the panel sent: its size and the color at each asked point (0..1 of a side). */
+function decoded(page: Page, body: Buffer, points: [number, number][] = []) {
+  return page.evaluate(
+    async ([base64, at]) => {
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes]));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("no 2d context");
+      }
+      context.drawImage(bitmap, 0, 0);
+      const colors = at.map(([x, y]) => {
+        const { data } = context.getImageData(
+          Math.floor(x * (bitmap.width - 1)),
+          Math.floor(y * (bitmap.height - 1)),
+          1,
+          1
+        );
+        return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
+      });
+      const result = { colors, height: bitmap.height, width: bitmap.width };
+      bitmap.close();
+      return result;
+    },
+    [body.toString("base64"), points] as const
+  );
+}
+
+/** Each channel within 24 of the expected one (JPEG moves colors a little). */
+function expectColor(actual: number[] | undefined, expected: Rgb) {
+  expect(actual).toHaveLength(3);
+  for (const [index, channel] of (actual ?? []).entries()) {
+    expect(Math.abs(channel - (expected[index] ?? 0))).toBeLessThanOrEqual(24);
+  }
+}
+
+const BLUE: Rgb = [30, 90, 200];
+const GREEN: Rgb = [40, 170, 80];
+const RED: Rgb = [220, 60, 40];
+const YELLOW: Rgb = [230, 200, 40];
+const WHITE: Rgb = [255, 255, 255];
+
+/**
+ * An image of `width` × `height` encoded by the browser. "quadrants" paints blue, green, red and yellow (top left,
+ * top right, bottom left, bottom right), to see where a crop came from; "halves" paints the left half blue and the
+ * right half red; "transparent" leaves it transparent but for a red corner.
+ */
+async function browserImage(
+  page: Page,
+  input: {
+    height: number;
+    paint: "halves" | "quadrants" | "transparent";
+    type: "image/jpeg" | "image/png";
+    width: number;
+  }
+) {
+  const base64 = await page.evaluate(
+    async ({ colors, height, paint, type, width }) => {
+      const canvas = new OffscreenCanvas(width, height);
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("no 2d context");
+      }
+      const fill = (
+        color: number[],
+        x: number,
+        y: number,
+        w: number,
+        h: number
+      ) => {
+        context.fillStyle = `rgb(${color.join(" ")})`;
+        context.fillRect(x, y, w, h);
+      };
+      const [blue = [], green = [], red = [], yellow = []] = colors;
+      if (paint === "quadrants") {
+        fill(blue, 0, 0, width / 2, height / 2);
+        fill(green, width / 2, 0, width / 2, height / 2);
+        fill(red, 0, height / 2, width / 2, height / 2);
+        fill(yellow, width / 2, height / 2, width / 2, height / 2);
+      } else if (paint === "halves") {
+        fill(blue, 0, 0, width / 2, height);
+        fill(red, width / 2, 0, width / 2, height);
+      } else {
+        fill(red, 0, 0, width / 8, height / 8);
+      }
+      const blob = await canvas.convertToBlob({ quality: 0.92, type });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      return btoa(binary);
+    },
+    { ...input, colors: [BLUE, GREEN, RED, YELLOW] }
+  );
+  return Buffer.from(base64, "base64");
+}
+
+/** The JPEG with an EXIF segment saying "rotate 90° clockwise to show" (Orientation 6), right after its SOI. */
+function withExifOrientation6(jpeg: Buffer) {
+  const exif = Buffer.from([
+    0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, 0x4d, 0x4d,
+    0x00, 0x2a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x01, 0x01, 0x12, 0x00, 0x03,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+  return Buffer.concat([jpeg.subarray(0, 2), exif, jpeg.subarray(2)]);
 }
 
 const created = api(
@@ -420,9 +520,8 @@ const created = api(
   201
 );
 
-test("envia o recorte já reduzido a 1200 px em JPEG, com o recorte da imagem inteira", async ({
-  page,
-}) => {
+/** Opens the panel with an upload that is answered with success, and returns the bodies it received. */
+async function openWithUpload(page: Page) {
   const sent: { body: Buffer; crop: string | null; type: string | null }[] = [];
   await openMediaPanel(page, {
     lists: [list(0), list(1)],
@@ -436,13 +535,24 @@ test("envia o recorte já reduzido a 1200 px em JPEG, com o recorte da imagem in
       return route.fulfill(created);
     },
   });
+  return sent;
+}
+
+async function sendImage(page: Page) {
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+}
+
+test("envia o recorte já reduzido a 1200 px em JPEG, com o recorte da imagem inteira", async ({
+  page,
+}) => {
+  const sent = await openWithUpload(page);
   await page.getByLabel("Escolher imagem").setInputFiles({
     buffer: solidPng(2400, 1600),
     mimeType: "image/png",
     name: "foto.png",
   });
-  await page.getByRole("button", { name: "Enviar imagem" }).click();
-  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+  await sendImage(page);
 
   expect(sent).toHaveLength(1);
   const [upload] = sent;
@@ -455,56 +565,24 @@ test("envia o recorte já reduzido a 1200 px em JPEG, com o recorte da imagem in
   });
   // a JPEG starts with FF D8 FF
   expect([...(upload?.body.subarray(0, 3) ?? [])]).toEqual([0xff, 0xd8, 0xff]);
-  await expect(
-    decodedSize(page, upload?.body ?? Buffer.alloc(0))
-  ).resolves.toEqual({
+  const image = await decoded(page, upload?.body ?? Buffer.alloc(0));
+  expect({ height: image.height, width: image.width }).toEqual({
     height: 800,
     width: 1200,
   });
 });
 
-/** A JPEG photo of `width` × `height`, encoded by the browser: two colors split at the middle, to see the crop. */
-async function photoJpeg(page: Page, width: number, height: number) {
-  const base64 = await page.evaluate(
-    async ([w, h]) => {
-      const canvas = new OffscreenCanvas(w, h);
-      const context = canvas.getContext("2d");
-      if (!context) {
-        throw new Error("no 2d context");
-      }
-      context.fillStyle = "rgb(30 90 200)";
-      context.fillRect(0, 0, w, h);
-      context.fillStyle = "rgb(220 60 40)";
-      context.fillRect(0, h / 2, w, h / 2);
-      const blob = await canvas.convertToBlob({
-        quality: 0.92,
-        type: "image/jpeg",
-      });
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      let binary = "";
-      for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-      }
-      return btoa(binary);
-    },
-    [width, height] as const
-  );
-  return Buffer.from(base64, "base64");
-}
-
-test("uma foto JPEG em retrato com recorte sai só com o recorte, reduzido a 1200 px no lado maior", async ({
+test("uma foto JPEG em retrato com recorte sai só com a área recortada, do lugar escolhido", async ({
   page,
 }) => {
-  const sent: Buffer[] = [];
-  await openMediaPanel(page, {
-    lists: [list(0), list(1)],
-    upload: (route) => {
-      sent.push(route.request().postDataBuffer() ?? Buffer.alloc(0));
-      return route.fulfill(created);
-    },
-  });
+  const sent = await openWithUpload(page);
   await page.getByLabel("Escolher imagem").setInputFiles({
-    buffer: await photoJpeg(page, 3000, 4000),
+    buffer: await browserImage(page, {
+      height: 4000,
+      paint: "quadrants",
+      type: "image/jpeg",
+      width: 3000,
+    }),
     mimeType: "image/jpeg",
     name: "retrato.jpg",
   });
@@ -516,20 +594,83 @@ test("uma foto JPEG em retrato com recorte sai só com o recorte, reduzido a 120
   if (!box) {
     throw new Error("the crop area has no box");
   }
-  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.25);
+  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.55);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5, {
+  await page.mouse.move(box.x + box.width * 0.95, box.y + box.height * 0.8, {
     steps: 4,
   });
   await page.mouse.up();
-  await page.getByRole("button", { name: "Enviar imagem" }).click();
-  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+  await sendImage(page);
 
   expect(sent).toHaveLength(1);
-  const size = await decodedSize(page, sent[0] ?? Buffer.alloc(0));
-  // the whole photo would be 900 × 1200; the crop of 1500 × 1000 is 1200 × 800 (the drag lands within a pixel or two)
-  expect(size.width).toBe(1200);
-  expect(Math.abs(size.height - 800)).toBeLessThanOrEqual(3);
+  const image = await decoded(page, sent[0]?.body ?? Buffer.alloc(0), [
+    [0.5, 0.5],
+    [0.05, 0.05],
+  ]);
+  // the whole photo would be 900 × 1200; the crop of 1200 × 1000 px is not scaled (the drag lands within a few pixels)
+  expect(Math.abs(image.width - 1200)).toBeLessThanOrEqual(4);
+  expect(Math.abs(image.height - 1000)).toBeLessThanOrEqual(4);
+  // all of it comes from the bottom right quadrant, never from the top left corner of the photo
+  expectColor(image.colors[0], YELLOW);
+  expectColor(image.colors[1], YELLOW);
+});
+
+test("um PNG transparente sai em JPEG com fundo branco, não preto", async ({
+  page,
+}) => {
+  const sent = await openWithUpload(page);
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: await browserImage(page, {
+      height: 600,
+      paint: "transparent",
+      type: "image/png",
+      width: 800,
+    }),
+    mimeType: "image/png",
+    name: "recorte.png",
+  });
+  await sendImage(page);
+
+  const image = await decoded(page, sent[0]?.body ?? Buffer.alloc(0), [
+    [0.5, 0.5],
+    [0.02, 0.02],
+  ]);
+  expect({ height: image.height, width: image.width }).toEqual({
+    height: 600,
+    width: 800,
+  });
+  expectColor(image.colors[0], WHITE);
+  expectColor(image.colors[1], RED);
+});
+
+test("uma foto com orientação EXIF sai de pé, como o recorte a mostra", async ({
+  page,
+}) => {
+  const sent = await openWithUpload(page);
+  const stored = await browserImage(page, {
+    height: 200,
+    paint: "halves",
+    type: "image/jpeg",
+    width: 400,
+  });
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: withExifOrientation6(stored),
+    mimeType: "image/jpeg",
+    name: "celular.jpg",
+  });
+  await sendImage(page);
+
+  const image = await decoded(page, sent[0]?.body ?? Buffer.alloc(0), [
+    [0.5, 0.2],
+    [0.5, 0.8],
+  ]);
+  // stored 400 × 200 with blue on the left; shown turned clockwise, 200 × 400 with blue on top
+  expect({ height: image.height, width: image.width }).toEqual({
+    height: 400,
+    width: 200,
+  });
+  expectColor(image.colors[0], BLUE);
+  expectColor(image.colors[1], RED);
 });
 
 test("a nova tentativa depois de cair a conexão envia os mesmos bytes, com o mesmo comando", async ({
@@ -563,9 +704,8 @@ test("a nova tentativa depois de cair a conexão envia os mesmos bytes, com o me
   const [first, retry] = sent;
   expect(retry?.uploadId).toBe(first?.uploadId);
   expect(retry?.body.equals(first?.body ?? Buffer.alloc(0))).toBe(true);
-  await expect(
-    decodedSize(page, retry?.body ?? Buffer.alloc(0))
-  ).resolves.toEqual({
+  const image = await decoded(page, retry?.body ?? Buffer.alloc(0));
+  expect({ height: image.height, width: image.width }).toEqual({
     height: 900,
     width: 1200,
   });
