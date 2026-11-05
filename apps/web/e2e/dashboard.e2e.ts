@@ -564,8 +564,9 @@ const chainRow = (page: Page, label: string) =>
   chain(page).locator("tbody tr").filter({ hasText: label });
 const preset = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name });
+const CHART_REGION_NAME = /^Vendas × custos por (dia|mês)$/;
 const chartRegion = (page: Page) =>
-  page.getByRole("region", { name: "Vendas × custos por dia" });
+  page.getByRole("region", { name: CHART_REGION_NAME });
 /** A phone (the Pixel 5 project too) has the periods in a Select; from 768 px they are a strip of buttons. */
 const compact = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
 const periodSelect = (page: Page) =>
@@ -1329,10 +1330,10 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     });
   });
 
-  test("Este ano lê de 1º de janeiro até hoje e o gráfico agrupa por mês (AC-1, AC-7)", async ({
+  test("Este ano lê de 1º de janeiro até hoje e o gráfico mostra os meses do servidor (AC-1, AC-7)", async ({
     page,
   }) => {
-    const server = new FakeReportServer();
+    const server = new MonthlyReportServer();
     // the sales of the year fall on January 1st, the first day the year reads
     server.fixture = { ...FIXTURE, "2026-01": COMPLETE_MONTH };
     await openDashboard(page, server);
@@ -1345,7 +1346,9 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect
       .poll(() => server.periods.at(-1))
       .toEqual({ from: "2026-01-01", to: "2026-10-14" });
-    await expect(chartRegion(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("region", { name: "Vendas × custos por dia" })
+    ).toHaveCount(0);
     const region = page.getByRole("region", {
       name: "Vendas × custos por mês",
     });
@@ -1376,11 +1379,18 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(rows.last()).toContainText("outubro de 2026");
 
     // a free range of a whole year is accepted too
+    // the fake server reads the records of the month the range starts in
+    server.fixture = { ...server.fixture, "2025-10": COMPLETE_MONTH };
     await rangeFields(page, "2025-10-15", "2026-10-14");
     await expectPreset(page, "Período");
     await expect
       .poll(() => server.periods.at(-1))
       .toEqual({ from: "2025-10-15", to: "2026-10-14" });
+    const yearRegion = page.getByRole("region", {
+      name: "Vendas × custos por mês",
+    });
+    await expect(yearRegion).toContainText("15 de outubro de 2025");
+    await expect(yearRegion.locator("table tbody tr")).toHaveCount(13);
   });
 
   test("um intervalo inválido diz o que está errado e não chama o servidor", async ({

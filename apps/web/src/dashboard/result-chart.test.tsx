@@ -263,19 +263,28 @@ describe("the cost line by run of known days (AC-9)", () => {
 });
 
 describe("the unit of the texts follows the grouping (day for a month, month for a year)", () => {
-  /** January to October read on the 25th: more than 62 days, so the chart and the table group by month. */
+  /** January to October read on the 25th, as the server sends it above 62 days: one bucket per month, the last one cut at today. */
   const year = (): StoredPeriodSummary => {
     const base = october([]);
+    const lastDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 25];
+    const daily = lastDays.map((days, index) => {
+      const date = `2026-${String(index + 1).padStart(2, "0")}-01`;
+      return {
+        costs: `${days * 10}.00`,
+        date,
+        days,
+        netSales: `${days * 50}.00`,
+        operatingExpenses: "0.00",
+        operatingResult: `${days * 40}.00`,
+        salesCount: days,
+        to: addDays(date, days - 1),
+        unknownDays: 0,
+      };
+    });
     return {
       ...base,
-      daily: Array.from({ length: 298 }, (_, index) => ({
-        costs: "10.00",
-        date: addDays("2026-01-01", index),
-        netSales: "50.00",
-        operatingExpenses: "0.00",
-        operatingResult: "40.00",
-        salesCount: 1,
-      })),
+      daily,
+      granularity: "month",
       period: { from: "2026-01-01", to: "2026-10-25" },
     } as StoredPeriodSummary;
   };
@@ -290,7 +299,9 @@ describe("the unit of the texts follows the grouping (day for a month, month for
       renderToStaticMarkup(
         <NumbersTable
           hasCosts
-          series={resultSeries(year().daily ?? [], "2026-10-25")}
+          series={resultSeries(year().daily ?? [], "2026-10-25", {
+            granularity: "month",
+          })}
         />
       )
     );
