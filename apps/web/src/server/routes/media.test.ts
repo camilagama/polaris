@@ -8,6 +8,7 @@ import {
   ProductDeletedError,
   ProductVariantNotFoundError,
 } from "@polaris/domain/catalog/product";
+import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaBucketBinding, ServerEnv } from "../environment";
@@ -61,6 +62,10 @@ function createTestApp(overrides: Partial<MediaRouteDependencies> = {}) {
         uploaded: new Date("2026-10-10T12:00:00.000Z"),
       });
     }),
+    head: vi.fn((key) => {
+      const bytes = stored.get(key);
+      return Promise.resolve(bytes ? { size: bytes.byteLength } : null);
+    }),
     list: vi.fn(() => Promise.resolve({ objects: [], truncated: false })),
     put: vi.fn((key, value, options) => {
       if (options?.onlyIf?.get("if-none-match") === "*" && stored.has(key)) {
@@ -86,6 +91,7 @@ function createTestApp(overrides: Partial<MediaRouteDependencies> = {}) {
     ),
     findMediaUploadCommand: vi.fn(() => Promise.resolve(undefined)),
     getMediaAssetForDelivery: vi.fn(() => Promise.resolve(null)),
+    listDeliverableMediaAssetIds: vi.fn(() => Promise.resolve(new Set())),
     listProductMedia: vi.fn(() => Promise.resolve([])),
     processMediaImage: vi.fn(() =>
       Promise.resolve({
@@ -891,5 +897,385 @@ describe("media removal and order routes", () => {
       deleted.bindings
     );
     expect(deletedResponse.status).toBe(404);
+  });
+});
+
+describe("media thumbnail batch route", () => {
+  const thumbsUrl = "https://polaris.example.invalid/api/media/thumbs";
+  const thumbId = (index: number) =>
+    `0199c2d0-0000-7000-8000-${String(1000 + index).padStart(12, "0")}`;
+  const thumbKey = (id: string) => `media/derivatives/v1/${id}/320.webp`;
+  const thumbBytes = (index: number, length: number) =>
+    Uint8Array.from({ length }, (_, offset) => (index * 31 + offset) % 256);
+  const askThumbs = (
+    app: Hono<ServerEnv>,
+    bindings: ServerEnv["Bindings"],
+    ids: string
+  ) =>
+    app.fetch(
+      new Request(
+        `${thumbsUrl}?organizationId=${encodeURIComponent(organizationId)}&ids=${ids}`
+      ),
+      bindings
+    );
+  const headerEntries = (response: Response) =>
+    (response.headers.get("x-polaris-thumbs") ?? "").split(",").map((entry) => {
+      const [id, size] = entry.split(":");
+      return { id: id as string, size: size as string };
+    });
+  /** An organization's database as the row level policy shows it: only its own linked images. */
+  const tenantImages = (owners: Map<string, string>) =>
+    vi.fn(
+      (
+        _transaction: unknown,
+        requestedOrganization: string,
+        ids: readonly string[]
+      ) =>
+        Promise.resolve(
+          new Set(ids.filter((id) => owners.get(id) === requestedOrganization))
+        )
+    );
+
+  it("answers one stored thumbnail with the private binary headers, in one transaction under catalog:read", async () => {
+    const id = thumbId(1);
+    const { app, bindings, dependencies, stored } = createTestApp({
+      listDeliverableMediaAssetIds: tenantImages(
+        new Map([[id, organizationId]])
+      ),
+    });
+    stored.set(thumbKey(id), thumbBytes(1, 37));
+
+    const response = await askThumbs(app, bindings, id);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("content-type")).toBe(
+      "application/octet-stream"
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-polaris-thumbs")).toBe(`${id}:37`);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+      thumbBytes(1, 37)
+    );
+    expect(dependencies.withTenantRequestContext).toHaveBeenCalledTimes(1);
+    expect(dependencies.withTenantRequestContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability: "catalog:read",
+        requestedOrganizationId: organizationId,
+      })
+    );
+    expect(dependencies.getMediaAssetForDelivery).not.toHaveBeenCalled();
+  });
+
+  it("answers 24 ids in the asked order, the body slicing into each WebP by the header, with one query and at most six storage reads at once", async () => {
+    const ids = Array.from({ length: 24 }, (_, index) => thumbId(index));
+    const owners = new Map(ids.map((id) => [id, organizationId]));
+    const listDeliverable = tenantImages(owners);
+    const { app, bindings, mediaBucket, stored } = createTestApp({
+      listDeliverableMediaAssetIds: listDeliverable,
+    });
+    for (const [index, id] of ids.entries()) {
+      if (index % 5 !== 3) {
+        stored.set(thumbKey(id), thumbBytes(index, 100 + index * 7));
+      }
+    }
+    // an operation is open from the call until its body is read to the end or cancelled
+    let open = 0;
+    let mostOpen = 0;
+    const opened = () => {
+      open += 1;
+      mostOpen = Math.max(mostOpen, open);
+    };
+    const plainGet = mediaBucket.get;
+    const plainHead = mediaBucket.head;
+    mediaBucket.head = vi.fn(async (key: string) => {
+      opened();
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      try {
+        return await plainHead(key);
+      } finally {
+        open -= 1;
+      }
+    });
+    mediaBucket.get = vi.fn(async (key: string) => {
+      opened();
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      const object = await plainGet(key);
+      if (!object) {
+        open -= 1;
+        return null;
+      }
+      const reader = object.body.getReader();
+      const body = new ReadableStream<Uint8Array>({
+        cancel: async () => {
+          open -= 1;
+          await reader.cancel();
+        },
+        pull: async (controller) => {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            open -= 1;
+            controller.close();
+            return;
+          }
+          controller.enqueue(chunk.value);
+        },
+      });
+      return { ...object, body };
+    });
+    const asked = [...ids].reverse();
+
+    const response = await askThumbs(app, bindings, asked.join(","));
+    const body = new Uint8Array(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    const entries = headerEntries(response);
+    expect(entries.map((entry) => entry.id)).toEqual(asked);
+    let offset = 0;
+    for (const entry of entries) {
+      const index = ids.indexOf(entry.id);
+      if (index % 5 === 3) {
+        expect(entry.size).toBe("missing");
+        continue;
+      }
+      const size = Number(entry.size);
+      expect(size).toBe(100 + index * 7);
+      expect(body.slice(offset, offset + size)).toEqual(
+        thumbBytes(index, size)
+      );
+      offset += size;
+    }
+    expect(offset).toBe(body.byteLength);
+    expect(listDeliverable).toHaveBeenCalledTimes(1);
+    expect(listDeliverable.mock.calls[0]?.[2]).toEqual(asked);
+    expect(mostOpen).toBeGreaterThan(1);
+    expect(mostOpen).toBeLessThanOrEqual(6);
+  });
+
+  it("refuses 0, 25 or more and malformed ids with a stable 400 before opening a transaction", async () => {
+    const { app, bindings, dependencies } = createTestApp();
+    const ids25 = Array.from({ length: 25 }, (_, index) => thumbId(index));
+    const cases = [
+      ids25.join(","),
+      "",
+      `${thumbId(1)},not-a-uuid`,
+      `${thumbId(1)},`,
+      "%27%3B%20DROP%20TABLE",
+      "0".repeat(36),
+    ];
+
+    for (const ids of cases) {
+      // biome-ignore lint/performance/noAwaitInLoops: One request at a time.
+      const response = await askThumbs(app, bindings, ids);
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "invalid_media_thumbs_request" },
+      });
+    }
+    const withoutIds = await app.fetch(
+      new Request(
+        `${thumbsUrl}?organizationId=${encodeURIComponent(organizationId)}`
+      ),
+      bindings
+    );
+    expect(withoutIds.status).toBe(400);
+    const withoutOrganization = await app.fetch(
+      new Request(`${thumbsUrl}?ids=${thumbId(1)}`),
+      bindings
+    );
+    expect(withoutOrganization.status).toBe(400);
+    expect(dependencies.withTenantRequestContext).not.toHaveBeenCalled();
+  });
+
+  it("answers a repeated id once", async () => {
+    const id = thumbId(2);
+    const { app, bindings, stored } = createTestApp({
+      listDeliverableMediaAssetIds: tenantImages(
+        new Map([[id, organizationId]])
+      ),
+    });
+    stored.set(thumbKey(id), thumbBytes(2, 10));
+
+    const response = await askThumbs(
+      app,
+      bindings,
+      `${id},${id.toUpperCase()},${id}`
+    );
+
+    expect(response.headers.get("x-polaris-thumbs")).toBe(`${id}:10`);
+    expect((await response.arrayBuffer()).byteLength).toBe(10);
+  });
+
+  it("answers 401 without a session and the single delivery's refusal without the product read capability", async () => {
+    const id = thumbId(3);
+    for (const [error, status, code] of [
+      [
+        new TenantRequestContextError("session_required"),
+        401,
+        "session_required",
+      ],
+      [new TenantAuthorizationError("capability_denied"), 403, "forbidden"],
+      [
+        new TenantAuthorizationError("tenant_access_denied"),
+        403,
+        "tenant_access_denied",
+      ],
+    ] as const) {
+      const { app, bindings, dependencies, mediaBucket } = createTestApp({
+        withTenantRequestContext: vi.fn(() => Promise.reject(error)),
+      } as unknown as Partial<MediaRouteDependencies>);
+      // biome-ignore lint/performance/noAwaitInLoops: One request at a time.
+      const batch = await askThumbs(app, bindings, id);
+      const single = await app.fetch(
+        new Request(
+          `https://polaris.example.invalid/api/media/${id}?organizationId=${encodeURIComponent(organizationId)}&size=320`
+        ),
+        bindings
+      );
+      expect(batch.status).toBe(status);
+      expect(single.status).toBe(status);
+      await expect(batch.json()).resolves.toMatchObject({ error: { code } });
+      await expect(single.json()).resolves.toMatchObject({ error: { code } });
+      expect(dependencies.withTenantRequestContext).toHaveBeenCalledWith(
+        expect.objectContaining({ capability: "catalog:read" })
+      );
+      expect(mediaBucket.head).not.toHaveBeenCalled();
+      expect(mediaBucket.get).not.toHaveBeenCalled();
+    }
+  });
+
+  it("answers another store's image exactly as an unknown, removed or underived one, without reading it from storage", async () => {
+    const own = thumbId(10);
+    const ofOtherStore = thumbId(11);
+    const unknown = thumbId(12);
+    const removed = thumbId(13);
+    const underived = thumbId(14);
+    const owners = new Map([
+      [own, organizationId],
+      [ofOtherStore, "another-organization"],
+      [underived, organizationId],
+    ]);
+    const { app, bindings, mediaBucket, stored } = createTestApp({
+      listDeliverableMediaAssetIds: tenantImages(owners),
+    });
+    stored.set(thumbKey(own), thumbBytes(10, 20));
+    // the other store's thumbnail and the removed image's are in the bucket
+    stored.set(thumbKey(ofOtherStore), thumbBytes(11, 30));
+    stored.set(thumbKey(removed), thumbBytes(13, 40));
+
+    const answers = await Promise.all(
+      [ofOtherStore, unknown, removed, underived].map(async (probe) => {
+        const response = await askThumbs(app, bindings, `${own},${probe}`);
+        // every header but the per-request id, with the probed id masked
+        const headers = [...response.headers.entries()]
+          .filter(([name]) => name !== "x-request-id")
+          .map(([name, value]) =>
+            name === "x-polaris-thumbs"
+              ? [name, value.replace(probe, "<probe>")]
+              : [name, value]
+          );
+        return {
+          body: [...new Uint8Array(await response.arrayBuffer())],
+          headers,
+          status: response.status,
+        };
+      })
+    );
+
+    const [first] = answers;
+    expect(first?.status).toBe(200);
+    expect(first?.headers).toContainEqual([
+      "x-polaris-thumbs",
+      `${own}:20,<probe>:missing`,
+    ]);
+    for (const answer of answers) {
+      expect(answer).toEqual(first);
+    }
+    const readKeys = [
+      ...vi.mocked(mediaBucket.head).mock.calls,
+      ...vi.mocked(mediaBucket.get).mock.calls,
+    ].map(([key]) => key);
+    expect(readKeys).not.toContain(thumbKey(ofOtherStore));
+    expect(readKeys).not.toContain(thumbKey(unknown));
+    expect(readKeys).not.toContain(thumbKey(removed));
+  });
+
+  it("never reaches Images: an image without its 320 px derivative is missing, with no transformation", async () => {
+    const id = thumbId(20);
+    const imagesReads: PropertyKey[] = [];
+    const images = new Proxy(
+      {},
+      {
+        get: (_target, property) => {
+          imagesReads.push(property);
+          return vi.fn();
+        },
+      }
+    );
+    const { app, bindings, dependencies, stored } = createTestApp({
+      listDeliverableMediaAssetIds: tenantImages(
+        new Map([[id, organizationId]])
+      ),
+    });
+    // the master is there; only the 320 px derivative is not
+    stored.set(`media/v2/master/${id}.webp`, thumbBytes(20, 50));
+
+    const response = await askThumbs(
+      app,
+      { ...bindings, IMAGES: images as never },
+      id
+    );
+
+    expect(response.headers.get("x-polaris-thumbs")).toBe(`${id}:missing`);
+    expect((await response.arrayBuffer()).byteLength).toBe(0);
+    expect(imagesReads).toEqual([]);
+    expect(dependencies.processMediaDerivative).not.toHaveBeenCalled();
+    expect(dependencies.processMediaImage).not.toHaveBeenCalled();
+  });
+
+  it("cuts the body, never sending short bytes, when a thumbnail vanishes after it was sized", async () => {
+    const [kept, vanishing] = [thumbId(30), thumbId(31)];
+    const { app, bindings, mediaBucket, stored } = createTestApp({
+      listDeliverableMediaAssetIds: tenantImages(
+        new Map([
+          [kept, organizationId],
+          [vanishing, organizationId],
+        ])
+      ),
+    });
+    stored.set(thumbKey(kept), thumbBytes(30, 12));
+    stored.set(thumbKey(vanishing), thumbBytes(31, 12));
+    const plainHead = mediaBucket.head;
+    mediaBucket.head = vi.fn(async (key: string) => {
+      const sized = await plainHead(key);
+      if (key === thumbKey(vanishing)) {
+        stored.delete(key);
+      }
+      return sized;
+    });
+
+    const response = await askThumbs(app, bindings, `${kept},${vanishing}`);
+
+    expect(response.headers.get("x-polaris-thumbs")).toBe(
+      `${kept}:12,${vanishing}:12`
+    );
+    await expect(response.arrayBuffer()).rejects.toThrow();
+  });
+
+  it("answers 503 with a stable code when storage cannot size the thumbnails", async () => {
+    const id = thumbId(40);
+    const { app, bindings, mediaBucket } = createTestApp({
+      listDeliverableMediaAssetIds: tenantImages(
+        new Map([[id, organizationId]])
+      ),
+    });
+    mediaBucket.head = vi.fn(() => Promise.reject(new Error("r2 down")));
+
+    const response = await askThumbs(app, bindings, id);
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "media_processing_unavailable" },
+    });
   });
 });

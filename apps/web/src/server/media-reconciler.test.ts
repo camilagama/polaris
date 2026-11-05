@@ -62,6 +62,10 @@ function makeFixture(
         uploaded: now,
       });
     }),
+    head: vi.fn((key) => {
+      const bytes = objects.get(key);
+      return Promise.resolve(bytes ? { size: bytes.byteLength } : null);
+    }),
     list,
     put: vi.fn(() => Promise.resolve({ etag: '"test"' })),
   };

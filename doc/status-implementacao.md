@@ -2814,6 +2814,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Gate `product-cover` (capa com 0, 1 e 3 imagens; reordenar; remover a capa e a última; uma mudança por operação; savepoint; pull; edição com a versão antiga; RLS entre duas lojas; plano da lista de 1.248 produtos no índice `(organization_id, product_id, position)`); gates `definer-owners` e `bootstrap` ajustados. Unidade: `product-cover.test.ts` (contrato), `product-cover-router.test.ts`, `local-products.test.ts`, `bootstrap.test.ts`. |
 | Fora | Registrado | Rota em lote (T2), cache e componente (T3a) e telas (T3b). |
 
+### Miniaturas de produto, T2: rota em lote `GET /api/media/thumbs` (t752; corte miniaturas-de-produto; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Rota | Em revisão | `GET /api/media/thumbs?organizationId=…&ids=…` (`apps/web/src/server/routes/media.ts`, `src/server/media-thumbs.ts`): 1 a 24 UUIDs (400 `invalid_media_thumbs_request` fora disso), uma transação tenant com `catalog:read`, uma consulta (`listDeliverableMediaAssetIds`), só o derivado de 320 px do R2 (`head` para os tamanhos, `get` em stream, no máximo 6 abertos), cabeçalho `X-Polaris-Thumbs` com `id:bytes` ou `id:missing` na ordem do pedido, corpo concatenado, `private, no-store`. Nunca chama o Images. Emenda de 04/11 do ADR 0018. |
+| Provas | Em revisão | `routes/media.test.ts` (1, 24 e 25 ids, ids inválidos, repetidos, 401 e 403 iguais aos da entrega por imagem, outra loja igual a inexistente, removida e sem 320 no cabeçalho e no corpo, 0 acessos ao binding do Images, corte do corpo quando o derivado some, 503 do R2); gate `media-commands` (lote com ids de outra loja, inexistente e removida; RLS sem o filtro de organização). |
+| Pendente | Registrado | Medida de CPU do lote de 24 contra a entrega por imagem no staging (AC-13), depois do deploy. Cache, componente e telas são da T3a e da T3b. |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |
