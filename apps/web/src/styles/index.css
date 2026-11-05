@@ -8,7 +8,7 @@
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
 @import "./shadcn-tailwind.css";
-@import "../../../../packages/ui/src/theme.css";
+@import "@polaris/ui/theme.css";
 
 /* Utilities only for the files that draw the interface, file by file (styles/source-coverage.test.ts). */
 @source "../ui";

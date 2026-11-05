@@ -331,6 +331,28 @@
       }
     },
     {
+      // The token package is plain CSS and constants that the dash and the Admin share: a framework in it would
+      // reach the Admin's page, which has none (ADR 0070).
+      "includes": ["packages/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["react", "react/**", "react-dom", "react-dom/**"],
+                    "message": "packages/ui must stay framework-free: the Admin page has no React, and the dash's components live in apps/web/src/ui."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       // evlog is the logger's engine and runs with its own masking off (the Polaris policy masks in `emit`):
       // only packages/observability imports it.
       "includes": [

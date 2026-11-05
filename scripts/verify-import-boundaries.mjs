@@ -21,6 +21,8 @@ const catalogMessage =
   "The public catalog must not import tenant data, billing, auth or a database driver: it reads only through the public catalog reader.";
 const adminMessage =
   "The Admin app must not import tenant data, billing, auth or a database driver: it reaches the database only through its own repositories.";
+const uiMessage =
+  "packages/ui must stay framework-free: the Admin page has no React, and the dash's components live in apps/web/src/ui.";
 const browserMessage =
   "Browser code must not import the database, the server layer or server-only libraries.";
 
@@ -73,6 +75,10 @@ const cases = [
   ["react", ["packages", "db", "src"], dbMessage],
   ["hono", ["packages", "db", "src"], dbMessage],
   ["@orpc/server", ["packages", "db", "src"], dbMessage],
+  ["react", ["packages", "ui", "src"], uiMessage],
+  ["react/jsx-runtime", ["packages", "ui", "src"], uiMessage],
+  ["react-dom", ["packages", "ui", "src"], uiMessage],
+  ["react-dom/client", ["packages", "ui", "src"], uiMessage],
   ["@polaris/db/client", ["apps", "web", "src", "lib"], browserMessage],
   ["drizzle-orm", ["apps", "web", "src", "sales"], browserMessage],
   ["better-auth", ["apps", "web", "src", "catalog"], browserMessage],
@@ -187,6 +193,7 @@ const importControls = [
   controlImport(["packages", "domain", "src"], domainMessage),
   controlImport(["packages", "contracts", "src"], contractsMessage),
   controlImport(["packages", "db", "src"], dbMessage),
+  controlImport(["packages", "ui", "src"], uiMessage),
   controlImport(["apps", "web", "src", "lib"], browserMessage),
   controlImport(["apps", "catalog", "src"], catalogMessage),
   controlImport(["apps", "admin", "src"], adminMessage),
