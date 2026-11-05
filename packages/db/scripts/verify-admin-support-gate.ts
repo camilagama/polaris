@@ -15,6 +15,8 @@ import {
   readSupportCase,
   revealCustomerField,
   revokeTenantAccess,
+  type SupportCasePage,
+  type SupportCaseSummary,
 } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
 import {
@@ -474,13 +476,13 @@ async function run() {
     const ofKind = async (
       kind: string | null,
       status: string | null = null
-    ) => {
-      const cases: Awaited<ReturnType<typeof listSupportCases>>["cases"] = [];
+    ): Promise<{ cases: SupportCaseSummary[] }> => {
+      const cases: SupportCaseSummary[] = [];
       let after: string | null = null;
       do {
         const cursor: string | null = after;
         // biome-ignore lint/performance/noAwaitInLoops: each page needs the cursor of the previous one.
-        const page = await asAdmin((client) =>
+        const page: SupportCasePage = await asAdmin((client) =>
           listSupportCases(client, {
             after: cursor,
             kind,
