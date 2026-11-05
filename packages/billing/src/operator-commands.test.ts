@@ -29,6 +29,7 @@ const link = {
   providerRef: "link-ref-0001",
   providerSubscriptionId: "sub_link0001",
 };
+const CURRENT_CHARGE_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a60";
 const decision = {
   actor: "admin:principal-1",
   reason: "Cliente pediu por e-mail",
@@ -79,8 +80,13 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         status: "applied",
       })
     ),
+    // the record holds the provider's amount: a different `expectedAmount` is only an old read
+    readCurrentCharge: vi.fn(() =>
+      Promise.resolve({ amount: "24.90", eventId: CURRENT_CHARGE_EVENT })
+    ),
     readProviderLink: vi.fn(() => Promise.resolve(link)),
     readRecord: vi.fn(() => Promise.resolve(null)),
+    recordAmountMismatchIncident: vi.fn(() => Promise.resolve()),
     recordEvent: vi.fn(() => Promise.resolve({ duplicate: false, id: "ev-1" })),
     recordOperatorDecision: vi.fn(() => Promise.resolve()),
     withOrganizationLock: vi.fn(
@@ -591,6 +597,165 @@ describe("refundCurrentPeriod, the operator's order (read, check the amount, can
     expect(port.cancelRenewal).not.toHaveBeenCalled();
     expect(store.recordOperatorDecision).not.toHaveBeenCalled();
     expect(store.recordEvent).not.toHaveBeenCalled();
+    expect(store.recordAmountMismatchIncident).not.toHaveBeenCalled();
+  });
+
+  describe("the record and the provider disagree on the charge in force (ADR 0105, amount_mismatch)", () => {
+    const input = {
+      decision,
+      expectedAmount: "19.90",
+      organizationId,
+      requestId: commandId,
+    };
+
+    it("answers amount_mismatch, records one incident on the record's ledger row, and touches nothing else", async () => {
+      const port = fakePort({ refundCurrentPeriod: refundingCharge() });
+      const store = fakeStore({
+        readCurrentCharge: vi.fn(() =>
+          Promise.resolve({ amount: "19.90", eventId: CURRENT_CHARGE_EVENT })
+        ),
+        readRecord: vi.fn(() => Promise.resolve(active)),
+      });
+
+      await expect(
+        refundCurrentPeriod(
+          { now: () => now, portFor: () => port, store },
+          input
+        )
+      ).resolves.toBe("amount_mismatch");
+      expect(store.recordAmountMismatchIncident).toHaveBeenCalledTimes(1);
+      expect(store.recordAmountMismatchIncident).toHaveBeenCalledWith(
+        CURRENT_CHARGE_EVENT
+      );
+      expect(port.cancelRenewal).not.toHaveBeenCalled();
+      expect(store.recordOperatorDecision).not.toHaveBeenCalled();
+      expect(store.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it("decides by the record against the provider, not by the screen: a record that holds the provider's amount is an old read", async () => {
+      const store = fakeStore({
+        readCurrentCharge: vi.fn(() =>
+          Promise.resolve({ amount: "24.9", eventId: CURRENT_CHARGE_EVENT })
+        ),
+      });
+
+      await expect(
+        refundCurrentPeriod(
+          { now: () => now, portFor: () => fakePort(), store },
+          input
+        )
+      ).resolves.toBe("amount_changed");
+      expect(store.recordAmountMismatchIncident).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["no amount recorded", { amount: null, eventId: CURRENT_CHARGE_EVENT }],
+      ["no charge recorded", { amount: null, eventId: null }],
+    ])(
+      "with %s there is nothing to disagree with: amount_changed, no incident",
+      async (_name, recorded) => {
+        const store = fakeStore({
+          readCurrentCharge: vi.fn(() => Promise.resolve(recorded)),
+        });
+
+        await expect(
+          refundCurrentPeriod(
+            { now: () => now, portFor: () => fakePort(), store },
+            input
+          )
+        ).resolves.toBe("amount_changed");
+        expect(store.recordAmountMismatchIncident).not.toHaveBeenCalled();
+      }
+    );
+
+    it("never reads the record when the amount matches", async () => {
+      const store = fakeStore();
+
+      await refundCurrentPeriod(
+        { now: () => now, portFor: () => fakePort(), store },
+        { ...input, expectedAmount: "24.90" }
+      );
+      expect(store.readCurrentCharge).not.toHaveBeenCalled();
+    });
+
+    it("logs billing_refund_amount_mismatch with the store's opaque ID and the provider: no amount, no reference, no reason", async () => {
+      const warn = vi.spyOn(logger, "warn");
+      const store = fakeStore({
+        readCurrentCharge: vi.fn(() =>
+          Promise.resolve({ amount: "19.90", eventId: CURRENT_CHARGE_EVENT })
+        ),
+      });
+
+      await refundCurrentPeriod(
+        { now: () => now, portFor: () => fakePort(), store },
+        input
+      );
+
+      const calls = warn.mock.calls.filter(
+        ([event]) => event === "billing_refund_amount_mismatch"
+      );
+      expect(calls).toHaveLength(1);
+      expect(Object.keys(calls[0]?.[1] ?? {}).sort()).toEqual([
+        "organizationId",
+        "provider",
+      ]);
+      expect(calls[0]?.[1]).toMatchObject({ provider: "asaas" });
+      const logged = JSON.stringify(warn.mock.calls);
+      for (const leak of [
+        link.providerRef,
+        link.providerSubscriptionId,
+        CURRENT_CHARGE_EVENT,
+        decision.reason,
+        "24.90",
+        "19.90",
+        "24.9",
+        "19.9",
+      ]) {
+        expect(logged).not.toContain(leak);
+      }
+      // a refusal is no command that reached the provider: the operator's alert does not count it
+      expect(
+        warn.mock.calls.some(([event]) => event === "billing_operator_command")
+      ).toBe(false);
+    });
+
+    it("still refuses when the incident cannot be written, and logs the failure for its alert", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const error = vi.spyOn(logger, "error");
+      const store = fakeStore({
+        readCurrentCharge: vi.fn(() =>
+          Promise.resolve({ amount: "19.90", eventId: CURRENT_CHARGE_EVENT })
+        ),
+        recordAmountMismatchIncident: vi.fn(() =>
+          Promise.reject(new Error("database down"))
+        ),
+      });
+      const port = fakePort();
+
+      await expect(
+        refundCurrentPeriod(
+          { now: () => now, portFor: () => port, store },
+          input
+        )
+      ).resolves.toBe("amount_mismatch");
+      expect(port.cancelRenewal).not.toHaveBeenCalled();
+      expect(
+        error.mock.calls.filter(
+          ([event]) => event === "billing_amount_mismatch_incident_failed"
+        )
+      ).toHaveLength(1);
+      const logged = JSON.stringify(error.mock.calls);
+      for (const leak of [
+        link.providerRef,
+        CURRENT_CHARGE_EVENT,
+        decision.reason,
+        "19.90",
+        "24.90",
+        "database down",
+      ]) {
+        expect(logged).not.toContain(leak);
+      }
+    });
   });
 
   it("compares amounts as money, not as text", async () => {

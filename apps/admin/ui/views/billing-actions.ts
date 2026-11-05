@@ -16,6 +16,7 @@ import type { Notice } from "../notice";
 import {
   AMOUNT_PATTERN,
   amountChangedText,
+  amountMismatchText,
   CANCEL_AUDIT,
   CANCEL_BUTTON,
   CANCEL_CONFIRM,
@@ -27,6 +28,7 @@ import {
   IN_PROGRESS,
   limitReachedText,
   NO_CHARGE,
+  NO_CURRENT_AMOUNT,
   NO_RENEWAL,
   NOT_ACCEPTED,
   NOTHING_TO_DO,
@@ -35,6 +37,7 @@ import {
   PROVIDER_NOT_HERE,
   REASON_HINT,
   REFUND_AUDIT,
+  REFUND_HELD,
   REFUND_LIMIT,
   REFUND_NEEDS_OTHER_PERMISSION,
   REFUND_TITLE,
@@ -61,6 +64,11 @@ type Kind = "cancel" | "refund";
 
 /** What the area says after it reads the billing again, which every definite answer does. */
 export interface After {
+  /**
+   * The refund stays off for this store until the page is loaded again: the server found a divergence
+   * (`amount_mismatch`), and another click would only spend one of the operator's 3 refunds an hour on it.
+   */
+  holdRefund?: boolean;
   kind: "alert" | "success";
   /** The refund's confirmation opens again, with this reason, over the amount the new read gives (`amount_changed`). */
   reopenRefund?: { from: string | null; reason: string };
@@ -75,6 +83,8 @@ export interface BillingActionsOptions {
   confirming?: (open: boolean) => void;
   notice: Notice;
   organization: { id: string; name: string };
+  /** The refund was held for this store (`After.holdRefund`): no refund button, with the reason. */
+  refundHeld?: boolean;
   settled: (after: After) => void;
   view: RefundWindowView;
 }
@@ -99,20 +109,42 @@ const ALERT_RESULTS: ReadonlySet<SettledResult> = new Set([
   "refund_not_supported",
 ]);
 
+function paidState(view: RefundWindowView): boolean {
+  return view.state === "active" || view.state === "grace";
+}
+
 /**
- * The amount that goes to the server is the first charge of this link as the read gave it, as `money.md` writes it:
- * nothing else is offered, and it is not known to be the charge in force (a change of cycle prices the next ones
- * apart), so the server's `amount_changed` is the check.
+ * The amount that goes to the server is the charge in force as the read gave it, as `money.md` writes it: nothing
+ * else is offered. It is not the authority: the server reads the charge again at the provider, and answers
+ * `amount_changed` (the read was old) or `amount_mismatch` (the record and the provider disagree).
  */
-function firstChargeAmountOf(view: RefundWindowView): string | null {
-  const amount = view.firstChargeAmount;
-  const paid = view.state === "active" || view.state === "grace";
-  return paid &&
+function currentChargeAmountOf(view: RefundWindowView): string | null {
+  const amount = view.currentChargeAmount;
+  return paidState(view) &&
     amount !== null &&
     AMOUNT_PATTERN.test(amount) &&
     amount !== "0.00"
     ? amount
     : null;
+}
+
+/** Why the refund is not offered, in the order the operator can act on it; null when it is. */
+function refundHintOf(
+  view: RefundWindowView,
+  state: { amount: string | null; held: boolean; mayRefund: boolean }
+): string | null {
+  if (state.amount === null) {
+    return paidState(view) && view.currentChargeAmount === null
+      ? NO_CURRENT_AMOUNT
+      : NO_CHARGE;
+  }
+  if (state.held) {
+    return REFUND_HELD;
+  }
+  if (!view.refundsHere) {
+    return view.method === "pix_automatic" ? PIX_OUTSIDE : PROVIDER_NOT_HERE;
+  }
+  return state.mayRefund ? null : REFUND_NEEDS_OTHER_PERMISSION;
 }
 
 function reasonProblem(reason: string): string | null {
@@ -144,7 +176,7 @@ export { renewalLine };
 
 /**
  * The two actions of the billing of a support case (ADR 0105), each reviewed in a step of its
- * own: cancel the renewal, and refund the period in force at the amount of the link's first charge (which cancels the renewal first). The page offers only
+ * own: cancel the renewal, and refund the period in force at the amount of the charge in force (which cancels the renewal first). The page offers only
  * what the read says is possible and the operator may do; the server decides again at every command. The command ID is
  * made when a confirmation opens and kept until a definite answer, so a repeat after "we do not know" is the same
  * command, and a new opening is a new one. The amount sent is the amount read and shown, never one typed or worked
@@ -156,7 +188,7 @@ export function billingActionsView(
 ): BillingActions {
   const { api, can, context, dom } = tools;
   const { choice, notice, organization, view } = options;
-  const amount = firstChargeAmountOf(view);
+  const amount = currentChargeAmountOf(view);
   const box = dom.el("div", { class: "grant-action" });
   let sending = false;
   const pathOf = (kind: Kind) => {
@@ -301,13 +333,26 @@ export function billingActionsView(
   const amountChanged = (current: Draft) => {
     options.settled({
       kind: "alert",
-      reopenRefund: { from: view.firstChargeAmount, reason: current.reason },
+      reopenRefund: { from: view.currentChargeAmount, reason: current.reason },
       text: (fresh) =>
         amountChangedText(
-          fresh.firstChargeAmount === null
+          fresh.currentChargeAmount === null
             ? null
-            : moneyText(fresh.firstChargeAmount),
-          fresh.firstChargeAmount === view.firstChargeAmount
+            : moneyText(fresh.currentChargeAmount),
+          fresh.currentChargeAmount === view.currentChargeAmount
+        ),
+    });
+  };
+
+  const amountMismatch = () => {
+    options.settled({
+      holdRefund: true,
+      kind: "alert",
+      text: (fresh) =>
+        amountMismatchText(
+          fresh.currentChargeAmount === null
+            ? null
+            : moneyText(fresh.currentChargeAmount)
         ),
     });
   };
@@ -363,6 +408,9 @@ export function billingActionsView(
           return;
         case "amount_changed":
           amountChanged(current);
+          return;
+        case "amount_mismatch":
+          amountMismatch();
           return;
         default:
           definite(outcome.result, outcome.outcomeRecorded);
@@ -458,10 +506,7 @@ export function billingActionsView(
           ]
         : [
             ["Valor a reembolsar", dom.el("span", { class: "money" }, money)],
-            [
-              "Cobrança",
-              `Primeira cobrança em ${brasiliaMomentText(view.firstChargeAt)}, ${methodText(view.method)}`,
-            ],
+            ["Cobrança", `Cobrança em vigor, ${methodText(view.method)}`],
             [RENEWAL_LABEL, renewalLine(view.renewal)],
           ];
     dom.fill(
@@ -484,8 +529,9 @@ export function billingActionsView(
 
   const canCancel =
     can("billing:operate") && view.renewal.status === "renewing";
+  const held = options.refundHeld === true;
   const canRefund =
-    can("billing:refund") && amount !== null && view.refundsHere;
+    can("billing:refund") && amount !== null && view.refundsHere && !held;
   const buttonsRow = dom.el("div", { class: "button-row" });
   if (canCancel) {
     buttonsRow.append(button(CANCEL_BUTTON, false, () => review("cancel")));
@@ -504,14 +550,13 @@ export function billingActionsView(
         : NO_RENEWAL
     );
   }
-  if (amount === null) {
-    hints.push(NO_CHARGE);
-  } else if (!view.refundsHere) {
-    hints.push(
-      view.method === "pix_automatic" ? PIX_OUTSIDE : PROVIDER_NOT_HERE
-    );
-  } else if (!can("billing:refund")) {
-    hints.push(REFUND_NEEDS_OTHER_PERMISSION);
+  const refundHint = refundHintOf(view, {
+    amount,
+    held,
+    mayRefund: can("billing:refund"),
+  });
+  if (refundHint !== null) {
+    hints.push(refundHint);
   }
   if (!(canCancel || canRefund) && amount === null) {
     hints.push(NOTHING_TO_DO);

@@ -350,7 +350,10 @@ export const alertSignals = [
     notify: "wake",
     severity: "critical",
     source: {
-      events: ["billing_refund_pending_incident_failed"],
+      events: [
+        "billing_refund_pending_incident_failed",
+        "billing_amount_mismatch_incident_failed",
+      ],
     },
     threshold: { atLeast: 1, kind: "count" },
     title: "Incidente do reembolso não gravado",

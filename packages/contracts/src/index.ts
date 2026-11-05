@@ -1512,9 +1512,11 @@ export const billingPlanView = z
       })
       .strict(),
     method: billingMethod.nullable(),
+    // `amount` is null only for a change of cycle waiting for the renewal, whose amount the record does not hold
     nextCharge: z
       .object({
-        amount: billingAmount,
+        amount: billingAmount.nullable(),
+        cycleMonths: billingCheckoutCycle,
         on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       })
       .strict()

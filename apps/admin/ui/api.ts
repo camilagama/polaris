@@ -427,6 +427,7 @@ const PROVIDER_COMMAND_RESULTS: ReadonlySet<string> =
   new Set<ProviderCommandResult>([
     "already_cancelled",
     "amount_changed",
+    "amount_mismatch",
     "cancelled",
     "command_in_progress",
     "not_linked",

@@ -6,7 +6,10 @@ import {
   OUTCOME_NOT_RECORDED,
   PIX_OUTSIDE,
   REASON_HINT,
+  NO_CHARGE,
+  NO_CURRENT_AMOUNT,
   REFUND_AUDIT,
+  REFUND_HELD,
   REFUND_LIMIT,
   REFUND_UNDO,
   RETRY_BUTTON,
@@ -63,6 +66,7 @@ const supportCase = (): SupportCaseSummary => ({
 
 function billing(overrides: Partial<RefundWindowView> = {}): RefundWindowView {
   return {
+    currentChargeAmount: "249.00",
     firstChargeAmount: "249.00",
     firstChargeAt: "2026-10-24T18:30:00.000Z",
     method: "card",
@@ -186,6 +190,7 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
     expect(page.fact("Valor da primeira cobrança deste vínculo")).toBe(
       "R$ 249,00"
     );
+    expect(page.fact("Valor da cobrança em vigor")).toBe("R$ 249,00");
     expect(page.fact("Valor da cobrança")).toBeUndefined();
     expect(
       buttons(page.section, "Cancelar a renovação").length +
@@ -328,19 +333,40 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
   });
 
   it.each([
-    ["no charge recorded", { firstChargeAmount: null, firstChargeAt: null }],
-    ["a store back on Free", { state: "free" }],
-    ["an amount the server would refuse", { firstChargeAmount: "1234.5" }],
-  ])("%s: no refund button", async (_name, overrides) => {
+    [
+      "no charge recorded",
+      { currentChargeAmount: null, state: "free" },
+      NO_CHARGE,
+    ],
+    ["a store back on Free", { state: "free" }, NO_CHARGE],
+    [
+      "an amount the server would refuse",
+      { currentChargeAmount: "1234.5" },
+      NO_CHARGE,
+    ],
+    [
+      "(d) a paid store without the amount in force recorded",
+      { currentChargeAmount: null },
+      NO_CURRENT_AMOUNT,
+    ],
+  ])("%s: no refund button", async (_name, overrides, hint) => {
     const page = await read(billing(overrides));
     expect(
-      byTag(page.section, "button").some((button) =>
+      byTag(page.section, "button").filter((button) =>
         button.textContent.startsWith("Reembolsar")
       )
-    ).toBe(false);
+    ).toHaveLength(0);
+    expect(visibleText(page.section)).toContain(hint);
+  });
+
+  it("(d) without the amount in force, the fact says it is not recorded and the provider's panel is named only then", async () => {
+    const page = await read(billing({ currentChargeAmount: null }));
+    expect(page.fact("Valor da cobrança em vigor")).toBe("Não registrado");
     expect(visibleText(page.section)).toContain(
-      "Nenhuma cobrança a reembolsar."
+      "O valor da cobrança em vigor não está registrado. Por enquanto, o reembolso é feito pelo painel do provedor."
     );
+    const paid = await read(billing());
+    expect(visibleText(paid.section)).not.toContain("painel do provedor");
   });
 });
 
@@ -395,7 +421,7 @@ describe("one reason field at a time (a confirmation hides the form of a new cas
   it("keeps it hidden when the amount changed and the confirmation opens again", async () => {
     const page = await read(billing(), [
       cancelResult("amount_changed", 409),
-      json(billing({ firstChargeAmount: "199.00" })),
+      json(billing({ currentChargeAmount: "199.00" })),
     ]);
     await confirmRefund(page);
     expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
@@ -648,7 +674,7 @@ describe("cancelling the renewal (AC-P10.2, AC-P10.3)", () => {
 
 describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
   it("(a) the highlighted amount and the button's are the amount sent, read only from the server", async () => {
-    const page = await read(billing({ firstChargeAmount: "1234.00" }), [
+    const page = await read(billing({ currentChargeAmount: "1234.00" }), [
       cancelResult("refund_requested"),
       json(billing()),
     ]);
@@ -790,13 +816,13 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
   it("(c) amount_changed: nothing was done, the amount is read again and shown, a new command ID is made, and a new confirmation is asked", async () => {
     const page = await read(billing(), [
       cancelResult("amount_changed", 409),
-      json(billing({ firstChargeAmount: "199.00" })),
+      json(billing({ currentChargeAmount: "199.00" })),
       cancelResult("refund_requested"),
       json(billing({ state: "free" })),
     ]);
     await confirmRefund(page);
     expect(alertOf(page.section)?.textContent).toBe(
-      "O valor da primeira cobrança deste vínculo mudou desde a leitura: agora é R$ 199,00. Nada foi feito. Revise de novo antes de reembolsar."
+      "O valor da cobrança em vigor mudou desde a leitura: agora é R$ 199,00. Nada foi feito. Revise de novo antes de reembolsar."
     );
     expect(page.commands()).toHaveLength(1);
     const money = allElements(page.section).find(
@@ -822,7 +848,7 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
     ]);
     await confirmRefund(page);
     expect(alertOf(page.section)?.textContent).toBe(
-      "A cobrança em vigor tem um valor diferente de R$ 249,00, o da primeira cobrança deste vínculo, que é o que o registro da loja guarda. Nada foi feito. Por enquanto, o reembolso dela vai pelo painel do provedor."
+      "O valor da cobrança em vigor mudou desde a leitura, mas a nova leitura trouxe o mesmo valor (R$ 249,00). Nada foi feito. Recarregue a página antes de tentar de novo."
     );
     expect(page.commands()).toHaveLength(1);
   });
@@ -840,15 +866,77 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
     ).toBe(false);
   });
 
-  it("amount_changed with the same amount sends one command, opens no confirmation and brings the form of a new case back", async () => {
+  it("amount_changed with the same amount sends one command, opens no confirmation, holds the refund and brings the form of a new case back", async () => {
     const page = await read(billing(), [
       cancelResult("amount_changed", 409),
       json(billing()),
     ]);
     await confirmRefund(page);
     expect(page.commands()).toHaveLength(1);
-    expect(buttons(page.section, "Reembolsar R$ 249,00")).toHaveLength(1);
+    expect(buttons(page.section, "Reembolsar R$ 249,00")).toHaveLength(0);
+    expect(visibleText(page.section)).toContain(REFUND_HELD);
     expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
+  });
+
+  it("(a) refunds the amount in force, not the first charge's, when the two differ", async () => {
+    const page = await read(
+      billing({ currentChargeAmount: "299.00", firstChargeAmount: "249.00" }),
+      [cancelResult("refund_requested"), json(billing({ state: "free" }))]
+    );
+    expect(buttons(page.section, "Reembolsar R$ 249,00")).toHaveLength(0);
+    expect(page.fact("Valor da cobrança em vigor")).toBe("R$ 299,00");
+    expect(page.fact("Valor da primeira cobrança deste vínculo")).toBe(
+      "R$ 249,00"
+    );
+    await confirmRefund(page, "Reembolsar R$ 299,00");
+    expect(page.bodyOf(page.commands()[0]).expectedAmount).toBe("299.00");
+  });
+
+  it("(b) amount_mismatch: the server's incident is said, no confirmation opens again and no refund button is left", async () => {
+    const page = await read(billing(), [
+      cancelResult("amount_mismatch", 409),
+      json(billing()),
+    ]);
+    await confirmRefund(page);
+    expect(alertOf(page.section)?.textContent).toBe(
+      "O valor registrado da cobrança em vigor (R$ 249,00) não é o que o provedor tem. Nada foi feito. A engenharia recebe um incidente; não repita a ação. Para tentar de novo depois da correção, recarregue a página."
+    );
+    expect(page.commands()).toHaveLength(1);
+    expect(
+      byTag(page.section, "h4").filter(
+        (heading) => heading.textContent === "Revise antes de reembolsar"
+      )
+    ).toHaveLength(0);
+    expect(
+      byTag(page.section, "button").filter((button) =>
+        button.textContent.startsWith("Reembolsar")
+      )
+    ).toHaveLength(0);
+    expect(visibleText(page.section)).toContain(REFUND_HELD);
+    expect(buttons(page.section, "Cancelar a renovação").length).toBe(1);
+  });
+
+  it("(b) the refund stays held when the billing is read again, until the page is loaded again", async () => {
+    const page = await read(billing(), [
+      cancelResult("amount_mismatch", 409),
+      json(billing()),
+      json({ cases: [supportCase()], next: null }),
+      json(billing()),
+    ]);
+    await confirmRefund(page);
+    buttons(page.section, "Ver atendimentos abertos desta loja")[0]?.click();
+    await flush();
+    buttons(page.section, "Ler a cobrança")[0]?.click();
+    await flush();
+    expect(
+      page.calls.filter((call) => call.path.endsWith("/refund-window"))
+    ).toHaveLength(3);
+    expect(
+      byTag(page.section, "button").filter((button) =>
+        button.textContent.startsWith("Reembolsar")
+      )
+    ).toHaveLength(0);
+    expect(page.commands()).toHaveLength(1);
   });
 
   it("an answer whose audit was not recorded does not say the action was done unless it was", async () => {

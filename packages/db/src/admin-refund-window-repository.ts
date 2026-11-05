@@ -80,6 +80,7 @@ export async function readRefundWindow(
   const state = answer?.state;
   const method = answer?.method ?? null;
   const amount = answer?.firstChargeAmount ?? null;
+  const currentAmount = answer?.currentChargeAmount ?? null;
   const revokedReason = answer?.revokedReason ?? null;
   if (
     !answer ||
@@ -90,13 +91,15 @@ export async function readRefundWindow(
     typeof state !== "string" ||
     !STATES.has(state) ||
     (method !== null && !(typeof method === "string" && METHODS.has(method))) ||
-    (amount !== null && typeof amount !== "string")
+    (amount !== null && typeof amount !== "string") ||
+    (currentAmount !== null && typeof currentAmount !== "string")
   ) {
     throw new Error("refund_window_unreadable");
   }
   return {
     accessEndsAt: instant(answer.accessEndsAt),
     cancelAtPeriodEnd: answer.cancelAtPeriodEnd,
+    currentChargeAmount: currentAmount,
     firstChargeAmount: amount,
     firstChargeAt: instant(answer.firstChargeAt),
     method: method as RawRefundWindow["method"],

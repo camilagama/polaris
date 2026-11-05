@@ -118,12 +118,40 @@ export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
   }
   return {
     badge: { text: "Ativo", tone: "ink" },
-    support:
-      charge === null
-        ? null
-        : `Próxima cobrança em ${formatCalendarDate(charge.on)}, ${formatBrlAmount(charge.amount)}.`,
+    support: charge === null ? null : nextChargeSupport(plan, charge),
     title: "Plano Pro",
   };
+}
+
+type NextChargeView = NonNullable<BillingPlanView["nextCharge"]>;
+
+/**
+ * The next charge is of another cycle than the current one (a change waiting for the renewal). A Worker older than
+ * the cycle in the answer sends none: the charge reads as of the current cycle, as before.
+ */
+function otherCycle(plan: BillingPlanView, charge: NextChargeView): boolean {
+  return (
+    plan.cycleMonths !== null &&
+    charge.cycleMonths !== undefined &&
+    charge.cycleMonths !== plan.cycleMonths
+  );
+}
+
+/**
+ * The card's line of a paid store: the day and the amount; with a change of cycle and no amount yet (the provider
+ * names it at the renewal), the day and the new cycle, never the old cycle's amount.
+ */
+function nextChargeSupport(
+  plan: BillingPlanView,
+  charge: NextChargeView
+): string {
+  const on = formatCalendarDate(charge.on);
+  if (charge.amount === null) {
+    return otherCycle(plan, charge)
+      ? `Próxima cobrança em ${on}, já no ciclo ${cycleName(charge.cycleMonths)}; o valor aparece na renovação.`
+      : `Próxima cobrança em ${on}.`;
+  }
+  return `Próxima cobrança em ${on}, ${formatBrlAmount(charge.amount)}.`;
 }
 
 /** The line of the payment that comes next, in the "Pagamento" block. */
@@ -172,13 +200,15 @@ export function paymentLines(plan: BillingPlanView): ChargeLine[] | null {
   const lines: ChargeLine[] = [
     { label: "Como paga", value: METHOD_NAMES[plan.method] },
   ];
+  const charge = plan.nextCharge;
   if (plan.cycleMonths !== null) {
+    // the amount sits beside the cycle only when the next charge is of this cycle
     lines.push({
       label: "Ciclo",
       value:
-        plan.nextCharge === null
+        charge === null || charge.amount === null || otherCycle(plan, charge)
           ? cycleName(plan.cycleMonths)
-          : `${cycleName(plan.cycleMonths)} · ${formatBrlAmount(plan.nextCharge.amount)}`,
+          : `${cycleName(plan.cycleMonths)} · ${formatBrlAmount(charge.amount)}`,
     });
   }
   if (plan.state === "grace") {
@@ -188,13 +218,28 @@ export function paymentLines(plan: BillingPlanView): ChargeLine[] | null {
     plan.state === "trialing" ? "Primeira cobrança" : "Próxima cobrança";
   if (plan.renewalCancelled) {
     lines.push({ label: "Próxima cobrança", value: "Nenhuma" });
-  } else if (plan.nextCharge !== null) {
-    lines.push({
-      label,
-      value: `${formatCalendarDate(plan.nextCharge.on)} · ${formatBrlAmount(plan.nextCharge.amount)}`,
-    });
+  } else if (charge !== null) {
+    lines.push({ label, value: nextChargeValue(plan, charge) });
   }
   return lines;
+}
+
+/** "{dia} · {valor}", with the cycle after it when the charge is of another cycle ("valor na renovação" without one). */
+function nextChargeValue(
+  plan: BillingPlanView,
+  charge: NextChargeView
+): string {
+  const on = formatCalendarDate(charge.on);
+  const other = otherCycle(plan, charge);
+  if (charge.amount === null) {
+    return other
+      ? `${on} · ${cycleName(charge.cycleMonths)} · valor na renovação`
+      : on;
+  }
+  const amount = formatBrlAmount(charge.amount);
+  return other
+    ? `${on} · ${amount} · ${cycleName(charge.cycleMonths)}`
+    : `${on} · ${amount}`;
 }
 
 export interface UsageRow {

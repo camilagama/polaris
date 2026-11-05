@@ -54,7 +54,7 @@ const ACTIVE: Plan = {
   kept: { historyMonths: 3, products: 18, sales: 47 },
   limits: { goals: 3, images: 5000, variants: 2000 },
   method: "card",
-  nextCharge: { amount: "24.90", on: "2026-11-23" },
+  nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
   offer: {
     methods: ["card", "pix_automatic"],
     prices: [
@@ -290,7 +290,7 @@ test("cancelar no teste: vai até o fim, nada é cobrado e não há outro teste 
       {
         ...ACTIVE,
         accessEndsAt: "2026-10-31T03:00:00.000Z",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       },
     ],

@@ -358,6 +358,7 @@ export function brasiliaTime(moment: Date): string {
 }
 
 const INCIDENT_KINDS: Readonly<Record<string, string>> = {
+  billing_amount_mismatch: "Valor da cobrança em vigor",
   outbox_attempts_exhausted: "Envio da caixa de saída",
   queue_dead_letter: "Fila de mensagens",
 };
@@ -367,6 +368,7 @@ export function incidentKindText(kind: string): string {
 }
 
 const INCIDENT_CAUSES: Readonly<Record<string, string>> = {
+  amount_mismatch: "Valor registrado diferente do provedor",
   attempts_exhausted: "Tentativas esgotadas",
   invalid_envelope: "Mensagem inválida",
   retries_exhausted: "Tentativas esgotadas",

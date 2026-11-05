@@ -239,6 +239,7 @@ describe("alert signals", () => {
     for (const event of [
       "billing_refund_rearm_exhausted",
       "billing_refund_pending_incident_failed",
+      "billing_amount_mismatch_incident_failed",
     ]) {
       const signals = alertSignals.filter((candidate) =>
         (candidate.source.events as readonly string[]).includes(event)

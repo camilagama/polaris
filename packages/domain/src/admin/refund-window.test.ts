@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextChargeOf } from "../billing/plan-view";
+import { nextChargeDayOf } from "../billing/plan-view";
 import {
   buildRefundWindowView,
   type RawRefundWindow,
@@ -12,6 +12,7 @@ const sp = (local: string) => new Date(`${local}-03:00`);
 const charged: RawRefundWindow = {
   accessEndsAt: sp("2026-11-10T09:00:00"),
   cancelAtPeriodEnd: false,
+  currentChargeAmount: "24.90",
   firstChargeAmount: "24.90",
   firstChargeAt: sp("2026-10-10T15:30:00"),
   method: "pix_automatic",
@@ -27,6 +28,7 @@ const here = { refundsHere: true };
 describe("buildRefundWindowView (ADR 0104, decision 8)", () => {
   it("shows the facts, the last second of the window and a verdict made with the product's code", () => {
     expect(buildRefundWindowView(charged, here)).toEqual({
+      currentChargeAmount: "24.90",
       firstChargeAmount: "24.90",
       firstChargeAt: "2026-10-10T18:30:00.000Z",
       method: "pix_automatic",
@@ -44,6 +46,22 @@ describe("buildRefundWindowView (ADR 0104, decision 8)", () => {
       state: "active",
       window: { open: true, until: "2026-10-18T02:59:59.000Z" },
     });
+  });
+
+  it("carries the amount in force apart from the first charge's, and names the renewal's day without one", () => {
+    const renewed = buildRefundWindowView(
+      { ...charged, currentChargeAmount: "29.90" },
+      here
+    );
+    expect(renewed.currentChargeAmount).toBe("29.90");
+    expect(renewed.firstChargeAmount).toBe("24.90");
+
+    const unrecorded = buildRefundWindowView(
+      { ...charged, currentChargeAmount: null },
+      here
+    );
+    expect(unrecorded.currentChargeAmount).toBeNull();
+    expect(unrecorded.renewal.renewsOn).toBe("2026-11-10");
   });
 
   it.each([
@@ -124,6 +142,7 @@ describe("buildRefundWindowView (ADR 0104, decision 8)", () => {
       {
         accessEndsAt: null,
         cancelAtPeriodEnd: false,
+        currentChargeAmount: null,
         firstChargeAmount: null,
         firstChargeAt: null,
         method: null,
@@ -188,14 +207,17 @@ describe("the renewal of the store (the owner's own record, read by the Admin)",
 
   it("is renewing while Pro, not cancelled and paid up: the day is the product's next charge", () => {
     const view = buildRefundWindowView({ ...charged, now }, here);
-    const next = nextChargeOf(
+    const next = nextChargeDayOf(
       {
         accessEndsAt: charged.accessEndsAt,
         cancelAtPeriodEnd: false,
+        currentChargeAmount: charged.currentChargeAmount,
+        cycleMonths: 1,
         firstChargeAmount: charged.firstChargeAmount,
         firstChargeAt: charged.firstChargeAt,
         firstChargeOn: null,
-        priceAmount: charged.firstChargeAmount,
+        pendingCycleMonths: null,
+        priceAmount: null,
         provider: null,
         refundRequestedAt: null,
         revoked: null,
@@ -203,10 +225,10 @@ describe("the renewal of the store (the owner's own record, read by the Admin)",
       },
       now
     );
-    expect(next?.on).toBe("2026-11-10");
+    expect(next).toBe("2026-11-10");
     expect(view.renewal).toEqual({
       accessUntil: null,
-      renewsOn: next?.on,
+      renewsOn: next,
       resubscribeFrom: null,
       status: "renewing",
     });
@@ -261,13 +283,19 @@ describe("the renewal of the store (the owner's own record, read by the Admin)",
     expect(refunded.refundable).toBe(false);
   });
 
-  it("names no renewal day for a link recorded before its price, and still says it renews", () => {
+  it("names the renewal's day from the paid period alone, without any amount recorded", () => {
     const view = buildRefundWindowView(
-      { ...charged, firstChargeAmount: null, firstChargeAt: null, now },
+      {
+        ...charged,
+        currentChargeAmount: null,
+        firstChargeAmount: null,
+        firstChargeAt: null,
+        now,
+      },
       here
     );
     expect(view.renewal.status).toBe("renewing");
-    expect(view.renewal.renewsOn).toBeNull();
+    expect(view.renewal.renewsOn).toBe("2026-11-10");
   });
 
   it("copies the switch of the provider and nothing else of it", () => {
