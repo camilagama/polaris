@@ -20,6 +20,26 @@ export function brasiliaDay(moment: string | null): string {
   return Number.isNaN(date.getTime()) ? "—" : DAY.format(date);
 }
 
+const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A calendar day the server named (`AAAA-MM-DD`) as dd/mm/aaaa; "—" when it is none or not a day. */
+export function calendarDayText(day: string | null): string {
+  const match = day === null ? null : CALENDAR_DAY.exec(day);
+  return match === null ? "—" : `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+/**
+ * The last day an access that ends at `instant` covers, as dd/mm/aaaa in Brasília: the end is the first instant after
+ * that day, the same rule the owner's own screen shows its dates by.
+ */
+export function lastDayText(instant: string | null): string {
+  if (instant === null) {
+    return "—";
+  }
+  const end = Date.parse(instant);
+  return Number.isNaN(end) ? "—" : brasiliaDay(new Date(end - 1).toISOString());
+}
+
 const MOMENT = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   hour: "2-digit",

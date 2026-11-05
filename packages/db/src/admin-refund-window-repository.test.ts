@@ -10,11 +10,15 @@ const CALL =
   /^SELECT public\.admin_read_refund_window\(\$1::uuid, \$2::uuid, \$3::text\) AS result, pg_catalog\.clock_timestamp\(\) AS at$/;
 
 const answer = {
+  accessEndsAt: "2026-11-10T12:00:00.000000+00:00",
+  cancelAtPeriodEnd: false,
   firstChargeAmount: "24.90",
   firstChargeAt: "2026-10-10T18:30:00.123456+00:00",
   method: "pix_automatic",
   now: "2026-10-12T12:00:00.654321+00:00",
   refundRequestedAt: null,
+  revokedReason: null,
+  revokedThrough: null,
   state: "active",
 };
 
@@ -51,22 +55,50 @@ describe("readRefundWindow", () => {
     const raw = await readRefundWindow(client, PRINCIPAL, CASE, "org-1");
 
     expect(raw).toEqual({
+      accessEndsAt: new Date("2026-11-10T12:00:00.000Z"),
+      cancelAtPeriodEnd: false,
       firstChargeAmount: "24.90",
       firstChargeAt: new Date("2026-10-10T18:30:00.123Z"),
       method: "pix_automatic",
       now: new Date("2026-10-12T12:00:00.654Z"),
       refundRequestedAt: new Date("2026-10-11T10:00:00.000Z"),
+      revokedReason: null,
+      revokedThrough: null,
       state: "active",
+    });
+  });
+
+  it("reads the cancellation and the revocation the function says, from the same row", async () => {
+    const { client } = clientReturning({
+      ...answer,
+      accessEndsAt: null,
+      cancelAtPeriodEnd: true,
+      revokedReason: "refund",
+      revokedThrough: "2026-11-10T12:00:00+00:00",
+      state: "free",
+    });
+
+    const raw = await readRefundWindow(client, PRINCIPAL, CASE, "org-1");
+
+    expect(raw).toMatchObject({
+      accessEndsAt: null,
+      cancelAtPeriodEnd: true,
+      revokedReason: "refund",
+      revokedThrough: new Date("2026-11-10T12:00:00.000Z"),
     });
   });
 
   it("reads a store that never charged: no instants, no amount, no method", async () => {
     const { client } = clientReturning({
+      accessEndsAt: null,
+      cancelAtPeriodEnd: false,
       firstChargeAmount: null,
       firstChargeAt: null,
       method: null,
       now: answer.now,
       refundRequestedAt: null,
+      revokedReason: null,
+      revokedThrough: null,
       state: "free",
     });
 
@@ -131,6 +163,22 @@ describe("readRefundWindow", () => {
     ["an unknown state", { ...answer, state: "gone" }],
     ["an unknown method", { ...answer, method: "boleto" }],
     ["an amount that is not text", { ...answer, firstChargeAmount: 24.9 }],
+    [
+      "a cancellation that is not a boolean",
+      { ...answer, cancelAtPeriodEnd: "false" },
+    ],
+    [
+      "no cancellation key (the function before the migration)",
+      {
+        ...answer,
+        cancelAtPeriodEnd: undefined,
+      },
+    ],
+    ["an unknown revocation", { ...answer, revokedReason: "gift" }],
+    [
+      "an end of access that is not a date",
+      { ...answer, accessEndsAt: "soon" },
+    ],
   ])("fails closed on %s", async (_name, result) => {
     const { client } = clientReturning(result);
 

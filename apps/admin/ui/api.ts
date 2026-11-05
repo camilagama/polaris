@@ -11,6 +11,7 @@ import type {
   GrantedAccess,
   MaskedCustomer,
   MaskedCustomerPage,
+  ProviderCommandResult,
   RevealableField,
   RevealedField,
 } from "./types";
@@ -420,6 +421,61 @@ export async function readCustomers(
   return isMaskedPage(answer.data)
     ? { data: answer.data, ok: true }
     : { ok: false, problem: "failed" };
+}
+
+const PROVIDER_COMMAND_RESULTS: ReadonlySet<string> =
+  new Set<ProviderCommandResult>([
+    "already_cancelled",
+    "amount_changed",
+    "cancelled",
+    "command_in_progress",
+    "not_linked",
+    "nothing_to_cancel",
+    "nothing_to_refund",
+    "provider_unavailable",
+    "refund_not_supported",
+    "refund_requested",
+  ]);
+
+/**
+ * What an operator's provider command answered (ADR 0105): one of the codes the page has a sentence for, with whether
+ * the server recorded the outcome in the audit; or one of the page's problems. A 409 and a 503 that name a result are
+ * answers, not problems; a 503 or a body without a known result is a failure whose outcome the page cannot confirm.
+ */
+export type ProviderCommandOutcome =
+  | { kind: "problem"; problem: ApiFailure }
+  | {
+      kind: "result";
+      outcomeRecorded: boolean;
+      result: ProviderCommandResult;
+    };
+
+/** One POST of a provider command, never repeated by itself: the caller decides whether to send the same ID again. */
+export async function sendProviderCommand(
+  api: Api,
+  path: string,
+  body: PostBody
+): Promise<ProviderCommandOutcome> {
+  const answer = await api.post<unknown>(path, body, [409, 503]);
+  if (!answer.ok) {
+    return { kind: "problem", problem: answer };
+  }
+  const { data } = answer;
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "result" in data &&
+    typeof data.result === "string" &&
+    PROVIDER_COMMAND_RESULTS.has(data.result)
+  ) {
+    return {
+      kind: "result",
+      outcomeRecorded:
+        "outcomeRecorded" in data ? data.outcomeRecorded === true : false,
+      result: data.result as ProviderCommandResult,
+    };
+  }
+  return { kind: "problem", problem: { ok: false, problem: "failed" } };
 }
 
 /**

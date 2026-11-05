@@ -900,3 +900,11 @@ a {
   margin-top: 0.75rem;
   font-weight: 600;
 }
+
+/* the amount of a refund is read as one figure: never broken across lines, however narrow the card */
+.money {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}

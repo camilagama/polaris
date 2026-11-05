@@ -1568,11 +1568,15 @@ async function run() {
     const read = await readWindow(operator, caseC, tenantC.organizationId);
     const window = read.rows[0]?.window ?? {};
     assert.deepEqual(Object.keys(window).sort(), [
+      "accessEndsAt",
+      "cancelAtPeriodEnd",
       "firstChargeAmount",
       "firstChargeAt",
       "method",
       "now",
       "refundRequestedAt",
+      "revokedReason",
+      "revokedThrough",
       "state",
     ]);
     assert.equal(window.firstChargeAmount, "249.00");
@@ -1583,6 +1587,71 @@ async function run() {
     assert.equal(window.method, "card");
     assert.equal(window.state, "active");
     assert.equal(window.refundRequestedAt, null);
+    // the renewal of the same row: this store renews (a paid period to come, nothing cancelled, nothing revoked)
+    const renewing = await owner.pool.query<{ access_ends_at: Date }>(
+      "SELECT access_ends_at FROM public.organization_billing WHERE organization_id = $1",
+      [tenantC.organizationId]
+    );
+    assert.ok(renewing.rows[0]?.access_ends_at);
+    assert.equal(
+      new Date(String(window.accessEndsAt)).getTime(),
+      renewing.rows[0].access_ends_at.getTime()
+    );
+    assert.equal(window.cancelAtPeriodEnd, false);
+    assert.equal(window.revokedReason, null);
+    assert.equal(window.revokedThrough, null);
+    // a store whose renewal was cancelled keeps the paid period; a Free store has no period, no cancellation, no
+    // revocation; a refunded store says the revocation. Each is read under its own open case, in the same transaction
+    // as its audit.
+    const cancelledEnds = at(24 * 20);
+    const tenantX = await newTenant("window cancelled");
+    await owner.pool.query(
+      `INSERT INTO public.organization_billing
+         (organization_id, state, access_ends_at, cycle_months, cancel_at_period_end, provider, provider_ref)
+       VALUES ($1, 'active', $2, 1, true, 'asaas', 'chk-x1-' || gen_random_uuid())`,
+      [tenantX.organizationId, cancelledEnds]
+    );
+    const cancelledWindow =
+      (
+        await readWindow(
+          operator,
+          await openCase(tenantX.organizationId),
+          tenantX.organizationId
+        )
+      ).rows[0]?.window ?? {};
+    assert.equal(cancelledWindow.cancelAtPeriodEnd, true);
+    assert.equal(
+      new Date(String(cancelledWindow.accessEndsAt)).getTime(),
+      cancelledEnds.getTime()
+    );
+    assert.equal(cancelledWindow.state, "active");
+    assert.equal(cancelledWindow.revokedReason, null);
+    const freeWindow =
+      (
+        await readWindow(
+          operator,
+          await openCase(tenantA.organizationId),
+          tenantA.organizationId
+        )
+      ).rows[0]?.window ?? {};
+    assert.equal(freeWindow.state, "free");
+    assert.equal(freeWindow.accessEndsAt, null);
+    assert.equal(freeWindow.cancelAtPeriodEnd, false);
+    assert.equal(freeWindow.revokedReason, null);
+    assert.equal(freeWindow.revokedThrough, null);
+    assert.equal(freeWindow.method, null);
+    const refundedWindow =
+      (
+        await readWindow(
+          operator,
+          await openCase(tenantF.organizationId),
+          tenantF.organizationId
+        )
+      ).rows[0]?.window ?? {};
+    assert.equal(refundedWindow.revokedReason, "refund");
+    assert.equal(refundedWindow.cancelAtPeriodEnd, false);
+    assert.equal(refundedWindow.accessEndsAt, null);
+    assert.ok(refundedWindow.revokedThrough);
     const serialized = JSON.stringify(window);
     for (const secret of [ref("chk-c2"), "pro-12", "sub_"]) {
       assert.equal(serialized.includes(secret), false, `no ${secret}`);
@@ -1687,7 +1756,7 @@ async function run() {
       "exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111: no value of 0091 is gone"
     );
     tests.push(
-      "admin_read_refund_window answers, to an active operator under an open case of the same store, exactly firstChargeAt, firstChargeAmount, refundRequestedAt, state, method and now (no reference, price ID or subscription), audited in the same transaction with the operator, the store and the case; a case of another store, an inactive operator and a closed case get the same 42501 and leave no row; only the Admin runtime executes it; it is SECURITY DEFINER of polaris_admin_owner with a fixed search_path, and the platform audit check is exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111"
+      "admin_read_refund_window answers, to an active operator under an open case of the same store, exactly firstChargeAt, firstChargeAmount, refundRequestedAt, state, method, now, accessEndsAt, cancelAtPeriodEnd, revokedThrough and revokedReason (no reference, provider, price ID or subscription; the four of the renewal come from the same row, for a store that renews, one whose renewal is cancelled, a Free one and a refunded one), audited in the same transaction with the operator, the store and the case; a case of another store, an inactive operator and a closed case get the same 42501 and leave no row; only the Admin runtime executes it; it is SECURITY DEFINER of polaris_admin_owner with a fixed search_path, and the platform audit check is exactly the list of 0091 plus billing.refund_window_read, the three of 0105 and the four of 0111"
     );
 
     console.log(

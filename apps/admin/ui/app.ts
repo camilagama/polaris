@@ -76,10 +76,7 @@ function storesScreen(tools: ScreenTools): HTMLElement[] {
     return [forbiddenArea(dom, "Lojas", "lojas-titulo")];
   }
   const store = diagnosticsView(dom, api, now);
-  const refund = refundWindowView(dom, api, {
-    manageCases: can("support_case:manage"),
-    readWindow: can("billing:operate"),
-  });
+  const refund = refundWindowView(tools);
   return [
     organizationsView(dom, api, (organization) => {
       refund.show(organization);

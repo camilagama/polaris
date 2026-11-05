@@ -37,7 +37,7 @@ export interface SupportCasesView {
 
 function countText(count: number, more: boolean): string {
   if (count === 0) {
-    return "Nenhum atendimento aberto desta loja. Abra um atendimento para consultar a janela.";
+    return "Nenhum atendimento aberto desta loja. Abra um atendimento para ler a cobrança.";
   }
   const found =
     count === 1 ? "1 atendimento aberto." : `${count} atendimentos abertos.`;
@@ -171,10 +171,10 @@ export function supportCasesView(
         "button",
         {
           "aria-describedby": options.readHint?.getAttribute("id") ?? "",
-          "aria-label": `Consultar janela: atendimento aberto em ${brasiliaMomentText(supportCase.openedAt)}`,
+          "aria-label": `Ler a cobrança: atendimento aberto em ${brasiliaMomentText(supportCase.openedAt)}`,
           type: "button",
         },
-        "Consultar janela"
+        "Ler a cobrança"
       );
       read.addEventListener("click", () => {
         if (!(loading || reading)) {
@@ -317,7 +317,7 @@ export function supportCasesView(
     counter.textContent = `0 de ${MAX_REASON_LENGTH} caracteres`;
     notice.status(
       options.canRead
-        ? "Atendimento aberto. Ele está na lista; use Consultar janela."
+        ? "Atendimento aberto. Ele está na lista; use Ler a cobrança."
         : "Atendimento aberto. Ele está na lista."
     );
     added.querySelector("button")?.focus();
