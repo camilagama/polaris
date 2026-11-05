@@ -75,12 +75,19 @@ async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
+  let failed = false;
   const worker = async () => {
-    while (next < items.length) {
+    while (!failed && next < items.length) {
       const index = next;
       next += 1;
-      // biome-ignore lint/performance/noAwaitInLoops: each worker takes the next item; the pool caps the parallelism.
-      results[index] = await operation(items[index] as T);
+      try {
+        // biome-ignore lint/performance/noAwaitInLoops: each worker takes the next item; the pool caps the parallelism.
+        results[index] = await operation(items[index] as T);
+      } catch (error: unknown) {
+        // the others stop taking items: the request has already failed
+        failed = true;
+        throw error;
+      }
     }
   };
   await Promise.all(
@@ -185,9 +192,12 @@ export function streamMediaThumbs(input: {
           pending.length < MEDIA_THUMBS_STORAGE_CONCURRENCY
         ) {
           const next = found[started] as { id: string };
-          pending.push(
-            input.bucket.get(mediaDerivativeKey(next.id, MEDIA_THUMBS_SIZE))
+          const read = input.bucket.get(
+            mediaDerivativeKey(next.id, MEDIA_THUMBS_SIZE)
           );
+          // a read that fails while an earlier body is piped is seen when its turn comes
+          read.catch(() => undefined);
+          pending.push(read);
           started += 1;
         }
         // biome-ignore lint/performance/noAwaitInLoops: the bodies go out in the header's order, one after the other.
@@ -204,8 +214,12 @@ export function streamMediaThumbs(input: {
       await writable.close();
     } catch (error: unknown) {
       releaseStoredBodies(pending);
+      try {
+        await writable.abort(error);
+      } catch {
+        // the client already went away
+      }
       input.onAbort(error);
-      await writable.abort(error).catch(() => undefined);
     }
   };
   pump().catch(() => undefined);

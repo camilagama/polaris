@@ -979,23 +979,50 @@ describe("media thumbnail batch route", () => {
         stored.set(thumbKey(id), thumbBytes(index, 100 + index * 7));
       }
     }
+    // an operation is open from the call until its body is read to the end or cancelled
     let open = 0;
     let mostOpen = 0;
-    const track = <T>(read: (key: string) => Promise<T>) =>
-      vi.fn(async (key: string) => {
-        open += 1;
-        mostOpen = Math.max(mostOpen, open);
-        await new Promise<void>((resolve) => queueMicrotask(resolve));
-        try {
-          return await read(key);
-        } finally {
-          open -= 1;
-        }
-      });
+    const opened = () => {
+      open += 1;
+      mostOpen = Math.max(mostOpen, open);
+    };
     const plainGet = mediaBucket.get;
     const plainHead = mediaBucket.head;
-    mediaBucket.get = track(plainGet);
-    mediaBucket.head = track(plainHead);
+    mediaBucket.head = vi.fn(async (key: string) => {
+      opened();
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      try {
+        return await plainHead(key);
+      } finally {
+        open -= 1;
+      }
+    });
+    mediaBucket.get = vi.fn(async (key: string) => {
+      opened();
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      const object = await plainGet(key);
+      if (!object) {
+        open -= 1;
+        return null;
+      }
+      const reader = object.body.getReader();
+      const body = new ReadableStream<Uint8Array>({
+        cancel: async () => {
+          open -= 1;
+          await reader.cancel();
+        },
+        pull: async (controller) => {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            open -= 1;
+            controller.close();
+            return;
+          }
+          controller.enqueue(chunk.value);
+        },
+      });
+      return { ...object, body };
+    });
     const asked = [...ids].reverse();
 
     const response = await askThumbs(app, bindings, asked.join(","));
