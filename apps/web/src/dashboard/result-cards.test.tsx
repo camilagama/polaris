@@ -359,3 +359,58 @@ describe("the days with no cost: on the badge line while they fit, in the (i) wh
     expect(words(long)).toContain("Não é lucro líquido nem caixa");
   });
 });
+
+describe("a long period, by month (D1-2, D1-3, D1-6)", () => {
+  /** January 15 to today, October 25, as the server sends it above 62 days: one entry per month, the ends cut. */
+  function year(): StoredPeriodSummary {
+    const months: [string, string][] = [["2026-01-15", "2026-01-31"]];
+    for (let month = 2; month <= 10; month += 1) {
+      const first = `2026-${String(month).padStart(2, "0")}-01`;
+      const last =
+        month === 10
+          ? TODAY
+          : addDays(`2026-${String(month + 1).padStart(2, "0")}-01`, -1);
+      months.push([first, last]);
+    }
+    const base = october([]);
+    return {
+      ...base,
+      daily: months.map(([date, to]) => {
+        const days =
+          Math.round(
+            (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) /
+              86_400_000
+          ) + 1;
+        return {
+          costs: `${10 * days}.00`,
+          date,
+          days,
+          netSales: `${50 * days}.00`,
+          operatingExpenses: "0.00",
+          operatingResult: `${40 * days}.00`,
+          salesCount: days,
+          to,
+          unknownDays: 0,
+        };
+      }),
+      granularity: "month",
+      period: { from: "2026-01-15", to: TODAY },
+    };
+  }
+
+  it("names the curves by month, reads to today at rest, and has no chip nor mark of its own", () => {
+    const markup = cards(year(), null, null);
+    expect(markup).toContain("Vendas líquidas, acumulado por mês");
+    expect(markup).toContain("Resultado estimado, acumulado por mês");
+    expect(markup).toContain("Ticket médio, por mês do período");
+    expect(markup).not.toContain("acumulado por dia");
+    expect(markup).toContain('aria-valuetext="Até 25/10: R$');
+    expect(markup).not.toContain("por mês</");
+  });
+
+  it("keeps the names by day for a period by date", () => {
+    const markup = cards(october([]));
+    expect(markup).toContain("acumulado por dia");
+    expect(markup).not.toContain("acumulado por mês");
+  });
+});
