@@ -425,10 +425,7 @@ describe("what each answer of the suspension says (AC-C3)", () => {
   };
 
   it.each([
-    [
-      400,
-      "O caso não está aberto ou não é desta loja. Nada foi mudado. Recarregue o caso.",
-    ],
+    [400, "O caso não está mais aberto. Nada foi mudado. Recarregue o caso."],
     [403, "Sem permissão para isto."],
     [404, "Este caso não foi encontrado."],
     [401, PROBLEM_TEXT.session],
@@ -457,17 +454,13 @@ describe("what each answer of the suspension says (AC-C3)", () => {
     expect(mounted.calls).toHaveLength(4);
   });
 
-  it("reads the store once on a 409 and says what it is now", async () => {
-    const mounted = await confirmed(
-      json({ error: "conflict" }, 409),
-      state("suspended")
-    );
+  it("answers a 409 with the generic sentence and reads nothing again", async () => {
+    const mounted = await confirmed(json({ error: "conflict" }, 409));
 
-    expect(alertOf(mounted.root)?.textContent).toBe(
-      "Esta ação já não se aplica: a loja agora está suspensa."
-    );
-    expect(mounted.calls).toHaveLength(5);
-    expect(buttons(mounted.root, "Reativar a loja")).toHaveLength(1);
+    expect(alertOf(mounted.root)?.textContent).toBe(PROBLEM_TEXT.conflict);
+    expect(mounted.calls).toHaveLength(4);
+    expect(shown(mounted)).toContain("Revise antes de suspender");
+    expect(shown(mounted)).not.toContain("a loja agora está");
   });
 
   it.each([

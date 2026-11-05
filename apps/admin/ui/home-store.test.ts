@@ -86,6 +86,7 @@ describe("Início (AC-P1.2b)", () => {
     expect(calls[1]?.path.startsWith("/api/support-cases?")).toBe(true);
     expect(search(calls[1]).get("limit")).toBe("50");
     expect(search(calls[1]).get("status")).toBe("open");
+    expect(search(calls[1]).get("kind")).toBe("support");
     expect(search(calls[1]).has("organizationId")).toBe(false);
     for (const call of calls) {
       expect(call.path).not.toContain("funnel");
@@ -96,16 +97,7 @@ describe("Início (AC-P1.2b)", () => {
 
   it("says how many support cases are open, with a link to the list", async () => {
     const { root } = await home([
-      json(
-        page([
-          summaryOf(),
-          summaryOf({ id: OTHER_CASE }),
-          summaryOf({
-            id: "0199a0a0-0000-7000-8000-00000000c0e0",
-            kind: "privacy",
-          }),
-        ])
-      ),
+      json(page([summaryOf(), summaryOf({ id: OTHER_CASE })])),
     ]);
 
     expect(visibleText(root)).toContain("2 casos de suporte abertos");
@@ -123,19 +115,28 @@ describe("Início (AC-P1.2b)", () => {
     expect(visibleText(root)).not.toContain("1 casos");
   });
 
-  it("counts only the support cases that are open", async () => {
-    const { root } = await home([
+  it("takes the count from the answer to the support kind, never from a filter on the screen", async () => {
+    const { calls, root } = await home([
       json(
-        page([
-          summaryOf({ kind: "privacy" }),
-          summaryOf({ id: OTHER_CASE, kind: "privacy" }),
-          summaryOf({ closedAt: OPENED_AT, id: "x1", status: "closed" }),
-        ])
+        page(
+          [summaryOf(), summaryOf({ id: OTHER_CASE }), summaryOf({ id: "x1" })],
+          "cursor-1"
+        )
       ),
     ]);
 
+    expect(search(calls[1]).get("kind")).toBe("support");
+    expect(visibleText(root)).toContain("3 ou mais casos de suporte abertos");
+    expect(visibleText(root)).not.toContain("0 ou mais");
+  });
+
+  it("shows nothing for a support list that comes back empty, with no next page", async () => {
+    const { calls, root } = await home([json(page([]))]);
+
+    expect(search(calls[1]).get("kind")).toBe("support");
     expect(visibleText(root)).toContain("Nada esperando por você.");
     expect(visibleText(root)).not.toContain("casos de suporte abertos");
+    expect(visibleText(root)).not.toContain("0 ou mais");
   });
 
   it('says "ou mais" when the server has another page', async () => {

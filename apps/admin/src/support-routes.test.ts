@@ -328,10 +328,37 @@ describe("opening and listing cases", () => {
       ).status
     ).toBe(200);
     expect(calls.list).toHaveBeenCalledWith(
-      { after: caseId, limit: 10, organizationId: "org-1", status: "open" },
+      {
+        after: caseId,
+        kind: null,
+        limit: 10,
+        organizationId: "org-1",
+        status: "open",
+      },
       bindings
     );
+    for (const kind of ["support", "privacy"]) {
+      vi.mocked(calls.list).mockClear();
+      expect(
+        // biome-ignore lint/performance/noAwaitInLoops: Two probes, in order.
+        (await call(`/api/support-cases?status=open&kind=${kind}`)).status
+      ).toBe(200);
+      expect(calls.list).toHaveBeenCalledWith(
+        {
+          after: null,
+          kind,
+          limit: 25,
+          organizationId: null,
+          status: "open",
+        },
+        bindings
+      );
+    }
+    vi.mocked(calls.list).mockClear();
     const badPaths = [
+      "/api/support-cases?kind=audit",
+      "/api/support-cases?kind=",
+      "/api/support-cases?kind=SUPPORT",
       "/api/support-cases?status=weird",
       "/api/support-cases?limit=0",
       "/api/support-cases?limit=51",
@@ -343,6 +370,7 @@ describe("opening and listing cases", () => {
     )) {
       expect(response.status).toBe(400);
     }
+    expect(calls.list).not.toHaveBeenCalled();
     expect((await call(`/api/support-cases/${caseId}`)).status).toBe(200);
     expect((await call("/api/support-cases/not-a-uuid")).status).toBe(404);
     const missing = setup({ detail: vi.fn(() => Promise.resolve(null)) });

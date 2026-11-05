@@ -21,6 +21,7 @@ import {
   normalizeOpenCase,
   normalizeResolution,
   type RevealableCustomerField,
+  SUPPORT_CASE_KINDS,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
 import {
@@ -162,6 +163,7 @@ export interface SupportDependencies {
   list: (
     input: {
       after: string | null;
+      kind: string | null;
       limit: number;
       organizationId: string | null;
       status: string | null;
@@ -408,9 +410,12 @@ export function supportRoutes(
       const paging = page(context);
       const status = context.req.query("status") ?? null;
       const organizationId = context.req.query("organizationId") ?? null;
+      const kind = context.req.query("kind") ?? null;
       if (
         !paging ||
         (status !== null && status !== "open" && status !== "closed") ||
+        (kind !== null &&
+          !(SUPPORT_CASE_KINDS as readonly string[]).includes(kind)) ||
         (organizationId !== null &&
           (organizationId.length > MAX_ID_LENGTH ||
             controlCharacter(organizationId)))
@@ -419,7 +424,7 @@ export function supportRoutes(
       }
       return context.json(
         await dependencies.list(
-          { ...paging, organizationId, status },
+          { ...paging, kind, organizationId, status },
           context.env
         )
       );
