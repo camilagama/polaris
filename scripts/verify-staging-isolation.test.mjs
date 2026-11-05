@@ -490,6 +490,36 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it("refuses the pepper of the password as a var in any block: it is a Worker secret of each environment", () => {
+    const entries = repositoryEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
+    }));
+    expect(findIsolationProblems(entries)).toEqual([]);
+    const web = entryOf(entries, "web");
+    web.config.vars = { ...web.config.vars, AUTH_PASSWORD_PEPPER: "" };
+    web.config.env.staging.vars.AUTH_PASSWORD_PEPPER = "planted";
+    web.config.env.production.vars.AUTH_PASSWORD_PEPPER = "planted";
+    web.built = {
+      ...web.built,
+      vars: { ...web.built.vars, AUTH_PASSWORD_PEPPER: "planted" },
+    };
+    expect(
+      findIsolationProblems(entries).filter((problem) =>
+        problem.includes("AUTH_PASSWORD_PEPPER")
+      )
+    ).toEqual([
+      "web: top level: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: env.staging: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: env.production: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: built wrangler.json: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+    ]);
+  });
+
   it("refuses two staging roles on the same Hyperdrive configuration", () => {
     const entries = repositoryEntries();
     const web = entryOf(entries, "web").config.env.staging;

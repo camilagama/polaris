@@ -159,6 +159,8 @@ const gates: Gate[] = [
   ["access-log", "verify-access-log-gate.ts"],
   // the lock of the sign-in by password (ADR 0100): the 5th failure, the release, the reservation, the expiry
   ["login-lock", "verify-login-lock-gate.ts"],
+  // lives in apps/web: the Worker's hasher against the bcrypt of pgcrypto (0112), who reaches it, the old hash refused
+  ["password-hash", "../../../apps/web/scripts/verify-password-hash-gate.ts"],
   // the purge of the user who never verified the e-mail (ADR 0100, Q-D2): every condition together, the limit, the audit
   ["unverified-user-purge", "verify-unverified-user-purge-gate.ts"],
   // the record of acceptance of the terms and the privacy policy (ADR 0100): append-only, per user, the minimum version, no IP
@@ -182,6 +184,8 @@ const gates: Gate[] = [
   ["catalog-size-ceilings", "verify-catalog-size-ceilings-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
+  // the cover of a product (the image of lowest position): the reads, one sync change per image command, the plan
+  ["product-cover", "verify-product-cover-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
   ["sync-push", "verify-sync-push-gate.ts"],
   ["offline-product", "verify-offline-product-gate.ts"],
@@ -399,6 +403,7 @@ const suites: Record<string, string[]> = {
     "scheduled-jobs",
     "access-log",
     "login-lock",
+    "password-hash",
     "unverified-user-purge",
     "legal-acceptance",
     "definer-hardening",
@@ -413,6 +418,7 @@ const suites: Record<string, string[]> = {
     "catalog-size-ceilings",
     "offline-lease",
     "sync-log",
+    "product-cover",
     "bootstrap",
     "sync-push",
     "offline-product",
@@ -475,6 +481,7 @@ const suites: Record<string, string[]> = {
     "device-sessions",
     "offline-lease",
     "sync-log",
+    "product-cover",
     "bootstrap",
     "sync-push",
     "offline-product",

@@ -22,7 +22,6 @@ import {
   type PasswordTestAuth,
   sessionOf,
   signInCookie,
-  stubPwnedPasswordRange,
   testBaseURL,
   testPassword,
   testSecret,
@@ -32,6 +31,15 @@ const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const START = new Date("2026-10-20T12:00:00.000Z");
 const newPassword = "Outra senha longa e segura para 2026";
+
+const policyRefusals = [
+  { code: "password_too_short", password: "Curta1" },
+  { code: "password_too_long", password: `Aa1${"x".repeat(126)}` },
+  { code: "password_missing_number", password: "Sem numero nenhum" },
+  { code: "password_missing_uppercase", password: "sem maiuscula 123" },
+  { code: "password_missing_lowercase", password: "SEM MINUSCULA 123" },
+  { code: "password_invalid_unicode", password: "Aa1\ud800bcdefgh" },
+];
 
 function useFakeClock() {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -72,7 +80,6 @@ function createEffects(
 describe("change of the password of a signed-in person (AC-57)", () => {
   beforeEach(() => {
     useFakeClock();
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -272,20 +279,23 @@ describe("change of the password of a signed-in person (AC-57)", () => {
     await expect(signInCookie(ctx.auth, ctx.email)).resolves.toBeTruthy();
   });
 
-  it("refuses a new password under the policy (too short) and has no effect", async () => {
-    const ctx = await twoSessions();
+  it.each(policyRefusals)(
+    "refuses a new password under the policy ($code) and has no effect",
+    async ({ code, password }) => {
+      const ctx = await twoSessions();
 
-    const response = await ctx.change(ctx.s1, {
-      currentPassword: testPassword,
-      newPassword: "curta demais",
-    });
+      const response = await ctx.change(ctx.s1, {
+        currentPassword: testPassword,
+        newPassword: password,
+      });
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ code: "password_too_short" });
-    expect(ctx.bump).not.toHaveBeenCalled();
-    expect(ctx.auditEvents).toEqual([]);
-    expect(await sessionOf(ctx.auth, ctx.s2)).not.toBeNull();
-  });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code });
+      expect(ctx.bump).not.toHaveBeenCalled();
+      expect(ctx.auditEvents).toEqual([]);
+      expect(await sessionOf(ctx.auth, ctx.s2)).not.toBeNull();
+    }
+  );
 
   it("tries the epoch bump a second time when the first fails, and still answers 200", async () => {
     const ctx = await twoSessions();
@@ -364,7 +374,6 @@ describe("change of the password of a signed-in person (AC-57)", () => {
 describe("addition of a password to an account without one", () => {
   beforeEach(() => {
     useFakeClock();
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -439,21 +448,19 @@ describe("addition of a password to an account without one", () => {
     ).rejects.toThrow();
   });
 
-  it("refuses a short password with the policy error and records nothing", async () => {
-    const ctx = await accountWithoutPassword();
+  it.each(policyRefusals)(
+    "refuses a password under the policy ($code) with its error and records nothing",
+    async ({ code, password }) => {
+      const ctx = await accountWithoutPassword();
 
-    const response = await ctx.set({ newPassword: "curta" });
+      const response = await ctx.set({ newPassword: password });
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      error: {
-        code: "password_too_short",
-        message: "Password does not meet the minimum length.",
-      },
-    });
-    expect(ctx.auditEvents).toEqual([]);
-    expect(ctx.fx.sendPasswordNotice).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code } });
+      expect(ctx.auditEvents).toEqual([]);
+      expect(ctx.fx.sendPasswordNotice).not.toHaveBeenCalled();
+    }
+  );
 
   it("does not audit or notice when Better Auth refuses (an account that already has a password)", async () => {
     const parts = createPasswordTestAuth();
@@ -491,7 +498,6 @@ describe("addition of a password to an account without one", () => {
 
 describe("what a password reset does besides the new password", () => {
   beforeEach(() => {
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -610,7 +616,6 @@ describe("what a password reset does besides the new password", () => {
 
 describe("sign-up with an e-mail that already has an account", () => {
   beforeEach(() => {
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -817,7 +822,6 @@ describe("unlock of the sign-in lock by the link of the e-mail (AC-64)", () => {
 describe("verification of the e-mail by the link of the e-mail (AC-48)", () => {
   beforeEach(() => {
     useFakeClock();
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -953,7 +957,6 @@ describe("change of the password and the sign-in lock (same counter)", {
 
   beforeEach(() => {
     useFakeClock();
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -1110,7 +1113,7 @@ describe("change of the password and the sign-in lock (same counter)", {
 
     const response = await ctx.change({
       currentPassword: wrong,
-      newPassword: "curta demais",
+      newPassword: "Curta1",
     });
 
     expect(response.status).toBe(400);
@@ -1158,7 +1161,6 @@ describe("change of the password and the sign-in lock (same counter)", {
 describe("settling of the change of password when the lock store fails", () => {
   beforeEach(() => {
     useFakeClock();
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -1222,7 +1224,6 @@ describe("settling of the change of password when the lock store fails", () => {
 describe("set-password revokes the other sessions and the leases", () => {
   beforeEach(() => {
     useFakeClock();
-    stubPwnedPasswordRange();
     silenceLogs();
   });
   afterEach(() => {
@@ -1282,7 +1283,7 @@ describe("set-password revokes the other sessions and the leases", () => {
       ctx.auth,
       jsonRequest(
         "/api/auth/set-password",
-        { newPassword: "curta" },
+        { newPassword: "Curt4" },
         ctx.current.headers
       ),
       ctx.fx.effects
@@ -1316,9 +1317,6 @@ describe("set-password revokes the other sessions and the leases", () => {
 });
 
 describe("the unlock e-mail of a new lock (sendLoginUnlock)", () => {
-  beforeEach(() => {
-    stubPwnedPasswordRange();
-  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

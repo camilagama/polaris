@@ -14,6 +14,7 @@ import {
   requestIpForSessionRow,
 } from "./access-log";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
+import { createTestPasswordHasher } from "./password-hash-test-support";
 import {
   currentAuthRequestState,
   currentRequestId,
@@ -240,6 +241,7 @@ function createAccessLogTestApp(
     },
     auditEventWriter: () => Promise.resolve(),
     baseURL: testBaseURL,
+    passwordHasher: createTestPasswordHasher(),
     databaseAdapter: memoryAdapter({
       account: [],
       session: [],
@@ -278,12 +280,6 @@ function createAccessLogTestApp(
 
 type TestApp = ReturnType<typeof createAccessLogTestApp>;
 
-function stubPwnedPasswordRange() {
-  vi.stubGlobal("fetch", () =>
-    Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`))
-  );
-}
-
 function post(app: TestApp["app"], path: string, body: unknown, ip?: string) {
   return app.request(
     path,
@@ -309,7 +305,6 @@ function cookiesOf(response: Response): string {
 
 /** A verified user with a password, created through the real routes. */
 async function registerUser(test: TestApp, email: string, password: string) {
-  stubPwnedPasswordRange();
   const signUp = await post(test.app, "/api/auth/sign-up/email", {
     email,
     legalAcceptance: SIGN_UP_LEGAL_ACCEPTANCE,
@@ -380,7 +375,6 @@ describe("the access log in the server of authentication", () => {
 
   it("records a failed login without a user, and never the e-mail or the password", async () => {
     const test = createAccessLogTestApp({ requestId: "req-failed" });
-    stubPwnedPasswordRange();
 
     const failed = await post(
       test.app,

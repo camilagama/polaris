@@ -183,14 +183,14 @@ O login por senha fica **ligado** no staging, aberto, por decisão do usuário d
 
 ## 5. Segredos do Worker `polaris-web-staging` (responsável)
 
-`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SYNC_PAYLOAD_HASH_SECRET`, `OFFLINE_LEASE_SECRET` e `BILLING_PAYER_KEY` (a chave do pagador do Pix, 32 caracteres ou mais, gerada uma vez e nunca rodada por rotina: ver o [runbook de provedores](./billing-providers.md)), com `wrangler secret put <NOME> --env staging`. Os `*_PREVIOUS_*` ficam vazios até a primeira rotação. Nenhum segredo de staging é reaproveitado na produção. Os segredos da cobrança no sandbox estão na [seção 5a](#5a-cobrança-no-sandbox-responsável). O catálogo não tem segredo.
+`BETTER_AUTH_SECRET`, `AUTH_PASSWORD_PEPPER` (ver [Pepper da senha](#pepper-da-senha)), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SYNC_PAYLOAD_HASH_SECRET`, `OFFLINE_LEASE_SECRET` e `BILLING_PAYER_KEY` (a chave do pagador do Pix, 32 caracteres ou mais, gerada uma vez e nunca rodada por rotina: ver o [runbook de provedores](./billing-providers.md)), com `wrangler secret put <NOME> --env staging`. Os `*_PREVIOUS_*` ficam vazios até a primeira rotação. Nenhum segredo de staging é reaproveitado na produção. Os segredos da cobrança no sandbox estão na [seção 5a](#5a-cobrança-no-sandbox-responsável). O catálogo não tem segredo.
 
 **`RESEND_API_KEY` (senha ligada, 22/10).** A chave é **uma só por Worker**: a senha e os avisos de encerramento ([avisos-de-encerramento](./avisos-de-encerramento.md)) usam a mesma. Apagá-la desliga a senha **e** os avisos de encerramento juntos, e também os e-mails de cobrança e as boas-vindas ([email-auth](./email-auth.md#e-mails-de-cobrança-e-dmarc)) (a flag `CLOSURE_NOTICE_EMAIL_ENABLED` sozinha não os religa sem a chave); recriá-la liga de volta o que as flags permitem. Chave do Resend só de envio ("Sending access"), presa ao domínio `araute.app` (já verificado no Resend) e usada só no staging. Para recriar (a chave vazou, foi revogada ou o Resend a recusou: o log do Worker mostra falha de envio com 401 ou 403):
 
 1. No painel do Resend, **API Keys → Create API Key**, permissão **Sending access**, domínio `araute.app`. Copiar a chave uma vez, sem colar em arquivo do repositório, chat, PR nem log.
 2. Em `apps/web`, gravar o segredo com `wrangler secret put RESEND_API_KEY --env staging` e colar a chave no prompt (a chave não vai na linha de comando).
 3. Revogar a chave antiga no painel do Resend. O segredo vale na hora, sem novo deploy.
-4. Conferir sem imprimir valores: `curl -fsS https://dash.araute.app/api/auth-methods` traz `"emailPassword": true` (e `turnstileSiteKey` com a chave pública do widget) quando a proteção contra abuso está pronta (`AUTH_ABUSE_PROTECTION_ENABLED: "true"`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY` e os limitadores); vem `false` se qualquer um faltar, e a tela não mostra o formulário. Sem o segredo do Resend, `emailPassword` também volta `false`. Para desligar a senha, ver [email-auth](./email-auth.md#desligar-a-senha-no-staging).
+4. Conferir sem imprimir valores: `curl -fsS https://dash.araute.app/api/auth-methods` traz `"emailPassword": true` (e `turnstileSiteKey` com a chave pública do widget) quando a proteção contra abuso está pronta (`AUTH_ABUSE_PROTECTION_ENABLED: "true"`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY` e os limitadores); vem `false` se qualquer um faltar, e a tela não mostra o formulário. Sem o segredo do Resend ou sem `AUTH_PASSWORD_PEPPER`, `emailPassword` também volta `false`. Para desligar a senha, ver [email-auth](./email-auth.md#desligar-a-senha-no-staging).
 
 `AUTH_EMAIL_FROM` não é segredo: fica no `wrangler.jsonc` (`Polaris (staging) <nao-responda@araute.app>`). Os links dos e-mails de confirmação e de troca de senha saem de `BETTER_AUTH_BASE_URL` (`https://dash.araute.app`).
 
@@ -206,6 +206,20 @@ Recriar o widget (apagado, ou hostname errado):
 4. Conferir: `curl -fsS https://dash.araute.app/api/auth-methods` com `"emailPassword": true`; depois um cadastro de teste na tela, que passa do desafio.
 
 Trocar só o segredo (suspeita de vazamento, rotina): no painel, no widget `polaris-staging`, gire a chave secreta (o painel oferece invalidar a antiga na hora ou mantê-la por um período; sem suspeita de vazamento, mantenha a antiga, grave a nova com o passo 3, confira com o passo 4 e só então invalide a antiga; havendo suspeita, invalide na hora). O segredo do Worker vale sem deploy. Com o valor antigo gravado e já invalidado, o Siteverify recusa o desafio e cadastro, entrada e "esqueci a senha" respondem 403 `auth_challenge_failed`, igual a um desafio falho: o sintoma de segredo trocado é 403 em todos os cadastros, não 503 (aceitável no staging). A chave de site não muda ao girar o segredo, e as janelas dos limitadores recomeçam (a chave do limitador deriva do segredo).
+
+### Pepper da senha
+
+`AUTH_PASSWORD_PEPPER` é o segredo do hash da senha ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), emenda de 4/11/2026): o Worker calcula o HMAC-SHA-256 da senha com ele, e o banco guarda só o bcrypt desse HMAC (migration 0112). Um por ambiente, nunca o mesmo no staging e na produção, nunca em `vars` (a verificação de isolamento reprova), nunca em arquivo do repositório, chat, PR nem log. Sem ele, ou com menos de 32 caracteres, a senha fica desligada: `/api/auth-methods` traz `"emailPassword": false` e os logs do Worker mostram `auth_password_pepper_missing` a cada pedido de `/api/auth`.
+
+**Criar** (antes de ligar a senha, ou depois do deploy que trouxe a migration 0112):
+
+1. Conferir que a migration 0112 está no banco do ambiente (`polaris_password.crypt` existe): sem ela, o cadastro e a entrada por senha respondem 500.
+2. Em `apps/web`, gerar e gravar sem o valor passar pelo terminal nem pelo histórico: `openssl rand -base64 32 | wrangler secret put AUTH_PASSWORD_PEPPER --env staging` (32 bytes aleatórios, 44 caracteres em base64). O segredo vale na hora, sem deploy.
+3. Conferir sem imprimir valores: `curl -fsS https://dash.araute.app/api/auth-methods` traz `"emailPassword": true`, e um cadastro de teste confirma o e-mail e entra.
+
+**Girar.** Hoje há uma versão só do pepper (o `1` de `pgbf1$`). Trocar o valor invalida todas as senhas do ambiente: cada entrada responde "E-mail ou senha incorretos." e a pessoa usa "Esqueci a senha". No staging, com contas de teste, é aceitável: gire com o passo 2 e avise quem testa. Uma rotação sem redefinir as senhas (produção com contas reais) pede antes a versão 2 no código (o pepper anterior conferindo `pgbf1$` e o hash regravado como `pgbf2$` no login); ela não existe ainda e é pré-requisito para girar na produção.
+
+**Suspeita de vazamento do pepper:** sozinho ele não abre conta (o banco guarda bcrypt de custo 11); junto com uma cópia do banco, encurta o ataque. Gire na hora (passo 2) e trate como o vazamento do banco.
 
 ## 5a. Cobrança no sandbox (responsável)
 

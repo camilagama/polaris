@@ -266,6 +266,7 @@ async function run() {
         [
           "archivedAt",
           "categoryId",
+          "coverAssetId",
           "deletedAt",
           "description",
           "id",

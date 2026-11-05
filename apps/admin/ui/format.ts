@@ -325,3 +325,44 @@ const AUDIT_EVENTS: Readonly<Record<string, string>> = {
 export function auditEventText(eventType: string): string {
   return AUDIT_EVENTS[eventType] ?? "Outra ação registrada";
 }
+
+const TIME = new Intl.DateTimeFormat("pt-BR", {
+  hour: "2-digit",
+  hourCycle: "h23",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+export function brasiliaTime(moment: Date): string {
+  return TIME.format(moment);
+}
+
+const INCIDENT_KINDS: Readonly<Record<string, string>> = {
+  outbox_attempts_exhausted: "Envio da caixa de saída",
+  queue_dead_letter: "Fila de mensagens",
+};
+
+export function incidentKindText(kind: string): string {
+  return INCIDENT_KINDS[kind] ?? `tipo desconhecido: ${kind}`;
+}
+
+const INCIDENT_CAUSES: Readonly<Record<string, string>> = {
+  attempts_exhausted: "Tentativas esgotadas",
+  invalid_envelope: "Mensagem inválida",
+  retries_exhausted: "Tentativas esgotadas",
+  unknown_type: "Tipo de mensagem desconhecido",
+  wrong_queue: "Mensagem na fila errada",
+};
+
+export function incidentCauseText(cause: string): string {
+  return INCIDENT_CAUSES[cause] ?? `causa desconhecida: ${cause}`;
+}
+
+const DEAD_EVENT_STATES: Readonly<Record<string, string>> = {
+  dead: "Morto, a reenviar",
+  retried: "Já reenviado",
+};
+
+export function deadEventStateText(state: string): string {
+  return DEAD_EVENT_STATES[state] ?? `estado desconhecido: ${state}`;
+}

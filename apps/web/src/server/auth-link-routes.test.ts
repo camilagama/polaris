@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "./app";
 import type { WorkerBindings } from "./environment";
+import { testPasswordPepper } from "./auth/password-hash-test-support";
 
 const baseURL = "https://app.example.com";
 const routes = ["/api/login-unlock", "/api/email-verification"] as const;
@@ -15,6 +16,7 @@ function createBindings(overrides: Partial<WorkerBindings> = {}) {
     AUTH_RATE_LIMITER: createLimiter(),
     BETTER_AUTH_BASE_URL: baseURL,
     BETTER_AUTH_SECRET: "test-only-better-auth-secret-32-bytes",
+    AUTH_PASSWORD_PEPPER: testPasswordPepper,
     EMAIL_PASSWORD_AUTH_ENABLED: "true",
     RESEND_API_KEY: "re_test_only",
     ...overrides,

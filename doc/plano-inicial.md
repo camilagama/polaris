@@ -1200,7 +1200,7 @@ Adicionar:
 
 
 
-Aplicar [docs/business-rules/authentication.md](../docs/business-rules/authentication.md): 15–128 pontos de código Unicode após NFC, espaços permitidos, sem composição arbitrária nem expiração periódica; verificar HIBP antes de estabelecer/alterar credencial e falhar fechado se a consulta não estiver disponível. Reset revoga todas as sessões.
+Aplicar [docs/business-rules/authentication.md](../docs/business-rules/authentication.md): 8–128 pontos de código Unicode após NFC, com número, maiúscula e minúscula, espaços permitidos, sem expiração periódica e sem consulta HIBP (regra trocada na emenda de 4/11/2026 do ADR 0100, que também leva o hash para bcrypt no PostgreSQL). Reset revoga todas as sessões.
 
 Usar Resend com templates React Email minimalistas, idempotency key por token e secrets `RESEND_API_KEY` + `AUTH_EMAIL_FROM` de domínio verificado. Os fluxos ficam indisponíveis sem sender configurado e só são expostos após PR16 (rate limiting e Turnstile). O outbox/Queue e webhooks de delivery da proposta inicial ficam adiados para hardening pré-go-live; PR15 usa callback síncrono idempotente. `EMAIL_PASSWORD_AUTH_ENABLED` permanece `false` por padrão e só deve ser ligado após o PR16.
 

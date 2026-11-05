@@ -106,3 +106,50 @@ export interface ClosedSupportCase {
   id: string;
   status: string;
 }
+
+export interface OperationalIncidentSummary {
+  cause: string;
+  deadEvents: number;
+  firstSeenAt: string;
+  id: string;
+  kind: string;
+  lastReference: string | null;
+  lastSeenAt: string;
+  occurrenceCount: number;
+  subject: string;
+}
+
+export interface OperationalIncidentPage {
+  incidents: OperationalIncidentSummary[];
+  next: string | null;
+}
+
+/** One event of an incident; `organizationId` comes with it and is never shown (the screen names no store). */
+export interface DeadEventSummary {
+  eventId: string;
+  eventType: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  occurrences: number;
+  organizationId: string;
+  retriedAt: string | null;
+  retryCount: number;
+  state: "dead" | "retried";
+}
+
+export interface OperationalIncidentDetail {
+  events: DeadEventSummary[];
+  incident: Omit<OperationalIncidentSummary, "deadEvents">;
+  next: string | null;
+}
+
+export type RetryResult =
+  | "already_pending"
+  | "busy"
+  | "event_gone"
+  | "retried"
+  | "unknown_item";
+
+export interface RetryAnswer {
+  result?: string;
+}

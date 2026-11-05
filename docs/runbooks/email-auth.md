@@ -2,7 +2,7 @@
 
 O PR15 envia links de verificação e recuperação com Resend e templates React Email sem imagens. Os callbacks são síncronos, limitados a 10 segundos e usam uma chave de idempotência derivada por SHA-256 do token; o token original aparece apenas no link enviado e não é registrado em logs. As respostas do provider não são devolvidas ao usuário.
 
-A validação e o hash/verify normalizam NFC. O hasher mantém os parâmetros Scrypt e o formato `salt:key` usado pela versão Better Auth aprovada; preserve ambos ao atualizar a dependência.
+A validação e o hash/verify normalizam NFC. O hash não é o do Better Auth: o Worker calcula o HMAC-SHA-256 da senha com `AUTH_PASSWORD_PEPPER` e o PostgreSQL guarda o bcrypt custo 11 dele, no formato `pgbf1$` (emenda de 4/11/2026 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md); pepper no [runbook do staging](./staging.md#pepper-da-senha)). Ao atualizar o Better Auth, confira que as opções `password.hash` e `password.verify` continuam sendo as únicas usadas.
 
 ## Configuração futura
 
