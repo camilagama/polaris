@@ -427,6 +427,56 @@ describe("Privacidade: the list (AC-P11.1)", () => {
     });
   });
 
+  describe("the due date in the case header keeps up with the clock too", () => {
+    const DUE = "2026-11-05T21:00:00.000Z";
+    const clock = { now: NOW };
+    const standingCase = (
+      privacy: Partial<PrivacyCaseDetail["privacy"]> = {}
+    ) =>
+      mount(
+        [json(detail("received", { dueAt: DUE, ...privacy }))],
+        json(PRIVACY),
+        () => clock.now,
+        screenContext({ id: CASE, screen: "privacidade-caso" })
+      );
+    const headerDue = (root: FakeElement) =>
+      allElements(root)
+        .filter((element) => element.getAttribute("class") === "due-text")
+        .map((element) => element.textContent);
+
+    it("turns 'vence hoje' into 'prazo vencido' on visibilitychange, with no new request", async () => {
+      clock.now = NOW;
+      const mounted = await standingCase();
+      expect(headerDue(mounted.root)).toEqual(["Atenção: vence hoje"]);
+      const requests = mounted.calls.length;
+
+      clock.now = new Date("2026-11-05T21:00:01.000Z");
+      mounted.document.hidden = false;
+      mounted.document.dispatch("visibilitychange");
+
+      expect(headerDue(mounted.root)).toEqual([
+        "Atenção: prazo vencido em 05/11/2026",
+      ]);
+      expect(mounted.calls).toHaveLength(requests);
+    });
+
+    it("does the same when the window gets the focus back, and not while hidden", async () => {
+      clock.now = NOW;
+      const mounted = await standingCase();
+
+      clock.now = new Date("2026-11-06T12:00:00.000Z");
+      mounted.document.hidden = true;
+      mounted.document.dispatch("visibilitychange");
+      expect(headerDue(mounted.root)).toEqual(["Atenção: vence hoje"]);
+
+      mounted.document.hidden = false;
+      mounted.document.defaultView.dispatch("focus");
+      expect(headerDue(mounted.root)).toEqual([
+        "Atenção: prazo vencido em 05/11/2026",
+      ]);
+    });
+  });
+
   it("says when nothing is open, and offers to open a case", async () => {
     const mounted = await list([json({ cases: [], next: null })]);
     expect(visibleText(mounted.root)).toContain(
@@ -622,6 +672,35 @@ describe("Abrir atendimento de privacidade (AC-P11.1)", () => {
     expect(bodyOf(posts(mounted.calls)[0])).toMatchObject({
       reason: "😀".repeat(500),
     });
+  });
+
+  it("announces the limit once, when the counter crosses it, and not on every key", async () => {
+    const mounted = await ready();
+    const live = () => {
+      const field = byId(mounted.root, "privacidade-motivo");
+      const [region] = allElements(mounted.root).filter(
+        (element) => element.getAttribute("class") === "sr-only"
+      );
+      expect(field.getAttribute("aria-describedby")).not.toContain(
+        region?.getAttribute("id") ?? "sem-id"
+      );
+      return region as FakeElement;
+    };
+    expect(live().getAttribute("aria-live")).toBe("polite");
+    type(mounted.root, "privacidade-motivo", "a".repeat(500));
+    expect(live().textContent).toBe("");
+
+    type(mounted.root, "privacidade-motivo", "a".repeat(501));
+    const said = live().textContent;
+    expect(said).toContain("500 caracteres");
+    expect(said).not.toBe("");
+
+    live().textContent = "já lido";
+    type(mounted.root, "privacidade-motivo", "a".repeat(502));
+    expect(live().textContent).toBe("já lido");
+
+    type(mounted.root, "privacidade-motivo", "a".repeat(500));
+    expect(live().textContent).toBe("");
   });
 
   it("does not count the spaces around the reason, because the check and the sent text drop them", async () => {

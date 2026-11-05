@@ -813,9 +813,32 @@ describe("ending the access now (AC-P5.3, AC-C2, AC-C4)", () => {
     await click(mounted.root, "Confirmar encerramento do acesso");
 
     expect(shown(mounted)).toContain(
-      "Acesso encerrado. A lista de clientes saiu da tela."
+      "Acesso encerrado. A lista de clientes saiu da tela. O acesso acabou."
     );
     expect(shown(mounted)).not.toContain("Outro acesso");
+    expect(shown(mounted)).not.toContain("continua ativo");
+  });
+
+  it("keeps both sentences in the one status line when the other access ran out and nothing was ended", async () => {
+    const mounted = await open(
+      [
+        json({ revoked: false }),
+        json(
+          detail([
+            grantRow({ active: false }),
+            grantRow({ expiresAt: OTHER_ENDS, id: OTHER_GRANT }),
+          ])
+        ),
+      ],
+      detail([grantRow()])
+    );
+    await click(mounted.root, "Encerrar acesso agora");
+    clock.now = new Date("2026-10-28T17:30:00.000Z");
+    await click(mounted.root, "Confirmar encerramento do acesso");
+
+    expect(alertOf(mounted.root)?.textContent).toBe(
+      `${NOTHING_ENDED} O acesso acabou.`
+    );
     expect(shown(mounted)).not.toContain("continua ativo");
   });
 
