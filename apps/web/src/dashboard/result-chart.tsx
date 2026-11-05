@@ -204,15 +204,16 @@ function costsNote(fromCopy: boolean): string {
  * (1.125rem), never `max-h` nor a clamp, so nothing is cut. Each line count is that of the longest form the line takes
  * at that width (measured at 320, 340, 360, 375, 390, 412, 430, 480, 540, 600, 680, 767, 820, 1000, 1280 and 1440 px,
  * with "366 de 366 dias sem custo informado", amounts of R$ 123.456,78 and the values hidden), and a step is placed at
- * the first width that reads fewer lines.
+ * the first width that reads fewer lines. The reading and the legend wrap in lines, so they also take `content-start`:
+ * the room goes below the text, not between its fragments.
  */
 const TITLE_RESERVE = "min-h-[2.875rem] min-[390px]:min-h-[1.375rem]";
 const DESCRIPTION_RESERVE =
   "min-h-[calc(6*1.125rem)] min-[360px]:min-h-[calc(5*1.125rem)] min-[412px]:min-h-[calc(4*1.125rem)] min-[540px]:min-h-[calc(3*1.125rem)] min-[767px]:min-h-[calc(2*1.125rem)]";
 const READING_RESERVE =
-  "min-h-[calc(5*1.125rem)] min-[340px]:min-h-[calc(4*1.125rem)] min-[480px]:min-h-[calc(3*1.125rem)] min-[600px]:min-h-[calc(2*1.125rem)]";
+  "content-start min-h-[calc(5*1.125rem)] min-[340px]:min-h-[calc(4*1.125rem)] min-[480px]:min-h-[calc(3*1.125rem)] min-[600px]:min-h-[calc(2*1.125rem)]";
 const LEGEND_RESERVE =
-  "min-h-[3.5rem] min-[390px]:min-h-[2.25rem] min-[680px]:min-h-[1rem]";
+  "content-start min-h-[3.5rem] min-[390px]:min-h-[2.25rem] min-[680px]:min-h-[1rem]";
 const NOTE_RESERVE = "min-h-[1.125rem]";
 const CHART_RESERVE = { legend: LEGEND_RESERVE, reading: READING_RESERVE };
 

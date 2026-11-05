@@ -1698,11 +1698,36 @@ const settled = (page: Page) =>
       )
   );
 
+/**
+ * The largest vertical step between consecutive rows of the pieces of the reading and of the legend: room reserved
+ * below the text is no step, an empty row between two fragments is.
+ */
+const rowStep = (chart: Locator) =>
+  chart.evaluate((region) => {
+    let step = 0;
+    for (const lines of region.querySelectorAll(
+      "[data-chart-reading], [data-chart-legend]"
+    )) {
+      const tops = [
+        ...new Set(
+          [...lines.children].map((child) =>
+            Math.round(child.getBoundingClientRect().top)
+          )
+        ),
+      ].sort((a, b) => a - b);
+      for (let at = 1; at < tops.length; at += 1) {
+        step = Math.max(step, (tops[at] ?? 0) - (tops[at - 1] ?? 0));
+      }
+    }
+    return step;
+  });
+
 async function chartPlaces(page: Page) {
   await settled(page);
   const chart = chartRegion(page);
   return {
     card: await placeOf(chart),
+    rowStep: await rowStep(chart),
     next: await placeOf(chain(page)),
     numbers: await placeOf(
       chart.getByRole("button", { name: "Ver os números" })
@@ -1738,7 +1763,13 @@ function insideTheCard(places: ChartPlaces) {
   };
 }
 
+const ONE_ROW_AND_ITS_GAP = 28;
+
 function expectSameBox(after: ChartPlaces, before: ChartPlaces) {
+  expect(
+    after.rowStep,
+    "linha vazia entre os pedaços da leitura ou da legenda"
+  ).toBeLessThanOrEqual(ONE_ROW_AND_ITS_GAP);
   const now = insideTheCard(after);
   const was = insideTheCard(before);
   for (const key of ["height", "numbers", "totals"] as const) {
