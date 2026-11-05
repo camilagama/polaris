@@ -164,12 +164,13 @@ async function run() {
     const decide = (
       caseId: string,
       decision: string,
-      reason: string | null = null
+      reason: string | null = null,
+      note: string | null = null
     ) =>
       asAdmin((client) =>
         recordPrivacyDecision(client, p1, caseId, {
           decision,
-          note: null,
+          note,
           reason,
         })
       );
@@ -448,7 +449,7 @@ async function run() {
       );
     }
     await assert.rejects(
-      () => decide(failedId, "reject", "legal_retention"),
+      () => decide(failedId, "reject", "legal_retention", "CTN art195"),
       refused("privacy_decision_not_allowed"),
       "and its refusal says why"
     );
@@ -502,6 +503,117 @@ async function run() {
     );
     tests.push(
       "a decision is refused when the case does not allow it: a failed identity check only rejects, with its own reason; a refusal needs a reason; a redirect needs Polaris to be the processor; Polaris does not accept data it only processes on the word of a data subject or an authority (only the organization's owner can ask); a refusal or a redirect resolves without execution, an acceptance only after it was carried out"
+    );
+
+    // ------------------------------------------------- 3a. a legal retention names the obligation
+    const noteOf = async (caseId: string) =>
+      (
+        await owner.pool.query<{ decision_note: string | null }>(
+          "SELECT decision_note FROM public.privacy_cases WHERE support_case_id = $1",
+          [caseId]
+        )
+      ).rows[0]?.decision_note;
+    const legalCase = await scoped("verified", "controller");
+    for (const note of [null, "", "   ", "lei", "123456789", "📜".repeat(9)]) {
+      await assert.rejects(
+        () => decide(legalCase, "reject", "legal_retention", note),
+        refused("invalid_privacy_step"),
+        `a legal retention with the note ${JSON.stringify(note)} is refused`
+      );
+      assert.equal(await stageOf(legalCase), "scoped");
+    }
+    await assert.rejects(
+      () => decide(legalCase, "reject", "legal_retention", "a".repeat(501)),
+      refused("invalid_privacy_step"),
+      "and the ceiling of 500 holds"
+    );
+    await decide(legalCase, "reject", "legal_retention", "  CTN art195  ");
+    assert.equal(await stageOf(legalCase), "decided");
+    assert.equal(
+      await noteOf(legalCase),
+      "CTN art195",
+      "ten characters after the trim are enough"
+    );
+    for (const note of ["📜".repeat(10), "a".repeat(500)]) {
+      const accepted = await scoped("verified", "controller");
+      await decide(accepted, "partially_accept", "legal_retention", note);
+      assert.equal(
+        await noteOf(accepted),
+        note,
+        "ten code points and 500 are taken as written"
+      );
+    }
+    for (const reason of [
+      "no_authority",
+      "controller_is_reseller",
+      "manifestly_unfounded",
+      "not_personal_data",
+      "other",
+    ]) {
+      const free = await scoped("verified", "controller");
+      await decide(free, "reject", reason);
+      assert.equal(await noteOf(free), null, `${reason} needs no note`);
+    }
+    const processorFree = await scoped("verified", "processor");
+    await decide(
+      processorFree,
+      "redirect_to_controller",
+      "controller_is_reseller"
+    );
+    // a decision taken before the rule has no note and no CHECK holds it back: it still moves on to executed and resolved
+    const poke = (sql: string, values: unknown[]) =>
+      owner.pool.query(sql, values);
+    const oldReject = await scoped("verified", "controller");
+    await poke(
+      "UPDATE public.privacy_cases SET stage = 'decided', decision = 'reject', decision_reason = 'legal_retention', decision_note = NULL WHERE support_case_id = $1",
+      [oldReject]
+    );
+    assert.equal(
+      (await resolve(oldReject, "Guarda anterior à regra"))?.stage,
+      "resolved"
+    );
+    const oldAccept = await scoped("verified", "controller");
+    await poke(
+      "UPDATE public.privacy_cases SET stage = 'decided', decision = 'partially_accept', decision_reason = 'legal_retention', decision_note = NULL WHERE support_case_id = $1",
+      [oldAccept]
+    );
+    assert.equal((await act(oldAccept))?.stage, "executed");
+    assert.equal(
+      (await resolve(oldAccept, "Guarda anterior à regra"))?.stage,
+      "resolved"
+    );
+    assert.equal(await noteOf(oldAccept), null);
+    const definition = await owner.pool.query<{
+      owner: string;
+      search_path: string[];
+      security_definer: boolean;
+    }>(
+      `SELECT pg_get_userbyid(proowner) AS owner, prosecdef AS security_definer, proconfig AS search_path
+         FROM pg_proc
+        WHERE oid = 'public.admin_privacy_record_decision(uuid, uuid, text, text, text)'::regprocedure`
+    );
+    assert.deepEqual(definition.rows[0], {
+      owner: "polaris_admin_owner",
+      search_path: ["search_path=pg_catalog, public, pg_temp"],
+      security_definer: true,
+    });
+    const reach = await owner.pool.query<{
+      public_runs: boolean;
+      runtime_runs: boolean;
+    }>(
+      `SELECT has_function_privilege('public', f.oid, 'EXECUTE') AS public_runs,
+              has_function_privilege('polaris_admin_runtime', f.oid, 'EXECUTE') AS runtime_runs
+         FROM (SELECT 'public.admin_privacy_record_decision(uuid, uuid, text, text, text)'::regprocedure::oid AS oid) AS f`
+    );
+    assert.deepEqual(reach.rows[0], { public_runs: false, runtime_runs: true });
+    const failedLegal = await scoped("failed", "controller");
+    await assert.rejects(
+      () => decide(failedLegal, "reject", "legal_retention"),
+      refused("invalid_privacy_step"),
+      "a missing note is refused before the case's facts are weighed, as the domain does"
+    );
+    tests.push(
+      "a legal retention needs a note of 10 to 500 code points after the trim (none, blank, 9 characters, 9 emoji and 501 are refused with invalid_privacy_step; 10 and 500 are taken), no other reason does; a decision taken before the rule, with no note, still moves on to executed and resolved because no CHECK holds it; the function stays SECURITY DEFINER of polaris_admin_owner with the search_path of 0077"
     );
 
     // ------------------------------------------------- 3b. the database agrees with the domain, combination by combination
@@ -785,8 +897,6 @@ async function run() {
     );
 
     // ------------------------------------------------- 5. the database refuses what the functions would not
-    const poke = (sql: string, values: unknown[]) =>
-      owner.pool.query(sql, values);
     const processorCase = await scoped("verified", "processor");
     await expectSqlState(
       () =>
