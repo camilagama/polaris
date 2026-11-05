@@ -1005,13 +1005,20 @@ describe("a period still open with only returns of earlier sales", () => {
     expect(reading.value).toBe("5.00");
   });
 
-  it("Vendas hoje: a day already gone keeps its own line", () => {
+  it("Vendas hoje: a day already gone with only returns says 'Só devoluções', no 'até agora'", () => {
     const gone = days("2026-11-01", MONDAY, (date) =>
       date === "2026-11-01" ? { netSales: "-15.00", salesCount: 0 } : undefined
     );
-    expect(dayReading(octoberAll, gone, "2026-11-01", MONDAY).count).toBe(
-      "Nenhuma venda"
-    );
+    const reading = dayReading(octoberAll, gone, "2026-11-01", MONDAY);
+    expect(reading.value).toBe("-15.00");
+    expect(reading.count).toBe("Só devoluções");
+  });
+
+  it("Vendas hoje: a day already gone with net zero and no sale stays 'Nenhuma venda'", () => {
+    const gone = days("2026-11-01", MONDAY);
+    const reading = dayReading(octoberAll, gone, "2026-11-01", MONDAY);
+    expect(reading.value).toBe("0.00");
+    expect(reading.count).toBe("Nenhuma venda");
   });
 
   it("Vendas do mês at rest: negative net, no chip, 'Só devoluções até agora'", () => {

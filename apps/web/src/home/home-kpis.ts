@@ -231,17 +231,18 @@ export function todaySeries(
 /** The line of a period still open with returns of earlier sales and no sale of its own: the net is not zero. */
 const ONLY_RETURNS_OPEN = "Só devoluções até agora";
 
+/** The same on a day already gone: closed, so no "até agora"; "no período" belongs to the month card. */
+const ONLY_RETURNS_CLOSED_DAY = "Só devoluções";
+
 /** The line under the number of a day: the count, or why there is none (returns leave a net with no sale of the day). */
 function dayCountText(entry: Day, isToday: boolean): string {
   if (entry.salesCount > 0) {
     return salesCountText(entry.salesCount);
   }
-  if (!isToday) {
-    return "Nenhuma venda";
+  if (cents(entry.netSales) !== 0n) {
+    return isToday ? ONLY_RETURNS_OPEN : ONLY_RETURNS_CLOSED_DAY;
   }
-  return cents(entry.netSales) === 0n
-    ? "Nenhuma venda ainda"
-    : ONLY_RETURNS_OPEN;
+  return isToday ? "Nenhuma venda ainda" : "Nenhuma venda";
 }
 
 /**
