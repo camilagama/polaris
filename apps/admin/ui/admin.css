@@ -1066,6 +1066,7 @@
   }
   .area {
     min-width: 0;
+    container-type: inline-size;
     border-radius: 0.875rem;
     background-color: var(--card);
     padding-inline: var(--card-spacing);
@@ -1617,7 +1618,7 @@
     overflow-wrap: anywhere;
     white-space: normal;
   }
-  @media (max-width: 40rem) {
+  @container (max-width: 40rem) {
     .grid:not(.funnel) thead {
       position: absolute;
       width: 1px;
@@ -1651,7 +1652,7 @@
       max-width: 100%;
       white-space: normal;
     }
-    @media (max-width: 22.5rem) {
+    @container (max-width: 19rem) {
       .grid:not(.funnel) td {
         grid-template-columns: 6rem minmax(0, 1fr);
       }

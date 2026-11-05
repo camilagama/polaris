@@ -154,6 +154,16 @@ const BUTTON_ROW_WRAPS = /\.button-row\s*\{[^}]*flex-wrap:\s*wrap/;
 const BUTTON_LABEL_WRAPS =
   /\.button-row button[^{]*\{[^}]*white-space:\s*normal/;
 
+const CARD_IS_MEASURED = /\.area \{[^}]*container-type:\s*inline-size/;
+const STACKS_BY_THE_CARD = /@container \(max-width: 40rem\)/;
+
+describe("the tables beside the sidebar", () => {
+  it("stack by the width of their card, not of the window, so a 768 px window with the 16 rem sidebar has no horizontal scroll", () => {
+    expect(sheet).toMatch(CARD_IS_MEASURED);
+    expect(sheet).toMatch(STACKS_BY_THE_CARD);
+  });
+});
+
 describe("the narrow screen of the billing area (AC-P10.2 to AC-P10.6)", () => {
   it("keeps a refund amount on one line and lets the buttons wrap, so 360 px has no horizontal scroll", () => {
     expect(sheet).toMatch(MONEY_ON_ONE_LINE);

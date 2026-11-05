@@ -133,6 +133,7 @@
   /* the card */
   .area {
     min-width: 0;
+    container-type: inline-size;
     /* dash: apps/web/src/ui/card.tsx */
     @apply rounded-xl bg-card px-(--card-spacing) py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)];
   }
@@ -479,8 +480,9 @@
     white-space: normal;
   }
 
-  /* A narrow screen stacks each row of the other tables; the header of each cell is written before it, so nothing scrolls sideways. */
-  @media (max-width: 40rem) {
+  /* A narrow card stacks each row of the other tables; the header of each cell is written before it, so nothing scrolls
+     sideways. The card is measured, not the window: beside the 16 rem sidebar a 768 px window leaves a card of 30 rem. */
+  @container (max-width: 40rem) {
     .grid:not(.funnel) thead {
       position: absolute;
       width: 1px;
@@ -523,7 +525,7 @@
     }
 
     /* on a 320 px phone the 8 rem label column leaves a stacked button less than one long word ("concessão") plus its padding: every stacked table narrows its label column and its buttons give up side padding so no word is split */
-    @media (max-width: 22.5rem) {
+    @container (max-width: 19rem) {
       .grid:not(.funnel) td {
         grid-template-columns: 6rem minmax(0, 1fr);
       }
