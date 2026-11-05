@@ -1,7 +1,7 @@
 import { PROBLEM_TEXT, type Problem } from "../api";
 import { environmentText, type ScreenTools } from "../app";
 import { facts } from "../blocks";
-import { labelName, storeName } from "../dom";
+import { type Dom, labelName, storeName } from "../dom";
 import { brasiliaMomentText } from "../format";
 import { createNotice, type Notice } from "../notice";
 import {
@@ -15,10 +15,12 @@ import {
   IDENTITY_STATUSES,
   isCode,
   labelOf,
+  MIN_LEGAL_RETENTION_NOTE_LENGTH,
   privacyCasePath,
   REQUEST_TYPES,
   REQUESTER_KINDS,
   ROLES,
+  STAGES,
 } from "../privacy";
 import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
@@ -38,6 +40,12 @@ import {
   textField,
 } from "./privacy-form";
 
+const NOTE_OPTIONAL_LABEL = "Nota da decisão (opcional)";
+const NOTE_MANDATORY_LABEL = "Nota da decisão (obrigatória)";
+const LEGAL_NOTE_MISSING =
+  "nota: não registrada (decidido antes desta regra ou apagada pelo purge)";
+const LEGAL_NOTE_REQUIRED = `Obrigatória: diga a norma (de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres)`;
+const LEGAL_NOTE_REFUSED = `Com este motivo a nota é obrigatória: diga a norma, de ${MIN_LEGAL_RETENTION_NOTE_LENGTH} a ${MAX_NOTE_LENGTH} caracteres.`;
 export const STEP_UNDO = "Não: cada etapa vale uma vez.";
 export const STEP_RECORD =
   "A etapa fica no registro do caso e na auditoria, com o seu e-mail. A nota não vai para a auditoria.";
@@ -64,27 +72,36 @@ interface StepSpec {
   /** The last part of the route, `/api/privacy-cases/:caseId{segment}`, written whole so the route guard sees it. */
   segment: string;
   title: string;
+  /** The title as it reads mid-sentence in a button or status: only a common word is lowered, a proper name is not. */
+  lower: string;
 }
 
 /** The six steps of ADR 0077, in the server's order. */
 const STEPS: readonly StepSpec[] = [
-  { key: "identity", segment: "/identity", title: "Identidade" },
-  { key: "role", segment: "/role", title: "Papel do Polaris" },
-  { key: "scope", segment: "/scope", title: "Escopo" },
-  { key: "decision", segment: "/decision", title: "Decisão" },
-  { key: "actions", segment: "/actions", title: "Ações" },
-  { key: "resolve", segment: "/resolve", title: "Resolução" },
+  {
+    key: "identity",
+    segment: "/identity",
+    title: "Identidade",
+    lower: "identidade",
+  },
+  {
+    key: "role",
+    segment: "/role",
+    title: "Papel do Polaris",
+    lower: "papel do Polaris",
+  },
+  { key: "scope", segment: "/scope", title: "Escopo", lower: "escopo" },
+  { key: "decision", segment: "/decision", title: "Decisão", lower: "decisão" },
+  { key: "actions", segment: "/actions", title: "Ações", lower: "ações" },
+  {
+    key: "resolve",
+    segment: "/resolve",
+    title: "Resolução",
+    lower: "resolução",
+  },
 ];
 
-const STAGE_ORDER = [
-  "requested",
-  "identity_checked",
-  "role_determined",
-  "scoped",
-  "decided",
-  "executed",
-  "resolved",
-];
+export const STAGE_ORDER: readonly string[] = STAGES.map(([code]) => code);
 
 /** The rules the server enforces, said in words; the screen enforces none of them for the operator (AC-P11.3). */
 export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
@@ -248,6 +265,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         }
         if (privacy.decisionNote !== null) {
           parts.push(`nota: ${labelName(privacy.decisionNote, 120)}`);
+        } else if (privacy.decisionReason === "legal_retention") {
+          parts.push(LEGAL_NOTE_MISSING);
         }
         return parts.join(" · ");
       }
@@ -534,10 +553,11 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const note = textField(
         dom,
         id("nota"),
-        "Nota da decisão (opcional)",
+        NOTE_OPTIONAL_LABEL,
         MAX_NOTE_LENGTH,
         NO_PERSONAL_DATA
       );
+      legalNoteHint(dom, id("nota-obrigatoria"), reason, note);
       const caseFacts = dom.el(
         "p",
         { class: "hint" },
@@ -713,7 +733,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const next = dom.el(
         "button",
         { type: "submit" },
-        `Revisar ${spec.title.toLowerCase()}`
+        `Revisar ${spec.lower}`
       );
       const element = dom.el(
         "form",
@@ -748,7 +768,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const confirm = dom.el(
         "button",
         { type: "button" },
-        `Registrar ${spec.title.toLowerCase()}`
+        `Registrar ${spec.lower}`
       );
       const back = dom.el(
         "button",
@@ -818,7 +838,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       sending = true;
       buttons.confirm.setAttribute("aria-disabled", "true");
       buttons.back.setAttribute("aria-disabled", "true");
-      stepNotice.status(`Registrando ${spec.title.toLowerCase()}…`);
+      stepNotice.status(`Registrando ${spec.lower}…`);
       const answer = await api.post<PrivacyStepAnswer>(
         `/api/privacy-cases/${encodeURIComponent(detail.case.id)}${spec.segment}`,
         read.body
@@ -913,6 +933,40 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
   );
 }
 
+/** With a legal retention chosen the note is mandatory: the label and a hint say so, and the hint is read with the field. */
+function legalNoteHint(
+  dom: Dom,
+  hintId: string,
+  reason: Field<HTMLSelectElement>,
+  note: Field<HTMLInputElement>
+): void {
+  const label = note.element.querySelector("label");
+  const hint = dom.el(
+    "p",
+    { class: "hint", hidden: "", id: hintId },
+    LEGAL_NOTE_REQUIRED
+  );
+  note.element.append(hint);
+  const described = note.control.getAttribute("aria-describedby") ?? "";
+  reason.control.addEventListener("change", () => {
+    const mandatory = reason.control.value === "legal_retention";
+    if (label !== null) {
+      label.textContent = mandatory
+        ? NOTE_MANDATORY_LABEL
+        : NOTE_OPTIONAL_LABEL;
+    }
+    if (mandatory) {
+      hint.removeAttribute("hidden");
+    } else {
+      hint.setAttribute("hidden", "");
+    }
+    note.control.setAttribute(
+      "aria-describedby",
+      mandatory ? `${described} ${hintId}` : described
+    );
+  });
+}
+
 /** The decision's body and words, or null once the first field the server would refuse is marked. */
 function readDecision(
   decision: Field<HTMLSelectElement>,
@@ -939,6 +993,13 @@ function readDecision(
   const noteRefused = noteProblem(noteText, "A nota");
   if (noteRefused !== null) {
     note.refuse(noteRefused);
+    return null;
+  }
+  if (
+    why === "legal_retention" &&
+    [...noteText].length < MIN_LEGAL_RETENTION_NOTE_LENGTH
+  ) {
+    note.refuse(LEGAL_NOTE_REFUSED);
     return null;
   }
   const body: Record<string, string> = { decision: chosen };

@@ -332,6 +332,42 @@ describe("the steps", () => {
     }
   });
 
+  it("refuses a legal retention without the obligation named, and takes it with the note", async () => {
+    const { privacy: calls, send } = setup();
+    const url = `/api/privacy-cases/${caseId}/decision`;
+    const responses = await Promise.all(
+      [undefined, null, "   ", "123456789"].map((note) =>
+        send("POST", url, {
+          decision: "reject",
+          note,
+          reason: "legal_retention",
+        })
+      )
+    );
+    expect(responses.map((response) => response.status)).toEqual([
+      400, 400, 400, 400,
+    ]);
+    const bodies = await Promise.all(
+      responses.map((response) => response.json())
+    );
+    for (const body of bodies) {
+      expect(body).toMatchObject({ error: "invalid_privacy_step" });
+    }
+    expect(calls.decision).not.toHaveBeenCalled();
+    const accepted = await send("POST", url, {
+      decision: "reject",
+      note: "CTN art195",
+      reason: "legal_retention",
+    });
+    expect(accepted.status).toBe(200);
+    expect(calls.decision).toHaveBeenCalledTimes(1);
+    const other = await send("POST", url, {
+      decision: "reject",
+      reason: "no_authority",
+    });
+    expect(other.status).toBe(200);
+  });
+
   it("says a step out of order is a conflict, a decision not allowed is a refusal and an unknown case is not found", async () => {
     const outOfOrder = setup({
       role: () =>

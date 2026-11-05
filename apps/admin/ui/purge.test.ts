@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { environmentText } from "./app";
 import {
   CANCEL_EFFECT,
@@ -42,7 +42,12 @@ import {
 } from "./test-page";
 import type { PrivacyCaseDetail } from "./types";
 import { NO_PERSONAL_DATA } from "./views/privacy-form";
-import { purgeCaseProblem, sameStoreName } from "./views/purge";
+import {
+  holdReviewAt,
+  lastHoldReviewDay,
+  purgeCaseProblem,
+  sameStoreName,
+} from "./views/purge";
 
 /**
  * The tab "Purge e trava legal" of a privacy case (corte admin-v2, Parte 7): what it offers by the store's state and
@@ -592,6 +597,12 @@ describe("Purge tab: the hold sentence appears once", () => {
     allElements(root).filter(
       (element) => element.getAttribute("class") === "purge-part"
     );
+  const partTitled = (root: FakeElement, title: string) =>
+    partsOf(root).find((part) => visibleText(part).startsWith(title)) as
+      | FakeElement
+      | undefined;
+  const PURGE_TITLE = "Apagamento da loja (purge)";
+  const HOLD_TITLE = "Trava legal";
   const ONLY_HOLD = {
     ...OWNER,
     capabilities: [
@@ -614,10 +625,12 @@ describe("Purge tab: the hold sentence appears once", () => {
     expect(countOf(mounted.root)).toBe(1);
     const parts = partsOf(mounted.root);
     expect(parts).toHaveLength(2);
-    expect(visibleText(parts[0] as FakeElement)).toContain(HOLD_STOPS_PURGE);
-    expect(visibleText(parts[1] as FakeElement)).not.toContain(
-      HOLD_STOPS_PURGE
-    );
+    expect(
+      visibleText(partTitled(mounted.root, PURGE_TITLE) as FakeElement)
+    ).toContain(HOLD_STOPS_PURGE);
+    expect(
+      visibleText(partTitled(mounted.root, HOLD_TITLE) as FakeElement)
+    ).not.toContain(HOLD_STOPS_PURGE);
   });
 
   it("says it once, in the hold block, without a hold", async () => {
@@ -625,10 +638,12 @@ describe("Purge tab: the hold sentence appears once", () => {
     expect(countOf(mounted.root)).toBe(1);
     const parts = partsOf(mounted.root);
     expect(parts).toHaveLength(2);
-    expect(visibleText(parts[0] as FakeElement)).not.toContain(
-      HOLD_STOPS_PURGE
-    );
-    expect(visibleText(parts[1] as FakeElement)).toContain(HOLD_STOPS_PURGE);
+    expect(
+      visibleText(partTitled(mounted.root, PURGE_TITLE) as FakeElement)
+    ).not.toContain(HOLD_STOPS_PURGE);
+    expect(
+      visibleText(partTitled(mounted.root, HOLD_TITLE) as FakeElement)
+    ).toContain(HOLD_STOPS_PURGE);
   });
 
   it("keeps it once, in the hold block, when the purge block cannot say it", async () => {
@@ -832,5 +847,39 @@ describe("Purge tab: the legal hold", () => {
     const addresses = mounted.calls.map((call) => call.path).join("\n");
     expect(addresses).not.toMatch(TRACE);
     expect(mounted.navigations).toEqual([]);
+  });
+});
+
+describe("Purge tab: the review date the field offers", () => {
+  const dayAfter = (day: string) =>
+    new Date(new Date(`${day}T12:00:00Z`).getTime() + 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+
+  it("keeps the end of the day in Brasília for a day in the middle of the range", () => {
+    expect(holdReviewAt("2026-12-01", NOW)).toBe("2026-12-01T23:59:59-03:00");
+  });
+
+  it("sets the field's max to the last day and refuses a later day without calling the server", async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+    try {
+      const mounted = await openClosed([]);
+      await click(mounted.root, "Pôr trava legal");
+      const field = byId(mounted.root, "purge-trava-data");
+      const last = lastHoldReviewDay(NOW);
+      expect(field.getAttribute("max")).toBe(last);
+      field.value = dayAfter(last);
+      await click(mounted.root, "Revisar a trava legal");
+      expect(visibleText(mounted.root)).toContain(
+        purgeRefusalText("invalid_review_at")
+      );
+      expect(posts(mounted.calls)).toHaveLength(0);
+
+      field.value = last;
+      await click(mounted.root, "Revisar a trava legal");
+      expect(visibleText(panelOf(mounted.root))).toContain(HOLD_UNDO);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
