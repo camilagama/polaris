@@ -15,7 +15,13 @@ import {
   type StoredDay,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
-import { addDays, dayCount, monthName, type Period } from "./result-period";
+import {
+  addDays,
+  dayCount,
+  lastOfMonth,
+  monthName,
+  type Period,
+} from "./result-period";
 
 /**
  * The row of KPI cards of the Resultado (revisão de UI v7, § 8), in the mold of the Início's (home-kpis.ts): Resultado
@@ -42,10 +48,6 @@ const drawing = (amount: bigint): number => Number(amount) / 100;
 
 /** Above this many days a period groups by month (AC-7): its cards compare with nothing. */
 const LONGEST_COMPARED = 62;
-
-function lastOfMonth(day: string): string {
-  return addDays(`${addDays(`${day.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1);
-}
 
 /** True when the period is one whole calendar month ("Este mês", "Mês passado", or a range given as one). */
 function isWholeMonth(period: Period): boolean {

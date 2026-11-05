@@ -400,10 +400,10 @@ async function assertSame(
   period: EconomicsPeriod,
   limit: number | undefined,
   label: string,
-  tally: Tally
+  tally: Tally,
+  asOf: string = runClock().toISOString()
 ) {
   const { tenant } = store;
-  const asOf = runClock().toISOString();
   const long =
     Math.round(
       (Date.parse(`${period.to}T00:00:00Z`) -
@@ -1126,6 +1126,43 @@ async function assertScenarios(
       // biome-ignore lint/performance/noAwaitInLoops: each window is its own pair of reads
       await assertSame(db, store, period, limit, store.timezone, tally);
     }
+  }
+}
+
+/**
+ * Long windows read by month at fixed instants at which the store's date is
+ * not the UTC date (02:30Z is the evening before in São Paulo; 15:30Z is the
+ * next morning in Tokyo and in Auckland): the month of today ends on the
+ * store's today, from its time zone, never on the UTC date of the instant.
+ */
+async function assertStoreToday(db: RuntimeDb, stores: Store[], tally: Tally) {
+  const day = runClock().toISOString().slice(0, 10);
+  for (const store of stores) {
+    let otherDay = false;
+    for (const time of ["02:30:00.000Z", "15:30:00.000Z"]) {
+      const asOf = `${day}T${time}`;
+      const today = storeDay(() => new Date(asOf), 0, store.timezone);
+      otherDay ||= today !== day;
+      for (const period of [
+        { from: shiftDay(today, -40), to: shiftDay(today, AFTER_TODAY_DAYS) },
+        { from: shiftDay(today, 1 - MAX_ECONOMICS_PERIOD_DAYS), to: today },
+      ]) {
+        // biome-ignore lint/performance/noAwaitInLoops: each window is its own pair of reads
+        await assertSame(
+          db,
+          { tenant: store.tenant, today },
+          period,
+          undefined,
+          `${store.timezone} at ${asOf}`,
+          tally,
+          asOf
+        );
+      }
+    }
+    assert.ok(
+      otherDay,
+      `${store.timezone}: no instant on another day than UTC`
+    );
   }
 }
 
@@ -2091,6 +2128,7 @@ async function run() {
     }
     await moveSomeBack(admin.pool, zones);
     await assertScenarios(db, zones, tally, seed);
+    await assertStoreToday(db, zones, tally);
     tests.push(
       `the SQL summary equals the engine in every field (result, cards, quality, daily date by date, ranking, the answer byte by byte) in ${tally.comparisons} windows of 1 to 366 days of stores in São Paulo, Tokyo and Auckland: a discount split with a tie, a percentage discount, returns partial, repeated and full with and without restocking, costs unknown in part and in all of the items, costs of six places, the processing and the anticipation fee unknown and known, surcharge, freight and payment surcharge, an expense linked to a live sale, one voided, one of a cancelled sale (operating by competence), cancellations, sales a second before and after midnight, sales at the far end of the year`
     );
@@ -2131,7 +2169,7 @@ async function run() {
     }
     assert.equal(tally.monthly, tally.comparisons);
     tests.push(
-      `the monthly read equals the daily read added up in cents in all ${tally.monthly} windows (63 and 366 days, a range past today with an expense after it, a range wholly after today, ${LONG_WINDOWS_PER_STORE} drawn long windows per store and every drawn case): one entry per month up to today with its ends cut, the dates after today apart, costs and result null for a month with an unknown date, unknownDays the count of those dates, and the result, cards, quality and ranking byte by byte; up to 62 days the read with no granularity asked is the daily one, above it the monthly one`
+      `the monthly read equals the daily read added up in cents in all ${tally.monthly} windows (63 and 366 days, a range past today with an expense after it, a range wholly after today, ${LONG_WINDOWS_PER_STORE} drawn long windows per store, a year and a range past today read at 02:30Z and 15:30Z, when the store's date is not the UTC date, and every drawn case): one entry per month up to today with its ends cut, the dates after today apart, costs and result null for a month with an unknown date, unknownDays the count of those dates, and the result, cards, quality and ranking byte by byte; up to 62 days the read with no granularity asked is the daily one, above it the monthly one`
     );
     assert.ok(
       tally.daysWithSales >= 60,

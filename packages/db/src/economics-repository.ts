@@ -465,7 +465,7 @@ export interface TopProduct extends ProductSales {
 
 /** Rows the database sent for a summary: what it read was aggregated by the database itself. */
 export interface PeriodSummaryReadCounts {
-  /** One row per date of the period. */
+  /** One row per entry of the series (a date, or a month and the dates after today above 62 days). */
   days: number;
   /** One row per ranked product (0 without a ranking). */
   products: number;
@@ -884,7 +884,7 @@ function monthSelect(
     bucket AS (
       SELECT day_row.*, store_today.day AS today,
         day_row.day > store_today.day AS after_today,
-        date_trunc('month', day_row.day)::date AS month
+        date_trunc('month', day_row.day::timestamp)::date AS month
       FROM day_row
       CROSS JOIN store_today
     )
@@ -1113,7 +1113,7 @@ function rankedOf(text: string | null | undefined): TopProduct[] {
  * The result of a period with its daily series and, when asked, its most sold
  * products, aggregated by the database in one statement
  * (`periodSummaryQuery`, so one snapshot at any isolation level): the Worker
- * only adds up one row per date, so its work does not grow with the sales. The same result as the
+ * only adds up one row per date (per month above 62 days), so its work does not grow with the sales. The same result as the
  * engine over `readPeriodFacts` (ADR 0054), scoped by the organization of the
  * server context and by RLS.
  */

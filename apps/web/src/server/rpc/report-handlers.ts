@@ -33,8 +33,9 @@ interface ReportRpcDependencies {
  * when asked and the account of how complete the estimate is.
  *
  * Each read leaves one record with counts only (the rows the database sent,
- * one per date and one per ranked product, the days, the size of the answer and
- * the time it took) and the organization's opaque ID:
+ * one per entry of the series, the dates after today apart, and one per ranked
+ * product; `days`, the entries of the series, which are months above 62 days;
+ * the size of the answer and the time it took) and the organization's opaque ID:
  * never an amount or a name. The CPU time is the invocation's own, in the
  * Workers Logs of the same `requestId`.
  */

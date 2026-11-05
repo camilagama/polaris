@@ -6,7 +6,7 @@ import {
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
 import type { PeriodChain, PeriodQuality } from "./dashboard-model";
-import { monthAbbreviation, monthName } from "./result-period";
+import { lastOfMonth, monthAbbreviation, monthName } from "./result-period";
 
 /**
  * The series of the Resultado chart and its table (corte resultado-v2, AC-5 to AC-12): the days up to the store's today,
@@ -143,13 +143,6 @@ function dayRow(day: StoredDay): ResultRow {
     salesCount: day.salesCount,
     tableLabel: formatCalendarDate(day.date),
   };
-}
-
-function lastOfMonth(day: string): string {
-  const next = new Date(
-    Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 0)
-  );
-  return next.toISOString().slice(0, 10);
 }
 
 /**
