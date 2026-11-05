@@ -350,6 +350,14 @@ export interface MaskedCustomer {
   phone: string | null;
 }
 
+/** The four fields of a customer the server can reveal; there is no other, and no secret among them. */
+export type RevealableField = "email" | "name" | "notes" | "phone";
+
+/** What `POST …/customers/:customerId/reveal` answers once checked: the real value, or null when the field is empty. */
+export interface RevealedField {
+  value: string | null;
+}
+
 /** What `GET /api/support-cases/:caseId/customers` answers: a page of at most 50 and the cursor of the next. */
 export interface MaskedCustomerPage {
   customers: MaskedCustomer[];

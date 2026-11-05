@@ -703,6 +703,33 @@ a {
   margin-top: 1rem;
 }
 
+.reveal-review:not(:empty) {
+  padding-top: 0.75rem;
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.reveal-cell {
+  min-width: 0;
+}
+
+.reveal-cell .button-row {
+  margin-top: 0.5rem;
+}
+
+/* a revealed note keeps its line breaks and wraps anywhere, so a long word cannot widen the page */
+.revealed-value {
+  display: block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reveal-cell .hint {
+  margin: 0.25rem 0 0.5rem;
+  white-space: normal;
+}
+
 .internal:empty {
   display: none;
 }

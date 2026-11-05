@@ -289,6 +289,19 @@ describe("the refund area of the chosen store (AC-9)", () => {
     expect(calls.at(-1)?.path).toBe("/api/support-cases");
   });
 
+  it("has no UTF-16 length limit on the field, and the counter counts 500 and 501 emoji as the server does", async () => {
+    const { section } = await chosen([]);
+    const field = byId(section, "motivo");
+    expect(field.getAttribute("maxlength")).toBeNull();
+    for (const count of [500, 501]) {
+      field.value = "😀".repeat(count);
+      field.dispatch("input");
+      expect(byId(section, "motivo-contador").textContent).toBe(
+        `${count} de 500 caracteres`
+      );
+    }
+  });
+
   it("says a refused reason or a missing permission in words", async () => {
     const { section } = await chosen([
       json({ error: "invalid_case_reason" }, 400),

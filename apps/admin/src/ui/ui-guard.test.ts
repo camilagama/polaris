@@ -108,7 +108,7 @@ const NAME_WRAPS = /\.purge label bdi\s*\{[^}]*overflow-wrap:\s*anywhere/;
  * (`/api/support-cases/:id/customers`) and ending it (`/api/tenant-access/:grantId`; Parte 5), and scheduling and
  * cancelling the purge of a closed store, placing and releasing its legal hold, and the list of the holds in force
  * (`/api/support-cases/:id/purge`, `/purge/cancel`, `/legal-hold`, `/legal-hold/release` and `/api/legal-holds`;
- * Parte 7). Revealing a field (`…/customers/:customerId/reveal`) is not in the cut.
+ * Parte 7), and revealing one field of one customer (`/api/support-cases/:id/customers/:customerId/reveal`; Parte 6).
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/access-log",
@@ -122,9 +122,28 @@ const ROUTES_OF_THIS_CUT = [
   "/api/whoami",
 ];
 
-function forbiddenIn(text: string): string[] {
-  return SCRIPT_FORBIDDEN.filter(([, pattern]) => pattern.test(text)).map(
-    ([name]) => name
+function forbiddenIn(text: string, allowed: readonly string[] = []): string[] {
+  return SCRIPT_FORBIDDEN.filter(
+    ([name, pattern]) => !allowed.includes(name) && pattern.test(text)
+  ).map(([name]) => name);
+}
+
+/**
+ * The one timer of the page: the revealed customer value must leave the screen on its own after 30 seconds, and
+ * nothing but a timer does that without a click. It is counted: one call, in one module.
+ */
+const TIMER_MODULE = "ui/views/reveal.ts";
+const TIMER_CALL = /\bsetTimeout\(/g;
+const TEST_FILE = /(\.test|\/test-[a-z-]+)\.ts$/;
+
+function timerCalls(files: readonly string[]): Record<string, number> {
+  return Object.fromEntries(
+    files
+      .map((file): [string, number] => [
+        file,
+        (readFileSync(join(app, file), "utf8").match(TIMER_CALL) ?? []).length,
+      ])
+      .filter(([, count]) => count > 0)
   );
 }
 
@@ -149,8 +168,16 @@ describe("the built script of the page", () => {
     expect(gzip(bundle) + gzip(sheet)).toBeLessThan(100 * 1024);
   });
 
-  it("carries no HTML sink, eval, timer, browser storage, outside channel or log", () => {
-    expect(forbiddenIn(bundle)).toEqual([]);
+  it("carries no HTML sink, eval, browser storage, outside channel or log, and exactly one timer", () => {
+    expect(forbiddenIn(bundle, ["setTimeout"])).toEqual([]);
+    expect(bundle.match(/setTimeout/g)).toHaveLength(1);
+  });
+
+  it("has that one timer in the module of the reveal and nowhere else, and counts a second one", () => {
+    const sources = uiFiles(ui).filter((file) => !TEST_FILE.test(file));
+    expect(timerCalls(sources)).toEqual({ [TIMER_MODULE]: 1 });
+    expect("setTimeout(f,1);setTimeout(g,2)".match(TIMER_CALL)).toHaveLength(2);
+    expect("clearTimeout(timer)".match(TIMER_CALL)).toBeNull();
   });
 
   it("finds each of them when it is there (the check is not blind)", () => {
@@ -197,7 +224,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, cancelling a renewal and refunding the period in force, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access and reading the masked customers, and the purge and the legal hold: no other action of a case or a store (no reveal)", () => {
+  it("names, under those routes, only the diagnostics, the refund window, cancelling a renewal and refunding the period in force, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, giving an access, reading the masked customers and revealing one field of one, and the purge and the legal hold: no other action of a case or a store", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -210,8 +237,8 @@ describe("the built script of the page", () => {
         )
     );
     expect(segments.size).toBeGreaterThan(10);
-    const named = (text: string) =>
-      [...segments]
+    const namedIn = (known: ReadonlySet<string>, text: string) =>
+      [...known]
         .filter((segment) => new RegExp(`/${segment}(?![a-z-])`).test(text))
         .sort();
     const expected = [
@@ -240,17 +267,65 @@ describe("the built script of the page", () => {
       "release",
       "resolve",
       "retry",
+      "reveal",
       "role",
       "scope",
       "suspend",
     ];
+    const named = (text: string) => namedIn(segments, text);
     expect(named(bundle)).toEqual(expected);
-    // a planted call to another action of a case is seen
+    // every route segment is one the page names; a planted call to a segment no route of the cut permits is seen
+    const planted = new Set([...segments, "erase"]);
+    expect(expected).not.toContain("erase");
     expect(
-      named(
-        `${bundle}fetch(\`/api/support-cases/\${id}/customers/\${c}/reveal\`)`
-      )
-    ).toEqual([...expected, "reveal"].sort());
+      namedIn(planted, `${bundle}fetch(\`/api/support-cases/\${id}/erase\`)`)
+    ).toEqual([...expected, "erase"].sort());
+  });
+});
+
+/** The sources that hold a revealed customer value: nothing there reaches the clipboard, storage, a log or a secret. */
+const FIELD_LIST = /REVEAL_FIELDS[^=]*=\s*\[([^\]]*)\]/;
+const QUOTED = /"[a-z]+"/g;
+const REVEAL_SOURCES = ["ui/views/reveal.ts", "ui/views/access.ts"];
+const REVEAL_FORBIDDEN =
+  /clipboard|localStorage|sessionStorage|indexedDB|console|document\.cookie|document\.title|history\.(push|replace)State|location\.(hash|search|href)|execCommand|password|passwd|senha|secret|segredo|token|api[_-]?key|webhook/i;
+
+describe("the sources of the reveal (AC-P6.3, AC-P6.4)", () => {
+  it("name no clipboard, storage, log, address, title or secret", () => {
+    for (const file of REVEAL_SOURCES) {
+      const code = readFileSync(join(app, file), "utf8")
+        .replaceAll(/\/\*[\s\S]*?\*\//g, "")
+        .replaceAll(/^\s*\/\/.*$/gm, "");
+      expect({ file, hit: code.match(REVEAL_FORBIDDEN)?.[0] }).toEqual({
+        file,
+        hit: undefined,
+      });
+    }
+  });
+
+  it("finds each of them when it is there (the check is not blind)", () => {
+    for (const planted of [
+      "navigator.clipboard.writeText(v)",
+      "localStorage.setItem(k, v)",
+      "console.log(v)",
+      "document.title = v",
+      "history.replaceState(null, '', v)",
+      "const apiKey = 1",
+      "const token = 1",
+    ]) {
+      expect(REVEAL_FORBIDDEN.test(planted)).toBe(true);
+    }
+  });
+
+  it("offers exactly the four fields of the server's list and no other", () => {
+    const source = readFileSync(join(app, "ui/views/reveal.ts"), "utf8");
+    const list = source.match(FIELD_LIST)?.[1];
+    expect(list?.match(QUOTED)).toEqual([
+      '"name"',
+      '"email"',
+      '"phone"',
+      '"notes"',
+    ]);
   });
 });
 
@@ -434,6 +509,29 @@ describe("the Biome guard of apps/admin/ui (AC-13)", () => {
         lines("zz-planted-imports\\.ts", "lint/style/noRestrictedImports")
       ).toEqual(imports.map((_source, index) => index + 1));
       expect(lines("zz-planted-allowed\\.ts", "\\S+")).toEqual([]);
+    } finally {
+      for (const name of names) {
+        rmSync(join(ui, name), { force: true });
+      }
+    }
+  }, 120_000);
+
+  it("refuses a timer in any module but the reveal's, whatever its name", () => {
+    const names = ["zz-planted-timer.ts", "views/zz-reveal.ts"];
+    const content = "setTimeout(() => undefined, 1);\nexport {};\n";
+    try {
+      for (const name of names) {
+        writeFileSync(join(ui, name), content);
+      }
+      const result = spawnSync(
+        join(repository, "node_modules/.bin/biome"),
+        ["lint", ...names.map((name) => `apps/admin/ui/${name}`)],
+        { cwd: repository, encoding: "utf8" }
+      );
+      const output = `${result.stdout}${result.stderr}`;
+      for (const name of names) {
+        expect(output).toContain(`apps/admin/ui/${name}:1:1 plugin`);
+      }
     } finally {
       for (const name of names) {
         rmSync(join(ui, name), { force: true });

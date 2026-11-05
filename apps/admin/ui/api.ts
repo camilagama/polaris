@@ -12,6 +12,8 @@ import type {
   MaskedCustomer,
   MaskedCustomerPage,
   ProviderCommandResult,
+  RevealableField,
+  RevealedField,
 } from "./types";
 
 export type Problem =
@@ -473,4 +475,31 @@ export async function sendProviderCommand(
     };
   }
   return { kind: "problem", problem: { ok: false, problem: "failed" } };
+}
+
+/**
+ * One real field of one customer of the case (audited by the server, the field and never the value): one POST, never
+ * repeated by itself. Only the four fields the server accepts can be named; the answer must be that customer's and
+ * that field, or it is not shown.
+ */
+export async function revealField(
+  api: Api,
+  caseId: string,
+  customerId: string,
+  field: RevealableField
+): Promise<Read<RevealedField>> {
+  const answer = await api.post<unknown>(
+    `/api/support-cases/${encodeURIComponent(caseId)}/customers/${encodeURIComponent(customerId)}/reveal`,
+    { field }
+  );
+  if (!answer.ok) {
+    return answer;
+  }
+  const { data } = answer;
+  return isRecord(data) &&
+    data.customerId === customerId &&
+    data.field === field &&
+    (data.value === null || typeof data.value === "string")
+    ? { data: { value: data.value }, ok: true }
+    : { ok: false, problem: "failed" };
 }
