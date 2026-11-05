@@ -3,6 +3,7 @@ import type { ScreenTools } from "../app";
 import { facts } from "../blocks";
 import { hasControlCharacter, labelName, storeName } from "../dom";
 import {
+  billingStateText,
   brasiliaMomentText,
   calendarDayText,
   lastDayText,
@@ -42,6 +43,9 @@ import {
   REREAD_BUTTON,
   RESULT_TEXT,
   RETRY_BUTTON,
+  RENEWAL_LABEL,
+  MAYBE_SENT_HINT,
+  NOT_RECORDED_SUFFIX,
   refundEffectText,
   type SettledResult,
   UNKNOWN_HINT,
@@ -59,7 +63,7 @@ type Kind = "cancel" | "refund";
 export interface After {
   kind: "alert" | "success";
   /** The refund's confirmation opens again, with this reason, over the amount the new read gives (`amount_changed`). */
-  reopenRefund?: { reason: string };
+  reopenRefund?: { from: string | null; reason: string };
   text: string | ((view: RefundWindowView) => string);
 }
 
@@ -133,7 +137,7 @@ function renewalLine(renewal: RefundWindowView["renewal"]): string {
 export { renewalLine };
 
 /**
- * The two actions of the billing of a support case (corte admin-v2 Parte 10, ADR 0105), each reviewed in a step of its
+ * The two actions of the billing of a support case (ADR 0105), each reviewed in a step of its
  * own: cancel the renewal, and refund the charge in force (which cancels the renewal first). The page offers only
  * what the read says is possible and the operator may do; the server decides again at every command. The command ID is
  * made when a confirmation opens and kept until a definite answer, so a repeat after "we do not know" is the same
@@ -291,23 +295,35 @@ export function billingActionsView(
   const amountChanged = (current: Draft) => {
     options.settled({
       kind: "alert",
-      reopenRefund: { reason: current.reason },
+      reopenRefund: { from: view.firstChargeAmount, reason: current.reason },
       text: (fresh) =>
         amountChangedText(
-          moneyText(fresh.firstChargeAmount),
+          fresh.firstChargeAmount === null
+            ? null
+            : moneyText(fresh.firstChargeAmount),
           fresh.firstChargeAmount === view.firstChargeAmount
         ),
     });
   };
 
   const definite = (result: SettledResult, outcomeRecorded: boolean) => {
-    if (!outcomeRecorded) {
-      options.settled({ kind: "alert", text: OUTCOME_NOT_RECORDED });
+    const text = RESULT_TEXT[result]({
+      accessUntil,
+      amount: moneyText(amount),
+    });
+    if (outcomeRecorded) {
+      options.settled({
+        kind: ALERT_RESULTS.has(result) ? "alert" : "success",
+        text,
+      });
       return;
     }
     options.settled({
-      kind: ALERT_RESULTS.has(result) ? "alert" : "success",
-      text: RESULT_TEXT[result]({ accessUntil, amount: moneyText(amount) }),
+      kind: "alert",
+      text:
+        result === "cancelled" || result === "refund_requested"
+          ? OUTCOME_NOT_RECORDED
+          : `${text} ${NOT_RECORDED_SUFFIX}`,
     });
   };
 
@@ -333,9 +349,10 @@ export function billingActionsView(
     if (outcome.kind === "result") {
       switch (outcome.result) {
         case "provider_unavailable":
-          unknown(current, UNKNOWN_OUTCOME, buttons);
+          unknown(current, UNKNOWN_OUTCOME, UNKNOWN_HINT, buttons);
           return;
         case "command_in_progress":
+          freeze(current);
           notice.alert(IN_PROGRESS);
           return;
         case "amount_changed":
@@ -347,27 +364,39 @@ export function billingActionsView(
       }
     }
     if (writeMayHaveHappened(outcome.problem)) {
-      unknown(current, WRITE_MAY_HAVE_HAPPENED, buttons);
+      unknown(current, WRITE_MAY_HAVE_HAPPENED, MAYBE_SENT_HINT, buttons);
       return;
     }
+    // the request was refused before anything ran: a new attempt is a new command
+    current.commandId = crypto.randomUUID();
     notice.alert(failureText(current.kind, outcome.problem));
   };
 
+  /** The reason of a command that may be running stays as it was sent: a repeat is the same command. */
+  function freeze(current: Draft) {
+    current.input.setAttribute("aria-readonly", "true");
+    current.input.readOnly = true;
+    current.sent = true;
+  }
+
   /** The outcome is not known: the confirmation stays as it was and the same command can go again. */
-  function unknown(current: Draft, text: string, buttons: HTMLElement[]) {
+  function unknown(
+    current: Draft,
+    text: string,
+    hint: string,
+    buttons: HTMLElement[]
+  ) {
     notice.alert(text);
     buttons[0]?.replaceChildren(RETRY_BUTTON);
     if (!current.sent) {
       box.append(
-        dom.el("p", { class: "hint", id: "cobranca-incerto" }, UNKNOWN_HINT),
+        dom.el("p", { class: "hint", id: "cobranca-incerto" }, hint),
         button(REREAD_BUTTON, true, () => {
           options.settled({ kind: "success", text: "Cobrança lida de novo." });
         })
       );
     }
-    current.input.setAttribute("aria-readonly", "true");
-    current.input.readOnly = true;
-    current.sent = true;
+    freeze(current);
   }
 
   const review = (kind: Kind, prefill = "") => {
@@ -414,8 +443,11 @@ export function billingActionsView(
     const lines: [string, Node | string][] =
       kind === "cancel"
         ? [
-            ["Assinatura", `${methodText(view.method)}, ${view.state}`],
-            ["Renovação", renewalLine(view.renewal)],
+            [
+              "Assinatura",
+              `${methodText(view.method)}, ${billingStateText(view.state)}`,
+            ],
+            [RENEWAL_LABEL, renewalLine(view.renewal)],
           ]
         : [
             ["Valor a reembolsar", dom.el("span", { class: "money" }, money)],
@@ -423,7 +455,7 @@ export function billingActionsView(
               "Cobrança",
               `Primeira cobrança em ${brasiliaMomentText(view.firstChargeAt)}, ${methodText(view.method)}`,
             ],
-            ["Renovação", renewalLine(view.renewal)],
+            [RENEWAL_LABEL, renewalLine(view.renewal)],
           ];
     dom.fill(
       box,

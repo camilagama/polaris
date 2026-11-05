@@ -6,7 +6,7 @@ export type SettledResult = Exclude<
 >;
 
 /**
- * The words of the billing area of a support case (corte admin-v2 Parte 10, ADR 0105), apart from the screen. The
+ * The words of the billing area of a support case (ADR 0105), apart from the screen. The
  * effect lines are the design's and the server's: they say what the command does, never a code, a provider reference
  * or a status.
  */
@@ -74,6 +74,11 @@ export function environmentLine(
 
 export const UNKNOWN_OUTCOME =
   "Não sabemos se o provedor fez. Nada foi feito duas vezes por repetir: tente de novo com o mesmo pedido.";
+export const RENEWAL_LABEL = "Renovação (pelo registro da loja)";
+export const MAYBE_SENT_HINT =
+  "Se o pedido chegou, repetir usa o mesmo pedido e não cobra nem estorna de novo. Para um pedido novo, volte e abra a confirmação de novo.";
+export const NOT_RECORDED_SUFFIX =
+  "O registro do resultado na auditoria não foi confirmado; o pedido ficou registrado.";
 export const UNKNOWN_HINT =
   "A auditoria guardou o pedido sem resultado. Repetir usa o mesmo pedido e não cobra nem estorna de novo. Para um pedido novo, volte e abra a confirmação de novo.";
 export const WRITE_MAY_HAVE_HAPPENED =
@@ -91,7 +96,10 @@ export function limitReachedText(wait: string | null): string {
   return `Limite de 3 reembolsos por hora atingido. Nada foi feito. ${wait === null ? "Tente mais tarde." : `Tente de novo em ${wait}.`}`;
 }
 
-export function amountChangedText(now: string, same: boolean): string {
+export function amountChangedText(now: string | null, same: boolean): string {
+  if (now === null) {
+    return "O valor da cobrança mudou desde a leitura e não há mais cobrança a reembolsar. Nada foi feito.";
+  }
   return same
     ? `O provedor tem uma cobrança de valor diferente de ${now}, o que o registro da loja mostra. Nada foi feito. Se a diferença continuar, avise a engenharia.`
     : `O valor da cobrança mudou desde a leitura: agora é ${now}. Nada foi feito. Revise de novo antes de reembolsar.`;

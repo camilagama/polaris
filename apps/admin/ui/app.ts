@@ -108,10 +108,6 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
     caso: (tools) => [caseView(tools)],
     "caso-novo": (tools) => [newCaseView(tools)],
     casos: (tools) => [casesView(tools)],
-    configuracoes: (tools) =>
-      tools.can("platform:read")
-        ? settingsView(tools)
-        : [forbiddenArea(tools.dom, "Configurações", "configuracoes-titulo")],
     funil: funnelScreen,
     incidente: (tools) =>
       tools.can("operational_incident:read")
@@ -121,6 +117,10 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
       tools.can("operational_incident:read")
         ? [incidentsView(tools)]
         : [forbiddenArea(tools.dom, "Incidentes", "incidentes-titulo")],
+    configuracoes: (tools) =>
+      tools.can("platform:read")
+        ? settingsView(tools)
+        : [forbiddenArea(tools.dom, "Configurações", "configuracoes-titulo")],
     inicio: (tools) => [homeView(tools)],
     loja: (tools) => [storeView(tools)],
     lojas: storesScreen,

@@ -133,7 +133,7 @@ const BUTTON_ROW_WRAPS = /\.button-row\s*\{[^}]*flex-wrap:\s*wrap/;
 const BUTTON_LABEL_WRAPS =
   /\.button-row button[^{]*\{[^}]*white-space:\s*normal/;
 
-describe("the narrow screen of the billing area (corte admin-v2 Parte 10)", () => {
+describe("the narrow screen of the billing area (AC-P10.2 to AC-P10.6)", () => {
   it("keeps a refund amount on one line and lets the buttons wrap, so 360 px has no horizontal scroll", () => {
     expect(sheet).toMatch(MONEY_ON_ONE_LINE);
     expect(sheet).toMatch(BUTTON_ROW_WRAPS);

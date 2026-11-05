@@ -37,7 +37,7 @@ import type { RefundWindowView, SupportCaseSummary } from "./types";
 import { NO_PERSONAL_DATA } from "./views/privacy-form";
 
 /**
- * The billing of a support case (corte admin-v2 Parte 10, AC-P10.2 to AC-P10.6): the read is the trigger, the two
+ * The billing of a support case (AC-P10.2 to AC-P10.6): the read is the trigger, the two
  * actions are separate and each is reviewed, the amount sent is the amount read and shown, the command ID is made when
  * the review opens and kept only while the outcome is unknown, and each answer of the server has a sentence of its own.
  */
@@ -180,7 +180,9 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
   it("shows the facts of the renewal and offers the two actions, with the sentence that replaces the v1's", async () => {
     const page = await read(billing());
     expect(page.fact("Assinatura")).toBe("Pro ativo");
-    expect(page.fact("Renovação")).toBe("Viva: renova em 24/11/2026");
+    expect(page.fact("Renovação (pelo registro da loja)")).toBe(
+      "Viva: renova em 24/11/2026"
+    );
     expect(page.fact("Valor da cobrança")).toBe("R$ 249,00");
     expect(
       buttons(page.section, "Cancelar a renovação").length +
@@ -313,7 +315,7 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
   it("a renewal already cancelled offers only the refund, and says it is cancelled with the date the server gave", async () => {
     const page = await read(billing(cancelled()));
     expect(buttons(page.section, "Cancelar a renovação")).toEqual([]);
-    expect(page.fact("Renovação")).toBe(
+    expect(page.fact("Renovação (pelo registro da loja)")).toBe(
       "Cancelada: o acesso pago vai até 24/11/2026"
     );
     expect(visibleText(page.section)).toContain(
@@ -436,7 +438,7 @@ describe("cancelling the renewal (AC-P10.2, AC-P10.3)", () => {
     expect(visibleText(page.section)).toContain(
       "Renovação cancelada no provedor. O acesso já pago continua até o fim do período já pago."
     );
-    expect(page.fact("Renovação")).toBe(
+    expect(page.fact("Renovação (pelo registro da loja)")).toBe(
       "Cancelada: o acesso pago vai até 24/11/2026"
     );
     expect(buttons(page.section, "Cancelar a renovação")).toEqual([]);
@@ -735,6 +737,91 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
     expect(alertOf(page.section)?.textContent).toContain(
       "O provedor tem uma cobrança de valor diferente de R$ 249,00"
     );
+  });
+
+  it("amount_changed with the same amount does not reopen the review, so it spends no other refund of the hour", async () => {
+    const page = await read(billing(), [
+      cancelResult("amount_changed", 409),
+      json(billing()),
+    ]);
+    await confirmRefund(page);
+    expect(
+      byTag(page.section, "h4").some(
+        (heading) => heading.textContent === "Revise antes de reembolsar"
+      )
+    ).toBe(false);
+  });
+
+  it("an answer whose audit was not recorded does not say the action was done unless it was", async () => {
+    const page = await read(billing(), [
+      cancelResult("nothing_to_refund", 200, false),
+      json(billing()),
+    ]);
+    await confirmRefund(page);
+    expect(alertOf(page.section)?.textContent).toContain(
+      "Nada foi feito. O registro do resultado na auditoria não foi confirmado"
+    );
+    expect(alertOf(page.section)?.textContent).not.toContain(
+      "A ação foi feita"
+    );
+  });
+
+  it("a request that failed on the network does not claim that the audit kept it", async () => {
+    const page = await read(billing(), [new TypeError("Failed to fetch")]);
+    await confirmRefund(page);
+    expect(visibleText(page.section)).not.toContain("A auditoria guardou");
+    expect(visibleText(page.section)).toContain("Se o pedido chegou");
+  });
+
+  it("a definite refusal of the route makes the next attempt a new command", async () => {
+    const page = await read(billing(), [
+      json({ error: "invalid_request" }, 400),
+      cancelResult("nothing_to_refund"),
+      json(billing()),
+    ]);
+    await confirmRefund(page);
+    buttons(page.section, "Reembolsar R$ 249,00")[1]?.click();
+    await flush();
+    const [first, second] = page.commands();
+    expect(page.bodyOf(second).commandId).not.toBe(
+      page.bodyOf(first).commandId
+    );
+  });
+
+  it("command_in_progress keeps the command and its reason: the repeat is the same request", async () => {
+    const page = await read(billing(), [
+      cancelResult("command_in_progress", 409),
+      cancelResult("nothing_to_refund"),
+      json(billing()),
+    ]);
+    await confirmRefund(page);
+    byId(page.section, "cobranca-motivo").value = "outro motivo";
+    buttons(page.section, "Reembolsar R$ 249,00")[1]?.click();
+    await flush();
+    const [first, second] = page.commands();
+    expect(page.bodyOf(second)).toEqual(page.bodyOf(first));
+  });
+
+  it("a store chosen while a command is on its way gets nothing of the answer but a sentence that names the other store", async () => {
+    let answer: (response: Response) => void = () => undefined;
+    const page = await read(billing(), [
+      () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    ]);
+    buttons(page.section, "Reembolsar R$ 249,00")[0]?.click();
+    page.type("Motivo");
+    buttons(page.section, "Reembolsar R$ 249,00")[1]?.click();
+    buttons(page.root, "Ver loja")[0]?.click();
+    answer(cancelResult("refund_requested"));
+    await flush();
+    expect(alertOf(page.section)?.textContent).toContain(
+      "Loja Loja do Bruno: Reembolso de R$ 249,00 pedido ao provedor."
+    );
+    expect(
+      page.calls.filter((call) => call.path.endsWith("/refund-window"))
+    ).toHaveLength(1);
   });
 
   it("command_in_progress: said in words, the review stays", async () => {

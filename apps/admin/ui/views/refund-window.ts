@@ -9,7 +9,7 @@ import {
   moneyText,
 } from "../format";
 import { createNotice } from "../notice";
-import { AUDIT_TEXT, SEPARATE_ACTIONS } from "../refund-words";
+import { AUDIT_TEXT, RENEWAL_LABEL, SEPARATE_ACTIONS } from "../refund-words";
 import type { RefundWindowView } from "../types";
 import {
   type After,
@@ -53,7 +53,7 @@ function requestText(request: RefundWindowView["request"]): string {
 function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
   return facts(dom, [
     ["Assinatura", billingStateText(view.state)],
-    ["Renovação", renewalLine(view.renewal)],
+    [RENEWAL_LABEL, renewalLine(view.renewal)],
     ["Forma de pagamento", methodText(view.method)],
     ["Valor da cobrança", moneyText(view.firstChargeAmount)],
     ["Primeira cobrança", brasiliaMomentText(view.firstChargeAt)],
@@ -76,7 +76,7 @@ function windowFacts(dom: Dom, view: RefundWindowView, choice: CaseChoice) {
 }
 
 /**
- * Cobrança da loja (AC-9, AC-10; corte admin-v2 Parte 10): for the chosen store, an open case of it first, then the
+ * Cobrança da loja (AC-9, AC-10, AC-P10.4): for the chosen store, an open case of it first, then the
  * billing's read. The read is a POST from this origin that the server audits, so it happens only on an explicit click
  * next to the sentence that says so, once per click (the buttons are off while it answers), and never again by itself
  * but after an action the operator confirmed, which reads again so the page shows what the server holds. The two
@@ -128,6 +128,15 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
     choice: CaseChoice,
     view: RefundWindowView
   ): BillingActions | null => {
+    const builtFor = turn;
+    const away = organization;
+    const sayAway = (next: After) => {
+      const text =
+        typeof next.text === "string"
+          ? next.text
+          : "O valor da cobrança mudou desde a leitura. Nada foi feito.";
+      notice.alert(`Loja ${labelName(away.name)}: ${text}`);
+    };
     try {
       const shown = windowFacts(dom, view, choice);
       const actions = billingActionsView(tools, {
@@ -139,7 +148,11 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
         notice,
         organization,
         settled: (next) => {
-          read(choice, next);
+          if (builtFor === turn) {
+            read(choice, next);
+          } else {
+            sayAway(next);
+          }
         },
         view,
       });
@@ -198,7 +211,11 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       notice.status("Cobrança lida. A consulta ficou registrada na auditoria.");
       return;
     }
-    if (after.reopenRefund) {
+    // the same amount read again would only spend another of the 3 refunds an hour on the same refusal
+    if (
+      after.reopenRefund &&
+      answer.data.firstChargeAmount !== after.reopenRefund.from
+    ) {
       actions.openRefund(after.reopenRefund.reason);
     }
     say(after, answer.data);

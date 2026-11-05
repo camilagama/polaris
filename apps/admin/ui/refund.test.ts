@@ -381,7 +381,9 @@ describe("reading the refund window (AC-9, AC-10)", () => {
     expect(fact("Forma de pagamento")).toBe("Cartão");
     expect(fact("Assinatura")).toBe("Pro ativo");
     expect(fact("A regra do Polaris ainda permite o reembolso")).toBe("Sim");
-    expect(fact("Renovação")).toBe("Viva: renova em 24/11/2026");
+    expect(fact("Renovação (pelo registro da loja)")).toBe(
+      "Viva: renova em 24/11/2026"
+    );
     expect(fact("Pedido de reembolso do dono")).toBe("Nenhum");
     expect(visibleText(section)).toContain(SEPARATE_ACTIONS);
     expect(fact("Consulta feita em")).toBe(
