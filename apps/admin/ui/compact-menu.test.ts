@@ -117,6 +117,20 @@ describe("the compact menu closes with Esc", () => {
     expect(menu.summary.focused).toBe(2);
   });
 
+  it("with both menus open, the focus stays in the one that holds it and the other closes without taking it", () => {
+    const account = new FakeMenu(true, ACCOUNT);
+    const compact = new FakeMenu(true);
+    const page = mount(account, compact);
+    const link = {};
+    account.inside.add(link);
+    page.activeElement = link;
+    page.press("Escape");
+    expect(account.open).toBe(false);
+    expect(compact.open).toBe(false);
+    expect(account.summary.focused).toBe(1);
+    expect(compact.summary.focused).toBe(0);
+  });
+
   it("closes the menu but leaves the focus on a control outside it (the account menu, a field)", () => {
     const menu = new FakeMenu(true);
     const page = mount(menu);
