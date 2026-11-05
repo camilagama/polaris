@@ -11,11 +11,14 @@ import {
   PRIVACY_REQUESTER_KINDS,
   PRIVACY_STAGES,
 } from "@polaris/domain/admin/privacy-case";
+import { CLOSURE_NOTICE_DISMISSAL_REASONS } from "@polaris/domain/organization/closure-deadlines";
+import { ORGANIZATION_PURGE_REFUSALS } from "@polaris/domain/privacy/organization-purge";
 import { describe, expect, it } from "vitest";
 import {
   ACTIONS,
   CATEGORIES,
   CHANNELS,
+  CLOSURE_NOTICE_DISMISSALS,
   type Choices,
   DECISION_REASONS,
   DECISIONS,
@@ -26,6 +29,7 @@ import {
   ROLES,
   STAGES,
 } from "../../ui/privacy";
+import { NOTICE_REFUSALS } from "../../ui/closure-notice-words";
 
 /**
  * The page's script imports nothing of the domain, so the closed lists it offers are written in `ui/privacy.ts`.
@@ -46,6 +50,11 @@ const PAIRS: readonly [string, Choices, readonly string[]][] = [
   ["decision reason", DECISION_REASONS, PRIVACY_DECISION_REASONS],
   ["action", ACTIONS, PRIVACY_ACTIONS],
   ["stage", STAGES, PRIVACY_STAGES],
+  [
+    "closure notice dismissal reason",
+    CLOSURE_NOTICE_DISMISSALS,
+    CLOSURE_NOTICE_DISMISSAL_REASONS,
+  ],
 ];
 
 /** The page's list and the domain's hold the same codes, in the same order. */
@@ -79,5 +88,48 @@ describe("the privacy lists of the page and of the contract", () => {
     expect(sameCodes([...CHANNELS, ["fax", "Fax"]], domain)).toBe(false);
     expect(sameCodes([...CHANNELS].reverse(), domain)).toBe(false);
     expect(sameCodes(CHANNELS, domain)).toBe(true);
+  });
+});
+
+/**
+ * The two acts on the closure notice (corte admin-v2, Parte 12) are refused with the domain's named reasons, and the
+ * page says each in its own words. A reason the page has no sentence for gets the generic one, so a new closure-notice
+ * refusal in the domain fails here until the page says it.
+ */
+const CODE_LIKE = /[a-z]+_[a-z_]+/;
+const ORGANIZATION_WORD = /organiza[çc][ãa]o/i;
+
+describe("the closure notice refusals of the page and of the domain", () => {
+  const domain: readonly string[] = ORGANIZATION_PURGE_REFUSALS;
+  const privacyOfTheNotice = [
+    "privacy_case_required",
+    "privacy_case_not_deletion",
+    "privacy_requester_not_owner",
+    "privacy_case_not_accepted",
+  ];
+
+  it("says in words every refusal the domain names for these acts, and only refusals the domain names", () => {
+    const named = Object.keys(NOTICE_REFUSALS);
+    for (const code of named) {
+      expect(domain).toContain(code);
+    }
+    const ofTheNotice = domain.filter(
+      (code) =>
+        code.startsWith("closure_notice_") ||
+        code === "organization_mismatch" ||
+        code === "organization_not_in_closure" ||
+        privacyOfTheNotice.includes(code)
+    );
+    expect(ofTheNotice.length).toBeGreaterThanOrEqual(14);
+    expect([...named].sort()).toEqual([...ofTheNotice].sort());
+  });
+
+  it("gives each refusal a sentence of its own, without a code in it", () => {
+    const sentences = Object.values(NOTICE_REFUSALS);
+    expect(new Set(sentences).size).toBe(sentences.length);
+    for (const sentence of sentences) {
+      expect(sentence).not.toMatch(CODE_LIKE);
+      expect(sentence).not.toMatch(ORGANIZATION_WORD);
+    }
   });
 });
