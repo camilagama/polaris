@@ -37,8 +37,8 @@ const lines = (root: FakeElement) =>
   byTag(root, "li").map((item) => item.textContent);
 
 describe("Configurações: Você (AC-P9.1)", () => {
-  it("shows the operator as the top of the page does, the role and one permission per line, in words", async () => {
-    const { root } = await screen(
+  it("shows the operator as the menu of the account does, the role and one permission per line, in words", async () => {
+    const { operator, root } = await screen(
       json({
         ...OWNER,
         capabilities: [
@@ -50,7 +50,8 @@ describe("Configurações: Você (AC-P9.1)", () => {
       })
     );
     const text = visibleText(root);
-    expect(text).toContain("Operador: dona@polaris.example");
+    expect(text).toContain("Operadordona@polaris.example");
+    expect(operator.textContent).toBe("dona@polaris.example");
     expect(text).toContain("Dono da plataforma");
     expect(lines(root)).toEqual([
       "Ver o Início, o Funil de ativação e esta tela, Minha conta e permissões",
@@ -63,14 +64,15 @@ describe("Configurações: Você (AC-P9.1)", () => {
     );
   });
 
-  it("names the operator by the ID when the login has no e-mail, as the top of the page does", async () => {
-    const { root } = await screen(
+  it("names the operator by the ID when the login has no e-mail, as the menu of the account does", async () => {
+    const { operator, root } = await screen(
       json({
         ...OWNER,
         principal: { ...OWNER.principal, emailSnapshot: null },
       })
     );
-    expect(visibleText(root)).toContain(`Operador: ${OWNER.principal.id}`);
+    expect(operator.textContent).toBe(OWNER.principal.id);
+    expect(visibleText(root)).toContain(`Operador${OWNER.principal.id}`);
     expect(visibleText(root)).toContain(`${OWNER.principal.id}Papel`);
   });
 
@@ -92,7 +94,7 @@ describe("Configurações: Você (AC-P9.1)", () => {
   it.each(HOSTILE)(
     "writes what the server sent as text, never as markup (AC-C7): %s",
     async (hostile) => {
-      const { document, root } = await screen(
+      const { document, operator, root } = await screen(
         json({
           capabilities: ["platform:read", hostile],
           principal: {
@@ -103,7 +105,8 @@ describe("Configurações: Você (AC-P9.1)", () => {
         })
       );
       const text = visibleText(root);
-      expect(text).toContain(`Operador: ${hostile}`);
+      expect(operator.textContent).toBe(hostile);
+      expect(text).toContain(`Operador${hostile}`);
       expect(text).toContain(`desconhecido: ${hostile}`);
       expect(lines(root)).toContain(`Permissão ${hostile}`);
       expect(

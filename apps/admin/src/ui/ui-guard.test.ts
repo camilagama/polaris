@@ -92,6 +92,8 @@ const NO_DEPENDENCIES = new Proxy(
   {},
   { get: () => NEVER }
 ) as AdminDependencies;
+const SIDEBAR_WIDTH = /--sidebar-width:\s*16rem;/;
+const HEADER_HEIGHT = /--app-header:\s*3\.5rem;/;
 const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
 const NAME_WRAPS = /\.purge label bdi\s*\{[^}]*overflow-wrap:\s*anywhere/;
 /**
@@ -152,6 +154,16 @@ const MONEY_ON_ONE_LINE = /\.money\s*\{[^}]*white-space:\s*nowrap/;
 const BUTTON_ROW_WRAPS = /\.button-row\s*\{[^}]*flex-wrap:\s*wrap/;
 const BUTTON_LABEL_WRAPS =
   /\.button-row button[^{]*\{[^}]*white-space:\s*normal/;
+
+const CARD_IS_MEASURED = /\.area \{[^}]*container-type:\s*inline-size/;
+const STACKS_BY_THE_CARD = /@container \(max-width: 40rem\)/;
+
+describe("the tables beside the sidebar", () => {
+  it("stack by the width of their card, not of the window, so a 768 px window with the 16 rem sidebar has no horizontal scroll", () => {
+    expect(sheet).toMatch(CARD_IS_MEASURED);
+    expect(sheet).toMatch(STACKS_BY_THE_CARD);
+  });
+});
 
 describe("the narrow screen of the billing area (AC-P10.2 to AC-P10.6)", () => {
   it("keeps a refund amount on one line and lets the buttons wrap, so 360 px has no horizontal scroll", () => {
@@ -349,12 +361,10 @@ describe("the sheet of the page", () => {
     expect(sheet).toMatch(NAME_WRAPS);
   });
 
-  it("gives the shell grid rows, so a short page does not stretch the menu row over the screen", () => {
-    const shell = [...sheet.matchAll(/\.shell \{([^}]*)\}/g)];
-    expect(shell).toHaveLength(2);
-    for (const [, body] of shell) {
-      expect(body).toContain("grid-template-rows:");
-    }
+  it("sets the width of the dash's sidebar and the height of its header in the sheet, never in a style attribute", () => {
+    expect(sheet).toMatch(SIDEBAR_WIDTH);
+    expect(sheet).toContain(".w-\\(--sidebar-width\\) {");
+    expect(sheet).toMatch(HEADER_HEIGHT);
   });
 });
 

@@ -11,7 +11,9 @@ import { buttonVariants } from "@/ui/button";
  * (`e2e-pwa/ui-components.e2e.ts`); this reads the source so a change of a number fails here first.
  */
 const theme = readFileSync(
-  fileURLToPath(new URL("./theme.css", import.meta.url)),
+  fileURLToPath(
+    new URL("../../../../packages/ui/src/theme.css", import.meta.url)
+  ),
   "utf8"
 );
 

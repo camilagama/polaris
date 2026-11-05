@@ -1,0 +1,794 @@
+/*
+ * The source of the Admin's sheet. `apps/web/scripts/admin-sheet.ts` compiles it with the dash's Tailwind into
+ * `admin.css`, the one static file the page loads (the page's policy has no inline style, so nothing is computed in the
+ * browser), and `admin-sheet.test.ts` fails when that file differs from what the script would write now.
+ *
+ * The Admin is the dash with another menu: the same tokens (the whole of `@polaris/ui`'s theme.css), the shell written
+ * in `src/ui/page.ts` with the dash's class strings, and below, the dash's components put on the elements the page's
+ * script makes (it builds plain elements with a few class names, `ui/dom.ts`). Each `@apply` names, in the comment
+ * above it, the files of the dash whose classes it uses: `admin-sheet.test.ts` holds every class to them.
+ */
+@import "tailwindcss" source(none);
+@import "../../../packages/ui/src/theme.css";
+
+@source "../src/ui/page.ts";
+
+:root {
+  /* the width of the dash's sidebar (`SIDEBAR_WIDTH` of sidebar.tsx), set in the sheet: the page has no style attribute */
+  --sidebar-width: 16rem;
+  --app-header: 3rem;
+}
+
+@media (min-width: 760px) {
+  :root {
+    --app-header: 3.5rem;
+  }
+}
+
+@layer base {
+  [hidden] {
+    display: none !important;
+  }
+
+  /* every focusable element gets the dash's ring, also the ones the script makes without the class */
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* the content keeps the rhythm of a document: the reset leaves paragraphs and lists with no margin and no marker */
+  .content :where(p, ul, ol, dl) {
+    margin: 0 0 0.5rem;
+  }
+
+  .content :where(ul, ol) {
+    padding-left: 1.25rem;
+  }
+
+  .content :where(ul) {
+    list-style: disc;
+  }
+
+  .content :where(ol) {
+    list-style: decimal;
+  }
+
+  .content :where(h2, h3, h4) {
+    margin: 1rem 0 0.5rem;
+  }
+
+  .content :where(h2, h3) {
+    /* dash: apps/web/src/ui/card.tsx */
+    @apply text-section;
+  }
+
+  .content :where(h4) {
+    /* dash: apps/web/src/ui/toast.tsx */
+    @apply font-semibold text-sm;
+  }
+
+  .content :where(code) {
+    /* dash: apps/web/src/app-shell/not-found-page.tsx apps/web/src/ui/table.tsx */
+    @apply font-mono text-xs;
+  }
+
+  /* summary of a <details> drawn as a button: no marker */
+  summary {
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+@layer components {
+  /* the environment, the one thing of the Admin in the sidebar: said in words; production also by weight and a solid border */
+  .env {
+    padding: 0.25rem 0.5rem;
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    color: var(--foreground);
+    border-radius: var(--radius-md);
+  }
+
+  .env-staging {
+    border: 1px dashed var(--input);
+  }
+
+  .env-production {
+    font-weight: 700;
+    color: var(--destructive);
+    border: 2px solid var(--destructive);
+  }
+
+  .env-unknown {
+    font-weight: 600;
+    border: 1px solid var(--foreground);
+  }
+
+  .compact-env {
+    padding: 0.75rem 1rem 0;
+  }
+
+  /* the title of the screen and, under it, what the screen is for */
+  .purpose {
+    margin: 0.25rem 0 1.5rem;
+    overflow-wrap: anywhere;
+    /* dash: apps/web/src/ui/card.tsx */
+    @apply text-muted-foreground;
+  }
+
+  .back {
+    margin: 0 0 0.5rem;
+  }
+
+  /* links in the content: the dash's link button */
+  .content :where(a) {
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground;
+  }
+
+  /* the card */
+  .area {
+    min-width: 0;
+    container-type: inline-size;
+    /* dash: apps/web/src/ui/card.tsx */
+    @apply rounded-xl bg-card px-(--card-spacing) py-(--card-spacing) text-card-foreground text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)];
+  }
+
+  .area > :first-child {
+    margin-top: 0;
+  }
+
+  .area > :last-child {
+    margin-bottom: 0;
+  }
+
+  /* the button */
+  button {
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply touch-hit focus-ring inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium text-sm active:not-aria-[haspopup]:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-disabled:opacity-50 aria-invalid:border-destructive h-ctl-md px-3;
+  }
+
+  button:not(.secondary) {
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply bg-primary text-primary-foreground shadow-[inset_0_1px_0_var(--btn-shine),0_1px_2px_var(--btn-drop)] hover:bg-primary/88;
+  }
+
+  button.secondary {
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply bg-secondary text-secondary-foreground hover:bg-accent aria-expanded:bg-accent;
+  }
+
+  /* a link that starts an action looks like the button it leads to; it is still a link (a GET, never a write) */
+  .button-link {
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply touch-hit focus-ring inline-flex shrink-0 select-none items-center justify-center gap-1.5 rounded-md border border-transparent font-medium text-sm h-ctl-md px-3 bg-primary text-primary-foreground shadow-[inset_0_1px_0_var(--btn-shine),0_1px_2px_var(--btn-drop)] hover:bg-primary/88;
+    text-decoration: none;
+  }
+
+  button[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  /* the text field and the list: the dash's field band, on the element itself */
+  input[type="search"],
+  input[type="text"],
+  input[type="date"],
+  select {
+    /* dash: apps/web/src/ui/input-group.tsx apps/web/src/ui/select.tsx */
+    @apply h-ctl-md touch:h-11 w-full min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 text-sm touch:text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30;
+  }
+
+  select {
+    /* dash: apps/web/src/ui/select.tsx */
+    @apply pr-2 pl-3;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--primary);
+  }
+
+  label {
+    /* dash: apps/web/src/ui/label.tsx */
+    @apply font-medium text-sm leading-5;
+  }
+
+  /* the table */
+  .grid {
+    /* dash: apps/web/src/ui/table.tsx */
+    @apply w-full caption-bottom text-sm;
+  }
+
+  .grid tr {
+    /* dash: apps/web/src/ui/table.tsx */
+    @apply border-b;
+  }
+
+  .grid tbody tr:last-child {
+    border-bottom-width: 0;
+  }
+
+  .grid th {
+    /* dash: apps/web/src/ui/table.tsx */
+    @apply h-9 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground text-xs;
+  }
+
+  .grid td {
+    /* dash: apps/web/src/ui/table.tsx */
+    @apply px-3 py-2.5;
+  }
+
+  /* the tabs: the dash's segmented list; each tab is a link with `aria-current` (a GET) */
+  .tabs {
+    /* dash: apps/web/src/ui/tabs.tsx */
+    flex-wrap: wrap;
+    max-width: 100%;
+    margin: 0 0 0.75rem;
+    list-style: none;
+    /* dash: apps/web/src/ui/tabs.tsx */
+    @apply inline-flex w-fit items-center rounded-lg bg-muted p-[3px] text-muted-foreground;
+  }
+
+  .tabs li {
+    display: flex;
+    min-width: 0;
+  }
+
+  .tabs a {
+    /* dash: apps/web/src/ui/tabs.tsx */
+    @apply focus-ring relative inline-flex items-center justify-center gap-1.5 rounded-md border border-transparent px-2.5 font-medium text-muted-foreground text-sm hover:text-foreground;
+    /* the list wraps at 320 px instead of running out of the card, so a tab grows with its text */
+    min-height: calc(var(--h-md) - 6px);
+    text-decoration: none;
+  }
+
+  .tabs a[aria-current="page"] {
+    /* dash: apps/web/src/ui/tabs.tsx */
+    @apply bg-card text-foreground shadow-xs;
+    @variant dark {
+      /* dash: apps/web/src/ui/tabs.tsx */
+      @apply bg-secondary;
+    }
+  }
+}
+
+/*
+ * What the Admin has and the dash does not: the facts of a store, the stacked tables of a phone, the steps of a privacy
+ * case, the reviews. Their own rules, with the dash's tokens.
+ */
+@layer components {
+  .hint,
+  .status {
+    margin: 0;
+    overflow-wrap: anywhere;
+    /* dash: apps/web/src/ui/card.tsx */
+    @apply text-muted-foreground text-support;
+  }
+
+  .areas {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .notice {
+    margin: 0.5rem 0;
+  }
+
+  .alert {
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    font-weight: 600;
+    color: var(--destructive);
+    border: 1px solid var(--destructive);
+    border-radius: var(--radius);
+  }
+
+  .search {
+    display: grid;
+    /* the field's own width must not set the column: on a phone the row shrinks to the screen */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+
+  .search-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .store {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0 0.5rem;
+    align-items: baseline;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .store-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .store-head {
+    margin: 0;
+    /* dash: apps/web/src/ui/card.tsx */
+    @apply text-section;
+  }
+
+  .store-id {
+    overflow-wrap: anywhere;
+    /* dash: apps/web/src/app-shell/not-found-page.tsx apps/web/src/ui/table.tsx */
+    @apply font-mono text-muted-foreground text-xs;
+  }
+
+  .results {
+    margin-top: 0.5rem;
+  }
+
+  .grid th,
+  .grid td {
+    vertical-align: top;
+    text-align: left;
+    /* only the store's name and ID break anywhere (.store-name, .store-id); a date or a word stays whole */
+    overflow-wrap: break-word;
+  }
+
+  .grid th,
+  .grid td:not(:first-child),
+  button {
+    white-space: nowrap;
+  }
+
+  .area > button.secondary {
+    margin-top: 0.75rem;
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.5rem 1rem;
+    margin: 0;
+  }
+
+  .facts dt {
+    /* dash: apps/web/src/ui/card.tsx */
+    @apply text-muted-foreground text-support;
+  }
+
+  .facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .attention,
+  .notes {
+    padding-left: 1.25rem;
+    margin: 0;
+  }
+
+  /* the incidents' tables have more columns than the card has room for on a desktop: headers and cells wrap by word */
+  .grid.incidents th,
+  .grid.incidents td:not(:first-child) {
+    white-space: normal;
+  }
+
+  .grid.incidents code {
+    overflow-wrap: anywhere;
+  }
+
+  /* the access log's form: one field to a line, the two days one under the other */
+  .access-form {
+    max-width: 28rem;
+  }
+
+  .access-form .label {
+    margin: 0.75rem 0 0;
+    font-weight: 500;
+  }
+
+  .access-form .period {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+
+  /* a line of the access log is mostly identifiers: they wrap inside the cell instead of widening the card */
+  .results .grid code {
+    overflow-wrap: anywhere;
+  }
+
+  .results .grid td:not(:first-child),
+  .results .grid th {
+    white-space: normal;
+  }
+
+  /* the funnel's tables scroll sideways inside their own region, never the page; the week column stays in view */
+  .table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* the funnel's cells and headers are sentences ("não disponível (…)"): they wrap, down to a width that reads */
+  .grid.funnel th,
+  .grid.funnel td:not(:first-child) {
+    min-width: 8rem;
+    white-space: normal;
+  }
+
+  .grid.funnel th:first-child,
+  .grid.funnel td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--card);
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+    max-width: 28rem;
+    margin-top: 0.75rem;
+  }
+
+  .field-error {
+    margin: 0;
+    font-weight: 600;
+    color: var(--destructive);
+  }
+
+  /* display: none would take the empty live region out of the accessibility tree and the text put in it later would not be announced: it is clipped like .sr-only instead */
+  .field-error:empty {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  /* what the refund area cannot do and what each read leaves behind: said in words, not only by colour */
+  .warning,
+  .audit {
+    padding: 0.5rem 0.75rem;
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--foreground);
+    border-radius: var(--radius);
+  }
+
+  .cases {
+    margin-top: 0.75rem;
+  }
+
+  /* a long label wraps at 320 px instead of running out of the card */
+  .cases > button {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .case-form {
+    margin-top: 1rem;
+  }
+
+  /* a reason is a sentence the operator typed: it wraps inside its cell */
+  .reason {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  /* A narrow card stacks each row of the other tables; the header of each cell is written before it, so nothing scrolls
+     sideways. The card is measured, not the window: beside the 16 rem sidebar a 768 px window leaves a card of 30 rem. */
+  @container (max-width: 40rem) {
+    .grid:not(.funnel) thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+
+    /* the hidden header cells keep their text for a screen reader but take no width, so they cannot widen the page */
+    .grid:not(.funnel) th {
+      width: 1px;
+      max-width: 1px;
+      padding: 0;
+      overflow: hidden;
+      white-space: normal;
+    }
+
+    .grid:not(.funnel) tr {
+      display: block;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .grid:not(.funnel) td:not(:first-child) {
+      white-space: normal;
+    }
+
+    .grid:not(.funnel) td {
+      display: grid;
+      grid-template-columns: 8rem minmax(0, 1fr);
+      gap: 0.5rem;
+      padding: 0.25rem 0;
+      border-bottom: 0;
+    }
+
+    /* a button in a stacked row keeps to the column instead of running out of the card */
+    .grid:not(.funnel) td > button {
+      max-width: 100%;
+      white-space: normal;
+    }
+
+    /* on a 320 px phone the 8 rem label column leaves a stacked button less than one long word ("concessão") plus its padding: every stacked table narrows its label column and its buttons give up side padding so no word is split */
+    @container (max-width: 19rem) {
+      .grid:not(.funnel) td {
+        grid-template-columns: 6rem minmax(0, 1fr);
+      }
+
+      .grid:not(.funnel) td > button {
+        padding-inline: 0.5rem;
+        overflow-wrap: normal;
+      }
+    }
+
+    .grid:not(.funnel) td::before {
+      content: attr(data-label);
+      /* dash: apps/web/src/ui/table.tsx */
+      @apply text-muted-foreground text-xs;
+    }
+
+    /* on a phone a funnel row stays one line (the region scrolls) and the week column is narrow, so the numbers fit beside it */
+    .grid.funnel td:not(:first-child) {
+      white-space: nowrap;
+    }
+
+    .grid.funnel th:first-child,
+    .grid.funnel td:first-child {
+      width: 7.5rem;
+      min-width: 7.5rem;
+      max-width: 7.5rem;
+      overflow-wrap: normal;
+    }
+  }
+
+  .permissions {
+    padding-left: 1.25rem;
+    margin: 0 0 0.75rem;
+  }
+
+  .action-link {
+    margin: 0.75rem 0;
+  }
+
+  .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  /* a long verb ("Confirmar o fechamento do caso") wraps at 320 px instead of running out of the card */
+  .button-row button,
+  .button-link {
+    max-width: 100%;
+    height: auto;
+    min-height: var(--h-md);
+    text-align: center;
+    white-space: normal;
+  }
+
+  .action-panel,
+  .history {
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .action-panel .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .internal {
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .access-action:not(:empty),
+  .customers:not(:empty) {
+    margin-top: 1rem;
+  }
+
+  .reveal-review:not(:empty) {
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .reveal-cell {
+    min-width: 0;
+  }
+
+  .reveal-cell .button-row {
+    margin-top: 0.5rem;
+  }
+
+  /* a revealed note keeps its line breaks and wraps anywhere, so a long word cannot widen the page */
+  .revealed-value {
+    display: block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .reveal-cell .hint {
+    margin: 0.25rem 0 0.5rem;
+    white-space: normal;
+  }
+
+  .internal:empty {
+    display: none;
+  }
+
+  .effects {
+    padding-left: 1.25rem;
+    margin: 0;
+  }
+
+  .effects li {
+    overflow-wrap: anywhere;
+  }
+
+  .history ul,
+  .case-list,
+  .waiting {
+    padding-left: 1.25rem;
+    margin: 0.5rem 0;
+  }
+
+  .case-list li,
+  .waiting li {
+    overflow-wrap: anywhere;
+  }
+
+  .chosen {
+    margin: 0 0 0.75rem;
+  }
+
+  /* the privacy case's steps: one column at every width (AC-P11.8); the state of each step is a word, not only a tone */
+  .steps {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    padding: 0;
+    margin: 0.5rem 0 0;
+    list-style: none;
+  }
+
+  .step {
+    padding: 0.5rem 0.75rem;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .step-line {
+    margin: 0;
+  }
+
+  .step-mark {
+    font-weight: 600;
+  }
+
+  .step-later {
+    color: var(--muted-foreground);
+  }
+
+  .step-current {
+    border: 2px solid var(--foreground);
+  }
+
+  .step-current .step-panel {
+    padding-top: 0;
+    margin-top: 0;
+    border-top: 0;
+  }
+
+  .step-panel h4 {
+    margin: 0 0 0.5rem;
+  }
+
+  .rules {
+    padding-left: 1.25rem;
+    margin: 0 0 0.75rem;
+    color: var(--muted-foreground);
+  }
+
+  .step-form .field,
+  .privacy-form .field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+    max-width: 32rem;
+    margin-top: 0.75rem;
+  }
+
+  .radio-field {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+    max-width: 32rem;
+    padding: 0;
+    margin: 0.75rem 0 0;
+    border: 0;
+  }
+
+  .radio-field legend {
+    padding: 0;
+    margin-bottom: 0.25rem;
+    font-weight: 500;
+  }
+
+  .checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.25rem 1rem;
+    max-width: 40rem;
+  }
+
+  .check {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .check input {
+    width: 1.25rem;
+    height: 1.25rem;
+    margin: 0;
+  }
+
+  .due-warn .due-text {
+    font-weight: 700;
+    color: var(--destructive);
+  }
+
+  /* the tabs of a privacy case's acts sit apart from its steps */
+  .case-tabs {
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .purge-part {
+    margin-top: 1rem;
+  }
+
+  .purge-part h4 {
+    margin: 0 0 0.5rem;
+  }
+
+  /* the store's name the operator types to schedule the purge: a long name wraps instead of widening the page */
+  .purge label bdi {
+    overflow-wrap: anywhere;
+  }
+
+  .purge .step-form > label {
+    display: block;
+    margin-top: 0.75rem;
+  }
+
+  /* the amount of a refund is read as one figure: never broken across lines, however narrow the card */
+  .money {
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+}

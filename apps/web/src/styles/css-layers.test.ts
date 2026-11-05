@@ -13,11 +13,11 @@ const src = fileURLToPath(new URL("..", import.meta.url));
 const ENTRY = "styles/index.css";
 const BASE = new Set([
   ENTRY,
-  // the shadcn tokens and the Tailwind theme of the v5.1
-  "styles/theme.css",
   // copy of shadcn/tailwind.css (variants, keyframes, utilities)
   "styles/shadcn-tailwind.css",
 ]);
+// the shadcn tokens and the Tailwind theme of the v5.1, shared with the Admin: imported by the entry from @polaris/ui
+const THEME = "../../../packages/ui/src/theme.css";
 const LEGACY_LAYER = /@layer\s+[^;{]*\blegacy\b/;
 // the labs are no screens of the shop: their sheets are wholly inside `@layer components`, under the utilities
 const LAB_SHEETS = ["offline-poc/lab-page.css", "offline-poc/offline-poc.css"];
@@ -112,7 +112,7 @@ describe("no old CSS (ADR 0103, section 3)", () => {
 
   it("theme.css has outside a layer only the tokens, the theme, the variants, the utilities and the touch block", () => {
     const statements = topLevelStatements(
-      readFileSync(join(src, "styles/theme.css"), "utf8")
+      readFileSync(join(src, THEME), "utf8")
     );
     expect(
       statements.filter(
