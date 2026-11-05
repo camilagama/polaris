@@ -71,6 +71,9 @@ describe("HeroValue", () => {
   });
 });
 
+const TAGS = /<[^>]*>/g;
+const SKELETON_FOOT = /data-kpi-skeleton-foot=""/g;
+
 describe("KpiCardSkeleton", () => {
   it("draws the rows of the card it stands for, out of the accessibility tree", () => {
     const markup = renderToStaticMarkup(
@@ -81,5 +84,15 @@ describe("KpiCardSkeleton", () => {
     expect(markup).toContain('data-kpi-note-row=""');
     expect(markup).toContain("h-[1.05em]");
     expect(markup).toContain("h-[3.25rem]");
+    expect(markup.match(SKELETON_FOOT)).toHaveLength(1);
+  });
+
+  it("has no text for a screen reader: the box is hidden and holds no words", () => {
+    const markup = renderToStaticMarkup(
+      <KpiCardSkeleton action footer={2} size="md" />
+    );
+    expect(markup.startsWith('<div aria-hidden="true"')).toBe(true);
+    expect(markup.replace(TAGS, "")).toBe("");
+    expect(markup.match(SKELETON_FOOT)).toHaveLength(2);
   });
 });

@@ -210,9 +210,16 @@ describe("the room the card keeps for its lines (lugar reservado)", () => {
 
   it("puts the room reserved for the reading and the legend below their text, not between the fragments", () => {
     const markup = chart(october([3]));
-    expect(markup).toContain("content-start");
-    expect(markup).toContain("min-h-[calc(5*1.125rem)]");
-    expect(markup).toContain("min-h-[3.5rem]");
+    const reserved = (floor: string) =>
+      (
+        markup.match(/<div aria-hidden="true" class="[^"]*"[^>]*>/g) ?? []
+      ).filter((tag) => tag.includes(floor));
+    const reading = reserved("min-h-[calc(5*1.125rem)]");
+    const legend = reserved("min-h-[3.5rem]");
+    expect(reading).toHaveLength(1);
+    expect(legend).toHaveLength(1);
+    expect(reading[0]).toContain("content-start");
+    expect(legend[0]).toContain("content-start");
   });
 
   it("reserves with min-h only: nothing is cut with max-h or a line clamp", () => {
