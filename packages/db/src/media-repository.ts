@@ -748,3 +748,36 @@ export async function getMediaAssetForDelivery(
   }
   return { ...row, contentType: "image/webp" };
 }
+
+/**
+ * The batch counterpart of {@link getMediaAssetForDelivery}: one query for the
+ * whole list, same rule (an image of a product of this organization). An id of
+ * another organization, an unknown id and a removed image are simply absent,
+ * so the caller cannot tell them apart.
+ */
+export async function listDeliverableMediaAssetIds(
+  transaction: TenantRequestTransaction,
+  organizationId: string,
+  assetIds: readonly string[]
+): Promise<Set<string>> {
+  if (assetIds.length === 0) {
+    return new Set();
+  }
+  const rows = await transaction
+    .selectDistinct({ assetId: mediaAssets.id })
+    .from(mediaAssets)
+    .innerJoin(
+      productMedia,
+      and(
+        eq(productMedia.organizationId, mediaAssets.organizationId),
+        eq(productMedia.mediaAssetId, mediaAssets.id)
+      )
+    )
+    .where(
+      and(
+        eq(mediaAssets.organizationId, organizationId),
+        inArray(mediaAssets.id, [...assetIds])
+      )
+    );
+  return new Set(rows.map((row) => row.assetId.toLowerCase()));
+}

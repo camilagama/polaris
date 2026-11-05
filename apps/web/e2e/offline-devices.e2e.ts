@@ -578,7 +578,7 @@ test("a opção só existe dentro da confirmação de outro aparelho, nunca no a
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   // this device has no button: it leaves through "Sair"
   await expect(list.getByRole("listitem").first()).toContainText(
-    "use Sair: no celular ele está em Mais; em tela grande, no menu ⋯ do cartão da loja, no pé da barra lateral"
+    "use Sair, no menu da loja, no alto da tela"
   );
   await expect(askRevoke(page, "Caixa da loja")).toHaveCount(0);
   await askRevoke(page, "Celular da Ana").click();

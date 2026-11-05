@@ -414,11 +414,12 @@ interface ResultChartProps {
  * server's clock; what the days to come cost closes the table.
  */
 export function ResultChart({ source, summary, timezone }: ResultChartProps) {
-  const { daily } = summary;
+  const { afterToday, daily, granularity } = summary;
   const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   const series = useMemo(
-    () => (daily ? resultSeries(daily, today) : null),
-    [daily, today]
+    () =>
+      daily ? resultSeries(daily, today, { afterToday, granularity }) : null,
+    [afterToday, daily, granularity, today]
   );
   if (!(daily && series)) {
     return null;

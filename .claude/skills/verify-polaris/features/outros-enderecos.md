@@ -16,9 +16,9 @@ Os endereços que o app abre fora dos 8 destinos: Pendências (no shell, só qua
 ## How to get to it (user POV)
 
 - Pendências: pelo menu, quando existe; ou `/attention`.
-- Ajuda: no celular, "Mais" → "Ajuda e contato" (2 toques, depois de Configurações); no desktop, o terceiro link "Ajuda e contato" ao lado de "Termos de Uso" e "Política de Privacidade" no pé da lateral e no rodapé; ou `/ajuda`.
+- Ajuda: no desktop, o "?" do cabeçalho (1 toque); nas duas larguras, o menu "Loja, conta e ajuda" → "Ajuda e contato"; no celular também "Mais" → "Ajuda e contato" (2 toques, depois de Configurações); ou `/ajuda`.
 - Entrada: sem sessão, qualquer tela do shell manda para `/entrar?voltar=<endereço>` ("Entrar no Polaris"). Com a senha desligada (padrão), `/entrar` só tem "Continuar com o Google"; as outras páginas de entrada são da senha.
-- Legais: os links "Termos de Uso" e "Política de Privacidade" do rodapé de toda tela.
+- Legais: "Termos de Uso" e "Política de Privacidade" no menu "Loja, conta e ajuda" do cabeçalho (2 toques) e no rodapé da folha "Mais" do celular; nenhuma página do shell tem rodapé legal.
 - Aceite: depois de entrar, quando falta o aceite da versão vigente.
 - Loja encerrada: Configurações → Seus dados → "Encerrar a loja" (só o dono, com conexão e a fila do aparelho vazia); depois de encerrar, a tela vai sozinha para `/loja-encerrada?loja=<id>`. Também pelo botão "Abrir o painel" dos e-mails do encerramento.
 - 404 e endereços antigos: só digitando ou por link salvo.

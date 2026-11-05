@@ -137,9 +137,13 @@ describe("report.periodSummary", () => {
       {},
       identity,
       { from: "2026-10-01", to: "2026-10-31" },
-      { topProducts: undefined }
+      // the store's today of a monthly series is the date of the answer's own clock
+      { asOf: summary.generatedAt, topProducts: undefined }
     );
     expect(summary.daily).toEqual(daily);
+    // a series by date says nothing more than it did
+    expect(summary).not.toHaveProperty("granularity");
+    expect(summary).not.toHaveProperty("afterToday");
     // the Result page does not ask for the ranking and does not get it
     expect(summary).not.toHaveProperty("topProducts");
     // gross 200 + freight 10 ; cogs 60 ; linked 5 ; fee unknown
@@ -281,6 +285,63 @@ describe("report.periodSummary", () => {
     });
   });
 
+  it("returns a monthly series as the read gave it: the months with their dates and days, and the dates after today apart", async () => {
+    const months = [
+      {
+        costs: "95.00",
+        date: "2026-09-20",
+        days: 11,
+        netSales: "200.00",
+        operatingExpenses: "0.00",
+        operatingResult: "115.00",
+        salesCount: 1,
+        to: "2026-09-30",
+        unknownDays: 0,
+      },
+      {
+        costs: null,
+        date: "2026-10-01",
+        days: 31,
+        netSales: "0.00",
+        operatingExpenses: "50.00",
+        operatingResult: null,
+        salesCount: 0,
+        to: "2026-10-31",
+        unknownDays: 2,
+      },
+    ];
+    const afterToday = {
+      costs: "20.00",
+      date: "2026-11-01",
+      days: 48,
+      netSales: "0.00",
+      operatingExpenses: "20.00",
+      operatingResult: "-20.00",
+      salesCount: 0,
+      to: "2026-12-18",
+      unknownDays: 0,
+    };
+    const summary = await client(
+      createRpcRouter({
+        readPeriodSummary: async () => ({
+          afterToday,
+          daily: months,
+          granularity: "month" as const,
+          reads: { days: 3, products: 0 },
+          result,
+        }),
+        withTenantRequestContext: tenantStub(),
+      })
+    ).report.periodSummary({
+      from: "2026-09-20",
+      organizationId,
+      to: "2026-12-18",
+    });
+    expect(summary.granularity).toBe("month");
+    expect(summary.daily).toEqual(months);
+    expect(summary.afterToday).toEqual(afterToday);
+  });
+
   it("asks for the ranking only when the input does, and returns the products with their current name", async () => {
     const read = vi.fn(async () => ({
       daily,
@@ -311,7 +372,7 @@ describe("report.periodSummary", () => {
       {},
       identity,
       { from: "2026-10-01", to: "2026-10-31" },
-      { topProducts: 3 }
+      { asOf: summary.generatedAt, topProducts: 3 }
     );
     expect(summary.topProducts).toEqual([
       {
@@ -351,7 +412,7 @@ describe("report.periodSummary", () => {
 
   it("records each read with counts, size and the opaque organization only: no amount and no name", async () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
-    await client(
+    const answer = await client(
       createRpcRouter({
         readPeriodSummary: async () => ({
           daily,
@@ -386,7 +447,10 @@ describe("report.periodSummary", () => {
       reads: { ...reads, products: 1 },
       topProducts: 3,
     });
-    expect(fields.responseBytes).toBeGreaterThan(0);
+    // the size of the answer, counted without serializing it a second time
+    expect(fields.responseBytes).toBe(
+      new TextEncoder().encode(JSON.stringify(answer)).byteLength
+    );
     expect(typeof fields.durationMs).toBe("number");
     expect(typeof fields.requestId).toBe("string");
     const text = JSON.stringify(fields);
