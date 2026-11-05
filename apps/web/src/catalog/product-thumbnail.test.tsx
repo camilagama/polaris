@@ -24,7 +24,7 @@ const WARNING_LOOK = /border|destructive|warning/;
 const ERROR_TEXT = /…|\.\.\.|erro|falha/i;
 const DECORATIVE_IMG = /<img alt="" class="absolute inset-0/;
 const FOCUS_OR_NAME = /tabindex|role=|aria-label/;
-const ANY_TAG = /<[^>]+>/g;
+const TEXT_BETWEEN_TAGS = />([^<]+)</g;
 
 function loaderWith(options: { cached: string[]; online: boolean }) {
   let made = 0;
@@ -70,7 +70,9 @@ function box(drawn: string) {
     state: match?.[2],
     style: match?.[3],
     tags: [...markup.matchAll(TAG)].map((tag) => tag[1]),
-    text: markup.replaceAll(ANY_TAG, ""),
+    text: [...markup.matchAll(TEXT_BETWEEN_TAGS)]
+      .map((part) => part[1])
+      .join(""),
   };
 }
 
