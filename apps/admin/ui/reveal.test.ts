@@ -39,6 +39,7 @@ import {
  */
 
 const CASE = "0199a0a0-0000-7000-8000-00000000c0de";
+const ACCESS_VIEW_LISTENERS = 1;
 const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
 const GRANT = "0199d0d0-0000-7000-8000-0000000000a1";
 const C1 = "0199c1c1-0000-7000-8000-000000000001";
@@ -151,6 +152,9 @@ const open = async (
 };
 
 type Mounted = Awaited<ReturnType<typeof open>>;
+
+const revealListeners = (mounted: Mounted) =>
+  mounted.document.listenerCount("visibilitychange") - ACCESS_VIEW_LISTENERS;
 
 const firstButton = (root: FakeElement, text: string): FakeElement => {
   const [target] = buttons(root, text);
@@ -536,13 +540,13 @@ describe("the value leaves the page (AC-P6.3)", () => {
   it("hides the value, stops the timer and the listening and says so when another row's menu opens", async () => {
     const mounted = await withValue();
     expect(vi.getTimerCount()).toBe(1);
-    expect(mounted.document.listenerCount("visibilitychange")).toBe(1);
+    expect(revealListeners(mounted)).toBe(1);
     menuOf(mounted, ROW_2).click();
     await flush();
 
     maskedAgain(mounted);
     expect(vi.getTimerCount()).toBe(0);
-    expect(mounted.document.listenerCount("visibilitychange")).toBe(0);
+    expect(revealListeners(mounted)).toBe(0);
     expect(shown(mounted)).toContain("Valor escondido.");
     expect(
       buttons(rowOf(mounted, ROW_2) as FakeElement, "Telefone")
@@ -596,7 +600,7 @@ describe("the value leaves the page (AC-P6.3)", () => {
     expect(shown(mounted)).toContain("Atendimento fechado");
     maskedAgain(mounted);
     expect(buttons(mounted.root, OPEN_MENU)).toHaveLength(0);
-    expect(mounted.document.listenerCount("visibilitychange")).toBe(0);
+    expect(revealListeners(mounted)).toBe(0);
   });
 
   it("goes with the server's end of the access when it comes before the 30 seconds", async () => {
@@ -812,7 +816,7 @@ describe("what the review of the code found", () => {
 
     expect(shown(mounted)).not.toContain(PHONE);
     expect(vi.getTimerCount()).toBe(0);
-    expect(mounted.document.listenerCount("visibilitychange")).toBe(0);
+    expect(revealListeners(mounted)).toBe(0);
   });
 
   it("shows a Windows line break as one", async () => {
