@@ -435,6 +435,9 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
       expect(order.indexOf(field)).toBeGreaterThan(warning);
     }
     expect(visibleText(mounted.root)).toContain(OPEN_EFFECT);
+    expect(OPEN_EFFECT).toContain(
+      "Se a loja for apagada, o texto livre do caso some e o registro fica."
+    );
   });
 
   it.each([
@@ -606,7 +609,6 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     );
     expect(items[2]?.getAttribute("aria-current")).toBe("step");
     for (const later of items.slice(3)) {
-      expect(later.getAttribute("aria-disabled")).toBe("true");
       expect(byTag(later, "button")).toHaveLength(0);
     }
     expect(visibleText(mounted.root)).toContain(
@@ -672,6 +674,31 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     );
     expect(visibleText(mounted.root)).toContain(
       "Neste caso: identidade não confirmada; papel do Polaris operador; quem pede: titular dos dados."
+    );
+  });
+
+  it.each([
+    ["scoped", detail("scoped")],
+    ["role_determined", detail("role_determined")],
+    ["decided", detail("decided")],
+  ])("keeps aria-disabled off every step item (%s)", async (_state, shown) => {
+    const mounted = await openCase(shown);
+    const items = stepItems(mounted.root);
+    expect(items).toHaveLength(6);
+    for (const item of items) {
+      expect(item.hasAttribute("aria-disabled")).toBe(false);
+    }
+    expect(
+      byTag(mounted.root, "li").filter((item) =>
+        item.hasAttribute("aria-disabled")
+      )
+    ).toEqual([]);
+  });
+
+  it("says the Polaris controller list as the ADR 0077 does", async () => {
+    const mounted = await openCase(detail("identity_checked"));
+    expect(visibleText(mounted.root)).toContain(
+      "(conta, autenticação, assinatura, segurança e suporte)"
     );
   });
 
@@ -822,7 +849,7 @@ const STEP_CASES: readonly [string, StepCase][] = [
       },
       button: "Revisar decisão",
       effect:
-        "A etapa “Decisão” fica registrada como Aceitar em parte, motivo: Guarda exigida por lei, com nota.",
+        "A etapa “Decisão” fica registrada como Aceitar em parte, motivo: Guarda por obrigação legal (diga a norma na nota), com nota.",
       fill: (root) => {
         choose(root, "etapa-decision-decisao", "partially_accept");
         choose(root, "etapa-decision-motivo", "legal_retention");

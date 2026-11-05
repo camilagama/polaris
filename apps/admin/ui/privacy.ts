@@ -74,7 +74,7 @@ export const DECISION_REASONS: Choices = [
   ["identity_not_verified", "Identidade não confirmada"],
   ["no_authority", "Quem pede não tem autoridade"],
   ["controller_is_reseller", "O controlador é a loja"],
-  ["legal_retention", "Guarda exigida por lei"],
+  ["legal_retention", "Guarda por obrigação legal (diga a norma na nota)"],
   ["manifestly_unfounded", "Pedido sem fundamento"],
   ["not_personal_data", "Não é dado pessoal"],
   ["other", "Outro"],

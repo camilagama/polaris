@@ -104,7 +104,7 @@ export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
     "Uma aceitação só se resolve depois de ao menos uma ação registrada; uma recusa ou um encaminhamento se resolvem sem ação.",
   ],
   role: [
-    "Controlador: o Polaris decide sobre o dado (conta, entrada, cobrança, segurança). Operador: o Polaris só processa o dado pela loja (por exemplo, os clientes que a loja cadastra).",
+    "Controlador: o Polaris decide sobre o dado (conta, autenticação, assinatura, segurança e suporte). Operador: o Polaris só processa o dado pela loja (por exemplo, os clientes que a loja cadastra).",
     "Como operador, o Polaris não aceita por conta própria o pedido de quem não é o dono da loja.",
   ],
   scope: [
@@ -315,7 +315,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       if (state === "later") {
         return dom.el(
           "li",
-          { "aria-disabled": "true", class: "step step-later" },
+          { class: "step step-later" },
           dom.el(
             "p",
             { class: "step-line" },

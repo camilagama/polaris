@@ -31,7 +31,7 @@ const DAY_MS = 86_400_000;
 const BRASILIA_OFFSET_MS = 3 * 3_600_000;
 
 export const OPEN_EFFECT =
-  "Abrir o caso fica no registro e na auditoria com o seu e-mail. Ele não se apaga: fecha só pela resolução, na etapa 6.";
+  "Abrir o caso fica no registro e na auditoria com o seu e-mail. O registro do caso não se apaga por esta tela: ele fecha só pela resolução, na etapa 6. Se a loja for apagada, o texto livre do caso some e o registro fica.";
 const OPEN_REFUSED =
   "O caso não foi aberto: confira o motivo, as três listas, a data de recebimento (até hoje, no máximo um ano atrás) e a nota.";
 const OPEN_UNKNOWN =
