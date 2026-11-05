@@ -1,4 +1,4 @@
-import { type ChangeEvent, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
@@ -128,6 +128,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
@@ -275,6 +276,109 @@ function Section({
       <h2 className="text-section">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * The thumbnail of a product (`@/ui/thumbnail`, used by `ProductThumbnail` of the catalog) in the states a list will
+ * show, at 40 px (Produtos, Estoque) and 32 px (Venda). The states differ in where the picture comes from (the cache,
+ * the network, nothing); for the box they are a picture or the marker ("Erro" is the marker: bytes that do not
+ * decode are proved in e2e/offline-thumbnails.e2e.ts, outside the shell's CSP, where Chrome reports their blob URL
+ * under `connect-src`). Plus a very wide and a very tall picture, for the crop. The pictures are drawn here in the
+ * chart tokens. Synthetic only.
+ */
+const THUMBNAIL_STATES = [
+  { key: "cache", label: "Em cache", picture: [320, 320] },
+  { key: "sem-imagem", label: "Sem imagem", picture: null },
+  { key: "carregando", label: "Carregando", picture: null },
+  { key: "erro", label: "Erro", picture: null },
+  { key: "offline-cache", label: "Offline com cache", picture: [320, 320] },
+  { key: "offline-vazio", label: "Offline sem cache", picture: null },
+  { key: "larga", label: "Foto larga (1200×300)", picture: [1200, 300] },
+  { key: "alta", label: "Foto alta (300×1200)", picture: [300, 1200] },
+] as const;
+
+type ThumbnailPicture = (typeof THUMBNAIL_STATES)[number]["picture"];
+
+function drawPicture(picture: ThumbnailPicture): Promise<Blob | null> {
+  if (picture === null) {
+    return Promise.resolve(null);
+  }
+  const [width, height] = picture;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return Promise.resolve(null);
+  }
+  const token = (name: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  context.fillStyle = token("--chart-1");
+  context.fillRect(0, 0, width, height / 2);
+  context.fillStyle = token("--chart-2");
+  context.fillRect(0, height / 2, width, height / 2);
+  context.fillStyle = token("--chart-4");
+  context.beginPath();
+  context.arc(
+    width / 2,
+    height / 2,
+    Math.min(width, height) / 3,
+    0,
+    Math.PI * 2
+  );
+  context.fill();
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/webp"));
+}
+
+function ThumbnailCell({
+  picture,
+  size,
+}: {
+  picture: ThumbnailPicture;
+  size: ThumbnailSize;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    let current = true;
+    drawPicture(picture).then((blob) => {
+      if (current && blob) {
+        url = URL.createObjectURL(blob);
+        setSrc(url);
+      }
+    });
+    return () => {
+      current = false;
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [picture]);
+  return <Thumbnail marker="CA" size={size} src={src} />;
+}
+
+function ThumbnailStates() {
+  return (
+    <Section title="Miniatura do produto">
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {THUMBNAIL_STATES.map((state) => (
+          <li
+            className="grid justify-items-start gap-2"
+            data-testid={`miniatura-${state.key}`}
+            key={state.key}
+          >
+            <span className="flex items-center gap-3">
+              <ThumbnailCell picture={state.picture} size={40} />
+              <ThumbnailCell picture={state.picture} size={32} />
+            </span>
+            <span className="text-muted-foreground text-support">
+              {state.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
@@ -1216,6 +1320,8 @@ export function UiGallery() {
           </Section>
 
           <ChartStates />
+
+          <ThumbnailStates />
 
           <DatePickerStates />
 
