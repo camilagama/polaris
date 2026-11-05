@@ -306,15 +306,24 @@ export function createReveal(host: RevealHost): Reveal {
     resetReview();
   };
 
-  /** The focus is in the row's own value or button, or nowhere (the body, after a repaint took its element). */
-  const focusBelongsToRow = (customerId: string) => {
+  /**
+   * The focus is in the row's own value or button, in `also` (the review that is about to give way to the value), or
+   * nowhere (the body, after a repaint took its element).
+   */
+  const focusBelongsToRow = (
+    customerId: string,
+    also: readonly (HTMLElement | null)[] = []
+  ) => {
     const active = dom.document.activeElement;
     if (active === null || active === dom.document.body) {
       return true;
     }
     return (
       active === cells.get(customerId)?.querySelector("bdi") ||
-      (cellControls.get(customerId) ?? []).some((control) => control === active)
+      (cellControls.get(customerId) ?? []).some(
+        (control) => control === active
+      ) ||
+      also.some((element) => element === active)
     );
   };
 
@@ -342,13 +351,16 @@ export function createReveal(host: RevealHost): Reveal {
   const show = (
     customerId: string,
     field: RevealableField,
-    value: string | null
+    value: string | null,
+    takeFocus: boolean
   ) => {
     const end = host.expiresAt();
     const left =
       end === null ? 0 : new Date(end).getTime() - host.now().getTime();
     setPhase({ customerId, field, kind: "shown", value });
-    cells.get(customerId)?.querySelector("bdi")?.focus();
+    if (takeFocus) {
+      cells.get(customerId)?.querySelector("bdi")?.focus();
+    }
     watch(true);
     stopTimer();
     timer = setTimeout(
@@ -388,6 +400,10 @@ export function createReveal(host: RevealHost): Reveal {
       return;
     }
     host.setBusy(false);
+    const takeFocus = focusBelongsToRow(customerId, [
+      ...reviewControls,
+      reviewBox.querySelector("h4"),
+    ]);
     resetReview();
     if (!answer.ok) {
       await fail(answer);
@@ -401,10 +417,13 @@ export function createReveal(host: RevealHost): Reveal {
       notice.status(REVEAL_GONE);
       return;
     }
-    notice.success(
-      `${FIELD_TEXT[field].label}: valor revelado na linha do cliente. ${REVEALED_MARK}.`
-    );
-    show(customerId, field, answer.data.value);
+    const announcement = `${FIELD_TEXT[field].label}: valor revelado na linha do cliente. ${REVEALED_MARK}.`;
+    if (takeFocus) {
+      notice.success(announcement);
+    } else {
+      notice.status(announcement);
+    }
+    show(customerId, field, answer.data.value, takeFocus);
   };
 
   function openReview(customerId: string, field: RevealableField) {

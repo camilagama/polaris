@@ -340,6 +340,93 @@ describe("Privacidade: the list (AC-P11.1)", () => {
     ]);
   });
 
+  describe("the due date keeps up with the clock of a page left open", () => {
+    const DUE = "2026-11-05T21:00:00.000Z";
+    const clock = { now: NOW };
+    const standing = (dueAt = DUE) =>
+      mount(
+        [json({ cases: [summary({ dueAt })], next: null })],
+        json(PRIVACY),
+        () => clock.now,
+        screenContext({ listState: "abertos", screen: "privacidade" })
+      );
+    const dueTexts = (root: FakeElement) =>
+      allElements(root)
+        .filter((element) => element.getAttribute("class") === "due-text")
+        .map((element) => element.textContent);
+    const dueClasses = (root: FakeElement) =>
+      allElements(root)
+        .filter((element) => element.getAttribute("class")?.startsWith("due"))
+        .filter((element) => element.getAttribute("class") !== "due-text")
+        .map((element) => element.getAttribute("class"));
+
+    it("turns 'vence hoje' into 'prazo vencido' when the tab becomes visible again, with no new request", async () => {
+      clock.now = NOW;
+      const mounted = await standing();
+      expect(dueTexts(mounted.root)).toEqual(["Atenção: vence hoje"]);
+      const requests = mounted.calls.length;
+
+      clock.now = new Date("2026-11-05T21:00:01.000Z");
+      mounted.document.hidden = false;
+      mounted.document.dispatch("visibilitychange");
+
+      expect(dueTexts(mounted.root)).toEqual([
+        "Atenção: prazo vencido em 05/11/2026",
+      ]);
+      expect(dueClasses(mounted.root)).toEqual(["due due-warn"]);
+      expect(mounted.calls).toHaveLength(requests);
+    });
+
+    it("does the same when the window gets the focus back", async () => {
+      clock.now = NOW;
+      const mounted = await standing();
+
+      clock.now = new Date("2026-11-06T12:00:00.000Z");
+      mounted.document.defaultView.dispatch("focus");
+
+      expect(dueTexts(mounted.root)).toEqual([
+        "Atenção: prazo vencido em 05/11/2026",
+      ]);
+    });
+
+    it("moves a row from the calm wording to the warning when the days run out", async () => {
+      clock.now = NOW;
+      const mounted = await standing("2026-11-14T15:00:00.000Z");
+      expect(dueTexts(mounted.root)).toEqual(["faltam 9 dias"]);
+      expect(dueClasses(mounted.root)).toEqual(["due"]);
+
+      clock.now = new Date("2026-11-13T15:00:00.000Z");
+      mounted.document.defaultView.dispatch("focus");
+
+      expect(dueTexts(mounted.root)).toEqual(["Atenção: vence em 1 dia"]);
+      expect(dueClasses(mounted.root)).toEqual(["due due-warn"]);
+    });
+
+    it("does not redraw while the tab is hidden", async () => {
+      clock.now = NOW;
+      const mounted = await standing();
+
+      clock.now = new Date("2026-11-06T12:00:00.000Z");
+      mounted.document.hidden = true;
+      mounted.document.dispatch("visibilitychange");
+
+      expect(dueTexts(mounted.root)).toEqual(["Atenção: vence hoje"]);
+    });
+
+    it("redraws a page restored after it left, when the tab becomes visible again", async () => {
+      clock.now = NOW;
+      const mounted = await standing();
+      mounted.document.defaultView.dispatch("pagehide");
+
+      clock.now = new Date("2026-11-06T12:00:00.000Z");
+      mounted.document.dispatch("visibilitychange");
+
+      expect(dueTexts(mounted.root)).toEqual([
+        "Atenção: prazo vencido em 05/11/2026",
+      ]);
+    });
+  });
+
   it("says when nothing is open, and offers to open a case", async () => {
     const mounted = await list([json({ cases: [], next: null })]);
     expect(visibleText(mounted.root)).toContain(
@@ -509,6 +596,74 @@ describe("Abrir atendimento de privacidade (AC-P11.1)", () => {
     expect(bodyOf(posts(mounted.calls)[0])).toMatchObject({
       note: "Chegou pelo chamado 88",
       receivedAt: "2026-11-02T03:00:00.000Z",
+    });
+  });
+
+  it("has no native maxlength on the reason and the note, which would count UTF-16 units", async () => {
+    const mounted = await ready();
+
+    expect(
+      byId(mounted.root, "privacidade-motivo").getAttribute("maxlength")
+    ).toBeNull();
+    expect(
+      byId(mounted.root, "privacidade-nota").getAttribute("maxlength")
+    ).toBeNull();
+  });
+
+  it("takes a reason of 500 emoji, counts them as 500 and sends them whole", async () => {
+    const mounted = await ready([json({ id: CASE }, 201)]);
+    fill(mounted.root);
+    type(mounted.root, "privacidade-motivo", "😀".repeat(500));
+    expect(byId(mounted.root, "privacidade-motivo-contador").textContent).toBe(
+      "500 de 500 caracteres"
+    );
+    firstButton(mounted.root, "Abrir atendimento de privacidade").click();
+    await flush();
+    expect(bodyOf(posts(mounted.calls)[0])).toMatchObject({
+      reason: "😀".repeat(500),
+    });
+  });
+
+  it("does not count the spaces around the reason, because the check and the sent text drop them", async () => {
+    const mounted = await ready([json({ id: CASE }, 201)]);
+    fill(mounted.root);
+    type(mounted.root, "privacidade-motivo", `  ${"😀".repeat(500)}  `);
+    expect(byId(mounted.root, "privacidade-motivo-contador").textContent).toBe(
+      "500 de 500 caracteres"
+    );
+    firstButton(mounted.root, "Abrir atendimento de privacidade").click();
+    await flush();
+    expect(bodyOf(posts(mounted.calls)[0])).toMatchObject({
+      reason: "😀".repeat(500),
+    });
+  });
+
+  it("refuses 501 emoji in the reason, the counter says 501 and nothing is sent", async () => {
+    const mounted = await ready();
+    fill(mounted.root);
+    type(mounted.root, "privacidade-motivo", "😀".repeat(501));
+    expect(byId(mounted.root, "privacidade-motivo-contador").textContent).toBe(
+      "501 de 500 caracteres"
+    );
+    firstButton(mounted.root, "Abrir atendimento de privacidade").click();
+    await flush();
+    expect(posts(mounted.calls)).toHaveLength(0);
+    expect(byId(mounted.root, "privacidade-motivo-erro").textContent).toBe(
+      "O motivo aceita até 500 caracteres."
+    );
+  });
+
+  it("counts the note the same way: 500 emoji with spaces around it are taken", async () => {
+    const mounted = await ready([json({ id: CASE }, 201)]);
+    fill(mounted.root);
+    type(mounted.root, "privacidade-nota", ` ${"😀".repeat(500)} `);
+    expect(byId(mounted.root, "privacidade-nota-contador").textContent).toBe(
+      "500 de 500 caracteres"
+    );
+    firstButton(mounted.root, "Abrir atendimento de privacidade").click();
+    await flush();
+    expect(bodyOf(posts(mounted.calls)[0])).toMatchObject({
+      note: "😀".repeat(500),
     });
   });
 

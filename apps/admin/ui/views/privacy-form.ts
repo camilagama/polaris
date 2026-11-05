@@ -161,7 +161,11 @@ export function radioChoice(
   };
 }
 
-/** A short text with its counter, cut by the browser at the server's limit. */
+/**
+ * A short text with its counter in code points, without the spaces around it, like the check and the text sent. It has
+ * no native `maxlength`: that counts UTF-16 units and would cut 500 emoji at 250, so the limit is said by the counter
+ * and refused by the page.
+ */
 export function textField(
   dom: Dom,
   id: string,
@@ -172,7 +176,6 @@ export function textField(
   const input = dom.el("input", {
     autocomplete: "off",
     id,
-    maxlength: String(max),
     name: id,
     spellcheck: "false",
     type: "text",
@@ -183,7 +186,7 @@ export function textField(
     `0 de ${max} caracteres`
   );
   input.addEventListener("input", () => {
-    counter.textContent = `${[...input.value].length} de ${max} caracteres`;
+    counter.textContent = `${[...input.value.trim()].length} de ${max} caracteres`;
   });
   const hints = [counter];
   if (hint !== undefined) {

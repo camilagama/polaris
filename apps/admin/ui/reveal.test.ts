@@ -496,6 +496,48 @@ describe("the value leaves the page (AC-P6.3)", () => {
     expect(rowOf(mounted, ROW_1)?.textContent).toContain(PHONE);
   });
 
+  it("puts the focus on the value when the answer comes with the focus still on the confirmation", async () => {
+    const held = pending();
+    const mounted = await open([held.answer]);
+    await click(mounted.root, OPEN_MENU, 0);
+    await click(mounted.root, "Telefone");
+    await click(mounted.root, "Revelar o telefone deste cliente");
+    firstButton(mounted.root, "Revelar o telefone deste cliente").focus();
+    held.release(revealed(C1, "phone", PHONE));
+    await flush();
+
+    expect(shown(mounted)).toContain(PHONE);
+    expect(mounted.document.activeElement?.tagName).toBe("bdi");
+  });
+
+  it("puts the focus on the value when the answer comes with the focus on the body", async () => {
+    const held = pending();
+    const mounted = await open([held.answer]);
+    await click(mounted.root, OPEN_MENU, 0);
+    await click(mounted.root, "Telefone");
+    await click(mounted.root, "Revelar o telefone deste cliente");
+    mounted.document.activeElement = mounted.document.body;
+    held.release(revealed(C1, "phone", PHONE));
+    await flush();
+
+    expect(mounted.document.activeElement?.tagName).toBe("bdi");
+  });
+
+  it("does not pull the focus to the value when the operator took it elsewhere while the request answered", async () => {
+    const held = pending();
+    const mounted = await open([held.answer]);
+    await click(mounted.root, OPEN_MENU, 0);
+    await click(mounted.root, "Telefone");
+    await click(mounted.root, "Revelar o telefone deste cliente");
+    const elsewhere = firstButton(mounted.root, "Atualizar a lista");
+    elsewhere.focus();
+    held.release(revealed(C1, "phone", PHONE));
+    await flush();
+
+    expect(shown(mounted)).toContain(PHONE);
+    expect(mounted.document.activeElement).toBe(elsewhere);
+  });
+
   it("gives the focus to the row's menu button when the 30 seconds end with the focus on the row", async () => {
     const mounted = await withValue();
     await vi.advanceTimersByTimeAsync(REVEAL_SECONDS * 1000);
