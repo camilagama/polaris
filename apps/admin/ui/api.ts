@@ -6,6 +6,13 @@
  * sentence; no code, status or message of the server reaches the screen (AC-14).
  */
 
+import type {
+  EndedAccess,
+  GrantedAccess,
+  MaskedCustomer,
+  MaskedCustomerPage,
+} from "./types";
+
 export type Problem =
   | "conflict"
   | "failed"
@@ -132,7 +139,7 @@ async function failureOf(response: Response): Promise<ApiFailure> {
   const code = named !== null && CODE_PATTERN.test(named) ? named : null;
   const problem = problemOf(response, code);
   if (problem !== "rate_limited") {
-    return code !== null && problem === "invalid"
+    return code !== null && (problem === "invalid" || problem === "forbidden")
       ? { code, ok: false, problem }
       : { ok: false, problem };
   }
@@ -264,4 +271,106 @@ export async function sendClosureNotice(
   return code === null
     ? { kind: "problem", problem: "failed" }
     : { code, kind: "refused" };
+}
+
+/** The most customers one read asks for: the server's own limit for a page. */
+const CUSTOMERS_PAGE_SIZE = 50;
+
+const UUID_TEXT =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type Read<T> = { data: T; ok: true } | ApiFailure;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isGrantedAccess(value: unknown): value is GrantedAccess {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    UUID_TEXT.test(value.id) &&
+    typeof value.expiresAt === "string" &&
+    !Number.isNaN(new Date(value.expiresAt).getTime())
+  );
+}
+
+function isMaskedCustomer(value: unknown): value is MaskedCustomer {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    (value.email === null || typeof value.email === "string") &&
+    (value.phone === null || typeof value.phone === "string") &&
+    typeof value.hasNotes === "boolean" &&
+    typeof value.archived === "boolean"
+  );
+}
+
+function isMaskedPage(value: unknown): value is MaskedCustomerPage {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.customers) &&
+    value.customers.length <= CUSTOMERS_PAGE_SIZE &&
+    value.customers.every(isMaskedCustomer) &&
+    (value.next === null ||
+      (typeof value.next === "string" && UUID_TEXT.test(value.next)))
+  );
+}
+
+/** Gives the operator an access to the case's customers for `minutes`; one POST, never repeated by itself. */
+export async function giveAccess(
+  api: Api,
+  caseId: string,
+  minutes: number
+): Promise<Read<GrantedAccess>> {
+  const answer = await api.post<unknown>(
+    `/api/support-cases/${encodeURIComponent(caseId)}/access`,
+    { minutes }
+  );
+  if (!answer.ok) {
+    return answer;
+  }
+  return isGrantedAccess(answer.data)
+    ? { data: answer.data, ok: true }
+    : { ok: false, problem: "failed" };
+}
+
+/** Ends an access now: one DELETE by the ID the case's own read gave. */
+export async function endAccess(
+  api: Api,
+  grantId: string
+): Promise<Read<EndedAccess>> {
+  const answer = await api.delete<unknown>(
+    `/api/tenant-access/${encodeURIComponent(grantId)}`
+  );
+  if (!answer.ok) {
+    return answer;
+  }
+  return isRecord(answer.data) && typeof answer.data.revoked === "boolean"
+    ? { data: { revoked: answer.data.revoked }, ok: true }
+    : { ok: false, problem: "failed" };
+}
+
+/** One page of the case's masked customers (audited by the server); the cursor is the `next` of the page before. */
+export async function readCustomers(
+  api: Api,
+  caseId: string,
+  after: string | null
+): Promise<Read<MaskedCustomerPage>> {
+  const parameters = new URLSearchParams({
+    limit: String(CUSTOMERS_PAGE_SIZE),
+  });
+  if (after !== null) {
+    parameters.set("after", after);
+  }
+  const answer = await api.get<unknown>(
+    `/api/support-cases/${encodeURIComponent(caseId)}/customers?${parameters.toString()}`
+  );
+  if (!answer.ok) {
+    return answer;
+  }
+  return isMaskedPage(answer.data)
+    ? { data: answer.data, ok: true }
+    : { ok: false, problem: "failed" };
 }

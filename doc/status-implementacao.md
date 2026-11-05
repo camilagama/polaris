@@ -2891,6 +2891,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `ui/entitlements.test.ts` (formulário, 200/201 repetido, 400 por código, 401, 403, 404, 409, 429, 503, rede e resposta ilegível, `outcomeRecorded:false`, duplo clique, mesmo `commandId` na repetição, encerrar por ID, sem ID, loja de outro diagnóstico, cadeias hostis), `src/ui/screens.test.ts` (as duas listas só na tela do caso), `src/ui/ui-guard.test.ts` (rede: segmento `entitlement-grants`), `src/ui/ui-types.test.ts` (respostas, rótulos e limites do servidor), `src/support-routes.test.ts` (409, `outcomeRecorded`, ID que não é UUID), `src/worker.workerd-db.test.ts` e gates `admin-diagnostics` e `admin-worker` (PG18: o ID no diagnóstico, formato fechado, concessão de outra loja não se encerra pelo caso). |
 | Limites | Registrado | A revisão antes de enviar diz "por N horas (até cerca de {data})": a data é estimativa pelo relógio do navegador (o servidor conta o prazo no relógio dele e mostra o fim na lista). A lista "em vigor" esconde pelo relógio do navegador o que já passou do fim; o servidor decide em cada comando. Sem 429 hoje nessas rotas: a tela trata o 429 mesmo assim. Sem abas no caso ainda. Aceite no staging (AC-C14), parecer do Rodrigo (AC-C11 e migration) e do Filipe pendentes. |
 
+### Admin v2, Parte 5: acesso temporário e clientes mascarados (t766; corte admin-v2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Seção "Acesso aos clientes" no caso | Em revisão | `ui/views/access.ts`, montada por `views/case.ts` com `tenant_access:grant` ou `tenant_data:read`, no caso de suporte aberto ou fechado (caso de privacidade não a tem). Dar: 5, 15, 30, 60, 120 ou 240 minutos, revisão em duas etapas, fim mostrado é o do servidor. Encerrar: confirmação, `revoked:false` diz "Nada foi encerrado". Sem acesso, vencido ou caso fechado: "O acesso acabou ou não foi dado." e nenhuma chamada à rota de clientes. |
+| Lista mascarada | Em revisão | Só por clique, até 50 por página pelo cursor `next`, frase de que cada página lida fica na auditoria. Sai do DOM ao encerrar, vencer, fechar o caso, recusa do servidor e `pagehide`. Sem controle de revelar (Parte 6). |
+| Cliente das rotas | Em revisão | `ui/api.ts` (`giveAccess`, `endAccess`, `readCustomers`, no fim) e `ui/types.ts`; a falha 403 passa a guardar o código da recusa (token minúsculo) para separar "sem acesso" de "sem permissão". |
+| Provas | Em revisão | `ui/access.test.ts` (capacidade, dar com duplo clique e cada recusa, lista e cursor, sem acesso sem chamada, vencimento e caso fechado, encerrar, sem rastro, cadeias hostis), `src/ui/ui-guard.test.ts` (rede: `/api/tenant-access`, segmentos `access` e `customers`, `reveal` fora). |
+| Limites | Registrado | Sem temporizador no script: o vencimento tira a lista no próximo toque, tecla ou foco na seção, ou na próxima leitura; o servidor recusa a leitura de qualquer modo. Dar acesso não tem `commandId` na rota (repetir cria outro acesso, limite já aceito no ADR 0072). Aceite no staging (AC-C14), parecer do Rodrigo (AC-C11) e do Petković pendentes. |
+
 ### Admin v2, Parte 8: registro de acessos, a consulta do juízo (t749; corte admin-v2; sem migration)
 
 | Item | Estado | Detalhe |
