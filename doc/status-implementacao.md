@@ -2833,6 +2833,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | `ui/incidents.test.ts` (lista, detalhe, cada resultado, 400/403/404/409/429/503 e rede, cadeias hostis na referência, duplo clique, sem capacidade, Início), `src/ui/screens.test.ts` (rotas, menu por capacidade, 401), `src/ui/ui-guard.test.ts` (rede: `/api/operational-incidents`, segmentos `events` e `retry`), `src/ui/ui-types.test.ts` (formas e os cinco resultados), `src/route-surface.test.ts`, `src/worker.workerd.test.ts` (workerd, Access simulado). |
 | Limites | Registrado | Sem teste no banco: o gate `admin-worker` não semeia incidente (fora de `apps/admin`, AC-C10); o reenvio e as leituras têm teste de rota e de função de banco desde o ADR 0085. Aceite no staging (AC-C14) e parecer do Rodrigo (AC-C11) pendentes. |
 
+### Admin v2, Parte 3: suspender, reativar e marcar loja interna (t748; corte admin-v2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Painel "Loja" no caso | Em revisão | `apps/admin/ui/views/store-actions.ts`, montado em `views/case.ts` só com o caso de suporte aberto e `organization:suspend` ou `organization:classify`. Suspender e reativar: revisão em duas etapas com os efeitos na ordem do AC-P3.1, um pedido por clique, estado relido uma vez depois da resposta (AC-P3.3); loja encerrada não mostra o botão. |
+| Loja interna | Em revisão | Leve, com `organization:classify`: marcar e desmarcar, frase do efeito acima do botão. Nenhuma rota de leitura traz a marca: a tela diz "ainda não lida" até a primeira resposta da rota de classificação. |
+| Loja (`/lojas/{uuid}`) | Em revisão | Só a frase de que as ações moram no caso aberto da loja; sem ação própria. |
+| Provas | Em revisão | `ui/store-actions.test.ts` (estados `active`, `suspended`, `closed` e desconhecido, ordem dos efeitos, sem caso e sem capacidade, 400, 401, 403, 404, 409, 429, 503, rede e resposta ilegível, releitura que falha, duplo clique, cadeias hostis), `src/support-routes.test.ts` (400 `case_not_open`, 404 `unknown_case`, `internal` que não é booleano), `src/ui/ui-guard.test.ts` (rede: segmentos `suspend`, `reactivate` e `classification`). |
+| Limites | Registrado | O texto sobre o que estava guardado nos aparelhos offline segue a suposição do AC-P3.1 (achado t674), a confirmar com o Filipe e o Rodrigo. Suspender não tem segunda pessoa (ADR 0073). As rotas não devolvem `outcomeRecorded` (só as concessões). Sem abas no caso ainda: o painel é uma seção da página. Aceite no staging (AC-C14) e parecer do Rodrigo (AC-C11) pendentes. |
+
 ### Admin v2, Parte 9: Configurações do operador, só leitura (t750; corte admin-v2; sem migration)
 
 | Item | Estado | Detalhe |
