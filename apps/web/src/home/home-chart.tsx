@@ -245,7 +245,8 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
   // a period of returns only (net below zero) still has a drawing: "Sem vendas" is for a period with nothing
   const sold = series.some((day) => chartValue(day.netSales) !== 0);
   const first = series[0]?.date ?? figures.today;
-  const write = first.slice(0, 4) === figures.today.slice(0, 4) ? shortDate : fullDate;
+  const write =
+    first.slice(0, 4) === figures.today.slice(0, 4) ? shortDate : fullDate;
   const summary = `Vendas líquidas por dia, de ${write(first)} a ${write(figures.today)}: ${formatBrlAmount(total)} no total`;
   return (
     <div className="grid gap-3">
