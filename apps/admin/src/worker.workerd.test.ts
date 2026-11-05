@@ -91,6 +91,9 @@ describe("admin worker in workerd", () => {
     "/incidentes",
     "/incidentes/0199a0a0-0000-7000-8000-00000000f00d",
     "/registro",
+    "/privacidade",
+    "/privacidade/novo",
+    "/privacidade/0199a0a0-0000-7000-8000-00000000c0de",
     "/ui/admin-0000000000000000.js",
     "/ui/admin-0000000000000000.css",
   ])(
@@ -126,13 +129,17 @@ describe("admin worker in workerd", () => {
         "/incidentes",
         "/incidentes/0199a0a0-0000-7000-8000-00000000f00d",
         "/registro",
+        "/privacidade",
+        "/privacidade/0199a0a0-0000-7000-8000-00000000c0de",
       ].map((path) =>
         exports.default.fetch(`https://admin.test${path}`, {
           headers: { "cf-access-jwt-assertion": token },
         })
       )
     );
-    expect(screens.map((screen) => screen.status)).toEqual([503, 503, 503]);
+    expect(screens.map((screen) => screen.status)).toEqual([
+      503, 503, 503, 503, 503,
+    ]);
     const bodies = await Promise.all(screens.map((screen) => screen.text()));
     for (const body of bodies) {
       expect(body).not.toContain("<html");

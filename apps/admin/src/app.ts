@@ -131,6 +131,8 @@ export const SCREEN_ROUTES = [
   "/incidentes",
   "/incidentes/:incidentId",
   "/registro",
+  "/privacidade",
+  "/privacidade/:caseId",
 ] as const;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
