@@ -260,7 +260,6 @@ export function createReveal(host: RevealHost): Reveal {
           ),
           rowControl(customerId, "Esconder agora", () => {
             hideValue("Valor escondido.");
-            cells.get(customerId)?.querySelector("button")?.focus();
           }),
         ];
       default: {
@@ -307,16 +306,37 @@ export function createReveal(host: RevealHost): Reveal {
     resetReview();
   };
 
-  /** Drops a value that is on the screen and says so; the row stays masked, with the way to ask again. */
+  /** The focus is in the row's own value or button, or nowhere (the body, after a repaint took its element). */
+  const focusBelongsToRow = (customerId: string) => {
+    const active = dom.document.activeElement;
+    if (active === null || active === dom.document.body) {
+      return true;
+    }
+    return (
+      active === cells.get(customerId)?.querySelector("bdi") ||
+      (cellControls.get(customerId) ?? []).some((control) => control === active)
+    );
+  };
+
+  /**
+   * Drops a value that is on the screen and says so; the row stays masked, with the way to ask again. The focus goes
+   * to the row's menu button when it was on the row, so repainting the cell does not leave it on the body; a focus
+   * somewhere else on the page is not taken.
+   */
   function hideValue(message: string) {
     if (phase === null || phase.kind !== "shown") {
       return;
     }
+    const { customerId } = phase;
+    const keepFocus = focusBelongsToRow(customerId);
     epoch += 1;
     stopTimer();
     watch(false);
-    setPhase({ customerId: phase.customerId, kind: "gone" });
+    setPhase({ customerId, kind: "gone" });
     notice.status(message);
+    if (keepFocus) {
+      cells.get(customerId)?.querySelector("button")?.focus();
+    }
   }
 
   const show = (
@@ -328,6 +348,7 @@ export function createReveal(host: RevealHost): Reveal {
     const left =
       end === null ? 0 : new Date(end).getTime() - host.now().getTime();
     setPhase({ customerId, field, kind: "shown", value });
+    cells.get(customerId)?.querySelector("bdi")?.focus();
     watch(true);
     stopTimer();
     timer = setTimeout(
@@ -380,10 +401,10 @@ export function createReveal(host: RevealHost): Reveal {
       notice.status(REVEAL_GONE);
       return;
     }
-    show(customerId, field, answer.data.value);
     notice.success(
       `${FIELD_TEXT[field].label}: valor revelado na linha do cliente. ${REVEALED_MARK}.`
     );
+    show(customerId, field, answer.data.value);
   };
 
   function openReview(customerId: string, field: RevealableField) {
@@ -430,6 +451,9 @@ export function createReveal(host: RevealHost): Reveal {
     }
     resetReview();
     notice.clear();
+    if (phase?.kind === "shown") {
+      hideValue("Valor escondido.");
+    }
     const open = phase?.kind === "menu" && phase.customerId === customerId;
     setPhase(open ? null : { customerId, kind: "menu" });
     cells.get(customerId)?.querySelector("button")?.focus();

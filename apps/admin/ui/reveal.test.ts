@@ -196,6 +196,8 @@ const rows = (mounted: Mounted) =>
   allElements(mounted.root).filter((element) => element.tagName === "tr");
 const rowOf = (mounted: Mounted, name: string) =>
   rows(mounted).find((row) => row.textContent.includes(name));
+const menuOf = (mounted: Mounted, name: string): FakeElement =>
+  firstButton(rowOf(mounted, name) as FakeElement, OPEN_MENU);
 const bodyOf = (call: Call | undefined) =>
   JSON.parse(String(call?.init.body ?? "null"));
 
@@ -478,6 +480,74 @@ describe("the value leaves the page (AC-P6.3)", () => {
 
     maskedAgain(mounted);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("puts the focus on the value when it appears, so the keyboard lands on it", async () => {
+    const mounted = await withValue();
+    const focused = mounted.document.activeElement;
+
+    expect(focused?.tagName).toBe("bdi");
+    expect(focused?.textContent).toBe(PHONE);
+    expect(focused?.getAttribute("tabindex")).toBe("-1");
+    expect(rowOf(mounted, ROW_1)?.textContent).toContain(PHONE);
+  });
+
+  it("gives the focus to the row's menu button when the 30 seconds end with the focus on the row", async () => {
+    const mounted = await withValue();
+    await vi.advanceTimersByTimeAsync(REVEAL_SECONDS * 1000);
+
+    expect(mounted.document.activeElement).toBe(menuOf(mounted, ROW_1));
+  });
+
+  it("gives the focus to the row's menu button when it is on the Esconder agora button and the time ends", async () => {
+    const mounted = await withValue();
+    firstButton(mounted.root, "Esconder agora").focus();
+    await vi.advanceTimersByTimeAsync(REVEAL_SECONDS * 1000);
+
+    expect(mounted.document.activeElement).toBe(menuOf(mounted, ROW_1));
+  });
+
+  it("gives the focus to the row's menu button when the tab hides the value", async () => {
+    const mounted = await withValue();
+    mounted.document.hidden = true;
+    mounted.document.dispatch("visibilitychange");
+
+    expect(mounted.document.activeElement).toBe(menuOf(mounted, ROW_1));
+  });
+
+  it("gives the focus to the row's menu button when the focus fell to the body", async () => {
+    const mounted = await withValue();
+    mounted.document.activeElement = mounted.document.body;
+    await vi.advanceTimersByTimeAsync(REVEAL_SECONDS * 1000);
+
+    expect(mounted.document.activeElement).toBe(menuOf(mounted, ROW_1));
+  });
+
+  it("does not take the focus from another place on the page when the value leaves", async () => {
+    const mounted = await withValue();
+    const elsewhere = firstButton(mounted.root, "Atualizar a lista");
+    elsewhere.focus();
+    await vi.advanceTimersByTimeAsync(REVEAL_SECONDS * 1000);
+
+    maskedAgain(mounted);
+    expect(mounted.document.activeElement).toBe(elsewhere);
+  });
+
+  it("hides the value, stops the timer and the listening and says so when another row's menu opens", async () => {
+    const mounted = await withValue();
+    expect(vi.getTimerCount()).toBe(1);
+    expect(mounted.document.listenerCount("visibilitychange")).toBe(1);
+    menuOf(mounted, ROW_2).click();
+    await flush();
+
+    maskedAgain(mounted);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(mounted.document.listenerCount("visibilitychange")).toBe(0);
+    expect(shown(mounted)).toContain("Valor escondido.");
+    expect(
+      buttons(rowOf(mounted, ROW_2) as FakeElement, "Telefone")
+    ).toHaveLength(1);
+    expect(mounted.document.activeElement).toBe(menuOf(mounted, ROW_2));
   });
 
   it("keeps the value while the tab stays visible", async () => {
