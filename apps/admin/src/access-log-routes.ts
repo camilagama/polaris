@@ -10,11 +10,11 @@ import type { AdminBindings, AdminEnv } from "./app";
 import { readBody, sameOrigin } from "./support-routes";
 
 /**
- * The access log in the Admin (ADR 0092): one JSON route (the screen `/registro` only calls it). It answers a court order: the case number in
- * the CNJ format, one user or one IP, a window of at most 31 days, a page at a time. Reading asks for
- * `access_log:read`, takes the operator from the verified login, and leaves the checks and the audit to a database
- * function (one transaction). The request is a POST so that the IP, the user and the case number travel in the body,
- * not in a URL that an access log would keep. Nothing of the answer is logged here.
+ * The access log in the Admin (ADR 0092): one JSON route, which the screen `/registro` calls. It answers a court
+ * order: the case number in the CNJ format, one user or one IP, a window of at most 31 days, a page at a time.
+ * Reading asks for `access_log:read`, takes the operator from the verified login, and leaves the checks and the audit
+ * to a database function (one transaction). The request is a POST so that the IP, the user and the case number travel
+ * in the body, not in a URL that an access log would keep. Nothing of the answer is logged here.
  */
 
 export interface AccessLogDependencies {

@@ -11,7 +11,8 @@ import {
 import { createNotice } from "../notice";
 import type { AccessLogEntry, AccessLogPage } from "../types";
 
-export const NO_ACCESS = "Nenhum acesso encontrado nessa janela.";
+export const NO_ACCESS =
+  "Nenhum acesso encontrado nessa janela. O registro pode ter lacunas: isto não prova que não houve acesso.";
 export const NO_MORE_ACCESS = "Não há mais acessos nessa janela.";
 export const REGISTERED_TEXT =
   "Esta consulta fica registrada na auditoria, com o número do processo.";
@@ -36,7 +37,7 @@ const HEADERS = [
   "Evento",
   "IP",
   "Usuário",
-  "Pedido",
+  "Requisição",
 ] as const;
 
 type FilterKind = "ip" | "user";
@@ -101,7 +102,9 @@ function dayStart(text: string): number | null {
     : null;
 }
 
-type Period = { from: string; to: string } | { problem: string };
+type Period =
+  | { from: string; to: string }
+  | { field: "first" | "last"; problem: string };
 
 /**
  * The days the operator picked, first and last included, as the two instants the route takes: the first day at 00:00
@@ -111,16 +114,19 @@ export function periodOf(first: string, last: string): Period {
   const start = dayStart(first);
   const end = dayStart(last);
   if (start === null) {
-    return { problem: "Informe o primeiro dia do período." };
+    return { field: "first", problem: "Informe o primeiro dia do período." };
   }
   if (end === null) {
-    return { problem: "Informe o último dia do período." };
+    return { field: "last", problem: "Informe o último dia do período." };
   }
   if (end < start) {
-    return { problem: "O último dia não pode ser antes do primeiro." };
+    return {
+      field: "last",
+      problem: "O último dia não pode ser antes do primeiro.",
+    };
   }
   if ((end - start) / DAY_MS + 1 > MAX_DAYS) {
-    return { problem: WINDOW_TEXT };
+    return { field: "last", problem: WINDOW_TEXT };
   }
   return {
     from: new Date(start + BRASILIA_OFFSET_MS).toISOString(),
@@ -161,9 +167,14 @@ export function accessLogView(tools: ScreenTools): HTMLElement {
   const { api, dom } = tools;
   const notice = createNotice(dom);
 
-  const field = (id: string, inputType: "date" | "text", length?: number) =>
+  const field = (
+    id: string,
+    inputType: "date" | "text",
+    length?: number,
+    describedBy = id
+  ) =>
     dom.el("input", {
-      "aria-describedby": `${id}-dica ${id}-erro`,
+      "aria-describedby": `${describedBy}-dica ${describedBy}-erro`,
       autocomplete: "off",
       id,
       ...(length === undefined ? {} : { maxlength: String(length) }),
@@ -195,8 +206,8 @@ export function accessLogView(tools: ScreenTools): HTMLElement {
   );
   const filterValue = field("registro-valor", "text", USER_LENGTH);
   const filterError = errorLine("registro-valor-erro");
-  const firstDay = field("registro-inicio", "date");
-  const lastDay = field("registro-fim", "date");
+  const firstDay = field("registro-inicio", "date", undefined, "registro-fim");
+  const lastDay = field("registro-fim", "date", undefined, "registro-fim");
   const periodError = errorLine("registro-fim-erro");
   const submit = dom.el("button", { type: "submit" }, "Consultar");
   const more = dom.el(
@@ -250,11 +261,14 @@ export function accessLogView(tools: ScreenTools): HTMLElement {
   let loading = false;
   let asked: Record<string, string> | null = null;
   let next: string | null = null;
+  // an answer that comes after the form changed or the page was hidden belongs to nothing on screen
+  let generation = 0;
 
   const fieldErrors: [HTMLElement, HTMLElement][] = [
     [referenceError, reference],
     [filterError, filterValue],
     [periodError, lastDay],
+    [periodError, firstDay],
   ];
 
   const clearFieldErrors = () => {
@@ -285,6 +299,7 @@ export function accessLogView(tools: ScreenTools): HTMLElement {
 
   /** Leaves nothing of an answer on the page: the lines, the cursor and the request it belongs to. */
   const dropResults = () => {
+    generation += 1;
     rows.replaceChildren();
     more.setAttribute("hidden", "");
     asked = null;
@@ -340,12 +355,16 @@ export function accessLogView(tools: ScreenTools): HTMLElement {
     }
     busy(true);
     notice.status("Consultando…");
+    const mine = generation;
     const answer = await api.post<AccessLogPage | { error: string }>(
       "/api/access-log/read",
       after === null ? body : { ...body, after },
       [400]
     );
     busy(false);
+    if (mine !== generation) {
+      return;
+    }
     if (!answer.ok) {
       notice.alert(problemText(answer.problem, answer.retryAfterSeconds));
       return;
@@ -394,7 +413,7 @@ export function accessLogView(tools: ScreenTools): HTMLElement {
     if ("problem" in period) {
       fieldProblem(
         periodError,
-        period.problem.startsWith("Informe o primeiro") ? firstDay : lastDay,
+        period.field === "first" ? firstDay : lastDay,
         period.problem
       );
       return null;
@@ -428,18 +447,21 @@ export function accessLogView(tools: ScreenTools): HTMLElement {
     filterHint.textContent = chosen.hint;
     filterValue.setAttribute("maxlength", String(chosen.length));
     filterValue.value = "";
+    clearFieldErrors();
     dropResults();
     notice.clear();
   });
   for (const input of [reference, filterValue, firstDay, lastDay]) {
     // an answer belongs to what was typed when it was asked: a changed field takes it off the page
     input.addEventListener("input", () => {
+      clearFieldErrors();
       dropResults();
       notice.clear();
     });
   }
 
   const discard = () => {
+    clearFieldErrors();
     dropResults();
     notice.clear();
     for (const input of [reference, filterValue, firstDay, lastDay]) {

@@ -315,7 +315,10 @@ export function createAdminApp(
         listState:
           context.req.query("estado") === "fechados" ? "fechados" : "abertos",
         screen: found.screen,
-        store: isUuid(store) ? store.toLowerCase() : null,
+        store:
+          isUuid(store) && found.screen !== "registro"
+            ? store.toLowerCase()
+            : null,
       });
       return context.html(body, forbidden ? 403 : 200);
     };

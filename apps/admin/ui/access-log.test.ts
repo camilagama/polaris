@@ -255,6 +255,7 @@ describe("the query (AC-P8.1, AC-P8.2, AC-P8.3)", () => {
   it("counts days of the calendar across a month and a leap day", () => {
     expect(periodOf("2028-02-01", "2028-03-02")).toHaveProperty("from");
     expect(periodOf("2028-02-01", "2028-03-03")).toEqual({
+      field: "last",
       problem: WINDOW_TEXT,
     });
     expect(periodOf("2027-02-01", "2027-03-03")).toHaveProperty("from");
@@ -395,6 +396,69 @@ describe("the answer (AC-P8.3, AC-P8.4, AC-C7, AC-C12)", () => {
     expect(page.calls[2]?.path).toBe("/api/access-log/read");
     expect(more.hasAttribute("hidden")).toBe(true);
     expect(rowsOf(page.root)).toHaveLength(1);
+  });
+
+  it("ignores an answer that arrives after a field changed, and shows none of it", async () => {
+    const wait = pending();
+    const page = await screen([wait.answer]);
+    fill(page.root);
+    consult(page.root)?.click();
+    await flush();
+
+    byId(page.root, "registro-valor").value = "outro_usuario";
+    byId(page.root, "registro-valor").dispatch("input");
+    wait.release(json(pageOf([entryOf()], CURSOR)));
+    await flush();
+
+    expect(rowsOf(page.root)).toHaveLength(0);
+    expect(visibleText(page.root)).not.toContain(IP);
+    expect(
+      buttons(page.root, "Próxima página")[0]?.hasAttribute("hidden")
+    ).toBe(true);
+    expect(consult(page.root)?.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("ignores an answer that arrives after the page was hidden", async () => {
+    const wait = pending();
+    const page = await screen([wait.answer]);
+    fill(page.root);
+    consult(page.root)?.click();
+    await flush();
+
+    page.document.defaultView.dispatch("pagehide");
+    wait.release(json(pageOf([entryOf()])));
+    await flush();
+
+    expect(rowsOf(page.root)).toHaveLength(0);
+    expect(visibleText(page.root)).not.toContain(IP);
+  });
+
+  it("clears the mark of a wrong first day when it is typed again", async () => {
+    const page = await screen([]);
+    await ask(page, { first: "" });
+    const day = byId(page.root, "registro-inicio");
+    expect(day.getAttribute("aria-invalid")).toBe("true");
+    expect(page.document.activeElement).toBe(day);
+
+    day.dispatch("input");
+
+    expect(day.getAttribute("aria-invalid")).toBeNull();
+    expect(errorOf(page.root, "registro-fim-erro")).toBe("");
+  });
+
+  it("takes the server's refusal off the field when the operator changes the filter kind", async () => {
+    const page = await screen([json({ error: "invalid_filter" }, 400)]);
+    await ask(page);
+    expect(errorOf(page.root, "registro-valor-erro")).not.toBe("");
+
+    const kind = byId(page.root, "registro-tipo");
+    kind.value = "ip";
+    kind.dispatch("change");
+
+    expect(errorOf(page.root, "registro-valor-erro")).toBe("");
+    expect(
+      byId(page.root, "registro-valor").getAttribute("aria-invalid")
+    ).toBeNull();
   });
 
   it("does not send a next page twice on a double click", async () => {

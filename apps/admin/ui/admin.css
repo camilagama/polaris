@@ -295,7 +295,7 @@ button {
   overflow-wrap: anywhere;
 }
 
-/* the access log's form: one field to a line, the two days side by side where there is room */
+/* the access log's form: one field to a line, the two days one under the other */
 .access-form {
   max-width: 28rem;
 }

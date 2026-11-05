@@ -255,6 +255,11 @@ describe("one route per screen (AC-P1.2)", () => {
     ]) {
       expect(html).not.toContain(leaked);
     }
+    const withStore = await (await setup()(`/registro?loja=${STORE}`)).text();
+    expect(ROOT.exec(withStore)?.[1]).toBe(
+      ' data-tela="registro" data-ambiente="unknown"'
+    );
+    expect(withStore).not.toContain(STORE);
   });
 
   it("is the same document for two operators: nothing of the login is written into it", async () => {
