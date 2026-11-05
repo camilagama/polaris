@@ -51,6 +51,7 @@ Registro datado; o resto do ADR vale no que esta emenda não muda. Decisão do u
 - **O que não muda.** O Worker verifica o token em todo pedido; emissor e `sub` identificam o principal; nenhuma linha de código.
 - **Consequência.** Um token roubado vale até 8 h (atualiza "Limites aceitos"), compensado pelo `disabled` no principal valer no pedido seguinte, pelo acesso temporário de até 240 min e pelo limite de reembolsos.
 - **Produção.** A mesma configuração, na outra conta, com o aceite repetido antes do go-live.
+- **Execução.** Aplicado no staging em 05/11/2026 na ordem do runbook: passkeys conferidas, TOTP fora e o TOTP antigo apagado (aplicação, depois organização), um login pelo Google com o PIN ainda permitido, e então *require login method* = Google, PIN fora da aplicação e auto-redirect ligado. O PIN ficou só na organização, para recuperação ("Conta Google perdida", no runbook). O login final do operador (Google e passkey, em janela anônima) entrou no Admin. O `sub` deve se manter na troca PIN → Google (o id do usuário no Access não mudou); **aceite do token pendente**: a confirmar com o `sub`, `aud`, `iss` e `exp − iat ≤ 8 h` do token, o e-mail fora da lista recusado e as verificações 14 e 15 do smoke. Até o aceite, o passo 5 de "Cadastrar um operador" fica como está. A produção repete o mesmo fluxo antes do go-live, na conta de produção, com o mesmo aceite.
 
 ### Emenda de 05/11/2026: o Admin com a casca do dash (convergência visual)
 
