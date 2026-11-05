@@ -80,6 +80,7 @@
     "./sync-schema": "./src/schema/sync.ts"
   },
   "scripts": {
+    "billing:current-charge-reconcile": "bun scripts/billing-current-charge-reconcile.ts",
     "build": "bun run typecheck",
     "check": "bun run typecheck",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
