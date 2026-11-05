@@ -16,6 +16,7 @@ const THUMBNAILS = "thumbnails";
 /** `[lastUsed, size]`: the eviction walks this index with a key cursor, without loading a single image. */
 const USAGE = "usage";
 const DATABASE_VERSION = 1;
+const WIPE_BLOCKED_WAIT_MS = 3000;
 
 interface ThumbnailRecord {
   assetId: string;
@@ -173,6 +174,7 @@ export function openThumbnailDisk(
         async take(assetId, now) {
           const tx = transaction("readwrite");
           const done = finished(tx);
+          done.catch(() => undefined);
           const store = tx.objectStore(THUMBNAILS);
           const record = (await request(store.get(assetId))) as
             | ThumbnailRecord
@@ -186,6 +188,7 @@ export function openThumbnailDisk(
         async touch(assetId, now) {
           const tx = transaction("readwrite");
           const done = finished(tx);
+          done.catch(() => undefined);
           const store = tx.objectStore(THUMBNAILS);
           const record = (await request(store.get(assetId))) as
             | ThumbnailRecord
@@ -198,6 +201,7 @@ export function openThumbnailDisk(
         async write(assetId, bytes, now, budgetBytes) {
           const tx = transaction("readwrite");
           const done = finished(tx);
+          done.catch(() => undefined);
           const store = tx.objectStore(THUMBNAILS);
           const record: ThumbnailRecord = {
             assetId,
@@ -238,6 +242,10 @@ export function wipeThumbnails(namespaceKey: string): Promise<void> {
     deleting.onsuccess = () => resolve();
     deleting.onerror = () =>
       reject(deleting.error ?? new Error("thumbnails_wipe_failed"));
-    // `blocked` only says a connection is still closing: the deletion goes on once it closes
+    // `blocked`: a connection elsewhere is still closing. The browser deletes the database once it closes; the
+    // caller does not wait for that longer than this
+    deleting.onblocked = () => {
+      setTimeout(resolve, WIPE_BLOCKED_WAIT_MS);
+    };
   });
 }

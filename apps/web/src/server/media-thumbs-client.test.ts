@@ -18,10 +18,19 @@ const B = "0199c2d0-0000-7000-8000-00000000000b";
 const C = "0199c2d0-0000-7000-8000-00000000000c";
 const ORIGIN = "https://polaris.test";
 
-const body = (...parts: string[]) =>
-  new TextEncoder().encode(parts.join("")).buffer;
-const text = async (blob: Blob | null | undefined) =>
-  blob ? await blob.text() : blob;
+const encoder = new TextEncoder();
+/** A WebP container (RIFF, its length, WEBP) around a tag, told apart by the tag. */
+const webp = (tag: string) => {
+  const payload = encoder.encode(tag);
+  const bytes = new Uint8Array(12 + payload.length);
+  bytes.set(encoder.encode("RIFF"), 0);
+  new DataView(bytes.buffer).setUint32(4, payload.length + 4, true);
+  bytes.set(encoder.encode("WEBP"), 8);
+  bytes.set(payload, 12);
+  return bytes;
+};
+const tagOf = async (blob: Blob | null | undefined) =>
+  blob ? new TextDecoder().decode((await blob.arrayBuffer()).slice(12)) : blob;
 
 describe("contrato da rota em lote com o cliente das miniaturas", () => {
   it("o servidor lê os ids que o cliente manda, e o cliente lê o cabeçalho que o servidor escreve", async () => {
@@ -30,14 +39,14 @@ describe("contrato da rota em lote com o cliente das miniaturas", () => {
       parseMediaThumbIds(url.searchParams.get("ids") ?? undefined)
     ).toEqual([A, B, C]);
     const header = mediaThumbsHeaderValue([
-      { id: A, size: 3 },
+      { id: A, size: 15 },
       { id: B, size: null },
-      { id: C, size: 2 },
+      { id: C, size: 14 },
     ]);
     const transport = createThumbnailTransport(
       () =>
         Promise.resolve(
-          new Response(body("aaa", "cc"), {
+          new Response(new Blob([webp("aaa"), webp("cc")]), {
             headers: { [MEDIA_THUMBS_HEADER]: header },
             status: 200,
           })
@@ -51,9 +60,9 @@ describe("contrato da rota em lote com o cliente das miniaturas", () => {
     });
     expect(result.kind).toBe("ok");
     if (result.kind === "ok") {
-      expect(await text(result.items.get(A))).toBe("aaa");
+      expect(await tagOf(result.items.get(A))).toBe("aaa");
       expect(result.items.get(B)).toBeNull();
-      expect(await text(result.items.get(C))).toBe("cc");
+      expect(await tagOf(result.items.get(C))).toBe("cc");
     }
   });
 });

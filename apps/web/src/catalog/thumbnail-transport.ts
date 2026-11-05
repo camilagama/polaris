@@ -46,10 +46,33 @@ export function thumbnailBatchUrl(
 }
 
 const BYTES_PATTERN = /^\d+$/;
+/** Far above a 320 px WebP; more than this is not a thumbnail and is not kept. */
+const MAX_THUMBNAIL_BYTES = 512 * 1024;
+
+/** A RIFF container of WebP whose own length is the slice: anything else is not shown, nor kept on the device. */
+function isWebp(bytes: ArrayBuffer): boolean {
+  if (bytes.byteLength < 12 || bytes.byteLength > MAX_THUMBNAIL_BYTES) {
+    return false;
+  }
+  const view = new DataView(bytes);
+  const ascii = (offset: number) =>
+    String.fromCharCode(
+      view.getUint8(offset),
+      view.getUint8(offset + 1),
+      view.getUint8(offset + 2),
+      view.getUint8(offset + 3)
+    );
+  return (
+    ascii(0) === "RIFF" &&
+    ascii(8) === "WEBP" &&
+    view.getUint32(4, true) + 8 === bytes.byteLength
+  );
+}
 
 /**
  * Splits the body by the header. Any mismatch (an id out of order, a size that does not add up to the body) gives
- * `null`: bytes that do not match their header are never shown as somebody's image.
+ * `null`: bytes that do not match their header are never shown as somebody's image. A slice that is not a WebP is
+ * an id with no thumbnail.
  */
 export function parseThumbnailBatch(
   ids: readonly string[],
@@ -84,9 +107,10 @@ export function parseThumbnailBatch(
     if (size === 0 || offset + size > body.byteLength) {
       return null;
     }
+    const slice = body.slice(offset, offset + size);
     items.set(
       asked,
-      new Blob([body.slice(offset, offset + size)], { type: THUMBNAIL_TYPE })
+      isWebp(slice) ? new Blob([slice], { type: THUMBNAIL_TYPE }) : null
     );
     offset += size;
   }

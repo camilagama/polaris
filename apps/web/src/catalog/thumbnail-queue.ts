@@ -16,7 +16,8 @@ import {
  *   missing. Missing shows the marker; nothing falls back to the per-image route.
  * - Offline nothing is asked. A batch that failed (network, timeout, 429, 5xx) gives its ids back with a wait that
  *   grows, with jitter; after `MAX_ATTEMPTS` they rest with the marker until the connection comes back, and then
- *   the rows on screen ask once. A refusal (no session, no permission) stops asking for this loader.
+ *   the rows on screen ask once. A refusal (no session, no permission) stops asking until the connection comes
+ *   back.
  * - Nothing here throws to a screen or makes it wait: a row with no thumbnail shows the marker.
  */
 const MAX_ATTEMPTS = 3;
@@ -56,6 +57,7 @@ export class ThumbnailLoader {
   private disposed: boolean;
   private failures = 0;
   private cancelWait: (() => void) | null = null;
+  private abortInFlight: (() => void) | null = null;
   private wasOnline: boolean;
   private readonly stopOnline: () => void;
 
@@ -114,6 +116,8 @@ export class ThumbnailLoader {
     this.stopOnline();
     this.cancelWait?.();
     this.cancelWait = null;
+    this.abortInFlight?.();
+    this.abortInFlight = null;
     this.listeners.clear();
   }
 
@@ -142,7 +146,7 @@ export class ThumbnailLoader {
         this.looking.delete(assetId);
         if (url) {
           this.becomeReady(assetId);
-        } else {
+        } else if (!(this.missing.has(assetId) || this.disposed)) {
           this.wanted.add(assetId);
           this.pump();
         }
@@ -224,10 +228,12 @@ export class ThumbnailLoader {
       return;
     }
     this.inFlight = true;
-    this.send(visible).finally(() => {
-      this.inFlight = false;
-      this.pump();
-    });
+    this.send(visible)
+      .catch(() => undefined)
+      .finally(() => {
+        this.inFlight = false;
+        this.pump();
+      });
   }
 
   private async send(visible: string[]): Promise<void> {
@@ -236,6 +242,7 @@ export class ThumbnailLoader {
       return;
     }
     const controller = new AbortController();
+    this.abortInFlight = () => controller.abort();
     const cancelTimeout = this.options.schedule(
       () =>
         controller.abort(
@@ -251,6 +258,7 @@ export class ThumbnailLoader {
       })
       .catch(() => ({ kind: "failed" as const }));
     cancelTimeout();
+    this.abortInFlight = null;
     if (this.disposed) {
       return;
     }
@@ -263,34 +271,26 @@ export class ThumbnailLoader {
       return;
     }
     this.failures = 0;
-    await Promise.all(
-      batch.map(async (id) => {
-        const blob = result.items.get(id) ?? null;
-        if (!blob) {
-          this.wanted.delete(id);
-          this.missing.add(id);
-          return;
-        }
-        const url = await this.options.cache.store(id, blob).catch(() => null);
-        if (url && !this.disposed) {
-          this.becomeReady(id);
-        } else {
-          this.wanted.delete(id);
-        }
-      })
-    );
+    for (const id of batch) {
+      const blob = result.items.get(id) ?? null;
+      if (blob && this.options.cache.store(id, blob)) {
+        this.becomeReady(id);
+      } else {
+        this.wanted.delete(id);
+        this.missing.add(id);
+      }
+    }
   }
 
+  /** Only the rows on screen count a try: an id that only filled a seat never rests for a batch it did not start. */
   private failed(batch: readonly string[]): void {
-    for (const id of batch) {
+    for (const id of batch.filter((each) => this.visible.has(each))) {
       const attempts = (this.attempts.get(id) ?? 0) + 1;
       this.attempts.set(id, attempts);
       if (attempts >= MAX_ATTEMPTS) {
         this.resting.add(id);
       }
-      if (this.visible.has(id)) {
-        this.wanted.add(id);
-      }
+      this.wanted.add(id);
     }
     this.failures += 1;
     const base = Math.min(
@@ -315,6 +315,7 @@ export class ThumbnailLoader {
     this.cancelWait?.();
     this.cancelWait = null;
     this.failures = 0;
+    this.refused = false;
     this.resting.clear();
     this.attempts.clear();
     this.pump();

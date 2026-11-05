@@ -131,15 +131,18 @@ describe("ThumbnailCache", () => {
     const count = Math.floor(THUMBNAIL_CACHE_BUDGET_BYTES / size);
     for (let index = 0; index < count; index += 1) {
       clock.now += 1;
+      cache.store(`a${index}`, blobOf(size));
       // biome-ignore lint/performance/noAwaitInLoops: one write after the other, in the order of use
-      await cache.store(`a${index}`, blobOf(size));
+      await cache.flush();
     }
     clock.now += 60_000;
     await cache.lookup("a0");
     clock.now += 1;
-    await cache.store("extra-1", blobOf(size));
+    cache.store("extra-1", blobOf(size));
+    await cache.flush();
     clock.now += 1;
-    await cache.store("extra-2", blobOf(size));
+    cache.store("extra-2", blobOf(size));
+    await cache.flush();
     const total = [...disk.records.values()].reduce(
       (sum, record) => sum + record.bytes.byteLength,
       0
@@ -154,7 +157,8 @@ describe("ThumbnailCache", () => {
   it("o uso de uma miniatura já em memória vai ao disco no máximo uma vez por minuto", async () => {
     const disk = new MemoryDisk();
     const { cache, clock } = setup(Promise.resolve(disk));
-    await cache.store("a", blobOf(10));
+    cache.store("a", blobOf(10));
+    await cache.flush();
     clock.now += 30_000;
     await cache.used("a");
     clock.now += 30_000;
@@ -163,13 +167,13 @@ describe("ThumbnailCache", () => {
     expect(disk.records.get("a")?.lastUsed).toBe(clock.now);
   });
 
-  it("a memória também tem orçamento: a menos usada sai e a URL dela é liberada", async () => {
+  it("a memória também tem orçamento: a menos usada sai e a URL dela é liberada", () => {
     const { cache, revoked } = setup(null);
     const half = THUMBNAIL_CACHE_BUDGET_BYTES / 2;
-    await cache.store("a", blobOf(half));
-    await cache.store("b", blobOf(half));
+    cache.store("a", blobOf(half));
+    cache.store("b", blobOf(half));
     expect(cache.peek("a")).toBe("blob:1");
-    await cache.store("c", blobOf(half));
+    cache.store("c", blobOf(half));
     expect(cache.peek("b")).toBeNull();
     expect(revoked).toEqual(["blob:2"]);
     expect(cache.peek("a")).toBe("blob:1");
@@ -177,7 +181,7 @@ describe("ThumbnailCache", () => {
 
   it("sem cópia offline (plano sem offline), nada vai ao disco e a miniatura continua em memória", async () => {
     const { cache } = setup(null);
-    const url = await cache.store("a", blobOf(10));
+    const url = cache.store("a", blobOf(10));
     expect(url).toBe("blob:1");
     expect(await cache.usesDisk()).toBe(false);
     expect(await cache.lookup("a")).toBe("blob:1");
@@ -188,7 +192,7 @@ describe("ThumbnailCache", () => {
     const { cache } = setup(
       Promise.reject(new DOMException("denied", "SecurityError"))
     );
-    expect(await cache.store("a", blobOf(10))).toBe("blob:1");
+    expect(cache.store("a", blobOf(10))).toBe("blob:1");
     expect(await cache.lookup("a")).toBe("blob:1");
     expect(await cache.usesDisk()).toBe(false);
   });
@@ -196,10 +200,12 @@ describe("ThumbnailCache", () => {
   it("disco cheio: a escrita falha uma vez, o disco sai de cena e a memória segue", async () => {
     const disk = new MemoryDisk(true);
     const { cache } = setup(Promise.resolve(disk));
-    expect(await cache.store("a", blobOf(10))).toBe("blob:1");
+    expect(cache.store("a", blobOf(10))).toBe("blob:1");
+    await cache.flush();
     expect(await cache.usesDisk()).toBe(false);
     expect(disk.closed).toBe(true);
-    await cache.store("b", blobOf(10));
+    cache.store("b", blobOf(10));
+    await cache.flush();
     expect(disk.calls).toEqual(["write"]);
     expect(cache.peek("b")).toBe("blob:2");
   });
@@ -217,13 +223,13 @@ describe("ThumbnailCache", () => {
   it("descartar libera todas as URLs, fecha o disco e não guarda mais nada", async () => {
     const disk = new MemoryDisk();
     const { cache, revoked } = setup(Promise.resolve(disk));
-    await cache.store("a", blobOf(10));
+    cache.store("a", blobOf(10));
     cache.dispose();
     await cache.usesDisk();
     expect(revoked).toEqual(["blob:1"]);
     expect(disk.closed).toBe(true);
     expect(cache.peek("a")).toBeNull();
-    expect(await cache.store("b", blobOf(10))).toBeNull();
+    expect(cache.store("b", blobOf(10))).toBeNull();
     expect(disk.records.has("b")).toBe(false);
   });
 });

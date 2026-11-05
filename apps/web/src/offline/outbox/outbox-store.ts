@@ -66,6 +66,8 @@ export async function wipeOutboxStore(
       }
     }
   );
-  await wipeThumbnails(namespace.key);
+  // the queue is already empty: a thumbnails database that will not go is tried again by the purge, never a reason
+  // to report the queue as not emptied
+  await wipeThumbnails(namespace.key).catch(() => undefined);
   return { discarded };
 }

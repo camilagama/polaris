@@ -79,6 +79,23 @@ export interface ThumbnailCacheOptions {
 
 const THUMBNAIL_TYPE = "image/webp";
 const USE_MARK_INTERVAL_MS = 60_000;
+/** A disk that does not answer in this time is treated as failed: the queue never waits on it. */
+const DISK_TIMEOUT_MS = 3000;
+
+class DiskTimeoutError extends Error {
+  constructor() {
+    super("thumbnail_disk_timeout");
+    this.name = "DiskTimeoutError";
+  }
+}
+
+function withinDiskTime<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DiskTimeoutError()), DISK_TIMEOUT_MS);
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
 
 export class ThumbnailCache {
   private readonly budgetBytes: number;
@@ -91,6 +108,7 @@ export class ThumbnailCache {
   private disposed: boolean;
   /** When this cache last marked the use of each id on the disk. */
   private readonly usedOnDisk = new Map<string, number>();
+  private readonly writing = new Set<Promise<void>>();
 
   constructor(options: ThumbnailCacheOptions) {
     this.disposed = false;
@@ -167,20 +185,32 @@ export class ThumbnailCache {
     return known;
   }
 
-  /** Keeps what the server sent and returns the URL to show. The disk write never holds the screen. */
-  async store(assetId: string, blob: Blob): Promise<string | null> {
+  /** Keeps what the server sent and returns the URL to show at once; the disk is written behind it. */
+  store(assetId: string, blob: Blob): string | null {
     if (this.disposed) {
       return null;
     }
     const url = this.remember(assetId, blob);
     this.usedOnDisk.set(assetId, this.now());
-    const bytes = await blob.arrayBuffer().catch(() => null);
-    if (bytes) {
-      await this.onDisk((disk) =>
-        disk.write(assetId, bytes, this.now(), this.budgetBytes)
+    const write = blob
+      .arrayBuffer()
+      .then((bytes) =>
+        this.onDisk((disk) =>
+          disk.write(assetId, bytes, this.now(), this.budgetBytes)
+        )
+      )
+      .then(
+        () => undefined,
+        () => undefined
       );
-    }
+    this.writing.add(write);
+    write.finally(() => this.writing.delete(write));
     return url;
+  }
+
+  /** Waits for the disk writes started so far (a test, or whoever must know they are done). */
+  async flush(): Promise<void> {
+    await Promise.all([...this.writing]);
   }
 
   /** Lets go of every URL and of the disk (the store changed, the person left, the namespace was wiped). */
@@ -229,7 +259,7 @@ export class ThumbnailCache {
       return undefined;
     }
     try {
-      return await work(disk);
+      return await withinDiskTime(work(disk));
     } catch {
       this.disk = Promise.resolve(null);
       try {

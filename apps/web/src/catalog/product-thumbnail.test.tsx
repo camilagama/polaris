@@ -26,7 +26,7 @@ const DECORATIVE_IMG = /<img alt="" class="absolute inset-0/;
 const FOCUS_OR_NAME = /tabindex|role=|aria-label/;
 const ANY_TAG = /<[^>]+>/g;
 
-async function loaderWith(options: { cached: string[]; online: boolean }) {
+function loaderWith(options: { cached: string[]; online: boolean }) {
   let made = 0;
   const cache = new ThumbnailCache({
     createUrl: () => {
@@ -38,8 +38,7 @@ async function loaderWith(options: { cached: string[]; online: boolean }) {
     revokeUrl: () => undefined,
   });
   for (const id of options.cached) {
-    // biome-ignore lint/performance/noAwaitInLoops: the cache is filled before drawing
-    await cache.store(id, new Blob(["webp"], { type: "image/webp" }));
+    cache.store(id, new Blob(["webp"], { type: "image/webp" }));
   }
   return new ThumbnailLoader({
     cache,
@@ -75,9 +74,9 @@ function box(drawn: string) {
   };
 }
 
-async function sixStates(size: ProductThumbnailSize) {
-  const online = await loaderWith({ cached: ["cached"], online: true });
-  const offline = await loaderWith({ cached: ["cached"], online: false });
+function sixStates(size: ProductThumbnailSize) {
+  const online = loaderWith({ cached: ["cached"], online: true });
+  const offline = loaderWith({ cached: ["cached"], online: false });
   const thumb = (assetId: string | null) => (
     <ProductThumbnail assetId={assetId} name="Camiseta azul" size={size} />
   );
@@ -94,8 +93,8 @@ async function sixStates(size: ProductThumbnailSize) {
 describe("ProductThumbnail", () => {
   it.each([40, 32] as const)(
     "a caixa de %i px é a mesma nos seis estados, com largura, altura e proporção reservadas",
-    async (size) => {
-      const states = Object.values(await sixStates(size)).map(box);
+    (size) => {
+      const states = Object.values(sixStates(size)).map(box);
       const [first] = states;
       for (const state of states) {
         expect(state.className).toBe(first?.className);
@@ -111,8 +110,8 @@ describe("ProductThumbnail", () => {
     }
   );
 
-  it("o marcador são as duas iniciais do produto e nada mais: sem ícone, sem texto de erro, sem borda de aviso", async () => {
-    const states = await sixStates(40);
+  it("o marcador são as duas iniciais do produto e nada mais: sem ícone, sem texto de erro, sem borda de aviso", () => {
+    const states = sixStates(40);
     for (const [name, markup] of Object.entries(states)) {
       const drawn = box(markup);
       expect(drawn.text, name).toBe("CA");
@@ -125,8 +124,8 @@ describe("ProductThumbnail", () => {
     }
   });
 
-  it("com a foto no cache, ela vem por cima das iniciais, decorativa: alt vazio, sem foco e dentro de uma caixa escondida do leitor", async () => {
-    const states = await sixStates(40);
+  it("com a foto no cache, ela vem por cima das iniciais, decorativa: alt vazio, sem foco e dentro de uma caixa escondida do leitor", () => {
+    const states = sixStates(40);
     for (const name of ["em cache", "offline com cache"] as const) {
       const markup = states[name];
       expect(markup, name).toMatch(DECORATIVE_IMG);
@@ -144,8 +143,8 @@ describe("ProductThumbnail", () => {
     }
   });
 
-  it("a foto aparece de uma vez no celular e com movimento reduzido; só o nível full anima a opacidade em 150 ms", async () => {
-    const markup = (await sixStates(40))["em cache"];
+  it("a foto aparece de uma vez no celular e com movimento reduzido; só o nível full anima a opacidade em 150 ms", () => {
+    const markup = sixStates(40)["em cache"];
     const img = IMG_CLASS.exec(markup)?.[1] ?? "";
     const classes = img.split(" ");
     expect(classes).toContain("opacity-0");

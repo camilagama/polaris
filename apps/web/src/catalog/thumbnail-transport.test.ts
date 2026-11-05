@@ -16,8 +16,27 @@ const ORIGIN = "https://polaris.test";
 
 const encoder = new TextEncoder();
 const body = (...parts: string[]) => encoder.encode(parts.join("")).buffer;
-const text = async (blob: Blob | null | undefined) =>
-  blob ? await blob.text() : blob;
+/** A WebP container (RIFF, its length, WEBP) around a tag: what the parser accepts, told apart by the tag. */
+const webp = (tag: string) => {
+  const payload = encoder.encode(tag);
+  const bytes = new Uint8Array(12 + payload.length);
+  bytes.set(encoder.encode("RIFF"), 0);
+  new DataView(bytes.buffer).setUint32(4, payload.length + 4, true);
+  bytes.set(encoder.encode("WEBP"), 8);
+  bytes.set(payload, 12);
+  return bytes;
+};
+const joined = (...parts: Uint8Array[]) => {
+  const all = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    all.set(part, at);
+    at += part.length;
+  }
+  return all.buffer;
+};
+const tagOf = async (blob: Blob | null | undefined) =>
+  blob ? new TextDecoder().decode((await blob.arrayBuffer()).slice(12)) : blob;
 
 function server(response: () => Response | Promise<Response>) {
   const asked: { init: RequestInit; url: URL }[] = [];
@@ -52,14 +71,32 @@ describe("parseThumbnailBatch", () => {
   it("corta o corpo na ordem do cabeçalho e deixa missing como null", async () => {
     const items = parseThumbnailBatch(
       [A, B, C],
-      `${A}:3,${B}:missing,${C}:2`,
-      body("aaa", "cc")
+      `${A}:15,${B}:missing,${C}:14`,
+      joined(webp("aaa"), webp("cc"))
     );
     expect(items).not.toBeNull();
-    expect(await text(items?.get(A))).toBe("aaa");
+    expect(await tagOf(items?.get(A))).toBe("aaa");
     expect(items?.get(B)).toBeNull();
-    expect(await text(items?.get(C))).toBe("cc");
+    expect(await tagOf(items?.get(C))).toBe("cc");
     expect(items?.get(A)?.type).toBe("image/webp");
+  });
+
+  it("fatia que não é WebP, ou grande demais para uma miniatura, fica sem miniatura (nem vai ao aparelho)", () => {
+    const notWebp = encoder.encode("not an image");
+    const huge = webp("x".repeat(512 * 1024));
+    const lying = webp("abc");
+    new DataView(lying.buffer).setUint32(4, 99, true);
+    const items = parseThumbnailBatch(
+      [A, B, C],
+      `${A}:${notWebp.length},${B}:${huge.length},${C}:${lying.length}`,
+      joined(notWebp, huge, lying)
+    );
+    expect(items).not.toBeNull();
+    expect([items?.get(A), items?.get(B), items?.get(C)]).toEqual([
+      null,
+      null,
+      null,
+    ]);
   });
 
   it("todos missing: corpo vazio", () => {
@@ -82,8 +119,8 @@ describe("createThumbnailTransport", () => {
   it("id que não é UUID não vai ao servidor (que recusaria o lote inteiro) e fica sem miniatura", async () => {
     const { asked, transport } = server(
       () =>
-        new Response(body("aaa"), {
-          headers: { "X-Polaris-Thumbs": `${A}:3` },
+        new Response(joined(webp("aaa")), {
+          headers: { "X-Polaris-Thumbs": `${A}:15` },
           status: 200,
         })
     );
@@ -92,7 +129,7 @@ describe("createThumbnailTransport", () => {
     expect(result.kind).toBe("ok");
     if (result.kind === "ok") {
       expect(result.items.get("galeria")).toBeNull();
-      expect(await text(result.items.get(A))).toBe("aaa");
+      expect(await tagOf(result.items.get(A))).toBe("aaa");
     }
     expect((await call(transport, ["x"])).kind).toBe("ok");
     expect(asked).toHaveLength(1);

@@ -325,18 +325,55 @@ describe("ThumbnailLoader", () => {
     expect(loader.url("a1")).toBeNull();
   });
 
-  it("recusa (401, 403) para de pedir para este carregador e deixa o marcador", async () => {
+  it("recusa (401, 403) para de pedir até a conexão voltar, e deixa o marcador", async () => {
     const { calls, clock, connection, loader } = setup({
       answer: () => Promise.resolve({ kind: "refused" }),
     });
     loader.show("a1");
     await settle();
     loader.show("a2");
-    connection.set(false);
-    connection.set(true);
+    await settle();
     await clock.advance(3_600_000);
     expect(calls).toEqual([["a1"]]);
     expect(loader.url("a2")).toBeNull();
+    connection.set(false);
+    connection.set(true);
+    await settle();
+    expect(calls).toEqual([["a1"], ["a1", "a2"]]);
+  });
+
+  it("um id que só completou um lote que falhou não descansa por ele: ao entrar na tela, é pedido", async () => {
+    const network: { fail: boolean } = { fail: true };
+    const { calls, clock, loader } = setup({
+      answer: (input) =>
+        network.fail ? Promise.resolve({ kind: "failed" }) : served()(input),
+    });
+    loader.setSequence(assetIds(10));
+    const hide = loader.show("a0");
+    await settle();
+    await clock.advance(3_600_000);
+    expect(calls).toHaveLength(3);
+    expect(calls[0]).toContain("a5");
+    hide();
+    network.fail = false;
+    loader.show("a5");
+    await settle();
+    expect(calls.at(-1)?.[0]).toBe("a5");
+    expect(loader.url("a5")).toMatch(BLOB_URL);
+  });
+
+  it("descartar no meio de um pedido o cancela", async () => {
+    const signals: AbortSignal[] = [];
+    const { loader } = setup({
+      answer: (input) => {
+        signals.push(input.signal);
+        return new Promise(() => undefined);
+      },
+    });
+    loader.show("a1");
+    await settle();
+    loader.dispose();
+    expect(signals[0]?.aborted).toBe(true);
   });
 
   it("um transporte que lança não derruba nada: conta como falha", async () => {

@@ -90,12 +90,13 @@ export function ThumbnailLoaderProvider({
   loader,
 }: {
   children: ReactNode;
-  loader: ThumbnailLoader;
+  /** `null` while there is none yet: the rows show the marker. */
+  loader: ThumbnailLoader | null;
 }) {
   const visibility = useMemo(() => createObserve(), []);
   useEffect(() => visibility.dispose, [visibility]);
   const value = useMemo(
-    () => ({ loader, observe: visibility.observe }),
+    () => (loader ? { loader, observe: visibility.observe } : null),
     [loader, visibility]
   );
   return (
@@ -113,6 +114,7 @@ interface ThumbnailProviderProps {
    */
   namespaceKey: string | null;
   organizationId: string;
+  /** Stable across renders (a module constant): a new one builds a new loader. */
   transport?: ThumbnailTransport;
 }
 
@@ -127,7 +129,10 @@ export function ThumbnailProvider({
   transport,
 }: ThumbnailProviderProps) {
   const [goneKey, setGoneKey] = useState<string | null>(null);
-  const [loader, setLoader] = useState<ThumbnailLoader | null>(null);
+  const [made, setMade] = useState<{
+    key: string;
+    loader: ThumbnailLoader;
+  } | null>(null);
   const previous = useRef<{
     namespaceKey: string | null;
     organizationId: string;
@@ -135,23 +140,40 @@ export function ThumbnailProvider({
   // a database wiped under the open cache (logout, revocation) is not opened again for the same namespace
   const diskKey =
     namespaceKey && namespaceKey !== goneKey ? namespaceKey : null;
+  const key = `${organizationId}|${diskKey ?? ""}`;
+
+  useEffect(() => {
+    // a namespace that comes back after it went away (the person signed in again) may use the disk again
+    if (namespaceKey === null) {
+      setGoneKey(null);
+    }
+  }, [namespaceKey]);
 
   useEffect(() => {
     const before = previous.current;
     previous.current = { namespaceKey, organizationId };
-    if (before?.namespaceKey && before.organizationId !== organizationId) {
+    const otherStore = before?.organizationId !== organizationId;
+    const otherUser =
+      Boolean(namespaceKey) && before?.namespaceKey !== namespaceKey;
+    if (before?.namespaceKey && (otherStore || otherUser)) {
       wipeThumbnails(before.namespaceKey).catch(() => undefined);
     }
   }, [namespaceKey, organizationId]);
 
   useEffect(() => {
+    let live = true;
     const cache = new ThumbnailCache({
       disk: diskKey
-        ? openThumbnailDisk(diskKey, () => setGoneKey(diskKey))
+        ? openThumbnailDisk(diskKey, () => {
+            // only a wipe from outside counts: this provider's own switch already let go of the cache
+            if (live) {
+              setGoneKey(diskKey);
+            }
+          })
         : null,
       now: () => Date.now(),
     });
-    const made = new ThumbnailLoader({
+    const loader = new ThumbnailLoader({
       cache,
       isOnline: browserConnection.isOnline,
       organizationId,
@@ -159,22 +181,17 @@ export function ThumbnailProvider({
       subscribeOnline: browserConnection.subscribe,
       transport: transport ?? createThumbnailTransport(),
     });
-    setLoader(made);
+    setMade({ key, loader });
     return () => {
-      made.dispose();
+      live = false;
+      loader.dispose();
       cache.dispose();
     };
-  }, [diskKey, organizationId, transport]);
+  }, [diskKey, key, organizationId, transport]);
 
-  if (!loader) {
-    return (
-      <ThumbnailContext.Provider value={null}>
-        {children}
-      </ThumbnailContext.Provider>
-    );
-  }
+  // the loader of the previous store is never handed down, not even for the one render before the effect runs
   return (
-    <ThumbnailLoaderProvider loader={loader}>
+    <ThumbnailLoaderProvider loader={made?.key === key ? made.loader : null}>
       {children}
     </ThumbnailLoaderProvider>
   );

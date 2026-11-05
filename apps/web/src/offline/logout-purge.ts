@@ -21,11 +21,20 @@ export async function purgeNamespace(
 
 /**
  * The copy of the store without its queue: the local collections and the thumbnails shown from them. What the
- * runtime drops when it must keep a queue it cannot send (the access revoked with commands still queued).
+ * runtime drops when it must keep a queue it cannot send (the access revoked with commands still queued). Both are
+ * tried, and a failure of either is thrown only after both settled: a thumbnails database that will not go never
+ * keeps the collections on the disk, nor the other way around.
  */
 export async function wipeNamespaceCollections(
   namespace: LocalNamespace
 ): Promise<void> {
-  await wipeThumbnails(namespace.key);
-  await wipeLocalStore(namespace);
+  const [collections, thumbnails] = await Promise.allSettled([
+    wipeLocalStore(namespace),
+    wipeThumbnails(namespace.key),
+  ]);
+  for (const result of [collections, thumbnails]) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+  }
 }
