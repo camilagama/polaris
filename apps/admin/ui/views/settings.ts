@@ -1,6 +1,7 @@
-import type { ScreenContext, ScreenTools } from "../app";
+import type { ScreenTools } from "../app";
 import { facts } from "../blocks";
 import type { Dom } from "../dom";
+import { ENVIRONMENT_BANNER } from "../environment-banner";
 
 /**
  * What each permission the server lists lets the operator do, in words. The list is the one of
@@ -32,14 +33,6 @@ const PERMISSION_TEXT: Readonly<Record<string, string>> = {
 
 const ROLE_TEXT: Readonly<Record<string, string>> = {
   platform_owner: "Dono da plataforma",
-};
-
-const ENVIRONMENT_BANNER: Readonly<
-  Record<ScreenContext["environment"], string>
-> = {
-  production: "PRODUÇÃO · dados reais",
-  staging: "STAGING · dados de teste",
-  unknown: "Ambiente não informado",
 };
 
 export const PERMISSIONS_NOTE =
