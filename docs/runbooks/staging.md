@@ -139,9 +139,9 @@ Decisão do usuário de 03/11/2026 ([ADR 0097](../adr/0097-staging-fixo-e-produc
 
 - Zero Trust Free na conta do staging, time `polaris-staging.cloudflareaccess.com`.
 - Aplicação self-hosted "Polaris Admin (staging)", hostname `admin.araute.app` (a mesma de 03/11: **nunca recriar**, porque a audience tag muda e o `ACCESS_AUDIENCE` deixaria de bater; se recriar for inevitável, atualizar o `ACCESS_AUDIENCE` do `env.staging` e implantar **antes** de ligar a aplicação nova). A audience tag está no `env.staging` do Admin (não é segredo). Configuração desde 05/11/2026 ([ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md), emenda de 05/11):
-  - provedor de identidade **só Google** (cliente OAuth próprio do Admin, com PKCE; seção 4) e *instant authentication* ligada;
+  - provedor de identidade **só Google** na aplicação (cliente OAuth próprio do Admin, com PKCE; seção 4) e *instant authentication* (auto-redirect) ligada. O PIN por e-mail **continua cadastrado na organização, só para recuperação** (ver "Conta Google perdida"); não está na aplicação;
   - política Allow só com **e-mails exatos** dos operadores (nunca domínio, "qualquer conta Google" nem Everyone) e *Require login method* = Google;
-  - **MFA independente exigido**, só biometria e chave de segurança (TOTP fora) e *Use identity provider MFA* ligado;
+  - **MFA independente exigido**, só biometria e chave de segurança, e *Use identity provider MFA* ligado. O TOTP está fora dos autenticadores permitidos da aplicação **e** da organização, e o TOTP antigo do operador foi apagado (ordem imposta pela API: primeiro a aplicação, depois a organização, que recusa enquanto alguma aplicação ainda o usa);
   - sessão da aplicação, duração do MFA e do AMR matching, todos **≤ 8 h** (o padrão do AMR é 24 h: ajustar);
   - cookie binding ligado, HttpOnly e `SameSite` **Lax**;
   - página de login com a marca, sem script, sem recurso de terceiros e sem link para fora; mensagem de bloqueio genérica.
@@ -163,24 +163,38 @@ Decisão do usuário de 03/11/2026 ([ADR 0097](../adr/0097-staging-fixo-e-produc
 
 **Matricular as passkeys (ordem obrigatória):**
 
-O login do Admin só *pede* o MFA; matricular o primeiro dispositivo pelo próprio login faz o Access voltar sem o `kid` da aplicação e cair em 404 "It appears that you have attempted to reach an invalid URL". Por isso a matrícula vem **antes** do primeiro login no Admin.
+O login do Admin só *pede* o MFA, não matricula o primeiro dispositivo. Por isso a matrícula vem **antes** do primeiro login no Admin: isso evita o laço de login que aparece quando a sessão do Access existe sem o MFA exigido.
+
+**Executado no staging em 05/11/2026:** o operador matriculou duas passkeys, Windows Hello e Face ID (iCloud), as duas fora da conta Google do login (a condição do passo 2 está cumprida); o responsável conferiu a lista (passo 3); o TOTP saiu e foi apagado e o provedor passou a só Google, na ordem do passo 4. A produção repete o fluxo inteiro, na conta de produção, antes do go-live.
 
 1. Com o TOTP ainda permitido, o operador abre `https://polaris-staging.cloudflareaccess.com/AddMfaDevice` e registra **duas** passkeys **antes** do primeiro login no Admin.
 2. **Pelo menos uma fora da conta Google do login**: iCloud/Keychain, Windows Hello do equipamento ou chave física. Duas passkeys sincronizadas pela mesma conta Google não contam como dois fatores. Opcional: restringir por AAGUID.
 3. O responsável confere em Zero Trust → Users → (o operador) → MFA devices que só existem os dispositivos esperados.
-4. Só então: desmarcar o TOTP nos autenticadores permitidos, apagar o TOTP antigo do operador e ligar "MFA exigido" na aplicação. O TOTP sai **só depois** da conferência do passo 3. A troca do provedor para só Google, com *instant authentication*, também fica para este passo: até lá o operador entra como antes (e-mail e código), e é assim que chega à matrícula.
+4. Só então, nesta ordem (o TOTP sai **só depois** da conferência do passo 3; até a troca do provedor o operador entra como antes, com e-mail e código, e é assim que chega à matrícula):
+   1. Tirar o TOTP dos autenticadores permitidos **da aplicação** e, depois, **da organização** (a organização recusa enquanto uma aplicação ainda o usa); apagar o TOTP antigo do operador e ligar "MFA exigido" na aplicação.
+   2. Com as passkeys conferidas, o operador faz **um** login pelo Google com o PIN ainda permitido na aplicação.
+   3. O responsável confere no Zero Trust que houve esse login pelo Google.
+   4. Só então: *Require login method* = Google na política, PIN fora dos provedores da aplicação (continua na organização, para recuperação) e *instant authentication* (auto-redirect) ligada. Trocar antes de ver um login Google tranca o operador fora.
 5. Operador novo: entra na política e registra as duas passkeys **no mesmo dia**, com o responsável conferindo a lista. O Access não pede MFA para o primeiro autenticador: quem tivesse o Google do operador antes disso registraria a passkey dele.
 
-Se o 404 aparecer mesmo com os dispositivos já matriculados, é defeito do Access: abrir chamado na Cloudflare com o Ray ID e a URL inteira da página de erro (o `kid` não é segredo; cortar o `meta`). O contorno é abrir `https://admin.araute.app` de novo, que já encontra a sessão.
+Se o login entrar em laço ou der a página de erro com os dispositivos já matriculados:
+
+1. Dizer se o cookie `CF_Authorization` existe em `admin.araute.app` (só "sim" ou "não"; o valor não vai para chat, PR nem log).
+2. Com o OK do Rodrigo, desligar o *cookie binding* da aplicação num teste e religá-lo em seguida.
+3. Se persistir, abrir chamado na Cloudflare com o Ray ID e a URL da página de erro, sem o `meta`.
 
 **Fator perdido e revogação:**
 
 - *Uma passkey perdida:* o operador entra com a outra, remove a perdida e adiciona uma nova (o Access exige o MFA existente e dá 10 min). Não precisa do responsável.
 - *As duas perdidas:* o responsável apaga os dispositivos do operador, e ele registra outro **na mesma hora**, com o responsável acompanhando (a mesma janela do passo 5 acima).
-- *Conta Google perdida:* PIN temporário só numa **política separada, com o e-mail exato**, com o MFA independente ainda exigido (nunca "Disable MFA" nela), desfeita **no mesmo dia**; anotar o horário de criar e de desfazer.
+- *Conta Google perdida:* com o PIN fora da aplicação e o auto-redirect ligado, a política separada sozinha não basta. Procedimento, nesta ordem:
+  1. Pôr o PIN de volta nos provedores da aplicação (ele continua cadastrado na organização).
+  2. Desligar o auto-redirect (*instant authentication*).
+  3. Criar a política separada **com o e-mail exato**, exigindo *login method* = PIN e o MFA independente (nunca "Disable MFA" nela). A política principal continua exigindo Google, então ninguém mais entra por PIN.
+  4. Desfazer **no mesmo dia**, na ordem inversa: apagar a política separada, tirar o PIN da aplicação e religar o auto-redirect. Anotar o horário de cada passo, ao criar e ao desfazer.
 - *Suspeita de comprometimento:* é incidente, não recuperação. Primeiro `disabled` no principal; depois revogar as sessões do usuário no Zero Trust, tirar o e-mail da política e apagar os autenticadores; refazer os dois registros.
 - *Revogação comum:* `disabled` no principal, revogar as sessões do usuário no Zero Trust e tirar o e-mail da política (nessa ordem de urgência); se o operador não deve mais entrar no web do staging, tirá-lo também de Test users (seção 4).
-- Remover e readicionar o usuário no Zero Trust, ou trocar o provedor, muda o `sub`: recadastrar o principal (passos 2 e 3 de "Cadastrar um operador", e o passo 5).
+- Remover e readicionar o usuário no Zero Trust muda o `sub`, e trocar o provedor pode mudá-lo (na troca PIN → Google o esperado é que não mude; o aceite está pendente, ADR 0070, emenda de 05/11): conferir o `sub` e, se mudou, recadastrar o principal (passos 2 e 3 de "Cadastrar um operador", e o passo 5).
 
 **Cadastrar um operador (dono do banco do staging):**
 
