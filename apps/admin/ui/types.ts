@@ -264,3 +264,43 @@ export interface PrivacyStepAnswer {
   id: string;
   stage: string;
 }
+
+/** What `POST …/purge` answers: `notBefore` only when this call scheduled it (`changed`), never on a repeat. */
+export interface PurgeScheduled {
+  changed: boolean;
+  notBefore?: string;
+  status: string;
+}
+
+/** What `POST …/purge/cancel` answers: the store back to `closed`. */
+export interface PurgeCancelled {
+  changed: boolean;
+  status: string;
+}
+
+/** What `POST …/legal-hold` and `…/legal-hold/release` answer (`renewed` and `storageTouched` only when placing). */
+export interface LegalHoldAnswer {
+  changed: boolean;
+  held: boolean;
+  renewed?: boolean;
+  storageTouched?: boolean;
+}
+
+/** One hold in force of `GET /api/legal-holds`: the store by its ID only, never by its name. */
+export interface LegalHoldSummary {
+  id: string;
+  organizationId: string;
+  placedAt: string;
+  placedBy: string;
+  reviewAt: string;
+  /** The review date passed: the hold is still in force and waits for a review. */
+  reviewDue: boolean;
+  supportCaseId: string;
+}
+
+export interface LegalHoldPage {
+  /** How many holds in force are past their review date, over all of them. */
+  dueForReview: number;
+  holds: LegalHoldSummary[];
+  next: string | null;
+}

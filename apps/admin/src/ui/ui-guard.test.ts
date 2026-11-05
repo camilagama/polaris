@@ -92,6 +92,7 @@ const NO_DEPENDENCIES = new Proxy(
   { get: () => NEVER }
 ) as AdminDependencies;
 const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
+const NAME_WRAPS = /\.purge label bdi\s*\{[^}]*overflow-wrap:\s*anywhere/;
 /**
  * The routes of the cut (AC-6 of the v1, AC-C9 of the v2): who the operator is, the search and the diagnostics, the
  * funnel, the support cases (list, detail, open and close) with the refund window under them
@@ -102,11 +103,15 @@ const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
  * (`/api/support-cases/:id/entitlement-grants` and `…/:grantId`; Parte 4), the court's read of the access log
  * (`/api/access-log/read`, a POST; Parte 8), and the privacy cases (list, detail, open and each of the six steps,
  * `/api/privacy-cases/:id/identity`, `/role`, `/scope`, `/decision`, `/actions` and `/resolve`; Parte 11), and the two acts on
- * the closure notice of a closed store (`/api/support-cases/:id/closure-notice/reissue` and `/dismiss`; Parte 12).
+ * the closure notice of a closed store (`/api/support-cases/:id/closure-notice/reissue` and `/dismiss`; Parte 12), and
+ * scheduling and cancelling the purge of a closed store, placing and releasing its legal hold, and the list of the
+ * holds in force (`/api/support-cases/:id/purge`, `/purge/cancel`, `/legal-hold`, `/legal-hold/release` and
+ * `/api/legal-holds`; Parte 7).
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/access-log",
   "/api/funnel",
+  "/api/legal-holds",
   "/api/operational-incidents",
   "/api/organizations",
   "/api/privacy-cases",
@@ -176,7 +181,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case and the two acts on the closure notice: no other action of a case or a store (no purge or legal hold)", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, giving or ending an entitlement, the read of the access log, the six steps of a privacy case, the two acts on the closure notice, and the purge and the legal hold: no other action of a case or a store (no customers or reveal)", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -195,6 +200,7 @@ describe("the built script of the page", () => {
         .sort();
     const expected = [
       "actions",
+      "cancel",
       "classification",
       "close",
       "closure-notice",
@@ -204,10 +210,13 @@ describe("the built script of the page", () => {
       "entitlement-grants",
       "events",
       "identity",
+      "legal-hold",
+      "purge",
       "reactivate",
       "read",
       "refund-window",
       "reissue",
+      "release",
       "resolve",
       "retry",
       "role",
@@ -217,8 +226,8 @@ describe("the built script of the page", () => {
     expect(named(bundle)).toEqual(expected);
     // a planted call to another action of a case is seen
     expect(
-      named(`${bundle}fetch(\`/api/support-cases/\${id}/purge\`)`)
-    ).toEqual([...expected, "purge"].sort());
+      named(`${bundle}fetch(\`/api/support-cases/\${id}/customers\`)`)
+    ).toEqual([...expected, "customers"].sort());
   });
 });
 
@@ -235,6 +244,10 @@ describe("the verbs of the built script", () => {
 describe("the sheet of the page", () => {
   it("loads nothing: no import, no url(), no font face", () => {
     expect(sheet).not.toMatch(SHEET_LOADS);
+  });
+
+  it("lets the store's name typed to schedule the purge wrap at 360 px instead of widening the page", () => {
+    expect(sheet).toMatch(NAME_WRAPS);
   });
 
   it("gives the shell grid rows, so a short page does not stretch the menu row over the screen", () => {

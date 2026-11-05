@@ -832,3 +832,23 @@ a {
   font-weight: 700;
   color: var(--destructive);
 }
+
+/* the tabs of a privacy case's acts sit apart from its steps */
+.case-tabs {
+  padding-top: 0.75rem;
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.purge-part {
+  margin-top: 1rem;
+}
+
+.purge-part h4 {
+  margin: 0 0 0.5rem;
+}
+
+/* the store's name the operator types to schedule the purge: a long name wraps instead of widening the page */
+.purge label bdi {
+  overflow-wrap: anywhere;
+}

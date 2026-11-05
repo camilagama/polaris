@@ -23,6 +23,7 @@ import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
 import { closureNoticeSection, mayShowClosureNotice } from "./closure-notice";
 import { dueCell } from "./privacy-cases";
+import { mayShowPurgeTab, purgeTab } from "./purge";
 import {
   choiceField,
   type Field,
@@ -186,6 +187,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
   const caseId = context.id;
   let turn = 0;
   let left = false;
+  const purgeMemory: { notBefore: string | null } = { notBefore: null };
+  const onPurgeTab = context.action === "purge";
 
   const byWhom = (principalId: string) =>
     principalId === who.principal.id ? "você" : "outro operador";
@@ -350,7 +353,9 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         dom.el("h3", { id: "privacidade-etapas" }, "Etapas do caso"),
         dom.el("ol", { class: "steps" }, ...items)
       ),
-      mayShowClosureNotice(can, detail)
+      actionTabs(detail),
+      onPurgeTab ? purgeArea(detail, drawn) : null,
+      !onPurgeTab && mayShowClosureNotice(can, detail)
         ? closureNoticeSection(tools, detail, {
             current: () => !left && drawn === turn,
             readsStore: can("organization:diagnose"),
@@ -365,6 +370,46 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       history(detail)
     );
   };
+
+  /** The two tabs of the case's acts, as links of fixed values (`?acao=purge`); the current one is marked. */
+  const actionTabs = (detail: Detail) => {
+    if (!mayShowPurgeTab(can)) {
+      return null;
+    }
+    const base = `/privacidade/${encodeURIComponent(detail.case.id)}`;
+    const tab = (href: string, text: string, current: boolean) =>
+      dom.el(
+        "li",
+        {},
+        current
+          ? dom.el("a", { "aria-current": "page", href }, text)
+          : dom.el("a", { href }, text)
+      );
+    return dom.el(
+      "div",
+      { class: "case-tabs" },
+      dom.el(
+        "ul",
+        { "aria-label": "Ações deste caso", class: "tabs" },
+        tab(base, "Etapas e aviso", !onPurgeTab),
+        tab(`${base}?acao=purge`, "Purge e trava legal", onPurgeTab)
+      )
+    );
+  };
+
+  const purgeArea = (detail: Detail, drawn: number) =>
+    mayShowPurgeTab(can)
+      ? purgeTab(tools, detail, {
+          current: () => !left && drawn === turn,
+          memory: purgeMemory,
+          reread: (outcome) =>
+            load(
+              outcome === undefined
+                ? undefined
+                : () => notice[outcome.kind](outcome.text)
+            ),
+        })
+      : dom.el("p", {}, PROBLEM_TEXT.forbidden);
 
   /** Reads the case; `after` says how the step before ended once the steps are shown again. */
   const load = async (after?: () => void): Promise<boolean> => {
@@ -920,6 +965,12 @@ function closedText(detail: Detail): string | null {
 }
 
 const AUDIT_EVENTS: Readonly<Record<string, string>> = {
+  "organization.legal_hold_placed": "Trava legal posta",
+  "organization.legal_hold_released": "Trava legal liberada",
+  "organization.legal_hold_reviewed": "Data de revisão da trava legal mudada",
+  "organization.purge_cancelled": "Agendamento do apagamento cancelado",
+  "organization.purge_completed": "Apagamento da loja concluído",
+  "organization.purge_scheduled": "Apagamento da loja agendado",
   "privacy_case.action_recorded": "Ação registrada",
   "privacy_case.stage_recorded": "Etapa registrada",
   "support_case.closed": "Caso fechado",

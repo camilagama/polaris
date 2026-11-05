@@ -265,3 +265,45 @@ export async function sendClosureNotice(
     ? { kind: "problem", problem: "failed" }
     : { code, kind: "refused" };
 }
+
+/**
+ * What a command on the purge or the legal hold of a case's store answered (ADR 0081, 0102): the command was taken;
+ * the server refused it by name (a 409, the 503 of an unreadable billing, or a 400 that names its code), said in
+ * words by the screen and never shown; or the call ended in one of the page's problems.
+ */
+export type StoreCommandOutcome<T> =
+  | { kind: "done"; answer: T }
+  | { kind: "problem"; problem: Problem }
+  | { kind: "refused"; code: string };
+
+/** The 503 that says only that the Admin is not set up: no refusal of the store's state, the page's own problem. */
+const NOT_CONFIGURED = "admin_not_configured";
+
+/**
+ * One POST of a purge or legal hold command, never repeated by itself. The 409 and the 503 carry the refusal's code
+ * in their body, so those statuses are read as answers; a body that is neither the command's answer nor a code is a
+ * failure whose outcome the page cannot confirm.
+ */
+export async function sendStoreCommand<T>(
+  api: Api,
+  path: string,
+  body: PostBody,
+  isAnswer: (value: unknown) => value is T
+): Promise<StoreCommandOutcome<T>> {
+  const answer = await api.post<unknown>(path, body, [409, 503]);
+  if (!answer.ok) {
+    return answer.problem === "invalid" && answer.code !== undefined
+      ? { code: answer.code, kind: "refused" }
+      : { kind: "problem", problem: answer.problem };
+  }
+  if (isAnswer(answer.data)) {
+    return { answer: answer.data, kind: "done" };
+  }
+  const code = refusalCode(answer.data);
+  if (code === null || !CODE_PATTERN.test(code)) {
+    return { kind: "problem", problem: "failed" };
+  }
+  return code === NOT_CONFIGURED
+    ? { kind: "problem", problem: "unavailable" }
+    : { code, kind: "refused" };
+}

@@ -12,7 +12,10 @@ import {
   PRIVACY_STAGES,
 } from "@polaris/domain/admin/privacy-case";
 import { CLOSURE_NOTICE_DISMISSAL_REASONS } from "@polaris/domain/organization/closure-deadlines";
-import { ORGANIZATION_PURGE_REFUSALS } from "@polaris/domain/privacy/organization-purge";
+import {
+  ORGANIZATION_PURGE_REFUSALS,
+  ORGANIZATION_PURGE_REQUIRED_SCOPE,
+} from "@polaris/domain/privacy/organization-purge";
 import { describe, expect, it } from "vitest";
 import {
   ACTIONS,
@@ -26,9 +29,16 @@ import {
   IDENTITY_STATUSES,
   REQUEST_TYPES,
   REQUESTER_KINDS,
+  PURGE_SCOPE,
   ROLES,
   STAGES,
 } from "../../ui/privacy";
+import {
+  PURGE_REFUSALS,
+  purgeRefusalText,
+  REFUSED_GENERIC,
+  ROUTE_REFUSALS,
+} from "../../ui/purge-words";
 import { NOTICE_REFUSALS } from "../../ui/closure-notice-words";
 
 /**
@@ -131,5 +141,40 @@ describe("the closure notice refusals of the page and of the domain", () => {
       expect(sentence).not.toMatch(CODE_LIKE);
       expect(sentence).not.toMatch(ORGANIZATION_WORD);
     }
+  });
+});
+
+/**
+ * The purge and the legal hold (corte admin-v2, Parte 7): the scope the page asks of the case is the domain's, and
+ * every refusal the domain names for scheduling or cancelling a purge has a sentence of the page, as do the codes the
+ * routes add (the billing read and the 400s that name a code). A new purge refusal in the domain fails here.
+ */
+describe("the purge refusals and scope of the page and of the domain", () => {
+  const domain: readonly string[] = ORGANIZATION_PURGE_REFUSALS;
+  const ofTheNotice = (code: string) =>
+    code.startsWith("closure_notice_") ||
+    code === "organization_not_in_closure";
+
+  it("asks of the case exactly the scope the domain requires", () => {
+    expect([...PURGE_SCOPE]).toEqual([...ORGANIZATION_PURGE_REQUIRED_SCOPE]);
+  });
+
+  it("says in words every purge refusal of the domain and each code a route adds, and nothing else", () => {
+    const ofThePurge = domain.filter((code) => !ofTheNotice(code));
+    expect(ofThePurge.length).toBeGreaterThanOrEqual(17);
+    expect(Object.keys(PURGE_REFUSALS).sort()).toEqual(
+      [...ofThePurge, ...ROUTE_REFUSALS].sort()
+    );
+  });
+
+  it("gives each refusal a sentence of its own, without a code or the word organização, and a generic one to any other", () => {
+    const sentences = Object.values(PURGE_REFUSALS);
+    expect(new Set(sentences).size).toBe(sentences.length);
+    for (const sentence of sentences) {
+      expect(sentence).not.toMatch(CODE_LIKE);
+      expect(sentence).not.toMatch(ORGANIZATION_WORD);
+    }
+    expect(purgeRefusalText("toString")).toBe(REFUSED_GENERIC);
+    expect(purgeRefusalText("purge_something_new")).toBe(REFUSED_GENERIC);
   });
 });
