@@ -503,6 +503,18 @@ describe("reading and revealing", () => {
       ).status
     ).toBe(404);
 
+    // no active access, or the case closed: the one refusal of the database, said without a value
+    const noGrant = setup({
+      reveal: () => Promise.reject(new TenantAccessDeniedError()),
+    });
+    const refused = await noGrant.send(
+      "POST",
+      `/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+      { field: "phone" }
+    );
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ error: "tenant_access_denied" });
+
     // the caller's command ID already holds a different grant: a conflict, not a server error
     const conflict = setup({
       grantEntitlement: () =>
