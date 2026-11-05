@@ -698,6 +698,11 @@ a {
   border-top: 1px solid var(--border);
 }
 
+.access-action:not(:empty),
+.customers:not(:empty) {
+  margin-top: 1rem;
+}
+
 .internal:empty {
   display: none;
 }
