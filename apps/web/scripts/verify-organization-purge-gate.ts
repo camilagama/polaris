@@ -1224,7 +1224,7 @@ async function run() {
       } else if (steps.decision) {
         await recordPrivacyDecision(admin, principal, caseId, {
           decision: steps.decision,
-          note: null,
+          note: identity === "failed" ? null : "CTN art. 195",
           reason:
             identity === "failed" ? "identity_not_verified" : "legal_retention",
         });

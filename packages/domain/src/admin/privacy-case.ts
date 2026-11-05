@@ -131,6 +131,7 @@ export const PRIVACY_CASE_RESPONSE_DAYS = 15;
 /** A request that arrived by another channel can be typed in late, but not more than a year late. */
 export const MAX_PRIVACY_RECEIVED_AGE_DAYS = 365;
 export const MAX_PRIVACY_NOTE_LENGTH = 500;
+export const MIN_LEGAL_RETENTION_NOTE_LENGTH = 10;
 export const MAX_PRIVACY_REFERENCE_LENGTH = 64;
 
 export type PrivacyRefusalCode =
@@ -362,11 +363,14 @@ export function normalizeDecisionStep(input: {
     input.reason === undefined || input.reason === null
       ? null
       : oneOf(PRIVACY_DECISION_REASONS, input.reason);
-  return {
-    decision,
-    note: shortText(input.note, MAX_PRIVACY_NOTE_LENGTH),
-    reason,
-  };
+  const note = shortText(input.note, MAX_PRIVACY_NOTE_LENGTH);
+  if (
+    reason === "legal_retention" &&
+    (note === null || [...note].length < MIN_LEGAL_RETENTION_NOTE_LENGTH)
+  ) {
+    throw new InvalidPrivacyStepError();
+  }
+  return { decision, note, reason };
 }
 
 /** An opaque reference is an identifier, never text a person wrote: no spaces, no @, no punctuation but - and _. */

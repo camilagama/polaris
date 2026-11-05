@@ -5,6 +5,7 @@ import {
   dueDate,
   InvalidPrivacyStepError,
   isOverdue,
+  MIN_LEGAL_RETENTION_NOTE_LENGTH,
   normalizeActionStep,
   normalizeDecisionStep,
   normalizeIdentityStep,
@@ -311,6 +312,60 @@ describe("what may be decided", () => {
         normalizeDecisionStep({ decision: "reject", reason: "dislike" })
       )
     ).toBe("invalid_privacy_step");
+  });
+
+  describe("a legal retention", () => {
+    const legal = (note: unknown) =>
+      normalizeDecisionStep({
+        decision: "reject",
+        note,
+        reason: "legal_retention",
+      });
+
+    it("asks for a note naming the obligation", () => {
+      expect(MIN_LEGAL_RETENTION_NOTE_LENGTH).toBe(10);
+      expect(code(() => legal(undefined))).toBe("invalid_privacy_step");
+      expect(code(() => legal(null))).toBe("invalid_privacy_step");
+      expect(code(() => legal("   \n"))).toBe("invalid_privacy_step");
+      expect(code(() => legal("lei"))).toBe("invalid_privacy_step");
+      expect(code(() => legal("123456789"))).toBe("invalid_privacy_step");
+      expect(code(() => legal("  123456789  "))).toBe("invalid_privacy_step");
+    });
+
+    it("counts code points after the trim, not UTF-16 units", () => {
+      expect(code(() => legal("📜".repeat(9)))).toBe("invalid_privacy_step");
+      expect(legal("📜".repeat(10)).note).toBe("📜".repeat(10));
+    });
+
+    it("takes 10 and 500 characters, and refuses 501", () => {
+      expect(legal("CTN art195").note).toBe("CTN art195");
+      expect(legal("  CTN art195  ").note).toBe("CTN art195");
+      expect(legal("a".repeat(500)).note).toBe("a".repeat(500));
+      expect(code(() => legal("a".repeat(501)))).toBe("invalid_privacy_step");
+    });
+
+    it("still refuses control characters", () => {
+      expect(code(() => legal("CTN art.195\u0000"))).toBe(
+        "invalid_privacy_step"
+      );
+    });
+
+    it("leaves the other reasons free of a note", () => {
+      for (const reason of [
+        "identity_not_verified",
+        "no_authority",
+        "controller_is_reseller",
+        "manifestly_unfounded",
+        "not_personal_data",
+        "other",
+      ]) {
+        expect(normalizeDecisionStep({ decision: "reject", reason })).toEqual({
+          decision: "reject",
+          note: null,
+          reason,
+        });
+      }
+    });
   });
 });
 
