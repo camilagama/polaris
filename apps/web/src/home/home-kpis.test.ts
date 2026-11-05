@@ -964,6 +964,81 @@ describe("a period still open with no sale draws no chip", () => {
   });
 });
 
+describe("a period still open with only returns of earlier sales", () => {
+  const MONDAY = "2026-11-02";
+  const octoberAll = days("2026-10-01", "2026-10-31", () => ({
+    netSales: "20.00",
+    salesCount: 1,
+  }));
+  const returnedToday = (date: string) =>
+    date === MONDAY ? { netSales: "-15.00", salesCount: 0 } : undefined;
+  const novemberReturned = days("2026-11-01", MONDAY, returnedToday);
+  const returnCards = {
+    netSales: "-15.00",
+    operatingResult: "-15.00",
+    salesCount: 0,
+    ticket: null,
+  };
+
+  it("Vendas hoje: shows the negative net with no chip and says only returns, not 'Nenhuma venda ainda'", () => {
+    const reading = dayReading(octoberAll, novemberReturned, MONDAY, MONDAY);
+    expect(reading.value).toBe("-15.00");
+    expect(reading.delta).toBeNull();
+    expect(reading.count).toBe("Só devoluções até agora");
+    expect(reading.note).toBe("vs. média das segundas");
+  });
+
+  it("Vendas hoje: a day with nothing at all stays 'Nenhuma venda ainda'", () => {
+    const empty = days("2026-11-01", MONDAY);
+    const reading = dayReading(octoberAll, empty, MONDAY, MONDAY);
+    expect(reading.value).toBe("0.00");
+    expect(reading.delta).toBeNull();
+    expect(reading.count).toBe("Nenhuma venda ainda");
+  });
+
+  it("Vendas hoje: a sale with a return the same day is counted as always", () => {
+    const sold = days("2026-11-01", MONDAY, (date) =>
+      date === MONDAY ? { netSales: "5.00", salesCount: 2 } : undefined
+    );
+    const reading = dayReading(octoberAll, sold, MONDAY, MONDAY);
+    expect(reading.count).toBe("2 vendas");
+    expect(reading.value).toBe("5.00");
+  });
+
+  it("Vendas hoje: a day already gone keeps its own line", () => {
+    const gone = days("2026-11-01", MONDAY, (date) =>
+      date === "2026-11-01" ? { netSales: "-15.00", salesCount: 0 } : undefined
+    );
+    expect(dayReading(octoberAll, gone, "2026-11-01", MONDAY).count).toBe(
+      "Nenhuma venda"
+    );
+  });
+
+  it("Vendas do mês at rest: negative net, no chip, 'Só devoluções até agora'", () => {
+    const { sales } = monthKpis(
+      octoberAll,
+      novemberReturned,
+      MONDAY,
+      returnCards,
+      costs
+    ).read(null);
+    expect(sales.value).toBe("-15.00");
+    expect(sales.delta).toBeNull();
+    expect(sales.count).toBe("Só devoluções até agora");
+  });
+
+  it("Vendas do mês reading a day: 'Só devoluções no período'", () => {
+    const { sales } = monthKpis(
+      octoberAll,
+      novemberReturned,
+      MONDAY,
+      returnCards,
+      costs
+    ).read(1);
+    expect(sales.count).toBe("Só devoluções no período");
+  });
+});
+
 describe("Ticket médio never denies sales that were made", () => {
   it("with sales and no ticket sent, says it is unavailable, not that there were no sales", () => {
     const { ticket } = monthKpis(

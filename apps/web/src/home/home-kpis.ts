@@ -228,6 +228,22 @@ export function todaySeries(
   });
 }
 
+/** The line of a period still open with returns of earlier sales and no sale of its own: the net is not zero. */
+const ONLY_RETURNS_OPEN = "Só devoluções até agora";
+
+/** The line under the number of a day: the count, or why there is none (returns leave a net with no sale of the day). */
+function dayCountText(entry: Day, isToday: boolean): string {
+  if (entry.salesCount > 0) {
+    return salesCountText(entry.salesCount);
+  }
+  if (!isToday) {
+    return "Nenhuma venda";
+  }
+  return cents(entry.netSales) === 0n
+    ? "Nenhuma venda ainda"
+    : ONLY_RETURNS_OPEN;
+}
+
 /**
  * "Vendas hoje" for a day: its net sales and count against the mean of the 4 same weekdays before it (§ 3 item 2),
  * which is steadier than "last Sunday". It draws no chip, and the note says why: no sale on the 4 ("sem vendas antes"),
@@ -273,10 +289,7 @@ export function dayReading(
       }
     }
   }
-  let count = salesCountText(entry.salesCount);
-  if (entry.salesCount === 0) {
-    count = day === today ? "Nenhuma venda ainda" : "Nenhuma venda";
-  }
+  const count = dayCountText(entry, day === today);
   return {
     count,
     date: day === today ? "" : weekdayDate(day),
@@ -366,7 +379,10 @@ interface ReadContext {
 }
 
 /** "ainda" only for the period still open at its end (today at rest); a reading on a day already gone is of a closed one. */
-function noSalesText(open: boolean): string {
+function noSalesText(open: boolean, onlyReturns: boolean): string {
+  if (onlyReturns) {
+    return open ? ONLY_RETURNS_OPEN : "Só devoluções no período";
+  }
   return open ? "Nenhuma venda ainda" : "Sem vendas no período";
 }
 
@@ -384,6 +400,9 @@ function salesReading({
     previous && !(atRest && count === 0)
       ? percentDelta(sum.net, previous.net, `em relação a ${previousRange}`)
       : null;
+  const value = atRest
+    ? cards.netSales
+    : Money.fromMinorUnits(sum.net).toString();
   let compare = "";
   if (delta) {
     compare = ` Compara com ${previousRange}.`;
@@ -391,12 +410,15 @@ function salesReading({
     compare = ` Sem vendas de ${previousRange}, não há comparação.`;
   }
   return {
-    count: count === 0 ? noSalesText(atRest) : salesCountText(count),
+    count:
+      count === 0
+        ? noSalesText(atRest, cents(value) !== 0n)
+        : salesCountText(count),
     date: range,
     delta,
     help: `Vendas líquidas de ${range}.${compare}`,
     note: null,
-    value: atRest ? cards.netSales : Money.fromMinorUnits(sum.net).toString(),
+    value,
   };
 }
 
