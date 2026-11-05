@@ -210,7 +210,7 @@ export interface ResultSeries {
 
 /** The shape of the summary's series: by date (no `granularity`), or by month with the days after today apart. */
 interface SeriesShape {
-  afterToday?: StoredPeriodSummary["afterToday"] | undefined;
+  afterToday?: StoredDay | undefined;
   granularity?: StoredPeriodSummary["granularity"] | undefined;
 }
 
