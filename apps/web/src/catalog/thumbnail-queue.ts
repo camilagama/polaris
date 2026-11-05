@@ -9,9 +9,9 @@ import {
  *
  * - Only a row on screen starts a request (`show`); nothing is asked for a row nobody sees, and the catalog is
  *   never preloaded.
- * - At most one batch in flight, of up to `THUMBS_BATCH_SIZE` ids. A batch that a visible row started is completed with the
- *   next rows of the list (`setSequence`) that this device does not have yet: rolling a list from top to bottom then asks
- *   in full batches (1.248 rows, 156 requests), and the completion never makes a request of its own.
+ * - At most one batch in flight, of up to `THUMBS_BATCH_SIZE` ids. A batch that a visible row started is completed
+ *   with the next rows of the list (`setSequence`) that this device does not have yet: rolling a list from top to
+ *   bottom then asks in full batches (1.248 rows, 156 requests), and the completion never makes a request of its own.
  * - An id this device already has is never asked again (an asset id is immutable), nor one the server answered as
  *   missing. Missing shows the marker; nothing falls back to the per-image route.
  * - Offline nothing is asked. A batch that failed (network, timeout, 429, 5xx) gives its ids back with a wait that

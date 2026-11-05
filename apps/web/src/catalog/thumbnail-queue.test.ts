@@ -133,7 +133,7 @@ const assetIds = (count: number, prefix = "a") =>
   Array.from({ length: count }, (_, index) => `${prefix}${index}`);
 
 describe("ThumbnailLoader", () => {
-  it("rolar 1.248 linhas de cima a baixo faz no máximo um pedido a mais que os lotes cheios (156), de até THUMBS_BATCH_SIZE ids, sem repetir id", async () => {
+  it("rolar 1.248 linhas de cima a baixo faz no máximo um pedido a mais que os lotes cheios, de até THUMBS_BATCH_SIZE ids, sem repetir id", async () => {
     const { calls, loader } = setup();
     const list = assetIds(LIST_SIZE);
     loader.setSequence(list);
