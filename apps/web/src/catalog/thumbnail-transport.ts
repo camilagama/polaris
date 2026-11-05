@@ -97,11 +97,38 @@ function refusedStatus(status: number): boolean {
   return status === 400 || status === 401 || status === 403;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function createThumbnailTransport(
   fetcher: Fetcher = browserConnection.fetch,
   origin?: string
 ): ThumbnailTransport {
+  const ask = asker(fetcher, origin);
   return async ({ ids, organizationId, signal }) => {
+    // the server refuses the whole batch for one id that is not a UUID: such an id has no thumbnail, and only the
+    // others are asked
+    const valid = ids.filter((id) => UUID_PATTERN.test(id));
+    const answered =
+      valid.length === 0
+        ? ({ items: new Map(), kind: "ok" } as const)
+        : await ask(valid, organizationId, signal);
+    if (answered.kind !== "ok" || valid.length === ids.length) {
+      return answered;
+    }
+    return {
+      items: new Map(ids.map((id) => [id, answered.items.get(id) ?? null])),
+      kind: "ok",
+    };
+  };
+}
+
+function asker(fetcher: Fetcher, origin: string | undefined) {
+  return async (
+    ids: readonly string[],
+    organizationId: string,
+    signal: AbortSignal
+  ): Promise<ThumbnailBatchResult> => {
     let response: Response;
     try {
       response = await fetcher(thumbnailBatchUrl(organizationId, ids, origin), {

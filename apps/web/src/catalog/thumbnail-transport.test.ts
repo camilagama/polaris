@@ -79,6 +79,25 @@ describe("parseThumbnailBatch", () => {
 });
 
 describe("createThumbnailTransport", () => {
+  it("id que não é UUID não vai ao servidor (que recusaria o lote inteiro) e fica sem miniatura", async () => {
+    const { asked, transport } = server(
+      () =>
+        new Response(body("aaa"), {
+          headers: { "X-Polaris-Thumbs": `${A}:3` },
+          status: 200,
+        })
+    );
+    const result = await call(transport, ["galeria", A]);
+    expect(asked[0]?.url.searchParams.get("ids")).toBe(A);
+    expect(result.kind).toBe("ok");
+    if (result.kind === "ok") {
+      expect(result.items.get("galeria")).toBeNull();
+      expect(await text(result.items.get(A))).toBe("aaa");
+    }
+    expect((await call(transport, ["x"])).kind).toBe("ok");
+    expect(asked).toHaveLength(1);
+  });
+
   it("200 com cabeçalho e corpo: ok, com a sessão do próprio site", async () => {
     const { asked, transport } = server(
       () =>
