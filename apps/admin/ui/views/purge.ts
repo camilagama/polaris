@@ -445,7 +445,7 @@ export function purgeTab(
           "p",
           {},
           `${CASE_REQUIRED} `,
-          dom.el("a", { href: "/privacidade" }, "Ir para Privacidade")
+          dom.el("a", { href: "/privacidade" }, "Ir para Pedidos de dados")
         ),
         line(caseProblem)
       );
@@ -951,7 +951,7 @@ export function purgeTab(
         line(
           "Este atendimento está fechado: purge e trava legal precisam de um atendimento de privacidade aberto desta loja."
         ),
-        dom.el("a", { href: "/privacidade" }, "Ir para Privacidade")
+        dom.el("a", { href: "/privacidade" }, "Ir para Pedidos de dados")
       )
     );
   }

@@ -53,7 +53,7 @@ describe("Configurações: Você (AC-P9.1)", () => {
     expect(text).toContain("Operador: dona@polaris.example");
     expect(text).toContain("Dono da plataforma");
     expect(lines(root)).toEqual([
-      "Ver o Início, o funil de ativação e estas Configurações",
+      "Ver o Início, o Funil de ativação e esta tela, Minha conta e permissões",
       "Abrir, ver e fechar atendimentos de suporte",
       "Agendar e cancelar o apagamento de uma loja e cuidar do aviso de encerramento",
     ]);
@@ -83,7 +83,7 @@ describe("Configurações: Você (AC-P9.1)", () => {
       })
     );
     expect(lines(root)).toEqual([
-      "Ver o Início, o funil de ativação e estas Configurações",
+      "Ver o Início, o Funil de ativação e esta tela, Minha conta e permissões",
       "Permissão novo:poder",
     ]);
     expect(visibleText(root)).toContain("desconhecido: auditor");
@@ -118,7 +118,7 @@ describe("the words of Configurações", () => {
     expect(roleText("platform_owner")).toBe("Dono da plataforma");
     expect(permissionText("novo:poder")).toBe("Permissão novo:poder");
     expect(permissionText("platform:read")).toBe(
-      "Ver o Início, o funil de ativação e estas Configurações"
+      "Ver o Início, o Funil de ativação e esta tela, Minha conta e permissões"
     );
   });
 });

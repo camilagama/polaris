@@ -39,7 +39,7 @@ export const SERVER_CHECKS =
   "O Admin não devolve a data do encerramento nem a situação da renovação no provedor: o servidor confere os 90 dias do encerramento, a renovação cancelada e a leitura da cobrança ao agendar, e a recusa diz qual falta.";
 
 export const HOLD_STOPS_PURGE =
-  "Com trava legal vigente, o purge não é agendado nem roda, nem o automático.";
+  "Com trava legal vigente, o apagamento não é agendado nem roda, nem o automático.";
 
 export const HELD_WHILE_SCHEDULED =
   "Há uma trava legal vigente: o apagamento agendado não roda enquanto ela não for liberada.";
