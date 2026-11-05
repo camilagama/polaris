@@ -149,7 +149,7 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 **O que significa.** A limpeza de imagens removidas falhou ou o catálogo público não leu um arquivo do R2: `media_removed_asset_failed` (apagar objetos ou finalizar o ativo), `media_removed_asset_not_finalized` (o ativo ganhou vínculo depois de seus objetos serem apagados; **uma imagem pode ter perdido arquivos**), `media_removed_reconciliation_incomplete` (a execução terminou com falhas) e `catalog_media_read_failed` (leitura de objeto no catálogo). Falhas de rota de mídia do app aparecem como `server_error` nas rotas `/api/products/:productId/media`, `/api/media/thumbs` e `/api/media/:assetId`, e entram no sinal [http-5xx](#http-5xx).
 
-Fora do alerta, só para investigar: `media_thumbs_stream_aborted`, quando o lote de miniaturas cortou uma resposta já começada (`reason = thumb_changed`: um derivado sumiu ou mudou de tamanho entre a medida e a leitura; `stream_failed`: a leitura do R2 caiu ou o aparelho fechou a conexão, o que acontece toda vez que alguém sai da tela no meio da resposta). O aparelho vê falha de rede e tenta de novo depois. Muitos `stream_failed` junto com falhas de R2 apontam o bucket; sozinhos, são abas fechadas.
+O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde inteiro: uma falha do R2 dá 503 `media_processing_unavailable` e entra no sinal acima; um derivado que sumiu entre a consulta e a leitura volta como `missing`, sem evento.
 
 **Como confirmar.** Workers Logs: os quatro eventos do alerta por `errorClass`/`errorCode`; confira o status do R2 e do binding `MEDIA_BUCKET` no console. O procedimento de reconciliação está em [media-storage-reconciliation.md](./media-storage-reconciliation.md).
 

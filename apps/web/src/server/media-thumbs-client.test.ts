@@ -1,6 +1,10 @@
+import { MEDIA_THUMBS_MAX_PER_REQUEST } from "@polaris/domain/catalog/media";
 import { describe, expect, it } from "vitest";
+import { ThumbnailCache } from "../catalog/thumbnail-cache";
+import { ThumbnailLoader } from "../catalog/thumbnail-queue";
 import {
   createThumbnailTransport,
+  type ThumbnailTransport,
   thumbnailBatchUrl,
 } from "../catalog/thumbnail-transport";
 import {
@@ -64,5 +68,81 @@ describe("contrato da rota em lote com o cliente das miniaturas", () => {
       expect(result.items.get(B)).toBeNull();
       expect(await tagOf(result.items.get(C))).toBe("cc");
     }
+  });
+});
+
+describe("teto do lote", () => {
+  const list = Array.from(
+    { length: MEDIA_THUMBS_MAX_PER_REQUEST * 4 + 3 },
+    (_, index) =>
+      `0199c2d0-0000-7000-8000-${index.toString(16).padStart(12, "0")}`
+  );
+
+  async function askAll(visible: readonly string[]) {
+    const sizes: number[] = [];
+    const parsed: string[][] = [];
+    const transport: ThumbnailTransport = ({ ids, organizationId }) => {
+      sizes.push(ids.length);
+      const url = thumbnailBatchUrl(organizationId, ids, ORIGIN);
+      try {
+        parsed.push(
+          parseMediaThumbIds(url.searchParams.get("ids") ?? undefined)
+        );
+      } catch {
+        return Promise.resolve({ kind: "refused" });
+      }
+      return Promise.resolve({
+        items: new Map(ids.map((id) => [id, null])),
+        kind: "ok",
+      });
+    };
+    const loader = new ThumbnailLoader({
+      cache: new ThumbnailCache({
+        createUrl: () => "blob:unused",
+        disk: null,
+        now: () => 0,
+        revokeUrl: () => undefined,
+      }),
+      isOnline: () => true,
+      organizationId: "org-1",
+      random: () => 0.5,
+      schedule: () => () => undefined,
+      subscribeOnline: () => () => undefined,
+      transport,
+    });
+    loader.setSequence(list);
+    for (const id of visible) {
+      loader.show(id);
+    }
+    for (let round = 0; round < 40; round += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: each round lets the promises of the previous one run
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return { parsed, sizes };
+  }
+
+  it("nenhum lote do cliente passa do teto que o servidor aceita, com toda a lista na tela", async () => {
+    const { parsed, sizes } = await askAll(list);
+    expect(parsed).toHaveLength(sizes.length);
+    expect(Math.max(...sizes)).toBe(MEDIA_THUMBS_MAX_PER_REQUEST);
+    expect(parsed.flat().sort()).toEqual([...list].sort());
+  });
+
+  it("nem o lote completado com as próximas linhas da lista passa do teto", async () => {
+    const { parsed, sizes } = await askAll(list.slice(0, 2));
+    expect(parsed).toHaveLength(sizes.length);
+    expect(sizes[0]).toBe(MEDIA_THUMBS_MAX_PER_REQUEST);
+    expect(Math.max(...sizes)).toBe(MEDIA_THUMBS_MAX_PER_REQUEST);
+  });
+
+  it("o servidor recusa um id acima do teto", () => {
+    expect(() =>
+      parseMediaThumbIds(
+        list.slice(0, MEDIA_THUMBS_MAX_PER_REQUEST + 1).join(",")
+      )
+    ).toThrow();
+    expect(
+      parseMediaThumbIds(list.slice(0, MEDIA_THUMBS_MAX_PER_REQUEST).join(","))
+    ).toHaveLength(MEDIA_THUMBS_MAX_PER_REQUEST);
   });
 });
