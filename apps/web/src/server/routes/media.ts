@@ -44,11 +44,9 @@ import {
 import {
   InvalidMediaThumbsRequestError,
   MEDIA_THUMBS_HEADER,
-  MediaThumbChangedError,
   mediaThumbsHeaderValue,
   parseMediaThumbIds,
-  sizeMediaThumbs,
-  streamMediaThumbs,
+  readMediaThumbs,
 } from "../media-thumbs";
 import {
   InvalidMediaUploadCommandIdError,
@@ -995,7 +993,7 @@ async function handleMediaDelivery(
 }
 
 /**
- * Up to 24 stored 320 px thumbnails in one answer: one session, one tenant
+ * Up to `MAX_MEDIA_THUMBS_PER_REQUEST` stored 320 px thumbnails in one answer: one session, one tenant
  * transaction and one query for the whole list. Whatever this organization
  * cannot serve (another organization's id, an unknown or removed image, an image
  * without its 320 px derivative) is the same `missing`, and nothing is ever
@@ -1035,9 +1033,9 @@ async function handleMediaThumbs(
       request: context.req.raw,
       requestedOrganizationId: organizationId,
     });
-    let entries: Awaited<ReturnType<typeof sizeMediaThumbs>>;
+    let thumbs: Awaited<ReturnType<typeof readMediaThumbs>>;
     try {
-      entries = await sizeMediaThumbs({
+      thumbs = await readMediaThumbs({
         authorizedIds,
         bucket: mediaBucket,
         ids,
@@ -1046,23 +1044,12 @@ async function handleMediaThumbs(
       // biome-ignore lint/style/useErrorCause: Preserve storage details internally while returning a stable processing error.
       throw new MediaImageProcessingError({ cause });
     }
-    const body = streamMediaThumbs({
-      bucket: mediaBucket,
-      entries,
-      // The response is already under way: only a log can say why it was cut.
-      onAbort: (error) =>
-        logServerEvent("media_thumbs_stream_aborted", context, {
-          reason:
-            error instanceof MediaThumbChangedError
-              ? "thumb_changed"
-              : "stream_failed",
-        }),
-    });
-    return context.body(body, 200, {
+    return context.body(thumbs.body, 200, {
       "Cache-Control": "private, no-store",
+      "Content-Length": String(thumbs.body.byteLength),
       "Content-Type": "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
-      [MEDIA_THUMBS_HEADER]: mediaThumbsHeaderValue(entries),
+      [MEDIA_THUMBS_HEADER]: mediaThumbsHeaderValue(thumbs.entries),
     });
   } catch (error) {
     return errorResponse(context, error);
