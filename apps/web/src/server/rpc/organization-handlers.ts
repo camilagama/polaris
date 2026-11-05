@@ -15,6 +15,7 @@ import type { listUserOrganizations } from "@polaris/db/organization-membership-
 import type { RenewalCancellationStatus } from "@polaris/domain/billing/renewal-cancellation";
 import type { RenewalStatusReader } from "../billing/renewal-status";
 import { billingSelfServiceEnabled } from "../billing/self-service";
+import { mediaThumbsEnabled } from "../media-thumbs";
 import { isSessionFresh } from "../auth/session-policy";
 import type { WorkerBindings } from "../environment";
 import type { withAuthenticatedRequestContext } from "../authenticated-request-context";
@@ -98,6 +99,8 @@ export function createOrganizationRpcHandlers(
           operation: async (database, session) => ({
             // the same flag `billing.readPlan` asks first (ADR 0104): the client shows "Assinatura" only with it on
             billingSelfService: billingSelfServiceEnabled(context.bindings),
+            // the same flag the batch route asks first: off, the screens keep the initials and ask for nothing
+            mediaThumbs: mediaThumbsEnabled(context.bindings),
             organizations: await listRepository(database, session.user.id),
           }),
           request: context.request,

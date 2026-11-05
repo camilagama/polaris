@@ -140,6 +140,7 @@ import { ItemEditor } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
 import { SubmitBar, SummaryPanel } from "./sale-summary-panel";
 import {
+  coversOfStock,
   itemChangesForEntry,
   PICKER_RESULT_LIMIT,
 } from "./sale-variant-picker-model";
@@ -454,6 +455,7 @@ export function SalePage() {
     };
   }, [localOutbox, localWriter]);
   const { readLines, refresh, resetStock, seedStock } = catalog;
+  const covers = useMemo(() => coversOfStock(catalog.stock), [catalog.stock]);
 
   useEffect(
     () =>
@@ -1036,6 +1038,7 @@ export function SalePage() {
                   <ItemEditor
                     canAdjustStock={canAdjustStock}
                     canRemove={form.items.length > 1}
+                    cover={covers[item.variantId]}
                     errors={evaluation.errors}
                     index={index}
                     item={item}

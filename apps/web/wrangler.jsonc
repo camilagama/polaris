@@ -22,6 +22,8 @@
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
     // the owner's billing self-service (ADR 0104): off until the screens, the e-mails and the Gate 7 are in
     "BILLING_SELF_SERVICE_ENABLED": "false",
+    // the thumbnails of Produtos and Venda and their batch route: off until the CPU of the batch is measured
+    "MEDIA_THUMBS_ENABLED": "false",
     // the support box of the billing e-mails, their footer and reply-to (ADR 0104): empty on purpose until the
     // responsible sets it; without it the billing e-mails and the welcome stay off (their notices are skipped)
     "BILLING_SUPPORT_EMAIL": "",
@@ -278,6 +280,7 @@
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "true",
         "BILLING_SELF_SERVICE_ENABLED": "true",
+        "MEDIA_THUMBS_ENABLED": "true",
         // the footer and reply-to of the billing e-mails: one address on araute.app (the isolation check refuses another domain)
         "BILLING_SUPPORT_EMAIL": "suporte@araute.app",
         "WELCOME_EMAIL_ENABLED": "false",
@@ -456,6 +459,7 @@
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "false",
+        "MEDIA_THUMBS_ENABLED": "false",
         "BILLING_SUPPORT_EMAIL": "",
         "WELCOME_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",

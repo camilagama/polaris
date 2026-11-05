@@ -109,6 +109,11 @@ export function ThumbnailLoaderProvider({
 interface ThumbnailProviderProps {
   children: ReactNode;
   /**
+   * `false` (the default is `true`) builds no loader and no cache and opens nothing on the disk: the rows below show
+   * the marker and ask for nothing. The tree stays the same, so a screen is not remounted when this turns on.
+   */
+  enabled?: boolean;
+  /**
    * The namespace (user + store) when this device keeps the offline copy of the store, `null` otherwise: the same
    * answer that decides whether the copy exists (`useLocalWorkspace`). With `null` nothing is written to the disk.
    */
@@ -124,6 +129,7 @@ interface ThumbnailProviderProps {
  */
 export function ThumbnailProvider({
   children,
+  enabled = true,
   namespaceKey,
   organizationId,
   transport,
@@ -161,6 +167,10 @@ export function ThumbnailProvider({
   }, [namespaceKey, organizationId]);
 
   useEffect(() => {
+    if (!enabled) {
+      setMade(null);
+      return;
+    }
     let live = true;
     const cache = new ThumbnailCache({
       disk: diskKey
@@ -187,7 +197,7 @@ export function ThumbnailProvider({
       loader.dispose();
       cache.dispose();
     };
-  }, [diskKey, key, organizationId, transport]);
+  }, [diskKey, enabled, key, organizationId, transport]);
 
   // the loader of the previous store is never handed down, not even for the one render before the effect runs
   return (
@@ -212,6 +222,19 @@ function useThumbnailUrl(
     () => (loader && assetId ? loader.url(assetId) : null),
     () => (loader && assetId ? loader.url(assetId) : null)
   );
+}
+
+/**
+ * Tells the loader the order of the rows of the list now (their capa ids), so a batch started by a visible row is
+ * completed with the rows after it. Nothing is asked here: only rows on screen start a request.
+ */
+export function useThumbnailSequence(
+  assetIds: readonly (string | null | undefined)[]
+): void {
+  const loader = useContext(ThumbnailContext)?.loader;
+  useEffect(() => {
+    loader?.setSequence(assetIds);
+  }, [loader, assetIds]);
 }
 
 export interface ProductThumbnailProps {

@@ -117,6 +117,13 @@ export function removedNotice(removed: boolean, position: number): string {
 export const replacementPendingText =
   "A imagem anterior foi removida. Escolha o novo arquivo e envie; enquanto isso, o produto tem uma imagem a menos. A nova imagem entra no fim da lista e pode ser movida depois.";
 
+/**
+ * Said in the panel while the thumbnails are on: the image in the first position is the capa, drawn in a square box,
+ * so a very wide or very tall picture shows its centre only.
+ */
+export const COVER_NOTICE =
+  "A primeira imagem é a capa e aparece em Produtos e na Venda. Na miniatura quadrada, aparece o centro da imagem.";
+
 export const replacementAbandonedText =
   "Substituição cancelada. A imagem anterior já foi removida, então o produto ficou com uma imagem a menos.";
 

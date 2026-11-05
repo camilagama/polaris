@@ -23,7 +23,8 @@ type ListBalancesInput = Parameters<
 /** One read of sellable variants (active products only), searched by text. */
 export function variantSearchRequest(
   organizationId: string,
-  query: string
+  query: string,
+  withCover = false
 ): ListBalancesInput {
   const text = query.trim();
   return {
@@ -32,13 +33,15 @@ export function variantSearchRequest(
     productStatus: "active",
     stock: "all",
     ...(text === "" ? {} : { query: text }),
+    ...(withCover ? { withCover: true } : {}),
   };
 }
 
 /** Re-reads the balances of the variants already on the sale, one call. */
 export function lineBalancesRequest(
   organizationId: string,
-  variantIds: readonly string[]
+  variantIds: readonly string[],
+  withCover = false
 ): ListBalancesInput {
   return {
     limit: 100,
@@ -46,6 +49,7 @@ export function lineBalancesRequest(
     productStatus: "all",
     stock: "all",
     variantIds: [...variantIds],
+    ...(withCover ? { withCover: true } : {}),
   };
 }
 
@@ -153,10 +157,21 @@ export function itemChangesForEntry(
 }
 
 /** The line's balance, from the same read that listed the variant. */
+/**
+ * A variant's balance as the sale keeps it in memory, with the cover of its product when the read carried it. The
+ * cover is for drawing only: the sale draft, the queue and the snapshot never hold it.
+ */
+export type SaleBalance = InventoryBalanceReadModel & {
+  coverAssetId?: string | null;
+};
+
 export function balanceOfEntry(
   entry: InventoryBalanceEntryReadModel
-): InventoryBalanceReadModel {
+): SaleBalance {
   return {
+    ...(entry.coverAssetId === undefined
+      ? {}
+      : { coverAssetId: entry.coverAssetId }),
     movingAverageCost: entry.movingAverageCost,
     quantity: entry.quantity,
     variantId: entry.variantId,
@@ -172,10 +187,10 @@ const GONE_MESSAGE =
  * new balance, and one the server no longer lists gets a warning instead.
  */
 export function stockAfterRefresh(
-  previous: Readonly<Record<string, Loadable<InventoryBalanceReadModel>>>,
+  previous: Readonly<Record<string, Loadable<SaleBalance>>>,
   requestedIds: readonly string[],
   entries: readonly InventoryBalanceEntryReadModel[]
-): Record<string, Loadable<InventoryBalanceReadModel>> {
+): Record<string, Loadable<SaleBalance>> {
   const next = { ...previous };
   const found = new Map(entries.map((entry) => [entry.variantId, entry]));
   for (const variantId of requestedIds) {
@@ -194,4 +209,19 @@ export function chunkIds(ids: readonly string[], size = 100): string[][] {
     chunks.push(ids.slice(index, index + size));
   }
   return chunks;
+}
+
+export function coversOfStock(
+  stock: Readonly<Record<string, Loadable<SaleBalance>>>
+): Record<string, string | null> {
+  const covers: Record<string, string | null> = {};
+  for (const [variantId, balance] of Object.entries(stock)) {
+    if (
+      balance.status === "ready" &&
+      balance.value.coverAssetId !== undefined
+    ) {
+      covers[variantId] = balance.value.coverAssetId;
+    }
+  }
+  return covers;
 }

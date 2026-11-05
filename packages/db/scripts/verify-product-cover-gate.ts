@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { readBootstrapPage } from "../src/bootstrap-repository";
 import { createDatabase } from "../src/client";
+import { listInventoryBalances } from "../src/inventory-repository";
 import {
   type CreateProductMediaAssetInput,
   createProductMediaAsset,
@@ -355,6 +356,48 @@ async function run() {
     );
     tests.push(
       "a reorder (two UPDATEs over every image) and a removal (variant links, then the product link) each leave exactly one product change and the version untouched; the image moved to the front becomes the cover, removing the cover promotes the next, removing the last gives null, and a removal of nothing writes nothing"
+    );
+
+    // ------------- 3b. the balances of the sale search carry the cover only when asked, and only the tenant's
+    const balanceEntries = (tenant: TenantFixture, asked: boolean) =>
+      withTenantAs(db, tenant, "inventory:read", (tx, identity) =>
+        listInventoryBalances(tx, identity, {
+          includeArchived: true,
+          limit: 100,
+          withCover: asked,
+        })
+      ).then((page) => page.entries);
+    const foreignProduct = await newProduct(tenantB, "de outra loja");
+    const foreignCover = await upload(tenantB, foreignProduct.id);
+    const askedEntries = await balanceEntries(tenantA, true);
+    const balanceCoverByProduct = new Map(
+      askedEntries.map((entry) => [entry.productId, entry.coverAssetId])
+    );
+    assert.equal(balanceCoverByProduct.get(none.id), null, "no image, null");
+    assert.equal(
+      balanceCoverByProduct.get(single.id),
+      null,
+      "the last image was removed"
+    );
+    assert.equal(
+      balanceCoverByProduct.get(triple.id),
+      second,
+      "the balances carry the cover the list and the bootstrap carry"
+    );
+    assert.equal(
+      balanceCoverByProduct.has(foreignProduct.id) ||
+        askedEntries.some((entry) => entry.coverAssetId === foreignCover),
+      false,
+      "another organization's product and cover never appear"
+    );
+    assert.ok(
+      (await balanceEntries(tenantA, false)).every(
+        (entry) => !("coverAssetId" in entry)
+      ),
+      "without withCover the entries have no coverAssetId key"
+    );
+    tests.push(
+      "listInventoryBalances withCover adds the same coverAssetId as the list and the bootstrap (null with no image, the image of lowest position otherwise) and never one of another organization; without it the entries have no such key"
     );
 
     // ----------------------------- 4. a SAVEPOINT rolled back does not hide the change

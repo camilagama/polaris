@@ -264,6 +264,10 @@ Os segredos vêm **antes** do deploy que liga a cobrança: sem `ASAAS_WEBHOOK_TO
 
 **Desligar** (sandbox fora do ar, segredo vazado): `wrangler secret delete ASAAS_API_KEY --env staging` (ou `WOOVI_APP_ID`) corta as chamadas ao provedor na hora, sem deploy, e as rotas de webhook respondem 503; para tirar a tela, `BILLING_SELF_SERVICE_ENABLED: "false"` por pull request. Pause os webhooks no painel do sandbox antes, para a fila não acumular falhas.
 
+### Miniaturas das listas (`MEDIA_THUMBS_ENABLED`)
+
+`"true"` em `env.staging.vars` abre `GET /api/media/thumbs` e faz Produtos e a Venda mostrarem a capa dos produtos; na raiz e em `env.production.vars` vale `"false"` até o reteste do AC-13 com o lote de 5 e o AC-26 ([ADR 0018, emenda de 05/11/2026](../adr/0018-midia-privada-cloudflare-images-r2.md#emenda-05112026-a-chave-media_thumbs_enabled-liga-as-miniaturas-das-telas)). Desligada, a rota responde 404 antes de abrir transação ou ler o R2 e as telas não pedem nada. Para medir no staging (CPU do lote, requisições de mídia por abertura de lista), a chave já está ligada; para tirar as miniaturas do staging, `"false"` por pull request.
+
 ## 6. GitHub (responsável)
 
 - Environment `staging`, com os segredos `CLOUDFLARE_API_TOKEN` (restrito à conta atual em "Account Resources", com validade curta e permissões mínimas: Workers Scripts Edit, Queues Edit e Hyperdrive Read, este só para a verificação `--remote`; sem R2; a lista final é conferida no primeiro deploy. O token alcança qualquer Worker e fila da conta, e por isso a conta atual não guarda nada de produção) e `STAGING_MIGRATOR_DATABASE_URL` (dono, URL direta).

@@ -8,6 +8,8 @@ import {
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
+import { ProductThumbnail } from "../catalog/product-thumbnail";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { Button } from "@/ui/button";
 import {
   Combobox,
@@ -48,7 +50,8 @@ type LocalSearch = (query: string) => Promise<SearchResult>;
 function useVariantSearch(
   organizationId: string,
   text: string,
-  localSearch: LocalSearch | undefined
+  localSearch: LocalSearch | undefined,
+  withCover: boolean
 ) {
   const query = useDebouncedValue(text, SEARCH_DELAY_MS);
   const [load, setLoad] = useState<Loadable<SearchResult>>({
@@ -65,7 +68,7 @@ function useVariantSearch(
     const search: Promise<SearchResult> = localSearch
       ? localSearch(query)
       : orpcClient.inventory
-          .listBalances(variantSearchRequest(organizationId, query))
+          .listBalances(variantSearchRequest(organizationId, query, withCover))
           .then((page) => ({
             entries: page.entries,
             more: page.nextCursor !== null,
@@ -84,10 +87,38 @@ function useVariantSearch(
     return () => {
       current = false;
     };
-  }, [attempt, localSearch, organizationId, query]);
+  }, [attempt, localSearch, organizationId, query, withCover]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   return { load, query, retry };
+}
+
+/**
+ * A suggestion with the capa of its product at the left, in a box of fixed size so it is as tall with the photo as
+ * with the marker. The capa is the product's, even when the variant has an image of its own.
+ */
+function VariantOption({
+  option,
+  thumbs,
+}: {
+  option: PickerOption;
+  thumbs: boolean;
+}) {
+  if (!thumbs) {
+    return <VariantOptionText option={option} />;
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-3">
+      <ProductThumbnail
+        assetId={option.entry.coverAssetId}
+        name={option.entry.productName}
+        size={32}
+      />
+      <span className="grid min-w-0 gap-0.5">
+        <VariantOptionText option={option} />
+      </span>
+    </span>
+  );
 }
 
 /** What a suggestion says: the full name, then the balance and the SKU (the warning tone when there is no balance). */
@@ -151,7 +182,13 @@ export function VariantSearch({
   const [text, setText] = useState("");
   // Base UI opens it on a touch or click on the field, on typing and on ArrowDown; never by itself
   const [requested, setRequested] = useState(Boolean(autoFocus));
-  const { load, retry } = useVariantSearch(organizationId, text, localSearch);
+  const thumbs = useMediaThumbsEnabled();
+  const { load, retry } = useVariantSearch(
+    organizationId,
+    text,
+    localSearch,
+    thumbs
+  );
   const view = pickerView(
     load,
     // The list follows the debounced text; the live message follows the list.
@@ -257,7 +294,7 @@ export function VariantSearch({
           <ComboboxList aria-label="Variantes encontradas">
             {(option: PickerOption) => (
               <ComboboxItem key={option.id} value={option}>
-                <VariantOptionText option={option} />
+                <VariantOption option={option} thumbs={thumbs} />
               </ComboboxItem>
             )}
           </ComboboxList>

@@ -39,6 +39,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/ui/sidebar";
+import { MediaThumbnailScope } from "../catalog/media-thumbnail-scope";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
 import { canManageBilling } from "../lib/billing-access";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -480,7 +481,13 @@ function OrganizationGate({ children }: { children: ReactNode }) {
   }
   // Remounts the page when another organization is chosen, so no screen keeps
   // data of the previous one.
-  return <div key={load.current.id}>{children}</div>;
+  return (
+    <div key={load.current.id}>
+      <MediaThumbnailScope organizationId={load.current.id}>
+        {children}
+      </MediaThumbnailScope>
+    </div>
+  );
 }
 
 /** The notices at the top of `main`: the session that ended, the acceptance that is missing, the connection. */

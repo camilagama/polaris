@@ -2,8 +2,12 @@ import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
 import type { PendingProduct } from "../offline/product-create";
 import { lockedReasonFor, ProductList } from "./product-list";
+import { ThumbnailLoaderProvider } from "./product-thumbnail";
+import { ThumbnailCache } from "./thumbnail-cache";
+import { ThumbnailLoader } from "./thumbnail-queue";
 
 /**
  * The list of the products screen, drawn without a browser: what each state says and what each row carries. The
@@ -339,5 +343,84 @@ describe("o que trava as ações", () => {
     expect(lockedReasonFor(pending("p", "sending"), true)).toBe(
       "Disponível depois que o servidor confirmar o cadastro."
     );
+  });
+});
+
+const COVER = "0199c2d0-0000-7000-8000-0000000000c1";
+const THUMB_BOX =
+  /<span aria-hidden="true" class="[^"]*size-10 rounded-md[^"]*"/g;
+const MARKER_CIRCLE = /rounded-full/g;
+
+function idleLoader(): ThumbnailLoader {
+  return new ThumbnailLoader({
+    cache: new ThumbnailCache({ disk: null, now: () => 0 }),
+    isOnline: () => true,
+    organizationId: "org",
+    schedule: () => () => undefined,
+    subscribeOnline: () => () => undefined,
+    transport: () => new Promise(() => undefined),
+  });
+}
+
+const withThumbs = (props: Partial<Props>) =>
+  renderToStaticMarkup(
+    <MediaThumbsFlagProvider value>
+      <ThumbnailLoaderProvider loader={idleLoader()}>
+        <ProductList {...base} {...props} />
+      </ThumbnailLoaderProvider>
+    </MediaThumbsFlagProvider>
+  );
+
+describe("a capa na lista, atrás da flag", () => {
+  const products = [
+    product(1, { coverAssetId: COVER }),
+    product(2, { coverAssetId: null }),
+    product(3),
+  ];
+
+  it("sem escopo, cada linha tem o círculo de iniciais de hoje e nenhuma caixa de miniatura", () => {
+    const markup = html({ products, total: 3 });
+    expect(markup.match(MARKER_CIRCLE)).toHaveLength(3);
+    expect(markup).toContain("size-9");
+    expect(markup).not.toContain("data-thumbnail");
+    expect(markup).not.toContain("<img");
+  });
+
+  it("com a flag ligada, cada linha tem a caixa de 40 px arredondada, decorativa e com o marcador", () => {
+    const markup = withThumbs({ products, total: 3 });
+    expect(markup.match(THUMB_BOX)).toHaveLength(3);
+    expect(markup.match(/data-thumbnail="marker"/g)).toHaveLength(3);
+    expect(markup).not.toContain("size-9");
+    expect(markup).not.toMatch(MARKER_CIRCLE);
+    expect(markup).not.toContain("<img");
+    expect(markup).toContain(">PR<");
+  });
+
+  it("o nome acessível e a ordem dos elementos da linha são os mesmos com e sem a flag", () => {
+    const off = html({ products, total: 3 });
+    const on = withThumbs({ products, total: 3 });
+    for (const name of ["Produto 1", "Produto 2", "Produto 3"]) {
+      expect(rowOpen(on, name)).toContain(`Editar </span>${name}<`);
+      expect(menuTrigger(on, name)).toBe(menuTrigger(off, name));
+    }
+    const order = (markup: string) =>
+      [
+        "data-row-open",
+        "Editar ",
+        "Produto 1",
+        "Mais ações para Produto 1",
+      ].map((needle) => markup.indexOf(needle));
+    const sorted = (list: number[]) => [...list].sort((a, b) => a - b);
+    expect(order(on)).toEqual(sorted(order(on)));
+    expect(order(off)).toEqual(sorted(order(off)));
+  });
+
+  it("com a flag ligada, o que fica sob o texto da linha recua para o fim da caixa maior", () => {
+    const saved = product(1, { coverAssetId: COVER });
+    const syncStates = new Map([[saved.id, pending(saved.id, "pending")]]);
+    const on = withThumbs({ products: [saved], syncStates, total: 1 });
+    const off = html({ products: [saved], syncStates, total: 1 });
+    expect(on).toContain("pb-2.5 pl-13");
+    expect(off).toContain("pb-2.5 pl-12");
   });
 });
