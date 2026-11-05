@@ -185,8 +185,24 @@ export class FakeElement extends FakeNode {
   }
 }
 
+/** The window's one use by the page: listening for `pagehide`, which a test fires by name. */
+class FakeWindow {
+  readonly listeners = new Map<string, (() => void)[]>();
+
+  addEventListener(type: string, listener: () => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  dispatch(type: string) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener();
+    }
+  }
+}
+
 export class FakeDocument {
   activeElement: FakeElement | null = null;
+  readonly defaultView = new FakeWindow();
   readonly body: FakeElement;
   /** Every tag the page asked for, in order. */
   readonly created: string[] = [];

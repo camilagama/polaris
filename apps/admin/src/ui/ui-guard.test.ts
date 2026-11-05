@@ -96,11 +96,13 @@ const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
  * The routes of the cut (AC-6 of the v1, AC-C9 of the v2): who the operator is, the search and the diagnostics, the
  * funnel, the support cases (list, detail, open and close) with the refund window under them
  * (`/api/support-cases/:id/refund-window`), and the operational incidents (list, detail and the retry of one event,
- * `/api/operational-incidents/:id/events/:eventId/retry`; Parte 2), and, of a store, suspending and
+ * `/api/operational-incidents/:id/events/:eventId/retry`; Parte 2), of a store, suspending and
  * reactivating it (`/api/support-cases/:id/suspend` and `/reactivate`) and marking it as internal
- * (`/api/organizations/:id/classification`; Parte 3).
+ * (`/api/organizations/:id/classification`; Parte 3), and the court's read of the access log
+ * (`/api/access-log/read`, a POST; Parte 8).
  */
 const ROUTES_OF_THIS_CUT = [
+  "/api/access-log",
   "/api/funnel",
   "/api/operational-incidents",
   "/api/organizations",
@@ -170,7 +172,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store and marking it as internal: no other action of a case or a store", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal and the read of the access log: no other action of a case or a store", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -193,6 +195,7 @@ describe("the built script of the page", () => {
       "diagnostics",
       "events",
       "reactivate",
+      "read",
       "refund-window",
       "retry",
       "suspend",

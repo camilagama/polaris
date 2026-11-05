@@ -668,21 +668,25 @@ const drawnAll = {
   costsDrawn: true,
   costsSent: true,
   days: { total: 25, unknown: 0 },
+  grouped: false,
 };
 const drawnSome = {
   costsDrawn: true,
   costsSent: true,
   days: { total: 25, unknown: 3 },
+  grouped: false,
 };
 const drawnNone = {
   costsDrawn: false,
   costsSent: true,
   days: { total: 25, unknown: 25 },
+  grouped: false,
 };
 const notSent = {
   costsDrawn: false,
   costsSent: false,
   days: { total: 25, unknown: 0 },
+  grouped: false,
 };
 const withFreight = { ...chain, commercialSurcharges: "12.00" };
 
@@ -719,10 +723,28 @@ describe("the sentence that supports the chart (AC-11, texto do Petković de 26/
     expect(supportText(drawnNone, withFreight)).toBe(text);
   });
 
+  it("by month, the equality and the table sentence say month and months, the count stays in days", () => {
+    const byMonth = { ...drawnSome, grouped: true };
+    expect(supportText({ ...drawnAll, grouped: true }, chain)).toBe(
+      "A diferença entre as duas linhas é o resultado estimado do mês. Despesas do período entram no dia da competência."
+    );
+    expect(supportText(byMonth, chain)).toBe(
+      "3 de 25 dias sem custo informado. A diferença entre as duas linhas é o resultado estimado do mês nos meses sem hachura. Despesas do período entram no dia da competência."
+    );
+    expect(supportText(byMonth, withFreight)).toBe(
+      "3 de 25 dias sem custo informado. O resultado de cada mês está em Ver os números. Despesas do período entram no dia da competência."
+    );
+  });
+
   it("says one day in the singular", () => {
     expect(
       supportText(
-        { costsDrawn: false, costsSent: true, days: { total: 1, unknown: 1 } },
+        {
+          costsDrawn: false,
+          costsSent: true,
+          days: { total: 1, unknown: 1 },
+          grouped: false,
+        },
         chain
       )
     ).toBe(

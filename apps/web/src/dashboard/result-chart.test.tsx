@@ -261,3 +261,69 @@ describe("the cost line by run of known days (AC-9)", () => {
     expect(mixed.match(/data-chart-run="/g)).toHaveLength(1);
   });
 });
+
+describe("the unit of the texts follows the grouping (day for a month, month for a year)", () => {
+  /** January to October read on the 25th, as the server sends it above 62 days: one bucket per month, the last one cut at today. */
+  const year = (): StoredPeriodSummary => {
+    const base = october([]);
+    const lastDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 25];
+    const daily = lastDays.map((days, index) => {
+      const date = `2026-${String(index + 1).padStart(2, "0")}-01`;
+      return {
+        costs: `${days * 10}.00`,
+        date,
+        days,
+        netSales: `${days * 50}.00`,
+        operatingExpenses: "0.00",
+        operatingResult: `${days * 40}.00`,
+        salesCount: days,
+        to: addDays(date, days - 1),
+        unknownDays: 0,
+      };
+    });
+    return {
+      ...base,
+      daily,
+      granularity: "month",
+      period: { from: "2026-01-01", to: "2026-10-25" },
+    } as StoredPeriodSummary;
+  };
+  it("says month in the title, the sentence and the result column when the rows are months", () => {
+    const markup = chart(year());
+    const said = text(markup);
+    expect(said).toContain("Vendas × custos por mês");
+    expect(said).not.toContain("Vendas × custos por dia");
+    expect(said).toContain("é o resultado estimado do mês");
+
+    const table = text(
+      renderToStaticMarkup(
+        <NumbersTable
+          hasCosts
+          series={resultSeries(year().daily ?? [], "2026-10-25", {
+            granularity: "month",
+          })}
+        />
+      )
+    );
+    expect(table).toContain("Resultado do mês");
+    expect(table).not.toContain("Resultado do dia");
+  });
+
+  it("keeps day for a single month", () => {
+    const markup = chart(october([]));
+    const said = text(markup);
+    expect(said).toContain("Vendas × custos por dia");
+    expect(said).toContain("é o resultado estimado do dia");
+
+    const table = text(
+      renderToStaticMarkup(
+        <NumbersTable
+          hasCosts
+          series={resultSeries(october([]).daily ?? [], "2026-10-25")}
+        />
+      )
+    );
+    expect(table).toContain("Resultado do dia");
+    expect(table).not.toContain("Resultado do mês");
+  });
+});

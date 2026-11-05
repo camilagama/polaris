@@ -22,11 +22,10 @@ import {
   SelectValue,
 } from "@/ui/select";
 import {
-  availablePresets,
-  maxPeriodDays,
   type Period,
   type PeriodPreset,
   PRESET_LABELS,
+  PRESETS,
   type RangeProblem,
   rangeMessage,
   rangeProblem,
@@ -41,7 +40,6 @@ interface PeriodPickerProps {
   preset: PeriodPreset;
 }
 
-const PRESETS = availablePresets();
 const PRESET_ITEMS = PRESETS.map((item) => ({
   label: PRESET_LABELS[item],
   value: item,
@@ -125,10 +123,9 @@ function PresetChoice({ onChoose, preset }: PresetChoiceProps) {
 }
 
 /**
- * The periods of the Resultado (AC-1, AC-2): "Este mês" (the one it opens on), "Mês passado", "Últimos 30 dias" and
- * "Período", a free range of up to 62 days ("Este ano" and longer ranges wait for the CPU measure, AC-23). A preset reads
- * at once. The range has its own fields and a button: an invalid one says what is wrong under the field "Até" and asks
- * the server for nothing.
+ * The periods of the Resultado (AC-1, AC-2): "Este mês" (the one it opens on), "Mês passado", "Últimos 30 dias",
+ * "Este ano" and "Período", a free range of up to 366 days. A preset reads at once. The range has its own fields and a
+ * button: an invalid one says what is wrong under the field "Até" and asks the server for nothing.
  */
 export function PeriodPicker({
   onCustom,
@@ -141,7 +138,6 @@ export function PeriodPicker({
   const [from, setFrom] = useState(period.from);
   const [to, setTo] = useState(period.to);
   const [problem, setProblem] = useState<RangeProblem | null>(null);
-  const maxDays = maxPeriodDays();
   const errorId = `${id}-error`;
   const describedBy = problem ? errorId : undefined;
 
@@ -174,13 +170,13 @@ export function PeriodPicker({
   const apply = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const found = rangeProblem(from, to, maxDays);
+      const found = rangeProblem(from, to);
       setProblem(found);
       if (found === null) {
         onCustom({ from, to });
       }
     },
-    [from, maxDays, onCustom, to]
+    [from, onCustom, to]
   );
 
   return (
@@ -220,9 +216,7 @@ export function PeriodPicker({
               value={to}
             />
             {problem ? (
-              <FieldError id={errorId}>
-                {rangeMessage(problem, maxDays)}
-              </FieldError>
+              <FieldError id={errorId}>{rangeMessage(problem)}</FieldError>
             ) : null}
           </Field>
           <Button
