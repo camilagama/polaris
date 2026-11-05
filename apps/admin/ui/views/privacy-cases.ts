@@ -49,26 +49,48 @@ function countText(count: number, more: boolean, empty: string): string {
   return more ? `${found} Há mais: use Carregar mais.` : found;
 }
 
+interface DueView {
+  element: HTMLElement;
+  /** Says the due date again for another moment; the day, the provisional mark and the order of the page stay. */
+  redraw: (now: Date) => void;
+}
+
 /**
  * The due date in words, from what the server returned (AC-P11.1, AC-P11.6): two days or less, or past, is a warning
  * said in words, never only by color; every due date carries "prazo provisório" (ADR 0077: 15 days, provisional).
  */
+function dueView(
+  dom: Dom,
+  item: { dueAt: string; overdue: boolean },
+  now: Date
+): DueView {
+  const first = dueText(item.dueAt, item.overdue, now);
+  const words = dom.el("span", { class: "due-text" });
+  const element = dom.el(
+    "span",
+    {},
+    words,
+    ` (até ${first.day}, ${PROVISIONAL})`
+  );
+  const redraw = (at: Date) => {
+    const due = dueText(item.dueAt, item.overdue, at);
+    if (due.warn) {
+      element.setAttribute("class", "due due-warn");
+    } else {
+      element.setAttribute("class", "due");
+    }
+    words.textContent = due.warn ? `Atenção: ${due.text}` : due.text;
+  };
+  redraw(now);
+  return { element, redraw };
+}
+
 export function dueCell(
   dom: Dom,
   item: { dueAt: string; overdue: boolean },
   now: Date
 ): HTMLElement {
-  const due = dueText(item.dueAt, item.overdue, now);
-  return dom.el(
-    "span",
-    { class: due.warn ? "due due-warn" : "due" },
-    dom.el(
-      "span",
-      { class: "due-text" },
-      due.warn ? `Atenção: ${due.text}` : due.text
-    ),
-    ` (até ${due.day}, ${PROVISIONAL})`
-  );
+  return dueView(dom, item, now).element;
 }
 
 /**
@@ -110,17 +132,24 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
   let next: string | null = null;
   let shown = 0;
   let loading = false;
+  const dues: DueView[] = [];
 
   const row = (item: PrivacyCaseSummary) => {
     const path = privacyCasePath(item.id);
     const open = item.status === "open";
+    let due: HTMLElement | string = "Atendimento fechado";
+    if (open) {
+      const view = dueView(dom, item, now());
+      dues.push(view);
+      due = view.element;
+    }
     return tableRow(dom, HEADERS, [
       brasiliaMomentText(item.openedAt),
       storeName(dom, item.organizationName, item.organizationId),
       labelOf(REQUEST_TYPES, item.requestType),
       labelOf(REQUESTER_KINDS, item.requesterKind),
       labelOf(STAGES, item.stage),
-      open ? dueCell(dom, item, now()) : "Atendimento fechado",
+      due,
       path === null
         ? "—"
         : dom.el(
@@ -185,6 +214,19 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
       load(next);
     }
   });
+
+  /** The listeners stay for the life of the document: a page restored from the back-forward cache needs them. */
+  const redrawDues = () => {
+    if (dom.document.hidden) {
+      return;
+    }
+    const at = now();
+    for (const view of dues) {
+      view.redraw(at);
+    }
+  };
+  dom.document.addEventListener("visibilitychange", redrawDues);
+  dom.document.defaultView?.addEventListener("focus", redrawDues);
 
   const tab = (key: keyof typeof STATES, path: string) => {
     const attributes =
