@@ -115,10 +115,11 @@ function isClassification(
 }
 
 /**
- * What a refused command says, in words. 400 here is the case that is no longer open (the page sends no input). A 409
- * is not something these routes answer (they say `changed: false`); it is read as a state that moved, defensively.
- * Neither leaves a change behind. The three answers that may hide a write that happened
- * (network, 5xx, an answer the page cannot read) are not here: they have their own sentence and no retry.
+ * What a refused command says, in words. 400 here is the case that is no longer open (the page sends no input, and
+ * `case_not_open` is the only 400 these routes answer). Suspend and reactivate say `changed: false` instead of a 409;
+ * a 409 that arrives anyway gets the generic sentence of the default. A refusal leaves no change behind. The three
+ * answers that may hide a write that happened (network, 5xx, an answer the page cannot read) are not here: they have
+ * their own sentence and no retry.
  */
 function refusalText(failure: ApiFailure): string {
   switch (failure.problem) {
@@ -127,7 +128,7 @@ function refusalText(failure: ApiFailure): string {
     case "not_found":
       return "Este caso não foi encontrado.";
     case "invalid":
-      return "O caso não está aberto ou não é desta loja. Nada foi mudado. Recarregue o caso.";
+      return "O caso não está mais aberto. Nada foi mudado. Recarregue o caso.";
     case "rate_limited":
       return limitText(failure);
     case "session":
@@ -256,15 +257,6 @@ export function storeActionsView(
     sending = false;
     buttons.confirm.setAttribute("aria-disabled", "false");
     buttons.back.setAttribute("aria-disabled", "false");
-    if (answer.problem === "conflict") {
-      await readState();
-      notice.alert(
-        status === null
-          ? refusalText(answer)
-          : `Esta ação já não se aplica: a loja agora está ${storeStatusText(status).toLowerCase()}.`
-      );
-      return;
-    }
     notice.alert(refusalText(answer));
   };
 

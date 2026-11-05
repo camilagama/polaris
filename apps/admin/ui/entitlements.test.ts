@@ -386,6 +386,47 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
     expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(1);
   });
 
+  it("counts a reason by characters a person sees: an emoji is one, so 300 with emoji go through", async () => {
+    const mounted = await open([]);
+    const reason = `${"😀".repeat(MAX_REASON_LENGTH - 1)}é`;
+    await click(mounted.root, "Dar uma concessão");
+    const field = byId(mounted.root, "concessao-motivo");
+
+    expect(field.getAttribute("maxlength")).toBeNull();
+    field.value = reason;
+    field.dispatch("input");
+    expect(byId(mounted.root, "concessao-contador").textContent).toBe(
+      `${MAX_REASON_LENGTH} de ${MAX_REASON_LENGTH} caracteres`
+    );
+
+    await fill(mounted, { reason });
+
+    expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(1);
+  });
+
+  it("refuses 301 characters with an emoji among them, with the counter at 301 and the focus on the field", async () => {
+    const mounted = await open([]);
+    const reason = `${"😀".repeat(MAX_REASON_LENGTH)}é`;
+    await click(mounted.root, "Dar uma concessão");
+    const field = byId(mounted.root, "concessao-motivo");
+    field.value = reason;
+    field.dispatch("input");
+
+    await fill(mounted, { reason });
+
+    expect(byId(mounted.root, "concessao-contador").textContent).toBe(
+      `${MAX_REASON_LENGTH + 1} de ${MAX_REASON_LENGTH} caracteres`
+    );
+    expect(byId(mounted.root, "concessao-erro").textContent).toBe(
+      `O motivo aceita até ${MAX_REASON_LENGTH} caracteres.`
+    );
+    expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(0);
+    expect(writes(mounted.calls)).toHaveLength(0);
+    expect(mounted.document.activeElement?.getAttribute("aria-invalid")).toBe(
+      "true"
+    );
+  });
+
   it("goes back to the start on Cancelar, with nothing sent", async () => {
     const mounted = await open([]);
 
