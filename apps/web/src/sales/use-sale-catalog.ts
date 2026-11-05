@@ -53,6 +53,21 @@ interface SaleCatalog {
   stock: LoadableMap<SaleBalance>;
 }
 
+function markLoadingAsError(
+  stock: LoadableMap<SaleBalance>,
+  variantIds: readonly string[],
+  error: unknown
+) {
+  for (const variantId of variantIds) {
+    if (stock[variantId]?.status === "loading") {
+      stock[variantId] = {
+        message: loadErrorMessage(error, "o estoque"),
+        status: "error",
+      };
+    }
+  }
+}
+
 function keepReady<T>(current: Loadable<T>): Loadable<T> {
   return current.status === "ready" ? current : { status: "loading" };
 }
@@ -242,8 +257,9 @@ export function useSaleCatalog(
           }
           return null;
         }
-        const pages = await Promise.all(
-          chunkIds(variantIds).map((chunk) =>
+        const chunks = chunkIds(variantIds);
+        const settled = await Promise.allSettled(
+          chunks.map((chunk) =>
             readWithRetry(() =>
               orpcClient.inventory.listBalances(
                 lineBalancesRequest(organizationId, chunk, withCoverRef.current)
@@ -251,24 +267,35 @@ export function useSaleCatalog(
             )
           )
         );
-        const entries = pages.flatMap((page) => page.entries);
+        const entries: InventoryBalanceEntryReadModel[] = [];
+        const answeredIds: string[] = [];
+        const failed: { ids: string[]; reason: unknown }[] = [];
+        settled.forEach((result, index) => {
+          const ids = chunks[index] ?? [];
+          if (result.status === "fulfilled") {
+            entries.push(...result.value.entries);
+            answeredIds.push(...ids);
+          } else {
+            failed.push({ ids, reason: result.reason });
+          }
+        });
         if (generation.current === current) {
-          setStock((map) => stockAfterRefresh(map, variantIds, entries));
+          setStock((map) => {
+            const next = stockAfterRefresh(map, answeredIds, entries);
+            for (const { ids, reason } of failed) {
+              markLoadingAsError(next, ids, reason);
+            }
+            return next;
+          });
         }
-        return entries;
+        // a chunk that did not answer leaves its lines unjudged: the caller treats a line missing from the entries as gone
+        return failed.length === 0 ? entries : null;
       } catch (error) {
         if (generation.current === current) {
           // the refresh this read superseded left these lines loading and will not write again
           setStock((map) => {
             const next = { ...map };
-            for (const variantId of variantIds) {
-              if (next[variantId]?.status === "loading") {
-                next[variantId] = {
-                  message: loadErrorMessage(error, "o estoque"),
-                  status: "error",
-                };
-              }
-            }
+            markLoadingAsError(next, variantIds, error);
             return next;
           });
         }
