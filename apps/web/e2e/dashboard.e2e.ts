@@ -1424,6 +1424,40 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   });
 
+  test("com o formulário De/Até aberto o seletor diz Período, válido ou não, e volta ao período escolhido ao fechar", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await choosePreset(page, "Este ano");
+    await expectPreset(page, "Este ano");
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2026-01-01", to: "2026-10-14" });
+    const asked = server.periods.length;
+
+    await choosePreset(page, "Período");
+    await expectPreset(page, "Período");
+    await page.getByLabel("De", { exact: true }).fill("2025-10-13");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-14");
+    await page.getByRole("button", { name: "Ver período" }).click();
+    await expect(page.getByRole("alert")).toContainText("Escolha até 1 ano.");
+    await expectPreset(page, "Período");
+    if (!compact(page)) {
+      await expect(preset(page, "Este ano")).toHaveAttribute(
+        "aria-pressed",
+        "false"
+      );
+    }
+    expect(server.periods).toHaveLength(asked);
+
+    await choosePreset(page, "Este mês");
+    await expectPreset(page, "Este mês");
+    await expect(
+      page.getByRole("form", { name: "Escolher o período" })
+    ).toHaveCount(0);
+  });
+
   test("enquanto lê outro período, mantém os números de antes marcados como tal, e um erro nunca deixa os de antes com o nome do novo", async ({
     page,
   }) => {
