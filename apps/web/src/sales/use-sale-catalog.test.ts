@@ -149,3 +149,62 @@ describe("useSaleCatalog: respostas fora de ordem", () => {
     expect(render().stock[variantId]?.status).toBe("error");
   });
 });
+
+describe("useSaleCatalog: releitura em blocos de 100", () => {
+  beforeEach(() => {
+    runtime.slots = [];
+    listBalances.mockReset();
+  });
+
+  const ids = Array.from(
+    { length: 101 },
+    (_, index) => `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`
+  );
+
+  function entryOf(id: string): InventoryBalanceEntryReadModel {
+    return {
+      movingAverageCost: null,
+      quantity: 3,
+      variantId: id,
+      version: 1,
+    } as unknown as InventoryBalanceEntryReadModel;
+  }
+
+  it("o bloco que falha marca erro só nas linhas dele; as do bloco que respondeu ficam prontas", async () => {
+    const never = new Promise<never>(() => undefined);
+    listBalances
+      .mockReturnValueOnce(never)
+      .mockReturnValueOnce(never)
+      .mockImplementation((input: { variantIds: string[] }) =>
+        input.variantIds.length === 100
+          ? Promise.resolve({ entries: input.variantIds.map(entryOf) })
+          : Promise.reject(new Error("sem rede"))
+      );
+    const render = mount();
+    const { readLines, refresh } = render();
+
+    refresh(ids);
+    expect(render().stock[ids[0] as string]?.status).toBe("loading");
+    expect(render().stock[ids[100] as string]?.status).toBe("loading");
+
+    expect(await readLines(ids)).toBeNull();
+
+    const { stock } = render();
+    expect(stock[ids[0] as string]?.status).toBe("ready");
+    expect(stock[ids[99] as string]?.status).toBe("ready");
+    expect(stock[ids[100] as string]?.status).toBe("error");
+  });
+
+  it("com todos os blocos respondendo devolve as entradas de todos", async () => {
+    listBalances.mockImplementation((input: { variantIds: string[] }) =>
+      Promise.resolve({ entries: input.variantIds.map(entryOf) })
+    );
+    const render = mount();
+    const { readLines } = render();
+
+    const entries = await readLines(ids);
+
+    expect(entries).toHaveLength(101);
+    expect(render().stock[ids[100] as string]?.status).toBe("ready");
+  });
+});

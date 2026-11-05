@@ -1,4 +1,4 @@
-import { implement } from "@orpc/server";
+import { implement, ORPCError } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import {
   DeviceNotOwnedError,
@@ -52,6 +52,26 @@ interface OfflineRpcDependencies {
   touchDevice: typeof touchDevice | undefined;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
+}
+
+const domainCodePattern = /^[a-z][a-z0-9_]*$/;
+
+/**
+ * The stable snake_case code of a domain refusal: its `code`, or the message of the errors that carry no `code`
+ * (`device_revoked`, `offline_lease_not_available`). A 4xx never reaches the fault log, so this is what tells the
+ * refusals apart; anything that is not a code is left out rather than logged.
+ */
+function refusalCode(error: unknown): string | undefined {
+  const { code, message } = (error ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  for (const candidate of [code, message]) {
+    if (typeof candidate === "string" && domainCodePattern.test(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 function deviceReadModel(device: DeviceRecord) {
@@ -247,7 +267,18 @@ export function createOfflineRpcHandlers(dependencies: OfflineRpcDependencies) {
           request: context.request,
           requestedOrganizationId: input.organizationId,
         })
-        .catch(dependencies.toRpcError)
+        .catch((error: unknown) => {
+          try {
+            return dependencies.toRpcError(error);
+          } catch (rpcError) {
+            if (rpcError instanceof ORPCError && rpcError.status === 409) {
+              logger.warn("offline_lease_refused", {
+                reason: refusalCode(error),
+              });
+            }
+            throw rpcError;
+          }
+        })
   );
 
   return {

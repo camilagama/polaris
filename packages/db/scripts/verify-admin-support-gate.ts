@@ -15,6 +15,8 @@ import {
   readSupportCase,
   revealCustomerField,
   revokeTenantAccess,
+  type SupportCasePage,
+  type SupportCaseSummary,
 } from "../src/admin-support-repository";
 import { createDatabase } from "../src/client";
 import {
@@ -470,16 +472,30 @@ async function run() {
         `a page size of ${size}`
       );
     }
-    const ofKind = (kind: string | null, status: string | null = null) =>
-      asAdmin((client) =>
-        listSupportCases(client, {
-          after: null,
-          kind,
-          limit: 50,
-          organizationId: null,
-          status,
-        })
-      );
+    // every page to the end: a database with more than a page of cases (the gate does not own all of them) still lists whole
+    const ofKind = async (
+      kind: string | null,
+      status: string | null = null
+    ): Promise<{ cases: SupportCaseSummary[] }> => {
+      const cases: SupportCaseSummary[] = [];
+      let after: string | null = null;
+      do {
+        const cursor: string | null = after;
+        // biome-ignore lint/performance/noAwaitInLoops: each page needs the cursor of the previous one.
+        const page: SupportCasePage = await asAdmin((client) =>
+          listSupportCases(client, {
+            after: cursor,
+            kind,
+            limit: 50,
+            organizationId: null,
+            status,
+          })
+        );
+        cases.push(...page.cases);
+        after = page.next;
+      } while (after !== null);
+      return { cases };
+    };
     const supportOnly = await ofKind("support");
     const privacyOnly = await ofKind("privacy");
     const everyKind = await ofKind(null);
@@ -585,7 +601,7 @@ async function run() {
     );
     assert.deepEqual(
       previousVersion.rows[0]?.page.cases.map((entry) => entry.id),
-      everyKind.cases.map((entry) => entry.id),
+      everyKind.cases.slice(0, 50).map((entry) => entry.id),
       "the four-argument call of the previous Admin lists every kind, as before"
     );
     tests.push(
