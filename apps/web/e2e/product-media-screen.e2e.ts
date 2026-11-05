@@ -404,6 +404,173 @@ test("enviar sem internet diz 'Sem internet' e que repetir é seguro, e a imagem
   ).toBeEnabled();
 });
 
+/** The width, height and type the browser decodes from a body the panel sent. */
+function decodedSize(page: Page, body: Buffer) {
+  return page.evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes]));
+    const size = { height: bitmap.height, width: bitmap.width };
+    bitmap.close();
+    return size;
+  }, body.toString("base64"));
+}
+
+const created = api(
+  { asset: mediaAsset(0), replayed: false, requestId: REQUEST_ID },
+  201
+);
+
+test("envia o recorte já reduzido a 1200 px em JPEG, com o recorte da imagem inteira", async ({
+  page,
+}) => {
+  const sent: { body: Buffer; crop: string | null; type: string | null }[] = [];
+  await openMediaPanel(page, {
+    lists: [list(0), list(1)],
+    upload: (route) => {
+      const request = route.request();
+      sent.push({
+        body: request.postDataBuffer() ?? Buffer.alloc(0),
+        crop: request.headers()["x-media-crop"] ?? null,
+        type: request.headers()["content-type"] ?? null,
+      });
+      return route.fulfill(created);
+    },
+  });
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: solidPng(2400, 1600),
+    mimeType: "image/png",
+    name: "foto.png",
+  });
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+
+  expect(sent).toHaveLength(1);
+  const [upload] = sent;
+  expect(upload?.type).toBe("image/jpeg");
+  expect(JSON.parse(upload?.crop ?? "null")).toEqual({
+    height: 1,
+    width: 1,
+    x: 0,
+    y: 0,
+  });
+  // a JPEG starts with FF D8 FF
+  expect([...(upload?.body.subarray(0, 3) ?? [])]).toEqual([0xff, 0xd8, 0xff]);
+  await expect(
+    decodedSize(page, upload?.body ?? Buffer.alloc(0))
+  ).resolves.toEqual({
+    height: 800,
+    width: 1200,
+  });
+});
+
+/** A JPEG photo of `width` × `height`, encoded by the browser: two colors split at the middle, to see the crop. */
+async function photoJpeg(page: Page, width: number, height: number) {
+  const base64 = await page.evaluate(
+    async ([w, h]) => {
+      const canvas = new OffscreenCanvas(w, h);
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("no 2d context");
+      }
+      context.fillStyle = "rgb(30 90 200)";
+      context.fillRect(0, 0, w, h);
+      context.fillStyle = "rgb(220 60 40)";
+      context.fillRect(0, h / 2, w, h / 2);
+      const blob = await canvas.convertToBlob({
+        quality: 0.92,
+        type: "image/jpeg",
+      });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      return btoa(binary);
+    },
+    [width, height] as const
+  );
+  return Buffer.from(base64, "base64");
+}
+
+test("uma foto JPEG em retrato com recorte sai só com o recorte, reduzido a 1200 px no lado maior", async ({
+  page,
+}) => {
+  const sent: Buffer[] = [];
+  await openMediaPanel(page, {
+    lists: [list(0), list(1)],
+    upload: (route) => {
+      sent.push(route.request().postDataBuffer() ?? Buffer.alloc(0));
+      return route.fulfill(created);
+    },
+  });
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: await photoJpeg(page, 3000, 4000),
+    mimeType: "image/jpeg",
+    name: "retrato.jpg",
+  });
+  const area = page.getByRole("button", {
+    name: "Área de recorte. Arraste ou use as setas para ajustar.",
+  });
+  await expect(area).toBeVisible();
+  const box = await area.boundingBox();
+  if (!box) {
+    throw new Error("the crop area has no box");
+  }
+  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.25);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5, {
+    steps: 4,
+  });
+  await page.mouse.up();
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+
+  expect(sent).toHaveLength(1);
+  const size = await decodedSize(page, sent[0] ?? Buffer.alloc(0));
+  // the whole photo would be 900 × 1200; the crop of 1500 × 1000 is 1200 × 800 (the drag lands within a pixel or two)
+  expect(size.width).toBe(1200);
+  expect(Math.abs(size.height - 800)).toBeLessThanOrEqual(3);
+});
+
+test("a nova tentativa depois de cair a conexão envia os mesmos bytes, com o mesmo comando", async ({
+  page,
+}) => {
+  const sent: { body: Buffer; uploadId: string | null }[] = [];
+  await openMediaPanel(page, {
+    lists: [list(0), list(1)],
+    upload: (route) => {
+      const request = route.request();
+      sent.push({
+        body: request.postDataBuffer() ?? Buffer.alloc(0),
+        uploadId: request.headers()["x-upload-id"] ?? null,
+      });
+      return sent.length === 1
+        ? route.abort("internetdisconnected")
+        : route.fulfill(created);
+    },
+  });
+  await page.getByLabel("Escolher imagem").setInputFiles({
+    buffer: solidPng(1600, 1200, [200, 120, 90]),
+    mimeType: "image/png",
+    name: "foto.png",
+  });
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByRole("alert")).toContainText("Sem internet.");
+  await page.getByRole("button", { name: "Enviar imagem" }).click();
+  await expect(page.getByText("Imagem adicionada ao produto.")).toBeVisible();
+
+  expect(sent).toHaveLength(2);
+  const [first, retry] = sent;
+  expect(retry?.uploadId).toBe(first?.uploadId);
+  expect(retry?.body.equals(first?.body ?? Buffer.alloc(0))).toBe(true);
+  await expect(
+    decodedSize(page, retry?.body ?? Buffer.alloc(0))
+  ).resolves.toEqual({
+    height: 900,
+    width: 1200,
+  });
+});
+
 /** No box of the panel ends beyond the right edge of the window (the page may hide it, so boxes are measured). */
 async function expectNoSidewaysScroll(page: Page) {
   const found = await page.evaluate(() => {
