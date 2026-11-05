@@ -126,7 +126,7 @@ export function NumbersTable({ hasCosts, series }: NumbersTableProps) {
                   Custos
                 </TableHead>
                 <TableHead className="text-right" scope="col">
-                  Resultado do dia
+                  {`Resultado do ${unit}`}
                 </TableHead>
                 <TableHead className="text-right" scope="col">
                   Despesas do período
@@ -154,7 +154,7 @@ export function NumbersTable({ hasCosts, series }: NumbersTableProps) {
                       CARD_CELL,
                       isNegative(row.operatingResult) && "text-destructive"
                     )}
-                    data-label="Resultado do dia"
+                    data-label={`Resultado do ${unit}`}
                   >
                     <MoneyText text={costText(row.operatingResult)} />
                   </TableCell>
@@ -204,15 +204,22 @@ interface HeaderProps {
   range: string;
   source: "cache" | "server";
   support: string | null;
+  unit: string;
 }
 
 /** The title with the seal of an incomplete estimate beside it, the dates, and the sentence that supports the drawing. */
-function ChartHeader({ incomplete, range, source, support }: HeaderProps) {
+function ChartHeader({
+  incomplete,
+  range,
+  source,
+  support,
+  unit,
+}: HeaderProps) {
   return (
     <CardHeader className="border-b py-(--card-spacing)">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <CardTitle aria-level={2} id={TITLE_ID} role="heading">
-          Vendas × custos por dia
+          {`Vendas × custos por ${unit}`}
         </CardTitle>
         {incomplete ? <IncompleteBadge /> : null}
       </div>
@@ -434,7 +441,7 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
   const costsTotal = costsKnown(daily)
     ? costParts(summary.chain, summary.quality).total
     : null;
-  const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por dia, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}${unknown ? `. ${unknownDaysCount(days.unknown, days.total)}` : ""}`;
+  const label = `Vendas líquidas${costsDrawn ? " e custos" : ""} por ${series.grouped ? "mês" : "dia"}, ${range}: ${formatBrlAmount(salesTotal)} de vendas${costsTotal ? ` e ${formatBrlAmount(costsTotal)} de custos` : ""}${unknown ? `. ${unknownDaysCount(days.unknown, days.total)}` : ""}`;
 
   return (
     <Card aria-labelledby={TITLE_ID} className="gap-0 py-0" role="region">
@@ -443,6 +450,7 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
         range={range}
         source={source}
         support={supportText(series, summary.chain)}
+        unit={series.grouped ? "mês" : "dia"}
       />
       <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-3 py-(--card-spacing)">
         <Totals costsTotal={costsTotal} salesTotal={salesTotal} />
