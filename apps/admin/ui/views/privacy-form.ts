@@ -91,6 +91,76 @@ export function choiceField(
   return wrap(dom, id, label, select, hints);
 }
 
+export interface RadioChoice {
+  /** The legend, the three or more radios and the error line of the group. */
+  element: HTMLElement;
+  /** The code of the radio that is checked, or null when none is. */
+  chosen: () => string | null;
+  /** Says why nothing was chosen and puts the focus on the first radio. */
+  refuse: (text: string) => void;
+  first: HTMLInputElement;
+}
+
+/**
+ * A choice among facts that exclude each other, all in view: a group of radios with nothing checked, so the screen
+ * never picks a code for the operator (AC-P11.3, AC-P12.2). The codes are those of the list, in its order.
+ */
+export function radioChoice(
+  dom: Dom,
+  id: string,
+  legend: string,
+  list: Choices
+): RadioChoice {
+  const error = dom.el("p", {
+    "aria-live": "polite",
+    class: "field-error",
+    id: `${id}-erro`,
+  });
+  const radios = list.map(([code, words]) => {
+    const input = dom.el("input", {
+      id: `${id}-${code}`,
+      name: id,
+      type: "radio",
+      value: code,
+    });
+    input.addEventListener("change", () => {
+      error.textContent = "";
+      for (const other of radios) {
+        other.input.removeAttribute("aria-invalid");
+      }
+    });
+    return {
+      code,
+      element: dom.el(
+        "div",
+        { class: "check" },
+        input,
+        dom.el("label", { for: `${id}-${code}` }, words)
+      ),
+      input,
+    };
+  });
+  const first = radios[0]?.input ?? dom.el("input", { type: "radio" });
+  return {
+    chosen: () => radios.find((radio) => radio.input.checked)?.code ?? null,
+    element: dom.el(
+      "fieldset",
+      { "aria-describedby": `${id}-erro`, class: "radio-field", id },
+      dom.el("legend", {}, legend),
+      ...radios.map((radio) => radio.element),
+      error
+    ),
+    first,
+    refuse: (text) => {
+      error.textContent = text;
+      for (const radio of radios) {
+        radio.input.setAttribute("aria-invalid", "true");
+      }
+      first.focus();
+    },
+  };
+}
+
 /** A short text with its counter, cut by the browser at the server's limit. */
 export function textField(
   dom: Dom,

@@ -8,8 +8,8 @@ export const REISSUE_EFFECT =
 export const REISSUE_UNDO =
   "Não: o aviso novo é uma linha nova e o anterior continua como está.";
 export const DISMISS_EFFECT =
-  "A dispensa conta como entregue para o apagamento, que ainda espera 7 dias. Isso não poderá ser desfeito.";
-export const DISMISS_UNDO = "Não.";
+  "A dispensa conta como entregue para o apagamento, que ainda espera 7 dias.";
+export const DISMISS_UNDO = "Não: isso não poderá ser desfeito.";
 export const DISMISS_RULES =
   "Só vale sob um pedido de exclusão aceito por inteiro, feito pelo dono da loja (ou, se a conta do dono foi apagada, por quem pede), e o motivo precisa bater com o que o sistema registrou: o servidor recusa o que não bate.";
 export const REISSUE_RECORD =

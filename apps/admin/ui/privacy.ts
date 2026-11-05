@@ -189,3 +189,14 @@ export const CLOSURE_NOTICE_DISMISSALS: Choices = [
   ["email_not_verified", "O e-mail do dono não foi verificado"],
   ["email_undeliverable", "O e-mail do dono recusa o aviso (não é entregável)"],
 ];
+
+/**
+ * The states of a store in which the server accepts reissuing or dismissing the notice of D minus 7 days
+ * (`CLOSURE_NOTICE_ORGANIZATION_STATUSES`): the section is offered for these and not for another state the page knows.
+ * `src/ui/closure-notice-statuses.test.ts` ties this list to the domain's and to the database function's.
+ */
+export const CLOSURE_NOTICE_ORGANIZATION_STATUSES: readonly string[] = [
+  "closing",
+  "closed",
+  "purge_pending",
+];

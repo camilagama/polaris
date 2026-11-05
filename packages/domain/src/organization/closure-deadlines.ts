@@ -85,6 +85,18 @@ export function isClosureNoticeDismissalReason(
 }
 
 /**
+ * The states of a store in which the support may reissue or dismiss the notice of D minus 7 days: the closure process
+ * up to the purge scheduled, which is where a store left without a delivered notice waits for the support (ADR 0102,
+ * item 9). The database holds the same list in `closure_notice_support_reissue`, the function both Admin acts call,
+ * and a test of the Admin compares them.
+ */
+export const CLOSURE_NOTICE_ORGANIZATION_STATUSES = Object.freeze([
+  "closing",
+  "closed",
+  "purge_pending",
+] as const);
+
+/**
  * A notice still owed (neither sent, failed nor skipped) this many days after its date enters the alert of a store
  * left behind (`closure_purge_overdue`), for the support to see the owner was not told, for example while no e-mail
  * is configured. The database writes it in hours (`interval '72 hours'`).

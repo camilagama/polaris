@@ -21,9 +21,13 @@ import {
 import { storeName } from "../dom";
 import { brasiliaMomentText } from "../format";
 import { createNotice, type Notice } from "../notice";
-import { CLOSURE_NOTICE_DISMISSALS, labelOf } from "../privacy";
+import {
+  CLOSURE_NOTICE_DISMISSALS,
+  CLOSURE_NOTICE_ORGANIZATION_STATUSES,
+  labelOf,
+} from "../privacy";
 import type { OrganizationDiagnostics, PrivacyCaseDetail } from "../types";
-import { choiceField } from "./privacy-form";
+import { radioChoice } from "./privacy-form";
 
 function problemText(problem: Problem): string {
   if (problem === "not_found") {
@@ -37,6 +41,8 @@ type Detail = PrivacyCaseDetail;
 export interface ClosureNoticeHooks {
   /** False once the screen was drawn again or left: an old read writes nothing. */
   current: () => boolean;
+  /** Whether the operator may read the store's state; without it the acts are offered and the server refuses. */
+  readsStore: boolean;
   /** Reads the case again, and says how the act ended once the screen is shown again; false if it could not. */
   reread: (outcome?: {
     kind: "alert" | "success";
@@ -50,25 +56,20 @@ interface Buttons {
   reload: HTMLButtonElement;
 }
 
-/** Whether the notice section may be asked for at all: the capability to act and the one to read the store's state. */
+/** Whether the notice section may be asked for at all: the capability to act, on a case that is still open. */
 export function mayShowClosureNotice(
   can: (capability: string) => boolean,
   detail: Detail
 ): boolean {
-  return (
-    can("organization:purge") &&
-    can("organization:diagnose") &&
-    detail.case.status === "open"
-  );
+  return can("organization:purge") && detail.case.status === "open";
 }
-
-const CLOSED = "closed";
 
 /**
  * "Aviso de encerramento" in a privacy case (corte admin-v2, Parte 12; ADR 0102): reissue the notice of D minus 7 days
- * or dismiss it. The section exists only for the case of a closed store, which the case read does not say: the store's
- * state is read once, from its diagnostics, and a store that is not closed (or a read that failed) leaves nothing of
- * the section in the page. Each act is reviewed in two steps with the store and the case in view, sends one request
+ * or dismiss it. The section exists for a store in the states the server accepts the acts in, which the case read does
+ * not say: an operator who may read the store reads its state once, from its diagnostics, and a store in another
+ * state (or a read that failed) leaves nothing of the section in the page; an operator who may not read it is offered
+ * the acts and the server refuses by name what does not fit. Each act is reviewed in two steps with the store and the case in view, sends one request
  * per click and ends by reading the case, and so the section, again. The section schedules and cancels no purge.
  */
 export function closureNoticeSection(
@@ -110,7 +111,7 @@ export function closureNoticeSection(
       );
       return;
     }
-    if (organization.status === CLOSED) {
+    if (CLOSURE_NOTICE_ORGANIZATION_STATUSES.includes(organization.status)) {
       showActions();
     }
   };
@@ -228,7 +229,7 @@ export function closureNoticeSection(
 
   const dismissForm = () => {
     const notice = createNotice(dom);
-    const reason = choiceField(
+    const reason = radioChoice(
       dom,
       "aviso-encerramento-motivo",
       "Motivo da dispensa",
@@ -250,7 +251,7 @@ export function closureNoticeSection(
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const chosen = CLOSURE_NOTICE_DISMISSALS.find(
-        ([code]) => code === reason.control.value
+        ([code]) => code === reason.chosen()
       );
       if (chosen === undefined) {
         reason.refuse("Escolha o motivo da dispensa.");
@@ -263,7 +264,7 @@ export function closureNoticeSection(
       slot.querySelector("button")?.focus();
     });
     dom.fill(slot, wrap(sectionTitle(), caseFacts(), form, notice.element));
-    reason.control.focus();
+    reason.first.focus();
   };
 
   const reviewDismiss = (code: string) => {
@@ -407,6 +408,10 @@ export function closureNoticeSection(
     );
   };
 
-  read();
+  if (hooks.readsStore) {
+    read();
+  } else {
+    showActions();
+  }
   return slot;
 }

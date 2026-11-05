@@ -353,6 +353,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       mayShowClosureNotice(can, detail)
         ? closureNoticeSection(tools, detail, {
             current: () => !left && drawn === turn,
+            readsStore: can("organization:diagnose"),
             reread: (outcome) =>
               load(
                 outcome === undefined

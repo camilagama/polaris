@@ -34,7 +34,7 @@ import {
 
 /**
  * "Aviso de encerramento" in the privacy case (corte admin-v2, Parte 12): the section exists only for the case of a
- * closed store and an operator who may purge and read the store; reissue and dismiss are each reviewed in two steps
+ * store in closure (closing, closed or purge_pending) and an operator who may purge; reissue and dismiss are each reviewed in two steps
  * and sent once; the refusals of the server are said in words; the case, and so the section, is read again after an
  * answer; and no purge is scheduled or cancelled from here (AC-P12.1 to AC-P12.3, AC-C2 to AC-C4).
  */
@@ -134,6 +134,19 @@ const sectionOf = (root: FakeElement) =>
     (element) => element.getAttribute("id") === "aviso-encerramento-titulo"
   );
 
+const REASON = "aviso-encerramento-motivo";
+
+const choose = (root: FakeElement, code: string) => {
+  const radio = byId(root, `${REASON}-${code}`);
+  for (const other of byTag(root, "input")) {
+    if (other.getAttribute("name") === REASON) {
+      other.checked = false;
+    }
+  }
+  radio.checked = true;
+  radio.dispatch("change");
+};
+
 const panelOf = (root: FakeElement) =>
   allElements(root).find((element) =>
     (element.getAttribute("class") ?? "").startsWith("closure-notice ")
@@ -183,13 +196,47 @@ describe("Aviso de encerramento: where the section exists (AC-P12.1)", () => {
     expect(buttons(mounted.root, "Dispensar").length).toBe(0);
   });
 
-  it("is not in the page without the capability to read the store, which is the only place the state of the store is", async () => {
+  it("is in the page without the capability to read the store, which is offered the acts with the store not read, for the server to refuse", async () => {
     const mounted = await openCase([], WITHOUT_DIAGNOSE);
-    expect(mounted.calls).toHaveLength(2);
-    expect(sectionOf(mounted.root)).toBeUndefined();
+    expect(mounted.calls.map((call) => call.path)).toEqual([
+      "/api/whoami",
+      `/api/privacy-cases/${CASE}`,
+    ]);
+    expect(sectionOf(mounted.root)).toBeDefined();
+    expect(buttons(mounted.root, "Reemitir o aviso").length).toBeGreaterThan(0);
+    expect(buttons(mounted.root, "Dispensar o aviso").length).toBeGreaterThan(
+      0
+    );
   });
 
-  it.each(["active", "suspended", "closing", "purge_pending", "purged"])(
+  it("sends the act of an operator who cannot read the store, and says the server's refusal in words", async () => {
+    const mounted = await openCase(
+      [refusal("organization_not_in_closure"), json(detail())],
+      WITHOUT_DIAGNOSE
+    );
+    await click(mounted.root, "Reemitir o aviso");
+    await click(mounted.root, "Confirmar reemissão do aviso");
+    expect(posts(mounted.calls)).toHaveLength(1);
+    expect(alertOf(mounted.root)?.textContent).toBe(
+      NOTICE_REFUSALS.organization_not_in_closure
+    );
+  });
+
+  it.each(["closing", "closed", "purge_pending"])(
+    "is in the page when the store is %s, the states the server accepts",
+    async (status) => {
+      const mounted = await openCase([
+        json(diagnostics({ id: STORE, status })),
+      ]);
+      expect(mounted.calls).toHaveLength(3);
+      expect(sectionOf(mounted.root)).toBeDefined();
+      expect(buttons(mounted.root, "Reemitir o aviso").length).toBeGreaterThan(
+        0
+      );
+    }
+  );
+
+  it.each(["active", "suspended", "purged"])(
     "is not in the page when the store is %s",
     async (status) => {
       const mounted = await openCase([
@@ -334,54 +381,72 @@ describe("Aviso de encerramento: reissue (AC-P12.1, AC-C2, AC-C4)", () => {
 });
 
 describe("Aviso de encerramento: dismiss (AC-P12.2)", () => {
-  it("offers only the three reasons of the list, with none chosen and no free text", async () => {
+  it("offers the three reasons of the list as radios in view, none checked, with no free text", async () => {
     const mounted = await openCase([closedStore()]);
     await click(mounted.root, "Dispensar o aviso");
-    const select = byId(mounted.root, "aviso-encerramento-motivo");
-    expect(select.value).toBe("");
-    const options = byTag(select, "option").map((option) => [
-      option.getAttribute("value"),
-      option.textContent,
+    const group = byId(mounted.root, REASON);
+    expect(group.tagName).toBe("fieldset");
+    expect(byTag(group, "legend").map((legend) => legend.textContent)).toEqual([
+      "Motivo da dispensa",
     ]);
-    expect(options).toEqual([
-      ["", "Escolha…"],
-      ...CLOSURE_NOTICE_DISMISSALS.map(([code, words]) => [code, words]),
+    const radios = byTag(group, "input");
+    expect(radios.map((radio) => radio.getAttribute("type"))).toEqual([
+      "radio",
+      "radio",
+      "radio",
     ]);
+    expect(radios.map((radio) => radio.checked)).toEqual([false, false, false]);
+    expect(radios.map((radio) => radio.getAttribute("value"))).toEqual(
+      CLOSURE_NOTICE_DISMISSALS.map(([code]) => code)
+    );
+    const text = visibleText(group);
+    for (const [, words] of CLOSURE_NOTICE_DISMISSALS) {
+      expect(text).toContain(words);
+    }
+    expect(byTag(group, "select")).toHaveLength(0);
+    expect(byTag(group, "textarea")).toHaveLength(0);
+    expect(byTag(panelOf(mounted.root) as FakeElement, "select")).toHaveLength(
+      0
+    );
     expect(CLOSURE_NOTICE_DISMISSALS.map(([code]) => code)).toEqual([
       "owner_account_deleted",
       "email_not_verified",
       "email_undeliverable",
     ]);
-    const section = panelOf(mounted.root);
-    expect(section).toBeDefined();
-    expect(byTag(section as FakeElement, "input")).toHaveLength(0);
-    expect(byTag(section as FakeElement, "textarea")).toHaveLength(0);
   });
 
   it("asks for a reason when none is chosen, and sends nothing", async () => {
     const mounted = await openCase([closedStore()]);
     await click(mounted.root, "Dispensar o aviso");
     await click(mounted.root, "Revisar a dispensa");
-    expect(
-      byId(mounted.root, "aviso-encerramento-motivo-erro").textContent
-    ).toBe("Escolha o motivo da dispensa.");
+    expect(byId(mounted.root, `${REASON}-erro`).textContent).toBe(
+      "Escolha o motivo da dispensa."
+    );
+    expect(mounted.root.ownerDocument.activeElement).toBe(
+      byId(mounted.root, `${REASON}-owner_account_deleted`)
+    );
     expect(visibleText(mounted.root)).not.toContain(
       "Revise antes de dispensar o aviso"
     );
     expect(posts(mounted.calls)).toHaveLength(0);
   });
 
-  it("refuses a value outside the list: only the codes of the list are sent", async () => {
-    const mounted = await openCase([closedStore()]);
+  it("sends the code of the list even when the value of the radio was altered", async () => {
+    const mounted = await openCase([
+      closedStore(),
+      json({ ...DONE, dismissed: true }),
+      json(detail()),
+      closedStore(),
+    ]);
     await click(mounted.root, "Dispensar o aviso");
-    const select = byId(mounted.root, "aviso-encerramento-motivo");
-    select.value = "outro motivo";
-    select.dispatch("change");
+    byId(mounted.root, `${REASON}-email_not_verified`).value = "outro motivo";
+    choose(mounted.root, "email_not_verified");
     await click(mounted.root, "Revisar a dispensa");
-    expect(posts(mounted.calls)).toHaveLength(0);
-    expect(visibleText(mounted.root)).not.toContain(
-      "Revise antes de dispensar o aviso"
-    );
+    await click(mounted.root, "Confirmar dispensa do aviso");
+    expect(bodyOf(posts(mounted.calls)[0])).toEqual({
+      organizationId: STORE,
+      reason: "email_not_verified",
+    });
   });
 
   it.each(CLOSURE_NOTICE_DISMISSALS)(
@@ -395,17 +460,16 @@ describe("Aviso de encerramento: dismiss (AC-P12.2)", () => {
         closedStore(),
       ]);
       await click(mounted.root, "Dispensar o aviso");
-      const select = byId(mounted.root, "aviso-encerramento-motivo");
-      select.value = code;
-      select.dispatch("change");
+      choose(mounted.root, code);
       await click(mounted.root, "Revisar a dispensa");
       const text = visibleText(mounted.root);
       expect(text).toContain("Revise antes de dispensar o aviso");
       expect(text).toContain("Loja da Ana");
       expect(text).toContain(words);
-      expect(text).toContain(
-        "A dispensa conta como entregue para o apagamento, que ainda espera 7 dias. Isso não poderá ser desfeito."
+      expect(DISMISS_EFFECT).toBe(
+        "A dispensa conta como entregue para o apagamento, que ainda espera 7 dias."
       );
+      expect(DISMISS_UNDO).toBe("Não: isso não poderá ser desfeito.");
       expect(text).toContain(DISMISS_EFFECT);
       expect(text).toContain(DISMISS_UNDO);
       expect(posts(mounted.calls)).toHaveLength(0);
@@ -431,12 +495,13 @@ describe("Aviso de encerramento: dismiss (AC-P12.2)", () => {
   it("goes back from the review to the choice, keeping the page", async () => {
     const mounted = await openCase([closedStore()]);
     await click(mounted.root, "Dispensar o aviso");
-    const select = byId(mounted.root, "aviso-encerramento-motivo");
-    select.value = "owner_account_deleted";
-    select.dispatch("change");
+    choose(mounted.root, "owner_account_deleted");
     await click(mounted.root, "Revisar a dispensa");
     await click(mounted.root, "Voltar");
-    expect(byId(mounted.root, "aviso-encerramento-motivo")).toBeDefined();
+    expect(byId(mounted.root, REASON)).toBeDefined();
+    expect(
+      byTag(mounted.root, "input").filter((radio) => radio.checked)
+    ).toHaveLength(0);
     expect(posts(mounted.calls)).toHaveLength(0);
   });
 
@@ -450,9 +515,7 @@ describe("Aviso de encerramento: dismiss (AC-P12.2)", () => {
         closedStore(),
       ]);
       await click(mounted.root, "Dispensar o aviso");
-      const select = byId(mounted.root, "aviso-encerramento-motivo");
-      select.value = "email_not_verified";
-      select.dispatch("change");
+      choose(mounted.root, "email_not_verified");
       await click(mounted.root, "Revisar a dispensa");
       await click(mounted.root, "Confirmar dispensa do aviso");
       const alert = alertOf(mounted.root);
