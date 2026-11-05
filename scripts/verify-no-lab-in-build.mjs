@@ -31,6 +31,7 @@ export const LAB_ROUTES = [
   "/offline-poc",
   "/offline-runtime-lab",
   "/offline-screens-lab",
+  "/offline-thumbnails-lab",
   "/ui-galeria",
   "/ui-pecas-do-shell",
 ];
@@ -50,6 +51,7 @@ export const LAB_MODULES = [
   "runtime-lab",
   "sale-lab-server",
   "screens-lab",
+  "thumbnails-lab",
   "ui-gallery",
 ];
 

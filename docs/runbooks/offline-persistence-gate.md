@@ -11,7 +11,7 @@ O gate avalia persistência depois que a página foi carregada. O app shell não
 - Coleções locais v1/v2 usam TanStack DB com SQLite no OPFS.
 - O outbox de mutations e os receipts do mock server usam bancos IndexedDB separados entre si e das coleções. Um journal IndexedDB separado e Web Locks permitem retomar e serializar um reset interrompido entre abas antes de abrir o runtime. O teste de eviction remove somente o arquivo OPFS da POC para demonstrar que uma mutation pendente pode ser restaurada pelo outbox.
 - A troca do mock server para online executa uma função sintética com idempotency key e grava um receipt local. Isso não é entrega remota nem prova de exatamente uma vez no servidor.
-- Falha de OPFS/IndexedDB é explícita. O runtime não degrada silenciosamente para memória ou `localStorage`.
+- Falha de OPFS/IndexedDB é explícita. O runtime não degrada silenciosamente para memória ou `localStorage`. A exceção é o cache de miniaturas (`polaris-thumbnails-<hash>`, fora deste laboratório): é só cópia de bytes que o servidor manda de novo, então, se o IndexedDB dele falhar, as miniaturas seguem em memória e a tela não espera. O laboratório dele é `/offline-thumbnails-lab` (`e2e/offline-thumbnails.e2e.ts`).
 - Schema v2 tem outro ID de coleção. A cópia v1→v2 é explícita, repetível e mantém v1. Nenhum reset destrutivo de coleção é aceito como migração.
 - O botão de eviction simula a remoção do arquivo nomeado da POC; não força nem prevê a política real de eviction do sistema operacional.
 
