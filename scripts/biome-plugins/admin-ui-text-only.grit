@@ -44,7 +44,9 @@ or {
   `document.cookie`,
   `eval($arguments)`,
   `new Function($arguments)`,
-  `setTimeout($arguments)`,
+  `setTimeout($arguments)` where {
+    $filename <: not r".*/ui/views/reveal\.ts$"
+  },
   `setInterval($arguments)`,
   `localStorage`,
   `sessionStorage`,

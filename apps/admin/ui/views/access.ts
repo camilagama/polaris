@@ -12,6 +12,7 @@ import { brasiliaMomentText } from "../format";
 import { createNotice } from "../notice";
 import { limitText, writeMayHaveHappened } from "../refusal";
 import type { MaskedCustomer, SupportCaseDetail } from "../types";
+import { createReveal, type Reveal } from "./reveal";
 import type { StoreActionsCase } from "./store-actions";
 
 export const ACCESS_TEXT =
@@ -127,7 +128,7 @@ function failureText(failure: ApiFailure, notFound: string): string {
  * page's memory: they leave the DOM when the access ends, is refused, is found past its end or the page is hidden. With
  * no timer (the script has none), "past its end" is checked, against the end the server gave, at every
  * interaction with the section; the server refuses the read of an access that ended whatever the page shows.
- * Revealing a field is not here.
+ * Revealing a field is `reveal.ts`, which has the page's only timer.
  */
 export function accessView(
   tools: ScreenTools,
@@ -138,6 +139,7 @@ export function accessView(
   const { api, can, context, dom, now, who } = tools;
   const canGrant = can("tenant_access:grant");
   const canRead = can("tenant_data:read");
+  const canReveal = canRead && can("pii:reveal");
   if (!(canGrant || canRead)) {
     return null;
   }
@@ -174,11 +176,36 @@ export function accessView(
         onClick();
       }
     });
+    if (busy) {
+      element.setAttribute("aria-disabled", "true");
+    }
     controls.push(element);
     return element;
   };
 
+  const reveal: Reveal | null = canReveal
+    ? createReveal({
+        accessEnded: async (text) => {
+          leave();
+          await reloadWith({ kind: "alert", text });
+        },
+        api,
+        caseId: item.id,
+        control,
+        dom,
+        expiresAt: () => access?.expiresAt ?? null,
+        isBusy: () => busy,
+        notice,
+        now,
+        review: (lines, effect, undo, audit) =>
+          reviewFacts(lines, effect, undo, audit),
+        setBusy,
+        stillActive: () => stillActive(),
+      })
+    : null;
+
   const dropList = () => {
+    reveal?.clear();
     customers = [];
     next = null;
     listed = false;
@@ -204,6 +231,7 @@ export function accessView(
         : dom.el("bdi", {}, customer.phone),
       customer.hasNotes ? "tem observações" : "sem observações",
       customer.archived ? "arquivado" : "ativo",
+      ...(reveal === null ? [] : [reveal.cell(customer)]),
     ]);
     const count = `${customers.length} ${customers.length === 1 ? "cliente lido" : "clientes lidos"}.`;
     dom.fill(
@@ -211,7 +239,14 @@ export function accessView(
       table(
         dom,
         "Clientes da loja, mascarados",
-        ["Nome", "E-mail", "Telefone", "Observações", "Situação"],
+        [
+          "Nome",
+          "E-mail",
+          "Telefone",
+          "Observações",
+          "Situação",
+          ...(reveal === null ? [] : ["Dado pessoal"]),
+        ],
         rows
       ),
       dom.el("p", { class: "hint" }, count),
@@ -341,6 +376,9 @@ export function accessView(
     }
     turn += 1;
     const mine = turn;
+    if (!more) {
+      reveal?.clear();
+    }
     setBusy(true);
     notice.status(more ? "Lendo mais clientes…" : "Lendo os clientes…");
     const answer = await readCustomers(api, item.id, cursor);
@@ -568,6 +606,7 @@ export function accessView(
     notice.element,
     stateBox,
     actionBox,
+    reveal?.element,
     listBox
   );
   for (const type of ["focusin", "pointerdown", "keydown"]) {

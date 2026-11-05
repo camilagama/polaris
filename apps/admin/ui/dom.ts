@@ -197,6 +197,25 @@ function isInvisible(code: number): boolean {
   );
 }
 
+/** The longest revealed value shown: a customer's notes are at most 2000 characters, so this never cuts one. */
+const REVEALED_LIMIT = 4000;
+
+/**
+ * A revealed value as text the operator can trust: a line break stays, any other control or invisible character
+ * becomes the replacement character so that nothing hides in it.
+ */
+export function revealedText(value: string): string {
+  let shown = "";
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    shown +=
+      code === 0x0a || !(isControl(code) || isInvisible(code))
+        ? character
+        : "\uFFFD";
+  }
+  return cut(shown, REVEALED_LIMIT);
+}
+
 /** A store's name for an attribute (tooltip, accessible name): controls and invisible characters made visible, cut. */
 export function labelName(name: string, limit = NAME_LIMIT): string {
   let shown = "";
