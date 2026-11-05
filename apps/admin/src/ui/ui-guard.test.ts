@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -7,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { type AdminDependencies, createAdminApp } from "../app";
@@ -370,6 +371,67 @@ const OUTSIDE_THE_GUARD = ["ui/test-dom.ts"];
 /** A suppression comment would switch the guard off for the line below it: none is allowed in apps/admin/ui. */
 const SUPPRESSION = /biome-ignore/;
 
+interface GuardOverride {
+  includes: string[];
+  plugins?: string[];
+}
+
+function guardOverride(): GuardOverride {
+  const biome = JSON.parse(
+    readFileSync(join(repository, "biome.jsonc"), "utf8").replaceAll(
+      /^\s*\/\/.*$/gm,
+      ""
+    )
+  ) as { overrides: GuardOverride[] };
+  const guard = biome.overrides.find((override) =>
+    override.plugins?.includes(
+      "./scripts/biome-plugins/admin-ui-text-only.grit"
+    )
+  );
+  if (guard === undefined) {
+    throw new Error("the Admin page guard is not in biome.jsonc");
+  }
+  return guard;
+}
+
+/**
+ * Plants the files under `apps/admin/ui` of a throwaway directory that carries the repository's own guard
+ * (its override of biome.jsonc, with the plugin by absolute path) and lints them there, so the tree of the
+ * repository is never written to while other tests walk it.
+ */
+function lintPlanted(files: Record<string, string>, extra: string[] = []) {
+  const directory = mkdtempSync(join(tmpdir(), "polaris-admin-planted-"));
+  try {
+    const override = {
+      ...guardOverride(),
+      plugins: [
+        join(repository, "scripts/biome-plugins/admin-ui-text-only.grit"),
+      ],
+    };
+    writeFileSync(
+      join(directory, "biome.json"),
+      JSON.stringify({ root: true, overrides: [override] })
+    );
+    for (const [name, content] of Object.entries(files)) {
+      const target = join(directory, "apps/admin/ui", name);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    }
+    const result = spawnSync(
+      join(repository, "node_modules/.bin/biome"),
+      [
+        "lint",
+        ...extra,
+        ...Object.keys(files).map((name) => `apps/admin/ui/${name}`),
+      ],
+      { cwd: directory, encoding: "utf8" }
+    );
+    return `${result.stdout}${result.stderr}`;
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+}
+
 describe("the Biome guard of apps/admin/ui (AC-13)", () => {
   it("is never switched off by a comment, in any file of the page (and the check sees one)", () => {
     const suppressed = uiFiles(ui).filter(
@@ -390,18 +452,8 @@ describe("the Biome guard of apps/admin/ui (AC-13)", () => {
     expect(files.filter((file) => OUTSIDE_THE_GUARD.includes(file))).toEqual(
       OUTSIDE_THE_GUARD
     );
-    const biome = JSON.parse(
-      readFileSync(join(repository, "biome.jsonc"), "utf8").replaceAll(
-        /^\s*\/\/.*$/gm,
-        ""
-      )
-    ) as { overrides: { includes: string[]; plugins?: string[] }[] };
-    const guard = biome.overrides.find((override) =>
-      override.plugins?.includes(
-        "./scripts/biome-plugins/admin-ui-text-only.grit"
-      )
-    );
-    expect(guard?.includes).toEqual([
+    const guard = guardOverride();
+    expect(guard.includes).toEqual([
       "apps/admin/ui/**",
       ...OUTSIDE_THE_GUARD.map((file) => `!apps/admin/${file}`),
     ]);
@@ -477,65 +529,42 @@ describe("the Biome guard of apps/admin/ui (AC-13)", () => {
       `${imports.map((source, index) => `import type { T${index} } from "${source}";`).join("\n")}\nexport type All = [${imports.map((_source, index) => `T${index}`).join(", ")}];\n`,
       `${allowed.join("\n")}\n`,
     ];
-    try {
-      names.forEach((name, index) => {
-        writeFileSync(join(ui, name), contents[index] ?? "");
-      });
-      const result = spawnSync(
-        join(repository, "node_modules/.bin/biome"),
-        [
-          "lint",
-          "--max-diagnostics=200",
-          ...names.map((name) => `apps/admin/ui/${name}`),
-        ],
-        { cwd: repository, encoding: "utf8" }
-      );
-      const output = `${result.stdout}${result.stderr}`;
-      const lines = (name: string, rule: string) =>
-        [
-          ...output.matchAll(
-            new RegExp(`apps/admin/ui/${name}:(\\d+):\\d+ ${rule}`, "g")
-          ),
-        ].map((match) => Number(match[1]));
-      // one per planted line (line 1 of the sinks file makes the element)
-      const sinkLines = new Set([
-        ...lines("zz-planted-sinks\\.ts", "plugin"),
-        ...lines("zz-planted-sinks\\.ts", "lint/suspicious/noConsole"),
-      ]);
-      expect([...sinkLines].sort((a, b) => a - b)).toEqual(
-        sinks.map((_sink, index) => index + 2)
-      );
-      expect(
-        lines("zz-planted-imports\\.ts", "lint/style/noRestrictedImports")
-      ).toEqual(imports.map((_source, index) => index + 1));
-      expect(lines("zz-planted-allowed\\.ts", "\\S+")).toEqual([]);
-    } finally {
-      for (const name of names) {
-        rmSync(join(ui, name), { force: true });
-      }
-    }
+    const output = lintPlanted(
+      Object.fromEntries(
+        names.map((name, index) => [name, contents[index] ?? ""])
+      ),
+      ["--max-diagnostics=200"]
+    );
+    const lines = (name: string, rule: string) =>
+      [
+        ...output.matchAll(
+          new RegExp(`apps/admin/ui/${name}:(\\d+):\\d+ ${rule}`, "g")
+        ),
+      ].map((match) => Number(match[1]));
+    // one per planted line (line 1 of the sinks file makes the element)
+    const sinkLines = new Set([
+      ...lines("zz-planted-sinks\\.ts", "plugin"),
+      ...lines("zz-planted-sinks\\.ts", "lint/suspicious/noConsole"),
+    ]);
+    expect([...sinkLines].sort((a, b) => a - b)).toEqual(
+      sinks.map((_sink, index) => index + 2)
+    );
+    expect(
+      lines("zz-planted-imports\\.ts", "lint/style/noRestrictedImports").sort(
+        (a, b) => a - b
+      )
+    ).toEqual(imports.map((_source, index) => index + 1));
+    expect(lines("zz-planted-allowed\\.ts", "\\S+")).toEqual([]);
   }, 120_000);
 
   it("refuses a timer in any module but the reveal's, whatever its name", () => {
     const names = ["zz-planted-timer.ts", "views/zz-reveal.ts"];
     const content = "setTimeout(() => undefined, 1);\nexport {};\n";
-    try {
-      for (const name of names) {
-        writeFileSync(join(ui, name), content);
-      }
-      const result = spawnSync(
-        join(repository, "node_modules/.bin/biome"),
-        ["lint", ...names.map((name) => `apps/admin/ui/${name}`)],
-        { cwd: repository, encoding: "utf8" }
-      );
-      const output = `${result.stdout}${result.stderr}`;
-      for (const name of names) {
-        expect(output).toContain(`apps/admin/ui/${name}:1:1 plugin`);
-      }
-    } finally {
-      for (const name of names) {
-        rmSync(join(ui, name), { force: true });
-      }
+    const output = lintPlanted(
+      Object.fromEntries(names.map((name) => [name, content]))
+    );
+    for (const name of names) {
+      expect(output).toContain(`apps/admin/ui/${name}:1:1 plugin`);
     }
   }, 120_000);
 });
