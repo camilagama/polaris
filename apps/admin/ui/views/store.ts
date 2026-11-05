@@ -97,11 +97,8 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
  * to the concession, which is an action of the case. The grants in force are in the diagnostics below.
  */
 function billingSection(tools: ScreenTools) {
-  const { api, can, dom } = tools;
-  const refund = refundWindowView(dom, api, {
-    manageCases: can("support_case:manage"),
-    readWindow: can("billing:operate"),
-  });
+  const { can, dom } = tools;
+  const refund = refundWindowView(tools);
   const element = dom.el(
     "section",
     { "aria-labelledby": "cobranca-titulo", class: "area" },

@@ -183,13 +183,14 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     await page.shows("Lida em");
     const refund = page.section("reembolso-titulo");
     expect(visibleText(refund)).toContain(
-      "Esta tela só mostra a janela. Ela não devolve dinheiro."
+      "Ler a cobrança exige um caso de suporte aberto desta loja."
     );
+    expect(visibleText(refund)).not.toContain("Ela não devolve dinheiro.");
 
     // no open case yet: the page offers no read, so the route is never called
     buttons(refund, "Ver casos abertos desta loja")[0]?.click();
     await page.shows("Nenhum caso aberto desta loja.");
-    expect(buttons(refund, "Consultar janela")).toEqual([]);
+    expect(buttons(refund, "Ler a cobrança")).toEqual([]);
     expect(windowCalls(page.calls)).toEqual([]);
 
     // a case of another store does not open this store's window: the server refuses it, and audits nothing
@@ -227,8 +228,10 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
       path: "/api/support-cases",
       status: 201,
     });
-    buttons(refund, "Consultar janela")[0]?.click();
-    await page.shows("Janela lida. A consulta ficou registrada na auditoria.");
+    buttons(refund, "Ler a cobrança")[0]?.click();
+    await page.shows(
+      "Cobrança lida. A consulta ficou registrada na auditoria."
+    );
     expect(windowCalls(page.calls)).toHaveLength(1);
     const facts = factsOf(refund);
     const charged = new Date(fixture.screen.firstChargeAt);
@@ -240,7 +243,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     });
     expect(facts["Janela de arrependimento"]).toBe("Dentro do prazo");
     expect(facts["Primeira cobrança"]).toContain(brasilia.format(charged));
-    expect(facts["Valor da primeira cobrança"]).toBe("R$ 49,90");
+    expect(facts["Valor da primeira cobrança deste vínculo"]).toBe("R$ 49,90");
     expect(facts.Assinatura).toBe("Pro ativo");
     expect(facts["Prazo até"]).toMatch(LAST_MINUTE_OF_A_DAY);
 
@@ -273,7 +276,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
       }
     );
     expect(closed.status).toBe(200);
-    buttons(refund, "Consultar janela")[0]?.click();
+    buttons(refund, "Ler a cobrança")[0]?.click();
     await page.shows(
       "Consulta recusada: confira se o caso está aberto e é desta loja."
     );
