@@ -59,6 +59,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
 
   const countCases = async (): Promise<HTMLElement | null> => {
     const parameters = new URLSearchParams({
+      kind: "support",
       limit: COUNT_PAGE,
       status: "open",
     });
@@ -69,9 +70,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
       failed("os casos abertos", answer);
       return null;
     }
-    const count = answer.data.cases.filter(
-      (item) => item.kind === "support" && item.status === "open"
-    ).length;
+    const count = answer.data.cases.length;
     const more = answer.data.next !== null;
     if (count === 0 && !more) {
       return null;

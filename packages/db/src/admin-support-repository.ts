@@ -190,6 +190,7 @@ export async function listSupportCases(
   client: AdminQueryable,
   input: {
     after: string | null;
+    kind?: string | null;
     limit: number;
     organizationId: string | null;
     status: string | null;
@@ -197,8 +198,14 @@ export async function listSupportCases(
 ): Promise<SupportCasePage> {
   const page = await call<SupportCasePage>(
     client,
-    "public.admin_list_support_cases($1, $2, $3, $4)",
-    [input.status, input.organizationId, input.limit, input.after]
+    "public.admin_list_support_cases($1, $2, $3, $4, $5)",
+    [
+      input.status,
+      input.organizationId,
+      input.limit,
+      input.after,
+      input.kind ?? null,
+    ]
   );
   return page ?? { cases: [], next: null };
 }
