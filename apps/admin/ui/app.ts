@@ -12,6 +12,7 @@ import { incidentsView } from "./views/incidents";
 import { newCaseView } from "./views/new-case";
 import { organizationsView } from "./views/organizations";
 import { refundWindowView } from "./views/refund-window";
+import { settingsView } from "./views/settings";
 import { storeView } from "./views/store";
 
 /**
@@ -99,6 +100,10 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
       tools.can("operational_incident:read")
         ? [incidentsView(tools)]
         : [forbiddenArea(tools.dom, "Incidentes", "incidentes-titulo")],
+    configuracoes: (tools) =>
+      tools.can("platform:read")
+        ? settingsView(tools)
+        : [forbiddenArea(tools.dom, "Configurações", "configuracoes-titulo")],
     inicio: (tools) => [homeView(tools)],
     loja: (tools) => [storeView(tools)],
     lojas: storesScreen,

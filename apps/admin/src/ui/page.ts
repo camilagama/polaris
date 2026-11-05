@@ -26,6 +26,7 @@ export type ScreenId =
   | "caso"
   | "caso-novo"
   | "casos"
+  | "configuracoes"
   | "funil"
   | "incidente"
   | "incidentes"
@@ -46,6 +47,7 @@ export const SCREENS: Readonly<Record<ScreenId, Screen>> = {
     title: "Abrir caso de suporte",
   },
   casos: { capability: "support_case:manage", title: "Casos de suporte" },
+  configuracoes: { capability: "platform:read", title: "Configurações" },
   funil: { capability: "platform:read", title: "Funil de ativação" },
   incidente: { capability: "operational_incident:read", title: "Incidente" },
   incidentes: {
@@ -64,12 +66,19 @@ interface MenuItem {
   screens: readonly ScreenId[];
 }
 
+interface MenuGroup {
+  /** The foot of the menu: set apart from the groups above it. */
+  foot?: true;
+  items: readonly MenuItem[];
+  label: string | null;
+}
+
 /**
  * The menu of the design (§1.1), with only the screens that exist: a group whose items the operator cannot open goes
- * with its label. The other items of the design (Privacidade, Registro de acessos, Retenções legais,
- * Configurações) enter with their parts.
+ * with its label. The other items of the design (Privacidade, Registro de acessos, Retenções legais)
+ * enter with their parts.
  */
-const MENU: readonly { items: readonly MenuItem[]; label: string | null }[] = [
+const MENU: readonly MenuGroup[] = [
   {
     items: [
       {
@@ -120,6 +129,18 @@ const MENU: readonly { items: readonly MenuItem[]; label: string | null }[] = [
     ],
     label: "Operação",
   },
+  {
+    foot: true,
+    items: [
+      {
+        capability: "platform:read",
+        label: "Configurações",
+        path: "/configuracoes",
+        screens: ["configuracoes"],
+      },
+    ],
+    label: null,
+  },
 ];
 
 const UUID =
@@ -137,6 +158,7 @@ export function screenOfPath(
     "/": "inicio",
     "/casos": "casos",
     "/casos/novo": "caso-novo",
+    "/configuracoes": "configuracoes",
     "/funil": "funil",
     "/incidentes": "incidentes",
     "/lojas": "lojas",
@@ -253,7 +275,7 @@ function menuOf(screen: ScreenId, capabilities: readonly string[]) {
     html`<nav aria-label="Admin" class="menu">${groups.map((group) =>
       synchronous(
         group.label === null
-          ? html`<ul>${group.items.map(itemOf)}</ul>`
+          ? html`<ul${group.foot ? raw(' class="menu-foot"') : raw("")}>${group.items.map(itemOf)}</ul>`
           : html`<p class="menu-group">${group.label}</p><ul>${group.items.map(itemOf)}</ul>`
       )
     )}</nav>`
