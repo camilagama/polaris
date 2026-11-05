@@ -78,6 +78,8 @@ function deliveryOf(
   overrides: Partial<BillingNoticeDelivery> = {}
 ): BillingNoticeDelivery {
   return {
+    currentChargeAmount: null,
+    currentChargeEventId: null,
     cycleMonths: 1,
     dedupeKey: EVENT_ID,
     dueAt: new Date(NOW.getTime() - MINUTE_MS),
@@ -961,7 +963,7 @@ describe("the e-mail of a billing notice", () => {
     });
   });
 
-  it("falls back to the recorded first charge for the first receipt, and to the price for a renewal", () => {
+  it("falls back to the recorded first charge for the first receipt, and to the amount in force for a renewal, never the price", () => {
     const withoutAmount = {
       fact: chargeSucceeded(),
       providerRef: PROVIDER_REF,
@@ -970,8 +972,70 @@ describe("the e-mail of a billing notice", () => {
       emailOf(receipt({ event: { ...withoutAmount, id: EVENT_ID } }))
     ).toMatchObject({ amount: "19.90" });
     expect(
-      emailOf(receipt({ event: { ...withoutAmount, id: "another-event" } }))
-    ).toMatchObject({ amount: "39.90" });
+      emailOf(
+        receipt({
+          currentChargeAmount: "44.90",
+          currentChargeEventId: "another-event",
+          event: { ...withoutAmount, id: "another-event" },
+        })
+      )
+    ).toMatchObject({ amount: "44.90" });
+    // the amount in force is of another charge: the receipt of this one has no amount to write
+    expect(
+      emailOf(
+        receipt({
+          currentChargeAmount: "44.90",
+          currentChargeEventId: "a-later-event",
+          event: { ...withoutAmount, id: "another-event" },
+        })
+      )
+    ).toBeNull();
+  });
+
+  describe("the annual reminder (annual_renewal_reminder) writes the next charge's amount", () => {
+    /** Subscribed yearly at 249.00 (the checkout's price); the renewal was charged 299.00 by the provider. */
+    function reminder(overrides: Partial<BillingNoticeDelivery> = {}) {
+      return deliveryOf({
+        currentChargeAmount: "299.00",
+        currentChargeEventId: EVENT_ID,
+        cycleMonths: 12,
+        dedupeKey: "2027-10-20",
+        event: null,
+        kind: "annual_renewal_reminder",
+        priceAmount: "249.00",
+        record: recordOf({
+          accessEndsAt: new Date("2027-11-20T15:00:00.000Z"),
+          cycleMonths: 12,
+        }),
+        ...overrides,
+      });
+    }
+
+    it("after a renewal at another amount, the amount in force and not the checkout's price", () => {
+      expect(emailOf(reminder())).toMatchObject({
+        amount: "299.00",
+        chargeOn: "2027-11-20",
+        kind: "annual_renewal_reminder",
+      });
+    });
+
+    it("follows the next charge: with a change of cycle waiting there is no amount, so no e-mail invents one", () => {
+      expect(
+        emailOf(
+          reminder({
+            record: recordOf({
+              accessEndsAt: new Date("2027-11-20T15:00:00.000Z"),
+              cycleMonths: 12,
+              pendingCycleMonths: 1,
+            }),
+          })
+        )
+      ).toBeNull();
+    });
+
+    it("without an amount in force, none either: the price is not the renewal's", () => {
+      expect(emailOf(reminder({ currentChargeAmount: null }))).toBeNull();
+    });
   });
 
   it("gives the right of withdrawal only to the first charge", () => {

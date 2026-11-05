@@ -58,6 +58,8 @@ export interface OpenedSupportCase {
 
 /** What `POST /api/support-cases/:caseId/refund-window` answers: the domain's view, computed on the database clock. */
 export interface RefundWindowView {
+  /** The amount of the charge in force the record holds: the one the refund sends; null when it is not recorded. */
+  currentChargeAmount: string | null;
   firstChargeAmount: string | null;
   firstChargeAt: string | null;
   method: string | null;
@@ -85,6 +87,7 @@ export interface RefundWindowView {
 export type ProviderCommandResult =
   | "already_cancelled"
   | "amount_changed"
+  | "amount_mismatch"
   | "cancelled"
   | "command_in_progress"
   | "not_linked"

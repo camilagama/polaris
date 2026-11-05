@@ -116,7 +116,7 @@ describe("planHeadline", () => {
     const headline = planHeadline(
       plan({
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       }),
       NOW
@@ -131,7 +131,7 @@ describe("planHeadline", () => {
     const headline = planHeadline(
       plan({
         method: "pix_automatic",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       }),
       NOW
@@ -145,7 +145,7 @@ describe("planHeadline", () => {
     const headline = planHeadline(
       plan({
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-11-23" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
         state: "active",
       }),
       NOW
@@ -592,7 +592,7 @@ describe("paymentLines", () => {
         plan({
           cycleMonths: 1,
           method: "card",
-          nextCharge: { amount: "24.90", on: "2026-11-23" },
+          nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
           state: "active",
         })
       )
@@ -603,12 +603,69 @@ describe("paymentLines", () => {
     ]);
   });
 
+  describe("the cycle of the next charge (a renewal at another amount, or a change of cycle waiting)", () => {
+    const paid = (nextCharge: BillingPlanView["nextCharge"]) =>
+      plan({ cycleMonths: 1, method: "card", nextCharge, state: "active" });
+
+    it("renewed at another amount in the same cycle: the amount in force beside the cycle and the day", () => {
+      const view = paid({ amount: "29.90", cycleMonths: 1, on: "2026-11-23" });
+      expect(paymentLines(view)).toEqual([
+        { label: "Como paga", value: "Cartão de crédito" },
+        { label: "Ciclo", value: "Mensal · R$ 29,90" },
+        { label: "Próxima cobrança", value: "23/11/2026 · R$ 29,90" },
+      ]);
+      expect(planHeadline(view, NOW).support).toBe(
+        "Próxima cobrança em 23/11/2026, R$ 29,90."
+      );
+    });
+
+    it("of another cycle with its amount: the cycle line has no amount, the next charge names its cycle", () => {
+      const view = paid({
+        amount: "249.00",
+        cycleMonths: 12,
+        on: "2026-12-12",
+      });
+      expect(paymentLines(view)).toEqual([
+        { label: "Como paga", value: "Cartão de crédito" },
+        { label: "Ciclo", value: "Mensal" },
+        { label: "Próxima cobrança", value: "12/12/2026 · R$ 249,00 · Anual" },
+      ]);
+    });
+
+    it("of another cycle without an amount: the day is kept, the value comes at the renewal, and no old amount is shown", () => {
+      const view = paid({ amount: null, cycleMonths: 12, on: "2026-12-12" });
+      expect(paymentLines(view)).toEqual([
+        { label: "Como paga", value: "Cartão de crédito" },
+        { label: "Ciclo", value: "Mensal" },
+        {
+          label: "Próxima cobrança",
+          value: "12/12/2026 · Anual · valor na renovação",
+        },
+      ]);
+      expect(planHeadline(view, NOW).support).toBe(
+        "Próxima cobrança em 12/12/2026, já no ciclo Anual; o valor aparece na renovação."
+      );
+      expect(JSON.stringify(paymentLines(view))).not.toContain("R$");
+    });
+
+    it("a Worker that sends no cycle in the next charge reads as the current cycle, as before", () => {
+      const view = paid({
+        amount: "24.90",
+        on: "2026-11-23",
+      } as BillingPlanView["nextCharge"]);
+      expect(paymentLines(view)?.[1]).toEqual({
+        label: "Ciclo",
+        value: "Mensal · R$ 24,90",
+      });
+    });
+  });
+
   it("calls it Primeira cobrança while trialing", () => {
     const lines = paymentLines(
       plan({
         cycleMonths: 1,
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       })
     );
@@ -623,7 +680,7 @@ describe("paymentLines", () => {
       plan({
         cycleMonths: 1,
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-11-23" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
         renewalCancelled: true,
         state: "active",
       })
@@ -636,7 +693,7 @@ describe("paymentLines", () => {
       plan({
         cycleMonths: 1,
         method: "pix_automatic",
-        nextCharge: { amount: "24.90", on: "2026-11-23" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
         state: "grace",
       })
     );
@@ -1022,7 +1079,7 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       "loja-a",
       {
         accessEndsAt: "2026-11-10T03:00:00.000Z",
-        nextCharge: { amount: "24.90", on: "2026-11-10" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-10" },
         state: "trialing",
       },
       1000,

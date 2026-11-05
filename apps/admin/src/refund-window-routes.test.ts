@@ -46,6 +46,7 @@ function raw(overrides: Partial<RawRefundWindow> = {}): RawRefundWindow {
   return {
     accessEndsAt: sp("2026-11-10T09:00:00"),
     cancelAtPeriodEnd: false,
+    currentChargeAmount: "24.90",
     firstChargeAmount: "24.90",
     firstChargeAt: sp("2026-10-10T15:30:00"),
     method: "pix_automatic",
@@ -147,6 +148,7 @@ describe("reading the window of the right of withdrawal (ADR 0104, decisions 8 a
     };
 
     expect(body).toEqual({
+      currentChargeAmount: "24.90",
       firstChargeAmount: "24.90",
       firstChargeAt: "2026-10-10T18:30:00.000Z",
       method: "pix_automatic",
@@ -232,6 +234,7 @@ describe("reading the window of the right of withdrawal (ADR 0104, decisions 8 a
     const text = await (await send({ organizationId: "org-1" })).text();
 
     expect(Object.keys(JSON.parse(text)).sort()).toEqual([
+      "currentChargeAmount",
       "firstChargeAmount",
       "firstChargeAt",
       "method",

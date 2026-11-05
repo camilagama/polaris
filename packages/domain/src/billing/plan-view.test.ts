@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   historyMonthsOf,
+  nextChargeDayOf,
   nextChargeOf,
   type PlanViewRecord,
   planMethodOf,
@@ -19,9 +20,12 @@ const sp = (local: string) => new Date(`${local}-03:00`);
 const free: PlanViewRecord = {
   accessEndsAt: null,
   cancelAtPeriodEnd: false,
+  currentChargeAmount: null,
+  cycleMonths: null,
   firstChargeAmount: null,
   firstChargeAt: null,
   firstChargeOn: null,
+  pendingCycleMonths: null,
   priceAmount: null,
   provider: null,
   refundRequestedAt: null,
@@ -32,6 +36,7 @@ const free: PlanViewRecord = {
 const trialing: PlanViewRecord = {
   ...free,
   accessEndsAt: sp("2026-10-17T15:00:00"),
+  cycleMonths: 1,
   firstChargeOn: "2026-10-17",
   priceAmount: "24.90",
   provider: "asaas",
@@ -42,6 +47,7 @@ const trialing: PlanViewRecord = {
 const active: PlanViewRecord = {
   ...trialing,
   accessEndsAt: sp("2026-11-11T00:00:00"),
+  currentChargeAmount: "24.90",
   firstChargeAmount: "24.90",
   firstChargeAt: sp("2026-10-10T15:00:00"),
   state: "active",
@@ -57,6 +63,7 @@ describe("nextChargeOf (AS-3)", () => {
 
     expect(nextChargeOf(lateApproval, sp("2026-10-12T10:00:00"))).toEqual({
       amount: "24.90",
+      cycleMonths: 1,
       on: "2026-10-17",
     });
   });
@@ -70,9 +77,10 @@ describe("nextChargeOf (AS-3)", () => {
     expect(nextChargeOf(trialing, sp(local))?.on).toBe("2026-10-17");
   });
 
-  it("while paid and renewing is the last day of the paid period, with the price recorded at the checkout", () => {
+  it("while paid and renewing is the last day of the paid period, with the amount of the charge in force", () => {
     expect(nextChargeOf(active, sp("2026-10-20T12:00:00"))).toEqual({
       amount: "24.90",
+      cycleMonths: 1,
       on: "2026-11-10",
     });
     // 23:59 and 00:01 around the end of the period, in São Paulo
@@ -104,7 +112,81 @@ describe("nextChargeOf (AS-3)", () => {
   it("invents nothing for a link older than the recorded price or day", () => {
     const now = sp("2026-10-12T10:00:00");
     expect(nextChargeOf({ ...trialing, firstChargeOn: null }, now)).toBeNull();
-    expect(nextChargeOf({ ...active, priceAmount: null }, now)).toBeNull();
+    expect(nextChargeOf({ ...trialing, priceAmount: null }, now)).toBeNull();
+    expect(nextChargeOf({ ...trialing, cycleMonths: null }, now)).toBeNull();
+  });
+
+  describe("the amount of the renewal is the charge in force, not the checkout's price", () => {
+    /** Subscribed at 24.90 monthly; the renewal of `10/11` was charged 29.90 by the provider (an edit there). */
+    const renewed: PlanViewRecord = {
+      ...active,
+      accessEndsAt: sp("2026-12-11T00:00:00"),
+      currentChargeAmount: "29.90",
+    };
+
+    it("names the amount the provider charged last, whatever the price of the checkout", () => {
+      expect(nextChargeOf(renewed, sp("2026-11-20T12:00:00"))).toEqual({
+        amount: "29.90",
+        cycleMonths: 1,
+        on: "2026-12-10",
+      });
+    });
+
+    it("around midnight in São Paulo of the last day: 23:59:59 still names it, 00:00 of the next day does not", () => {
+      expect(nextChargeOf(renewed, sp("2026-12-10T23:59:59"))).toEqual({
+        amount: "29.90",
+        cycleMonths: 1,
+        on: "2026-12-10",
+      });
+      expect(nextChargeOf(renewed, sp("2026-12-11T00:00:00"))).toBeNull();
+    });
+
+    it("is none without an amount in force (a fact without one), never the checkout's price", () => {
+      expect(
+        nextChargeOf(
+          { ...renewed, currentChargeAmount: null },
+          sp("2026-11-20T12:00:00")
+        )
+      ).toBeNull();
+    });
+
+    it("with a change of cycle waiting keeps the day, names the new cycle and no amount, never the old cycle's", () => {
+      expect(
+        nextChargeOf(
+          { ...renewed, pendingCycleMonths: 12 },
+          sp("2026-11-20T12:00:00")
+        )
+      ).toEqual({ amount: null, cycleMonths: 12, on: "2026-12-10" });
+    });
+
+    it("a pending cycle equal to the current one is no change", () => {
+      expect(
+        nextChargeOf(
+          { ...renewed, pendingCycleMonths: 1 },
+          sp("2026-11-20T12:00:00")
+        )
+      ).toEqual({ amount: "29.90", cycleMonths: 1, on: "2026-12-10" });
+    });
+
+    it("in a trial is still the checkout's price: the first charge is that price", () => {
+      expect(
+        nextChargeOf(
+          { ...trialing, currentChargeAmount: "99.00" },
+          sp("2026-10-12T10:00:00")
+        )
+      ).toEqual({ amount: "24.90", cycleMonths: 1, on: "2026-10-17" });
+    });
+  });
+});
+
+describe("nextChargeDayOf", () => {
+  it("names the day of the renewal without an amount or a cycle (the Admin's line)", () => {
+    expect(
+      nextChargeDayOf(
+        { ...active, currentChargeAmount: null, cycleMonths: null },
+        sp("2026-10-20T12:00:00")
+      )
+    ).toBe("2026-11-10");
   });
 });
 

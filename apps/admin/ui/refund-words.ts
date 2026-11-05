@@ -2,7 +2,10 @@ import type { ProviderCommandResult } from "./types";
 
 export type SettledResult = Exclude<
   ProviderCommandResult,
-  "amount_changed" | "command_in_progress" | "provider_unavailable"
+  | "amount_changed"
+  | "amount_mismatch"
+  | "command_in_progress"
+  | "provider_unavailable"
 >;
 
 /**
@@ -16,6 +19,8 @@ export const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,8})\.\d{2}$/;
 
 export const FIRST_CHARGE_AMOUNT_LABEL =
   "Valor da primeira cobrança deste vínculo";
+export const CURRENT_CHARGE_AMOUNT_LABEL = "Valor da cobrança em vigor";
+export const CURRENT_CHARGE_NOT_RECORDED = "Não registrado";
 export const AUDIT_TEXT = "Esta consulta fica registrada na auditoria.";
 export const SEPARATE_ACTIONS =
   "Cancelar a renovação e reembolsar são ações separadas, cada uma com a sua confirmação.";
@@ -27,6 +32,12 @@ export const REFUND_NEEDS_OTHER_PERMISSION =
 export const RENEWAL_ALREADY_CANCELLED = "A renovação já está cancelada.";
 export const NO_RENEWAL = "Não há renovação para cancelar.";
 export const NO_CHARGE = "Nenhuma cobrança a reembolsar.";
+/** A paid store whose charge in force has no amount recorded: the only case the provider's panel is still the way. */
+export const NO_CURRENT_AMOUNT =
+  "O valor da cobrança em vigor não está registrado. Por enquanto, o reembolso é feito pelo painel do provedor.";
+/** The refund button is gone after the server refused for a divergence, until the page is loaded again. */
+export const REFUND_HELD =
+  "Reembolso suspenso nesta página: o valor registrado não confere com o do provedor. Recarregue a página depois da correção.";
 export const NOTHING_TO_DO = "Nada a fazer aqui na cobrança desta loja.";
 export const REFUND_LIMIT =
   "O limite é de até 3 reembolsos por hora, por operador.";
@@ -99,13 +110,25 @@ export function limitReachedText(wait: string | null): string {
   return `Limite de 3 reembolsos por hora atingido. Nada foi feito. ${wait === null ? "Tente mais tarde." : `Tente de novo em ${wait}.`}`;
 }
 
+export const AMOUNT_CHANGED_AWAY =
+  "O valor da cobrança em vigor mudou desde a leitura. Nada foi feito.";
+
 export function amountChangedText(now: string | null, same: boolean): string {
   if (now === null) {
-    return "O valor da primeira cobrança deste vínculo mudou desde a leitura e não há mais cobrança a reembolsar. Nada foi feito.";
+    return "O valor da cobrança em vigor mudou desde a leitura e não está mais registrado. Nada foi feito.";
   }
   return same
-    ? `A cobrança em vigor tem um valor diferente de ${now}, o da primeira cobrança deste vínculo, que é o que o registro da loja guarda. Nada foi feito. Por enquanto, o reembolso dela vai pelo painel do provedor.`
-    : `O valor da primeira cobrança deste vínculo mudou desde a leitura: agora é ${now}. Nada foi feito. Revise de novo antes de reembolsar.`;
+    ? `O valor da cobrança em vigor mudou desde a leitura, mas a nova leitura trouxe o mesmo valor (${now}). Nada foi feito. Recarregue a página antes de tentar de novo.`
+    : `O valor da cobrança em vigor mudou desde a leitura: agora é ${now}. Nada foi feito. Revise de novo antes de reembolsar.`;
+}
+
+/**
+ * The server refused because the amount it records for the charge in force is not the provider's, and recorded an
+ * incident (`amount_mismatch`): the operator is told not to repeat, and how to try again after the fix.
+ */
+export function amountMismatchText(recorded: string | null): string {
+  const amount = recorded === null ? "" : ` (${recorded})`;
+  return `O valor registrado da cobrança em vigor${amount} não é o que o provedor tem. Nada foi feito. A engenharia recebe um incidente; não repita a ação. Para tentar de novo depois da correção, recarregue a página.`;
 }
 
 export const RESULT_TEXT: Readonly<

@@ -430,6 +430,7 @@ describe("the operator's provider commands: the answer", () => {
     ["command_in_progress", 409],
     ["refund_not_supported", 409],
     ["amount_changed", 409],
+    ["amount_mismatch", 409],
     ["provider_unavailable", 503],
   ] as const)("refund: %s is %i", async (result, status) => {
     const { refund, send } = setup();

@@ -46,6 +46,7 @@ const STATUS: Readonly<Record<CancelOutcome | RefundOutcome, 200 | 409 | 503>> =
   {
     already_cancelled: 200,
     amount_changed: 409,
+    amount_mismatch: 409,
     cancelled: 200,
     command_in_progress: 409,
     not_linked: 409,

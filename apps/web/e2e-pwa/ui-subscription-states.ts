@@ -118,7 +118,7 @@ const ACTIVE_IN_WINDOW = plan({
   accessEndsAt: "2026-11-24T03:00:00.000Z",
   cycleMonths: 1,
   method: "card",
-  nextCharge: { amount: "24.90", on: "2026-11-23" },
+  nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
   refund: { amount: "24.90", until: "2026-10-31T02:59:59.999Z", via: "app" },
   state: "active",
 });
@@ -128,7 +128,7 @@ const TRIAL = plan({
   accessEndsAt: "2026-10-31T03:00:00.000Z",
   cycleMonths: 1,
   method: "card",
-  nextCharge: { amount: "24.90", on: "2026-10-30" },
+  nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
   state: "trialing",
   trialAvailable: false,
 });

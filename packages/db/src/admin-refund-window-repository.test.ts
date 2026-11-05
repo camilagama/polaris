@@ -12,6 +12,7 @@ const CALL =
 const answer = {
   accessEndsAt: "2026-11-10T12:00:00.000000+00:00",
   cancelAtPeriodEnd: false,
+  currentChargeAmount: "29.90",
   firstChargeAmount: "24.90",
   firstChargeAt: "2026-10-10T18:30:00.123456+00:00",
   method: "pix_automatic",
@@ -57,6 +58,7 @@ describe("readRefundWindow", () => {
     expect(raw).toEqual({
       accessEndsAt: new Date("2026-11-10T12:00:00.000Z"),
       cancelAtPeriodEnd: false,
+      currentChargeAmount: "29.90",
       firstChargeAmount: "24.90",
       firstChargeAt: new Date("2026-10-10T18:30:00.123Z"),
       method: "pix_automatic",
@@ -66,6 +68,28 @@ describe("readRefundWindow", () => {
       revokedThrough: null,
       state: "active",
     });
+  });
+
+  it("reads no amount in force from a function older than migration 0118 (no key)", async () => {
+    const { client } = clientReturning({
+      ...answer,
+      currentChargeAmount: undefined,
+    });
+
+    const raw = await readRefundWindow(client, PRINCIPAL, CASE, "org-1");
+
+    expect(raw.currentChargeAmount).toBeNull();
+  });
+
+  it("reads no amount in force from a function older than migration 0118 (no key)", async () => {
+    const { client } = clientReturning({
+      ...answer,
+      currentChargeAmount: undefined,
+    });
+
+    const raw = await readRefundWindow(client, PRINCIPAL, CASE, "org-1");
+
+    expect(raw.currentChargeAmount).toBeNull();
   });
 
   it("reads the cancellation and the revocation the function says, from the same row", async () => {
@@ -163,6 +187,10 @@ describe("readRefundWindow", () => {
     ["an unknown state", { ...answer, state: "gone" }],
     ["an unknown method", { ...answer, method: "boleto" }],
     ["an amount that is not text", { ...answer, firstChargeAmount: 24.9 }],
+    [
+      "an amount in force that is not text",
+      { ...answer, currentChargeAmount: 29.9 },
+    ],
     [
       "a cancellation that is not a boolean",
       { ...answer, cancelAtPeriodEnd: "false" },
