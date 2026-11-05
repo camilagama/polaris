@@ -89,7 +89,7 @@ const GROUP = /data-sidebar="group-label">([^<]*)<\/div>/g;
 const ROOT = /<div id="admin"([^>]*)>/;
 const NAV = /<nav aria-label="Admin"/g;
 const DIGIT = /\d/;
-const TAG = /<[^>]*>/g;
+const TEXT_BETWEEN_TAGS = />([^<]*)</g;
 const OPERATOR_SLOT =
   /<summary[^>]*>.*<span class="[^"]*" data-operador=""><\/span><\/summary>/s;
 
@@ -446,8 +446,12 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
       screen: "casos",
       store: null,
     });
-    // the text of the menu: its classes and the drawings of its icons have numbers of their own
-    expect(MENU.exec(html)?.[1]?.replaceAll(TAG, "")).not.toMatch(DIGIT);
+    // the text of the menu, between its tags: its classes and the drawings of its icons have numbers of their own
+    const text = [...(MENU.exec(html)?.[1] ?? "").matchAll(TEXT_BETWEEN_TAGS)]
+      .map((match) => match[1])
+      .join("");
+    expect(text).toContain("Atendimentos");
+    expect(text).not.toMatch(DIGIT);
   });
 
   it("gives an operator with no capability the shell and the sentence, with no screen for the script (403)", async () => {
