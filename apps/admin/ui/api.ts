@@ -176,3 +176,76 @@ export function createApi(fetchJson: Fetch): Api {
       ),
   };
 }
+
+interface ClosureNoticeAnswer {
+  dismissed: boolean;
+  noticeId: string;
+  reissue: number;
+}
+
+export type ClosureNoticeAct =
+  | { kind: "dismiss"; reason: string }
+  | { kind: "reissue" };
+
+/**
+ * What the closure notice routes answered (ADR 0102): the act was recorded; the server refused it with a named reason
+ * (a 409, said in words by the screen, the code never shown); or the call ended in one of the page's problems.
+ */
+export type ClosureNoticeOutcome =
+  | { kind: "done"; answer: ClosureNoticeAnswer }
+  | { kind: "problem"; problem: Problem }
+  | { kind: "refused"; code: string };
+
+function isClosureNoticeAnswer(value: unknown): value is ClosureNoticeAnswer {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "noticeId" in value &&
+    typeof value.noticeId === "string" &&
+    value.noticeId.length > 0
+  );
+}
+
+function refusalCode(value: unknown): string | null {
+  return typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    typeof value.error === "string"
+    ? value.error
+    : null;
+}
+
+/**
+ * Reissues or dismisses the closure notice of the case's store: one POST, never repeated by itself. The server's 409
+ * names why it refused, so that status is read as an answer; an answer that is neither the notice nor a named
+ * refusal is a failure whose outcome the page cannot confirm.
+ */
+export async function sendClosureNotice(
+  api: Api,
+  caseId: string,
+  organizationId: string,
+  act: ClosureNoticeAct
+): Promise<ClosureNoticeOutcome> {
+  const answer =
+    act.kind === "dismiss"
+      ? await api.post<unknown>(
+          `/api/support-cases/${encodeURIComponent(caseId)}/closure-notice/dismiss`,
+          { organizationId, reason: act.reason },
+          [409]
+        )
+      : await api.post<unknown>(
+          `/api/support-cases/${encodeURIComponent(caseId)}/closure-notice/reissue`,
+          { organizationId },
+          [409]
+        );
+  if (!answer.ok) {
+    return { kind: "problem", problem: answer.problem };
+  }
+  if (isClosureNoticeAnswer(answer.data)) {
+    return { answer: answer.data, kind: "done" };
+  }
+  const code = refusalCode(answer.data);
+  return code === null
+    ? { kind: "problem", problem: "failed" }
+    : { code, kind: "refused" };
+}

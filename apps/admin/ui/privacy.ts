@@ -178,3 +178,14 @@ export function privacyCasePath(id: unknown): string | null {
     ? `/privacidade/${id.toLowerCase()}`
     : null;
 }
+
+/**
+ * Why the notice of D minus 7 days may be dismissed (`CLOSURE_NOTICE_DISMISSAL_REASONS`, ADR 0102): the closed list
+ * the server accepts, in the domain's order. The code sent is always one of these; the server checks that the reason
+ * fits the facts it keeps, and `src/ui/privacy-lists.test.ts` ties this list to the domain's.
+ */
+export const CLOSURE_NOTICE_DISMISSALS: Choices = [
+  ["owner_account_deleted", "A conta do dono da loja foi apagada"],
+  ["email_not_verified", "O e-mail do dono não foi verificado"],
+  ["email_undeliverable", "O e-mail do dono recusa o aviso (não é entregável)"],
+];

@@ -21,6 +21,7 @@ import {
 } from "../privacy";
 import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
+import { closureNoticeSection, mayShowClosureNotice } from "./closure-notice";
 import { dueCell } from "./privacy-cases";
 import {
   choiceField,
@@ -338,6 +339,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
             "Este caso foi fechado fora do fluxo de privacidade: as etapas que faltam não podem mais ser registradas."
           )
         : null;
+    const drawn = turn;
     dom.fill(
       body,
       header(detail),
@@ -348,6 +350,17 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         dom.el("h3", { id: "privacidade-etapas" }, "Etapas do caso"),
         dom.el("ol", { class: "steps" }, ...items)
       ),
+      mayShowClosureNotice(can, detail)
+        ? closureNoticeSection(tools, detail, {
+            current: () => !left && drawn === turn,
+            reread: (outcome) =>
+              load(
+                outcome === undefined
+                  ? undefined
+                  : () => notice[outcome.kind](outcome.text)
+              ),
+          })
+        : null,
       history(detail)
     );
   };

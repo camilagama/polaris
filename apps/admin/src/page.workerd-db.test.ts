@@ -1,6 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { mountAdmin, type ScreenContext } from "../ui/app";
+import { refusalText } from "../ui/closure-notice-words";
 import {
   allElements,
   buttons,
@@ -475,5 +476,64 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     const detail = await json(await asBrowser(`/api/privacy-cases/${caseId}`));
     expect((detail.privacy as { stage: string }).stage).toBe("resolved");
     expect((detail.case as { status: string }).status).toBe("closed");
+  });
+
+  it("keeps the closure notice section out of the case of a store that is not closed, and the database's refusals of the two acts are the sentences the page says (Parte 12: AC-P12.1, AC-P12.2)", async () => {
+    const { free } = fixture.screen;
+    const opened = await asBrowser("/api/privacy-cases", {
+      body: JSON.stringify({
+        channel: "email",
+        organizationId: free.id,
+        reason: "Pedido de exclusão do dono",
+        requesterKind: "organization_owner",
+        requestType: "deletion",
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    expect(opened.status).toBe(201);
+    const caseId = String((await json(opened)).id);
+
+    const page = await openPage({ id: caseId, screen: "privacidade-caso" });
+    await page.shows("Revisar identidade");
+    await vi.waitFor(
+      () =>
+        expect(page.calls.map((call) => call.path)).toContain(
+          `/api/organizations/${free.id}/diagnostics`
+        ),
+      WAIT
+    );
+    expect(page.text()).not.toContain("Aviso de encerramento");
+    expect(buttons(page.root, "Reemitir o aviso")).toHaveLength(0);
+
+    const act = async (route: string, body: Record<string, string>) => {
+      const response = await asBrowser(
+        `/api/support-cases/${caseId}/closure-notice/${route}`,
+        {
+          body: JSON.stringify(body),
+          headers: { "content-type": "application/json" },
+          method: "POST",
+        }
+      );
+      return { body: await json(response), status: response.status };
+    };
+    const reissued = await act("reissue", { organizationId: free.id });
+    expect(reissued.status).toBe(409);
+    expect(reissued.body.error).toBe("organization_not_in_closure");
+    expect(refusalText(String(reissued.body.error))).toBe(
+      "A loja não está em encerramento."
+    );
+    const dismissed = await act("dismiss", {
+      organizationId: free.id,
+      reason: "owner_account_deleted",
+    });
+    expect(dismissed.status).toBe(409);
+    expect(dismissed.body.error).toBe("privacy_case_not_accepted");
+    expect(refusalText(String(dismissed.body.error))).toContain(
+      "não foi aceito por inteiro"
+    );
+    const another = await act("reissue", { organizationId: "another-store" });
+    expect(another.status).toBe(409);
+    expect(another.body.error).toBe("organization_mismatch");
   });
 });

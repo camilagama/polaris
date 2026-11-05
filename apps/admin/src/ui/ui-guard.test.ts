@@ -100,7 +100,8 @@ const SHEET_LOADS = /@import|url\(|@font-face|https?:/i;
  * reactivating it (`/api/support-cases/:id/suspend` and `/reactivate`) and marking it as internal
  * (`/api/organizations/:id/classification`; Parte 3), and the court's read of the access log
  * (`/api/access-log/read`, a POST; Parte 8), and the privacy cases (list, detail, open and each of the six steps,
- * `/api/privacy-cases/:id/identity`, `/role`, `/scope`, `/decision`, `/actions` and `/resolve`; Parte 11).
+ * `/api/privacy-cases/:id/identity`, `/role`, `/scope`, `/decision`, `/actions` and `/resolve`; Parte 11), and the two acts on
+ * the closure notice of a closed store (`/api/support-cases/:id/closure-notice/reissue` and `/dismiss`; Parte 12).
  */
 const ROUTES_OF_THIS_CUT = [
   "/api/access-log",
@@ -174,7 +175,7 @@ describe("the built script of the page", () => {
     );
   });
 
-  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, the read of the access log and the six steps of a privacy case: no other action of a case or a store (no purge, closure notice or legal hold)", () => {
+  it("names, under those routes, only the diagnostics, the refund window, the close of a case, the retry of one event, suspending and reactivating a store, marking it as internal, the read of the access log, the six steps of a privacy case and the two acts on the closure notice: no other action of a case or a store (no purge or legal hold)", () => {
     // every literal segment after the first of every Admin route (`/api/support-cases/:caseId/close` gives `close`)
     const segments = new Set(
       createAdminApp(NO_DEPENDENCIES, { css: "", js: "" })
@@ -195,13 +196,16 @@ describe("the built script of the page", () => {
       "actions",
       "classification",
       "close",
+      "closure-notice",
       "decision",
       "diagnostics",
+      "dismiss",
       "events",
       "identity",
       "reactivate",
       "read",
       "refund-window",
+      "reissue",
       "resolve",
       "retry",
       "role",
