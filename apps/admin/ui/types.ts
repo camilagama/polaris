@@ -168,3 +168,19 @@ export interface EndedEntitlement {
   outcomeRecorded: boolean;
   revoked: boolean;
 }
+
+/** One line of the access log (ADR 0092): the IP and the user are what the court asks for, and they are only shown. */
+export interface AccessLogEntry {
+  event: "login_failed" | "login_succeeded" | "logout" | "session_refreshed";
+  id: string;
+  ip: string;
+  occurredAt: string;
+  requestId: string;
+  userId: string | null;
+}
+
+/** What `POST /api/access-log/read` answers on success; a refusal is `{ error }` with a 400. */
+export interface AccessLogPage {
+  entries: AccessLogEntry[];
+  next: string | null;
+}

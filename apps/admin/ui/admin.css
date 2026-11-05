@@ -141,6 +141,7 @@ h4 {
 
 input[type="search"],
 input[type="text"],
+input[type="date"],
 select {
   flex: 1;
   width: 100%;
@@ -297,6 +298,32 @@ button {
 
 .grid.incidents code {
   overflow-wrap: anywhere;
+}
+
+/* the access log's form: one field to a line, the two days one under the other */
+.access-form {
+  max-width: 28rem;
+}
+
+.access-form .label {
+  margin: 0.75rem 0 0;
+  font-weight: 600;
+}
+
+.access-form .period {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.25rem;
+}
+
+/* a line of the access log is mostly identifiers: they wrap inside the cell instead of widening the card */
+.results .grid code {
+  overflow-wrap: anywhere;
+}
+
+.results .grid td:not(:first-child),
+.results .grid th {
+  white-space: normal;
 }
 
 /* the funnel's tables scroll sideways inside their own region, never the page; the week column stays in view */

@@ -129,6 +129,12 @@ const SCREENS = [
     "Incidentes",
     `data-id="${INCIDENT}"`,
   ],
+  [
+    "/registro",
+    "Registro de acessos",
+    "Registro de acessos",
+    'data-tela="registro"',
+  ],
 ] as const;
 
 describe("one route per screen (AC-P1.2)", () => {
@@ -194,7 +200,8 @@ describe("one route per screen (AC-P1.2)", () => {
     "/privacidade",
     `/incidentes/${INCIDENT}/events`,
     "/incidentes/123",
-    "/registro",
+    "/registro/x",
+    `/registro/${INCIDENT}`,
     "/retencoes",
     "/configuracoes/x",
     `/configuracoes/${CASE}`,
@@ -235,6 +242,31 @@ describe("one route per screen (AC-P1.2)", () => {
     expect(ROOT.exec(closed)?.[1]).toContain('data-estado="fechados"');
   });
 
+  it("writes nothing of the query into the page of the access log: no case, case number, user or IP (AC-P8.0, AC-P8.3)", async () => {
+    const html = await (
+      await setup()(
+        "/registro?caso=0199a0a0&processo=0000001-55.2026.8.26.0100&usuario=u1&ip=203.0.113.7&loja=<b>x</b>"
+      )
+    ).text();
+    expect(ROOT.exec(html)?.[1]).toBe(
+      ' data-tela="registro" data-ambiente="unknown"'
+    );
+    for (const leaked of [
+      "0199a0a0",
+      "0000001-55",
+      "u1&",
+      "203.0.113.7",
+      "<b>",
+    ]) {
+      expect(html).not.toContain(leaked);
+    }
+    const withStore = await (await setup()(`/registro?loja=${STORE}`)).text();
+    expect(ROOT.exec(withStore)?.[1]).toBe(
+      ' data-tela="registro" data-ambiente="unknown"'
+    );
+    expect(withStore).not.toContain(STORE);
+  });
+
   it("is the same document for two operators: nothing of the login is written into it", async () => {
     const first = await (await setup()(`/casos/${CASE}`)).text();
     expect(first).not.toContain("owner@example.com");
@@ -267,9 +299,10 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
         "Casos de suporte /casos",
         "Incidentes /incidentes",
         "Funil /funil",
+        "Registro de acessos /registro",
         "Configurações /configuracoes",
       ],
-      ["Lojas", "Suporte", "Operação"],
+      ["Lojas", "Suporte", "Operação", "Auditoria"],
     ],
     [
       "platform:read",
@@ -302,6 +335,12 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
       ["Operação"],
     ],
     [
+      "access_log:read",
+      ["access_log:read"],
+      ["Registro de acessos /registro"],
+      ["Auditoria"],
+    ],
+    [
       "only the retry, which opens no screen",
       ["operational_incident:retry"],
       [],
@@ -310,7 +349,7 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
     // the items of later parts are not in the menu until their screens exist
     [
       "only capabilities of screens that do not exist yet",
-      ["privacy_case:manage", "access_log:read", "organization:legal_hold"],
+      ["privacy_case:manage", "organization:legal_hold"],
       [],
       [],
     ],
@@ -343,6 +382,15 @@ describe("the menu by capability (AC-P1.1, AC-C1)", () => {
     const response = await setup("unknown_role")("/");
     expect(response.status).toBe(403);
     expect(response.headers.get("content-security-policy")).toBe(DOCUMENT);
+    const html = await response.text();
+    expect(html).toContain("Sem permissão para isto.");
+    expect(ROOT.exec(html)?.[1]).toBe("");
+    expect(menuOf(html).links).toEqual([]);
+  });
+
+  it("gives the access log's page, with no data for the script, to an operator without access_log:read (403, AC-C1)", async () => {
+    const response = await setup("unknown_role")("/registro");
+    expect(response.status).toBe(403);
     const html = await response.text();
     expect(html).toContain("Sem permissão para isto.");
     expect(ROOT.exec(html)?.[1]).toBe("");
@@ -390,6 +438,7 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
     expect(menu.links).toEqual([
       "Buscar loja /lojas",
       "Casos de suporte /casos",
+      "Registro de acessos /registro",
     ]);
   });
 

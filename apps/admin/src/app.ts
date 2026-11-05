@@ -130,6 +130,7 @@ export const SCREEN_ROUTES = [
   "/funil",
   "/incidentes",
   "/incidentes/:incidentId",
+  "/registro",
 ] as const;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
@@ -314,7 +315,10 @@ export function createAdminApp(
         listState:
           context.req.query("estado") === "fechados" ? "fechados" : "abertos",
         screen: found.screen,
-        store: isUuid(store) ? store.toLowerCase() : null,
+        store:
+          isUuid(store) && found.screen !== "registro"
+            ? store.toLowerCase()
+            : null,
       });
       return context.html(body, forbidden ? 403 : 200);
     };

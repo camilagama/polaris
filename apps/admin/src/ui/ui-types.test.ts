@@ -1,3 +1,7 @@
+import type {
+  AccessLogEntryView,
+  AccessLogReadResult,
+} from "@polaris/db/admin-access-log-repository";
 import type { AdminOrganizationPage } from "@polaris/db/admin-diagnostics-repository";
 import type {
   DeadEventSummary as ServerDeadEvent,
@@ -22,6 +26,8 @@ import { describe, expect, it } from "vitest";
 import { entitlementText } from "../../ui/format";
 import { MAX_HOURS, MAX_REASON_LENGTH } from "../../ui/grant-limits";
 import type {
+  AccessLogEntry,
+  AccessLogPage,
   ClosedSupportCase,
   DeadEventSummary,
   EndedEntitlement,
@@ -87,6 +93,13 @@ const endedMatches: Same<
   Awaited<ReturnType<SupportDependencies["revokeEntitlement"]>>,
   EndedEntitlement
 > = true;
+const accessEntryMatches: Same<AccessLogEntryView, AccessLogEntry> = true;
+const accessPageMatches: Extract<
+  AccessLogReadResult,
+  { result: "ok" }
+> extends { entries: AccessLogPage["entries"]; next: AccessLogPage["next"] }
+  ? true
+  : false = true;
 const capabilitiesRead: readonly PlatformCapability[] extends readonly string[]
   ? true
   : false = true;
@@ -109,7 +122,9 @@ describe("the page's types", () => {
       retryResultsRead,
       grantedRead,
       endedMatches,
-    ]).toEqual(new Array(15).fill(true));
+      accessEntryMatches,
+      accessPageMatches,
+    ]).toEqual(new Array(17).fill(true));
   });
 });
 
