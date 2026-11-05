@@ -520,7 +520,8 @@ describe("admin worker, whole chain, PostgreSQL", () => {
           revokedAt: null,
         }),
       ]);
-      expect(Object.keys(diagnostics.body.grants[0]).sort()).toEqual([
+      const [listed] = diagnostics.body.grants as object[];
+      expect(Object.keys(listed ?? {}).sort()).toEqual([
         "expiresAt",
         "flagValue",
         "id",

@@ -1,8 +1,5 @@
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
-import {
-  FLAG_KEYS,
-  LIMIT_KEYS,
-} from "@polaris/domain/billing/entitlements";
+import { FLAG_KEYS, LIMIT_KEYS } from "@polaris/domain/billing/entitlements";
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
 

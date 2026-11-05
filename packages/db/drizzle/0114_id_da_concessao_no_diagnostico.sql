@@ -78,7 +78,7 @@ BEGIN
             'startsAt', grant_row.starts_at,
             'expiresAt', grant_row.expires_at,
             'revokedAt', grant_row.revoked_at
-          ) ORDER BY grant_row.starts_at, grant_row.key, grant_row.id
+          ) ORDER BY grant_row.starts_at, grant_row.key
         )
         FROM public.entitlement_grants AS grant_row
         WHERE grant_row.organization_id = organization.id

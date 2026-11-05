@@ -207,6 +207,16 @@ describe("the built script of the page", () => {
   });
 });
 
+const DELETE_CALL = /method:\s*"DELETE"/g;
+const OTHER_WRITES = /method:\s*"(PUT|PATCH)"/;
+
+describe("the verbs of the built script", () => {
+  it("sends one DELETE, the end of a grant, and no PUT or PATCH", () => {
+    expect(bundle.match(DELETE_CALL)).toHaveLength(1);
+    expect(bundle).not.toMatch(OTHER_WRITES);
+  });
+});
+
 describe("the sheet of the page", () => {
   it("loads nothing: no import, no url(), no font face", () => {
     expect(sheet).not.toMatch(SHEET_LOADS);

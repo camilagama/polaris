@@ -859,21 +859,22 @@ describe("ending a grant (AC-P4.4)", () => {
 });
 
 describe("what the panel writes and keeps (AC-C6, AC-C7)", () => {
-  it.each(
-    HOSTILE
-  )("writes the reason %j as text, creates no element but the page's own and moves nowhere", async (hostile) => {
-    const mounted = await open([]);
-    await toReview(mounted, { reason: hostile });
+  it.each(HOSTILE)(
+    "writes the reason %j as text, creates no element but the page's own and moves nowhere",
+    async (hostile) => {
+      const mounted = await open([]);
+      await toReview(mounted, { reason: hostile });
 
-    expect(shown(mounted)).toContain(hostile.trim());
-    for (const tag of NEVER_CREATED) {
-      expect(mounted.document.created).not.toContain(tag);
+      expect(shown(mounted)).toContain(hostile.trim());
+      for (const tag of NEVER_CREATED) {
+        expect(mounted.document.created).not.toContain(tag);
+      }
+      expect(mounted.navigations).toEqual([]);
+      expect(
+        allElements(mounted.root).some((element) =>
+          [...element.attributes.keys()].some((name) => name.startsWith("on"))
+        )
+      ).toBe(false);
     }
-    expect(mounted.navigations).toEqual([]);
-    expect(
-      allElements(mounted.root).some((element) =>
-        [...element.attributes.keys()].some((name) => name.startsWith("on"))
-      )
-    ).toBe(false);
-  });
+  );
 });

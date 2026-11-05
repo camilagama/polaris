@@ -425,7 +425,9 @@ describe("Configurações in the foot of the menu (Parte 9: AC-C1)", () => {
 
 describe("the keys a grant may name (corte admin-v2, Parte 4)", () => {
   const rootOf = async (path: string) =>
-    ROOT.exec(await (await setup("platform_owner", "staging")(path)).text())?.[1];
+    ROOT.exec(
+      await (await setup("platform_owner", "staging")(path)).text()
+    )?.[1];
 
   it("writes, on the case screen, the domain's own two lists, which together are the whole catalog", async () => {
     const root = await rootOf(`/casos/${CASE}`);

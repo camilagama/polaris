@@ -213,6 +213,9 @@ export function grantForm(
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     error.textContent = "";
+    for (const field of [key, value, hours, reason]) {
+      field.removeAttribute("aria-invalid");
+    }
     const typed: Typed = {
       hours: hours.value.trim(),
       key: key.value,

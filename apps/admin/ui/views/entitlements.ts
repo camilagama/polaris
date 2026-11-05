@@ -45,7 +45,7 @@ export const NO_GRANTS = "Nenhuma concessão em vigor.";
 export const GRANT_RETRY =
   "Outra ação ao mesmo tempo mexeu nesta concessão. Tente de novo.";
 export const GRANT_UNKNOWN =
-  "Não deu para confirmar se a concessão foi dada. Releia as concessões em vigor antes de tentar de novo; repetir o mesmo pedido não cria uma segunda concessão.";
+  "Não deu para confirmar se a concessão foi dada. Releia as concessões em vigor antes de tentar de novo; repetir o mesmo pedido pelo formulário, sem mudar nada, não cria uma segunda concessão.";
 export const END_UNKNOWN =
   "Não deu para confirmar se a concessão foi encerrada. Releia as concessões em vigor antes de tentar de novo.";
 export const GRANT_REPEATED =
@@ -103,9 +103,7 @@ function listedGrants(report: OrganizationDiagnostics, now: Date) {
         expiresAt: grant.expiresAt,
         flagValue: grant.flagValue,
         id:
-          typeof grant.id === "string" && UUID.test(grant.id)
-            ? grant.id
-            : null,
+          typeof grant.id === "string" && UUID.test(grant.id) ? grant.id : null,
         key: grant.key,
         limitValue: grant.limitValue,
       });
@@ -305,7 +303,9 @@ export function entitlementsView(
     } else {
       notice.alert(OUTCOME_NOT_RECORDED);
     }
-    await readGrants();
+    if (tools.can("organization:diagnose")) {
+      await readGrants();
+    }
   };
 
   const sendEnd = async (grantId: string, buttons: Buttons) => {
@@ -521,13 +521,7 @@ export function entitlementsView(
     notice.element,
     dom.el("h4", {}, "Concessões em vigor"),
     tools.can("organization:diagnose")
-      ? dom.el(
-          "div",
-          {},
-          listNotice.element,
-          listBox,
-          readControl
-        )
+      ? dom.el("div", {}, listNotice.element, listBox, readControl)
       : dom.el(
           "p",
           { class: "hint" },
