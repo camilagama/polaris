@@ -172,7 +172,7 @@ export function textField(
   label: string,
   max: number,
   hint?: string
-): Field<HTMLInputElement> {
+): Field<HTMLInputElement> & { clear: () => void } {
   const input = dom.el("input", {
     autocomplete: "off",
     id,
@@ -190,7 +190,7 @@ export function textField(
     class: "sr-only",
   });
   let over = false;
-  input.addEventListener("input", () => {
+  const count = () => {
     const { length } = [...input.value.trim()];
     counter.textContent = `${length} de ${max} caracteres`;
     if (length > max === over) {
@@ -200,12 +200,20 @@ export function textField(
     overLimit.textContent = over
       ? `${label}: passou do limite de ${max} caracteres.`
       : "";
-  });
+  };
+  input.addEventListener("input", count);
   const hints = [counter, overLimit];
   if (hint !== undefined) {
     hints.push(dom.el("p", { class: "hint", id: `${id}-dica` }, hint));
   }
-  return wrap(dom, id, label, input, hints);
+  return {
+    ...wrap(dom, id, label, input, hints),
+    /** Empties the field and its counter: setting the value by script fires no `input`. */
+    clear: () => {
+      input.value = "";
+      count();
+    },
+  };
 }
 
 /** A field with no counter (a date, a UUID). */

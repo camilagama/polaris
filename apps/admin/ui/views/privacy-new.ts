@@ -314,9 +314,9 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
   }
 
   const discard = () => {
-    for (const field of [reason, note, received]) {
-      field.control.value = "";
-    }
+    reason.clear();
+    note.clear();
+    received.control.value = "";
   };
   // a page restored from the back-forward cache must not show what was typed
   dom.document.defaultView?.addEventListener("pagehide", discard);
