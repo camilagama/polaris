@@ -38,7 +38,8 @@ export type ScreenId =
   | "privacidade"
   | "privacidade-caso"
   | "privacidade-novo"
-  | "registro";
+  | "registro"
+  | "retencoes";
 
 interface Screen {
   capability: PlatformCapability;
@@ -73,6 +74,10 @@ export const SCREENS: Readonly<Record<ScreenId, Screen>> = {
     title: "Abrir caso de privacidade",
   },
   registro: { capability: "access_log:read", title: "Registro de acessos" },
+  retencoes: {
+    capability: "organization:legal_hold",
+    title: "Retenções legais",
+  },
 };
 
 interface MenuItem {
@@ -91,7 +96,7 @@ interface MenuGroup {
 
 /**
  * The menu of the design (§1.1), with only the screens that exist: a group whose items the operator cannot open goes
- * with its label. The other item of the design (Retenções legais) enters with its part.
+ * with its label.
  */
 const MENU: readonly MenuGroup[] = [
   {
@@ -158,6 +163,12 @@ const MENU: readonly MenuGroup[] = [
         path: "/registro",
         screens: ["registro"],
       },
+      {
+        capability: "organization:legal_hold",
+        label: "Retenções legais",
+        path: "/retencoes",
+        screens: ["retencoes"],
+      },
     ],
     label: "Auditoria",
   },
@@ -197,6 +208,7 @@ export function screenOfPath(
     "/privacidade": "privacidade",
     "/privacidade/novo": "privacidade-novo",
     "/registro": "registro",
+    "/retencoes": "retencoes",
   };
   const screen = fixed[path];
   if (screen !== undefined) {
@@ -251,6 +263,8 @@ function environmentOf(name: string | undefined): Environment {
 }
 
 export interface PageRequest {
+  /** `?acao=` of a privacy case, only its one fixed value: the tab of the purge and the legal hold. */
+  action?: "purge";
   capabilities: readonly string[];
   environment: string | undefined;
   /** The operator may not open this screen: the shell and "Sem permissão para isto.", no script data. */
@@ -336,6 +350,9 @@ function rootAttributes(request: PageRequest, environment: Environment) {
   }
   if (request.screen === "casos" || request.screen === "privacidade") {
     pairs.push(["data-estado", request.listState]);
+  }
+  if (request.screen === "privacidade-caso" && request.action === "purge") {
+    pairs.push(["data-acao", request.action]);
   }
   if (request.screen === "caso") {
     // the keys a grant may name come from the domain's lists, so the screen has no copy to drift

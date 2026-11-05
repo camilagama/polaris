@@ -10,6 +10,7 @@ import { funnelView } from "./views/funnel";
 import { homeView } from "./views/home";
 import { incidentView } from "./views/incident";
 import { incidentsView } from "./views/incidents";
+import { legalHoldsView } from "./views/legal-holds";
 import { newCaseView } from "./views/new-case";
 import { organizationsView } from "./views/organizations";
 import { privacyCaseView } from "./views/privacy-case";
@@ -24,6 +25,8 @@ import { storeView } from "./views/store";
  * and the UUIDs the path or `?loja=` carried, already checked by the Worker. Nothing else of the URL is read.
  */
 export interface ScreenContext {
+  /** `?acao=purge` on a privacy case: its tab of the purge and the legal hold, the one fixed value the Worker names. */
+  action?: "purge";
   environment: "production" | "staging" | "unknown";
   /** The capability keys the Worker names, from the domain's own lists: the page keeps no list of its own. */
   flagKeys: readonly string[];
@@ -131,6 +134,10 @@ const SCREENS: Readonly<Record<string, (tools: ScreenTools) => HTMLElement[]>> =
       tools.can("access_log:read")
         ? [accessLogView(tools)]
         : [forbiddenArea(tools.dom, "Registro de acessos", "registro-titulo")],
+    retencoes: (tools) =>
+      tools.can("organization:legal_hold")
+        ? [legalHoldsView(tools)]
+        : [forbiddenArea(tools.dom, "Retenções legais", "retencoes-titulo")],
   };
 
 /**

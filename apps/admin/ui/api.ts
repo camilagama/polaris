@@ -273,6 +273,50 @@ export async function sendClosureNotice(
     : { code, kind: "refused" };
 }
 
+/**
+ * What a command on the purge or the legal hold of a case's store answered (ADR 0081, 0102): the command was taken;
+ * the server refused it by name (a 409, the 503 of an unreadable billing, or a 400 that names its code), said in
+ * words by the screen and never shown; or the call ended in one of the page's problems.
+ */
+export type StoreCommandOutcome<T> =
+  | { kind: "done"; answer: T }
+  | { kind: "problem"; problem: Problem }
+  | { kind: "refused"; code: string };
+
+/**
+ * One POST of a purge or legal hold command, never repeated by itself. The 409 and the 503 carry the refusal's code
+ * in their body, so those statuses are read as answers; only a code `isRefusal` names is a refusal, and a body that is
+ * neither the command's answer nor such a code is a failure whose outcome the page cannot confirm.
+ */
+export async function sendStoreCommand<T>(
+  api: Api,
+  path: string,
+  body: PostBody,
+  isAnswer: (value: unknown) => value is T,
+  isRefusal: (code: string) => boolean
+): Promise<StoreCommandOutcome<T>> {
+  const answer = await api.post<unknown>(path, body, [409, 503]);
+  if (!answer.ok) {
+    return answer.problem === "invalid" &&
+      answer.code !== undefined &&
+      isRefusal(answer.code)
+      ? { code: answer.code, kind: "refused" }
+      : { kind: "problem", problem: answer.problem };
+  }
+  if (isAnswer(answer.data)) {
+    return { answer: answer.data, kind: "done" };
+  }
+  const code = refusalCode(answer.data);
+  if (code === null || !CODE_PATTERN.test(code)) {
+    return { kind: "problem", problem: "failed" };
+  }
+  // a code the screen does not name (the Access check or the principal unavailable, the Admin not set up) is not a
+  // refusal of the store's state: the outcome is the page's problem, never "nothing was done"
+  return isRefusal(code)
+    ? { code, kind: "refused" }
+    : { kind: "problem", problem: "unavailable" };
+}
+
 /** The most customers one read asks for: the server's own limit for a page. */
 const CUSTOMERS_PAGE_SIZE = 50;
 
