@@ -49,7 +49,7 @@ function countText(count: number, more: boolean, empty: string): string {
   return more ? `${found} Há mais: use Carregar mais.` : found;
 }
 
-interface DueView {
+export interface DueView {
   element: HTMLElement;
   /** Says the due date again for another moment; the day, the provisional mark and the order of the page stay. */
   redraw: (now: Date) => void;
@@ -59,7 +59,7 @@ interface DueView {
  * The due date in words, from what the server returned (AC-P11.1, AC-P11.6): two days or less, or past, is a warning
  * said in words, never only by color; every due date carries "prazo provisório" (ADR 0077: 15 days, provisional).
  */
-function dueView(
+export function dueView(
   dom: Dom,
   item: { dueAt: string; overdue: boolean },
   now: Date
@@ -85,12 +85,27 @@ function dueView(
   return { element, redraw };
 }
 
-export function dueCell(
+/**
+ * Says the due dates again when the page comes back (tab visible, window focused), with the same wording rule and no
+ * timer: a page left open and in view between those two events keeps the words of the last draw until one of them, or a
+ * reload. The listeners stay for the life of the document: a page restored from the back-forward cache needs them.
+ */
+export function keepDuesCurrent(
   dom: Dom,
-  item: { dueAt: string; overdue: boolean },
-  now: Date
-): HTMLElement {
-  return dueView(dom, item, now).element;
+  now: () => Date,
+  views: () => readonly DueView[]
+): void {
+  const redraw = () => {
+    if (dom.document.hidden) {
+      return;
+    }
+    const at = now();
+    for (const view of views()) {
+      view.redraw(at);
+    }
+  };
+  dom.document.addEventListener("visibilitychange", redraw);
+  dom.document.defaultView?.addEventListener("focus", redraw);
 }
 
 /**
@@ -215,18 +230,7 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
     }
   });
 
-  /** The listeners stay for the life of the document: a page restored from the back-forward cache needs them. */
-  const redrawDues = () => {
-    if (dom.document.hidden) {
-      return;
-    }
-    const at = now();
-    for (const view of dues) {
-      view.redraw(at);
-    }
-  };
-  dom.document.addEventListener("visibilitychange", redrawDues);
-  dom.document.defaultView?.addEventListener("focus", redrawDues);
+  keepDuesCurrent(dom, now, () => dues);
 
   const tab = (key: keyof typeof STATES, path: string) => {
     const attributes =

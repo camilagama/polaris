@@ -38,6 +38,7 @@ export const ACCESS_UNKNOWN =
   "Não deu para confirmar se o acesso foi dado. Releia o atendimento antes de tentar de novo.";
 export const END_UNKNOWN =
   "Não deu para confirmar se o acesso foi encerrado. Releia o atendimento antes de tentar de novo.";
+const ACCESS_ENDED = "O acesso acabou.";
 const OTHER_ACCESS = (expiresAt: string) =>
   `Outro acesso seu a esta loja continua ativo, até ${brasiliaMomentText(expiresAt)}.`;
 const RELOAD_FAILED =
@@ -340,7 +341,7 @@ export function accessView(
       return true;
     }
     leave();
-    notice.status("O acesso acabou.");
+    notice.status(ACCESS_ENDED);
     return false;
   };
 
@@ -654,10 +655,12 @@ export function accessView(
     discard,
     element: section,
     say: (message) => {
-      const text =
-        message.afterEnd && stillActive() && access !== null
-          ? `${message.text} ${OTHER_ACCESS(access.expiresAt)}`
-          : message.text;
+      let { text } = message;
+      if (message.afterEnd && access !== null) {
+        text = stillActive()
+          ? `${text} ${OTHER_ACCESS(access.expiresAt)}`
+          : `${text} ${ACCESS_ENDED}`;
+      }
       if (message.kind === "success") {
         notice.success(text);
       } else {

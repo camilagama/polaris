@@ -185,10 +185,23 @@ export function textField(
     { class: "hint", id: `${id}-contador` },
     `0 de ${max} caracteres`
   );
-  input.addEventListener("input", () => {
-    counter.textContent = `${[...input.value.trim()].length} de ${max} caracteres`;
+  const overLimit = dom.el("p", {
+    "aria-live": "polite",
+    class: "sr-only",
   });
-  const hints = [counter];
+  let over = false;
+  input.addEventListener("input", () => {
+    const { length } = [...input.value.trim()];
+    counter.textContent = `${length} de ${max} caracteres`;
+    if (length > max === over) {
+      return;
+    }
+    over = length > max;
+    overLimit.textContent = over
+      ? `${label}: passou do limite de ${max} caracteres.`
+      : "";
+  });
+  const hints = [counter, overLimit];
   if (hint !== undefined) {
     hints.push(dom.el("p", { class: "hint", id: `${id}-dica` }, hint));
   }

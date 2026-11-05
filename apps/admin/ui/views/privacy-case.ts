@@ -25,7 +25,7 @@ import {
 import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
 import { closureNoticeSection, mayShowClosureNotice } from "./closure-notice";
-import { dueCell } from "./privacy-cases";
+import { type DueView, dueView, keepDuesCurrent } from "./privacy-cases";
 import { mayShowPurgeTab, purgeTab } from "./purge";
 import {
   choiceField,
@@ -211,6 +211,9 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
   const byWhom = (principalId: string) =>
     principalId === who.principal.id ? "você" : "outro operador";
 
+  let headerDue: DueView | null = null;
+  keepDuesCurrent(dom, now, () => (headerDue === null ? [] : [headerDue]));
+
   const header = (detail: Detail) => {
     const item = detail.case;
     const { privacy } = detail;
@@ -219,6 +222,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       can("organization:diagnose") && path !== null
         ? dom.el("a", { href: path }, "Ver loja")
         : null;
+    const closed = closedText(detail);
+    headerDue = closed === null ? dueView(dom, privacy, now()) : null;
     const pairs: [string, Node | string][] = [
       [
         "Loja",
@@ -235,7 +240,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       ["Canal", labelOf(CHANNELS, privacy.channel)],
       ["Recebido em", brasiliaMomentText(privacy.receivedAt)],
       ["Aberto em", brasiliaMomentText(item.openedAt)],
-      ["Prazo de resposta", closedText(detail) ?? dueCell(dom, privacy, now())],
+      ["Prazo de resposta", closed ?? headerDue?.element ?? ""],
       ["Nota", privacy.note ?? "Sem nota."],
     ];
     return facts(dom, pairs);
