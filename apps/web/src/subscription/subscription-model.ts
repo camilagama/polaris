@@ -237,6 +237,7 @@ function nextChargeValue(
       : on;
   }
   const amount = formatBrlAmount(charge.amount);
+  // with a different cycle and an amount, only once a cycle-change command exists: a pending change carries no amount today
   return other
     ? `${on} · ${amount} · ${cycleName(charge.cycleMonths)}`
     : `${on} · ${amount}`;
