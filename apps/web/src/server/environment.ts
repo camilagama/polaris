@@ -46,6 +46,8 @@ export interface MediaBucketBinding {
   /** One key, or up to 1000 keys in one call (R2 `delete` accepts both). */
   delete: (keys: string | string[]) => Promise<void>;
   get: (key: string) => Promise<MediaBucketObject | null>;
+  /** Metadata only (R2 `head`): sizes an object without opening its body. */
+  head: (key: string) => Promise<{ size: number } | null>;
   list: (options: {
     cursor?: string;
     limit: number;

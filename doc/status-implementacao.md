@@ -2814,6 +2814,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Gate `product-cover` (capa com 0, 1 e 3 imagens; reordenar; remover a capa e a última; uma mudança por operação; savepoint; pull; edição com a versão antiga; RLS entre duas lojas; plano da lista de 1.248 produtos no índice `(organization_id, product_id, position)`); gates `definer-owners` e `bootstrap` ajustados. Unidade: `product-cover.test.ts` (contrato), `product-cover-router.test.ts`, `local-products.test.ts`, `bootstrap.test.ts`. |
 | Fora | Registrado | Rota em lote (T2), cache e componente (T3a) e telas (T3b). |
 
+### Miniaturas de produto, T2: rota em lote `GET /api/media/thumbs` (t752; corte miniaturas-de-produto; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Rota | Em revisão | `GET /api/media/thumbs?organizationId=…&ids=…` (`apps/web/src/server/routes/media.ts`, `src/server/media-thumbs.ts`): 1 a 24 UUIDs (400 `invalid_media_thumbs_request` fora disso), uma transação tenant com `catalog:read`, uma consulta (`listDeliverableMediaAssetIds`), só o derivado de 320 px do R2 (`head` para os tamanhos, `get` em stream, no máximo 6 abertos), cabeçalho `X-Polaris-Thumbs` com `id:bytes` ou `id:missing` na ordem do pedido, corpo concatenado, `private, no-store`. Nunca chama o Images. Emenda de 04/11 do ADR 0018. |
+| Provas | Em revisão | `routes/media.test.ts` (1, 24 e 25 ids, ids inválidos, repetidos, 401 e 403 iguais aos da entrega por imagem, outra loja igual a inexistente, removida e sem 320 no cabeçalho e no corpo, 0 acessos ao binding do Images, corte do corpo quando o derivado some, 503 do R2); gate `media-commands` (lote com ids de outra loja, inexistente e removida; RLS sem o filtro de organização). |
+| Pendente | Registrado | Medida de CPU do lote de 24 contra a entrega por imagem no staging (AC-13), depois do deploy. Cache, componente e telas são da T3a e da T3b. |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |
@@ -2832,6 +2840,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Início | Em revisão | A linha "N incidentes com eventos a reenviar" (primeira página de 50 da lista, sem auditoria; "ou mais" com outra página). |
 | Provas | Em revisão | `ui/incidents.test.ts` (lista, detalhe, cada resultado, 400/403/404/409/429/503 e rede, cadeias hostis na referência, duplo clique, sem capacidade, Início), `src/ui/screens.test.ts` (rotas, menu por capacidade, 401), `src/ui/ui-guard.test.ts` (rede: `/api/operational-incidents`, segmentos `events` e `retry`), `src/ui/ui-types.test.ts` (formas e os cinco resultados), `src/route-surface.test.ts`, `src/worker.workerd.test.ts` (workerd, Access simulado). |
 | Limites | Registrado | Sem teste no banco: o gate `admin-worker` não semeia incidente (fora de `apps/admin`, AC-C10); o reenvio e as leituras têm teste de rota e de função de banco desde o ADR 0085. Aceite no staging (AC-C14) e parecer do Rodrigo (AC-C11) pendentes. |
+
+### Admin v2, Parte 3: suspender, reativar e marcar loja interna (t748; corte admin-v2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Painel "Loja" no caso | Em revisão | `apps/admin/ui/views/store-actions.ts`, montado em `views/case.ts` só com o caso de suporte aberto e `organization:suspend` ou `organization:classify`. Suspender e reativar: revisão em duas etapas com os efeitos na ordem do AC-P3.1, um pedido por clique, estado relido uma vez depois da resposta (AC-P3.3); loja encerrada não mostra o botão. |
+| Loja interna | Em revisão | Leve, com `organization:classify`: marcar e desmarcar, frase do efeito acima do botão. Nenhuma rota de leitura traz a marca: a tela diz "ainda não lida" até a primeira resposta da rota de classificação. |
+| Loja (`/lojas/{uuid}`) | Em revisão | Só a frase de que as ações moram no caso aberto da loja; sem ação própria. |
+| Provas | Em revisão | `ui/store-actions.test.ts` (estados `active`, `suspended`, `closed` e desconhecido, ordem dos efeitos, sem caso e sem capacidade, 400, 401, 403, 404, 409, 429, 503, rede e resposta ilegível, releitura que falha, duplo clique, cadeias hostis), `src/support-routes.test.ts` (400 `case_not_open`, 404 `unknown_case`, `internal` que não é booleano), `src/ui/ui-guard.test.ts` (rede: segmentos `suspend`, `reactivate` e `classification`). |
+| Limites | Registrado | O texto sobre o que estava guardado nos aparelhos offline segue a suposição do AC-P3.1 (achado t674), a confirmar com o Filipe e o Rodrigo. Suspender não tem segunda pessoa (ADR 0073). As rotas não devolvem `outcomeRecorded` (só as concessões). Sem abas no caso ainda: o painel é uma seção da página. Aceite no staging (AC-C14) e parecer do Rodrigo (AC-C11) pendentes. |
 
 ### Admin v2, Parte 8: registro de acessos, a consulta do juízo (t749; corte admin-v2; sem migration)
 

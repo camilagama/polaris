@@ -7,6 +7,7 @@
  */
 
 export type Problem =
+  | "conflict"
   | "failed"
   | "forbidden"
   | "invalid"
@@ -28,6 +29,8 @@ export interface ApiFailure {
 type ApiResult<T> = { data: T; ok: true } | ApiFailure;
 
 export const PROBLEM_TEXT: Readonly<Record<Problem, string>> = {
+  conflict:
+    "Esta ação já não se aplica ao estado atual. Releia e confira antes de tentar de novo.",
   failed: "Erro no Admin. Tente de novo; se continuar, avise a engenharia.",
   forbidden: "Sem permissão para isto.",
   invalid:
@@ -53,7 +56,7 @@ export interface Api {
    */
   post: <T>(
     path: string,
-    body: Readonly<Record<string, string>>,
+    body: Readonly<Record<string, boolean | string>>,
     answers?: readonly number[]
   ) => Promise<ApiResult<T>>;
 }
@@ -63,6 +66,7 @@ const STATUS_PROBLEMS: Readonly<Record<number, Problem>> = {
   401: "session",
   403: "forbidden",
   404: "not_found",
+  409: "conflict",
   429: "rate_limited",
 };
 

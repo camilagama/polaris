@@ -138,8 +138,10 @@ export function diagnostics(
     billing?: Partial<NonNullable<OrganizationDiagnostics["billing"]>> | null;
     entitlements?: Partial<OrganizationDiagnostics["entitlements"]>;
     grants?: OrganizationDiagnostics["grants"];
+    id?: string;
     name?: string;
     quotas?: OrganizationDiagnostics["quotas"];
+    status?: string;
   } = {}
 ): OrganizationDiagnostics {
   const billing =
@@ -184,10 +186,10 @@ export function diagnostics(
       authorizationEpoch: 1,
       createdAt: "2026-10-01T12:00:00.000Z",
       currency: "BRL",
-      id: "org-pro-1",
+      id: overrides.id ?? "org-pro-1",
       members: 1,
       name: overrides.name ?? "Loja do Bruno",
-      status: "active",
+      status: overrides.status ?? "active",
       timezone: "America/Sao_Paulo",
     },
     quotas: overrides.quotas ?? [
