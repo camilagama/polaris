@@ -54,24 +54,41 @@ interface OfflineRpcDependencies {
   withTenantRequestContext: typeof withTenantRequestContext;
 }
 
-const domainCodePattern = /^[a-z][a-z0-9_]*$/;
+export const issueLeaseRefusalCodes = [
+  "entitlement_denied",
+  "device_revoked",
+  "offline_lease_not_available",
+] as const;
+
+type IssueLeaseRefusalCode = (typeof issueLeaseRefusalCodes)[number];
+
+const issueLeaseRefusalCodeSet: ReadonlySet<string> = new Set(
+  issueLeaseRefusalCodes
+);
+
+export const unknownIssueLeaseRefusalCode = "other";
 
 /**
- * The stable snake_case code of a domain refusal: its `code`, or the message of the errors that carry no `code`
- * (`device_revoked`, `offline_lease_not_available`). A 4xx never reaches the fault log, so this is what tells the
- * refusals apart; anything that is not a code is left out rather than logged.
+ * The closed code of a domain refusal of `issueLease`: its `code`, or the message of the errors that carry no
+ * `code` (`device_revoked`, `offline_lease_not_available`). A 4xx never reaches the fault log, so this is what tells
+ * the refusals apart; only the listed codes are logged, because a text outside the list could carry client data.
  */
-function refusalCode(error: unknown): string | undefined {
+function refusalCode(
+  error: unknown
+): IssueLeaseRefusalCode | typeof unknownIssueLeaseRefusalCode {
   const { code, message } = (error ?? {}) as {
     code?: unknown;
     message?: unknown;
   };
   for (const candidate of [code, message]) {
-    if (typeof candidate === "string" && domainCodePattern.test(candidate)) {
-      return candidate;
+    if (
+      typeof candidate === "string" &&
+      issueLeaseRefusalCodeSet.has(candidate)
+    ) {
+      return candidate as IssueLeaseRefusalCode;
     }
   }
-  return undefined;
+  return unknownIssueLeaseRefusalCode;
 }
 
 function deviceReadModel(device: DeviceRecord) {
