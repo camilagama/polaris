@@ -281,6 +281,7 @@ describe("the due date in words (AC-P11.1, AC-P11.6)", () => {
     expect(dueText(dueAt, false, new Date("2026-11-05T17:59:59.000Z"))).toEqual(
       { day: "05/11/2026", text: "vence hoje", warn: true }
     );
+    expect(dueText(dueAt, false, new Date(dueAt)).text).toBe("vence hoje");
     expect(dueText(dueAt, false, new Date("2026-11-05T18:00:01.000Z"))).toEqual(
       { day: "05/11/2026", text: "prazo vencido em 05/11/2026", warn: true }
     );

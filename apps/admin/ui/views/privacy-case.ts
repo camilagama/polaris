@@ -71,12 +71,27 @@ interface StepSpec {
 
 /** The six steps of ADR 0077, in the server's order. */
 const STEPS: readonly StepSpec[] = [
-  { key: "identity", segment: "/identity", title: "Identidade", lower: "identidade" },
-  { key: "role", segment: "/role", title: "Papel do Polaris", lower: "papel do Polaris" },
+  {
+    key: "identity",
+    segment: "/identity",
+    title: "Identidade",
+    lower: "identidade",
+  },
+  {
+    key: "role",
+    segment: "/role",
+    title: "Papel do Polaris",
+    lower: "papel do Polaris",
+  },
   { key: "scope", segment: "/scope", title: "Escopo", lower: "escopo" },
   { key: "decision", segment: "/decision", title: "Decisão", lower: "decisão" },
   { key: "actions", segment: "/actions", title: "Ações", lower: "ações" },
-  { key: "resolve", segment: "/resolve", title: "Resolução", lower: "resolução" },
+  {
+    key: "resolve",
+    segment: "/resolve",
+    title: "Resolução",
+    lower: "resolução",
+  },
 ];
 
 export const STAGE_ORDER: readonly string[] = STAGES.map(([code]) => code);
