@@ -267,9 +267,9 @@ describe("the due date in words (AC-P11.1, AC-P11.6)", () => {
     );
   });
 
-  it("never says the case is late on its own: only the server's mark does", () => {
+  it("says late on the server's mark, or once the server's day is past on the page's clock", () => {
     expect(dueText("2026-11-01T15:00:00.000Z", false, NOW).text).toBe(
-      "vence hoje"
+      "prazo vencido em 01/11/2026"
     );
     expect(dueText("2026-11-30T15:00:00.000Z", true, NOW).text).toBe(
       "prazo vencido em 30/11/2026"
@@ -530,7 +530,6 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
       "Esta loja não foi encontrada.",
     ],
     [json({ error: "forbidden" }, 403), PROBLEM_TEXT.forbidden],
-    [new Error("offline"), "Não deu para confirmar se o caso foi aberto."],
   ] as const)(
     "says a refusal in words, without a code, and lets the button work again",
     async (answer, said) => {
@@ -547,6 +546,28 @@ describe("Abrir caso de privacidade (AC-P11.1)", () => {
           "aria-disabled"
         )
       ).toBe("false");
+    }
+  );
+
+  it.each([
+    [new Error("offline")],
+    [json({ error: "internal_error" }, 500)],
+    [json({ error: "unavailable" }, 503)],
+  ])(
+    "after an answer that does not say whether the case was opened, keeps the button off so a second click opens nothing",
+    async (answer) => {
+      const mounted = await ready([answer]);
+      fill(mounted.root);
+      firstButton(mounted.root, "Abrir caso de privacidade").click();
+      await flush();
+      expect(alertOf(mounted.root)?.textContent).toContain(
+        "Não deu para confirmar se o caso foi aberto."
+      );
+      const button = firstButton(mounted.root, "Abrir caso de privacidade");
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      button.click();
+      await flush();
+      expect(posts(mounted.calls)).toHaveLength(1);
     }
   );
 
@@ -682,6 +703,25 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     const items = stepItems(mounted.root);
     expect(items[4]?.getAttribute("aria-current")).toBe("step");
     expect(items[5]?.getAttribute("class")).toBe("step step-later");
+  });
+
+  it("says a case closed outside the workflow was closed, not resolved, and offers nothing to send", async () => {
+    const closed = detail("scoped");
+    const mounted = await openCase({
+      ...closed,
+      case: {
+        ...closed.case,
+        closedAt: "2026-11-03T15:00:00.000Z",
+        status: "closed",
+      },
+    });
+    const text = visibleText(mounted.root);
+    expect(text).toContain(
+      "Caso fechado em 03/11/2026 12:00, sem resolução no fluxo de privacidade"
+    );
+    expect(text).not.toContain("Caso resolvido");
+    expect(text).toContain("fechado fora do fluxo de privacidade");
+    expect(byTag(mounted.root, "button")).toHaveLength(0);
   });
 
   it("shows a resolved case with every step done and nothing to send", async () => {
@@ -1097,6 +1137,19 @@ describe("nothing of the case after leaving (AC-P11.6, AC-C6)", () => {
     await flush();
     expect(visibleText(mounted.root)).not.toContain("Pedido pelo e-mail");
     expect(stepItems(mounted.root)).toHaveLength(0);
+  });
+
+  it("does not show the case again when a step's answer arrives after the page was left", async () => {
+    const wait = pending();
+    const [, step] = STEP_CASES[0] as [string, StepCase];
+    const mounted = await reviewOf(step, [wait.answer]);
+    firstButton(mounted.root, "Registrar identidade").click();
+    mounted.document.defaultView.dispatch("pagehide");
+    wait.release(step.answer());
+    await flush();
+    await flush();
+    expect(stepItems(mounted.root)).toHaveLength(0);
+    expect(mounted.calls.at(-1)?.init.method).toBe("POST");
   });
 
   it("clears a case already shown", async () => {

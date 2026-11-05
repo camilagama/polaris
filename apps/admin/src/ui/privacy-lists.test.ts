@@ -48,11 +48,20 @@ const PAIRS: readonly [string, Choices, readonly string[]][] = [
   ["stage", STAGES, PRIVACY_STAGES],
 ];
 
+/** The page's list and the domain's hold the same codes, in the same order. */
+function sameCodes(page: Choices, domain: readonly string[]): boolean {
+  const codes = page.map(([code]) => code);
+  return (
+    codes.length === domain.length &&
+    codes.every((code, index) => code === domain[index])
+  );
+}
+
 describe("the privacy lists of the page and of the contract", () => {
   it.each(PAIRS)(
     "offers exactly the domain's %s codes, in its order",
     (_name, page, domain) => {
-      expect(page.map(([code]) => code)).toEqual([...domain]);
+      expect(sameCodes(page, domain)).toBe(true);
     }
   );
 
@@ -64,10 +73,11 @@ describe("the privacy lists of the page and of the contract", () => {
     }
   });
 
-  it("fails when the page's list and the domain's drift apart (the comparison is not blind)", () => {
-    const missing = CHANNELS.slice(1).map(([code]) => code);
-    expect(missing).not.toEqual([...PRIVACY_CHANNELS]);
-    const reordered = [...CHANNELS].reverse().map(([code]) => code);
-    expect(reordered).not.toEqual([...PRIVACY_CHANNELS]);
+  it("refuses a list with a code missing, one more, or the order changed (the comparison is not blind)", () => {
+    const domain = [...PRIVACY_CHANNELS];
+    expect(sameCodes(CHANNELS.slice(1), domain)).toBe(false);
+    expect(sameCodes([...CHANNELS, ["fax", "Fax"]], domain)).toBe(false);
+    expect(sameCodes([...CHANNELS].reverse(), domain)).toBe(false);
+    expect(sameCodes(CHANNELS, domain)).toBe(true);
   });
 });

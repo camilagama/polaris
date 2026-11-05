@@ -184,6 +184,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
   const body = dom.el("div", { class: "case privacy-case" });
   const caseId = context.id;
   let turn = 0;
+  let left = false;
 
   const byWhom = (principalId: string) =>
     principalId === who.principal.id ? "você" : "outro operador";
@@ -212,12 +213,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       ["Canal", labelOf(CHANNELS, privacy.channel)],
       ["Recebido em", brasiliaMomentText(privacy.receivedAt)],
       ["Aberto em", brasiliaMomentText(item.openedAt)],
-      [
-        "Prazo de resposta",
-        privacy.stage === "resolved" || item.status !== "open"
-          ? `Caso resolvido em ${brasiliaMomentText(privacy.resolvedAt ?? item.closedAt)}`
-          : dueCell(dom, privacy, now()),
-      ],
+      ["Prazo de resposta", closedText(detail) ?? dueCell(dom, privacy, now())],
       ["Nota", privacy.note ?? "Sem nota."],
     ];
     return facts(dom, pairs);
@@ -358,6 +354,9 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
 
   /** Reads the case; `after` says how the step before ended once the steps are shown again. */
   const load = async (after?: () => void): Promise<boolean> => {
+    if (left) {
+      return true;
+    }
     turn += 1;
     const mine = turn;
     if (after === undefined) {
@@ -834,6 +833,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
 
   // a page restored from the back-forward cache must not show the case's note, reference or choices again
   dom.document.defaultView?.addEventListener("pagehide", () => {
+    left = true;
     turn += 1;
     dom.fill(body);
     notice.clear();
@@ -892,6 +892,17 @@ function readDecision(
     words.push("com nota");
   }
   return { body, value: words.join(", ") };
+}
+
+/** How a case that is no longer open ended, as the server recorded it; null while it is open. */
+function closedText(detail: Detail): string | null {
+  if (detail.privacy.stage === "resolved") {
+    return `Caso resolvido em ${brasiliaMomentText(detail.privacy.resolvedAt ?? detail.case.closedAt)}`;
+  }
+  if (detail.case.status !== "open") {
+    return `Caso fechado em ${brasiliaMomentText(detail.case.closedAt)}, sem resolução no fluxo de privacidade`;
+  }
+  return null;
 }
 
 const AUDIT_EVENTS: Readonly<Record<string, string>> = {

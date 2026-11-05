@@ -348,7 +348,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
       WAIT
     );
   });
-  it("opens a privacy case and takes it through its steps one at a time; a stale screen is refused in words (Parte 11: AC-P11.1 to AC-P11.5)", async () => {
+  it("opens a privacy case and takes it through its steps one at a time; a stale screen is refused in words (Parte 11: AC-P11.1 to AC-P11.4)", async () => {
     const { free } = fixture.screen;
     const opening = await openPage({
       screen: "privacidade-novo",

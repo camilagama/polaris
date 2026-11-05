@@ -35,7 +35,7 @@ export const OPEN_EFFECT =
 const OPEN_REFUSED =
   "O caso não foi aberto: confira o motivo, as três listas, a data de recebimento (até hoje, no máximo um ano atrás) e a nota.";
 const OPEN_UNKNOWN =
-  "Não deu para confirmar se o caso foi aberto. Veja a lista de casos de privacidade antes de tentar de novo.";
+  "Não deu para confirmar se o caso foi aberto. Veja a lista de casos de privacidade antes de abrir outro; para tentar de novo, recarregue esta página.";
 
 interface Choice {
   id: string;
@@ -70,7 +70,7 @@ function receivedOf(
   if (start > now.getTime()) {
     return { problem: "A data de recebimento não pode ser depois de hoje." };
   }
-  if (start < now.getTime() - 366 * DAY_MS) {
+  if (start < now.getTime() - 365 * DAY_MS) {
     return { problem: "A data de recebimento vai até um ano atrás." };
   }
   return new Date(start).toISOString();
@@ -230,20 +230,22 @@ export function privacyNewView(tools: ScreenTools): HTMLElement {
       navigate(path);
       return;
     }
-    sending = false;
-    openButton.setAttribute("aria-disabled", "false");
-    if (answer.ok) {
-      notice.alert(OPEN_UNKNOWN);
-    } else if (answer.problem === "invalid") {
-      notice.alert(OPEN_REFUSED);
-    } else if (answer.problem === "not_found") {
-      notice.alert("Esta loja não foi encontrada.");
-    } else if (
+    if (
+      answer.ok ||
       answer.problem === "network" ||
       answer.problem === "failed" ||
       answer.problem === "unavailable"
     ) {
+      // the case may have been opened: the button stays off, so a second click cannot open another one
       notice.alert(OPEN_UNKNOWN);
+      return;
+    }
+    sending = false;
+    openButton.setAttribute("aria-disabled", "false");
+    if (answer.problem === "invalid") {
+      notice.alert(OPEN_REFUSED);
+    } else if (answer.problem === "not_found") {
+      notice.alert("Esta loja não foi encontrada.");
     } else {
       notice.alert(PROBLEM_TEXT[answer.problem]);
     }
