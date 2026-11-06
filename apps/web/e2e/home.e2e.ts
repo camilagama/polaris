@@ -1,11 +1,18 @@
 /// <reference lib="dom" />
 
-import type { Locator, Page, Route } from "@playwright/test";
+import type { Browser, Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { READ_PROCEDURES } from "../src/lib/read-gate";
 import { pickDate } from "./date-pickers";
+import {
+  assertNoEllipsis,
+  assertNoPageScroll,
+  assertNothingClipped,
+  expectReflowFont,
+  openReflowViewport,
+} from "./reflow";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /** The button of the menu of the store in the header: what the menu holds, then the store. */
@@ -189,6 +196,15 @@ class FakeServer {
     version: number;
   }> = [];
 
+  /** The ranking of the month when a test needs other names than the two of the default one. */
+  top: Array<{
+    deleted: boolean;
+    name: string;
+    netSales: string;
+    productId: string;
+    quantity: number;
+  }> | null = null;
+
   /** Answers of a procedure that wait for the promise to settle (an answer still in flight). */
   readonly held = new Map<string, Promise<void>>();
 
@@ -277,7 +293,7 @@ class FakeServer {
       },
       ...(topProducts && count > 0
         ? {
-            topProducts: [
+            topProducts: this.top ?? [
               {
                 deleted: false,
                 name: "Camiseta básica",
@@ -4250,4 +4266,257 @@ test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cart
       )
     ).toBeLessThanOrEqual(1);
   });
+});
+
+/** Names of 30, 45 and 60 characters. */
+const LONG_NAMES = [
+  "Camiseta de algodão manga lisa",
+  "Calça jeans masculina slim fit azul escuro 44",
+  "Tênis esportivo de corrida leve com amortecedor duplo, preto",
+];
+
+function rankingOf(names: readonly string[], scale = 1) {
+  const ids = [PRODUCT, DELETED, "0199c2d0-0000-7000-8000-0000000000b3"];
+  return names.map((name, index) => ({
+    deleted: index === 1,
+    name,
+    netSales: `${(900 - index * 300) * scale}.00`,
+    productId: ids[index] ?? PRODUCT,
+    quantity: (12 - index * 4) * scale,
+  }));
+}
+
+const NOVEMBER = Date.parse("2026-11-05T15:00:00.000Z");
+const SOLD_IN_NOVEMBER: Scenario = {
+  ...SOLD,
+  days: { ...SOLD.days, "2026-11-03": [30_000, 2] },
+};
+
+interface RankingRow {
+  bottom: number;
+  figuresTop: number;
+  height: number;
+  nameBottom: number;
+  nameText: string;
+  top: number;
+  visibleCharacters: number;
+}
+
+/** Each line of the ranking as laid out, and how many characters of the name are drawn inside its box. */
+async function rankingRows(page: Page): Promise<RankingRow[]> {
+  await settled(page);
+  return region(page, "Mais vendidos do mês")
+    .locator("ol > li")
+    .evaluateAll((rows) =>
+      rows.map((row) => {
+        const name = row.querySelector("[data-top-name]") as HTMLElement;
+        const figures = row.querySelector("[data-top-figures]") as HTMLElement;
+        const box = row.getBoundingClientRect();
+        const origin = (
+          row.parentElement as HTMLElement
+        ).getBoundingClientRect().top;
+        const nameBox = name.getBoundingClientRect();
+        const text = name.firstChild as Text;
+        let visible = 0;
+        for (let at = 0; at < text.length; at += 1) {
+          const range = document.createRange();
+          range.setStart(text, at);
+          range.setEnd(text, at + 1);
+          const rect = range.getBoundingClientRect();
+          if (
+            rect.width > 0 &&
+            rect.bottom <= nameBox.bottom + 1 &&
+            rect.right <= nameBox.right + 1
+          ) {
+            visible += 1;
+          }
+        }
+        const value = figures.firstElementChild as HTMLElement;
+        return {
+          bottom: box.bottom - origin,
+          figuresTop: value.getBoundingClientRect().top - origin,
+          height: box.height,
+          nameBottom: nameBox.bottom - origin,
+          nameText: name.textContent ?? "",
+          top: box.top - origin,
+          visibleCharacters: visible,
+        };
+      })
+    );
+}
+
+async function openRanking(
+  page: Page,
+  server: FakeServer,
+  { at = NOON, fontPixels = 20, width = 320 } = {}
+) {
+  await openReflowViewport(page, { fontPixels, width });
+  await openHome(page, server, at);
+  await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+  await expectReflowFont(page, fontPixels);
+}
+
+test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px", () => {
+  test.skip(
+    ({ browserName }) => browserName !== "chromium",
+    "`Page.setFontSizes` is a Chrome DevTools command"
+  );
+
+  test("o nome tem a sua linha, o valor e as unidades ficam inteiros na de baixo e nada rola de lado", async ({
+    page,
+  }) => {
+    const server = new FakeServer(SOLD);
+    server.top = rankingOf(LONG_NAMES);
+    await openRanking(page, server);
+    const rows = await rankingRows(page);
+    expect(LONG_NAMES.map((name) => name.length)).toEqual([30, 45, 60]);
+    expect(rows).toHaveLength(3);
+    for (const [index, row] of rows.entries()) {
+      expect(row.nameText).toBe(LONG_NAMES[index]);
+      expect(
+        row.visibleCharacters,
+        `caracteres do nome ${index + 1} dentro da caixa`
+      ).toBeGreaterThanOrEqual(20);
+      expect(
+        row.figuresTop,
+        `valor ${index + 1} abaixo do nome`
+      ).toBeGreaterThanOrEqual(row.nameBottom - 1);
+    }
+    const block = region(page, "Mais vendidos do mês");
+    await assertNothingClipped(block);
+    await assertNoEllipsis(block.locator("[data-top-figures]"));
+    await assertNoPageScroll(page);
+    await expect(block.locator("[data-top-figures]")).toHaveText([
+      "R$ 900,0012 un.",
+      "R$ 600,008 un.",
+      "R$ 300,004 un.",
+    ]);
+    await expect(block.getByRole("link")).toHaveCount(2);
+    await expect(block.getByRole("link").first()).toHaveAttribute(
+      "href",
+      `/products?produto=${PRODUCT}`
+    );
+  });
+
+  test("a altura de cada linha não depende do estado: Esconder valores, o 3º produto ausente e outro mês", async ({
+    browser,
+    page,
+  }) => {
+    const server = new FakeServer(SOLD_IN_NOVEMBER);
+    server.top = rankingOf(LONG_NAMES);
+    await openRanking(page, server);
+    const full = await rankingRows(page);
+
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Esconder valores" })
+      .click();
+    await expect(region(page, "Mais vendidos do mês")).toContainText("R$ ••••");
+    expectSameRows(await rankingRows(page), full, "Esconder valores");
+
+    const fewer = new FakeServer(SOLD_IN_NOVEMBER);
+    fewer.top = rankingOf(LONG_NAMES.slice(0, 2));
+    await inFreshPage(browser, async (other) => {
+      await openRanking(other, fewer);
+      expectSameRows(
+        await rankingRows(other),
+        full.slice(0, 2),
+        "sem o 3º produto"
+      );
+    });
+
+    const later = new FakeServer(SOLD_IN_NOVEMBER);
+    later.top = rankingOf(LONG_NAMES, 2);
+    await inFreshPage(browser, async (other) => {
+      await openRanking(other, later, { at: NOVEMBER });
+      await expect(region(other, "Mais vendidos do mês")).toContainText(
+        "R$ 1.800,00"
+      );
+      expectSameRows(
+        await rankingRows(other),
+        full,
+        "outro mês, com outros valores"
+      );
+    });
+  });
+});
+
+async function inFreshPage(
+  browser: Browser,
+  use: (page: Page) => Promise<void>
+) {
+  const context = await browser.newContext();
+  try {
+    await use(await context.newPage());
+  } finally {
+    await context.close();
+  }
+}
+
+function expectSameRows(
+  after: readonly RankingRow[],
+  before: readonly RankingRow[],
+  when: string
+) {
+  expect(after.length, when).toBe(before.length);
+  for (const [index, row] of after.entries()) {
+    const rest = before[index];
+    for (const key of ["height", "top"] as const) {
+      expect(
+        Math.abs(row[key] - (rest?.[key] ?? Number.NaN)),
+        `${when}: ${key} da linha ${index + 1}`
+      ).toBeLessThanOrEqual(1);
+    }
+  }
+}
+
+test.describe("Mais vendidos do mês com a letra de 16 px: a linha de sempre", () => {
+  for (const [label, width, height] of [
+    ["360", 360, 740],
+    ["1280", 1280, 800],
+  ] as const) {
+    test(`a ${label} px nome, valor e unidades ficam numa linha só`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height, width });
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(LONG_NAMES);
+      await openHome(page, server);
+      await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+      const rows = await rankingRows(page);
+      for (const [index, row] of rows.entries()) {
+        expect(
+          row.nameBottom,
+          `valor na linha do nome ${index + 1}`
+        ).toBeGreaterThan(row.figuresTop);
+      }
+      const line = region(page, "Mais vendidos do mês").locator(
+        "[data-top-line]"
+      );
+      expect(
+        await line.evaluateAll((nodes) =>
+          nodes.map((node) => getComputedStyle(node).display)
+        )
+      ).toEqual(["flex", "flex", "flex"]);
+      const cut = await region(page, "Mais vendidos do mês")
+        .locator("[data-top-name]")
+        .last()
+        .evaluate((name) => {
+          const style = getComputedStyle(name);
+          return {
+            cut: name.scrollWidth > name.clientWidth,
+            ellipsis: style.textOverflow,
+            overflow: style.overflowX,
+            wrap: style.whiteSpace,
+          };
+        });
+      expect(cut).toEqual({
+        cut: true,
+        ellipsis: "ellipsis",
+        overflow: "hidden",
+        wrap: "nowrap",
+      });
+      await assertNoPageScroll(page);
+    });
+  }
 });

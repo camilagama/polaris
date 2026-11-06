@@ -158,14 +158,52 @@ function pendingLabelFor(
   return null;
 }
 
+interface Contacts {
+  email: string | null;
+  phone: string | null;
+}
+
+/**
+ * Each contact is an atom of the line: an inline box is as wide as the line allows (never wider), so one that does
+ * not fit beside the other goes down to a line of its own before anything breaks, and only a contact wider than the
+ * whole line breaks, at any character. The line takes no clamp: it would hide the second line, which is where the last
+ * digit and the e-mail go.
+ */
+const CONTACT_CLASS = "inline-block max-w-full [overflow-wrap:anywhere]";
+
+interface ContactsLineProps {
+  contacts: Contacts;
+  /** The row's button describes itself by this line, so the line is out of the tree of the screen reader. */
+  hidden: boolean;
+  id: string;
+}
+
+function ContactsLine({ contacts, hidden, id }: ContactsLineProps) {
+  return (
+    <span
+      aria-hidden={hidden ? true : undefined}
+      className="text-muted-foreground text-support"
+      id={id}
+    >
+      {contacts.phone ? (
+        <span className={CONTACT_CLASS}>{contacts.phone}</span>
+      ) : null}
+      {contacts.phone && contacts.email ? " · " : null}
+      {contacts.email ? (
+        <span className={CONTACT_CLASS}>{contacts.email}</span>
+      ) : null}
+    </span>
+  );
+}
+
 interface CustomerMainProps {
-  /** The phone and the e-mail, as the row writes them. */
-  contacts: string;
+  /** The phone, already formatted, and the e-mail: what the row writes under the name. */
+  contacts: Contacts;
   customer: CustomerReadModel;
   locked: boolean;
   lockedReasonId: string | undefined;
-  pendingLabelId: string | undefined;
   onEdit: (customer: CustomerReadModel) => void;
+  pendingLabelId: string | undefined;
 }
 
 /**
@@ -186,6 +224,7 @@ function CustomerMain({
   const stateId = `customer-state-${customer.id}`;
   // the active tab already says "Ativo": the badge is for the other states
   const hasStateBadge = customer.status !== "active" || isAnonymized;
+  const hasContacts = Boolean(contacts.phone || contacts.email);
   const content = (
     <>
       <span
@@ -214,14 +253,12 @@ function CustomerMain({
             </Badge>
           ) : null}
         </span>
-        {contacts ? (
-          <span
-            aria-hidden={isAnonymized ? undefined : true}
-            className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]"
+        {hasContacts ? (
+          <ContactsLine
+            contacts={contacts}
+            hidden={!isAnonymized}
             id={supportId}
-          >
-            {contacts}
-          </span>
+          />
         ) : null}
       </span>
     </>
@@ -238,7 +275,7 @@ function CustomerMain({
       describedBy={
         [
           hasStateBadge ? stateId : undefined,
-          contacts ? supportId : undefined,
+          hasContacts ? supportId : undefined,
           lockedReasonId,
           pendingLabelId,
         ]
@@ -354,12 +391,10 @@ function CustomerRow({
   const shownState = syncState ?? updateState;
   const lockedReason = lockedReasonFor(syncState, updateState);
   const pendingLabel = pendingLabelFor(pendingAction, customer.id);
-  const contacts = [
-    customer.phone ? formatCustomerPhone(customer.phone) : null,
-    customer.email,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const contacts = {
+    email: customer.email,
+    phone: customer.phone ? formatCustomerPhone(customer.phone) : null,
+  };
 
   const reasonId = `customer-locked-${customer.id}`;
   const pendingLabelId = `customer-pending-${customer.id}`;
