@@ -93,16 +93,28 @@ const TEXT_BETWEEN_TAGS = />([^<]*)</g;
 const OPERATOR_SLOT =
   /<summary[^>]*>.*<span class="[^"]*" data-operador=""><\/span><\/summary>/s;
 
-/** The side menu and the menu of the account in the header, which holds Minha conta e permissões. */
+const SIGN_OUT_HREF = "/cdn-cgi/access/logout";
+
+/** The links of the side menu and of the menu of the account in the header, except Sair, which every operator has. */
 function menuOf(html: string) {
   const menu = `${MENU.exec(html)?.[1] ?? ""}${ACCOUNT.exec(html)?.[1] ?? ""}`;
+  const links = [...menu.matchAll(LINK)].filter(
+    (match) => match[1] !== SIGN_OUT_HREF
+  );
   return {
-    current: [...menu.matchAll(LINK)]
+    current: links
       .filter((match) => match[2] !== undefined)
       .map((match) => match[3]),
     groups: [...menu.matchAll(GROUP)].map((match) => match[1]),
-    links: [...menu.matchAll(LINK)].map((match) => `${match[3]} ${match[1]}`),
+    links: links.map((match) => `${match[3]} ${match[1]}`),
   };
+}
+
+/** The "Sair" links of the account's menu: the account is the only place the page draws one. */
+function signOutOf(html: string) {
+  return [...(ACCOUNT.exec(html)?.[1] ?? "").matchAll(LINK)]
+    .filter((match) => match[1] === SIGN_OUT_HREF)
+    .map((match) => match[3]);
 }
 
 const SCREENS = [
@@ -550,8 +562,15 @@ describe("Minha conta e permissões in the menu of the account (Parte 9: AC-C1)"
     expect(menuOf(others).links.join()).not.toContain(
       "Minha conta e permissões"
     );
-    expect(ACCOUNT.exec(others)).toBeNull();
     expect(others).not.toContain('href="/configuracoes"');
+    expect(signOutOf(others)).toEqual(["Sair"]);
+  });
+
+  it("keeps Sair, and only Sair, in the account menu of an operator with no capability at all (AC-S1)", async () => {
+    const html = await render([]);
+    expect(signOutOf(html)).toEqual(["Sair"]);
+    expect(ACCOUNT.exec(html)?.[1]).not.toContain("/configuracoes");
+    expect(html.match(/\/cdn-cgi\/access\/logout/g)).toHaveLength(1);
   });
 
   it("has, in the button of the account, the slot where the script writes the operator's e-mail", async () => {

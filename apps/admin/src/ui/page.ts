@@ -3,6 +3,7 @@ import { FLAG_KEYS, LIMIT_KEYS } from "@polaris/domain/billing/entitlements";
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
 import { ENVIRONMENT_BANNER } from "../../ui/environment-banner";
+import { SIGN_OUT_LABEL, SIGN_OUT_PATH } from "../../ui/sign-out";
 import { type IconName, icon } from "./icons";
 
 /**
@@ -495,8 +496,6 @@ const MOBILE_MENU =
   "absolute inset-x-0 top-full max-h-[calc(100dvh-var(--app-header))] overflow-y-auto bg-sidebar pb-2 shadow-lg";
 const ACCOUNT_BUTTON =
   "touch-hit focus-ring flex h-10 min-w-0 max-w-[18rem] cursor-pointer list-none items-center gap-2 rounded-md px-1 text-foreground hover:bg-sidebar-hover [&::-webkit-details-marker]:hidden";
-const ACCOUNT_STATIC =
-  "flex h-10 min-w-0 max-w-[18rem] items-center gap-2 px-1 text-foreground";
 const ACCOUNT_AVATAR =
   "inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground [&_svg]:size-4";
 const ACCOUNT_POPUP =
@@ -514,23 +513,23 @@ const MAIN =
   "content mx-auto w-[min(100%_-_2rem,72rem)] pt-[clamp(1.5rem,5vw,4.25rem)] pb-14";
 
 /**
- * The menu of the account, in the header: the operator's e-mail, written by the script, and their page. Without the
- * capability of that page there is nothing to open, so the account is only the avatar and the e-mail, with no control.
+ * The menu of the account, in the header: the operator's e-mail, written by the script, the link of their page when
+ * they have the capability of it, and "Sair", which every operator has. "Sair" is a link to the edge's logout, so the
+ * menu works without the script.
  */
 function accountOf(screen: ScreenId, capabilities: readonly string[]) {
   const who = html`<span class="${ACCOUNT_AVATAR}">${icon("user-round")}</span><span class="sr-only">Conta</span><span class="${ACCOUNT_EMAIL}" data-operador=""></span>`;
-  if (!capabilities.includes(ACCOUNT.capability)) {
-    return synchronous(
-      html`<div class="${ACCOUNT_MENU} ${ACCOUNT_STATIC}" data-conta="">${who}</div>`
-    );
+  const signOut = html`<a class="${ACCOUNT_ITEM}" href="${SIGN_OUT_PATH}">${icon("log-out")}${SIGN_OUT_LABEL}</a>`;
+  let page = html``;
+  if (capabilities.includes(ACCOUNT.capability)) {
+    page = ACCOUNT.screens.includes(screen)
+      ? html`<a class="${ACCOUNT_ITEM}" data-active="" href="${ACCOUNT.path}" aria-current="page">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a>`
+      : html`<a class="${ACCOUNT_ITEM}" href="${ACCOUNT.path}">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a>`;
   }
-  const link = ACCOUNT.screens.includes(screen)
-    ? html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" data-active="" href="${ACCOUNT.path}" aria-current="page">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`
-    : html`<div class="${ACCOUNT_POPUP}"><a class="${ACCOUNT_ITEM}" href="${ACCOUNT.path}">${icon(ACCOUNT.icon)}${ACCOUNT.label}</a></div>`;
   return synchronous(
     html`<details class="${ACCOUNT_MENU}" data-conta="">
             <summary class="${ACCOUNT_BUTTON}">${who}</summary>
-            ${link}
+            <div class="${ACCOUNT_POPUP}">${page}${signOut}</div>
           </details>`
   );
 }

@@ -2,6 +2,7 @@ import type { ScreenTools } from "../app";
 import { facts } from "../blocks";
 import type { Dom } from "../dom";
 import { ENVIRONMENT_BANNER } from "../environment-banner";
+import { SIGN_OUT_LABEL, SIGN_OUT_PATH } from "../sign-out";
 
 /**
  * What each permission the server lists lets the operator do, in words. The list is the one of
@@ -37,7 +38,8 @@ const ROLE_TEXT: Readonly<Record<string, string>> = {
 
 export const PERMISSIONS_NOTE =
   "Estas permissões vêm do cadastro do Admin; não se mudam por aqui.";
-export const SIGN_OUT_TEXT = "Para sair, encerre a sessão no Access.";
+export const SIGN_OUT_TEXT =
+  "Sair encerra a sessão do Access e fecha o Polaris Admin em todos os aparelhos em até 30 segundos.";
 
 export function permissionText(code: string): string {
   return PERMISSION_TEXT[code] ?? `Permissão ${code}`;
@@ -57,8 +59,8 @@ function area(dom: Dom, id: string, title: string, ...content: Node[]) {
 }
 
 /**
- * Configurações (corte admin-v2, Parte 9): who the operator is to the Admin, in which environment this is and how to
- * end the session. Read only: it uses the `whoami` the page already read, makes no request, keeps nothing in the
+ * Configurações (corte admin-v2, Parte 9): who the operator is to the Admin, in which environment this is and the link that
+ * ends the session. Read only: it uses the `whoami` the page already read, makes no request, keeps nothing in the
  * browser and has no field. The operator's label is the one of the top of the page.
  */
 export function settingsView(tools: ScreenTools): HTMLElement[] {
@@ -92,6 +94,12 @@ export function settingsView(tools: ScreenTools): HTMLElement[] {
         ENVIRONMENT_BANNER[context.environment]
       )
     ),
-    area(dom, "configuracoes-sessao", "Sessão", dom.el("p", {}, SIGN_OUT_TEXT)),
+    area(
+      dom,
+      "configuracoes-sessao",
+      "Sessão",
+      dom.el("p", {}, SIGN_OUT_TEXT),
+      dom.el("p", {}, dom.el("a", { href: SIGN_OUT_PATH }, SIGN_OUT_LABEL))
+    ),
   ];
 }

@@ -166,12 +166,21 @@ describe("Configurações sem platform:read (AC-C1)", () => {
   });
 });
 
-describe("Configurações: Sessão (AC-P9.3) and nothing to write (AC-P9.1, AC-P9.4)", () => {
-  it("says how to leave and offers no way to do it", async () => {
+describe("Configurações: Sessão (AC-S1, AC-S3) and nothing to write (AC-P9.1, AC-P9.4)", () => {
+  it("says what leaving does and offers one link to the logout of the Access, and nothing else", async () => {
     const { root } = await screen();
     expect(visibleText(root)).toContain(SIGN_OUT_TEXT);
-    expect(SIGN_OUT_TEXT).toBe("Para sair, encerre a sessão no Access.");
-    expect(byTag(root, "a")).toEqual([]);
+    expect(SIGN_OUT_TEXT).toBe(
+      "Sair encerra a sessão do Access e fecha o Polaris Admin em todos os aparelhos em até 30 segundos."
+    );
+    expect(visibleText(root)).not.toContain(
+      "Para sair, encerre a sessão no Access."
+    );
+    const links = byTag(root, "a");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/cdn-cgi/access/logout",
+    ]);
+    expect(visibleText(links[0] as FakeElement)).toBe("Sair");
     expect(byTag(root, "button")).toEqual([]);
   });
 
@@ -179,10 +188,11 @@ describe("Configurações: Sessão (AC-P9.3) and nothing to write (AC-P9.1, AC-P
     const { calls, document, navigations, root } = await screen();
     expect(calls.map((call) => call.path)).toEqual(["/api/whoami"]);
     expect(calls[0]?.init.method).toBe("GET");
-    for (const tag of ["form", "input", "select", "button", "a"]) {
+    for (const tag of ["form", "input", "select", "button"]) {
       expect(byTag(root, tag)).toEqual([]);
       expect(document.created).not.toContain(tag);
     }
+    expect(byTag(root, "a")).toHaveLength(1);
     expect(navigations).toEqual([]);
   });
 
