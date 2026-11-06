@@ -109,7 +109,7 @@ const LINK_PATTERNS = {
 
 const checkbox = (page: Page) => page.getByRole("checkbox");
 const continueButton = (page: Page) =>
-  page.getByRole("button", { name: "Continuar" });
+  page.getByRole("button", { name: "Aceitar e continuar" });
 
 test("o aceite pendente mostra os dois documentos com link em outra aba, a caixa desmarcada, e sem menu do app", async ({
   page,
@@ -145,7 +145,7 @@ test("o aceite pendente mostra os dois documentos com link em outra aba, a caixa
   );
 });
 
-test("'Continuar' sem marcar a caixa diz o que falta e não grava nada; marcada, grava e volta ao destino", async ({
+test("'Aceitar e continuar' sem marcar a caixa diz o que falta e não grava nada; marcada, grava e volta ao destino", async ({
   page,
 }) => {
   const server = await serve(page);
