@@ -13,13 +13,10 @@ import {
   useState,
 } from "react";
 import type * as React from "react";
+import { PHONE_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import {
-  dialogEntries,
-  holdOpenDialog,
-  PHONE_QUERY,
-} from "@/ui/dialog-history";
+import { dialogEntries, holdOpenDialog } from "@/ui/dialog-history";
 import {
   FORM_BODY_CLASS,
   FORM_CLOSE_CLASS,

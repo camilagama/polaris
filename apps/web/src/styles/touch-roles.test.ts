@@ -18,7 +18,7 @@ const theme = readFileSync(
 );
 
 const TOUCH_BLOCK =
-  /@media \(pointer: coarse\), \(max-width: 759\.98px\) \{\s*:root \{([^}]*)\}/;
+  /@media \(pointer: coarse\), not all and \(min-width: 47\.5rem\) \{\s*:root \{([^}]*)\}/;
 
 function tokenIn(css: string, name: string) {
   return new RegExp(`${name}:\\s*([^;]+);`).exec(css)?.[1];

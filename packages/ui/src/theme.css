@@ -329,7 +329,7 @@
 
 /* Touch (phone, tablet) or a narrow screen: the visible height goes one step up, the side margin shrinks, the big
    value comes down. The spacing does NOT scale. */
-@media (pointer: coarse), (max-width: 759.98px) {
+@media (pointer: coarse), not all and (min-width: 47.5rem) {
   :root {
     --gutter: 1rem;
     --h-xs: 1.75rem;
@@ -354,7 +354,7 @@
 /* Polaris variant and utilities */
 /* Block form: the shorthand with a comma-separated media query compiles to a broken selector. */
 @custom-variant touch {
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     @slot;
   }
 }
@@ -362,7 +362,7 @@
 /* A 44 px touch area around a smaller control: an invisible pseudo-element, only with touch. The controls of a group
    (row actions, filters, segments) do not need it: as small as 24 px, with 8 px between targets (WCAG 2.2, 2.5.8). */
 @utility touch-hit {
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     position: relative;
     &::before {
       position: absolute;
@@ -375,7 +375,7 @@
 /* The same for a text field (InputGroup): the pseudo-element sits BEHIND the field (z-index -1), so a touch on the
    text still places the caret */
 @utility touch-hit-field {
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     position: relative;
     isolation: isolate;
     &::before {
