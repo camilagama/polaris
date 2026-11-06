@@ -24,6 +24,7 @@ test.skip(
 const REM = 16;
 const PHONE_REM = 47.5;
 const COLLAPSIBLE_REM = 64;
+const SALE_REM = 56.25;
 
 async function setBrowserFont(page: Page, pixels: number) {
   const session = await page.context().newCDPSession(page);
@@ -156,3 +157,90 @@ test.describe("fonte padrão 20 px: nada rola de lado a 320 px", () => {
     expect(await sideScroll(page)).toEqual([]);
   });
 });
+
+/** The two-column sale form, the bar with the total at the bottom (below the line) and the confirm button of the summary. */
+function saleLayout(page: Page) {
+  return page.evaluate(() => {
+    const form = document.querySelector("[data-sale-form]");
+    const bar = document.querySelector("[data-submit-bar]");
+    const aside = form?.querySelector("aside");
+    const confirm = aside?.querySelector('button[type="submit"]');
+    const shown = (element: Element | null | undefined) =>
+      element ? getComputedStyle(element).display !== "none" : false;
+    return {
+      barShown: shown(bar),
+      columns: form
+        ? getComputedStyle(form).gridTemplateColumns.split(" ").length
+        : 0,
+      confirmShown: shown(confirm),
+      display: form ? getComputedStyle(form).display : "",
+      sideScroll:
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth,
+      summarySticky: aside ? getComputedStyle(aside).position : "",
+    };
+  });
+}
+
+async function openSale(page: Page, width: number, pixels: number) {
+  await page.setViewportSize({ height: 800, width });
+  await setBrowserFont(page, pixels);
+  await serve(page);
+  await page.goto("/sales");
+  await expect(page.locator("[data-sale-form]")).toBeVisible({
+    timeout: 20_000,
+  });
+}
+
+const ONE_COLUMN = {
+  barShown: true,
+  columns: 1,
+  confirmShown: false,
+  display: "flex",
+  summarySticky: "static",
+};
+const TWO_COLUMNS = {
+  barShown: false,
+  columns: 2,
+  confirmShown: true,
+  display: "grid",
+  summarySticky: "sticky",
+};
+
+for (const pixels of [REM, 20]) {
+  test.describe(`a Venda em rem, fonte padrão ${pixels} px`, () => {
+    test(`a ${SALE_REM * pixels - 1} px é uma coluna e a ${SALE_REM * pixels} px são duas, com a barra de total e o botão do resumo na mesma linha`, async ({
+      page,
+    }) => {
+      const line = SALE_REM * pixels;
+      await openSale(page, line - 1, pixels);
+      expect(await saleLayout(page)).toMatchObject(ONE_COLUMN);
+      await page.setViewportSize({ height: 800, width: line });
+      await expect
+        .poll(async () => (await saleLayout(page)).columns)
+        .toBe(TWO_COLUMNS.columns);
+      expect(await saleLayout(page)).toMatchObject(TWO_COLUMNS);
+    });
+  });
+}
+
+test.describe("fonte padrão 20 px: a Venda não vai a duas colunas a 950 px", () => {
+  test("a 950 px continua em uma coluna, com a barra de total", async ({
+    page,
+  }) => {
+    await openSale(page, 950, 20);
+    expect(await saleLayout(page)).toMatchObject(ONE_COLUMN);
+  });
+});
+
+for (const pixels of [REM, 20]) {
+  test.describe(`a Venda a 320 px, fonte padrão ${pixels} px`, () => {
+    test("não rola de lado", async ({ page }) => {
+      await openSale(page, 320, pixels);
+      expect(await saleLayout(page)).toMatchObject({
+        ...ONE_COLUMN,
+        sideScroll: false,
+      });
+    });
+  });
+}

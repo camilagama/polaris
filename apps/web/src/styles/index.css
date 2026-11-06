@@ -149,10 +149,10 @@
   }
 }
 
-/* A page with the sticky submit bar (the sale, below 900 px): what gets the focus scrolls above the bar, which is
+/* A page with the sticky submit bar (the sale, below 56.25 rem): what gets the focus scrolls above the bar, which is
    about 4.5 rem tall and grows with the text size and the zoom, as `rem` does (U-19), and above the shell's. */
 @layer base {
-  @media (max-width: 899.98px) {
+  @media (max-width: 56.2487rem) {
     :root:has([data-submit-bar]) {
       scroll-padding-bottom: calc(8rem + var(--app-bottom-bar, 0rem));
     }

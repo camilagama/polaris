@@ -1004,7 +1004,7 @@ export function SalePage() {
       ) : null}
       <form
         aria-label="Nova venda"
-        className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_minmax(19rem,22rem)] min-[900px]:items-start"
+        className="flex flex-col gap-4 min-[56.25rem]:grid min-[56.25rem]:grid-cols-[minmax(0,1fr)_minmax(19rem,22rem)] min-[56.25rem]:items-start"
         data-sale-form=""
         noValidate
         onSubmit={handleSubmitEvent}
