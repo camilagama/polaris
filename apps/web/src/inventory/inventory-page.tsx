@@ -127,7 +127,7 @@ function StockItem({
   return (
     <li
       className={cn(
-        "grid gap-3 p-(--card-spacing)",
+        "@container grid gap-3 p-(--card-spacing)",
         panelOpen && "bg-muted/50"
       )}
       data-open={panelOpen ? "" : undefined}
@@ -161,7 +161,7 @@ function StockItem({
             </p>
           </div>
         </div>
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-support">
+        <dl className="grid @max-[15.999rem]:grid-cols-1 grid-cols-2 gap-x-3 gap-y-2 text-support">
           <Figure label="Saldo">
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span
