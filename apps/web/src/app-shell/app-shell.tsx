@@ -297,6 +297,12 @@ function AppSidebar({
   );
 }
 
+/* The label of a destination of the bar scales down in `rem` with the width of its cell (`4.4` em is the widest label,
+   "Histórico", and 0.25 rem is the padding of the cell) to a floor of 0.6875 rem, where a tighter tracking takes
+   what is left; under that it breaks in two lines (`--app-bottom-bar` grows with it) and is never cut. */
+const BOTTOM_BAR_LABEL =
+  "max-w-full text-center [font-size:clamp(0.6875rem,calc((100cqw-0.25rem)/4.4),0.75rem)] [overflow-wrap:anywhere] @max-[3.275rem]/tab:tracking-[-0.01em]";
+
 /**
  * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
  * which opens the rest (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
@@ -311,7 +317,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
   const marked = navId === null ? null : bottomBarMark(navId);
   const moreCurrent = marked === "more";
   const tab =
-    "focus-ring relative grid min-h-13 min-w-0 content-center justify-items-center gap-0.5 px-0.5 pt-1 font-medium text-xs [&_svg]:size-[18px]";
+    "@container/tab focus-ring relative grid min-h-13 min-w-0 content-center justify-items-center gap-0.5 px-0.5 pt-1 font-medium text-xs [&_svg]:size-[18px]";
   const mark = (
     <span
       aria-hidden="true"
@@ -350,7 +356,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
               <span className="grid h-8 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs">
                 <Icon aria-hidden />
               </span>
-              <span className="max-w-full truncate font-semibold">
+              <span className={`${BOTTOM_BAR_LABEL} font-semibold`}>
                 {item.label}
               </span>
             </a>
@@ -365,7 +371,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           >
             {current ? mark : null}
             <Icon aria-hidden />
-            <span className="max-w-full truncate">{item.label}</span>
+            <span className={BOTTOM_BAR_LABEL}>{item.label}</span>
           </a>
         );
       })}
@@ -390,7 +396,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
             </span>
           ) : null}
         </span>
-        Mais
+        <span className={BOTTOM_BAR_LABEL}>Mais</span>
       </button>
     </nav>
   );

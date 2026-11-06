@@ -133,6 +133,13 @@
       scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
     }
   }
+  /* A cell this narrow cannot hold "Histórico" in one line even at the floor of the label: the labels break in two
+     and the bar is one line taller. */
+  @media (max-width: 15.75rem) {
+    :root:has([data-bottom-bar]) {
+      --app-bottom-bar: calc(4.25rem + env(safe-area-inset-bottom));
+    }
+  }
 }
 
 /* The header of the shell: 48 px on the phone and 56 px from 760 px, the one source of its height (the header, the
