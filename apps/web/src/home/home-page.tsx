@@ -66,16 +66,20 @@ function RefreshButton({
   busy,
   className,
   offline,
+  offlineReasonId,
   onClick,
 }: {
   busy: boolean;
   className?: string;
   offline: boolean;
+  /** The line that already says "Sem internet.": read as the reason while the button is off for lack of a connection. */
+  offlineReasonId: string | undefined;
   onClick: () => void;
 }) {
   const off = busy || offline;
   return (
     <Button
+      aria-describedby={busy ? undefined : offlineReasonId}
       aria-disabled={off || undefined}
       className={cn("max-md:size-ctl-lg max-md:px-0", className)}
       onClick={off ? undefined : onClick}
@@ -384,6 +388,12 @@ function HomeHeader({
   refresh: { busy: boolean; offline: boolean; onClick: () => void } | null;
   updated: React.ReactNode;
 }) {
+  let offlineReasonId: string | undefined;
+  if (explained) {
+    offlineReasonId = "home-updated";
+  } else if (offlineText) {
+    offlineReasonId = "home-new-sale-offline";
+  }
   return (
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
       <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
@@ -403,6 +413,7 @@ function HomeHeader({
             <RefreshButton
               busy={refresh.busy}
               offline={refresh.offline}
+              offlineReasonId={offlineReasonId}
               onClick={refresh.onClick}
             />
           ) : null}
@@ -415,6 +426,7 @@ function HomeHeader({
             busy={refresh.busy}
             className="max-md:hidden"
             offline={refresh.offline}
+            offlineReasonId={offlineReasonId}
             onClick={refresh.onClick}
           />
         ) : null}

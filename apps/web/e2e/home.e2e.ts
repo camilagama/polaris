@@ -2766,6 +2766,13 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
         "aria-disabled",
         "true"
       );
+      await expect(refreshButton(page)).toHaveAttribute(
+        "aria-describedby",
+        "home-new-sale-offline"
+      );
+      await expect(refreshButton(page)).toHaveAccessibleDescription(
+        OFFLINE_SALE
+      );
       await sameAs(online);
       const reads = server.calls.length;
       await refreshButton(page).click({ force: true });
@@ -2777,6 +2784,7 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
         "aria-disabled",
         "true"
       );
+      await expect(refreshButton(page)).not.toHaveAttribute("aria-describedby");
       await sameAs(online);
     });
   }
@@ -2871,6 +2879,10 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
       "A venda é enviada quando a conexão voltar."
     );
     await expect(refreshButton(page)).toHaveAttribute("aria-disabled", "true");
+    await expect(refreshButton(page)).toHaveAttribute(
+      "aria-describedby",
+      "home-updated"
+    );
     await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
   });
