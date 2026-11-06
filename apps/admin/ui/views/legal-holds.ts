@@ -91,7 +91,7 @@ export function legalHoldsView(tools: ScreenTools): HTMLElement {
           ),
           dom.el(
             "span",
-            { class: "hint" },
+            { "aria-hidden": "true", class: "hint" },
             ` · final ${hold.organizationId.slice(-4)}`
           )
         )
