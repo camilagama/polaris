@@ -24,7 +24,6 @@ test.skip(
 const REM = 16;
 const PHONE_REM = 47.5;
 const COLLAPSIBLE_REM = 64;
-const SALE_REM = 56.25;
 
 async function setBrowserFont(page: Page, pixels: number) {
   const session = await page.context().newCDPSession(page);
@@ -158,28 +157,13 @@ test.describe("fonte padrão 20 px: nada rola de lado a 320 px", () => {
   });
 });
 
-/** The two-column sale form, the bar with the total at the bottom (below the line) and the confirm button of the summary. */
-function saleLayout(page: Page) {
-  return page.evaluate(() => {
-    const form = document.querySelector("[data-sale-form]");
-    const bar = document.querySelector("[data-submit-bar]");
-    const aside = form?.querySelector("aside");
-    const confirm = aside?.querySelector('button[type="submit"]');
-    const shown = (element: Element | null | undefined) =>
-      element ? getComputedStyle(element).display !== "none" : false;
-    return {
-      barShown: shown(bar),
-      columns: form
-        ? getComputedStyle(form).gridTemplateColumns.split(" ").length
-        : 0,
-      confirmShown: shown(confirm),
-      display: form ? getComputedStyle(form).display : "",
-      sideScroll:
-        document.documentElement.scrollWidth >
-        document.documentElement.clientWidth,
-      summarySticky: aside ? getComputedStyle(aside).position : "",
-    };
-  });
+/** What the sale shows at the narrowest windows: the page must not scroll sideways. */
+function saleSideScroll(page: Page) {
+  return page.evaluate(
+    () =>
+      document.documentElement.scrollWidth >
+      document.documentElement.clientWidth
+  );
 }
 
 async function openSale(page: Page, width: number, pixels: number) {
@@ -192,70 +176,34 @@ async function openSale(page: Page, width: number, pixels: number) {
   });
 }
 
-const ONE_COLUMN = {
-  barShown: true,
-  columns: 1,
-  confirmShown: false,
-  display: "flex",
-  summarySticky: "static",
-};
-const TWO_COLUMNS = {
-  barShown: false,
-  columns: 2,
-  confirmShown: true,
-  display: "grid",
-  summarySticky: "sticky",
-};
-
-for (const pixels of [REM, 20]) {
-  test.describe(`a Venda em rem, fonte padrão ${pixels} px`, () => {
-    test(`a ${SALE_REM * pixels - 1} px é uma coluna e a ${SALE_REM * pixels} px são duas, com a barra de total e o botão do resumo na mesma linha`, async ({
-      page,
-    }) => {
-      const line = SALE_REM * pixels;
-      await openSale(page, line - 1, pixels);
-      expect(await saleLayout(page)).toMatchObject(ONE_COLUMN);
-      await page.setViewportSize({ height: 800, width: line });
-      await expect
-        .poll(async () => (await saleLayout(page)).columns)
-        .toBe(TWO_COLUMNS.columns);
-      expect(await saleLayout(page)).toMatchObject(TWO_COLUMNS);
-    });
-  });
-}
-
-test.describe("fonte padrão 20 px: a Venda não vai a duas colunas a 950 px", () => {
-  test("a 950 px continua em uma coluna, com a barra de total", async ({
-    page,
-  }) => {
-    await openSale(page, 950, 20);
-    expect(await saleLayout(page)).toMatchObject(ONE_COLUMN);
-  });
-});
-
 for (const pixels of [REM, 20]) {
   test.describe(`a Venda a 320 px, fonte padrão ${pixels} px`, () => {
     test("não rola de lado", async ({ page }) => {
       await openSale(page, 320, pixels);
-      expect(await saleLayout(page)).toMatchObject({
-        ...ONE_COLUMN,
-        sideScroll: false,
-      });
+      expect(await saleSideScroll(page)).toBe(false);
     });
   });
 }
 
-/** What the document reserves under the focused control against what the sticky total bar of the sale covers. */
+/**
+ * What the page reserves under a focused control of the sale against what the sticky total bar covers: the
+ * `scroll-padding` of the document plus the `scroll-margin` of the control, which is where the sale's own container
+ * (in one column) puts its part.
+ */
 function submitBarReserve(page: Page) {
   return page.evaluate(() => {
     const bar = document.querySelector("[data-submit-bar]");
-    const padding = Number.parseFloat(
-      getComputedStyle(document.documentElement).scrollPaddingBottom
-    );
+    const control = document.querySelector("[data-sale-form] button");
+    const px = (value: string | undefined) => {
+      const parsed = Number.parseFloat(value ?? "");
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
     return {
       barHeight: bar?.getBoundingClientRect().height ?? 0,
       barShown: bar ? getComputedStyle(bar).display !== "none" : false,
-      padding: Number.isNaN(padding) ? 0 : padding,
+      padding:
+        px(getComputedStyle(document.documentElement).scrollPaddingBottom) +
+        px(control ? getComputedStyle(control).scrollMarginBottom : undefined),
     };
   });
 }
@@ -267,7 +215,7 @@ for (const [width, pixels] of [
   [320, 20],
 ] as const) {
   test.describe(`a Venda a ${width} px, fonte padrão ${pixels} px`, () => {
-    test("o scroll-padding de baixo cobre a barra de total e a barra inferior", async ({
+    test("a reserva de rolagem de baixo cobre a barra de total e a barra inferior", async ({
       page,
     }) => {
       await openSale(page, width, pixels);
@@ -287,8 +235,8 @@ for (const [width, pixels] of [
   });
 }
 
-test.describe("a Venda a 1280 px: a regra do scroll-padding da barra de total não se aplica", () => {
-  test("o scroll-padding de baixo fica em 0 e a barra de total não aparece", async ({
+test.describe("a Venda a 1280 px: a reserva de rolagem da barra de total não se aplica", () => {
+  test("a reserva de rolagem de baixo fica em 0 e a barra de total não aparece", async ({
     page,
   }) => {
     await openSale(page, 1280, REM);

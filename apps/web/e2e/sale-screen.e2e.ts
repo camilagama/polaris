@@ -343,7 +343,7 @@ test("a 320 px nada transborda: venda guardada no aparelho, venda travada e falh
     name: "Guardar esta venda neste aparelho",
   });
   await expect(keep).toBeVisible();
-  // below 56.25 rem the notice is far above the bar that was tapped: the focus goes to it
+  // in one column the notice is far above the bar that was tapped: the focus goes to it
   await expect(page.getByRole("alert").filter({ has: keep })).toBeVisible();
   await expect(page.locator(":focus").filter({ has: keep })).toHaveCount(1);
   await expectNoSidewaysScroll(page);

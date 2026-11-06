@@ -978,7 +978,7 @@ export function SalePage() {
   const itemCount = form.items.length;
   const chosenCount = chosenItemCount(form);
   return (
-    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
+    <div className="@container/sale grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Nova venda</h1>
       <SaleDraftBar
         canClear={!locked}
@@ -1004,7 +1004,7 @@ export function SalePage() {
       ) : null}
       <form
         aria-label="Nova venda"
-        className="flex flex-col gap-4 min-[56.25rem]:grid min-[56.25rem]:grid-cols-[minmax(0,1fr)_minmax(19rem,22rem)] min-[56.25rem]:items-start"
+        className="flex @[44rem]/sale:grid @[44rem]/sale:grid-cols-[minmax(24rem,1fr)_minmax(19rem,22rem)] flex-col @[44rem]/sale:items-start gap-4"
         data-sale-form=""
         noValidate
         onSubmit={handleSubmitEvent}
