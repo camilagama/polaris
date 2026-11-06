@@ -237,20 +237,19 @@ describe("OperationActions", () => {
     );
   });
 
-  it("has one ink button on each step, and Voltar is the ghost one (no outline)", () => {
-    const steps = [
-      { confirming: false, locked: false },
-      { confirming: true, locked: false },
-      { confirming: true, locked: true, retrying: true },
-    ];
-    for (const step of steps) {
-      expect(
-        inkButtonsOf(renderActions(step, false)).length
-      ).toBeLessThanOrEqual(1);
-      expect(
-        inkButtonsOf(renderActions(step, true)).length
-      ).toBeLessThanOrEqual(1);
+  it("has exactly one ink button on each step that is not destructive, and none on a destructive confirm", () => {
+    const editing = { confirming: false, locked: false };
+    const confirming = { confirming: true, locked: false };
+    const retrying = { confirming: true, locked: true, retrying: true };
+    for (const step of [editing, confirming, retrying]) {
+      expect(inkButtonsOf(renderActions(step, false))).toHaveLength(1);
     }
+    expect(inkButtonsOf(renderActions(editing, true))).toHaveLength(1);
+    expect(inkButtonsOf(renderActions(confirming, true))).toHaveLength(0);
+    expect(inkButtonsOf(renderActions(retrying, true))).toHaveLength(1);
+  });
+
+  it("makes Voltar the ghost button, with no outline", () => {
     const last = renderActions({ confirming: true, locked: false });
     expect(last).toMatch(GHOST_BACK);
     expect(last).not.toContain("bg-card");
