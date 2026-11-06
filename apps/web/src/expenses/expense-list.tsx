@@ -76,6 +76,10 @@ function countLabel(count: number): string {
   return count === 1 ? "1 despesa" : `${count} despesas`;
 }
 
+function loadedCountLabel(count: number, hasMore: boolean): string {
+  return `${countLabel(count)}${hasMore ? " · há mais" : ""}`;
+}
+
 interface ExpenseSummaryProps {
   filters: ExpenseFilters;
   state: ExpenseListState;
@@ -118,7 +122,8 @@ const TOTAL_UNDER_VALUES =
 
 /**
  * The total of the rows loaded, under them: the sum the eye does down the column. The "Total do período" above is the
- * server's and covers every page; this one is what is on the screen, so with "Carregar mais" pending they differ.
+ * server's and covers every page; this one is what is on the screen, so with "Carregar mais" pending they differ
+ * and the count says "há mais", as the sales history does.
  */
 function ExpenseListTotal({ state }: { state: ExpenseListState }) {
   const unknown = state.isLoading && state.expenses.length === 0;
@@ -133,7 +138,11 @@ function ExpenseListTotal({ state }: { state: ExpenseListState }) {
   return (
     <ListTotalFooter
       className={cn("rounded-lg border", TOTAL_UNDER_VALUES)}
-      count={unknown || failed ? "" : countLabel(state.expenses.length)}
+      count={
+        unknown || failed
+          ? ""
+          : loadedCountLabel(state.expenses.length, state.nextCursor !== null)
+      }
       value={value}
     />
   );

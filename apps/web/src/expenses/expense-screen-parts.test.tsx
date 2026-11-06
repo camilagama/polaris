@@ -208,6 +208,15 @@ describe("the total of the rows on the screen", () => {
     expect(foot(html)).not.toContain("99.999");
   });
 
+  it("says there is more while another page is pending, and stops saying it after the last page", () => {
+    const rows = [expense({ id: "e1" }), expense({ id: "e2" })];
+    const pending = foot(list(state({ expenses: rows, nextCursor: "c1" })));
+    expect(pending).toContain("2 despesas · há mais");
+    const last = foot(list(state({ expenses: rows, nextCursor: null })));
+    expect(last).toContain("2 despesas");
+    expect(last).not.toContain("há mais");
+  });
+
   it("is in the DOM with no rows, with the same lines (zero and no count text lost)", () => {
     const empty = list(state({}));
     expect(foot(empty)).toContain("R$ 0,00");
