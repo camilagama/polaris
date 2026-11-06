@@ -15,6 +15,7 @@ import {
 } from "@polaris/domain/admin/privacy-case";
 import { Client } from "pg";
 import {
+  type PrivacyCasePage,
   closeSupportCase,
   grantTenantAccess,
   listPrivacyCases,
@@ -61,8 +62,16 @@ const DAY_MS = 86_400_000;
 const AUDIT_DETAIL_CODES =
   /^(privacy|revoked=\d+|stage=[a-z_]+(;[a-z_]+=[a-z_0-9]+)*|action=[a-z_]+)$/;
 
+interface OpenedDueCase {
+  dayOffset: number;
+  due: Date;
+  hour: number;
+  id: string;
+  minute: number;
+}
+
 interface DueDayProbe {
-  list: () => Promise<Awaited<ReturnType<typeof listPrivacyCases>>>;
+  list: () => Promise<PrivacyCasePage>;
   open: (over: {
     dueDays: number;
     receivedAt: Date;
@@ -98,8 +107,11 @@ async function assertDaysToDueDay(probe: DueDayProbe) {
       { hour: 0, minute: 30 },
     ].map((time) => ({ dayOffset, ...time }))
   );
-  const attempt = async () => {
-    const opened: ((typeof wanted)[number] & { due: Date; id: string })[] = [];
+  const attempt = async (): Promise<{
+    opened: OpenedDueCase[];
+    page: PrivacyCasePage;
+  }> => {
+    const opened: OpenedDueCase[] = [];
     for (const entry of wanted) {
       const due = await dueMoment(entry.dayOffset, entry.hour, entry.minute);
       const created = await probe.open({
@@ -111,15 +123,17 @@ async function assertDaysToDueDay(probe: DueDayProbe) {
     }
     return { opened, page: await probe.list() };
   };
-  let counted: Awaited<ReturnType<typeof attempt>> | null = null;
-  for (let tries = 0; counted === null && tries < 2; tries += 1) {
-    const before = await brasiliaDay();
-    const result = await attempt();
-    if (before === (await brasiliaDay())) {
-      counted = result;
+  const settled = async () => {
+    for (let tries = 0; tries < 2; tries += 1) {
+      const before = await brasiliaDay();
+      const result = await attempt();
+      if (before === (await brasiliaDay())) {
+        return result;
+      }
     }
-  }
-  assert.ok(counted, "São Paulo midnight passed on every attempt");
+    throw new Error("São Paulo midnight passed on every attempt");
+  };
+  const counted = await settled();
   for (const entry of counted.opened) {
     const listed = counted.page.cases.find((item) => item.id === entry.id);
     assert.ok(listed, "the case just opened is on the first page");
