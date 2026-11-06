@@ -78,7 +78,9 @@ describe("button labels say the choice, not OK or Sim", () => {
     expect(scanned).toContain("legal/acceptance/acceptance-page.tsx");
     expect(scanned).toContain("offline/attention-panel.tsx");
     expect(
-      readdirSync(SRC).filter((name) => EXCLUDED_FOLDERS.includes(`${name}/`))
+      readdirSync(SRC)
+        .filter((name) => EXCLUDED_FOLDERS.includes(`${name}/`))
+        .sort()
     ).toEqual(["offline-poc", "ui-gallery"]);
   });
 

@@ -58,7 +58,7 @@ describe("the attention panel", () => {
     ]) {
       const html = render(summary);
       expect(html).toContain(
-        '<p class="text-muted-foreground" id="attention-subtitle">O que o servidor recusou e espera uma decisão sua.</p>'
+        '<p class="text-muted-foreground" id="attention-subtitle">O que o servidor recusou e precisa da sua decisão.</p>'
       );
       expect(html.indexOf("Pendências</h1>")).toBeLessThan(
         html.indexOf("attention-subtitle")
