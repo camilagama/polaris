@@ -149,6 +149,47 @@ test("a 320 px com letra de 24 px os rótulos quebram em duas linhas, inteiros, 
   ).toBeGreaterThanOrEqual(heights.bar - SLACK);
 });
 
+for (const [width, fontPixels] of [
+  [316, 20],
+  [318, 20],
+  [320, 22],
+] as const) {
+  test(`a ${width} px com letra de ${fontPixels} px a altura da barra é a reserva e o fim da página fica acima dela`, async ({
+    page,
+  }) => {
+    await open(page, "/inventory", { fontPixels, width });
+    const boxes = await labelBoxes(bar(page));
+    expect(boxes.find((box) => box.name === "Histórico")?.lines).toBe(2);
+    await page.evaluate(() =>
+      window.scrollTo(0, document.documentElement.scrollHeight)
+    );
+    const measured = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.cssText =
+        "position:absolute;visibility:hidden;height:var(--app-bottom-bar)";
+      document.body.append(probe);
+      const reserve = probe.getBoundingClientRect().height;
+      probe.remove();
+      const nav = document.querySelector("[data-bottom-bar]");
+      const last = document.querySelector("main")?.lastElementChild;
+      return {
+        barHeight: nav?.getBoundingClientRect().height ?? 0,
+        barTop: nav?.getBoundingClientRect().top ?? 0,
+        lastBottom: last?.getBoundingClientRect().bottom ?? Number.NaN,
+        reserve,
+      };
+    });
+    expect(measured.reserve, "a reserva é a altura real da barra").toBeCloseTo(
+      measured.barHeight,
+      0
+    );
+    expect(
+      measured.lastBottom,
+      "o último elemento da página termina acima da barra"
+    ).toBeLessThanOrEqual(measured.barTop + SLACK);
+  });
+}
+
 for (const [width, height] of [
   [360, 740],
   [390, 844],
