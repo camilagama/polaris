@@ -6,12 +6,13 @@ import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { StatusNav } from "../catalog/screen-parts";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { ListTotalFooter, StatusNav } from "../catalog/screen-parts";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
-import { formatMonthLabel } from "./expense-model";
+import { sumBrlAmounts } from "../lib/sum-brl";
 import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
+import { formatMonthLabel } from "./expense-model";
 import type {
   ExpenseFilters,
   ExpenseListState,
@@ -102,6 +103,29 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
         <span className="sr-only"> em {formatMonthLabel(filters.month)}</span>
       </p>
     </div>
+  );
+}
+
+/**
+ * The total of the rows loaded, under them: the sum the eye does down the column. The "Total do período" above is the
+ * server's and covers every page; this one is what is on the screen, so with "Carregar mais" pending they differ.
+ */
+function ExpenseListTotal({ state }: { state: ExpenseListState }) {
+  const unknown = state.isLoading && state.expenses.length === 0;
+  const failed = state.error !== null && state.expenses.length === 0;
+  const sum = sumBrlAmounts(state.expenses.map((expense) => expense.amount));
+  let value = "—";
+  if (unknown) {
+    value = "…";
+  } else if (sum !== null && !failed) {
+    value = formatBrlAmount(sum);
+  }
+  return (
+    <ListTotalFooter
+      className="rounded-lg border"
+      count={unknown || failed ? "" : countLabel(state.expenses.length)}
+      value={value}
+    />
   );
 }
 
@@ -196,9 +220,9 @@ function ExpenseCard({
               <Button
                 {...connectionControlProps(online)}
                 aria-label={`Anular despesa ${expense.description}`}
+                className="ml-3 text-destructive hover:text-destructive"
                 disabled={isBusy}
                 onClick={handleVoid}
-                className="ml-3 text-destructive hover:text-destructive"
                 size="sm"
                 type="button"
                 variant="ghost"
@@ -272,6 +296,7 @@ export function ExpenseList({
           ))}
         </ul>
       ) : null}
+      <ExpenseListTotal state={state} />
       {state.nextCursor === null ? null : (
         <div className="flex justify-center pt-2">
           <Button
