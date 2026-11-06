@@ -2,7 +2,9 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { ResultCards, ResultFooter } from "./result-cards";
+import { HeroValue } from "@/ui/kpi-card";
+import { noCostDayText, ResultCards, ResultFooter } from "./result-cards";
+import { resultKpis } from "./result-kpis";
 import { addDays } from "./result-period";
 
 /**
@@ -412,5 +414,60 @@ describe("a long period, by month (D1-2, D1-3, D1-6)", () => {
     const markup = cards(october([]));
     expect(markup).toContain("acumulado por dia");
     expect(markup).not.toContain("acumulado por mês");
+  });
+});
+
+describe("the result while a day with no cost is read (RES-1)", () => {
+  const kpisOf = (unknown: readonly number[]) => {
+    const summary = october(unknown);
+    return resultKpis({
+      cards: summary.cards,
+      daily: summary.daily ?? [],
+      period: summary.period,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+  };
+
+  it("says 'sem custo neste dia' in place of the dash, and nothing else changes in the card", () => {
+    const empty = renderToStaticMarkup(
+      <HeroValue amount={null} emptyText="sem custo neste dia" />
+    );
+    expect(words(empty)).toBe("sem custo neste dia");
+    expect(empty).not.toContain("sem valor");
+    expect(empty).not.toContain("—");
+    const dash = renderToStaticMarkup(<HeroValue amount={null} />);
+    expect(words(dash)).toBe("—sem valor");
+    const known = renderToStaticMarkup(
+      <HeroValue amount="90.00" emptyText="sem custo neste dia" />
+    );
+    expect(words(known)).toContain("90");
+    expect(words(known)).not.toContain("sem custo neste dia");
+  });
+
+  it("is due only on the unknown day itself, read by the pointer", () => {
+    const kpis = kpisOf([5, 12]);
+    expect(noCostDayText(kpis, 4, false)).toBe("sem custo neste dia");
+    expect(noCostDayText(kpis, 11, false)).toBe("sem custo neste dia");
+    expect(noCostDayText(kpis, 3, false)).toBeUndefined();
+    expect(noCostDayText(kpis, 5, false)).toBeUndefined();
+  });
+
+  it("is not due at rest, with no cost of the goods known, or on a month of a long period", () => {
+    const kpis = kpisOf([5]);
+    expect(noCostDayText(kpis, null, false)).toBeUndefined();
+    expect(noCostDayText(kpis, 4, true)).toBeUndefined();
+    expect(noCostDayText({ ...kpis, monthly: true }, 4, false)).toBeUndefined();
+  });
+
+  it("is not due when every day is known", () => {
+    expect(noCostDayText(kpisOf([]), 4, false)).toBeUndefined();
+  });
+
+  it("leaves the card at rest as it was: the badge, the days and the amount", () => {
+    const result = card(cards(october([5])), "result-kpi-result");
+    expect(words(result)).not.toContain("sem custo neste dia");
+    expect(words(result)).toContain("1 de 25 dias sem custo");
   });
 });

@@ -1814,6 +1814,60 @@ function expectSameBox(after: ChartPlaces, before: ChartPlaces) {
   }
 }
 
+test.describe("o Resultado estimado num dia sem custo diz o porquê e não muda de altura (RES-1)", () => {
+  const WIDTHS = [{ height: 740, width: 320 }, ...SIZES] as const;
+  for (const size of WIDTHS) {
+    test(`'sem custo neste dia' cabe numa linha, sem mexer no cartão (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openDashboard(page, new FakeReportServer());
+      await choosePreset(page, "Mês passado");
+      const result = card(page, CARD.result);
+      await expect(result).toContainText("estimativa incompleta");
+      await settled(page);
+      const rest = await placeOf(result);
+      const restValue = await placeOf(result.locator("p").first());
+
+      const slider = card(page, CARD.netSales).getByRole("slider");
+      await slider.focus();
+      await slider.press("Home");
+      await expect(result).toContainText("sem custo neste dia");
+      await expect(result).not.toContainText("sem valor");
+      await settled(page);
+      const unknownDay = await placeOf(result);
+      expect(
+        Math.abs(unknownDay.height - rest.height),
+        "altura do cartão"
+      ).toBeLessThanOrEqual(1);
+      const text = result.getByText("sem custo neste dia", { exact: true });
+      const line = await text.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rects = [...range.getClientRects()];
+        const box = element.closest("[data-kpi]")?.getBoundingClientRect();
+        return {
+          lines: new Set(rects.map((rect) => Math.round(rect.top))).size,
+          right: Math.max(...rects.map((rect) => rect.right)),
+          limit: box?.right ?? 0,
+        };
+      });
+      expect(line.lines, "linhas do texto").toBe(1);
+      expect(line.right, "texto dentro do cartão").toBeLessThanOrEqual(
+        line.limit
+      );
+      const valueBox = await placeOf(result.locator("p").first());
+      expect(
+        Math.abs(valueBox.height - restValue.height),
+        "altura da linha do valor"
+      ).toBeLessThanOrEqual(1);
+
+      await slider.press("End");
+      await expect(result).not.toContainText("sem custo neste dia");
+    });
+  }
+});
+
 test.describe("Vendas × custos por dia: trocar de período não muda a altura do cartão nem o que vem depois", () => {
   // May and June are both partial estimates (no expense recorded): May has a sale to draw, June one returned whole
   const periods = [
