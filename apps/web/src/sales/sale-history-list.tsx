@@ -1,4 +1,5 @@
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
+import type { ReactNode } from "react";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
 import type { HistoryRow } from "./sale-history-model";
@@ -104,9 +105,11 @@ function HistoryItem({ offline, row }: { offline: boolean; row: HistoryRow }) {
 
 /** Newest first, one card with a line per sale (the pattern of the products list). */
 export function SaleHistoryList({
+  footer,
   offline,
   rows,
 }: {
+  footer?: ReactNode;
   offline: boolean;
   rows: readonly HistoryRow[];
 }) {
@@ -117,6 +120,7 @@ export function SaleHistoryList({
           <HistoryItem key={row.id} offline={offline} row={row} />
         ))}
       </ul>
+      {footer}
     </Card>
   );
 }

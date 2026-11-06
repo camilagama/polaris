@@ -9,6 +9,7 @@ import {
   formatInstant,
 } from "../lib/format";
 import { rpcErrorReason } from "../lib/rpc-error";
+import { sumBrlAmounts } from "../lib/sum-brl";
 import { cancellationReasonLabel } from "./sale-cancellation-model";
 import {
   type ConfirmedSaleView,
@@ -277,6 +278,35 @@ export function historyRows(state: HistoryState): HistoryRow[] {
     timeText: timeOf(sale.occurredAt),
     totalText: formatBrlAmount(sale.totalDue),
   }));
+}
+
+export interface HistoryTotal {
+  countText: string;
+  noteText: string;
+  /** "R$ 1.454,41", or null when an amount cannot be read. */
+  totalText: string | null;
+}
+
+/**
+ * The total of the sales on the screen: the confirmed ones only (a cancelled sale is not money), at the amount
+ * each row shows (the total due, returns not taken off). The note says how many cancelled ones stayed out, and the
+ * count says "há mais" while another page is pending, so the sum is not read as the total of the period.
+ */
+export function historyTotal(
+  sales: readonly SaleListEntryReadModel[],
+  hasMore = false
+): HistoryTotal {
+  const counted = sales.filter((sale) => sale.status !== "cancelled");
+  const left = sales.length - counted.length;
+  const sum = sumBrlAmounts(counted.map((sale) => sale.totalDue));
+  return {
+    countText: `${counted.length} ${counted.length === 1 ? "venda" : "vendas"}${hasMore ? " · há mais" : ""}`,
+    noteText:
+      left === 0
+        ? ""
+        : `${left} ${left === 1 ? "cancelada fica fora" : "canceladas ficam fora"} da soma.`,
+    totalText: sum === null ? null : formatBrlAmount(sum),
+  };
 }
 
 export type HistoryView =

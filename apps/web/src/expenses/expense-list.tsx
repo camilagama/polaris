@@ -6,12 +6,13 @@ import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { StatusNav } from "../catalog/screen-parts";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { ListTotalFooter, StatusNav } from "../catalog/screen-parts";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
-import { formatMonthLabel } from "./expense-model";
+import { sumBrlAmounts } from "../lib/sum-brl";
 import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
+import { formatMonthLabel } from "./expense-model";
 import type {
   ExpenseFilters,
   ExpenseListState,
@@ -105,6 +106,39 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
   );
 }
 
+/**
+ * From 30 rem the buttons of a row have a fixed width (12 rem, enough for "Editar" and "Anulando…" and for
+ * "Reativando…"), so the figures end in the same x on every row. The total ends there too: the buttons, the 12 px
+ * gap of the row less the 1 px border of the box, as padding on the right. The `md:` copy stays: the box has its own
+ * `md:px-4`, which would win over the `min-[30rem]` one from 48 rem.
+ */
+const ACTIONS_WIDTH = "min-[30rem]:w-48";
+const TOTAL_UNDER_VALUES =
+  "min-[30rem]:pr-[calc(12rem+11px)] md:pr-[calc(12rem+11px)]";
+
+/**
+ * The total of the rows loaded, under them: the sum the eye does down the column. The "Total do período" above is the
+ * server's and covers every page; this one is what is on the screen, so with "Carregar mais" pending they differ.
+ */
+function ExpenseListTotal({ state }: { state: ExpenseListState }) {
+  const unknown = state.isLoading && state.expenses.length === 0;
+  const failed = state.error !== null && state.expenses.length === 0;
+  const sum = sumBrlAmounts(state.expenses.map((expense) => expense.amount));
+  let value = "—";
+  if (unknown) {
+    value = "…";
+  } else if (sum !== null && !failed) {
+    value = formatBrlAmount(sum);
+  }
+  return (
+    <ListTotalFooter
+      className={cn("rounded-lg border", TOTAL_UNDER_VALUES)}
+      count={unknown || failed ? "" : countLabel(state.expenses.length)}
+      value={value}
+    />
+  );
+}
+
 interface ExpenseCardProps {
   busyKey: string | null;
   expense: ExpenseReadModel;
@@ -167,7 +201,12 @@ function ExpenseCard({
         >
           {formatBrlAmount(expense.amount)}
         </p>
-        <div className="flex items-center gap-2 touch:gap-3">
+        <div
+          className={cn(
+            "flex items-center gap-2 touch:gap-3 min-[30rem]:justify-end",
+            ACTIONS_WIDTH
+          )}
+        >
           {voided ? (
             <Button
               {...connectionControlProps(online)}
@@ -196,9 +235,9 @@ function ExpenseCard({
               <Button
                 {...connectionControlProps(online)}
                 aria-label={`Anular despesa ${expense.description}`}
+                className="ml-3 text-destructive hover:text-destructive"
                 disabled={isBusy}
                 onClick={handleVoid}
-                className="ml-3 text-destructive hover:text-destructive"
                 size="sm"
                 type="button"
                 variant="ghost"
@@ -272,6 +311,7 @@ export function ExpenseList({
           ))}
         </ul>
       ) : null}
+      <ExpenseListTotal state={state} />
       {state.nextCursor === null ? null : (
         <div className="flex justify-center pt-2">
           <Button

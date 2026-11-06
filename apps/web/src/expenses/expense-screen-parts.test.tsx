@@ -185,3 +185,40 @@ describe("ExpenseSummary", () => {
     expect(html).toContain('<span class="sr-only"> em outubro de 2026</span>');
   });
 });
+
+describe("the total of the rows on the screen", () => {
+  const foot = (html: string) => html.slice(html.indexOf("data-list-total"));
+
+  it("sums the rows loaded in exact centavos, in tabular numerals, apart from the server total", () => {
+    const html = list(
+      state({
+        count: 40,
+        expenses: [
+          expense({ amount: "0.10", id: "e1" }),
+          expense({ amount: "0.20", id: "e2" }),
+          expense({ amount: "1500.50", id: "e3" }),
+        ],
+        total: "99999.00",
+      })
+    );
+    expect(foot(html)).toContain("Total na tela");
+    expect(foot(html)).toContain("R$ 1.500,80");
+    expect(foot(html)).toContain("3 despesas");
+    expect(foot(html)).toContain("tabular-nums");
+    expect(foot(html)).not.toContain("99.999");
+  });
+
+  it("is in the DOM with no rows, with the same lines (zero and no count text lost)", () => {
+    const empty = list(state({}));
+    expect(foot(empty)).toContain("R$ 0,00");
+    expect(foot(empty)).toContain("0 despesas");
+    expect(foot(empty)).toContain("min-h-5");
+  });
+
+  it("while the first page loads it is a dash, and after a failed read it is not a zero", () => {
+    expect(foot(list(state({ isLoading: true })))).toContain("…");
+    const failed = foot(list(state({ error: "Falhou." })));
+    expect(failed).toContain("—");
+    expect(failed).not.toContain("R$ 0,00");
+  });
+});
