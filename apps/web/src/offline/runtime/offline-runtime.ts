@@ -222,7 +222,8 @@ export interface RuntimeSnapshot {
   /**
    * Why the runtime is unavailable or the last sync failed; null when fine. A failed sync is `server_busy` when the
    * server got the call and died on it (`isPlatformCut`: the regime of the Free plan, past the 60 s of quiet), and
-   * `sync_failed` for any other failure (`syncFailed`).
+   * `sync_failed` for any other failure (`syncFailed`). When the start was refused because the plan has no offline
+   * writes it is `PLAN_REFUSED_REASON`.
    */
   reason: string | null;
   /**
@@ -380,6 +381,20 @@ function isPlanRefusal(error: unknown): boolean {
     "reason" in data &&
     data.reason === "entitlement_denied"
   );
+}
+
+/** The `unavailable` reason when the plan of the store does not include offline writes (the device is fine). */
+export const PLAN_REFUSED_REASON = "entitlement_denied";
+
+function startFailureReason(
+  error: unknown,
+  legal: boolean,
+  failure: string
+): string {
+  if (legal) {
+    return "legal_acceptance_required";
+  }
+  return isPlanRefusal(error) ? PLAN_REFUSED_REASON : failure;
 }
 
 export class OfflineRuntime {
@@ -878,7 +893,7 @@ export class OfflineRuntime {
           ...this.snapshot,
           legalAcceptanceRequired: legal,
           phase: "unavailable",
-          reason: legal ? "legal_acceptance_required" : failure,
+          reason: startFailureReason(error, legal, failure),
         });
       }
     }

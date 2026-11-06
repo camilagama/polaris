@@ -16,6 +16,7 @@ import {
   NoSessionForDiscardError,
   OfflineRuntime,
   type OpenedStores,
+  PLAN_REFUSED_REASON,
   type RuntimeApi,
   type RuntimeDependencies,
   SessionUnreachableError,
@@ -462,6 +463,35 @@ describe("starting", () => {
     expect(w.calls.issueLease).toBe(1);
     expect(w.calls.registerDevice).toBe(1);
     expect(w.keyValues.read("polaris.offline.device")).not.toBeNull();
+  });
+
+  it("a plan refusal is the reason of the unavailable phase, and any other failure is not", async () => {
+    const refused = world();
+    refused.failures.issueLease.push(
+      Object.assign(new Error("conflict"), {
+        data: { reason: "entitlement_denied" },
+      })
+    );
+    const runtime = refused.make();
+    await runtime.start(organizationId);
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: PLAN_REFUSED_REASON,
+    });
+    expect(syncStatusLabel(runtime.getSnapshot()).text).toBe(
+      "O modo offline faz parte do plano Pro"
+    );
+    expect(refused.calls.issueLease).toBe(1);
+
+    const other = world();
+    other.failures.issueLease.push(
+      Object.assign(new Error("conflict"), {
+        data: { reason: "device_revoked_elsewhere" },
+      })
+    );
+    const second = other.make();
+    await second.start(organizationId);
+    expect(second.getSnapshot().reason).not.toBe(PLAN_REFUSED_REASON);
   });
 
   it("a second user of the same browser gets their own device, lease and namespace, and the first user's work is left alone", async () => {

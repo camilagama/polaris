@@ -41,4 +41,4 @@ Preconditions:
 - Os números dependem do relógio de verdade e do fuso da loja (`America/Sao_Paulo`): o nome da região do mês muda ("Vendas em outubro") e "Vendas hoje" só conta as 2 vendas de hoje enquanto o dia não vira. Não assuma valores fixos; compare com `$V sql` quando o valor importar.
 - "Resultado estimado" diz "estimativa incompleta" na loja `vendas`: as vendas não têm perfil de pagamento (taxa desconhecida). Não é defeito.
 - O e2e com a tela simulada (`apps/web/e2e/home.e2e.ts`) usa textos de uma data fixa ("Sexta-feira, 23 de outubro"): não copie esses textos para a pilha real.
-- Com `launch --runtime`, a barra do topo mostra o estado do modo offline ("Preparando o modo offline…", depois "Offline indisponível neste aparelho" na loja Free).
+- Com `launch --runtime`, a barra do topo mostra o estado do modo offline ("Preparando o modo offline…", depois, na loja Free, "O modo offline faz parte do plano Pro": o servidor recusa o modo offline por plano; "Offline indisponível neste aparelho" é das outras causas, como a loja Pro sem `OFFLINE_LEASE_SECRET`).

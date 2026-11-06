@@ -12,7 +12,7 @@ import type { LogoutWorkspace } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
 import { discardAndLeave, startLogout } from "./logout-flow";
-import type { RuntimeSnapshot } from "./offline-runtime";
+import { PLAN_REFUSED_REASON, type RuntimeSnapshot } from "./offline-runtime";
 import {
   SyncStatusMenuLineView,
   SyncStatusView,
@@ -296,6 +296,43 @@ describe("the sync status line at the top of Mais", () => {
     expect(syncStatusLabel(snapshot({ phase: "unavailable" })).short).toBe(
       "Sem offline"
     );
+  });
+});
+
+describe("the sync status when offline is not available", () => {
+  it("says offline is part of the Pro plan when the plan refused it, and keeps the short form", () => {
+    const label = syncStatusLabel(
+      snapshot({ phase: "unavailable", reason: PLAN_REFUSED_REASON })
+    );
+    expect(label).toEqual({
+      attention: false,
+      short: "Sem offline",
+      text: "O modo offline faz parte do plano Pro",
+      tone: "offline",
+    });
+  });
+
+  it.each([
+    ["the local queue does not open", "queue_open_failed"],
+    ["the session changed", "session_changed"],
+    ["the store was closed", "organization_closed"],
+    ["the session was refused", "session_refused"],
+    ["a purge failed", "purge_failed"],
+    ["the start failed without a message", "start_failed"],
+    ["no reason is known", null],
+  ])("keeps the device text when %s", (_name, reason) => {
+    const label = syncStatusLabel(snapshot({ phase: "unavailable", reason }));
+    expect(label.text).toBe("Offline indisponível neste aparelho");
+    expect(label.short).toBe("Sem offline");
+  });
+
+  it("never shows the plan text on a store with offline on", () => {
+    for (const phase of ["ready", "starting", "expired"] as const) {
+      const label = syncStatusLabel(
+        snapshot({ phase, reason: PLAN_REFUSED_REASON })
+      );
+      expect(label.text).not.toContain("plano Pro");
+    }
   });
 });
 

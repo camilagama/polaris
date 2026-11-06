@@ -2,7 +2,7 @@ import CheckIcon from "lucide-react/dist/esm/icons/check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import type { RuntimeSnapshot } from "./offline-runtime";
+import { PLAN_REFUSED_REASON, type RuntimeSnapshot } from "./offline-runtime";
 import { useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -70,7 +70,10 @@ function notReadyLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
     return {
       attention: false,
       short: "Sem offline",
-      text: "Offline indisponível neste aparelho",
+      text:
+        snapshot.reason === PLAN_REFUSED_REASON
+          ? "O modo offline faz parte do plano Pro"
+          : "Offline indisponível neste aparelho",
       tone: "offline",
     };
   }
