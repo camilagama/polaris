@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM_TEXT } from "./api";
+import { EFFECT_LINES } from "./effect-lines";
 import { MAX_HOURS, MAX_REASON_LENGTH } from "./grant-limits";
 import {
   allElements,
@@ -297,8 +298,32 @@ describe("the grants in force and the way to end one (AC-P4.4, AC-P4.6)", () => 
     await click(mounted.root, "Ver liberações temporárias em vigor");
 
     expect(shown(mounted)).toContain("Variantes ativas");
+    expect(shown(mounted)).toContain("Sem como encerrar por aqui");
+    expect(shown(mounted)).not.toContain(EFFECT_LINES.grantEnd);
     expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
       0
+    );
+  });
+
+  it("says what ending does once, above the table, when a grant has the button (AC-2.1)", async () => {
+    const mounted = await open([report([inForce(GRANT)])]);
+
+    await click(mounted.root, "Ver liberações temporárias em vigor");
+
+    expect(shown(mounted).split(EFFECT_LINES.grantEnd)).toHaveLength(2);
+  });
+
+  it("says what ending does when only one of two grants has an ID (AC-2.3)", async () => {
+    const mounted = await open([
+      report([inForce(GRANT), inForce(undefined, "products.active.max")]),
+    ]);
+
+    await click(mounted.root, "Ver liberações temporárias em vigor");
+
+    expect(shown(mounted).split(EFFECT_LINES.grantEnd)).toHaveLength(2);
+    expect(shown(mounted)).toContain("Sem como encerrar por aqui");
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      1
     );
   });
 
