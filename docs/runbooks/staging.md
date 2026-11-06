@@ -175,7 +175,7 @@ O login do Admin só *pede* o MFA, não matricula o primeiro dispositivo. Por is
    2. Com as passkeys conferidas, o operador faz **um** login pelo Google com o PIN ainda permitido na aplicação.
    3. O responsável confere no Zero Trust que houve esse login pelo Google.
    4. Só então: *Require login method* = Google na política, PIN fora dos provedores da aplicação (continua na organização, para recuperação) e *instant authentication* (auto-redirect) ligada. Trocar antes de ver um login Google tranca o operador fora.
-5. Operador novo: entra na política e registra as duas passkeys **no mesmo dia**, com o responsável conferindo a lista. O Access não pede MFA para o primeiro autenticador: quem tivesse o Google do operador antes disso registraria a passkey dele.
+5. Operador novo: entra na política e registra as duas passkeys **no mesmo dia**, com o responsável conferindo a lista. O Access não pede MFA para o primeiro autenticador: quem tivesse o Google ou o e-mail do operador (o PIN continua na organização para recuperação) antes disso registraria a passkey dele.
 
 Se o login entrar em laço ou der a página de erro com os dispositivos já matriculados:
 
