@@ -55,3 +55,18 @@ describe("the row buttons while another panel is open", () => {
     expect(markup).not.toMatch(DISABLED_ATTR);
   });
 });
+
+describe("the row of buttons in a narrow row", () => {
+  it("stacks the three, each as wide as the row and 44 px tall, below 18.5 rem of the row", () => {
+    const markup = actions(false);
+    expect(markup).toContain("@max-[18.499rem]:flex-col");
+    expect(markup.match(/@max-\[18\.499rem\]:h-11/g)).toHaveLength(3);
+    expect(markup.match(/@max-\[18\.499rem\]:w-full/g)).toHaveLength(3);
+  });
+
+  it("keeps the group one control with the same name", () => {
+    expect(actions(false)).toContain(
+      'aria-label="Movimentos de Camiseta Polaris, Azul / M"'
+    );
+  });
+});
