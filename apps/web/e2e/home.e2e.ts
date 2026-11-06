@@ -1462,6 +1462,72 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     await expect(title).toBeInViewport();
   });
 
+  for (const [state, stock, current] of [
+    [
+      "sem produto, com os dois botões do passo 2",
+      { all: 0, unknownCost: 0, withoutStock: 0, withStock: 0 },
+      1,
+    ],
+    [
+      "com produto, sem os botões",
+      { all: 1, unknownCost: 1, withoutStock: 1, withStock: 0 },
+      2,
+    ],
+  ] as const) {
+    for (const viewport of [
+      { height: 740, width: 360 },
+      { height: 800, width: 1280 },
+    ]) {
+      test(`o passo atual destaca um só item e não muda a altura do bloco: ${state}, ${viewport.width} px`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(viewport);
+        await openHome(page, new FakeServer(empty({ ...stock })));
+        const checklist = region(page, "Primeiros passos");
+        const items = checklist.getByRole("listitem");
+        await expect(items).toHaveCount(3);
+        await expect(checklist.locator("[aria-current]")).toHaveCount(1);
+        await expect(items.nth(current)).toHaveAttribute(
+          "aria-current",
+          "step"
+        );
+        const heights = async () => ({
+          block: (await checklist.boundingBox())?.height ?? 0,
+          rows: await Promise.all(
+            [0, 1, 2].map(
+              async (index) =>
+                (await items.nth(index).boundingBox())?.height ?? 0
+            )
+          ),
+        });
+        const marked = await heights();
+        // the same block with the mark of the current step taken off: the mark must not take a pixel of height
+        await items.nth(current).evaluate((item) => {
+          item.removeAttribute("aria-current");
+          const circle = item.querySelector("[aria-hidden='true']");
+          circle?.classList.remove(
+            "border-mark",
+            "bg-mark/10",
+            "text-mark-foreground"
+          );
+        });
+        const plain = await heights();
+        expect(Math.abs(marked.block - plain.block)).toBeLessThanOrEqual(1);
+        for (const index of [0, 1, 2]) {
+          expect(
+            Math.abs((marked.rows[index] ?? 0) - (plain.rows[index] ?? 0))
+          ).toBeLessThanOrEqual(1);
+        }
+        const overflow = await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth
+        );
+        expect(overflow).toBeLessThanOrEqual(0);
+      });
+    }
+  }
+
   test("com estoque, o botão vai à Venda", async ({ page }) => {
     await openHome(
       page,
