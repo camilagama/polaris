@@ -6,6 +6,7 @@ import { type StockRow, stockRowActions } from "./stock-list-model";
 const DISABLED_ATTR = /\sdisabled=/;
 const ARIA_DISABLED_BUTTONS = /<button[^>]*aria-disabled="true"/g;
 const BUTTONS = /<button\b/g;
+const BUTTON_NAME = /<button\b[^>]*\saria-label="([^"]*)"/g;
 
 const row: StockRow = {
   archived: false,
@@ -57,10 +58,10 @@ describe("the row buttons while another panel is open", () => {
 });
 
 describe("the row of buttons in a narrow row", () => {
-  it("has the three buttons in order, each with its own accessible name, whatever the width", () => {
-    const names = [
-      ...actions(false).matchAll(/<button\b[^>]*\saria-label="([^"]*)"/g),
-    ].map((match) => match[1]);
+  it("has the three buttons in order, each with its own accessible name (the stacking is measured in e2e/estoque-reflow.e2e.ts)", () => {
+    const names = [...actions(false).matchAll(BUTTON_NAME)].map(
+      (match) => match[1]
+    );
     expect(names).toEqual(stockRowActions(row.target).map(({ name }) => name));
     expect(new Set(names).size).toBe(3);
   });

@@ -260,14 +260,13 @@ test.describe("a Venda a 800 px, fonte padrão 16 px: sem barra inferior, com a 
               document.querySelector("[data-bottom-bar]") as Element
             ).display !== "none"
           : false,
-        columns: form
-          ? getComputedStyle(form).gridTemplateColumns.split(" ").length
-          : 0,
+        display: form ? getComputedStyle(form).display : "",
         formWidth: form?.getBoundingClientRect().width ?? 0,
         rootPaddingBottom: Number.parseFloat(root.scrollPaddingBottom) || 0,
       };
     });
     expect(column.bottomBar).toBe(false);
+    expect(column.display).toBe("flex");
     expect(column.formWidth).toBeLessThan(44 * REM);
     expect(column.rootPaddingBottom).toBe(0);
     const reserve = await submitBarReserve(page);
@@ -280,7 +279,7 @@ test.describe("a Venda a 800 px, fonte padrão 16 px: sem barra inferior, com a 
         ? window.innerHeight - bar.getBoundingClientRect().bottom
         : Number.NaN;
     });
-    expect(barBottom).toBeLessThanOrEqual(1);
+    expect(Math.abs(barBottom)).toBeLessThanOrEqual(1);
     expect(await saleSideScroll(page)).toBe(false);
   });
 });
