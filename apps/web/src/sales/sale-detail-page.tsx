@@ -32,11 +32,13 @@ import {
   detailLoadErrorMessage,
   type SaleDetailView,
   saleDetailView,
+  saleTimelineEvents,
 } from "./sale-history-model";
 import { SaleIdMissing } from "./sale-id-missing";
 import { SaleNoticeRegion } from "./sale-notice-region";
 import { SaleReceipt } from "./sale-receipt";
 import { SaleReturnPanel } from "./sale-return-panel";
+import { SaleTimeline } from "./sale-timeline";
 
 /** The root of a piece of the screen, as the other screens write it. */
 const UI_ROOT = "grid gap-4 font-sans text-foreground text-sm antialiased";
@@ -217,8 +219,8 @@ interface ReadyDetailTopProps {
   refreshing: boolean;
 }
 
-/** What the detail shows on the new interface: the receipt, the returns made, and the notes about what is offered. */
-function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
+/** What the detail shows on the new interface: the receipt, the timeline, the returns made, and the notes about what is offered. */
+export function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
   const view = saleDetailView(detail);
   const offer = cancelOffer(view, refreshing);
   return (
@@ -254,6 +256,7 @@ function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
           />
         }
       />
+      <SaleTimeline events={saleTimelineEvents(detail)} />
       <ReturnsHistory view={view} />
       {view.allReturnedMessage ? (
         <StateCard>{view.allReturnedMessage}</StateCard>

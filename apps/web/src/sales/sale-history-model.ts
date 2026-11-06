@@ -495,6 +495,121 @@ export function saleDetailView(detail: SaleDetailReadModel): SaleDetailView {
   };
 }
 
+type SaleTimelineKind = "cancelled" | "registered" | "return" | "sale";
+
+export interface SaleTimelineEvent {
+  /** The instant, for the `datetime` of the line. */
+  at: string;
+  key: string;
+  kind: SaleTimelineKind;
+  label: string;
+  /** Where the sale stands: the only dot with a color of its own. */
+  tone: "cancelled" | "muted" | "sale";
+  /** The device's local time, with the year only when it differs from the sale's. */
+  timeText: string;
+}
+
+/** A confirmation less than this long after the sale says the same as "Venda feita", so it is not a line. */
+const REGISTERED_GAP_MS = 60_000;
+
+/** Newest first, a tie goes to the later step of the story. */
+const TIMELINE_TIE_ORDER: Record<SaleTimelineKind, number> = {
+  cancelled: 0,
+  return: 1,
+  registered: 2,
+  sale: 3,
+};
+
+const timelineFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "numeric",
+  hour: "2-digit",
+  hourCycle: "h23",
+  minute: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+function timelineParts(instant: string): Map<string, string> | null {
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return new Map(
+    timelineFormatter.formatToParts(date).map((part) => [part.type, part.value])
+  );
+}
+
+function timelineText(instant: string, saleInstant: string): string {
+  const parts = timelineParts(instant);
+  if (parts === null) {
+    return instant;
+  }
+  const month = (parts.get("month") ?? "").replace(".", "");
+  const year = parts.get("year") ?? "";
+  const sameYear = timelineParts(saleInstant)?.get("year") === year;
+  const date = `${parts.get("day")} ${month}${sameYear ? "" : ` ${year}`}`;
+  return `${date} ${parts.get("hour")}:${parts.get("minute")}`;
+}
+
+/**
+ * What happened to a sale and when, newest first: made, registered (only when the server took it 60 s or more after
+ * it happened), each return, cancelled. Two instants that are the same moment keep the order of the story, and the
+ * comparison is by instant, not by day. The caller shows the list only with two events or more.
+ */
+export function saleTimelineEvents(
+  detail: SaleDetailReadModel
+): SaleTimelineEvent[] {
+  const { confirmedAt, occurredAt } = detail.sale.sale;
+  const cancelled = detail.cancellation !== null;
+  const at = (instant: string) => timelineText(instant, occurredAt);
+  const events: SaleTimelineEvent[] = [
+    {
+      at: occurredAt,
+      key: "sale",
+      kind: "sale",
+      label: "Venda feita",
+      timeText: at(occurredAt),
+      tone: cancelled ? "muted" : "sale",
+    },
+  ];
+  if (Date.parse(confirmedAt) - Date.parse(occurredAt) >= REGISTERED_GAP_MS) {
+    events.push({
+      at: confirmedAt,
+      key: "registered",
+      kind: "registered",
+      label: "Registrada",
+      timeText: at(confirmedAt),
+      tone: "muted",
+    });
+  }
+  for (const entry of detail.returns) {
+    events.push({
+      at: entry.returnedAt,
+      key: `return-${entry.id}`,
+      kind: "return",
+      label: "Devolução",
+      timeText: at(entry.returnedAt),
+      tone: "muted",
+    });
+  }
+  if (detail.cancellation) {
+    events.push({
+      at: detail.cancellation.cancelledAt,
+      key: "cancelled",
+      kind: "cancelled",
+      label: "Cancelada",
+      timeText: at(detail.cancellation.cancelledAt),
+      tone: "cancelled",
+    });
+  }
+  return events.sort(
+    (left, right) =>
+      Date.parse(right.at) - Date.parse(left.at) ||
+      TIMELINE_TIE_ORDER[left.kind] - TIMELINE_TIE_ORDER[right.kind] ||
+      left.key.localeCompare(right.key)
+  );
+}
+
 /** Message for a sale that failed to load. */
 export function detailLoadErrorMessage(error: unknown): string {
   return rpcErrorReason(error) === "sale_not_found"
