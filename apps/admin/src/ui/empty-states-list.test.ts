@@ -32,7 +32,7 @@ const WITH_NEXT_STEP = [
 
 /** The good news: nothing to do is the answer, so nothing is added. */
 const GOOD_NEWS = [
-  "views/access-log.ts | Nenhum acesso encontrado nessa janela. O registro pode ter lacunas: isto não prova que não houve acesso.",
+  "views/access-log.ts | Nenhum acesso encontrado nesse período. O registro pode ter lacunas: isto não prova que não houve acesso.",
   "views/incidents.ts | Nenhuma falha de envio. Tudo foi entregue.",
 ];
 
@@ -50,10 +50,10 @@ const ALREADY_GUIDED = [
 const PENDING_NEXT_STEP = [
   "refund-words.ts | Nada a fazer aqui na cobrança desta loja.",
   "refund-words.ts | Nenhuma cobrança a reembolsar.",
-  "views/diagnostics.ts | Nenhum direito está acima do plano por concessão agora.",
-  "views/diagnostics.ts | Nenhum ponto de atenção.",
-  "views/diagnostics.ts | Nenhuma concessão.",
-  "views/entitlements.ts | Nenhuma concessão em vigor.",
+  "views/diagnostics.ts | Nada pede atenção nesta loja.",
+  "views/diagnostics.ts | Nenhum recurso está acima do plano por liberação temporária agora.",
+  "views/diagnostics.ts | Nenhuma liberação temporária.",
+  "views/entitlements.ts | Nenhuma liberação temporária em vigor.",
   "views/incident.ts | Nenhum evento sem entrega nesta falha de envio.",
   "views/new-case.ts | Nenhuma loja escolhida.",
   "views/privacy-new.ts | Nenhuma loja escolhida.",
@@ -73,9 +73,6 @@ const NOT_AN_EMPTY_STATE = [
   "views/entitlements.ts | Sem como encerrar por aqui",
   "views/funnel.ts | Sem venda",
   "views/incident.ts | Nenhum",
-  "views/privacy-case.ts | Sem ação registrada.",
-  "views/privacy-case.ts | Sem ação: ",
-  "views/privacy-case.ts | Sem ação: uma recusa não tem o que registrar.",
   "views/privacy-case.ts | Sem nota.",
   "views/purge.ts | Nada mudou: a trava já estava vigente com uma data de revisão igual ou mais tarde.",
   "views/refund-window.ts | Nenhum",
