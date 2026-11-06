@@ -1,7 +1,7 @@
 import { type Api, type ApiFailure, PROBLEM_TEXT, revealField } from "../api";
 import { type Dom, labelName, revealedText } from "../dom";
 import type { Notice } from "../notice";
-import { limitText, writeMayHaveHappened } from "../refusal";
+import { writeMayHaveHappened } from "../refusal";
 import type { MaskedCustomer, RevealableField } from "../types";
 
 /** The longest a revealed value stays on the screen; it leaves sooner on any of the events below. */
@@ -17,6 +17,8 @@ export const REVEAL_GONE =
   "O valor revelado saiu da tela. Para ver de novo, revele de novo: cada revelação fica na auditoria.";
 export const REVEAL_UNKNOWN =
   "Não deu para confirmar se o dado foi revelado. Nada foi mostrado; se tentar de novo, outra revelação fica na auditoria.";
+export const REVEAL_RATE_LIMITED =
+  "Limite de revelações por hora atingido. Nada foi revelado. Tente mais tarde.";
 export const CUSTOMER_GONE = "Cliente não encontrado.";
 export const NO_ACCESS_NOW =
   "O acesso acabou ou o atendimento foi fechado: nada foi revelado.";
@@ -123,7 +125,7 @@ function failureText(failure: ApiFailure): string {
     case "not_found":
       return CUSTOMER_GONE;
     case "rate_limited":
-      return limitText(failure);
+      return REVEAL_RATE_LIMITED;
     case "session":
       return PROBLEM_TEXT.session;
     case "conflict":

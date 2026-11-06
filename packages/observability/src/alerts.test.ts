@@ -28,6 +28,7 @@ const root = path.resolve(
 );
 
 const sourceRoots = [
+  "apps/admin/src",
   "apps/catalog/src",
   "apps/web/src/server",
   "apps/web/worker",

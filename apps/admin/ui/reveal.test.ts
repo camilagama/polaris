@@ -25,6 +25,7 @@ import {
   REVEAL_AUDIT,
   type REVEAL_FIELDS,
   REVEAL_GONE,
+  REVEAL_RATE_LIMITED,
   REVEAL_SECONDS,
   REVEAL_UNDO,
   REVEAL_UNKNOWN,
@@ -738,9 +739,14 @@ describe("the refusals, in words (AC-C3)", () => {
     ["a customer not found", refusal("not_found", 404), CUSTOMER_GONE],
     ["a missing capability", refusal("forbidden", 403), PROBLEM_TEXT.forbidden],
     [
-      "a limit",
+      "the hourly limit of reveals",
+      refusal("rate_limited", 429),
+      REVEAL_RATE_LIMITED,
+    ],
+    [
+      "the hourly limit of reveals, even with a wait the server named",
       refusal("rate_limited", 429, { "retry-after": "600" }),
-      "Limite de consultas por hora atingido. Tente de novo em 10 minutos.",
+      REVEAL_RATE_LIMITED,
     ],
     [
       "a field the server refuses",
@@ -769,6 +775,17 @@ describe("the refusals, in words (AC-C3)", () => {
 
     expect(shown(mounted)).not.toContain(PHONE);
     expect(alertOf(mounted.root)?.textContent).toBe(REVEAL_UNKNOWN);
+  });
+
+  it("says the exact words of the limit and does not ask again by itself", async () => {
+    const mounted = await open([refusal("rate_limited", 429)]);
+    await reveal(mounted, ROW_1, "phone");
+    await vi.advanceTimersByTimeAsync(3_600_000);
+
+    expect(alertOf(mounted.root)?.textContent).toBe(
+      "Limite de revelações por hora atingido. Nada foi revelado. Tente mais tarde."
+    );
+    expect(revealCalls(mounted.calls)).toHaveLength(1);
   });
 
   it("never sends a second request by itself after a failure", async () => {
