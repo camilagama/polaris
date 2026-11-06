@@ -149,12 +149,15 @@
   }
 }
 
-/* A page with the sticky submit bar (the sale, below 56.25 rem): what gets the focus scrolls above the bar, which is
-   about 4.5 rem tall and grows with the text size and the zoom, as `rem` does (U-19), and above the shell's. */
+/* The sale in one column (its container, `sale`, under 44 rem) has the sticky submit bar, about 4.5 rem tall, which grows
+   with the text size and the zoom as `rem` does (U-19): what gets the focus scrolls above it. `scroll-padding` belongs
+   to the scroller and cannot ask the container, so the clearance is the `scroll-margin` of what takes the focus inside the form;
+   it adds to the scroll-padding the shell already keeps above its bottom bar (that bar's height plus 1 rem), so the
+   total is the bar's 8 rem on a phone. In two columns there is no bar and no margin. */
 @layer base {
-  @media not all and (min-width: 56.25rem) {
-    :root:has([data-submit-bar]) {
-      scroll-padding-bottom: calc(8rem + var(--app-bottom-bar, 0rem));
+  @container sale not (width >= 44rem) {
+    [data-sale-form] :is(input, select, textarea, button, a, [tabindex]) {
+      scroll-margin-bottom: 7rem;
     }
   }
 }
