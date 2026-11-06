@@ -20,6 +20,7 @@ const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const SHIRT_OPTION = /Camiseta do laboratório · Azul/;
 const LAB_PROFILE = /Maquininha do laboratório/;
 const ANY_ID = /.+/;
+const BLANK_LINE = /^\s*$/;
 const FIX_FIELDS = /Corrija \d+ campos?/;
 
 const THEMES = [
@@ -224,6 +225,42 @@ test("C-1: o campo da quantidade tem 64 px e deixa 48 px ou mais livres entre as
   await expect(
     item.getByRole("button", { name: "Menos uma unidade" })
   ).toBeDisabled();
+});
+
+test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º produto não empurra o item", async ({
+  page,
+}) => {
+  await openSaleLab(page, "claro");
+  const items = page.getByRole("group", { exact: true, name: "Item 1" });
+  const addItem = page.getByRole("button", { name: "Adicionar item" });
+  const count = page
+    .getByRole("group", { exact: true, name: "Itens" })
+    .locator("[data-slot=card-description]");
+  await expect(items.getByLabel("Produto ou variante")).toBeVisible();
+  await expect(addItem).toHaveCount(0);
+  await expect(count).toHaveText(BLANK_LINE);
+
+  // the "Venda em andamento" bar above the card appears with the first choice, so the gap to the card's own title
+  // is what shows whether the counter pushed the item
+  const title = page.getByRole("heading", { exact: true, name: "Itens" });
+  const top = async () =>
+    ((await items.boundingBox())?.y ?? Number.NaN) -
+    ((await title.boundingBox())?.y ?? Number.NaN);
+  const before = await top();
+  const lineHeight = (await count.boundingBox())?.height ?? Number.NaN;
+  expect(lineHeight).toBeGreaterThan(0);
+  await pickShirt(page);
+  const quantity = items.getByLabel("Quantidade");
+  await expect(quantity).toBeVisible();
+  await expect(count).toHaveText("1 item");
+  await expect(addItem).toBeVisible();
+  expect(Math.abs((await top()) - before)).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(((await count.boundingBox())?.height ?? Number.NaN) - lineHeight)
+  ).toBeLessThanOrEqual(1);
+
+  await addItem.click();
+  await expect(count).toHaveText("2 itens");
 });
 
 async function chooseNoProfile(page: Page) {
