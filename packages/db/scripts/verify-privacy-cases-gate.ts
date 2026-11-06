@@ -61,6 +61,82 @@ const DAY_MS = 86_400_000;
 const AUDIT_DETAIL_CODES =
   /^(privacy|revoked=\d+|stage=[a-z_]+(;[a-z_]+=[a-z_0-9]+)*|action=[a-z_]+)$/;
 
+interface DueDayProbe {
+  list: () => Promise<Awaited<ReturnType<typeof listPrivacyCases>>>;
+  open: (over: {
+    dueDays: number;
+    receivedAt: Date;
+  }) => Promise<{ id: string } | null>;
+  pool: Pick<Client, "query">;
+}
+
+/**
+ * `dueInDays` comes from the database's own now() and the São Paulo calendar: a due moment at 23:30 in São Paulo is
+ * already the next day in UTC, and it still counts as the São Paulo day it falls on. Every instant is built by the
+ * database, so the gate reads no clock of its own; a run that crosses midnight in São Paulo is repeated once.
+ */
+async function assertDaysToDueDay(probe: DueDayProbe) {
+  const brasiliaDay = async () =>
+    (
+      await probe.pool.query<{ day: string }>(
+        "SELECT to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS day"
+      )
+    ).rows[0]?.day;
+  const dueMoment = async (dayOffset: number, hour: number, minute: number) => {
+    const moment = await probe.pool.query<{ due: Date }>(
+      `SELECT (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')
+               + make_interval(days => $1::int, hours => $2::int, mins => $3::int)) AT TIME ZONE 'America/Sao_Paulo' AS due`,
+      [dayOffset, hour, minute]
+    );
+    const due = moment.rows[0]?.due;
+    assert.ok(due);
+    return due;
+  };
+  const wanted = [-1, 0, 1].flatMap((dayOffset) =>
+    [
+      { hour: 23, minute: 30 },
+      { hour: 0, minute: 30 },
+    ].map((time) => ({ dayOffset, ...time }))
+  );
+  const attempt = async () => {
+    const opened = await Promise.all(
+      wanted.map(async (entry) => {
+        const due = await dueMoment(entry.dayOffset, entry.hour, entry.minute);
+        const created = await probe.open({
+          dueDays: 5,
+          receivedAt: new Date(due.getTime() - 5 * DAY_MS),
+        });
+        assert.ok(created);
+        return { ...entry, due, id: created.id };
+      })
+    );
+    return { opened, page: await probe.list() };
+  };
+  const dayBefore = await brasiliaDay();
+  let counted = await attempt();
+  if (dayBefore !== (await brasiliaDay())) {
+    counted = await attempt();
+  }
+  for (const entry of counted.opened) {
+    const listed = counted.page.cases.find((item) => item.id === entry.id);
+    assert.ok(listed, "the case just opened is on the first page");
+    assert.equal(
+      listed.dueInDays,
+      entry.dayOffset,
+      `a case due ${entry.dayOffset} day(s) from today at ${entry.hour}:${entry.minute} in São Paulo`
+    );
+    assert.equal(new Date(listed.dueAt).getTime(), entry.due.getTime());
+    if (entry.dayOffset < 0) {
+      assert.equal(listed.overdue, true, "a past due day is overdue");
+    }
+  }
+  assert.ok(
+    counted.page.cases.every(
+      (item) => item.dueInDays === null || Number.isInteger(item.dueInDays)
+    )
+  );
+}
+
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -1027,76 +1103,14 @@ async function run() {
       !overdue.cases.some((entry) => entry.id === base),
       "a resolved case is never late"
     );
-    // dueInDays comes from the database's own now() and the São Paulo calendar: a due moment at 23:30 in São Paulo is
-    // already the next day in UTC, and it still counts as the São Paulo day it falls on
-    const brasiliaDayOf = async () =>
-      (
-        await owner.pool.query<{ day: string }>(
-          "SELECT to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS day"
-        )
-      ).rows[0]?.day;
-    const dueMomentAt = async (dayOffset: number, hour: number, minute: number) => {
-      const moment = await owner.pool.query<{ due: Date }>(
-        `SELECT (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')
-                 + make_interval(days => $1::int, hours => $2::int, mins => $3::int)) AT TIME ZONE 'America/Sao_Paulo' AS due`,
-        [dayOffset, hour, minute]
-      );
-      const due = moment.rows[0]?.due;
-      assert.ok(due);
-      return due;
-    };
-    const countedDays = async () => {
-      const wanted = [
-        { dayOffset: -1, expected: -1, hour: 23, minute: 30 },
-        { dayOffset: -1, expected: -1, hour: 0, minute: 30 },
-        { dayOffset: 0, expected: 0, hour: 23, minute: 30 },
-        { dayOffset: 0, expected: 0, hour: 0, minute: 30 },
-        { dayOffset: 1, expected: 1, hour: 23, minute: 30 },
-        { dayOffset: 1, expected: 1, hour: 0, minute: 30 },
-      ];
-      const opened = await Promise.all(
-        wanted.map(async (entry) => {
-          const due = await dueMomentAt(
-            entry.dayOffset,
-            entry.hour,
-            entry.minute
-          );
-          const created = await open({
-            dueDays: 5,
-            receivedAt: new Date(due.getTime() - 5 * DAY_MS),
-          });
-          assert.ok(created);
-          return { ...entry, due, id: created.id };
-        })
-      );
-      const page = await asAdmin((client) =>
-        listPrivacyCases(client, { after: null, filter: null, limit: 50 })
-      );
-      return { opened, page };
-    };
-    const dayBefore = await brasiliaDayOf();
-    let counted = await countedDays();
-    if (dayBefore !== (await brasiliaDayOf())) {
-      counted = await countedDays();
-    }
-    for (const entry of counted.opened) {
-      const listed = counted.page.cases.find((item) => item.id === entry.id);
-      assert.ok(listed, "the case just opened is on the first page");
-      assert.equal(
-        listed.dueInDays,
-        entry.expected,
-        `a case due ${entry.expected} day(s) from today at ${entry.hour}:${entry.minute} in São Paulo`
-      );
-      assert.equal(new Date(listed.dueAt).getTime(), entry.due.getTime());
-      if (listed.dueInDays !== null && listed.dueInDays < 0) {
-        assert.equal(listed.overdue, true, "a past due day is overdue");
-      }
-    }
-    assert.ok(
-      counted.page.cases.every(
-        (item) => item.dueInDays === null || Number.isInteger(item.dueInDays)
-      )
-    );
+    await assertDaysToDueDay({
+      list: () =>
+        asAdmin((client) =>
+          listPrivacyCases(client, { after: null, filter: null, limit: 50 })
+        ),
+      open,
+      pool: owner.pool,
+    });
     tests.push(
       "the list counts the days to the due day on the database's own now() in the São Paulo calendar: yesterday is -1, today 0 and tomorrow 1, also for a due moment at 23:30 in São Paulo that is already the next day in UTC"
     );
