@@ -48,10 +48,34 @@ export function HideValuesButton({
 export function MaskedMoney() {
   return (
     <>
-      <span aria-hidden="true" data-masked-money="">
+      <span
+        aria-hidden="true"
+        className="whitespace-nowrap"
+        data-masked-money=""
+      >
         {MASKED_MONEY}
       </span>
       <span className="sr-only">{MASKED_SPOKEN}</span>
+    </>
+  );
+}
+
+/**
+ * A text with its amounts kept in one piece: "R$" and the number never fall on two lines, however large the font is.
+ * The text is the same, only each amount sits in a box that does not break.
+ */
+export function NoBreakMoney({ text }: { text: string }) {
+  return (
+    <>
+      {moneyParts(text).map((part, index) =>
+        part.money ? (
+          <span className="whitespace-nowrap" key={index}>
+            {part.text}
+          </span>
+        ) : (
+          part.text
+        )
+      )}
     </>
   );
 }
@@ -63,7 +87,7 @@ export function MaskedMoney() {
 export function MoneyText({ text }: { text: string }) {
   const [hidden] = useHiddenValues();
   if (!hidden) {
-    return <>{text}</>;
+    return <NoBreakMoney text={text} />;
   }
   return (
     <>

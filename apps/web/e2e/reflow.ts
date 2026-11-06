@@ -188,3 +188,53 @@ export async function assertNoPageScroll(page: Page) {
     `the page is ${scroll.scroll} px wide in a window of ${scroll.client} px`
   ).toBeLessThanOrEqual(scroll.client);
 }
+
+/**
+ * Every amount ("R$ 1.757,10", with its sign) written as one text ("R$" and the number in the same text node; a `Money`
+ * box, which sets them in two elements, is not measured here) under `scope` has its "R$" and its number on the same line:
+ * the two boxes overlap vertically, so a line break between them fails. Returns how many amounts it measured, and the
+ * check fails when there is none, because a sweep that found no amount proves nothing.
+ */
+export async function assertAmountsOnOneLine(scope: Locator) {
+  const amounts = await scope.evaluateAll((roots) => {
+    const AMOUNT = /[-+−]?R\$ [\d.]+,\d{2}/g;
+    const found: Array<{
+      currency: { bottom: number; top: number };
+      number: { bottom: number; top: number };
+      text: string;
+    }> = [];
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const content = node.textContent ?? "";
+        for (const match of content.matchAll(AMOUNT)) {
+          const start = match.index ?? 0;
+          const range = document.createRange();
+          const sign = match[0].startsWith("R") ? 0 : 1;
+          range.setStart(node, start + sign);
+          range.setEnd(node, start + sign + 2);
+          const currency = range.getBoundingClientRect();
+          range.setStart(node, start + sign + 3);
+          range.setEnd(node, start + match[0].length);
+          const number = range.getBoundingClientRect();
+          found.push({
+            currency: { bottom: currency.bottom, top: currency.top },
+            number: { bottom: number.bottom, top: number.top },
+            text: match[0],
+          });
+        }
+      }
+    }
+    return found;
+  });
+  expect(amounts.length, "no amount was found to measure").toBeGreaterThan(0);
+  const apart = amounts
+    .filter(
+      ({ currency, number }) =>
+        number.top >= currency.bottom - SLACK_PIXELS ||
+        currency.top >= number.bottom - SLACK_PIXELS
+    )
+    .map(({ text }) => text);
+  expect(apart, "amounts with the R$ and the number on two lines").toEqual([]);
+  return amounts.length;
+}
