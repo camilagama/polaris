@@ -8,6 +8,7 @@ import { Card } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
 import { ListTotalFooter } from "../catalog/screen-parts";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { QueueStrip } from "../offline/runtime/queue-strip";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { SavedSalesCard } from "./offline-sale-panels";
 import { HistoryEmptyCard } from "./sale-history-empty";
@@ -101,6 +102,7 @@ export function SaleHistoryPage() {
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
+      <QueueStrip />
       <h1 className="text-title">Histórico de vendas</h1>
       {offline ? <OfflineHistoryNotice /> : null}
       <SavedSalesCard workspace={workspace} />

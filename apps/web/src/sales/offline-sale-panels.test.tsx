@@ -1,8 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { PendingSale } from "../offline/sale-confirm";
-import { SavedSalesCard, savedSaleLines } from "./offline-sale-panels";
+import {
+  mergeSavedLines,
+  type SavedSaleLine,
+  SavedSaleRow,
+  SavedSalesCard,
+  savedSaleLines,
+} from "./offline-sale-panels";
 import type { QueuedSaleView } from "./sale-form-model";
+
+const SHORT_DATE = /23\/10\/2026|23\/10\/26/;
 
 const pending = (
   commandId: string,
@@ -81,7 +89,7 @@ describe("SavedSalesCard", () => {
     expect(html.match(/role="status"/g)).toHaveLength(1);
     expect(html).toContain("Venda guardada neste aparelho.");
     expect(html).toContain("45,00");
-    expect(html).toContain("Aguardando envio");
+    expect(html).toContain("Guardada");
     expect(html.match(/Acompanhar em Pendências/g)).toHaveLength(1);
     expect(html.match(/O formulário abaixo foi reiniciado/g)).toHaveLength(1);
     expect(html.match(/Só viram vendas confirmadas/g)).toHaveLength(1);
@@ -105,5 +113,141 @@ describe("SavedSalesCard", () => {
     );
     expect(html).toContain("o aparelho mostra 5 em estoque e a venda tem 9");
     expect(html).toContain("parece não cobrir este item");
+  });
+});
+
+const savedLine = (
+  commandId: string,
+  state: SavedSaleLine["state"],
+  overrides: Partial<SavedSaleLine> = {}
+): SavedSaleLine => ({
+  commandId,
+  itemCount: 2,
+  justSaved: false,
+  occurredAt: "2026-10-23T15:30:00.000Z",
+  state,
+  stockWarnings: [],
+  totalText: "R$ 130,00",
+  ...overrides,
+});
+
+function rowHtml(sale: SavedSaleLine): string {
+  return renderToStaticMarkup(<SavedSaleRow line={sale} />);
+}
+
+describe("a fase de cada linha (AC-T6.3)", () => {
+  const phases: [SavedSaleLine["state"], string][] = [
+    ["pending", "Guardada"],
+    ["syncing", "Enviando"],
+    ["sent", "Enviada"],
+    ["rejected", "Precisa de atenção"],
+    ["needs_attention", "Precisa de atenção"],
+  ];
+
+  it.each(phases)("%s diz %s e mantém data, itens e valor", (state, words) => {
+    const html = rowHtml(savedLine("a", state));
+    expect(html).toContain(`>${words}</span>`);
+    expect(html).toContain("2 itens");
+    expect(html).toMatch(SHORT_DATE);
+    expect(html).toContain("130,00");
+    expect(html).not.toContain("Skeleton");
+  });
+
+  it("guardada e enviando não têm ação; enviada leva ao Histórico; recusada, a Pendências", () => {
+    for (const state of ["pending", "syncing"] as const) {
+      const html = rowHtml(savedLine("a", state));
+      expect(html).not.toContain("<a ");
+    }
+    const sent = rowHtml(savedLine("a", "sent"));
+    expect(sent).toContain('href="/sales/history"');
+    expect(sent).toContain("Ver no Histórico");
+    expect(sent).not.toContain("Pendências");
+    for (const state of ["rejected", "needs_attention"] as const) {
+      const html = rowHtml(savedLine("a", state));
+      expect(html).toContain('href="/attention"');
+      expect(html).toContain("Resolver em Pendências");
+    }
+  });
+
+  it("valor indisponível aparece em todas as fases, nunca zero", () => {
+    for (const [state] of phases) {
+      const html = rowHtml(savedLine("a", state, { totalText: null }));
+      expect(html).toContain("valor indisponível");
+      expect(html).not.toContain("R$ 0,00");
+    }
+  });
+
+  it("a linha tem a mesma caixa em toda fase: a altura mínima da linha da fase não muda", () => {
+    for (const [state] of phases) {
+      expect(rowHtml(savedLine("a", state))).toContain("min-h-6");
+    }
+  });
+});
+
+describe("mergeSavedLines: a fase muda, o lugar não", () => {
+  it("a venda que sai da fila depois de guardada ou enviando vira enviada, no mesmo lugar e com os mesmos dados", () => {
+    const before = [
+      savedLine("a", "pending"),
+      savedLine("b", "syncing"),
+      savedLine("c", "pending"),
+    ];
+    const after = mergeSavedLines(before, [
+      savedLine("a", "pending"),
+      savedLine("c", "syncing"),
+    ]);
+    expect(after.map((l) => [l.commandId, l.state])).toEqual([
+      ["a", "pending"],
+      ["b", "sent"],
+      ["c", "syncing"],
+    ]);
+    expect(after[1]).toMatchObject({
+      itemCount: 2,
+      occurredAt: "2026-10-23T15:30:00.000Z",
+      totalText: "R$ 130,00",
+    });
+  });
+
+  it("a enviada fica enquanto o cartão está aberto", () => {
+    const sent = mergeSavedLines([savedLine("a", "syncing")], []);
+    expect(mergeSavedLines(sent, [])).toEqual(sent);
+    expect(sent[0]?.state).toBe("sent");
+  });
+
+  it("a recusada que sai da fila (resolvida em outro lugar) não vira enviada", () => {
+    expect(mergeSavedLines([savedLine("a", "rejected")], [])).toEqual([]);
+  });
+
+  it("a venda nova guardada agora vai ao alto e a nova da fila ao fim; ler de novo não muda a ordem", () => {
+    const before = [savedLine("a", "pending")];
+    const next = mergeSavedLines(before, [
+      savedLine("n", "pending", { justSaved: true }),
+      savedLine("a", "pending"),
+      savedLine("z", "pending"),
+    ]);
+    expect(next.map((l) => l.commandId)).toEqual(["n", "a", "z"]);
+    expect(
+      mergeSavedLines(next, [
+        savedLine("a", "pending"),
+        savedLine("z", "pending"),
+        savedLine("n", "pending", { justSaved: true }),
+      ]).map((l) => l.commandId)
+    ).toEqual(["n", "a", "z"]);
+  });
+
+  it("a recém-guardada que o servidor levou perde o destaque e o aviso de estoque", () => {
+    const [sent] = mergeSavedLines(
+      [
+        savedLine("n", "pending", {
+          justSaved: true,
+          stockWarnings: ["Camiseta"],
+        }),
+      ],
+      []
+    );
+    expect(sent).toMatchObject({
+      justSaved: false,
+      state: "sent",
+      stockWarnings: [],
+    });
   });
 });

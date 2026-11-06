@@ -183,13 +183,55 @@ export function syncStatusLabel(
  * needs internet.
  */
 function offlineText(waiting: number, onlineOnly: boolean): string {
-  const kept =
-    waiting > 0
-      ? `${plural(waiting, "operação guardada", "operações guardadas")}, ${waiting === 1 ? "envia" : "enviam"} quando voltar`
-      : null;
-  return ["Sem conexão", kept, onlineOnly ? NEEDS_INTERNET : null]
+  return [
+    OFFLINE_TITLE,
+    waiting > 0 ? offlineConsequence(waiting) : null,
+    onlineOnly ? NEEDS_INTERNET : null,
+  ]
     .filter(Boolean)
     .join(" · ");
+}
+
+const OFFLINE_TITLE = "Sem conexão";
+
+function offlineConsequence(waiting: number): string {
+  return `${plural(waiting, "operação guardada", "operações guardadas")}, ${waiting === 1 ? "envia" : "enviam"} quando voltar`;
+}
+
+/** What the strip on the sale screens says: the state and, when there is one, what happens to the waiting work. */
+export interface QueueStripText {
+  consequence: string | null;
+  title: string;
+  tone: "busy" | "offline";
+}
+
+/**
+ * The strip of the sale screens (Vender and Histórico) says the same sentences as the chip, split in a title and a
+ * consequence. It is about the work that waits, so a refused operation (which the chip turns into attention) does not
+ * hide it; null when nothing waits or the runtime is not ready to say.
+ */
+export function queueStripText(
+  snapshot: RuntimeSnapshot
+): QueueStripText | null {
+  if (waitingOperations(snapshot) === 0) {
+    return null;
+  }
+  const label = syncStatusLabel({
+    ...snapshot,
+    counts: { ...snapshot.counts, rejected: 0 },
+  });
+  if (label.tone !== "offline" && label.tone !== "busy") {
+    return null;
+  }
+  if (snapshot.phase !== "ready" && !snapshot.legalAcceptanceRequired) {
+    return null;
+  }
+  const [title = label.text, ...rest] = label.text.split(" · ");
+  return {
+    consequence: rest.length > 0 ? rest.join(" · ") : null,
+    title,
+    tone: label.tone,
+  };
 }
 
 /* v5.1 (the SyncChip of the design): a 20 px pill. Synced and sending are neutral; only what asks for attention has

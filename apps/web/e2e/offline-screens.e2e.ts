@@ -517,7 +517,11 @@ test.describe("venda", () => {
     await expect(
       page.getByText("Vendas guardadas neste aparelho")
     ).toBeVisible();
-    await expect(page.getByText("Aguardando envio")).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+        .getByText("Guardada", { exact: true })
+    ).toBeVisible();
     // one card, one line: when, how many items, how much (P-3)
     const saved = page.getByRole("region", {
       name: "Vendas guardadas neste aparelho",
@@ -541,10 +545,17 @@ test.describe("venda", () => {
     await expect(page.getByTestId("server-records")).toHaveText("1", {
       timeout: 20_000,
     });
-    await expect(page.getByText("Vendas guardadas neste aparelho")).toHaveCount(
-      0,
-      { timeout: 20_000 }
-    );
+    // the card keeps the line while the screen is open, now as sent, with the way to the history
+    const sentLine = page
+      .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+      .getByRole("listitem");
+    await expect(sentLine.getByText("Enviada", { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(
+      sentLine.getByRole("link", { name: "Ver no Histórico" })
+    ).toHaveAttribute("href", "/sales/history");
+    await expect(page.locator(".queue-strip")).toHaveCount(0);
     // back online the form is the online one again
     await expect(page.getByLabel("Perfil de pagamento")).toBeVisible();
     await expect(
@@ -586,6 +597,114 @@ test.describe("venda", () => {
     );
   });
 
+  test("a faixa da fila diz o estado e a consequência, some com a fila vazia, e a troca de fase não mexe nas outras linhas", async ({
+    page,
+  }) => {
+    const apiCalls: string[] = [];
+    page.on("request", (request) => {
+      if (["fetch", "xhr"].includes(request.resourceType())) {
+        apiCalls.push(request.url());
+      }
+    });
+    const user = `user-${crypto.randomUUID()}`;
+    await openSaleLab(page, user);
+    const strip = page.locator(".queue-strip");
+    await expect(strip).toHaveCount(0);
+    await page.getByLabel("Rede disponível").uncheck();
+    await fillShirtSale(page, 1);
+    await keepSale(page).click();
+    await fillShirtSale(page, 3);
+    await keepSale(page).click();
+    await expect(strip).toHaveCount(1);
+
+    // a second visit: the sale kept just now has a line of its own that no longer applies, so the lines are compared
+    // as the card draws them when it opens
+    await page.reload();
+    await openLab(page, user, "sale");
+    await page.getByLabel("Rede disponível").uncheck();
+    await start(page, "Nova venda");
+    await expect(strip).toHaveCount(1);
+    await expect(strip).toHaveAttribute("data-tone", "offline");
+    await expect(strip).toContainText("Sem conexão");
+    await expect(strip).toContainText(
+      "2 operações guardadas, enviam quando voltar"
+    );
+    expect((await strip.boundingBox())?.height).toBeGreaterThanOrEqual(36);
+    // the card shows each line as kept
+    const rows = page
+      .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+      .getByRole("listitem");
+    await expect(rows.getByText("Guardada", { exact: true })).toHaveCount(2);
+
+    const settle = apiCalls.length;
+    const shape = async () => {
+      const region = await page
+        .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+        .boundingBox();
+      const boxes = await rows.evaluateAll((items) =>
+        items.map((item) => {
+          const box = item.getBoundingClientRect();
+          return { height: box.height, top: box.top };
+        })
+      );
+      return boxes.map((box) => ({
+        height: box.height,
+        top: box.top - (region?.y ?? 0),
+      }));
+    };
+    const kept = await shape();
+    expect(apiCalls.length).toBe(settle);
+
+    await page.getByLabel("Rede disponível").check();
+    await expect(rows.getByText("Enviada", { exact: true })).toHaveCount(2, {
+      timeout: 20_000,
+    });
+    await expect(strip).toHaveCount(0, { timeout: 5000 });
+    const sent = await shape();
+    expect(sent).toHaveLength(kept.length);
+    for (const [index, box] of sent.entries()) {
+      expect(
+        Math.abs(box.height - (kept[index]?.height ?? 0))
+      ).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.top - (kept[index]?.top ?? 0))).toBeLessThanOrEqual(
+        1
+      );
+    }
+  });
+
+  test("com a fila já guardada ao abrir, a faixa está no primeiro quadro e o título não se mexe", async ({
+    page,
+  }) => {
+    const user = `user-${crypto.randomUUID()}`;
+    await openSaleLab(page, user);
+    await page.getByLabel("Rede disponível").uncheck();
+    await fillShirtSale(page, 1);
+    await keepSale(page).click();
+    await expect(page.locator(".queue-strip")).toHaveCount(1);
+
+    await page.reload();
+    await openLab(page, user, "sale");
+    await page.getByLabel("Rede disponível").uncheck();
+    await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+    const title = page.getByRole("heading", {
+      exact: true,
+      name: "Nova venda",
+    });
+    await expect(title).toBeVisible({ timeout: 20_000 });
+    const strip = page.locator(".queue-strip");
+    await expect(strip).toHaveCount(1);
+    const first = await title.boundingBox();
+    await expect(
+      page
+        .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+        .getByRole("listitem")
+    ).toHaveCount(1);
+    const settled = await title.boundingBox();
+    expect(Math.abs((settled?.y ?? 0) - (first?.y ?? 0))).toBeLessThanOrEqual(
+      1
+    );
+  });
+
   test("sem rede, avisa quando o estoque do aparelho não cobre, guarda mesmo assim, e a recusa do servidor fica à vista", async ({
     page,
   }) => {
@@ -604,9 +723,11 @@ test.describe("venda", () => {
     ).toBeVisible();
 
     await page.getByLabel("Rede disponível").check();
-    await expect(page.getByText("Recusada pelo servidor")).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(
+      page
+        .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+        .getByText("Precisa de atenção", { exact: true })
+    ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("server-records")).toHaveText("0");
   });
 
@@ -1040,9 +1161,11 @@ test.describe("venda com perfil de pagamento sem conexão", () => {
     ).toBeVisible();
 
     await page.getByLabel("Rede disponível").check();
-    await expect(page.getByText("Recusada pelo servidor")).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(
+      page
+        .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+        .getByText("Precisa de atenção", { exact: true })
+    ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("server-records")).toHaveText("0");
   });
 });
@@ -1084,7 +1207,11 @@ test.describe("sem o aceite dos termos (ADR 0100)", () => {
       { timeout: 20_000 }
     );
     // the queue is intact and not refused, and the local collections are still there
-    await expect(page.getByText("Aguardando envio")).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+        .getByText("Guardada", { exact: true })
+    ).toBeVisible();
     await expect(page.getByText("Recusada pelo servidor")).toHaveCount(0);
     await expect(page.getByTestId("server-records")).toHaveText("0");
     // the local collections are still there: without a network the search reads them, with the queued sale

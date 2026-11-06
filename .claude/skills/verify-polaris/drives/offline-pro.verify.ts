@@ -73,15 +73,17 @@ test("venda-offline", async ({ context, evidence, page }) => {
     name: "Vendas guardadas neste aparelho",
   });
   await expect(saved).toContainText(total);
-  await expect(saved).toContainText("Aguardando envio");
+  await expect(saved).toContainText("Guardada");
+  await expect(page.locator(".queue-strip")).toContainText("Sem conexão");
   await evidence.shot(
     "offline-guardada",
     "venda guardada no aparelho, ainda não oficial"
   );
 
-  // the connection is back: the sale goes to the server and leaves the card
+  // the connection is back: the sale goes to the server and the line stays in the card, as sent
   await context.setOffline(false);
-  await expect(saved).toHaveCount(0, { timeout: 60_000 });
+  await expect(saved).toContainText("Enviada", { timeout: 60_000 });
+  await expect(page.locator(".queue-strip")).toHaveCount(0);
   await expect(
     page.getByRole("status").filter({ hasText: SYNCED })
   ).toBeVisible({ timeout: 60_000 });

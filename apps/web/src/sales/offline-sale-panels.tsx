@@ -1,6 +1,6 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { type RefObject, useEffect, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Card, CardContent, CardHeader } from "@/ui/card";
@@ -9,7 +9,8 @@ import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import type { PendingSale } from "../offline/sale-confirm";
 import {
   pendingDateTime,
-  pendingStateLabels,
+  type SalePhase,
+  salePhaseLabels,
   usePendingSales,
 } from "./pending-sales";
 import type { QueuedSaleView } from "./sale-form-model";
@@ -47,7 +48,7 @@ export interface SavedSaleLine {
   justSaved: boolean;
   /** Null when there is no date to show yet. */
   occurredAt: string | null;
-  state: PendingSale["state"];
+  state: SalePhase;
   /** The lines the device's stock does not seem to cover (only for the sale kept just now). */
   stockWarnings: readonly string[];
   /** As formatBrlAmount writes it; null when the total cannot be known (never shown as zero). */
@@ -99,13 +100,43 @@ export function savedSaleLines(
   return [first, ...others];
 }
 
+/**
+ * The lines of the card after a new read of the queue: each keeps its place, a sale that was waiting or being sent and
+ * is no longer in the queue is one the server took (`sent`, with what was last read of it), and a new one goes where
+ * `savedSaleLines` puts it. The place never changes with the phase, so a line changing does not move the others.
+ */
+export function mergeSavedLines(
+  previous: readonly SavedSaleLine[],
+  current: readonly SavedSaleLine[]
+): SavedSaleLine[] {
+  const now = new Map(current.map((line) => [line.commandId, line]));
+  const known = new Set(previous.map((line) => line.commandId));
+  const kept = previous.flatMap((old): SavedSaleLine[] => {
+    const line = now.get(old.commandId);
+    if (line) {
+      return [line];
+    }
+    if (old.state === "pending" || old.state === "syncing") {
+      return [{ ...old, justSaved: false, state: "sent", stockWarnings: [] }];
+    }
+    return old.state === "sent" ? [old] : [];
+  });
+  const fresh = current.filter((line) => !known.has(line.commandId));
+  return [
+    ...fresh.filter((line) => line.justSaved),
+    ...kept,
+    ...fresh.filter((line) => !line.justSaved),
+  ];
+}
+
 /** The sale kept just now has the border and the ring of a chosen card (DESIGN.md), so it reads as the one to look at. */
 const ROW_JUST_SAVED =
   "border-foreground/70 bg-secondary ring-1 ring-foreground/10";
 
-function SavedSaleRow({ line }: { line: SavedSaleLine }) {
+export function SavedSaleRow({ line }: { line: SavedSaleLine }) {
   const attention =
     line.state === "needs_attention" || line.state === "rejected";
+  const sent = line.state === "sent";
   const when = [
     line.occurredAt ? pendingDateTime.format(new Date(line.occurredAt)) : null,
     line.itemCount === null
@@ -133,13 +164,21 @@ function SavedSaleRow({ line }: { line: SavedSaleLine }) {
           <Money className="font-medium" text={line.totalText} />
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1">
         <Badge variant={attention ? "destructive" : "outline"}>
-          {pendingStateLabels[line.state]}
+          {salePhaseLabels[line.state]}
         </Badge>
         {attention ? (
           <a className={`${STANDALONE_LINK} text-support`} href="/attention">
             Resolver em Pendências
+          </a>
+        ) : null}
+        {sent ? (
+          <a
+            className={`${STANDALONE_LINK} text-support`}
+            href="/sales/history"
+          >
+            Ver no Histórico
           </a>
         ) : null}
       </div>
@@ -194,7 +233,12 @@ export function SavedSalesCard({
   }, [inQueue, justSaved]);
   const accepted =
     justSaved !== null && !inQueue && seenInQueue === justSaved.commandId;
-  const lines = savedSaleLines(sales, accepted ? null : justSaved);
+  const queueLines = savedSaleLines(sales, accepted ? null : justSaved);
+  // What the card holds is kept while this one is open: with no workspace there is no queue to compare with
+  const kept = useRef<SavedSaleLine[]>([]);
+  kept.current =
+    workspace === null ? [] : mergeSavedLines(kept.current, queueLines);
+  const lines = workspace === null ? queueLines : kept.current;
   if (lines.length === 0) {
     return null;
   }

@@ -8,11 +8,15 @@ export const pendingDateTime = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
 });
 
-export const pendingStateLabels: Record<PendingSale["state"], string> = {
-  needs_attention: "Precisa de ação",
-  pending: "Aguardando envio",
-  rejected: "Recusada pelo servidor",
-  syncing: "Enviando…",
+/** Where a sale kept on the device stands, in words: the phase of its line. `sent` is a sale the server took while the card was open. */
+export type SalePhase = PendingSale["state"] | "sent";
+
+export const salePhaseLabels: Record<SalePhase, string> = {
+  needs_attention: "Precisa de atenção",
+  pending: "Guardada",
+  rejected: "Precisa de atenção",
+  sent: "Enviada",
+  syncing: "Enviando",
 };
 
 /** The sales this device still holds for the server, read again after any sync or change. */

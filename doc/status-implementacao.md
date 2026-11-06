@@ -3163,6 +3163,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Aceite legal | Em revisão | `ACCEPTANCE_CONTINUE` passou de "Continuar" a "Aceitar e continuar"; a caixa segue obrigatória e o botão nunca fica desligado por causa dela; o e2e `legal-acceptance` usa o nome novo. |
 | Regra do botão | Em revisão | DESIGN.md, "Diálogo de formulário": "O botão diz a escolha, não 'OK' nem 'Sim'". `scripts/button-labels.test.ts` varre os `.tsx` de `apps/web/src` (sem `ui-gallery/` nem `offline-poc/`) e reprova o rótulo "OK" ou "Sim" sozinho, com casos plantados e de controle. Nenhum uso existia na main; os "Sim, <verbo>" que já existem (desfazer o encerramento, descartar a fila, remover o cliente da venda) ficam fora, como o corte pede ("diálogos existentes: só o teste olha"). |
 
+### Faixa "Sincronizando" em Vender e Histórico e fases na operação guardada (t841; corte ui-heyrico-2, T6, AC-T6.1 a AC-T6.7; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Faixa da fila | Em revisão | `offline/runtime/queue-strip.tsx`, no alto do `main` de Vender e Histórico (não em Pendências nem nas telas só com conexão): `Alert` de 36 px no mínimo, `role="status"`, `warning` sem conexão ("Sem conexão" e "N operações guardadas, enviam quando voltar", o texto do chip separado por `queueStripText` em `sync-status.tsx`) e `muted` com spinner enviando ("Enviando N operações…"). Fila zero: não existe. Só estado local do runtime (`counts`, `syncing`): nenhuma leitura nova, nada em `packages/` nem no servidor. |
+| Fases no cartão | Em revisão | Cada linha de "Vendas guardadas neste aparelho" diz Guardada, Enviando, Enviada ou Precisa de atenção, com a ação da fase (enviada, "Ver no Histórico"; atenção, "Resolver em Pendências"). A venda que o servidor leva com o cartão aberto fica nele como Enviada, com os dados da última leitura, até a pessoa sair da tela (`mergeSavedLines`); a ordem das linhas não muda com a fase. |
+| Movimento e leitor de tela | Em revisão | Desvanecer de 150 ms ao sumir só sob `motion-full:`; no celular e com `prefers-reduced-motion` sai no mesmo quadro; o spinner só gira sob `motion-full:`. O leitor de tela ouve uma vez por mudança de estado (a contagem que desce não fala de novo). |
+| Provas | Em revisão | `offline/runtime/queue-strip.test.tsx` e `sales/offline-sale-panels.test.tsx` (DOM por estado e por fase, classes de movimento, anúncio único, ordem estável); e2e `offline-screens.e2e.ts` (faixa, fila já guardada ao abrir e geometria das linhas ≤ 1 px). A linha recém-guardada tem um parágrafo próprio que some quando ela vira Enviada, então a geometria é medida na segunda visita. |
+
 ### Admin: Início que diz o que pede atenção e busca de loja pelo nome (t830; corte admin-v2-clareza-2a-passada, AC-CL5, AC-CL6, AC-CL7, AC-CP2, AC-CP6, AC-CL9 e AC-CP9; sem migration)
 
 | Item | Estado | Detalhe |

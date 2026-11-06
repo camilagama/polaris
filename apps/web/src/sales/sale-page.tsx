@@ -59,6 +59,7 @@ import {
   withSuggestedPrices,
   writeLastPrices,
 } from "./last-prices-model";
+import { QueueStrip } from "../offline/runtime/queue-strip";
 import { OfflineSaleNotice, SavedSalesCard } from "./offline-sale-panels";
 import {
   readSaleAttemptState,
@@ -979,6 +980,7 @@ export function SalePage() {
   const chosenCount = chosenItemCount(form);
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
+      <QueueStrip />
       <h1 className="text-title">Nova venda</h1>
       <SaleDraftBar
         canClear={!locked}
