@@ -14,6 +14,13 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import {
+  assertNoEllipsis,
+  assertNoPageScroll,
+  assertNothingClipped,
+  expectReflowFont,
+  openReflowViewport,
+} from "./reflow";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -1724,13 +1731,20 @@ for (const viewport of [
     const valueBox = await footer.locator(".tabular-nums").boundingBox();
     expect(countBox?.height ?? 99).toBeLessThanOrEqual(24);
     expect(valueBox).not.toBeNull();
-    expect(
-      Math.abs(
-        (valueBox?.y ?? 0) +
-          (valueBox?.height ?? 0) -
-          ((countBox?.y ?? 0) + (countBox?.height ?? 0))
-      )
-    ).toBeLessThanOrEqual(8);
+    if (viewport.width === 320) {
+      // 15 rem inside the box: the count and the total do not fit side by side, so the total goes under the count
+      expect(valueBox?.y ?? 0).toBeGreaterThanOrEqual(
+        (countBox?.y ?? 0) + (countBox?.height ?? 0) - 1
+      );
+    } else {
+      expect(
+        Math.abs(
+          (valueBox?.y ?? 0) +
+            (valueBox?.height ?? 0) -
+            ((countBox?.y ?? 0) + (countBox?.height ?? 0))
+        )
+      ).toBeLessThanOrEqual(8);
+    }
     const overflow = await footer.evaluate(
       (node) => node.scrollWidth - node.clientWidth
     );
@@ -1776,3 +1790,53 @@ for (const width of [480, 1280]) {
     await expectColumn("Anuladas");
   });
 }
+
+test.describe("a 320 px com letra de 20 px", () => {
+  test.skip(
+    ({ browserName }) => browserName !== "chromium",
+    "`Page.setFontSizes` is a Chrome DevTools command"
+  );
+
+  test("o rodapé Total na tela empilha a contagem e o valor, com as duas casas, dentro da janela, e tem a mesma altura com e sem despesas", async ({
+    page,
+  }) => {
+    await openReflowViewport(page);
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    for (let n = 1; n <= 51; n += 1) {
+      seedExpense(server, n, "1500.50");
+    }
+    await openExpenses(page, server);
+    await expectReflowFont(page);
+
+    const footer = page.locator("[data-list-total]");
+    await expect(footer).toContainText("50 despesas · há mais");
+    const value = footer.locator(".tabular-nums");
+    await expect(value).toHaveText("R$ 75.025,00");
+    const [footerBox, valueBox, countBox] = await Promise.all([
+      footer.boundingBox(),
+      value.boundingBox(),
+      footer.getByText("50 despesas · há mais").boundingBox(),
+    ]);
+    expect(footerBox).not.toBeNull();
+    expect(valueBox).not.toBeNull();
+    expect(countBox).not.toBeNull();
+    expect((valueBox?.x ?? 0) + (valueBox?.width ?? 0)).toBeLessThanOrEqual(
+      (footerBox?.x ?? 0) + (footerBox?.width ?? 0)
+    );
+    expect(valueBox?.y ?? 0).toBeGreaterThanOrEqual(
+      (countBox?.y ?? 0) + (countBox?.height ?? 0) - 1
+    );
+    await assertNothingClipped(footer);
+    await assertNoEllipsis(footer);
+    await assertNoPageScroll(page);
+    const filled = footerBox?.height ?? 0;
+
+    await choose(page, page, "Categoria", "Marketing");
+    await expect(page.getByText("Nenhuma despesa neste período")).toBeVisible();
+    await expect(footer).toContainText("0 despesas");
+    await expect(value).toHaveText("R$ 0,00");
+    const empty = await footer.boundingBox();
+    expect(Math.abs((empty?.height ?? 0) - filled)).toBeLessThanOrEqual(1);
+  });
+});

@@ -28,20 +28,32 @@ export function SaleStatusBadges({
   );
 }
 
-const ROW = "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4";
+/**
+ * Narrower than 19 rem (a 320 px window at the default font, and wider windows as the browser font grows) the row
+ * stops being one line of cells: the data take the full width, wrapping instead of being cut, and the value goes
+ * under them, beside the chevron. The width is the row's own (`@container` on the `li`) and in `rem`, so a bigger
+ * browser font reaches it on a wider window. At 20.5 rem (360 px, default font) and above the row is the one it was.
+ */
+const ROW =
+  "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4 @max-[18.999rem]:flex-wrap";
+const WRAPPED_DATA = "@max-[18.999rem]:basis-full @max-[18.999rem]:flex-none";
+const WRAPPED_LINE =
+  "@max-[18.999rem]:block @max-[18.999rem]:[&>span]:inline @max-[18.999rem]:[&_span]:overflow-visible @max-[18.999rem]:[&_span]:whitespace-normal @max-[18.999rem]:[&_span]:[overflow-wrap:anywhere]";
 
 function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
   return (
     <>
       <span
         aria-hidden="true"
-        className="hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
+        className="@max-[18.999rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
       >
         {row.customerInitials}
       </span>
-      <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5 overflow-hidden">
+      <div
+        className={`grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5 overflow-hidden ${WRAPPED_DATA}`}
+      >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="whitespace-nowrap font-medium">
+          <p className="@max-[18.999rem]:whitespace-normal whitespace-nowrap font-medium">
             {row.dateText}
             {row.timeText ? (
               <span className="font-normal text-muted-foreground tabular-nums">
@@ -57,7 +69,9 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
             statusTone={row.statusTone}
           />
         </div>
-        <p className="flex min-w-0 text-muted-foreground text-support">
+        <p
+          className={`flex min-w-0 text-muted-foreground text-support ${WRAPPED_LINE}`}
+        >
           <span className="min-w-[5ch] truncate">{row.customerText}</span>
           <span className="flex max-w-[calc(100%_-_5ch)] shrink-0 whitespace-pre">
             <span className="overflow-hidden text-ellipsis">{` · ${row.methodText}`}</span>
@@ -66,7 +80,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         </p>
       </div>
       <Money
-        className="shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
+        className="@max-[18.999rem]:ml-auto shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
         text={row.totalText}
       />
       {chevron ? (
@@ -86,7 +100,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
  */
 function HistoryItem({ offline, row }: { offline: boolean; row: HistoryRow }) {
   return (
-    <li>
+    <li className="@container">
       {offline ? (
         <div className={ROW}>
           <RowBody chevron={false} row={row} />
