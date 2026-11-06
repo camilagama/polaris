@@ -3,7 +3,7 @@ import {
   allElements,
   buttons,
   byTag,
-  type FakeElement,
+  FakeElement,
   visibleText,
 } from "./test-dom";
 import {
@@ -65,6 +65,26 @@ const sectionOf = (root: FakeElement): FakeElement => {
   }
   return found;
 };
+
+const readAloud = (root: FakeElement): string => {
+  if (
+    root.hasAttribute("hidden") ||
+    root.getAttribute("aria-hidden") === "true"
+  ) {
+    return "";
+  }
+  const label = root.getAttribute("aria-label");
+  if (root.tagName === "a" && label !== null) {
+    return label;
+  }
+  return root.childNodes
+    .map((node) =>
+      node instanceof FakeElement ? readAloud(node) : node.textContent
+    )
+    .join("");
+};
+
+const occurrences = (text: string, part: string) => text.split(part).length - 1;
 
 const posts = (calls: Call[]) =>
   calls.filter((call) => call.init.method === "POST");
@@ -202,5 +222,45 @@ describe("Lojas com trava legal", () => {
     for (const name of names) {
       expect(name).not.toMatch(UUID_TEXT);
     }
+  });
+
+  it("has the end of the store code read once per row when there is a link, and keeps the visible tail (AC-1.1)", async () => {
+    const mounted = await open([page([hold(STORE), hold(OTHER)])]);
+    const cells = byTag(sectionOf(mounted.root), "a").map(
+      (link) => link.parent
+    );
+    expect(cells).toHaveLength(2);
+    for (const [index, id] of [STORE, OTHER].entries()) {
+      const cell = cells[index] as FakeElement;
+      const tail = `final ${id.slice(-4)}`;
+      expect(occurrences(readAloud(cell), tail)).toBe(1);
+      const hint = cell.children.at(-1) as FakeElement;
+      expect(hint.getAttribute("aria-hidden")).toBe("true");
+      expect(hint.textContent).toBe(` · ${tail}`);
+      expect(visibleText(cell)).toContain(tail);
+    }
+  });
+
+  it("keeps the end of the code visible and not hidden, as its only mention, without the link (AC-1.2)", async () => {
+    const mounted = await open([page([hold(STORE)])], WITHOUT_DIAGNOSE);
+    const cell = allElements(sectionOf(mounted.root)).find(
+      (element) => element.getAttribute("title") === STORE
+    ) as FakeElement;
+    const tail = `final ${STORE.slice(-4)}`;
+    const hint = cell.children.at(-1) as FakeElement;
+    expect(hint.hasAttribute("aria-hidden")).toBe(false);
+    expect(occurrences(readAloud(cell), tail)).toBe(1);
+  });
+
+  it("gives two links of holds with the same dates different names (AC-1.3)", async () => {
+    const mounted = await open([page([hold(STORE), hold(OTHER)])]);
+    expect(hold(STORE).placedAt).toBe(hold(OTHER).placedAt);
+    expect(hold(STORE).reviewAt).toBe(hold(OTHER).reviewAt);
+    const [first, second] = byTag(sectionOf(mounted.root), "a").map((link) =>
+      link.getAttribute("aria-label")
+    );
+    expect(first).not.toBe(second);
+    expect(first).toContain(`código final ${STORE.slice(-4)}`);
+    expect(second).toContain(`código final ${OTHER.slice(-4)}`);
   });
 });

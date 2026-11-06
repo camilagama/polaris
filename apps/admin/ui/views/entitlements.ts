@@ -266,9 +266,10 @@ export function entitlementsView(
         end,
       ];
     });
+    const canEnd = grants.some((grant) => grant.id !== null);
     dom.fill(
       listBox,
-      effectLine(dom, "grantEnd"),
+      ...(canEnd ? [effectLine(dom, "grantEnd")] : []),
       table(
         dom,
         "Liberações temporárias em vigor",
