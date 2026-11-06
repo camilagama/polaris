@@ -458,13 +458,14 @@ describe("reading", () => {
     );
   });
 
-  it("adds to each listed case the whole days to its due day in Brasília, counted by the server", async () => {
+  it("answers each listed case with the days to its due day exactly as the database counted them, whatever the Worker's clock says", async () => {
     vi.useFakeTimers({
-      now: new Date("2026-11-06T02:30:00.000Z"),
+      now: new Date("2031-03-01T12:00:00.000Z"),
       toFake: ["Date"],
     });
-    const summary = (dueAt: string) => ({
+    const summary = (dueAt: string, dueInDays: number | null) => ({
       dueAt,
+      dueInDays,
       id: caseId,
       openedAt: "2026-10-22T15:00:00.000Z",
       organizationId: entityId,
@@ -479,11 +480,10 @@ describe("reading", () => {
       list: () =>
         Promise.resolve({
           cases: [
-            summary("2026-11-05T14:00:00.000Z"),
-            summary("2026-11-05T23:00:00.000Z"),
-            summary("2026-11-06T02:59:00.000Z"),
-            summary("2026-11-09T14:00:00.000Z"),
-            summary("not a date"),
+            summary("2026-11-05T14:00:00.000Z", -1),
+            summary("2026-11-06T02:59:00.000Z", 0),
+            summary("2026-11-09T14:00:00.000Z", 4),
+            summary("2026-11-09T14:00:00.000Z", null),
           ],
           next: null,
         }),
@@ -492,13 +492,7 @@ describe("reading", () => {
     const body = (await answer.json()) as {
       cases: { dueInDays: number | null }[];
     };
-    expect(body.cases.map((item) => item.dueInDays)).toEqual([
-      0,
-      0,
-      0,
-      4,
-      null,
-    ]);
+    expect(body.cases.map((item) => item.dueInDays)).toEqual([-1, 0, 4, null]);
   });
 
   it("answers not found for a case that does not exist", async () => {

@@ -15,6 +15,7 @@ import {
 } from "@polaris/domain/admin/privacy-case";
 import { Client } from "pg";
 import {
+  type PrivacyCasePage,
   closeSupportCase,
   grantTenantAccess,
   listPrivacyCases,
@@ -60,6 +61,98 @@ const NOTE_MARKER = "NOTA-PRIVADA-9731";
 const DAY_MS = 86_400_000;
 const AUDIT_DETAIL_CODES =
   /^(privacy|revoked=\d+|stage=[a-z_]+(;[a-z_]+=[a-z_0-9]+)*|action=[a-z_]+)$/;
+
+interface OpenedDueCase {
+  dayOffset: number;
+  due: Date;
+  hour: number;
+  id: string;
+  minute: number;
+}
+
+interface DueDayProbe {
+  list: () => Promise<PrivacyCasePage>;
+  open: (over: {
+    dueDays: number;
+    receivedAt: Date;
+  }) => Promise<{ id: string } | null>;
+  pool: Pick<Client, "query">;
+}
+
+/**
+ * `dueInDays` comes from the database's own now() and the São Paulo calendar: a due moment at 23:30 in São Paulo is
+ * already the next day in UTC, and it still counts as the São Paulo day it falls on. Every instant is built by the
+ * database, so the gate reads no clock of its own; a run that crosses midnight in São Paulo is repeated once.
+ */
+async function assertDaysToDueDay(probe: DueDayProbe) {
+  const brasiliaDay = async () =>
+    (
+      await probe.pool.query<{ day: string }>(
+        "SELECT to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS day"
+      )
+    ).rows[0]?.day;
+  const dueMoment = async (dayOffset: number, hour: number, minute: number) => {
+    const moment = await probe.pool.query<{ due: Date }>(
+      `SELECT (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')
+               + make_interval(days => $1::int, hours => $2::int, mins => $3::int)) AT TIME ZONE 'America/Sao_Paulo' AS due`,
+      [dayOffset, hour, minute]
+    );
+    const due = moment.rows[0]?.due;
+    assert.ok(due);
+    return due;
+  };
+  const wanted = [-1, 0, 1].flatMap((dayOffset) =>
+    [
+      { hour: 23, minute: 30 },
+      { hour: 0, minute: 30 },
+    ].map((time) => ({ dayOffset, ...time }))
+  );
+  const attempt = async (): Promise<{
+    opened: OpenedDueCase[];
+    page: PrivacyCasePage;
+  }> => {
+    const opened: OpenedDueCase[] = [];
+    for (const entry of wanted) {
+      const due = await dueMoment(entry.dayOffset, entry.hour, entry.minute);
+      const created = await probe.open({
+        dueDays: 5,
+        receivedAt: new Date(due.getTime() - 5 * DAY_MS),
+      });
+      assert.ok(created);
+      opened.push({ ...entry, due, id: created.id });
+    }
+    return { opened, page: await probe.list() };
+  };
+  const settled = async () => {
+    for (let tries = 0; tries < 2; tries += 1) {
+      const before = await brasiliaDay();
+      const result = await attempt();
+      if (before === (await brasiliaDay())) {
+        return result;
+      }
+    }
+    throw new Error("São Paulo midnight passed on every attempt");
+  };
+  const counted = await settled();
+  for (const entry of counted.opened) {
+    const listed = counted.page.cases.find((item) => item.id === entry.id);
+    assert.ok(listed, "the case just opened is on the first page");
+    assert.equal(
+      listed.dueInDays,
+      entry.dayOffset,
+      `a case due ${entry.dayOffset} day(s) from today at ${entry.hour}:${entry.minute} in São Paulo`
+    );
+    assert.equal(new Date(listed.dueAt).getTime(), entry.due.getTime());
+    if (entry.dayOffset < 0) {
+      assert.equal(listed.overdue, true, "a past due day is overdue");
+    }
+  }
+  assert.ok(
+    counted.page.cases.every(
+      (item) => item.dueInDays === null || Number.isInteger(item.dueInDays)
+    )
+  );
+}
 
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
@@ -1026,6 +1119,17 @@ async function run() {
     assert.ok(
       !overdue.cases.some((entry) => entry.id === base),
       "a resolved case is never late"
+    );
+    await assertDaysToDueDay({
+      list: () =>
+        asAdmin((client) =>
+          listPrivacyCases(client, { after: null, filter: null, limit: 50 })
+        ),
+      open,
+      pool: owner.pool,
+    });
+    tests.push(
+      "the list counts the days to the due day on the database's own now() in the São Paulo calendar: yesterday is -1, today 0 and tomorrow 1, also for a due moment at 23:30 in São Paulo that is already the next day in UTC"
     );
     const openCases = await asAdmin((client) =>
       listPrivacyCases(client, { after: null, filter: "open", limit: 50 })

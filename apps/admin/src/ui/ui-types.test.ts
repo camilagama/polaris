@@ -13,6 +13,7 @@ import type {
   openPrivacyCase,
   openSupportCase,
   PrivacyCaseDetail as ServerPrivacyDetail,
+  PrivacyCasePage as ServerPrivacyPage,
   PrivacyStepResult,
   SupportCaseDetail as ServerCaseDetail,
   SupportCasePage as ServerCasePage,
@@ -24,7 +25,6 @@ import {
   MAX_GRANT_REASON_LENGTH,
 } from "@polaris/domain/billing/grants";
 import type { RefundWindowView as ServerRefundWindow } from "@polaris/domain/admin/refund-window";
-import type { PrivacyCaseListing as ServerPrivacyPage } from "../privacy-routes";
 import type { SupportDependencies } from "../support-routes";
 import { describe, expect, it } from "vitest";
 import { entitlementText } from "../../ui/format";

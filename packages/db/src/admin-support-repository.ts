@@ -513,6 +513,7 @@ export function auditBillingCommand(
  */
 export interface PrivacyCaseSummary {
   dueAt: string;
+  dueInDays: number | null;
   id: string;
   openedAt: string;
   organizationId: string;
