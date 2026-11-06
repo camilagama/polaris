@@ -164,12 +164,19 @@ describe("Lojas com trava legal", () => {
     expect(visibleText(sectionOf(withoutLink.root))).not.toContain(STORE);
   });
 
-  it("shows no store ID as a text of the list, only in the title of the link (AC-CP5)", async () => {
+  it("shows no store ID as a text of the list: the ID rides in the title, and each link has its own accessible name (AC-CP5)", async () => {
     const mounted = await open([page([hold(STORE), hold(OTHER)])]);
     const section = sectionOf(mounted.root);
     expect(visibleText(section)).not.toMatch(UUID_TEXT);
-    expect(
-      byTag(section, "a").map((link) => link.getAttribute("title"))
-    ).toEqual([STORE, OTHER]);
+    const links = byTag(section, "a");
+    expect(links.map((link) => link.parent?.getAttribute("title"))).toEqual([
+      STORE,
+      OTHER,
+    ]);
+    const names = links.map((link) => link.getAttribute("aria-label"));
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) {
+      expect(name).not.toMatch(UUID_TEXT);
+    }
   });
 });

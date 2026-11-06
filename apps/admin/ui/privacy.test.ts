@@ -958,12 +958,17 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
       const visibleHints = form.children.filter(
         (child) =>
           child.tagName === "p" &&
-          (child.getAttribute("class") ?? "").includes("hint") &&
+          (child.getAttribute("class") ?? "").includes("step-help-line") &&
           !child.hasAttribute("hidden")
       );
       expect(visibleHints.map((hint) => hint.textContent)).toEqual([HELP[key]]);
-      expect(HELP[key].startsWith(start)).toBe(true);
-      expect(HELP[key].toLowerCase()).toContain(term);
+      expect(visibleHints[0]?.textContent.startsWith(start)).toBe(true);
+      expect(visibleHints[0]?.textContent.toLowerCase()).toContain(term);
+      expect(
+        form.children.filter(
+          (child) => child.tagName === "details" || child.tagName === "summary"
+        )
+      ).toHaveLength(1);
       const [details] = form.children.filter(
         (child) => child.tagName === "details"
       );

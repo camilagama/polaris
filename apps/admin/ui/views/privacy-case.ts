@@ -145,7 +145,7 @@ export const HELP: Readonly<Record<StepKey, string>> = {
   identity:
     "Identidade: como se conferiu que quem pede é o titular, a pessoa a quem os dados pertencem.",
   resolve: "Resolução: fecha o pedido. Um pedido resolvido não reabre.",
-  role: "Papel do Polaris: o Polaris decide sobre estes dados (controlador) ou só os guarda pela loja (operador).",
+  role: "Papel do Polaris: o Polaris decide sobre estes dados (controlador) ou só os processa pela loja (operador).",
   scope:
     "Escopo: quais dados o pedido alcança. O titular é a pessoa a quem os dados pertencem.",
 };
@@ -592,7 +592,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       legalNoteHint(dom, id("nota-obrigatoria"), reason, note);
       const caseFacts = dom.el(
         "p",
-        {},
+        { class: "hint" },
         `Neste atendimento: identidade ${labelOf(IDENTITY_STATUSES, detail.privacy.identityStatus).toLowerCase()}; papel do Polaris ${labelOf(ROLES, detail.privacy.polarisRole).split(":")[0]?.toLowerCase() ?? ""}; quem pede: ${labelOf(REQUESTER_KINDS, detail.privacy.requesterKind).toLowerCase()}.`
       );
       return {
@@ -759,7 +759,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
     const title = (text: string) =>
       dom.el("h4", { id: `etapa-${spec.key}-titulo`, tabindex: "-1" }, text);
 
-    const help = () => [
+    const helpNodes = [
       dom.el("p", { class: "hint step-help-line" }, HELP[spec.key]),
       dom.el(
         "details",
@@ -782,7 +782,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const element = dom.el(
         "form",
         { class: "step-form", novalidate: "" },
-        ...help(),
+        ...helpNodes,
         ...form.fields,
         dom.el("div", { class: "button-row" }, next)
       );

@@ -79,13 +79,16 @@ export function legalHoldsView(tools: ScreenTools): HTMLElement {
     const path = storePath(hold.organizationId);
     return can("organization:diagnose") && path !== null
       ? dom.el(
-          "a",
-          {
-            "aria-label": `${STORE_LINK_TEXT} da trava desde ${brasiliaDay(hold.placedAt)}`,
-            href: path,
-            title: hold.organizationId,
-          },
-          STORE_LINK_TEXT
+          "span",
+          { title: hold.organizationId },
+          dom.el(
+            "a",
+            {
+              "aria-label": `${STORE_LINK_TEXT} da trava desde ${brasiliaDay(hold.placedAt)}, revisão em ${brasiliaDay(hold.reviewAt)}, código final ${hold.organizationId.slice(-4)}`,
+              href: path,
+            },
+            STORE_LINK_TEXT
+          )
         )
       : dom.el("span", { title: hold.organizationId }, STORE_CELL_TEXT);
   };
