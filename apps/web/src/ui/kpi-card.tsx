@@ -26,6 +26,70 @@ export const KPI_GRID =
   "grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4 lg:gap-4";
 
 /**
+ * The row of the Resultado: the cards of `KPI_GRID` up to 899 px (two columns from 760 px), and from 900 px one card
+ * with four columns and a 1 px line between them (the Venda changes layout at the same line). The cells give up their
+ * own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the sparklines to its corners. The two-column
+ * rule of 760 px stops at 899.98 px because Tailwind writes an arbitrary `min-[900px]` before `md:`, which would win.
+ */
+const STRIP_LAYOUT =
+  "grid grid-cols-1 gap-3 md:max-[899.98px]:grid-cols-2 min-[900px]:grid-cols-4 min-[900px]:gap-0 min-[900px]:divide-x min-[900px]:divide-border min-[900px]:overflow-hidden min-[900px]:rounded-xl min-[900px]:bg-card min-[900px]:shadow-xs min-[900px]:ring-1 min-[900px]:ring-foreground/[0.06] min-[900px]:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
+
+/**
+ * The height the strip keeps from 900 px, by its own width (its container is `KPI_STRIP_ROOT`): the tallest it gets
+ * in any state, measured in the browser over the longest foot of the result card ("estimativa incompleta", the days
+ * with no cost and the "Não é lucro líquido nem caixa", wrapped in a column of 150 px), the titles that wrap and, in
+ * the columns narrower than 14 rem (all the steps but the last), the two lines the "vs. …" keeps under the number. The
+ * ranges exclude each other, so the order of the rules does not matter; with the height kept, a period, a missing
+ * comparison, an incomplete cost or hidden values move nothing under the strip. Remeasure when a text of a column
+ * changes (`dashboard.e2e.ts`, "a altura da faixa de KPIs não muda").
+ */
+const STRIP_RESERVE =
+  "min-[900px]:@max-[40.124rem]:min-h-[19.125rem] min-[900px]:@[40.125rem]:@max-[44.624rem]:min-h-[18.125rem] min-[900px]:@[44.625rem]:@max-[49.499rem]:min-h-[17.5rem] min-[900px]:@[49.5rem]:@max-[64.249rem]:min-h-[15.375rem] min-[900px]:@[64.25rem]:min-h-[11.875rem]";
+
+export const KPI_STRIP = `${STRIP_LAYOUT} ${STRIP_RESERVE}`;
+
+/** The box that holds the strip and whose width the reserve reads. */
+export const KPI_STRIP_ROOT = "@container grid gap-3";
+
+const KPI_STRIP_CELL =
+  "@container min-[900px]:rounded-none min-[900px]:bg-transparent min-[900px]:shadow-none! min-[900px]:ring-0";
+
+/**
+ * A column of the strip lines value and change up on one baseline once its content box is 14 rem wide (the value, 6 px
+ * and the chip "vs. …" of 12/500); the line never wraps, so the height does not depend on the length of the amount or of
+ * the chip. Narrower, the change keeps the line of its own it has in the cards and the chip comes apart (`DeltaChip`
+ * with `strip`): only the arrow and the number are in the pill, and the "vs. …" is under it, in as many lines as it needs.
+ */
+const STRIP_HEADLINE =
+  "min-[900px]:@[14rem]:flex-row min-[900px]:@[14rem]:items-baseline min-[900px]:@[14rem]:gap-x-1.5";
+
+/**
+ * Beside the number the row of the change keeps no height of its own: empty, it would move the baseline of the line.
+ * In a column narrower than that the row keeps the two lines a change may take under the number (the chip of 20 px, 2 px
+ * and the "vs. …" in up to two lines of 16 px), empty without a comparison, so the "vs. …" is never cut and a
+ * comparison that comes or goes moves nothing under it.
+ */
+const STRIP_CHIP_ROW =
+  "min-[900px]:@[14rem]:min-h-0 min-[900px]:@max-[13.999rem]:min-h-[3.375rem] min-[900px]:@max-[13.999rem]:items-start";
+
+/**
+ * The figure of a column of the strip: 24 px in all four, whatever size the card has below 900 px. An amount of 12
+ * characters or more ("R$ 12.345,67") needs more than the 120 px a column has with the side menu open at 900 px, and a
+ * cut figure is read as another number: such an amount steps down to 20 px (12 and 13 characters) or 18 px (14 or more)
+ * in a column narrower than it needs, measured at 24 px as 10.4 px a character. The two sizes exclude each other, so the
+ * order of the rules does not matter.
+ */
+function stripValueSize(characters: number): string {
+  if (characters >= 14) {
+    return "min-[900px]:@[10.5rem]:text-[1.5rem] min-[900px]:@max-[10.499rem]:text-[1.125rem]";
+  }
+  if (characters >= 12) {
+    return "min-[900px]:@[9rem]:text-[1.5rem] min-[900px]:@max-[8.999rem]:text-[1.25rem]";
+  }
+  return "min-[900px]:text-[1.5rem]";
+}
+
+/**
  * The group of the cards of one period: a line that says the period once ("Outubro · 1 a 23/10"), which is also the name
  * of the group, so the cards do not repeat it. The cards stay items of the grid of the row (`contents`): the line
  * takes the place `className` gives it.
@@ -90,10 +154,16 @@ const SPLIT = /^(-?)R\$\s?(.*?)(,\d{2})?$/;
  * the number has been drawn with (a `leading` put before the size class was dropped by the merge of the classes); the
  * size class comes first so the merge keeps both.
  */
-function heroBox(size: "lg" | "md"): string {
+function heroBox(size: "lg" | "md", strip = false, characters = 0): string {
   return cn(
     "whitespace-nowrap font-[650] tabular-nums tracking-[-0.035em]",
-    size === "lg" ? "text-[1.75rem] md:text-[1.875rem]" : "text-[1.3125rem]",
+    size === "lg"
+      ? cn(
+          "text-[1.75rem]",
+          strip ? "md:max-[899.98px]:text-[1.875rem]" : "md:text-[1.875rem]"
+        )
+      : "text-[1.3125rem]",
+    strip && stripValueSize(characters),
     "h-[1.05em] leading-5"
   );
 }
@@ -102,15 +172,20 @@ export function HeroValue({
   amount,
   emptyText,
   size = "lg",
+  strip = false,
 }: {
   /** The amount as the server writes money ("1234.5"), or null when there is none. */
   amount: string | null;
   /** What a missing amount says in place of the dash, in the same one-line box ("sem custo neste dia"). */
   emptyText?: string | undefined;
   size?: "lg" | "md";
+  /** The value of a column of `KPI_STRIP`: 24 px from 900 px. */
+  strip?: boolean;
 }) {
   const [hidden] = useHiddenValues();
-  const box = heroBox(size);
+  const characters =
+    strip && amount !== null && !hidden ? formatBrlAmount(amount).length : 0;
+  const box = heroBox(size, strip, characters);
   const currency = "font-medium text-[0.56em] tracking-normal";
   if (amount === null && emptyText) {
     return (
@@ -195,7 +270,31 @@ function chipText(delta: KpiDelta): ReactNode {
   );
 }
 
-export function DeltaChip({ delta }: { delta: KpiDelta }) {
+const CHIP_UP =
+  "bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))] text-mark-foreground";
+
+/**
+ * In a column of the strip narrower than 14 rem (from 900 px) the pill shrinks to the arrow and the number, and the
+ * "vs. …" goes under it in the muted text, wrapping instead of being cut. The rules sit after the plain ones of the
+ * pill, so they win; they are written whole because Tailwind reads only class names that are in the source.
+ */
+const STACKED_CHIP =
+  "min-[900px]:@max-[13.999rem]:h-auto min-[900px]:@max-[13.999rem]:flex-col min-[900px]:@max-[13.999rem]:items-start min-[900px]:@max-[13.999rem]:gap-0.5 min-[900px]:@max-[13.999rem]:bg-transparent min-[900px]:@max-[13.999rem]:py-0";
+const STACKED_PILL_UP =
+  "min-[900px]:@max-[13.999rem]:bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))]";
+const STACKED_PILL =
+  "min-[900px]:@max-[13.999rem]:h-5 min-[900px]:@max-[13.999rem]:rounded-full min-[900px]:@max-[13.999rem]:py-0.5 min-[900px]:@max-[13.999rem]:pr-[7px]";
+const STACKED_AGAINST =
+  "min-[900px]:@max-[13.999rem]:ml-0 min-[900px]:@max-[13.999rem]:overflow-visible min-[900px]:@max-[13.999rem]:whitespace-normal min-[900px]:@max-[13.999rem]:pr-0 min-[900px]:@max-[13.999rem]:text-muted-foreground min-[900px]:@max-[13.999rem]:leading-4";
+
+export function DeltaChip({
+  delta,
+  strip = false,
+}: {
+  delta: KpiDelta;
+  /** The chip is in a column of `KPI_STRIP`: narrower than 14 rem, its "vs. …" goes under the pill. */
+  strip?: boolean;
+}) {
   const [hidden] = useHiddenValues();
   let Icon: typeof ArrowUpIcon | null = null;
   if (delta.trend === "up") {
@@ -212,23 +311,45 @@ export function DeltaChip({ delta }: { delta: KpiDelta }) {
     }
   }
   const named = name ? ({ "aria-label": name, role: "img" } as const) : {};
+  const up = delta.trend === "up";
   return (
     <span
       {...named}
       className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full py-0.5 pr-[7px] pl-[5px] font-semibold text-xs tabular-nums leading-4",
-        delta.trend === "up"
-          ? "bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))] text-mark-foreground"
-          : "bg-muted text-muted-foreground"
+        "inline-flex h-5 min-w-0 max-w-full items-center whitespace-nowrap rounded-full py-0.5 font-semibold text-xs tabular-nums leading-4",
+        up ? CHIP_UP : "bg-muted text-muted-foreground",
+        strip && STACKED_CHIP
       )}
       data-kpi-delta={delta.trend}
     >
-      {Icon ? (
-        <Icon aria-hidden="true" className="size-3" strokeWidth={2.5} />
-      ) : null}
-      {chipText(delta)}
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center gap-0.5 pl-[5px]",
+          delta.against ? "pr-0" : "pr-[7px]",
+          strip && STACKED_PILL,
+          strip &&
+            (up ? STACKED_PILL_UP : "min-[900px]:@max-[13.999rem]:bg-muted")
+        )}
+        data-kpi-pill=""
+      >
+        {Icon ? (
+          <Icon
+            aria-hidden="true"
+            className="size-3 shrink-0"
+            strokeWidth={2.5}
+          />
+        ) : null}
+        {chipText(delta)}
+      </span>
       {delta.against ? (
-        <span className="ml-1 font-normal" data-kpi-delta-against="">
+        <span
+          className={cn(
+            "ml-1.5 min-w-0 truncate pr-[7px] font-normal",
+            strip && STACKED_AGAINST
+          )}
+          data-kpi-delta-against=""
+          title={strip ? delta.against : undefined}
+        >
           {delta.against}
         </span>
       ) : null}
@@ -344,6 +465,7 @@ export function KpiCard({
   noteLines = 1,
   range,
   spark,
+  strip = false,
   title,
   value,
 }: {
@@ -372,17 +494,29 @@ export function KpiCard({
   range?: KpiRange;
   /** The sparkline, or nothing (then the card ends with its text). */
   spark?: ReactNode;
+  /** The card is a column of `KPI_STRIP`: from 900 px it loses its own card and may put the chip beside the number. */
+  strip?: boolean;
   title: ReactNode;
   value: ReactNode;
 }) {
   return (
     <Card
       aria-labelledby={id}
-      className={cn(CARD, !spark && "pb-(--card-spacing)", className)}
+      className={cn(
+        CARD,
+        !spark && "pb-(--card-spacing)",
+        strip && KPI_STRIP_CELL,
+        className
+      )}
       data-kpi={entity}
       role="region"
     >
-      <div className={TOP_ROW}>
+      <div
+        className={cn(
+          TOP_ROW,
+          strip && "min-[900px]:flex-wrap min-[900px]:gap-y-0"
+        )}
+      >
         <div className="flex min-w-0 items-center gap-1">
           <h2
             className="flex min-w-0 items-center font-medium text-foreground"
@@ -405,19 +539,22 @@ export function KpiCard({
         </div>
         <KpiDate date={date} reserve={dateReserve} />
       </div>
-      {value}
       {/* two rows that are always there, empty without a change or a note: a chip that comes with a day read, or a note
           that goes away, moves nothing under them */}
-      <div className={SUPPORT_ROWS}>
-        <div className={CHIP_ROW} data-kpi-chip-row="">
+      <div
+        className={cn("flex flex-col gap-1", strip && STRIP_HEADLINE)}
+        data-kpi-headline=""
+      >
+        {value}
+        <div
+          className={cn(CHIP_ROW, strip && STRIP_CHIP_ROW)}
+          data-kpi-chip-row=""
+        >
           {chip}
         </div>
-        <div
-          className={cn(NOTE_ROW, NOTE_LINES[noteLines])}
-          data-kpi-note-row=""
-        >
-          {note}
-        </div>
+      </div>
+      <div className={cn(NOTE_ROW, NOTE_LINES[noteLines])} data-kpi-note-row="">
+        {note}
       </div>
       {footer === undefined ? null : (
         <div className={FOOTER_ROW} data-kpi-foot="">

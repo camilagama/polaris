@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -2291,6 +2292,395 @@ test.describe("Este ano até julho, sem custo por dia, e o mês na primeira sema
       await expect(chartRegion(page)).toContainText("Melhor dia");
       await expect(drawn()).toBeVisible();
       expectSameBox(await chartPlaces(page), month);
+    });
+  }
+});
+
+const stripOf = (page: Page) => page.locator("[data-kpi-row]");
+
+/** A box-shadow value that draws something: an offset, a blur or a spread above zero (the ring is a 1 px spread). */
+const NON_ZERO_PIXELS = /[1-9]\d*(\.\d+)?px/;
+const drawsShadow = (shadow: string) => NON_ZERO_PIXELS.test(shadow);
+
+/** The lab has no shell: the room of the side menu (16 rem open, 3 rem folded) is taken from the left of the page. */
+const SIDE_MENU = { aberta: 256, recolhida: 48 } as const;
+
+async function withSideMenu(page: Page, side: keyof typeof SIDE_MENU) {
+  await page.addInitScript((room) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = `#root { box-sizing: border-box; padding-left: ${room}px; }`;
+      document.head.append(style);
+    });
+  }, SIDE_MENU[side]);
+}
+
+/** The boxes of the four cards: where each is and what it paints. */
+const cardBoxes = (page: Page) =>
+  kpiCards(page).evaluateAll((cards) =>
+    cards.map((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        background: style.backgroundColor,
+        height: box.height,
+        left: box.left,
+        shadow: style.boxShadow,
+        top: box.top + window.scrollY,
+        width: box.width,
+      };
+    })
+  );
+
+test.describe("a faixa de KPIs do Resultado: uma peça a partir de 900 px, cartões abaixo (AC-T1.1)", () => {
+  for (const width of [899, 900]) {
+    test(`${width} px, lateral aberta`, async ({ page }) => {
+      await page.setViewportSize({ height: 800, width });
+      await withSideMenu(page, "aberta");
+      await openDashboard(page, new FakeReportServer());
+      await expect(kpiCards(page)).toHaveCount(4);
+      await settled(page);
+      const boxes = await cardBoxes(page);
+      const strip = await stripOf(page).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { background: style.backgroundColor, shadow: style.boxShadow };
+      });
+      if (width < 900) {
+        expect(new Set(boxes.map((box) => Math.round(box.top))).size).toBe(3);
+        for (const box of boxes) {
+          expect(box.background).not.toBe("rgba(0, 0, 0, 0)");
+          expect(drawsShadow(box.shadow)).toBe(true);
+        }
+        expect(drawsShadow(strip.shadow)).toBe(false);
+        return;
+      }
+      expect(new Set(boxes.map((box) => Math.round(box.top))).size).toBe(1);
+      expect(new Set(boxes.map((box) => Math.round(box.height))).size).toBe(1);
+      const lefts = boxes.map((box) => box.left);
+      expect([...lefts].sort((a, b) => a - b)).toEqual(lefts);
+      for (const box of boxes) {
+        expect(box.background).toBe("rgba(0, 0, 0, 0)");
+        expect(drawsShadow(box.shadow)).toBe(false);
+      }
+      expect(strip.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(drawsShadow(strip.shadow)).toBe(true);
+      const lines = await kpiCards(page).evaluateAll((cards) =>
+        cards.map((element) => getComputedStyle(element).borderRightWidth)
+      );
+      expect(lines).toEqual(["1px", "1px", "1px", "0px"]);
+      const figures = await page
+        .locator("[data-kpi-row] [data-kpi-value]")
+        .evaluateAll((values) =>
+          values.map((element) => {
+            const style = getComputedStyle(element);
+            return [style.fontSize, style.fontWeight, style.fontVariantNumeric];
+          })
+        );
+      expect(figures).toHaveLength(4);
+      for (const figure of figures) {
+        expect(figure).toEqual(["24px", "650", "tabular-nums"]);
+      }
+    });
+  }
+});
+
+const STRIP_FIXTURES = {
+  "Este ano": { fixture: CHART_BOX_FIXTURES.completo, preset: "Este ano" },
+  "Este ano incompleto": {
+    fixture: CHART_BOX_FIXTURES.incompleto,
+    preset: "Este ano",
+  },
+  "últimos 30 dias": {
+    fixture: { ...CHART_BOX_FIXTURES.completo, "2026-09": COMPLETE_MONTH },
+    preset: "Últimos 30 dias",
+  },
+  "mês completo": { fixture: CHART_BOX_FIXTURES.completo, preset: null },
+  "mês incompleto": { fixture: CHART_BOX_FIXTURES.incompleto, preset: null },
+  "mês sem custo informado": {
+    fixture: {
+      "2025-11": NO_COST_MONTH,
+      "2026-01": NO_COST_MONTH,
+      "2026-10": NO_COST_MONTH,
+      "2026-11": NO_COST_MONTH,
+    },
+    preset: null,
+  },
+  "mês sem comparação": {
+    fixture: { "2026-11": COMPLETE_MONTH },
+    preset: null,
+  },
+  "seis dígitos": {
+    fixture: CHART_BOX_FIXTURES["valores de seis dígitos"],
+    preset: "Este ano",
+  },
+} as const;
+
+const HIDDEN_RUNS = ["mês completo", "mês incompleto", "seis dígitos"] as const;
+
+const RANGE_AGAINST = /^vs\. \d/;
+
+const SWEEP_WIDTHS = [
+  900, 920, 940, 970, 980, 1024, 1060, 1080, 1150, 1280, 1300, 1440,
+] as const;
+
+/** What a state of the strip measures at one width: its box, where each card's note and foot sit, and what is cut. */
+async function measureStrip(page: Page) {
+  await settled(page);
+  return stripOf(page).evaluate((strip) => ({
+    cards: [...strip.querySelectorAll("[data-kpi]")].map((cell) => {
+      const box = cell.getBoundingClientRect();
+      const rowTop = (selector: string) => {
+        const row = cell.querySelector(selector);
+        return row ? row.getBoundingClientRect().top - box.top : null;
+      };
+      return {
+        foot: rowTop("[data-kpi-foot]"),
+        note: rowTop("[data-kpi-note-row]"),
+      };
+    }),
+    cut: [
+      ...[...strip.querySelectorAll("[data-kpi-value]")]
+        .filter((value) => value.scrollWidth > value.clientWidth)
+        .map((value) => value.textContent),
+      ...[...strip.querySelectorAll("[data-kpi-delta-against]")]
+        .filter((against) => {
+          const column = against.closest("[data-kpi-headline]");
+          const narrow = (column?.getBoundingClientRect().width ?? 0) < 224;
+          const cutOff = against.scrollWidth > against.clientWidth;
+          return (
+            cutOff &&
+            (narrow || against.getAttribute("title") !== against.textContent)
+          );
+        })
+        .map((against) => against.textContent),
+    ],
+    height: strip.getBoundingClientRect().height,
+  }));
+}
+
+type StripState = Awaited<ReturnType<typeof measureStrip>>;
+
+/** Opens a state of the strip once and measures it at every width of the sweep. */
+async function sweepStrip(
+  page: Page,
+  name: keyof typeof STRIP_FIXTURES,
+  hidden: boolean
+) {
+  const { fixture, preset: period } = STRIP_FIXTURES[name];
+  if (hidden) {
+    await page.addInitScript(() =>
+      localStorage.setItem("polaris-valores", "escondidos")
+    );
+  }
+  const server = new MonthlyReportServer();
+  server.now = NOVEMBER_5;
+  server.fixture = fixture;
+  await openDashboard(page, server);
+  await expect(kpiCards(page)).toHaveCount(4);
+  if (period) {
+    await choosePreset(page, period);
+    await expect(page.locator("[data-kpi-group]")).toContainText(
+      period === "Este ano" ? "01/01 a 05/11" : "07/10 a 05/11"
+    );
+  }
+  const states: Record<number, StripState> = {};
+  for (const width of SWEEP_WIDTHS) {
+    // biome-ignore lint/performance/noAwaitInLoops: the widths are set one after the other on the same page
+    await page.setViewportSize({ height: 800, width });
+    states[width] = await measureStrip(page);
+  }
+  return {
+    badge: await page.locator("[data-kpi-unknown]").count(),
+    noCost: await page.locator("[data-kpi-no-cost]").count(),
+    ranges: await page
+      .locator("[data-kpi-delta-against]", { hasText: RANGE_AGAINST })
+      .count(),
+    states,
+  };
+}
+
+type Measured = Record<string, Awaited<ReturnType<typeof sweepStrip>>>;
+
+function expectSameStripHeight(measured: Measured, width: number) {
+  const heights = Object.fromEntries(
+    Object.entries(measured).map(([name, run]) => [
+      name,
+      run.states[width]?.height ?? 0,
+    ])
+  );
+  const values = Object.values(heights);
+  expect(
+    Math.max(...values) - Math.min(...values),
+    `${width} px: ${JSON.stringify(heights)}`
+  ).toBeLessThanOrEqual(1);
+}
+
+function expectNothingCut(measured: Measured, width: number) {
+  for (const [name, run] of Object.entries(measured)) {
+    expect(
+      run.states[width]?.cut,
+      `${name} a ${width} px: valor ou "vs. …" cortado`
+    ).toEqual([]);
+  }
+}
+
+/** A change that comes and goes moves nothing under it: the note and the foot sit where they sat. */
+function expectChipMovesNothing(measured: Measured, width: number) {
+  const withChip = measured["mês completo"]?.states[width]?.cards ?? [];
+  const withoutChip =
+    measured["mês sem comparação"]?.states[width]?.cards ?? [];
+  expect(withChip).toHaveLength(4);
+  for (const [index, here] of withChip.entries()) {
+    for (const key of ["note", "foot"] as const) {
+      expect(
+        Math.abs((here[key] ?? 0) - (withoutChip[index]?.[key] ?? 0)),
+        `${width} px, cartão ${index}: ${key} com e sem comparação`
+      ).toBeLessThanOrEqual(1);
+    }
+  }
+}
+
+test.describe("a altura da faixa de KPIs não muda com o período, a comparação, o custo nem Esconder valores (AC-T1.3, AC-T1.5)", () => {
+  for (const side of ["aberta", "recolhida"] as const) {
+    test(`lateral ${side}, de 900 a 1440 px`, async ({ baseURL, browser }) => {
+      test.setTimeout(300_000);
+      const runs = [
+        ...(
+          Object.keys(STRIP_FIXTURES) as Array<keyof typeof STRIP_FIXTURES>
+        ).map((name) => ({ hidden: false, name })),
+        ...HIDDEN_RUNS.map((name) => ({ hidden: true, name })),
+      ];
+      const measured: Record<
+        string,
+        Awaited<ReturnType<typeof sweepStrip>>
+      > = {};
+      for (const { hidden, name } of runs) {
+        // biome-ignore lint/performance/noAwaitInLoops: one browser context at a time, the machine has two cores
+        const context = await browser.newContext({
+          ...(baseURL ? { baseURL } : {}),
+          viewport: { height: 800, width: SWEEP_WIDTHS[0] },
+        });
+        const page = await context.newPage();
+        await withSideMenu(page, side);
+        measured[`${name}${hidden ? ", escondido" : ""}`] = await sweepStrip(
+          page,
+          name,
+          hidden
+        );
+        await context.close();
+      }
+      // the tallest states are the ones that show the longest foot of the result card
+      expect(measured["mês incompleto"]?.badge).toBeGreaterThan(0);
+      expect(measured["mês sem custo informado"]?.noCost).toBeGreaterThan(0);
+      // the "vs. 07/09 a 06/10" of a period that is not a month is the longest text the chip row takes
+      expect(measured["últimos 30 dias"]?.ranges).toBeGreaterThan(0);
+      for (const width of SWEEP_WIDTHS) {
+        expectSameStripHeight(measured, width);
+        expectNothingCut(measured, width);
+        expectChipMovesNothing(measured, width);
+      }
+    });
+  }
+});
+
+test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal e nome completo, e a faixa não tem violação de axe (AC-T1.2)", () => {
+  const CASES = [
+    { beside: false, side: "aberta", width: 900 },
+    { beside: true, side: "recolhida", width: 1280 },
+  ] as const;
+  for (const { beside, side, width } of CASES) {
+    for (const scheme of ["light", "dark"] as const) {
+      test(`${width} px, lateral ${side}, tema ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ height: 800, width });
+        await page.emulateMedia({ colorScheme: scheme });
+        await withSideMenu(page, side);
+        await openDashboard(page, new FakeReportServer());
+        await expect(kpiCards(page)).toHaveCount(4);
+        await settled(page);
+        const sales = card(page, CARD.netSales);
+        const chip = sales.locator("[data-kpi-delta]");
+        await expect(chip).toContainText("+30,0%");
+        await expect(chip).toContainText("vs. setembro");
+        await expect(chip).toHaveAttribute(
+          "aria-label",
+          "+30,0% em relação a setembro (1 a 14/09)"
+        );
+        const value = await placeOf(sales.locator("[data-kpi-value]"));
+        const chipPlace = await placeOf(chip);
+        if (beside) {
+          expect(chipPlace.top).toBeGreaterThanOrEqual(value.top - 1);
+          expect(chipPlace.top + chipPlace.height).toBeLessThanOrEqual(
+            value.top + value.height + 6
+          );
+        } else {
+          expect(chipPlace.top).toBeGreaterThanOrEqual(
+            value.top + value.height
+          );
+        }
+        const left = await sales
+          .locator("[data-kpi-value]")
+          .evaluate((element) => element.getBoundingClientRect().right);
+        const chipLeft = await chip.evaluate(
+          (element) => element.getBoundingClientRect().left
+        );
+        if (beside) {
+          expect(chipLeft - left).toBeGreaterThanOrEqual(5);
+        }
+        const [chipRight, columnRight] = await Promise.all([
+          chip.evaluate((element) => element.getBoundingClientRect().right),
+          sales.evaluate((element) => element.getBoundingClientRect().right),
+        ]);
+        expect(chipRight, "o delta não passa da coluna").toBeLessThanOrEqual(
+          columnRight
+        );
+        expect(await axeFaults(page, "[data-kpi-row]")).toEqual([]);
+      });
+    }
+  }
+
+  for (const period of [null, "Últimos 30 dias"] as const) {
+    test(`900 px, lateral aberta${period ? `, ${period}` : ""}: o "vs. …" fica inteiro, sob o chip, na linha reservada`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width: 900 });
+      await withSideMenu(page, "aberta");
+      const server = new MonthlyReportServer();
+      server.now = NOVEMBER_5;
+      server.fixture = {
+        ...CHART_BOX_FIXTURES.completo,
+        "2026-09": COMPLETE_MONTH,
+      };
+      await openDashboard(page, server);
+      await expect(kpiCards(page)).toHaveCount(4);
+      if (period) {
+        await choosePreset(page, period);
+      }
+      await settled(page);
+      const sales = card(page, CARD.netSales);
+      const chip = sales.locator("[data-kpi-delta]");
+      const against = chip.locator("[data-kpi-delta-against]");
+      await expect(against).toContainText("vs. ");
+      const [pill, line, row] = await Promise.all([
+        placeOf(chip.locator("[data-kpi-pill]")),
+        placeOf(against),
+        placeOf(sales.locator("[data-kpi-chip-row]")),
+      ]);
+      expect(line.top, "o vs. fica sob o chip").toBeGreaterThanOrEqual(
+        pill.top + pill.height
+      );
+      expect(
+        line.top + line.height,
+        "dentro da linha reservada"
+      ).toBeLessThanOrEqual(row.top + row.height + 0.5);
+      const cut = await against.evaluate(
+        (element) => element.scrollWidth > element.clientWidth
+      );
+      expect(cut, "o vs. não é cortado").toBe(false);
+      const [lineRight, columnRight] = await Promise.all([
+        against.evaluate((element) => element.getBoundingClientRect().right),
+        sales.evaluate((element) => element.getBoundingClientRect().right),
+      ]);
+      expect(lineRight).toBeLessThanOrEqual(columnRight);
     });
   }
 });

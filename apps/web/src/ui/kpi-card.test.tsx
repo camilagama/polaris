@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { HeroValue, KpiCard, KpiCardSkeleton } from "./kpi-card";
+import {
+  DeltaChip,
+  HeroValue,
+  type KpiDelta,
+  KpiCard,
+  KpiCardSkeleton,
+} from "./kpi-card";
 
 /**
  * The geometry of a KPI card does not depend on what it says now: the support line is always there, a foot given as
@@ -9,7 +15,10 @@ import { HeroValue, KpiCard, KpiCardSkeleton } from "./kpi-card";
  */
 
 const CHIP_THEN_NOTE =
-  /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
+  /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
+
+const PILL_THEN_AGAINST =
+  /data-kpi-pill=""[^>]*>.*\+30,0%<\/span><span[^>]*data-kpi-delta-against=""[^>]*>vs\. 07\/10 a 05\/11<\/span>/;
 
 const card = (props: Partial<Parameters<typeof KpiCard>[0]>) =>
   renderToStaticMarkup(
@@ -86,6 +95,37 @@ describe("HeroValue", () => {
   });
 });
 
+describe("HeroValue in a column of the strip", () => {
+  const sizeOf = (amount: string | null) =>
+    renderToStaticMarkup(<HeroValue amount={amount} strip />);
+
+  it("is 24 px from 900 px for an amount that fits the narrowest column", () => {
+    const markup = sizeOf("129.90");
+    expect(markup).toContain("min-[900px]:text-[1.5rem]");
+    expect(markup).not.toContain("@max-");
+  });
+
+  it("steps an amount of 12 or 13 characters down to 20 px, and of 14 or more to 18 px, only in a column too narrow for it", () => {
+    const twelve = sizeOf("12345.67");
+    expect(twelve).toContain("min-[900px]:@[9rem]:text-[1.5rem]");
+    expect(twelve).toContain("min-[900px]:@max-[8.999rem]:text-[1.25rem]");
+    expect(sizeOf("999999.99")).toContain("@max-[8.999rem]:text-[1.25rem]");
+    const long = sizeOf("-9999999.99");
+    expect(long).toContain("min-[900px]:@[10.5rem]:text-[1.5rem]");
+    expect(long).toContain("min-[900px]:@max-[10.499rem]:text-[1.125rem]");
+  });
+
+  it("keeps the dash and the empty text at 24 px, with no step", () => {
+    expect(sizeOf(null)).toContain("min-[900px]:text-[1.5rem]");
+  });
+
+  it("does not touch the value of a card that is not in the strip", () => {
+    const markup = renderToStaticMarkup(<HeroValue amount="999999.99" />);
+    expect(markup).not.toContain("min-[900px]");
+    expect(markup).toContain("md:text-[1.875rem]");
+  });
+});
+
 const TEXT_BETWEEN_TAGS = />[^<]+</;
 const SKELETON_FOOT = /data-kpi-skeleton-foot=""/g;
 
@@ -109,5 +149,64 @@ describe("KpiCardSkeleton", () => {
     expect(markup.startsWith('<div aria-hidden="true"')).toBe(true);
     expect(markup.match(TEXT_BETWEEN_TAGS)).toBeNull();
     expect(markup.match(SKELETON_FOOT)).toHaveLength(2);
+  });
+});
+
+describe("DeltaChip in a column of the strip", () => {
+  const DELTA: KpiDelta = {
+    against: "vs. 07/10 a 05/11",
+    money: false,
+    text: "+30,0%",
+    trend: "up",
+  };
+  const chip = (strip: boolean, delta: KpiDelta = DELTA) =>
+    renderToStaticMarkup(<DeltaChip delta={delta} strip={strip} />);
+
+  it("keeps the arrow and the number in a pill of their own and the 'vs. …' after it, whole", () => {
+    const markup = chip(true);
+    expect(markup).toMatch(PILL_THEN_AGAINST);
+  });
+
+  it("stacks the 'vs. …' under the pill, wrapping and muted, in a column narrower than 14 rem", () => {
+    const markup = chip(true);
+    expect(markup).toContain("min-[900px]:@max-[13.999rem]:flex-col");
+    expect(markup).toContain("min-[900px]:@max-[13.999rem]:bg-transparent");
+    expect(markup).toContain("min-[900px]:@max-[13.999rem]:whitespace-normal");
+    expect(markup).toContain("min-[900px]:@max-[13.999rem]:overflow-visible");
+    expect(markup).toContain(
+      "min-[900px]:@max-[13.999rem]:text-muted-foreground"
+    );
+    expect(markup).toContain("min-[900px]:@max-[13.999rem]:rounded-full");
+  });
+
+  it("still cuts the 'vs. …' beside the number, where the line never wraps", () => {
+    expect(chip(true)).toContain("min-w-0 truncate");
+  });
+
+  it("gives the 'vs. …' a title with the whole text in the strip, where it may be cut beside the number", () => {
+    expect(chip(true)).toContain('title="vs. 07/10 a 05/11"');
+    expect(chip(false)).not.toContain("title=");
+  });
+
+  it("is the chip of before outside the strip", () => {
+    expect(chip(false)).not.toContain("@max-");
+    expect(chip(false)).not.toContain("min-[900px]");
+  });
+
+  it("keeps the name of the chip on the whole, so the screen reader reads it once", () => {
+    const markup = chip(true, {
+      ...DELTA,
+      basis: "em relação a setembro (1 a 14/09)",
+    });
+    expect(markup).toContain(
+      'aria-label="+30,0% em relação a setembro (1 a 14/09)"'
+    );
+    expect(markup.match(/aria-label=/g)).toHaveLength(1);
+  });
+
+  it("keeps the two lines of the chip row in the narrow column, empty without a comparison", () => {
+    const markup = card({ strip: true });
+    expect(markup).toContain("min-[900px]:@max-[13.999rem]:min-h-[3.375rem]");
+    expect(markup).toContain('data-kpi-chip-row=""');
   });
 });

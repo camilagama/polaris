@@ -5,7 +5,8 @@ import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
   HeroValue,
-  KPI_GRID,
+  KPI_STRIP,
+  KPI_STRIP_ROOT,
   KpiCard,
   KpiGroup,
   type KpiRange,
@@ -133,7 +134,9 @@ function sparkHeight(still: boolean): number {
 }
 
 function chip(reading: KpiReading) {
-  return reading.delta ? { chip: <DeltaChip delta={reading.delta} /> } : {};
+  return reading.delta
+    ? { chip: <DeltaChip delta={reading.delta} strip /> }
+    : {};
 }
 
 type SparkColor =
@@ -229,95 +232,99 @@ export function ResultCards({
     rest.result.date === rest.sales.date ? undefined : rest.result.date;
   const missing = kpis.result.kind === "incomplete" ? kpis.result : null;
   return (
-    <div className={KPI_GRID} data-kpi-row="">
-      <KpiGroup
-        className="md:col-span-2 lg:col-span-4"
-        period={read.sales.date}
-        title={capitalized(kpis.month)}
-      >
-        <KpiCard
-          {...(noCost ? {} : chip(read.result))}
-          className="md:col-span-2 lg:col-span-1"
-          {...(resultDate ? { date: resultDate } : {})}
-          {...(resultDateAtRest ? { dateReserve: resultDateAtRest } : {})}
-          entity="result"
-          footer={
-            <ResultFooter
-              incomplete={incomplete}
-              line={read.result.count}
-              missing={missing}
-              noCost={noCost}
-            />
-          }
-          help={{ about: "Resultado estimado", text: read.result.help }}
-          id="result-kpi-result"
-          {...(kpis.series.result && drawn && !noCost
-            ? {
-                range: range(
-                  read.result,
-                  `Resultado estimado, acumulado por ${unit}`
-                ),
-                spark: spark(
-                  kpis.series.result,
-                  resultNegative ? "var(--destructive)" : "var(--chart-result)",
-                  "range"
-                ),
-              }
-            : {})}
-          title="Resultado estimado"
-          value={
-            <HeroValue
-              amount={noCost ? null : read.result.value}
-              emptyText={noCostDayText(kpis, index, noCost)}
-            />
-          }
-        />
-        <KpiCard
-          {...chip(read.sales)}
-          className="md:col-span-2 lg:col-span-1"
-          entity="sales"
-          footer={read.sales.count}
-          help={{ about: "Vendas", text: read.sales.help }}
-          id="result-kpi-sales"
-          {...(drawn
-            ? {
-                range: range(
-                  read.sales,
-                  `${salesName(kpis.month)}, acumulado por ${unit}`
-                ),
-                spark: spark(kpis.series.sales, "var(--chart-sales)", "zero"),
-              }
-            : {})}
-          title={<SalesTitle month={kpis.month} />}
-          value={<HeroValue amount={read.sales.value} />}
-        />
-        <KpiCard
-          {...chip(read.ticket)}
-          entity="ticket"
-          footer={read.ticket.count || null}
-          help={{ about: "Ticket médio", text: read.ticket.help }}
-          id="result-kpi-ticket"
-          {...(drawn
-            ? {
-                range: range(
-                  read.ticket,
-                  `Ticket médio, por ${unit} do período`
-                ),
-                spark: spark(
-                  kpis.series.ticket,
-                  "var(--chart-ticket)",
-                  "range"
-                ),
-              }
-            : {})}
-          title="Ticket médio"
-          value={<HeroValue amount={read.ticket.value} size="md" />}
-        />
-        <MarginCard
-          incomplete={incomplete}
-          noCost={noCost}
-          percent={cards.marginPercent}
-        />
+    <div className={KPI_STRIP_ROOT}>
+      <KpiGroup period={read.sales.date} title={capitalized(kpis.month)}>
+        <div className={KPI_STRIP} data-kpi-row="">
+          <KpiCard
+            {...(noCost ? {} : chip(read.result))}
+            strip
+            className="md:max-[899.98px]:col-span-2"
+            {...(resultDate ? { date: resultDate } : {})}
+            {...(resultDateAtRest ? { dateReserve: resultDateAtRest } : {})}
+            entity="result"
+            footer={
+              <ResultFooter
+                incomplete={incomplete}
+                line={read.result.count}
+                missing={missing}
+                noCost={noCost}
+              />
+            }
+            help={{ about: "Resultado estimado", text: read.result.help }}
+            id="result-kpi-result"
+            {...(kpis.series.result && drawn && !noCost
+              ? {
+                  range: range(
+                    read.result,
+                    `Resultado estimado, acumulado por ${unit}`
+                  ),
+                  spark: spark(
+                    kpis.series.result,
+                    resultNegative
+                      ? "var(--destructive)"
+                      : "var(--chart-result)",
+                    "range"
+                  ),
+                }
+              : {})}
+            title="Resultado estimado"
+            value={
+              <HeroValue
+                strip
+                amount={noCost ? null : read.result.value}
+                emptyText={noCostDayText(kpis, index, noCost)}
+              />
+            }
+          />
+          <KpiCard
+            {...chip(read.sales)}
+            strip
+            className="md:max-[899.98px]:col-span-2"
+            entity="sales"
+            footer={read.sales.count}
+            help={{ about: "Vendas", text: read.sales.help }}
+            id="result-kpi-sales"
+            {...(drawn
+              ? {
+                  range: range(
+                    read.sales,
+                    `${salesName(kpis.month)}, acumulado por ${unit}`
+                  ),
+                  spark: spark(kpis.series.sales, "var(--chart-sales)", "zero"),
+                }
+              : {})}
+            title={<SalesTitle month={kpis.month} />}
+            value={<HeroValue amount={read.sales.value} strip />}
+          />
+          <KpiCard
+            {...chip(read.ticket)}
+            strip
+            entity="ticket"
+            footer={read.ticket.count || null}
+            help={{ about: "Ticket médio", text: read.ticket.help }}
+            id="result-kpi-ticket"
+            {...(drawn
+              ? {
+                  range: range(
+                    read.ticket,
+                    `Ticket médio, por ${unit} do período`
+                  ),
+                  spark: spark(
+                    kpis.series.ticket,
+                    "var(--chart-ticket)",
+                    "range"
+                  ),
+                }
+              : {})}
+            title="Ticket médio"
+            value={<HeroValue amount={read.ticket.value} size="md" strip />}
+          />
+          <MarginCard
+            incomplete={incomplete}
+            noCost={noCost}
+            percent={cards.marginPercent}
+          />
+        </div>
       </KpiGroup>
     </div>
   );
@@ -356,6 +363,7 @@ function MarginCard({
 }) {
   return (
     <KpiCard
+      strip
       {...(incomplete || noCost
         ? {
             footer: (
@@ -382,7 +390,7 @@ function MarginCard({
 function MarginValue({ percent }: { percent: string | null }) {
   const text = formatPercentOrDash(percent);
   const box =
-    "whitespace-nowrap font-[650] text-[1.3125rem] tabular-nums leading-[1.05] tracking-[-0.035em]";
+    "whitespace-nowrap font-[650] text-[1.3125rem] tabular-nums leading-[1.05] tracking-[-0.035em] min-[900px]:text-[1.5rem]";
   if (percent === null) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
