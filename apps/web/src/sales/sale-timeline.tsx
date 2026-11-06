@@ -5,7 +5,7 @@ import type { SaleTimelineEvent } from "./sale-history-model";
 const DOT: Record<SaleTimelineEvent["tone"], string> = {
   cancelled: "bg-destructive",
   muted: "bg-muted-foreground",
-  sale: "bg-(--chart-sales)",
+  sale: "bg-chart-sales",
 };
 
 /** The line runs from the dot to the next one and stops at the last. */
@@ -38,10 +38,8 @@ export function SaleTimeline({
                   aria-hidden="true"
                   className={`absolute top-1.5 left-0 size-2 rounded-full ${DOT[event.tone]}`}
                 />
-                <span>
-                  {event.label}
-                  <span className="sr-only">,</span>
-                </span>
+                <span>{event.label}</span>
+                <span className="sr-only">, </span>
                 <time
                   className="shrink-0 text-muted-foreground text-xs tabular-nums"
                   dateTime={event.at}

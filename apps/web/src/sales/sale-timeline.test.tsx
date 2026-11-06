@@ -1,6 +1,9 @@
 import type { SaleDetailReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
+
+import { ReadyDetailTop } from "./sale-detail-page";
 import { saleTimelineEvents } from "./sale-history-model";
 import { SaleTimeline } from "./sale-timeline";
 
@@ -175,13 +178,13 @@ describe("SaleTimeline", () => {
     const open = render(
       detail({ returns: [returnAt(0, "2026-06-11T12:00:00.000Z", null)] })
     );
-    expect(open.match(/bg-\(--chart-sales\)/g)).toHaveLength(1);
+    expect(open.match(/bg-chart-sales/g)).toHaveLength(1);
     expect(open).not.toContain("bg-destructive");
     const cancelled = render(
       detail({ cancelledAt: "2026-06-11T12:00:00.000Z" })
     );
     expect(cancelled.match(/bg-destructive/g)).toHaveLength(1);
-    expect(cancelled).not.toContain("bg-(--chart-sales)");
+    expect(cancelled).not.toContain("bg-chart-sales");
     expect(lines(cancelled)[0]).toContain("Cancelada");
   });
 
@@ -211,6 +214,68 @@ describe("SaleTimeline", () => {
       "devolvidas",
     ]) {
       expect(html).not.toContain(text);
+    }
+  });
+});
+
+describe("the timeline inside the detail", () => {
+  const top = (view: SaleDetailReadModel) =>
+    renderToStaticMarkup(<ReadyDetailTop detail={view} refreshing={false} />);
+  const section = (html: string) => {
+    const start = html.indexOf(
+      '<section aria-labelledby="sale-timeline-title"'
+    );
+    return html.slice(start, html.indexOf("</section>", start));
+  };
+  const twoReturns = detail({
+    returns: [
+      returnAt(0, "2026-06-12T12:00:00.000Z", RETURN_NOTE),
+      returnAt(1, "2026-06-13T12:00:00.000Z", null),
+    ],
+  });
+  const cancelled = detail({ cancelledAt: "2026-06-22T12:00:00.000Z" });
+
+  it("sits under the receipt and before the returns", () => {
+    const html = top(twoReturns);
+    const receipt = html.indexOf('id="sale-detail-title"');
+    const timeline = html.indexOf('id="sale-timeline-title"');
+    const returns = html.indexOf('id="sale-returns-title"');
+    expect(receipt).toBeGreaterThan(-1);
+    expect(timeline).toBeGreaterThan(receipt);
+    expect(returns).toBeGreaterThan(timeline);
+  });
+
+  it("is not in the detail of a sale with a single event", () => {
+    expect(top(detail())).not.toContain("sale-timeline-title");
+    expect(
+      top(detail({ confirmedAt: "2026-06-10T12:00:59.000Z" }))
+    ).not.toContain("Linha do tempo");
+  });
+
+  it("leaves the reason, the note and the items of the cancellation to the notice and the receipt", () => {
+    const html = top(cancelled);
+    expect(html.split(CANCEL_NOTE)).toHaveLength(2);
+    expect(html).toContain("Motivo");
+    const own = section(html);
+    expect(own).toContain("Cancelada");
+    for (const text of [CANCEL_NOTE, ITEM_LABEL, "Motivo", "Observação"]) {
+      expect(own).not.toContain(text);
+    }
+  });
+
+  it("leaves the reason, the note and the items of the returns to their card", () => {
+    const html = top(twoReturns);
+    expect(html.split(RETURN_NOTE)).toHaveLength(2);
+    expect(html).toContain("devolvidas 1");
+    const own = section(html);
+    expect(own.split("Devolução")).toHaveLength(3);
+    for (const text of [
+      RETURN_NOTE,
+      ITEM_LABEL,
+      "Item com defeito",
+      "devolvidas",
+    ]) {
+      expect(own).not.toContain(text);
     }
   });
 });

@@ -220,7 +220,7 @@ interface ReadyDetailTopProps {
 }
 
 /** What the detail shows on the new interface: the receipt, the timeline, the returns made, and the notes about what is offered. */
-function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
+export function ReadyDetailTop({ detail, refreshing }: ReadyDetailTopProps) {
   const view = saleDetailView(detail);
   const offer = cancelOffer(view, refreshing);
   return (
