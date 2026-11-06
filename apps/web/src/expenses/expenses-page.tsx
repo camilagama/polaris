@@ -362,7 +362,7 @@ export function ExpensesPage() {
           </Dialog>
           <Card aria-labelledby={LIST_TITLE_ID} role="region">
             <CardHeader className="gap-3">
-              <div className="flex items-center justify-between gap-x-3 gap-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                 <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
                   Despesas do período
                 </CardTitle>
