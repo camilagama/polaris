@@ -141,13 +141,13 @@ export const HELP: Readonly<Record<StepKey, string>> = {
   actions:
     "Ações: o que foi feito para atender o pedido. Aqui só se registra; nada muda nos dados da loja.",
   decision:
-    "Decisão: o que o Polaris responde ao titular, a pessoa a quem os dados pertencem: aceitar, recusar ou encaminhar à loja.",
+    "Decisão: o que o Polaris responde a quem pediu: aceitar, recusar ou encaminhar à loja (a controladora).",
   identity:
-    "Identidade: como se conferiu que quem pede é o titular, a pessoa a quem os dados pertencem.",
+    "Identidade: como se conferiu quem está pedindo. O titular é a pessoa a quem os dados se referem.",
   resolve: "Resolução: fecha o pedido. Um pedido resolvido não reabre.",
-  role: "Papel do Polaris: o Polaris decide sobre estes dados (controlador) ou só os processa pela loja (operador).",
+  role: "Papel do Polaris: controlador, quando o Polaris decide sobre o dado (a conta, o login, a cobrança e a segurança); operador, quando só trata o dado em nome da loja (os clientes que a loja cadastra).",
   scope:
-    "Escopo: quais dados o pedido alcança. O titular é a pessoa a quem os dados pertencem.",
+    "Escopo: quais dados o pedido alcança. O titular é a pessoa a quem os dados se referem.",
 };
 export const UNDERSTAND_STEP = "Entenda esta etapa";
 
@@ -375,8 +375,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           dom.el(
             "p",
             { class: "step-line" },
-            dom.el("span", { class: "step-mark" }, "Depois: "),
-            number
+            dom.el("span", { class: "step-name" }, number),
+            " · depois"
           )
         );
       }
@@ -620,7 +620,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           const entityText = entity.control.value.trim();
           if (entityText !== "" && !isUuidText(entityText)) {
             entity.refuse(
-              "Use o código completo do registro, como aparece na loja, ou deixe vazio."
+              "Use o código completo do registro, como aparece no cabeçalho da loja, ou deixe vazio."
             );
             return null;
           }

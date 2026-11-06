@@ -173,6 +173,13 @@ describe("Lojas com trava legal", () => {
       STORE,
       OTHER,
     ]);
+    const tails = links.map(
+      (link) => link.parent?.children.at(-1)?.textContent
+    );
+    expect(tails).toEqual([
+      ` · final ${STORE.slice(-4)}`,
+      ` · final ${OTHER.slice(-4)}`,
+    ]);
     const names = links.map((link) => link.getAttribute("aria-label"));
     expect(new Set(names).size).toBe(2);
     for (const name of names) {

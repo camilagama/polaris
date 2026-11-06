@@ -328,7 +328,9 @@ describe("a store's diagnostics (AC-5)", () => {
     expect(fact("Último fato de cobrança")).toBe("15/10/2026");
     expect(fact("Última sincronização")).toBe("27/10/2026");
     expect(visibleText(section)).toContain("Loja: Loja do Bruno org-pro-1");
-    expect(visibleText(section)).toContain("Nada pede atenção nesta loja.");
+    expect(visibleText(section)).toContain(
+      "Nenhum aviso automático nesta loja."
+    );
   });
 
   it.each([

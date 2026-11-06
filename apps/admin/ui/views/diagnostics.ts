@@ -106,7 +106,7 @@ function grantsBlock(dom: Dom, report: OrganizationDiagnostics) {
 
 function attentionBlock(dom: Dom, report: OrganizationDiagnostics) {
   if (report.attention.length === 0) {
-    return dom.el("p", {}, "Nada pede atenção nesta loja.");
+    return dom.el("p", {}, "Nenhum aviso automático nesta loja.");
   }
   return dom.el(
     "ul",

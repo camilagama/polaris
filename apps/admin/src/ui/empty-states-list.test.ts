@@ -50,7 +50,7 @@ const ALREADY_GUIDED = [
 const PENDING_NEXT_STEP = [
   "refund-words.ts | Nada a fazer aqui na cobrança desta loja.",
   "refund-words.ts | Nenhuma cobrança a reembolsar.",
-  "views/diagnostics.ts | Nada pede atenção nesta loja.",
+  "views/diagnostics.ts | Nenhum aviso automático nesta loja.",
   "views/diagnostics.ts | Nenhum recurso está acima do plano por liberação temporária agora.",
   "views/diagnostics.ts | Nenhuma liberação temporária.",
   "views/entitlements.ts | Nenhuma liberação temporária em vigor.",

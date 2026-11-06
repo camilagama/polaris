@@ -245,6 +245,8 @@ const stepItems = (root: FakeElement) =>
     (item.getAttribute("class") ?? "").startsWith("step ")
   );
 
+const LATER_STEP_LINE = /^\d\. .+ · depois$/;
+
 describe("the stage order of the case screen", () => {
   it("is the order of STAGES, the same codes", () => {
     expect(STAGE_ORDER).toEqual(STAGES.map(([code]) => code));
@@ -896,6 +898,9 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     expect(items[2]?.getAttribute("aria-current")).toBe("step");
     for (const later of items.slice(3)) {
       expect(byTag(later, "button")).toHaveLength(0);
+      const name = byTag(later, "span")[0] as FakeElement;
+      expect(name.getAttribute("class")).toBe("step-name");
+      expect(visibleText(later)).toMatch(LATER_STEP_LINE);
     }
     expect(visibleText(mounted.root)).toContain(
       "faltam 9 dias (até 14/11/2026, prazo provisório)"
@@ -934,7 +939,7 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     [
       "identity_checked",
       "role",
-      "Papel do Polaris: o Polaris decide",
+      "Papel do Polaris: controlador, quando o Polaris decide",
       "controlador",
     ],
     [
@@ -943,7 +948,7 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
       "Escopo: quais dados o pedido alcança",
       "titular",
     ],
-    ["scoped", "decision", "Decisão: o que o Polaris responde", "titular"],
+    ["scoped", "decision", "Decisão: o que o Polaris responde", "controladora"],
     ["decided", "actions", "Ações: o que foi feito", "nada muda"],
     ["executed", "resolve", "Resolução: fecha o pedido", "não reabre"],
   ] as const)(
@@ -986,13 +991,13 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
 
   it("explains titular, the Polaris's role and scope in the step where each one appears (AC-CL4)", () => {
     expect(HELP.identity).toContain(
-      "titular, a pessoa a quem os dados pertencem"
+      "O titular é a pessoa a quem os dados se referem"
     );
     expect(HELP.role).toContain("controlador");
     expect(HELP.role).toContain("operador");
     expect(HELP.scope).toContain("quais dados o pedido alcança");
     expect(HELP.scope).toContain(
-      "O titular é a pessoa a quem os dados pertencem"
+      "O titular é a pessoa a quem os dados se referem"
     );
   });
 
@@ -1535,7 +1540,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
     type(actions.root, "etapa-actions-registro", "cliente 42");
     await click(actions.root, "Revisar ações");
     expect(byId(actions.root, "etapa-actions-registro-erro").textContent).toBe(
-      "Use o código completo do registro, como aparece na loja, ou deixe vazio."
+      "Use o código completo do registro, como aparece no cabeçalho da loja, ou deixe vazio."
     );
   });
 });
