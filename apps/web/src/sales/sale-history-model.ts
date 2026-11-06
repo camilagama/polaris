@@ -577,7 +577,7 @@ export function saleTimelineEvents(
       at: confirmedAt,
       key: "registered",
       kind: "registered",
-      label: "Registrada",
+      label: "Confirmada no servidor",
       timeText: at(confirmedAt),
       tone: "muted",
     });
