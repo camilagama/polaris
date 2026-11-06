@@ -16,8 +16,8 @@ const REGISTERED_LINE = /^Registrada, \d{1,2} jun \d{2}:\d{2}$/;
 const SALE_LINE = /^Venda feita, \d{1,2} jun \d{2}:\d{2}$/;
 const OL = /<ol[\s>]/g;
 const LI = /<li[\s>]/g;
-const ITEM_TEXT = /<li[^>]*>(.*?)<\/li>/g;
-const TAGS = /<[^>]+>/g;
+const ITEM_TEXT =
+  /<li[^>]*><span aria-hidden="true"[^>]*><\/span><span>([^<]*)<\/span><span class="sr-only">([^<]*)<\/span><time[^>]*>([^<]*)<\/time><\/li>/g;
 
 const returnAt = (
   n: number,
@@ -120,8 +120,8 @@ const render = (view: SaleDetailReadModel) =>
   renderToStaticMarkup(<SaleTimeline events={saleTimelineEvents(view)} />);
 
 const lines = (html: string) =>
-  [...html.matchAll(ITEM_TEXT)].map((match) =>
-    (match[1] ?? "").replace(TAGS, "")
+  [...html.matchAll(ITEM_TEXT)].map(
+    (match) => `${match[1]}${match[2]}${match[3]}`
   );
 
 describe("SaleTimeline", () => {
