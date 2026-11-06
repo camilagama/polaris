@@ -171,6 +171,25 @@ interface Contacts {
  */
 const CONTACT_CLASS = "inline-block max-w-full [overflow-wrap:anywhere]";
 
+/**
+ * A break opportunity before the "@" makes a too-wide address break between user and domain; `overflow-wrap:anywhere`
+ * stays as the net for a part that is longer than the line. The `<wbr>` adds no character, so the text, the accessible
+ * name and what is copied stay the exact address.
+ */
+function EmailText({ email }: { email: string }) {
+  const at = email.indexOf("@");
+  if (at <= 0) {
+    return email;
+  }
+  return (
+    <>
+      {email.slice(0, at)}
+      <wbr />
+      {email.slice(at)}
+    </>
+  );
+}
+
 interface ContactsLineProps {
   contacts: Contacts;
   /** The row's button describes itself by this line, so the line is out of the tree of the screen reader. */
@@ -190,7 +209,9 @@ function ContactsLine({ contacts, hidden, id }: ContactsLineProps) {
       ) : null}
       {contacts.phone && contacts.email ? " · " : null}
       {contacts.email ? (
-        <span className={CONTACT_CLASS}>{contacts.email}</span>
+        <span className={CONTACT_CLASS}>
+          <EmailText email={contacts.email} />
+        </span>
       ) : null}
     </span>
   );

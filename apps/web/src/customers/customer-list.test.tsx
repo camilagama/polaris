@@ -161,11 +161,34 @@ describe("the list of customers", () => {
     });
     expect(html).toContain("Ana Lima");
     expect(html).toContain("(11) 90000-0001</span> · <span");
-    expect(html).toContain("ana@exemplo.com</span>");
+    expect(html).toContain("ana<wbr/>@exemplo.com</span>");
     expect(html).not.toContain("line-clamp");
     expect(html).not.toContain("Prefere o WhatsApp.");
     expect(html).not.toContain("Atualizado em");
     expect(html).toContain('data-customer-id="');
+  });
+
+  it("quebra o e-mail antes do @ sem mudar o texto, e deixa igual o dado sem @", () => {
+    const html = render({
+      customers: [
+        customer(1, "Ana Lima", { email: "usuario.longo@exemplo.com.br" }),
+        customer(2, "Bia Souza", { email: "sem-arroba" }),
+        customer(3, "Caio Prado", { email: "@exemplo.com" }),
+      ],
+    });
+    const emails = [
+      ...html.matchAll(
+        /<span class="inline-block[^"]*">([^<]*(?:<wbr\/>[^<]*)?)<\/span>/g
+      ),
+    ].map((m) => m[1] ?? "");
+    const ana = emails.find((e) => e.includes("usuario"));
+    expect(ana).toBe("usuario.longo<wbr/>@exemplo.com.br");
+    expect(ana?.split("<wbr/>").join("")).toBe("usuario.longo@exemplo.com.br");
+    expect(ana?.match(/<wbr\/>/g)).toHaveLength(1);
+    expect(emails).toContain("sem-arroba");
+    expect(emails).toContain("@exemplo.com");
+    expect(html).not.toContain("sem<wbr");
+    expect(html).not.toContain("\u200b");
   });
 
   it("não repete o selo Ativo em cada linha da aba Ativos", () => {
