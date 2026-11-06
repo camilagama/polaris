@@ -24,6 +24,11 @@ const HEADERS = [
   "Ação",
 ] as const;
 
+const EMPTY_WITH_QUERY =
+  "Tente menos letras do nome ou deixe o campo vazio para ver todas as lojas.";
+const EMPTY_WITHOUT_QUERY =
+  "Este ambiente ainda não tem loja. Confira o ambiente no alto da página.";
+
 function countText(count: number, more: boolean): string {
   if (count === 0) {
     return "Nenhuma loja encontrada.";
@@ -62,6 +67,7 @@ export function organizationsView(
     "Carregar mais"
   );
   const rows = dom.el("tbody");
+  const nextStep = dom.el("p", { class: "hint", hidden: "" });
   const results = dom.el(
     "table",
     { class: "grid", hidden: "" },
@@ -98,6 +104,7 @@ export function organizationsView(
     next = null;
     results.setAttribute("hidden", "");
     moreButton.setAttribute("hidden", "");
+    nextStep.setAttribute("hidden", "");
   };
 
   const row = (organization: OrganizationSummary) => {
@@ -145,6 +152,9 @@ export function organizationsView(
     ({ next } = answer.data);
     if (shown === 0) {
       results.setAttribute("hidden", "");
+      nextStep.textContent =
+        query === "" ? EMPTY_WITHOUT_QUERY : EMPTY_WITH_QUERY;
+      nextStep.removeAttribute("hidden");
     } else {
       results.removeAttribute("hidden");
     }
@@ -200,6 +210,7 @@ export function organizationsView(
     dom.el("h2", { id: "lojas-titulo" }, "Lojas"),
     form,
     notice.element,
+    nextStep,
     dom.el("div", { class: "results" }, results),
     moreButton
   );
