@@ -4,11 +4,7 @@ import { tableRow } from "../blocks";
 import { type Dom, hasControlCharacter, labelName } from "../dom";
 import { brasiliaMomentText, caseKindText } from "../format";
 import { createNotice } from "../notice";
-import type {
-  OpenedSupportCase,
-  SupportCasePage,
-  SupportCaseSummary,
-} from "../types";
+import type { SupportCasePage, SupportCaseSummary } from "../types";
 
 /** The server's limit for a case's reason (`MAX_CASE_REASON_LENGTH`), in characters as a person counts them. */
 export const MAX_REASON_LENGTH = 500;
@@ -29,8 +25,6 @@ export interface SupportCasesView {
   busy: (on: boolean) => void;
   /** The cases of the store: the button that lists them, their sentence and the list. */
   element: HTMLElement;
-  /** The form that opens a case, placed by the area after the window's answer. */
-  form: HTMLElement;
   /** Starts over for another store: nothing of the one before stays, and nothing is read until asked. */
   show: (organizationId: string) => void;
 }
@@ -78,8 +72,8 @@ export function reasonProblem(reason: string): string | null {
 }
 
 /**
- * The open support cases of the chosen store (AC-9): listed when the operator asks, or opened here with a reason of
- * 1 to 500 characters (no control character), sent as JSON in the body, never in the URL. Each case listed offers
+ * The open support cases of the chosen store (AC-9): listed when the operator asks; a case is opened in Atendimentos,
+ * not here, so the store's screen has one way to open it. Each case listed offers
  * the read of the refund window through `onRead`, when the operator may read it; without an open case of this store
  * there is nothing to click, so the window's route is never called.
  */
@@ -115,39 +109,6 @@ export function supportCasesView(
     ),
     rows
   );
-  const reason = dom.el("input", {
-    "aria-describedby": "motivo-erro motivo-contador motivo-dica",
-    autocomplete: "off",
-    id: "motivo",
-    name: "motivo",
-    required: "",
-    type: "text",
-  });
-  const reasonError = dom.el("p", {
-    "aria-live": "polite",
-    class: "field-error",
-    id: "motivo-erro",
-  });
-  const counter = dom.el(
-    "p",
-    { class: "hint", id: "motivo-contador" },
-    `0 de ${MAX_REASON_LENGTH} caracteres`
-  );
-  const openButton = dom.el("button", { type: "submit" }, "Abrir atendimento");
-  const form = dom.el(
-    "form",
-    { class: "search case-form", novalidate: "" },
-    dom.el("label", { for: "motivo" }, "Motivo do novo atendimento"),
-    dom.el("div", { class: "search-row" }, reason, openButton),
-    reasonError,
-    counter,
-    dom.el(
-      "p",
-      { class: "hint", id: "motivo-dica" },
-      "Curto e sem dado pessoal do cliente: o motivo fica no registro do atendimento."
-    )
-  );
-
   let organizationId = "";
   let loading = false;
   let reading = false;
@@ -156,9 +117,7 @@ export function supportCasesView(
   const readButtons: HTMLButtonElement[] = [];
 
   const refreshButtons = () => {
-    for (const button of [listButton, openButton]) {
-      button.setAttribute("aria-disabled", String(loading));
-    }
+    listButton.setAttribute("aria-disabled", String(loading));
     for (const button of readButtons) {
       button.setAttribute("aria-disabled", String(loading || reading));
     }
@@ -214,18 +173,6 @@ export function supportCasesView(
     }
   };
 
-  const clearReasonError = () => {
-    reasonError.textContent = "";
-    reason.removeAttribute("aria-invalid");
-  };
-
-  const showReasonError = (text: string) => {
-    notice.clear();
-    reasonError.textContent = text;
-    reason.setAttribute("aria-invalid", "true");
-    reason.focus();
-  };
-
   const load = async () => {
     turn += 1;
     const mine = turn;
@@ -273,73 +220,11 @@ export function supportCasesView(
     notice.status(countText(shown, answer.data.next !== null));
   };
 
-  const open = async () => {
-    const text = reason.value.trim();
-    const problem = reasonProblem(text);
-    if (problem !== null) {
-      showReasonError(problem);
-      return;
-    }
-    clearReasonError();
-    turn += 1;
-    const mine = turn;
-    loading = true;
-    refreshButtons();
-    notice.status("Abrindo o atendimento…");
-    const answer = await api.post<OpenedSupportCase>("/api/support-cases", {
-      kind: "support",
-      organizationId,
-      reason: text,
-    });
-    if (mine !== turn) {
-      return;
-    }
-    loading = false;
-    refreshButtons();
-    if (!answer.ok) {
-      if (answer.problem === "invalid") {
-        showReasonError(openProblemText(answer.problem));
-      } else {
-        notice.alert(openProblemText(answer.problem));
-      }
-      return;
-    }
-    // the route answers the case it opened; anything else is not shown as one, and it may still have been opened
-    if (typeof answer.data?.id !== "string") {
-      notice.alert(openProblemText("failed"));
-      return;
-    }
-    const added = row(answer.data);
-    rows.prepend(added);
-    shown += 1;
-    showRows();
-    refreshButtons();
-    reason.value = "";
-    counter.textContent = `0 de ${MAX_REASON_LENGTH} caracteres`;
-    notice.status(
-      options.canRead
-        ? "Atendimento aberto. Ele está na lista; use Ler a cobrança."
-        : "Atendimento aberto. Ele está na lista."
-    );
-    added.querySelector("button")?.focus();
-  };
-
   listButton.addEventListener("click", () => {
     if (!loading) {
       load();
     }
   });
-  reason.addEventListener("input", () => {
-    clearReasonError();
-    counter.textContent = `${[...reason.value.trim()].length} de ${MAX_REASON_LENGTH} caracteres`;
-  });
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!loading) {
-      open();
-    }
-  });
-
   return {
     busy: (on) => {
       reading = on;
@@ -353,7 +238,6 @@ export function supportCasesView(
       notice.element,
       dom.el("div", { class: "results" }, options.readHint, list)
     ),
-    form,
     show: (id) => {
       turn += 1;
       organizationId = id;
@@ -362,9 +246,6 @@ export function supportCasesView(
       shown = 0;
       rows.replaceChildren();
       readButtons.length = 0;
-      reason.value = "";
-      clearReasonError();
-      counter.textContent = `0 de ${MAX_REASON_LENGTH} caracteres`;
       notice.clear();
       showRows();
       refreshButtons();

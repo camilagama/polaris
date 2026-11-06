@@ -186,139 +186,16 @@ describe("the refund area of the chosen store (AC-9)", () => {
     expect(refundCalls(calls)).toEqual([]);
   });
 
-  it("opens a case with the reason as JSON in the body, never in the URL, and offers it for the read", async () => {
-    const reason = 'Pedido de reembolso <b>&</b> "urgente"';
-    const { calls, document, section } = await chosen([
-      json(
-        {
-          id: CASE_ID,
-          kind: "support",
-          openedAt: "2026-10-28T15:07:00.000Z",
-          organizationId: STORE,
-          reason,
-          status: "open",
-        },
-        201
-      ),
-    ]);
-    const field = byId(section, "motivo");
-    field.value = reason;
-    field.dispatch("input");
-    expect(byId(section, "motivo-contador").textContent).toBe(
-      `${[...reason].length} de 500 caracteres`
-    );
-    buttons(section, "Abrir atendimento")[0]?.click();
-    await flush();
-    const open = calls.at(-1);
-    expect(open?.path).toBe("/api/support-cases");
-    expect(open?.init).toMatchObject({
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      method: "POST",
-      redirect: "manual",
-    });
-    expect(JSON.parse(String(open?.init.body))).toEqual({
-      kind: "support",
-      organizationId: STORE,
-      reason,
-    });
-    expect(open?.path).not.toContain("reembolso");
-    const [read] = buttons(section, "Ler a cobrança");
-    expect(document.activeElement).toBe(read);
-    expect(byTag(section, "td").map((cell) => cell.textContent)).toContain(
-      reason
-    );
-    expect(byTag(section, "b")).toEqual([]);
-    expect(field.value).toBe("");
-  });
-
-  it.each([
-    ["", "Escreva o motivo do atendimento."],
-    ["   ", "Escreva o motivo do atendimento."],
-    ["a".repeat(501), "O motivo aceita até 500 caracteres."],
-    ["😀".repeat(501), "O motivo aceita até 500 caracteres."],
-    [
-      "linha\u0007",
-      "O motivo não aceita caracteres de controle nem quebra de linha.",
-    ],
-    [
-      "com\u009bC1",
-      "O motivo não aceita caracteres de controle nem quebra de linha.",
-    ],
-  ])(
-    "refuses a reason the server would refuse, without asking it, under the field (%#)",
-    async (reason, text) => {
-      const { calls, document, section } = await chosen([]);
-      const before = calls.length;
-      expect(byId(section, "motivo-erro").textContent).toBe("");
-      byId(section, "motivo").value = reason;
-      buttons(section, "Abrir atendimento")[0]?.click();
-      await flush();
-      const field = byId(section, "motivo");
-      const error = byId(section, "motivo-erro");
-      expect(error.textContent).toBe(text);
-      expect(error.getAttribute("aria-live")).toBe("polite");
-      expect(field.getAttribute("aria-describedby")).toContain("motivo-erro");
-      expect(field.getAttribute("aria-invalid")).toBe("true");
-      expect(document.activeElement).toBe(field);
-      expect(error.hasAttribute("role")).toBe(false);
-      expect(alertOf(section)).toBeUndefined();
-      expect(calls).toHaveLength(before);
-      field.dispatch("input");
-      expect(error.textContent).toBe("");
-      expect(error.hasAttribute("hidden")).toBe(false);
-      expect(field.hasAttribute("aria-invalid")).toBe(false);
-    }
-  );
-
-  it("sends the reason trimmed, as it was checked", async () => {
-    const { calls, section } = await chosen([
-      json({ ...supportCase(), reason: "x" }, 201),
-    ]);
-    byId(section, "motivo").value = "  Motivo do atendimento \n";
-    buttons(section, "Abrir atendimento")[0]?.click();
-    await flush();
-    expect(JSON.parse(String(calls.at(-1)?.init.body))).toMatchObject({
-      reason: "Motivo do atendimento",
-    });
-  });
-
-  it("takes a reason of exactly 500 characters, counted as a person counts them", async () => {
-    const { calls, section } = await chosen([
-      json({ ...supportCase(), reason: "x" }, 201),
-    ]);
-    byId(section, "motivo").value = "😀".repeat(500);
-    buttons(section, "Abrir atendimento")[0]?.click();
-    await flush();
-    expect(calls.at(-1)?.path).toBe("/api/support-cases");
-  });
-
-  it("has no UTF-16 length limit on the field, and the counter counts 500 and 501 emoji as the server does", async () => {
+  it("has no form to open a case: it points at Atendimentos with the store chosen", async () => {
     const { section } = await chosen([]);
-    const field = byId(section, "motivo");
-    expect(field.getAttribute("maxlength")).toBeNull();
-    for (const count of [500, 501]) {
-      field.value = "😀".repeat(count);
-      field.dispatch("input");
-      expect(byId(section, "motivo-contador").textContent).toBe(
-        `${count} de 500 caracteres`
-      );
-    }
+    expect(byTag(section, "form")).toEqual([]);
+    expect(byTag(section, "input")).toEqual([]);
+    const link = byTag(section, "a").find(
+      (item) => item.textContent === "Abrir atendimento desta loja"
+    );
+    expect(link?.getAttribute("href")).toBe("/casos/novo");
   });
 
-  it("says a refused reason or a missing permission in words", async () => {
-    const { section } = await chosen([
-      json({ error: "invalid_case_reason" }, 400),
-    ]);
-    byId(section, "motivo").value = "Motivo";
-    buttons(section, "Abrir atendimento")[0]?.click();
-    await flush();
-    expect(byId(section, "motivo-erro").textContent).toBe(
-      "O motivo não foi aceito: use de 1 a 500 caracteres, sem caracteres de controle."
-    );
-    expect(byId(section, "motivo-erro").hasAttribute("role")).toBe(false);
-    expect(alertOf(section)).toBeUndefined();
-  });
   it("turns the buttons back on and says the Admin failed when the list is not one", async () => {
     const { listCases, section } = await chosen([json({ next: null })]);
     await listCases();
@@ -329,24 +206,6 @@ describe("the refund area of the chosen store (AC-9)", () => {
       )
     ).toBe("false");
   });
-
-  it.each([
-    new TypeError("Failed to fetch"),
-    json({ error: "internal_error" }, 500),
-    json({ error: "unavailable" }, 503),
-    json(null, 201),
-  ])(
-    "says that a case may have been opened when the answer is not the case, so it is not opened twice (%#)",
-    async (answer) => {
-      const { section } = await chosen([answer]);
-      byId(section, "motivo").value = "Motivo";
-      buttons(section, "Abrir atendimento")[0]?.click();
-      await flush();
-      expect(alertOf(section)?.textContent).toBe(
-        "Não foi possível confirmar se o atendimento foi aberto. Veja os atendimentos abertos desta loja antes de tentar de novo."
-      );
-    }
-  );
 });
 
 describe("reading the refund window (AC-9, AC-10)", () => {

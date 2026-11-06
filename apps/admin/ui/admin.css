@@ -1772,14 +1772,82 @@
     overflow-wrap: anywhere;
   }
   .history ul,
-  .case-list,
-  .waiting {
+  .case-list {
     padding-left: 1.25rem;
     margin: 0.5rem 0;
   }
-  .case-list li,
-  .waiting li {
+  .case-list li {
     overflow-wrap: anywhere;
+  }
+  .waiting {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0;
+    margin: 0.5rem 0;
+    list-style: none;
+  }
+  .waiting-item {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    padding: 0.5rem 0.75rem;
+    color: inherit;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
+    .waiting-item {
+      position: relative;
+    }
+    .waiting-item::before {
+      position: absolute;
+      inset: min(0px, calc(50% - 22px));
+      content: "";
+    }
+  }
+  .waiting-item:focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+  @media (hover: hover) {
+    .waiting-item:hover {
+      background-color: var(--accent);
+    }
+  }
+  .waiting-count {
+    min-width: 2ch;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .waiting-what {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .waiting-go {
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+  @container (max-width: 40rem) {
+    .waiting-item {
+      flex-wrap: wrap;
+    }
+    .waiting-what {
+      flex-grow: 1;
+      flex-basis: 0;
+      min-width: 12ch;
+    }
+    .waiting-go {
+      flex-basis: 100%;
+    }
+    .waiting-count + .waiting-what + .waiting-go {
+      margin-left: calc(2ch + 0.5rem);
+    }
+  }
+  .guide {
+    padding-left: 1.25rem;
+    margin: 0.75rem 0 0;
   }
   .chosen {
     margin: 0 0 0.75rem;

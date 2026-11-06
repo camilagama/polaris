@@ -66,3 +66,11 @@ export function newCaseLink(dom: Dom, store: string | null): HTMLElement {
     )
   );
 }
+
+/** A plain link, not a button, to open a case of the store: where a screen only points at the way. */
+export function openCaseLink(dom: Dom, store: string): HTMLElement {
+  const path = isUuid(store)
+    ? `/casos/novo?loja=${store.toLowerCase()}`
+    : "/casos/novo";
+  return dom.el("a", { href: path }, "Abrir atendimento desta loja");
+}
