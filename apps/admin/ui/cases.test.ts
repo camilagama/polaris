@@ -792,7 +792,7 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
       "Não: isso não poderá ser desfeito."
     );
     expect(CLOSE_UNDO).toBe("Não: isso não poderá ser desfeito.");
-    expect(factOf(root, "Fica na auditoria")).toContain("auditoria");
+    expect(factOf(root, "Fica registrado")).toContain("auditoria");
 
     await confirm(root);
 

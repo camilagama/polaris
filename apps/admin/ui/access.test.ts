@@ -280,7 +280,7 @@ describe("giving an access (AC-P5.1, AC-C2, AC-C3)", () => {
     expect(text).toContain("Dono não acha um cliente");
     expect(text).toContain("por 30 minutos");
     expect(text).toContain(ACCESS_UNDO);
-    expect(text).toContain("Fica na auditoria");
+    expect(text).toContain("Fica registrado");
     expect(writes(mounted.calls)).toEqual([]);
   });
 
@@ -745,7 +745,7 @@ describe("ending the access now (AC-P5.3, AC-C2, AC-C4)", () => {
     expect(text).toContain("Revise antes de encerrar o acesso");
     expect(text).toContain("Loja da Ana");
     expect(text).toContain(END_ACCESS_UNDO);
-    expect(text).toContain("Fica na auditoria");
+    expect(text).toContain("Fica registrado");
     expect(writes(withAccess.calls)).toEqual([]);
     expect(withAccess.calls).toHaveLength(2);
   });
