@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -17,6 +18,11 @@ import { Card } from "@/ui/card";
 import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
+import {
+  ProductThumbnail,
+  useThumbnailSequence,
+} from "../catalog/product-thumbnail";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { useStoreToday } from "../lib/use-store-today";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
@@ -33,6 +39,7 @@ import {
   type StockFilter,
   type StockRow,
   stockCountText,
+  stockCoverIds,
   stockListView,
   stockMoreView,
   readStockLinkFilters,
@@ -116,6 +123,7 @@ function StockItem({
   panelOpen,
   row,
 }: StockItemProps) {
+  const thumbs = useMediaThumbsEnabled();
   return (
     <li
       className={cn(
@@ -125,20 +133,33 @@ function StockItem({
       data-open={panelOpen ? "" : undefined}
     >
       <div className="grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.5fr)_auto] md:items-center md:gap-6">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
-            {row.productName}
-            {row.archived ? <Badge variant="outline">Arquivado</Badge> : null}
-          </p>
-          <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
-            {row.variantText}
-            {row.skuText ? (
-              <>
-                {" "}
-                · <span className="font-mono">SKU {row.skuText}</span>
-              </>
-            ) : null}
-          </p>
+        <div className={thumbs ? "flex min-w-0 items-center gap-3" : "min-w-0"}>
+          {thumbs ? (
+            // the two text lines are 38 px tall: the 40 px box would lift the stacked row by 2 px, so it
+            // lends 1 px to the card padding on each side and the row keeps the height it has without it
+            <span className="-my-px grid shrink-0">
+              <ProductThumbnail
+                assetId={row.coverAssetId}
+                name={row.productName}
+                size={40}
+              />
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
+              {row.productName}
+              {row.archived ? <Badge variant="outline">Arquivado</Badge> : null}
+            </p>
+            <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
+              {row.variantText}
+              {row.skuText ? (
+                <>
+                  {" "}
+                  · <span className="font-mono">SKU {row.skuText}</span>
+                </>
+              ) : null}
+            </p>
+          </div>
         </div>
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-support">
           <Figure label="Saldo">
@@ -263,6 +284,8 @@ export function InventoryPage() {
   const today = useStoreToday(organization.timezone);
   const view = stockListView(state, filters, offline);
   const more = stockMoreView(state);
+  const coverIds = useMemo(() => stockCoverIds(state.entries), [state.entries]);
+  useThumbnailSequence(coverIds);
   const countText =
     state.status === "ready" ? stockCountText(state, filters, offline) : null;
 

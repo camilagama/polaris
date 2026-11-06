@@ -6,6 +6,7 @@ O Estoque (`/inventory`) mostra o saldo e o custo médio de cada variante e é o
 
 - `estoque-lista` a `list "Saldos por variante"`, com "Saldo" e "Custo médio" por variante (o painel de cada movimento diz "Saldo atual: 5 · custo médio R$ 62,40" e a data do último movimento vem no resumo da revisão, "Último movimento 14/10 09:00").
 - `estoque-precisa-de-acao` a faixa "Precisa de ação" sob o título, só com variante sem saldo ou sem custo: "1 variante sem saldo · 1 sem custo", cada número um link que aplica `?filtro=sem-saldo` ou `?filtro=sem-custo` sem sair da tela; sem conexão ou sem item, não aparece. O `HelpTip` "Sobre Estoque" no título diz o que muda o saldo.
+- `estoque-miniatura` com `MEDIA_THUMBS_ENABLED` ligada (true no staging, false na raiz do `wrangler.jsonc` e em produção), cada linha da lista tem à esquerda a caixa de 40 px com a capa do produto ou o marcador com as duas iniciais; desligada, a linha não tem caixa. Sem drive próprio.
 - `estoque-vazio` loja sem produto: "Nenhuma variante cadastrada. Cadastre um produto para controlar o estoque dele."
 - `estoque-filtros` `search "Filtrar estoque"`: `searchbox "Buscar no estoque"` e o botão "Filtros" (com o número de filtros ativos: "Filtros, 2 ativos"), que abre o popup com as abas "Todas", "Com saldo" e "Sem saldo" e as caixas "Sem custo" e "Incluir arquivados"; "Atualizar" fica na linha da contagem.
 - `estoque-receber` recebimento com quantidade e custo unitário.

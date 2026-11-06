@@ -63,7 +63,8 @@ type ListBalancesInput = Parameters<
 export function stockListRequest(
   organizationId: string,
   filters: StockFilters,
-  cursor: string | null
+  cursor: string | null,
+  withCover = false
 ): ListBalancesInput {
   const query = filters.query.trim();
   return {
@@ -74,6 +75,7 @@ export function stockListRequest(
     ...(filters.unknownCost ? { cost: "unknown" as const } : {}),
     ...(cursor === null ? {} : { cursor }),
     ...(query === "" ? {} : { query }),
+    ...(withCover ? { withCover: true as const } : {}),
   };
 }
 
@@ -277,6 +279,8 @@ export interface StockRow {
   costText: string;
   /** The cost is not known: margins on this variant are indeterminate. */
   costUnknown: boolean;
+  /** The product's capa; absent when the answer did not carry it (a list asked without `withCover`). */
+  coverAssetId?: string | null;
   id: string;
   productName: string;
   quantity: number;
@@ -297,6 +301,9 @@ export function stockRows(
       ? "Só com conexão"
       : costText(entry.movingAverageCost),
     costUnknown: !costUnavailable && entry.movingAverageCost === null,
+    ...(entry.coverAssetId === undefined
+      ? {}
+      : { coverAssetId: entry.coverAssetId }),
     id: entry.variantId,
     productName: entry.productName,
     quantity: entry.quantity,
@@ -306,6 +313,22 @@ export function stockRows(
     tone: entry.quantity === 0 ? "empty" : "ok",
     variantText: variantLabelText(entry),
   }));
+}
+
+/**
+ * The capa ids of the rows in the order they show, each once: the variants of one product share the capa, and the
+ * loader reads the order to complete a batch with the rows after the one on screen.
+ */
+export function stockCoverIds(
+  entries: readonly Pick<InventoryBalanceEntryReadModel, "coverAssetId">[]
+): string[] {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.coverAssetId) {
+      ids.add(entry.coverAssetId);
+    }
+  }
+  return [...ids];
 }
 
 /** The device does not know which variants have no cost: it says so instead of an empty list. */
