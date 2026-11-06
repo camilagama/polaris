@@ -185,17 +185,25 @@ for (const pixels of [REM, 20]) {
   });
 }
 
-/** What the document reserves under the focused control against what the sticky total bar of the sale covers. */
+/**
+ * What the page reserves under a focused control of the sale against what the sticky total bar covers: the
+ * `scroll-padding` of the document plus the `scroll-margin` of the control, which is where the sale's own container
+ * (in one column) puts its part.
+ */
 function submitBarReserve(page: Page) {
   return page.evaluate(() => {
     const bar = document.querySelector("[data-submit-bar]");
-    const padding = Number.parseFloat(
-      getComputedStyle(document.documentElement).scrollPaddingBottom
-    );
+    const control = document.querySelector("[data-sale-form] button");
+    const px = (value: string | undefined) => {
+      const parsed = Number.parseFloat(value ?? "");
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
     return {
       barHeight: bar?.getBoundingClientRect().height ?? 0,
       barShown: bar ? getComputedStyle(bar).display !== "none" : false,
-      padding: Number.isNaN(padding) ? 0 : padding,
+      padding:
+        px(getComputedStyle(document.documentElement).scrollPaddingBottom) +
+        px(control ? getComputedStyle(control).scrollMarginBottom : undefined),
     };
   });
 }
@@ -207,7 +215,7 @@ for (const [width, pixels] of [
   [320, 20],
 ] as const) {
   test.describe(`a Venda a ${width} px, fonte padrão ${pixels} px`, () => {
-    test("o scroll-padding de baixo cobre a barra de total e a barra inferior", async ({
+    test("a reserva de rolagem de baixo cobre a barra de total e a barra inferior", async ({
       page,
     }) => {
       await openSale(page, width, pixels);
@@ -227,8 +235,8 @@ for (const [width, pixels] of [
   });
 }
 
-test.describe("a Venda a 1280 px: a regra do scroll-padding da barra de total não se aplica", () => {
-  test("o scroll-padding de baixo fica em 0 e a barra de total não aparece", async ({
+test.describe("a Venda a 1280 px: a reserva de rolagem da barra de total não se aplica", () => {
+  test("a reserva de rolagem de baixo fica em 0 e a barra de total não aparece", async ({
     page,
   }) => {
     await openSale(page, 1280, REM);
