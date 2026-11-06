@@ -1161,7 +1161,7 @@
   button[aria-invalid=true] {
     border-color: var(--destructive);
   }
-  button:not(.secondary) {
+  button:not(.secondary, .ghost) {
     background-color: var(--primary);
     color: var(--primary-foreground);
     --tw-shadow: inset 0 1px 0 var(--tw-shadow-color, var(--btn-shine)), 0 1px 2px var(--tw-shadow-color, var(--btn-drop));
@@ -1173,11 +1173,11 @@
       var(--tw-shadow);
   }
   @media (hover: hover) {
-    button:not(.secondary):hover {
+    button:not(.secondary, .ghost):hover {
       background-color: var(--primary);
     }
     @supports (color: color-mix(in lab, red, red)) {
-      button:not(.secondary):hover {
+      button:not(.secondary, .ghost):hover {
         background-color: color-mix(in oklab, var(--primary) 88%, transparent);
       }
     }
@@ -1192,6 +1192,25 @@
     }
   }
   button.secondary[aria-expanded=true] {
+    background-color: var(--accent);
+  }
+  button.ghost {
+    color: var(--foreground);
+    text-decoration-line: underline;
+    text-decoration-color: var(--input);
+    text-underline-offset: 4px;
+  }
+  @media (hover: hover) {
+    button.ghost:hover {
+      background-color: var(--accent);
+    }
+  }
+  @media (hover: hover) {
+    button.ghost:hover {
+      text-decoration-color: var(--foreground);
+    }
+  }
+  button.ghost[aria-expanded=true] {
     background-color: var(--accent);
   }
   .button-link {
@@ -1447,6 +1466,18 @@
     font-size: var(--text-support);
     line-height: var(--tw-leading, var(--text-support--line-height));
     color: var(--muted-foreground);
+  }
+  .effect {
+    margin: 0.75rem 0 0;
+    overflow-wrap: anywhere;
+  }
+  .record {
+    margin-top: 0.5rem;
+  }
+  .grants-area {
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
   }
   .areas {
     display: grid;
@@ -1708,11 +1739,6 @@
   .action-panel .facts {
     grid-template-columns: minmax(0, 1fr);
   }
-  .internal {
-    padding-top: 0.75rem;
-    margin-top: 1rem;
-    border-top: 1px solid var(--border);
-  }
   .access-action:not(:empty),
   .customers:not(:empty) {
     margin-top: 1rem;
@@ -1737,9 +1763,6 @@
   .reveal-cell .hint {
     margin: 0.25rem 0 0.5rem;
     white-space: normal;
-  }
-  .internal:empty {
-    display: none;
   }
   .effects {
     padding-left: 1.25rem;

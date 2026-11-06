@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM_TEXT } from "./api";
+import { EFFECT_LINES } from "./effect-lines";
 import { brasiliaMomentText } from "./format";
 import {
   allElements,
@@ -22,7 +23,6 @@ import {
 import type { SupportCaseDetail } from "./types";
 import {
   ACCESS_MINUTES,
-  ACCESS_TEXT,
   ACCESS_UNDO,
   ACCESS_UNKNOWN,
   END_ACCESS_UNDO,
@@ -252,7 +252,7 @@ describe("giving an access (AC-P5.1, AC-C2, AC-C3)", () => {
     const mounted = await open([]);
 
     expect(shown(mounted)).toContain(NO_ACCESS);
-    expect(shown(mounted)).toContain(ACCESS_TEXT);
+    expect(shown(mounted)).toContain(EFFECT_LINES.accessGrant);
     expect(buttons(mounted.root, "Ver clientes")).toHaveLength(0);
     expect(customerCalls(mounted.calls)).toEqual([]);
   });

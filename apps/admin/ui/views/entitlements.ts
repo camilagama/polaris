@@ -8,6 +8,7 @@ import {
   entitlementText,
   grantValueText,
 } from "../format";
+import { buttonRow, effectLine, recordLine } from "../effect-lines";
 import { MAX_REASON_LENGTH } from "../grant-limits";
 import { createNotice } from "../notice";
 import { RECORD_LABEL } from "../record-label";
@@ -215,6 +216,11 @@ export function entitlementsView(
     return element;
   };
 
+  const situation = dom.el(
+    "p",
+    { class: "hint" },
+    "Liberações temporárias em vigor: ainda não lidas."
+  );
   const readControl = button(
     "Ver liberações temporárias em vigor",
     true,
@@ -222,6 +228,7 @@ export function entitlementsView(
       readGrants();
     }
   );
+  readControl.setAttribute("class", "ghost");
 
   const lockButtons = (buttons: Buttons, locked: boolean) => {
     buttons.confirm.setAttribute("aria-disabled", String(locked));
@@ -261,6 +268,7 @@ export function entitlementsView(
     });
     dom.fill(
       listBox,
+      effectLine(dom, "grantEnd"),
       table(
         dom,
         "Liberações temporárias em vigor",
@@ -287,6 +295,7 @@ export function entitlementsView(
       !Array.isArray(read.grants)
     ) {
       grants = null;
+      situation.textContent = "Liberações temporárias em vigor: não lidas.";
       renderList();
       listNotice.alert(
         answer.ok
@@ -300,6 +309,7 @@ export function entitlementsView(
     grants = listedGrants(read, now());
     readControl.textContent = "Atualizar liberações temporárias";
     renderList();
+    situation.textContent = `Liberações temporárias lidas às ${brasiliaTime(now())}: ${grants.length === 0 ? "nenhuma em vigor" : `${grants.length} em vigor`}.`;
     listNotice.status(
       `Liberações temporárias lidas às ${brasiliaTime(now())}.`
     );
@@ -516,30 +526,43 @@ export function entitlementsView(
   function start() {
     dom.fill(
       actionBox,
-      dom.el("p", {}, GRANT_RAISES),
-      dom.el("p", {}, GRANT_EXPIRES),
-      button("Dar uma liberação temporária", false, () => {
-        notice.clear();
-        draft = null;
-        openForm();
-      })
+      buttonRow(
+        dom,
+        button("Dar uma liberação temporária", false, () => {
+          notice.clear();
+          draft = null;
+          openForm();
+        })
+      )
     );
   }
 
   start();
+  const mayDiagnose = tools.can("organization:diagnose");
   return dom.el(
     "section",
     { "aria-labelledby": "plano-titulo", class: "action-panel" },
     dom.el("h3", { id: "plano-titulo" }, "Dar plano ou limite temporário"),
-    notice.element,
-    dom.el("h4", {}, "Liberações temporárias em vigor"),
-    tools.can("organization:diagnose")
-      ? dom.el("div", {}, listNotice.element, listBox, readControl)
+    mayDiagnose
+      ? situation
       : dom.el(
           "p",
           { class: "hint" },
           "Para ver e encerrar liberações temporárias é preciso poder ver a situação da loja."
         ),
-    actionBox
+    effectLine(dom, "grantGive"),
+    actionBox,
+    recordLine(dom, GRANT_AUDIT),
+    notice.element,
+    mayDiagnose
+      ? dom.el(
+          "div",
+          { class: "grants-area" },
+          dom.el("h4", {}, "Liberações temporárias em vigor"),
+          readControl,
+          listNotice.element,
+          listBox
+        )
+      : null
   );
 }

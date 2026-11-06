@@ -2,6 +2,7 @@ import { PROBLEM_TEXT, sendProviderCommand } from "../api";
 import type { ScreenTools } from "../app";
 import { facts } from "../blocks";
 import { hasControlCharacter, labelName, storeName } from "../dom";
+import { effectLine, recordLine } from "../effect-lines";
 import {
   billingStateText,
   brasiliaMomentText,
@@ -60,6 +61,9 @@ import { limitText, writeMayHaveHappened } from "../refusal";
 import type { RefundWindowView } from "../types";
 import { NO_PERSONAL_DATA } from "./privacy-form";
 import type { CaseChoice } from "./support-case";
+
+const BILLING_RECORD =
+  "Cada ação fica na auditoria com o seu e-mail e o atendimento; o motivo fica no registro de cobrança.";
 
 type Kind = "cancel" | "refund";
 
@@ -535,7 +539,7 @@ export function billingActionsView(
     can("billing:refund") && amount !== null && view.refundsHere && !held;
   const buttonsRow = dom.el("div", { class: "button-row" });
   if (canCancel) {
-    buttonsRow.append(button(CANCEL_BUTTON, false, () => review("cancel")));
+    buttonsRow.append(button(CANCEL_BUTTON, true, () => review("cancel")));
   }
   if (canRefund) {
     buttonsRow.append(
@@ -567,7 +571,10 @@ export function billingActionsView(
     "div",
     { class: "billing-actions" },
     ...hints.map((text) => dom.el("p", { class: "hint" }, text)),
+    canCancel ? effectLine(dom, "cancelRenewal") : null,
+    canRefund ? effectLine(dom, "refund") : null,
     buttonsRow,
+    canCancel || canRefund ? recordLine(dom, BILLING_RECORD) : null,
     box
   );
   return {

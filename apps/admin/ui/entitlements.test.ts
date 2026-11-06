@@ -335,6 +335,7 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
     const mounted = await open([]);
 
     expect(shown(mounted)).toContain(GRANT_RAISES);
+    await click(mounted.root, "Dar uma liberação temporária");
     expect(shown(mounted)).toContain("Expira sozinha no prazo.");
     expect(GRANT_RAISES).toBe(
       "A liberação temporária só eleva o plano da loja; nunca reduz um limite nem desliga um recurso."

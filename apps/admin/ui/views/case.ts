@@ -2,6 +2,7 @@ import { PROBLEM_TEXT, type Problem } from "../api";
 import { environmentText, type ScreenTools } from "../app";
 import { facts } from "../blocks";
 import { hasControlCharacter, labelName, storeName } from "../dom";
+import { buttonRow, effectLine, recordLine } from "../effect-lines";
 import {
   auditEventText,
   brasiliaMomentText,
@@ -217,13 +218,15 @@ export function caseView(tools: ScreenTools): HTMLElement {
       );
     }
     const mayAct = can("organization:suspend") || can("organization:classify");
+    const store = mayAct ? storeActionsView(tools, item) : null;
     return dom.el(
       "div",
       { class: "case-actions" },
-      closePanel(item),
-      mayAct ? storeActionsView(tools, item) : null,
+      store?.suspension,
       can("billing:operate") ? entitlementsView(tools, item) : null,
-      accessSection(detail)
+      accessSection(detail),
+      store?.internal,
+      closePanel(item)
     );
   };
 
@@ -298,13 +301,23 @@ export function caseView(tools: ScreenTools): HTMLElement {
       dom.el("h3", { id: "fechar-titulo", tabindex: "-1" }, text);
 
     const start = () => {
-      const open = dom.el("button", { type: "button" }, "Fechar atendimento");
+      const open = dom.el(
+        "button",
+        { class: "secondary", type: "button" },
+        "Fechar atendimento"
+      );
       open.addEventListener("click", () => showForm());
       dom.fill(
         panel,
-        title("Atendimento em uso"),
-        dom.el("p", {}, CLOSE_EFFECT),
-        open
+        title("Fechar atendimento"),
+        dom.el(
+          "p",
+          { class: "hint" },
+          `Atendimento aberto em ${brasiliaMomentText(item.openedAt)}.`
+        ),
+        effectLine(dom, "closeCase"),
+        buttonRow(dom, open),
+        recordLine(dom, CLOSE_AUDIT)
       );
     };
 
@@ -331,7 +344,6 @@ export function caseView(tools: ScreenTools): HTMLElement {
           { class: "hint", id: "resolucao-dica" },
           "Como o atendimento terminou, curto e sem dado pessoal do cliente. Fica no registro do atendimento."
         ),
-        dom.el("p", {}, CLOSE_EFFECT),
         dom.el("div", { class: "button-row" }, next, back)
       );
       form.addEventListener("submit", (event) => {
@@ -347,7 +359,13 @@ export function caseView(tools: ScreenTools): HTMLElement {
       });
       resolutionError.textContent = "";
       resolution.removeAttribute("aria-invalid");
-      dom.fill(panel, title("Fechar o atendimento"), form);
+      dom.fill(
+        panel,
+        title("Fechar o atendimento"),
+        effectLine(dom, "closeCase"),
+        form,
+        recordLine(dom, CLOSE_AUDIT)
+      );
       if (error === "") {
         resolution.focus();
       } else {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM_TEXT } from "./api";
+import { EFFECT_LINES } from "./effect-lines";
 import {
   allElements,
   buttons,
@@ -20,7 +21,6 @@ import {
 import type { SupportCaseDetail, SupportCasePage } from "./types";
 import {
   CLOSED_STORE,
-  INTERNAL_EFFECT,
   INTERNAL_UNREAD,
   REACTIVATE_EFFECT,
   REACTIVATE_UNDO,
@@ -534,10 +534,9 @@ describe("the mark of an internal store (AC-P3.4)", () => {
     const mounted = await open([], markOnly);
 
     const text = shown(mounted);
-    expect(text).toContain(INTERNAL_EFFECT);
+    expect(text).toContain(EFFECT_LINES.internalMarkOrUnmark);
     expect(text).toContain(INTERNAL_UNREAD);
-    expect(text).toContain("A loja sai do funil de ativação.");
-    expect(text).toContain("Desmarcar a devolve ao funil.");
+    expect(text).toContain("sai do funil de ativação");
     expect(
       buttons(mounted.root, "Marcar como loja interna do Polaris")
     ).toHaveLength(1);

@@ -180,6 +180,19 @@ describe("the list of cases (AC-P1.4)", () => {
     expect(search(calls[2]).get("status")).toBe("open");
   });
 
+  it("filters with an outline button, so the one ink of the list is Abrir atendimento", async () => {
+    const { root } = await mount(
+      [json(page([]))],
+      undefined,
+      undefined,
+      listContext()
+    );
+
+    expect(buttons(root, "Filtrar")[0]?.getAttribute("class")).toBe(
+      "secondary"
+    );
+  });
+
   it("starts with the store of the screen's context in the filter and sends it", async () => {
     const { calls, root } = await mount(
       [json(page([]))],
