@@ -13,9 +13,10 @@ import { waitingItem } from "../../admin/ui/views/home";
 
 /**
  * "Esperando por você" on the Admin's Início, on the real sheet (`apps/admin/ui/admin.css`) and the items the view
- * itself builds (`waitingItem` in `apps/admin/ui/views/home.ts`): in a card narrower than 40 rem the destination drops under the text, and it must start
- * where the text starts whatever the digits of the figure; in a wide card the figure, the text and the destination
- * share one row. An item with no figure keeps the whole line for the text and the destination.
+ * itself builds (`waitingItem` in `apps/admin/ui/views/home.ts`): in a card narrower than 40 rem the destination
+ * drops under the text, and it must start where the text starts whatever the digits of the figure; in a wide card
+ * the figure, the text and the destination share one row. An item with no figure keeps the whole line for the text
+ * and the destination.
  */
 const SHEET = readFileSync(
   join(import.meta.dirname, "../../admin/ui/admin.css"),

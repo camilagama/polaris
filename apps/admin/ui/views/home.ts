@@ -88,7 +88,7 @@ const GUIDE = [
   "Pedidos de dados e falhas aparecem aqui quando houver.",
 ] as const;
 
-export interface WaitingItem {
+interface WaitingItem {
   destination: string;
   figure: string | null;
   href: string;
