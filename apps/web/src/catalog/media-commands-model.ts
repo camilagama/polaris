@@ -122,7 +122,7 @@ export const replacementPendingText =
  * so a very wide or very tall picture shows its centre only.
  */
 export const COVER_NOTICE =
-  "A primeira imagem é a capa e aparece em Produtos e na Venda. Na miniatura quadrada, aparece o centro da imagem.";
+  "A primeira imagem é a capa e aparece em Produtos, na Venda e no Estoque. Na miniatura quadrada, aparece o centro da imagem.";
 
 export const replacementAbandonedText =
   "Substituição cancelada. A imagem anterior já foi removida, então o produto ficou com uma imagem a menos.";

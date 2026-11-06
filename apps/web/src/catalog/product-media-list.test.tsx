@@ -3,7 +3,8 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
-import { ProductMediaList } from "./product-media-list";
+import { COVER_NOTICE } from "./media-commands-model";
+import { CoverNotice, ProductMediaList } from "./product-media-list";
 
 /**
  * The list of images of the products screen, drawn without a browser: what each row says and which actions are on.
@@ -170,5 +171,22 @@ describe("o selo de capa", () => {
     const html = renderOn();
     expect(html).toContain("Imagem 1 de 3");
     expect(button(html, "Mover imagem 1 para depois")).not.toContain(OFF);
+  });
+});
+
+describe("o aviso da capa atrás da flag", () => {
+  it("sem a flag, o aviso não aparece", () => {
+    expect(renderToStaticMarkup(<CoverNotice />)).toBe("");
+  });
+
+  it("com a flag, o aviso diz onde a capa aparece, inclusive no Estoque", () => {
+    const html = renderToStaticMarkup(
+      <MediaThumbsFlagProvider value>
+        <CoverNotice />
+      </MediaThumbsFlagProvider>
+    );
+    expect(html).toContain("data-cover-notice");
+    expect(html).toContain(COVER_NOTICE);
+    expect(html).toContain("Produtos, na Venda e no Estoque");
   });
 });
