@@ -72,7 +72,11 @@ export function casesView(tools: ScreenTools): HTMLElement {
     type: "search",
   });
   storeInput.value = context.store ?? "";
-  const filterButton = dom.el("button", { type: "submit" }, "Filtrar");
+  const filterButton = dom.el(
+    "button",
+    { class: "secondary", type: "submit" },
+    "Filtrar"
+  );
   const moreButton = dom.el(
     "button",
     { class: "secondary", hidden: "", type: "button" },

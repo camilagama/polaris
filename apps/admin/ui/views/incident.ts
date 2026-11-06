@@ -267,6 +267,7 @@ export function incidentView(tools: ScreenTools): HTMLElement {
       {
         "aria-describedby": "reenviar-efeito",
         "aria-disabled": String(busy),
+        class: "secondary",
         type: "button",
       },
       "Reenviar"

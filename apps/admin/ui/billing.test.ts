@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { EFFECT_LINES } from "./effect-lines";
 import {
   CANCEL_AUDIT,
   IN_PROGRESS,
@@ -196,6 +197,14 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
       buttons(page.section, "Cancelar a renovação").length +
         buttons(page.section, "Reembolsar R$ 249,00").length
     ).toBe(2);
+    expect(visibleText(page.section)).toContain(EFFECT_LINES.cancelRenewal);
+    expect(visibleText(page.section)).toContain(EFFECT_LINES.refund);
+    const inks = byTag(page.section, "button").filter(
+      (button) => !(button.getAttribute("class") ?? "").includes("secondary")
+    );
+    expect(inks.map((button) => button.textContent)).toEqual([
+      "Abrir atendimento",
+    ]);
     expect(visibleText(page.section)).toContain(
       "Cancelar a renovação e reembolsar são ações separadas, cada uma com a sua confirmação."
     );

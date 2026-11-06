@@ -566,6 +566,16 @@ describe("the retry of one event (AC-P2.3, AC-P2.4)", () => {
     expect(buttons(root, "Reenviar")).toHaveLength(2);
   });
 
+  it("keeps every Reenviar button an outline button: a table of them has no ink", async () => {
+    const { root } = await detailScreen([
+      json(detail([eventOf(), eventOf({ eventId: OTHER_EVENT })])),
+    ]);
+
+    for (const button of buttons(root, "Reenviar")) {
+      expect(button.getAttribute("class")).toBe("secondary");
+    }
+  });
+
   it("says the sentence in the page's status when the event is no longer in the list that was read again", async () => {
     const { root } = await detailScreen([
       json(detail([eventOf()])),
