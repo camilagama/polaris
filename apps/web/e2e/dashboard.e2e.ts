@@ -2390,6 +2390,10 @@ const STRIP_FIXTURES = {
     fixture: CHART_BOX_FIXTURES.incompleto,
     preset: "Este ano",
   },
+  "últimos 30 dias": {
+    fixture: { ...CHART_BOX_FIXTURES.completo, "2026-09": COMPLETE_MONTH },
+    preset: "Últimos 30 dias",
+  },
   "mês completo": { fixture: CHART_BOX_FIXTURES.completo, preset: null },
   "mês incompleto": { fixture: CHART_BOX_FIXTURES.incompleto, preset: null },
   "mês sem custo informado": {
@@ -2413,6 +2417,8 @@ const STRIP_FIXTURES = {
 
 const HIDDEN_RUNS = ["mês completo", "mês incompleto", "seis dígitos"] as const;
 
+const RANGE_AGAINST = /^vs\. \d/;
+
 const SWEEP_WIDTHS = [
   900, 920, 940, 970, 980, 1024, 1060, 1080, 1150, 1280, 1300, 1440,
 ] as const;
@@ -2432,9 +2438,22 @@ async function measureStrip(page: Page) {
         note: rowTop("[data-kpi-note-row]"),
       };
     }),
-    cut: [...strip.querySelectorAll("[data-kpi-value]")]
-      .filter((value) => value.scrollWidth > value.clientWidth)
-      .map((value) => value.textContent),
+    cut: [
+      ...[...strip.querySelectorAll("[data-kpi-value]")]
+        .filter((value) => value.scrollWidth > value.clientWidth)
+        .map((value) => value.textContent),
+      ...[...strip.querySelectorAll("[data-kpi-delta-against]")]
+        .filter((against) => {
+          const column = against.closest("[data-kpi-headline]");
+          const narrow = (column?.getBoundingClientRect().width ?? 0) < 224;
+          const cutOff = against.scrollWidth > against.clientWidth;
+          return (
+            cutOff &&
+            (narrow || against.getAttribute("title") !== against.textContent)
+          );
+        })
+        .map((against) => against.textContent),
+    ],
     height: strip.getBoundingClientRect().height,
   }));
 }
@@ -2461,7 +2480,7 @@ async function sweepStrip(
   if (period) {
     await choosePreset(page, period);
     await expect(page.locator("[data-kpi-group]")).toContainText(
-      "01/01 a 05/11"
+      period === "Este ano" ? "01/01 a 05/11" : "07/10 a 05/11"
     );
   }
   const states: Record<number, StripState> = {};
@@ -2473,6 +2492,9 @@ async function sweepStrip(
   return {
     badge: await page.locator("[data-kpi-unknown]").count(),
     noCost: await page.locator("[data-kpi-no-cost]").count(),
+    ranges: await page
+      .locator("[data-kpi-delta-against]", { hasText: RANGE_AGAINST })
+      .count(),
     states,
   };
 }
@@ -2497,7 +2519,7 @@ function expectNothingCut(measured: Measured, width: number) {
   for (const [name, run] of Object.entries(measured)) {
     expect(
       run.states[width]?.cut,
-      `${name} a ${width} px: valor cortado`
+      `${name} a ${width} px: valor ou "vs. …" cortado`
     ).toEqual([]);
   }
 }
@@ -2550,6 +2572,8 @@ test.describe("a altura da faixa de KPIs não muda com o período, a comparaçã
       // the tallest states are the ones that show the longest foot of the result card
       expect(measured["mês incompleto"]?.badge).toBeGreaterThan(0);
       expect(measured["mês sem custo informado"]?.noCost).toBeGreaterThan(0);
+      // the "vs. 07/09 a 06/10" of a period that is not a month is the longest text the chip row takes
+      expect(measured["últimos 30 dias"]?.ranges).toBeGreaterThan(0);
       for (const width of SWEEP_WIDTHS) {
         expectSameStripHeight(measured, width);
         expectNothingCut(measured, width);
@@ -2612,5 +2636,51 @@ test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal
         expect(await axeFaults(page, "[data-kpi-row]")).toEqual([]);
       });
     }
+  }
+
+  for (const period of [null, "Últimos 30 dias"] as const) {
+    test(`900 px, lateral aberta${period ? `, ${period}` : ""}: o "vs. …" fica inteiro, sob o chip, na linha reservada`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width: 900 });
+      await withSideMenu(page, "aberta");
+      const server = new MonthlyReportServer();
+      server.now = NOVEMBER_5;
+      server.fixture = {
+        ...CHART_BOX_FIXTURES.completo,
+        "2026-09": COMPLETE_MONTH,
+      };
+      await openDashboard(page, server);
+      await expect(kpiCards(page)).toHaveCount(4);
+      if (period) {
+        await choosePreset(page, period);
+      }
+      await settled(page);
+      const sales = card(page, CARD.netSales);
+      const chip = sales.locator("[data-kpi-delta]");
+      const against = chip.locator("[data-kpi-delta-against]");
+      await expect(against).toContainText("vs. ");
+      const [pill, line, row] = await Promise.all([
+        placeOf(chip.locator("[data-kpi-pill]")),
+        placeOf(against),
+        placeOf(sales.locator("[data-kpi-chip-row]")),
+      ]);
+      expect(line.top, "o vs. fica sob o chip").toBeGreaterThanOrEqual(
+        pill.top + pill.height
+      );
+      expect(
+        line.top + line.height,
+        "dentro da linha reservada"
+      ).toBeLessThanOrEqual(row.top + row.height + 0.5);
+      const cut = await against.evaluate(
+        (element) => element.scrollWidth > element.clientWidth
+      );
+      expect(cut, "o vs. não é cortado").toBe(false);
+      const [lineRight, columnRight] = await Promise.all([
+        against.evaluate((element) => element.getBoundingClientRect().right),
+        sales.evaluate((element) => element.getBoundingClientRect().right),
+      ]);
+      expect(lineRight).toBeLessThanOrEqual(columnRight);
+    });
   }
 });

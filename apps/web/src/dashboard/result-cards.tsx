@@ -134,7 +134,9 @@ function sparkHeight(still: boolean): number {
 }
 
 function chip(reading: KpiReading) {
-  return reading.delta ? { chip: <DeltaChip delta={reading.delta} /> } : {};
+  return reading.delta
+    ? { chip: <DeltaChip delta={reading.delta} strip /> }
+    : {};
 }
 
 type SparkColor =

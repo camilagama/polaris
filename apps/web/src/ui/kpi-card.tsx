@@ -37,13 +37,14 @@ const STRIP_LAYOUT =
 /**
  * The height the strip keeps from 900 px, by its own width (its container is `KPI_STRIP_ROOT`): the tallest it gets
  * in any state, measured in the browser over the longest foot of the result card ("estimativa incompleta", the days
- * with no cost and the "Não é lucro líquido nem caixa", wrapped in a column of 150 px) and the titles that wrap. The
+ * with no cost and the "Não é lucro líquido nem caixa", wrapped in a column of 150 px), the titles that wrap and, in
+ * the columns narrower than 14 rem (all the steps but the last), the two lines the "vs. …" keeps under the number. The
  * ranges exclude each other, so the order of the rules does not matter; with the height kept, a period, a missing
  * comparison, an incomplete cost or hidden values move nothing under the strip. Remeasure when a text of a column
  * changes (`dashboard.e2e.ts`, "a altura da faixa de KPIs não muda").
  */
 const STRIP_RESERVE =
-  "min-[900px]:@max-[41.374rem]:min-h-68 min-[900px]:@[41.375rem]:@max-[44.499rem]:min-h-64 min-[900px]:@[44.5rem]:@max-[50.749rem]:min-h-[15.375rem] min-[900px]:@[50.75rem]:@max-[64.812rem]:min-h-[13.25rem] min-[900px]:@[64.8125rem]:min-h-[11.875rem]";
+  "min-[900px]:@max-[40.124rem]:min-h-[19.125rem] min-[900px]:@[40.125rem]:@max-[44.624rem]:min-h-[18.125rem] min-[900px]:@[44.625rem]:@max-[49.499rem]:min-h-[17.5rem] min-[900px]:@[49.5rem]:@max-[64.249rem]:min-h-[15.375rem] min-[900px]:@[64.25rem]:min-h-[11.875rem]";
 
 export const KPI_STRIP = `${STRIP_LAYOUT} ${STRIP_RESERVE}`;
 
@@ -55,15 +56,21 @@ const KPI_STRIP_CELL =
 
 /**
  * A column of the strip lines value and change up on one baseline once its content box is 14 rem wide (the value, 6 px
- * and the chip "vs. …" of 12/500); narrower, the change keeps the line of its own it has in the cards. The line never
- * wraps: a chip that does not fit is cut at its "vs. …" (its name keeps the whole text), so the height does not depend
- * on the length of the amount or of the chip.
+ * and the chip "vs. …" of 12/500); the line never wraps, so the height does not depend on the length of the amount or of
+ * the chip. Narrower, the change keeps the line of its own it has in the cards and the chip comes apart (`DeltaChip`
+ * with `strip`): only the arrow and the number are in the pill, and the "vs. …" is under it, in as many lines as it needs.
  */
 const STRIP_HEADLINE =
   "min-[900px]:@[14rem]:flex-row min-[900px]:@[14rem]:items-baseline min-[900px]:@[14rem]:gap-x-1.5";
 
-/** Beside the number the row of the change keeps no height of its own: empty, it would move the baseline of the line. */
-const STRIP_CHIP_ROW = "min-[900px]:@[14rem]:min-h-0";
+/**
+ * Beside the number the row of the change keeps no height of its own: empty, it would move the baseline of the line.
+ * In a column narrower than that the row keeps the two lines a change may take under the number (the chip of 20 px, 2 px
+ * and the "vs. …" in up to two lines of 16 px), empty without a comparison, so the "vs. …" is never cut and a
+ * comparison that comes or goes moves nothing under it.
+ */
+const STRIP_CHIP_ROW =
+  "min-[900px]:@[14rem]:min-h-0 min-[900px]:@max-[13.999rem]:min-h-[3.375rem] min-[900px]:@max-[13.999rem]:items-start";
 
 /**
  * The figure of a column of the strip: 24 px in all four, whatever size the card has below 900 px. An amount of 12
@@ -263,7 +270,31 @@ function chipText(delta: KpiDelta): ReactNode {
   );
 }
 
-export function DeltaChip({ delta }: { delta: KpiDelta }) {
+const CHIP_UP =
+  "bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))] text-mark-foreground";
+
+/**
+ * In a column of the strip narrower than 14 rem (from 900 px) the pill shrinks to the arrow and the number, and the
+ * "vs. …" goes under it in the muted text, wrapping instead of being cut. The rules sit after the plain ones of the
+ * pill, so they win; they are written whole because Tailwind reads only class names that are in the source.
+ */
+const STACKED_CHIP =
+  "min-[900px]:@max-[13.999rem]:h-auto min-[900px]:@max-[13.999rem]:flex-col min-[900px]:@max-[13.999rem]:items-start min-[900px]:@max-[13.999rem]:gap-0.5 min-[900px]:@max-[13.999rem]:bg-transparent min-[900px]:@max-[13.999rem]:py-0";
+const STACKED_PILL_UP =
+  "min-[900px]:@max-[13.999rem]:bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))]";
+const STACKED_PILL =
+  "min-[900px]:@max-[13.999rem]:h-5 min-[900px]:@max-[13.999rem]:rounded-full min-[900px]:@max-[13.999rem]:py-0.5 min-[900px]:@max-[13.999rem]:pr-[7px]";
+const STACKED_AGAINST =
+  "min-[900px]:@max-[13.999rem]:ml-0 min-[900px]:@max-[13.999rem]:overflow-visible min-[900px]:@max-[13.999rem]:whitespace-normal min-[900px]:@max-[13.999rem]:pr-0 min-[900px]:@max-[13.999rem]:text-muted-foreground min-[900px]:@max-[13.999rem]:leading-4";
+
+export function DeltaChip({
+  delta,
+  strip = false,
+}: {
+  delta: KpiDelta;
+  /** The chip is in a column of `KPI_STRIP`: narrower than 14 rem, its "vs. …" goes under the pill. */
+  strip?: boolean;
+}) {
   const [hidden] = useHiddenValues();
   let Icon: typeof ArrowUpIcon | null = null;
   if (delta.trend === "up") {
@@ -280,29 +311,44 @@ export function DeltaChip({ delta }: { delta: KpiDelta }) {
     }
   }
   const named = name ? ({ "aria-label": name, role: "img" } as const) : {};
+  const up = delta.trend === "up";
   return (
     <span
       {...named}
       className={cn(
-        "inline-flex h-5 min-w-0 max-w-full items-center gap-0.5 whitespace-nowrap rounded-full py-0.5 pr-[7px] pl-[5px] font-semibold text-xs tabular-nums leading-4",
-        delta.trend === "up"
-          ? "bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))] text-mark-foreground"
-          : "bg-muted text-muted-foreground"
+        "inline-flex h-5 min-w-0 max-w-full items-center whitespace-nowrap rounded-full py-0.5 font-semibold text-xs tabular-nums leading-4",
+        up ? CHIP_UP : "bg-muted text-muted-foreground",
+        strip && STACKED_CHIP
       )}
       data-kpi-delta={delta.trend}
     >
-      {Icon ? (
-        <Icon
-          aria-hidden="true"
-          className="size-3 shrink-0"
-          strokeWidth={2.5}
-        />
-      ) : null}
-      {chipText(delta)}
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center gap-0.5 pl-[5px]",
+          delta.against ? "pr-0" : "pr-[7px]",
+          strip && STACKED_PILL,
+          strip &&
+            (up ? STACKED_PILL_UP : "min-[900px]:@max-[13.999rem]:bg-muted")
+        )}
+        data-kpi-pill=""
+      >
+        {Icon ? (
+          <Icon
+            aria-hidden="true"
+            className="size-3 shrink-0"
+            strokeWidth={2.5}
+          />
+        ) : null}
+        {chipText(delta)}
+      </span>
       {delta.against ? (
         <span
-          className="ml-1 min-w-0 truncate font-normal"
+          className={cn(
+            "ml-1.5 min-w-0 truncate pr-[7px] font-normal",
+            strip && STACKED_AGAINST
+          )}
           data-kpi-delta-against=""
+          title={strip ? delta.against : undefined}
         >
           {delta.against}
         </span>
