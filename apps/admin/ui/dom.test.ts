@@ -102,13 +102,16 @@ describe("the attributes dom.el sets", () => {
     expect(() => dom().el("a", { href: value })).toThrow();
   });
 
-  it.each(["/", "/ui/admin-1a2b3c.css", "/apis", "/api-docs"])(
-    "takes %s, a path of the Admin's page",
-    (value) => {
-      const link = dom().el("a", { href: value }, "Admin");
-      expect(link.getAttribute("href")).toBe(value);
-    }
-  );
+  it.each([
+    "/",
+    "/ui/admin-1a2b3c.css",
+    "/apis",
+    "/api-docs",
+    "/cdn-cgi/access/logout",
+  ])("takes %s, a path of the Admin's page", (value) => {
+    const link = dom().el("a", { href: value }, "Admin");
+    expect(link.getAttribute("href")).toBe(value);
+  });
 
   it("sets every attribute of the list as it is, and the text as text", () => {
     const element = dom().el(
