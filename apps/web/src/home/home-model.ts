@@ -735,10 +735,22 @@ export function offlineGoal(
   return { kind: "online-only" };
 }
 
-/** What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. */
-export function newSaleOfflineText(canSellOffline: boolean): string {
-  return canSellOffline
-    ? "Sem internet. A venda é enviada quando a conexão voltar."
+/**
+ * What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. When the
+ * line under the title already says "Sem internet." (no copy), this one does not repeat it, and says nothing when the
+ * device cannot keep a sale (the title line already says the sales come back with the connection).
+ */
+export function newSaleOfflineText(
+  canSellOffline: boolean,
+  titleSaysNoConnection: boolean
+): string | null {
+  if (canSellOffline) {
+    return titleSaysNoConnection
+      ? "A venda é enviada quando a conexão voltar."
+      : "Sem internet. A venda é enviada quando a conexão voltar.";
+  }
+  return titleSaysNoConnection
+    ? null
     : "Sem internet: para vender é preciso conexão.";
 }
 
