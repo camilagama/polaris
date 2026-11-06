@@ -84,8 +84,6 @@ export interface BillingActionsOptions {
   /** Turns the area's own buttons off while a command is on its way, so nothing else is asked meanwhile. */
   busy: (on: boolean) => void;
   choice: CaseChoice;
-  /** A confirmation opened (true) or closed (false): the page shows no other reason field beside an open one. */
-  confirming?: (open: boolean) => void;
   notice: Notice;
   organization: { id: string; name: string };
   /** The refund was held for this store (`After.holdRefund`): no refund button, with the reason. */
@@ -297,7 +295,6 @@ export function billingActionsView(
   };
 
   const close = () => {
-    options.confirming?.(false);
     dom.fill(box);
     buttonsRow.querySelector("button")?.focus();
   };
@@ -460,7 +457,6 @@ export function billingActionsView(
 
   const review = (kind: Kind, prefill = "") => {
     notice.clear();
-    options.confirming?.(true);
     const field = reasonField(prefill);
     const current: Draft = {
       commandId: crypto.randomUUID(),

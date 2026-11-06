@@ -458,6 +458,49 @@ describe("reading", () => {
     );
   });
 
+  it("adds to each listed case the whole days to its due day in Brasília, counted by the server", async () => {
+    vi.useFakeTimers({
+      now: new Date("2026-11-06T02:30:00.000Z"),
+      toFake: ["Date"],
+    });
+    const summary = (dueAt: string) => ({
+      dueAt,
+      id: caseId,
+      openedAt: "2026-10-22T15:00:00.000Z",
+      organizationId: entityId,
+      organizationName: "Loja da Ana",
+      overdue: false,
+      requesterKind: "holder",
+      requestType: "access",
+      stage: "opened",
+      status: "open",
+    });
+    const { send } = setup({
+      list: () =>
+        Promise.resolve({
+          cases: [
+            summary("2026-11-05T14:00:00.000Z"),
+            summary("2026-11-05T23:00:00.000Z"),
+            summary("2026-11-06T02:59:00.000Z"),
+            summary("2026-11-09T14:00:00.000Z"),
+            summary("not a date"),
+          ],
+          next: null,
+        }),
+    });
+    const answer = await send("GET", "/api/privacy-cases?filter=open");
+    const body = (await answer.json()) as {
+      cases: { dueInDays: number | null }[];
+    };
+    expect(body.cases.map((item) => item.dueInDays)).toEqual([
+      0,
+      0,
+      0,
+      4,
+      null,
+    ]);
+  });
+
   it("answers not found for a case that does not exist", async () => {
     const { send } = setup();
     expect((await send("GET", `/api/privacy-cases/${caseId}`)).status).toBe(

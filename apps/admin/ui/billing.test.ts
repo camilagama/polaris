@@ -202,9 +202,7 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
     const inks = byTag(page.section, "button").filter(
       (button) => !(button.getAttribute("class") ?? "").includes("secondary")
     );
-    expect(inks.map((button) => button.textContent)).toEqual([
-      "Abrir atendimento",
-    ]);
+    expect(inks).toEqual([]);
     expect(visibleText(page.section)).toContain(
       "Cancelar a renovação e reembolsar são ações separadas, cada uma com a sua confirmação."
     );
@@ -376,64 +374,6 @@ describe("the billing is read on a click, and the actions come after it (AC-P10.
     );
     const paid = await read(billing());
     expect(visibleText(paid.section)).not.toContain("painel do provedor");
-  });
-});
-
-const caseForm = (section: FakeElement) =>
-  byTag(section, "form").find((form) =>
-    form.textContent.includes("Motivo do novo atendimento")
-  ) as FakeElement;
-
-describe("one reason field at a time (a confirmation hides the form of a new case)", () => {
-  it("hides 'Motivo do novo atendimento' while the refund confirmation is open and shows it again on Voltar", async () => {
-    const page = await read(billing());
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
-    buttons(page.section, "Reembolsar R$ 249,00")[0]?.click();
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
-    expect(visibleText(page.section)).not.toContain(
-      "Motivo do novo atendimento"
-    );
-    expect(visibleText(page.section)).not.toContain("Abrir atendimento");
-    expect(visibleText(page.section)).toContain("Motivo");
-    buttons(page.section, "Voltar")[0]?.click();
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
-    expect(visibleText(page.section)).toContain("Motivo do novo atendimento");
-  });
-
-  it("hides it for the cancel confirmation too, and shows it again once the answer is definite", async () => {
-    const page = await read(billing(), [
-      cancelResult("cancelled"),
-      json(billing(cancelled())),
-    ]);
-    openCancel(page);
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
-    page.type("O dono pediu o cancelamento por e-mail");
-    buttons(page.section, "Confirmar o cancelamento da renovação")[0]?.click();
-    await flush();
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
-  });
-
-  it("shows it again after a definite refusal, and keeps it hidden while the outcome is unknown", async () => {
-    const page = await read(billing(), [
-      cancelResult("provider_unavailable", 503),
-    ]);
-    await confirmRefund(page);
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
-    const refused = await read(billing(), [
-      cancelResult("nothing_to_refund"),
-      json(billing()),
-    ]);
-    await confirmRefund(refused);
-    expect(caseForm(refused.section).hasAttribute("hidden")).toBe(false);
-  });
-
-  it("keeps it hidden when the amount changed and the confirmation opens again", async () => {
-    const page = await read(billing(), [
-      cancelResult("amount_changed", 409),
-      json(billing({ currentChargeAmount: "199.00" })),
-    ]);
-    await confirmRefund(page);
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(true);
   });
 });
 
@@ -875,7 +815,7 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
     ).toBe(false);
   });
 
-  it("amount_changed with the same amount sends one command, opens no confirmation, holds the refund and brings the form of a new case back", async () => {
+  it("amount_changed with the same amount sends one command, opens no confirmation, and holds the refund", async () => {
     const page = await read(billing(), [
       cancelResult("amount_changed", 409),
       json(billing()),
@@ -884,7 +824,6 @@ describe("refunding (AC-P10.3 amended: it also cancels the renewal)", () => {
     expect(page.commands()).toHaveLength(1);
     expect(buttons(page.section, "Reembolsar R$ 249,00")).toHaveLength(0);
     expect(visibleText(page.section)).toContain(REFUND_HELD);
-    expect(caseForm(page.section).hasAttribute("hidden")).toBe(false);
   });
 
   it("(a) refunds the amount in force, not the first charge's, when the two differ", async () => {

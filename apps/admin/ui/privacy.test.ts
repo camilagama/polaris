@@ -115,6 +115,7 @@ function summary(
 ): PrivacyCaseSummary {
   return {
     dueAt: "2026-11-14T15:00:00.000Z",
+    dueInDays: 9,
     id: CASE,
     openedAt: "2026-10-30T15:00:00.000Z",
     organizationId: STORE,

@@ -165,12 +165,20 @@ describe("Atendimentos", () => {
     );
   });
 
-  it("tells to check the store or to clear the filter when a store is filtered", async () => {
-    const { root } = await list(OWNERS_WITH_STORES(), { store: STORE });
+  it("tells to clear the filter when a store is filtered", async () => {
+    const { root } = await mount(
+      [
+        json({ cases: [], next: null }),
+        json({ next: null, organizations: [] }),
+      ],
+      OWNERS_WITH_STORES(),
+      undefined,
+      screenContext({ screen: "casos", store: STORE })
+    );
 
     expect(visibleText(root)).toContain("Nenhum atendimento aberto.");
-    expect(emptyBlock(root, "Confira o ID da loja")).toBe(
-      "Confira o ID da loja ou deixe o campo vazio para ver os atendimentos de todas as lojas."
+    expect(emptyBlock(root, "Não há atendimentos para esta loja")).toBe(
+      "Não há atendimentos para esta loja. Confira a loja ou deixe o campo vazio e filtre para ver os de todas as lojas."
     );
   });
 });

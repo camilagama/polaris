@@ -212,6 +212,8 @@ export interface AccessLogPage {
 /** One case of `GET /api/privacy-cases` (ADR 0077): codes, the store and the due date the server keeps. */
 export interface PrivacyCaseSummary {
   dueAt: string;
+  /** Whole calendar days in Brasília from the server's today to the due day (0 is the day itself, below 0 is past), counted by the server; null when `dueAt` is not a date. */
+  dueInDays: number | null;
   id: string;
   openedAt: string;
   organizationId: string;
