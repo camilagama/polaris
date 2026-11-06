@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
+import type { Outbox } from "../offline/outbox/outbox";
 import type { PendingSale } from "../offline/sale-confirm";
 import { pendingSales } from "../offline/sale-confirm";
 
@@ -19,17 +20,20 @@ export const salePhaseLabels: Record<SalePhase, string> = {
   syncing: "Enviando",
 };
 
-/** The sales this device still holds for the server, read again after any sync or change. */
+/** The sales this device still holds for the server, read again after any sync or change. Empty until the queue of the current workspace was read. */
 export function usePendingSales(
   workspace: LocalWorkspace | null
 ): PendingSale[] {
-  const [sales, setSales] = useState<PendingSale[]>([]);
+  const [read, setRead] = useState<{
+    outbox: Outbox;
+    sales: PendingSale[];
+  } | null>(null);
   const outbox = workspace?.stores.outbox;
   const dataVersion = workspace?.dataVersion ?? 0;
 
   useEffect(() => {
     if (!outbox) {
-      setSales([]);
+      setRead(null);
       return;
     }
     let current = true;
@@ -37,7 +41,7 @@ export function usePendingSales(
     pendingSales(outbox)
       .then((found) => {
         if (current && dataVersion >= 0) {
-          setSales(found);
+          setRead({ outbox, sales: found });
         }
       })
       .catch(() => undefined);
@@ -45,5 +49,7 @@ export function usePendingSales(
       current = false;
     };
   }, [outbox, dataVersion]);
-  return sales;
+  return read !== null && read.outbox === outbox ? read.sales : NO_SALES;
 }
+
+const NO_SALES: PendingSale[] = [];

@@ -223,7 +223,10 @@ export function queueStripText(
   if (label.tone !== "offline" && label.tone !== "busy") {
     return null;
   }
-  if (snapshot.phase !== "ready" && !snapshot.legalAcceptanceRequired) {
+  if (
+    snapshot.phase !== "ready" &&
+    !(snapshot.legalAcceptanceRequired && snapshot.online)
+  ) {
     return null;
   }
   const [title = label.text, ...rest] = label.text.split(" · ");

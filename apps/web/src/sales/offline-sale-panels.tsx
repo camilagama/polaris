@@ -234,11 +234,20 @@ export function SavedSalesCard({
   const accepted =
     justSaved !== null && !inQueue && seenInQueue === justSaved.commandId;
   const queueLines = savedSaleLines(sales, accepted ? null : justSaved);
-  // What the card holds is kept while this one is open: with no workspace there is no queue to compare with
-  const kept = useRef<SavedSaleLine[]>([]);
-  kept.current =
-    workspace === null ? [] : mergeSavedLines(kept.current, queueLines);
-  const lines = workspace === null ? queueLines : kept.current;
+  // What the card holds is kept while this one is open, for the queue it was read from: a sale that leaves a queue
+  // it was in (waiting or being sent: nothing here discards it) is one the sync took; with another queue, or none,
+  // there is nothing to compare with.
+  const outbox = workspace?.stores.outbox ?? null;
+  const kept = useRef<{ lines: SavedSaleLine[]; outbox: unknown }>({
+    lines: [],
+    outbox,
+  });
+  if (kept.current.outbox !== outbox) {
+    kept.current = { lines: [], outbox };
+  }
+  kept.current.lines =
+    outbox === null ? [] : mergeSavedLines(kept.current.lines, queueLines);
+  const lines = outbox === null ? queueLines : kept.current.lines;
   if (lines.length === 0) {
     return null;
   }

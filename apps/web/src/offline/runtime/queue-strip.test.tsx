@@ -92,6 +92,17 @@ describe("the strip of the queue (AC-T6.1)", () => {
     ).toBeNull();
   });
 
+  it("sem conexão e sem acesso, a faixa não repete o texto de acesso vencido: o chip e a tela já o dizem", () => {
+    expect(
+      queueStripText(
+        snapshot(
+          { legalAcceptanceRequired: true, online: false, phase: "expired" },
+          { pending: 2 }
+        )
+      )
+    ).toBeNull();
+  });
+
   it("the paused send for the acceptance keeps its words and counts as a warning", () => {
     expect(
       queueStripText(

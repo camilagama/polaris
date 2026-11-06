@@ -1212,7 +1212,11 @@ test.describe("sem o aceite dos termos (ADR 0100)", () => {
         .getByRole("region", { name: "Vendas guardadas neste aparelho" })
         .getByText("Guardada", { exact: true })
     ).toBeVisible();
-    await expect(page.getByText("Recusada pelo servidor")).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("region", { name: "Vendas guardadas neste aparelho" })
+        .getByText("Precisa de atenção")
+    ).toHaveCount(0);
     await expect(page.getByTestId("server-records")).toHaveText("0");
     // the local collections are still there: without a network the search reads them, with the queued sale
     await page.getByLabel("Rede disponível").uncheck();
