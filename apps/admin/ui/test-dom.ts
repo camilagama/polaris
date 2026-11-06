@@ -294,3 +294,26 @@ export function visibleText(root: FakeElement): string {
     )
     .join("");
 }
+
+const ESCAPES: Readonly<Record<string, string>> = {
+  '"': "&quot;",
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+};
+
+const escapeMarkup = (text: string) =>
+  text.replace(/["&<>]/g, (character) => ESCAPES[character] as string);
+
+/** The HTML a browser would parse back into the same tree: attributes in the order they were set, text escaped. */
+export function markupOf(node: FakeElement | FakeText): string {
+  if (node instanceof FakeText) {
+    return escapeMarkup(node.data);
+  }
+  const attributes = [...node.attributes]
+    .map(([name, value]) => ` ${name}="${escapeMarkup(value)}"`)
+    .join("");
+  return `<${node.tagName}${attributes}>${node.childNodes
+    .map((child) => markupOf(child as FakeElement | FakeText))
+    .join("")}</${node.tagName}>`;
+}

@@ -3,10 +3,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { createDom } from "../../admin/ui/dom";
+import {
+  FakeDocument,
+  type FakeElement,
+  markupOf,
+} from "../../admin/ui/test-dom";
+import { waitingItem } from "../../admin/ui/views/home";
 
 /**
- * "Esperando por você" on the Admin's Início, on the real sheet (`apps/admin/ui/admin.css`) and the markup of
- * `apps/admin/ui/views/home.ts`: in a card narrower than 40 rem the destination drops under the text, and it must start
+ * "Esperando por você" on the Admin's Início, on the real sheet (`apps/admin/ui/admin.css`) and the items the view
+ * itself builds (`waitingItem` in `apps/admin/ui/views/home.ts`): in a card narrower than 40 rem the destination drops under the text, and it must start
  * where the text starts whatever the digits of the figure; in a wide card the figure, the text and the destination
  * share one row. An item with no figure keeps the whole line for the text and the destination.
  */
@@ -20,31 +27,32 @@ const WIDE_PX = 960;
 const SUBPIXEL = 1;
 const FIGURES = ["7", "42", "128", "1234"] as const;
 
-interface Item {
-  figure: string | null;
-  what: string;
-}
-
-const ITEMS: readonly Item[] = [
+const ITEMS = [
   ...FIGURES.map((figure) => ({
+    destination: "Ver atendimentos",
     figure,
+    href: "/casos",
     what: "atendimentos abertos há mais de dois dias sem resposta",
   })),
-  { figure: null, what: "lojas com cobrança pendente" },
+  {
+    destination: "Ver cobranças",
+    figure: null,
+    href: "/lojas",
+    what: "lojas com cobrança pendente",
+  },
 ];
 
-const itemMarkup = ({ figure, what }: Item) => `<li>
-  <a class="waiting-item" href="#">${
-    figure === null ? "" : `<span class="waiting-count">${figure}</span> `
-  }<span class="waiting-what">${what}</span> <span class="waiting-go">Abrir fila →</span></a>
-</li>`;
+const dom = createDom(new FakeDocument() as unknown as Document);
+const ITEMS_MARKUP = ITEMS.map((item) =>
+  markupOf(waitingItem(dom, item) as unknown as FakeElement)
+).join("");
 
 async function open(page: Page, width: number) {
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.setContent(
     `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>${SHEET}</style></head>
 <body><div id="admin" class="content"><section class="area" style="width:${width}px">
-<ul class="waiting">${ITEMS.map(itemMarkup).join("")}</ul></section></div></body></html>`
+<ul class="waiting">${ITEMS_MARKUP}</ul></section></div></body></html>`
   );
   await page.evaluate(() => document.fonts.ready);
 }
