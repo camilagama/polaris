@@ -56,6 +56,8 @@ import { OPEN_EFFECT } from "./views/privacy-new";
 const CASE = "0199a0a0-0000-7000-8000-00000000c0de";
 const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
 const CUSTOMER = "0199a0a0-0000-7000-8000-0000000000c1";
+const RECORD_REFUSED =
+  "Para a loja, use o código completo do cabeçalho. Para um cliente, deixe vazio: o Admin não mostra o código do cliente.";
 const NOW = new Date("2026-11-05T15:00:00.000Z");
 const HOSTILE: readonly [string, string, string, string, string] = [
   "<img src=x onerror=alert(1)>",
@@ -1544,8 +1546,18 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
     type(actions.root, "etapa-actions-registro", "cliente 42");
     await click(actions.root, "Revisar ações");
     expect(byId(actions.root, "etapa-actions-registro-erro").textContent).toBe(
-      "Use o código completo do registro (para a loja, o do cabeçalho; para um cliente, o que a loja informar), ou deixe vazio."
+      RECORD_REFUSED
     );
+  });
+
+  it("tells the operator where the record code comes from: the header for a store, nothing for a customer", async () => {
+    const actions = await openCase(detail("decided"));
+    expect(byId(actions.root, "etapa-actions-registro-dica").textContent).toBe(
+      "Para a loja, use o código do cabeçalho. Para um cliente, deixe vazio: o Admin não mostra o código do cliente."
+    );
+    const shown = visibleText(actions.root);
+    expect(shown).not.toContain("o que a loja informar");
+    expect(shown.toLowerCase()).not.toContain("código do cliente ou da loja");
   });
 });
 
