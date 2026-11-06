@@ -21,9 +21,9 @@ const ANY_ID = /.+/;
 const EXPENSES_CHUNK = /expenses-page[^/]*\.js/;
 const EXPENSE_TABS = "Lançamentos, recorrentes e categorias";
 const SEARCHES = [
-  { hint: "Produto, variante ou SKU", path: "/inventory" },
-  { hint: "Nome, telefone ou e-mail", path: "/customers" },
-  { hint: "Nome do produto", path: "/products" },
+  { hint: "Produto, variante ou SKU", narrowBelowRem: 14, path: "/inventory" },
+  { hint: "Nome, telefone ou e-mail", narrowBelowRem: 15, path: "/customers" },
+  { hint: "Nome do produto", narrowBelowRem: 14, path: "/products" },
 ] as const;
 
 const bar = (page: Page) =>
@@ -282,7 +282,7 @@ test("a 320 px com letra de 20 px a faixa de Despesas mostra o degradê do fim, 
   await expect(categories).toBeInViewport();
 });
 
-for (const { hint, path } of SEARCHES) {
+for (const { hint, narrowBelowRem, path } of SEARCHES) {
   test(`a 320 px com letra de 20 px a dica de ${path} lê inteira: no campo ou na linha de baixo`, async ({
     page,
   }) => {
@@ -292,10 +292,18 @@ for (const { hint, path } of SEARCHES) {
     const state = await field.evaluate((input: HTMLInputElement, text) => {
       const group = input.parentElement as HTMLElement;
       const style = getComputedStyle(input);
-      const canvas = document.createElement("canvas").getContext("2d");
-      if (canvas) {
-        canvas.font = style.font;
-      }
+      const probe = document.createElement("span");
+      probe.style.cssText =
+        "position:absolute;visibility:hidden;white-space:nowrap;";
+      probe.style.font = style.font;
+      probe.style.fontFamily = style.fontFamily;
+      probe.style.fontSize = style.fontSize;
+      probe.style.fontWeight = style.fontWeight;
+      probe.style.letterSpacing = style.letterSpacing;
+      probe.textContent = input.placeholder;
+      document.body.append(probe);
+      const placeholderWidth = probe.getBoundingClientRect().width;
+      probe.remove();
       const room =
         input.clientWidth -
         Number.parseFloat(style.paddingLeft) -
@@ -314,7 +322,7 @@ for (const { hint, path } of SEARCHES) {
         noteScroll: note?.scrollWidth ?? 0,
         noteText: note?.textContent ?? null,
         placeholder: input.placeholder,
-        placeholderWidth: canvas?.measureText(input.placeholder).width ?? 0,
+        placeholderWidth,
         room,
         text,
       };
@@ -322,9 +330,9 @@ for (const { hint, path } of SEARCHES) {
     if (state.noteText === null) {
       expect(state.placeholder).toBe(hint);
       expect(state.placeholderWidth).toBeLessThanOrEqual(state.room);
-      expect(state.groupRem).toBeGreaterThanOrEqual(14);
+      expect(state.groupRem).toBeGreaterThanOrEqual(narrowBelowRem);
     } else {
-      expect(state.groupRem).toBeLessThan(14);
+      expect(state.groupRem).toBeLessThan(narrowBelowRem);
       expect(state.placeholder).toBe("Buscar");
       expect(state.noteText).toBe(hint);
       expect(state.noteScroll).toBeLessThanOrEqual(state.noteClient + SLACK);
