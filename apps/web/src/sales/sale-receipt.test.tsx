@@ -5,6 +5,8 @@ import { SaleHistoryList } from "./sale-history-list";
 import type { HistoryRow } from "./sale-history-model";
 import { SaleReceipt } from "./sale-receipt";
 
+const FRAME = /\bborder|\bring|\bshadow/;
+const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
 const SALE_ID = "77777777-7777-4777-8777-777777777777";
 
 const sale: ConfirmedSaleView = {
@@ -62,6 +64,23 @@ describe("the sale as a receipt", () => {
     expect(markup.indexOf("Desconto")).toBeLessThan(perforation);
     expect(markup.indexOf("Total devido")).toBeGreaterThan(perforation);
     expect(markup).toContain("219,90");
+  });
+
+  it("sets the dates and the payment back as a muted block with no border, two columns from 760 px", () => {
+    const markup = render();
+    const blocks = markup.match(MUTED_BLOCK) ?? [];
+    expect(blocks).toHaveLength(2);
+    for (const block of blocks) {
+      expect(block).toContain("rounded-lg");
+      expect(block).toContain("p-4");
+      expect(block).toContain("min-[760px]:grid-cols-2");
+      expect(block).not.toMatch(FRAME);
+    }
+    expect(markup).toContain('class="text-muted-foreground text-xs">Método<');
+  });
+
+  it("has no ink button: the receipt only reads", () => {
+    expect(render()).not.toContain("<button");
   });
 
   it("names the status beside the title", () => {

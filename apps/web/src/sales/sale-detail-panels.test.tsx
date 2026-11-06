@@ -211,6 +211,11 @@ const renderActions = (
     />
   );
 const DESTRUCTIVE = "bg-destructive/10";
+const INK = "bg-primary ";
+const GHOST_BACK = /hover:bg-accent[^>]*>Voltar</;
+const buttonsOf = (html: string) => html.match(/<button[^>]*>/g) ?? [];
+const inkButtonsOf = (html: string) =>
+  buttonsOf(html).filter((button) => button.includes(INK));
 const DESTRUCTIVE_CONFIRM = /bg-destructive\/10[^>]*>Confirmar cancelamento</;
 
 describe("OperationActions", () => {
@@ -230,6 +235,25 @@ describe("OperationActions", () => {
     expect(renderActions({ confirming: true, locked: true })).not.toContain(
       "Voltar"
     );
+  });
+
+  it("has one ink button on each step, and Voltar is the ghost one (no outline)", () => {
+    const steps = [
+      { confirming: false, locked: false },
+      { confirming: true, locked: false },
+      { confirming: true, locked: true, retrying: true },
+    ];
+    for (const step of steps) {
+      expect(
+        inkButtonsOf(renderActions(step, false)).length
+      ).toBeLessThanOrEqual(1);
+      expect(
+        inkButtonsOf(renderActions(step, true)).length
+      ).toBeLessThanOrEqual(1);
+    }
+    const last = renderActions({ confirming: true, locked: false });
+    expect(last).toMatch(GHOST_BACK);
+    expect(last).not.toContain("bg-card");
   });
 
   it("sends the same command again from a locked cancellation as the main action, not a destructive one", () => {
