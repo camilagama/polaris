@@ -21,6 +21,9 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.85** | 4.5 | ✓ |
 | `accent-foreground` / `accent` | item em foco de menu e de select | DropdownMenu, Select | **15.37** | 7 | ✓ |
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **16.19** | 7 | ✓ |
+| `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **16.19** | 7 | ✓ |
+| `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.22** | 4.5 | ✓ |
+| `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **6.78** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.81** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.78** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-hover` | item em hover do menu lateral | SidebarMenuButton | **15.41** | 7 | ✓ |
@@ -103,6 +106,9 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.33** | 4.5 | ✓ |
 | `accent-foreground` / `accent` | item em foco de menu e de select | DropdownMenu, Select | **10.46** | 7 | ✓ |
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **11.58** | 7 | ✓ |
+| `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **11.58** | 7 | ✓ |
+| `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.01** | 4.5 | ✓ |
+| `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **7.48** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.48** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.19** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar-hover` | item em hover do menu lateral | SidebarMenuButton | **15.08** | 7 | ✓ |

@@ -51,7 +51,11 @@ export function ReturnReviewNotice({
   review,
 }: ReturnReviewNoticeProps) {
   return (
-    <Alert className="focus-ring" ref={noticeRef} tabIndex={-1}>
+    <Alert
+      className="focus-ring border-0 bg-muted p-4"
+      ref={noticeRef}
+      tabIndex={-1}
+    >
       <AlertTitle>Confirme a devolução</AlertTitle>
       <AlertDescription className="grid gap-2 [&_p:not(:last-child)]:mb-0">
         <p>Motivo: {review.reasonText}.</p>
