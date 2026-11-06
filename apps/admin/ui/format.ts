@@ -339,8 +339,8 @@ const AUDIT_EVENTS: Readonly<Record<string, string>> = {
   "pii.revealed": "Dado pessoal revelado (o campo, não o valor)",
   "support_case.closed": "Atendimento fechado",
   "support_case.opened": "Atendimento aberto",
-  "tenant_access.granted": "Acesso aos dados dado",
-  "tenant_access.revoked": "Acesso aos dados encerrado",
+  "tenant_access.granted": "Acesso temporário liberado",
+  "tenant_access.revoked": "Acesso temporário encerrado",
 };
 
 export function auditEventText(eventType: string): string {
