@@ -11,11 +11,21 @@ const NOT_LETTER_AFTER = String.raw`(?![\p{L}\p{N}_-])`;
 const wordsOf = (alternatives: string) =>
   new RegExp(`${NOT_LETTER}(${alternatives})${NOT_LETTER_AFTER}`, "iu");
 
+const OWNER_WORDS = [
+  "concess(?:ão|ões|ao|oes)",
+  "direitos?",
+  "ocorrências?",
+  "comandos próprios",
+  "uuids?",
+  "pontos? de atenção",
+  "fluxos? de privacidade",
+  "janelas?(?!\\s+d[eao]s?(?![\\p{L}\\p{N}_-]))",
+];
+
 const SHELL_WORDS = wordsOf(
   [
+    ...OWNER_WORDS,
     "capacidades?",
-    "concessões",
-    "concessão",
     "grants?",
     "dlq",
     "rls",
@@ -35,6 +45,7 @@ const SHELL_WORDS = wordsOf(
 
 const TEXT_WORDS = wordsOf(
   [
+    ...OWNER_WORDS,
     "casos?",
     "incidentes?",
     "dlq",
@@ -311,6 +322,20 @@ describe("the scan reads what it should (a planted word in each shape of text)",
     ['const a = "diagnóstico";', ["diagnóstico"]],
     ['const a = "caso.";', ["caso"]],
     ['const a = "retry?";', ["retry"]],
+    ['const a = "Dar uma concessão";', ["concessão"]],
+    ['const a = "As concessões em vigor";', ["concessões"]],
+    ['const a = "Nenhum direito está acima do plano";', ["direito"]],
+    ['const a = "Ocorrências";', ["Ocorrências"]],
+    ['const a = "pelos comandos próprios";', ["comandos próprios"]],
+    ['const a = "O ID (UUID) do registro";', ["UUID"]],
+    ['const a = "Nenhum ponto de atenção.";', ["ponto de atenção"]],
+    ['const a = "Pontos de atenção";', ["Pontos de atenção"]],
+    ['const a = "Fica no fluxo de privacidade.";', ["fluxo de privacidade"]],
+    ['const a = "Nada nessa janela.";', ["janela"]],
+    ['const a = "lojas criadas na janela";', ["janela"]],
+    [template("", "n", " lojas na janela"), ["janela"]],
+    ['const a = "A janela passou.";', ["janela"]],
+    ['const a = "janela";', ["janela"]],
   ])("finds the word in %s", (source, words) => {
     expect(scan(source)).toEqual(words);
   });
@@ -323,6 +348,12 @@ describe("the scan reads what it should (a planted word in each shape of text)",
     ['const a = "organization:purge";'],
     ['const a = "/casos/novo";'],
     [template("", "casos.length", " atendimentos")],
+    ['const a = "Janela de reembolso consultada";'],
+    ['const a = "A janela de recuperação da loja";'],
+    ['const a = "dentro da janela do estorno";'],
+    ['const a = "O isUuid decide";'],
+    ['const a = "concessao-revisao";'],
+    ["const uuid = crypto.randomUUID();"],
   ])("finds nothing in %s", (source) => {
     expect(scan(source)).toEqual([]);
   });

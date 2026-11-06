@@ -6,7 +6,7 @@ import { MAX_HOURS, MAX_REASON_LENGTH } from "../grant-limits";
 const WHOLE_NUMBER = /^\d{1,9}$/;
 
 export const GRANT_RAISES =
-  "A concessão só eleva o plano da loja; nunca reduz um limite nem desliga um recurso.";
+  "A liberação temporária só eleva o plano da loja; nunca reduz um limite nem desliga um recurso.";
 export const GRANT_EXPIRES = "Expira sozinha no prazo.";
 
 export interface GrantFields {
@@ -60,7 +60,10 @@ function problemOf(context: ScreenContext, typed: Typed): Problem | null {
     };
   }
   if (typed.reason === "") {
-    return { field: "motivo", text: "Escreva o motivo da concessão." };
+    return {
+      field: "motivo",
+      text: "Escreva o motivo da liberação temporária.",
+    };
   }
   if ([...typed.reason].length > MAX_REASON_LENGTH) {
     return {
@@ -181,7 +184,11 @@ export function grantForm(
   }
   count();
 
-  const next = dom.el("button", { type: "submit" }, "Revisar a concessão");
+  const next = dom.el(
+    "button",
+    { type: "submit" },
+    "Revisar a liberação temporária"
+  );
   const cancel = dom.el(
     "button",
     { class: "secondary", type: "button" },
@@ -236,7 +243,7 @@ export function grantForm(
   const heading = dom.el(
     "h4",
     { id: "concessao-formulario", tabindex: "-1" },
-    "Dar uma concessão"
+    "Dar uma liberação temporária"
   );
   if (options.refusal !== "") {
     error.textContent = options.refusal;

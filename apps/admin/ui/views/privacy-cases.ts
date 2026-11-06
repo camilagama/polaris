@@ -2,7 +2,7 @@ import { PROBLEM_TEXT } from "../api";
 import type { ScreenTools } from "../app";
 import { tableRow } from "../blocks";
 import type { Dom } from "../dom";
-import { storeName } from "../dom";
+import { storeNameInList } from "../dom";
 import { brasiliaMomentText } from "../format";
 import { createNotice } from "../notice";
 import {
@@ -183,7 +183,7 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
     }
     return tableRow(dom, HEADERS, [
       brasiliaMomentText(item.openedAt),
-      storeName(dom, item.organizationName, item.organizationId),
+      storeNameInList(dom, item.organizationName, item.organizationId),
       labelOf(REQUEST_TYPES, item.requestType),
       labelOf(REQUESTER_KINDS, item.requesterKind),
       labelOf(STAGES, item.stage),

@@ -2898,6 +2898,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Termos proibidos | Concluído (PR 647, a43d4b17) | `forbidden-terms.test.ts` perde as 15 exceções de "purge" que cobriam as frases; sobra só a classe CSS `purge action-panel`, que não é texto lido. |
 | Fora | Registrado | Códigos de recusa, rotas, capacidades, tipos de auditoria, nomes de constantes e o texto de erro do servidor (`support-routes.ts`, `packages/`) não mudam. |
 
+### Admin: glossário do dono, termos de lei explicados e UUID fora das listas (t828; corte admin-v2-clareza-2a-passada, AC-CL3, CL4, CP5, CP7; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Glossário (AC-CL3) | Em revisão | "Concessão" vira "liberação temporária" (botões, títulos, revisão, rótulos de auditoria; o título da seção segue "Dar plano ou limite temporário"), "direito" vira "recurso", "ocorrências" vira "vezes que falhou", "ponto de atenção" vira "o que pede atenção", "fluxo de privacidade" vira "Pedidos de dados", "comandos próprios" e "ID (UUID)" saem das etapas, "janela" ganha o de quê (semanas escolhidas, período). `forbidden-terms.test.ts` passa a reprovar concessão, direito, ocorrência, "comandos próprios", UUID, "ponto de atenção", "fluxo de privacidade" e "janela" sem "de/do/da", com um caso plantado de cada e os casos que passam. |
+| Termos de lei (AC-CL4, CP7) | Em revisão | Cada etapa do Pedido de dados mostra uma linha de ajuda visível (`HELP` em `ui/views/privacy-case.ts`: titular, controlador e operador, escopo) e as regras do servidor, que antes vinham todas abertas, ficam num `<details>` "Entenda esta etapa". Etapa feita: nome em peso 500 e o estado em texto normal depois dele ("1. Identidade · feita: ..."). O texto jurídico é rascunho: Bruno e Rodrigo conferem. |
+| UUID nas listas (AC-CP5) | Em revisão | `storeNameInList` (`ui/dom.ts`): Lojas, Atendimentos e Pedidos de dados mostram só o nome, e o ID vai no `title` dele. Lojas com trava legal: o servidor lista só o ID, então a célula é o link "Ver loja" (ou "Loja da trava" sem a capacidade) com o ID no `title`; o nome da loja ali pede o contrato (`packages/`), fora deste corte. Ficam com o ID visível, como o corte pede: cabeçalho da Loja, revisões e o campo "Código do registro". |
+| Minha conta | Em revisão | A nota das permissões termina com "Para mudar o que você pode fazer, peça ao responsável pelo cadastro do painel." |
+| Fora | Registrado | Rotas, capacidades, contratos, textos de efeito e `packages/` não mudam; a lista de Falhas de envio segue com o ID do evento (não é loja nem atendimento). Os textos de propósito de Pedidos de dados (aprovados, teto de 90 caracteres) não ganharam a explicação de "titular": ela está nas etapas. Vazios, efeito antes do clique, Início e filtro por nome são as tarefas seguintes do corte. |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |

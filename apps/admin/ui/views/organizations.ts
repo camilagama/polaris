@@ -1,7 +1,12 @@
 import type { Api } from "../api";
 import { PROBLEM_TEXT } from "../api";
 import { tableRow } from "../blocks";
-import { type Dom, hasControlCharacter, labelName, storeName } from "../dom";
+import {
+  type Dom,
+  hasControlCharacter,
+  labelName,
+  storeNameInList,
+} from "../dom";
 import {
   billingStateText,
   brasiliaDay,
@@ -119,7 +124,7 @@ export function organizationsView(
     );
     open.addEventListener("click", () => onSelect(organization));
     return tableRow(dom, HEADERS, [
-      storeName(dom, organization.name, organization.id),
+      storeNameInList(dom, organization.name, organization.id),
       storeStatusText(organization.status),
       billingStateText(organization.billingState),
       planText(organization.planInForce),

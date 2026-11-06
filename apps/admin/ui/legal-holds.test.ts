@@ -24,6 +24,8 @@ import { NO_HOLDS } from "./views/legal-holds";
 
 const NOW = new Date("2026-11-05T15:00:00.000Z");
 const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
+const UUID_TEXT =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
 const OTHER = "0199a0a0-0000-7000-8000-0000000000a2";
 
 const MAY = {
@@ -159,6 +161,46 @@ describe("Lojas com trava legal", () => {
 
     const withoutLink = await open([page([hold(STORE)])], WITHOUT_DIAGNOSE);
     expect(byTag(sectionOf(withoutLink.root), "a")).toHaveLength(0);
-    expect(visibleText(sectionOf(withoutLink.root))).toContain(STORE);
+    expect(visibleText(sectionOf(withoutLink.root))).not.toContain(STORE);
+  });
+
+  it("tells two stores apart by the visible end of the ID even without the capability to read stores", async () => {
+    const mounted = await open(
+      [page([hold(STORE), hold(OTHER)])],
+      WITHOUT_DIAGNOSE
+    );
+    const section = sectionOf(mounted.root);
+    expect(byTag(section, "a")).toHaveLength(0);
+    const text = visibleText(section);
+    expect(text).not.toMatch(UUID_TEXT);
+    expect(text).toContain(`Loja da trava · final ${STORE.slice(-4)}`);
+    expect(text).toContain(`Loja da trava · final ${OTHER.slice(-4)}`);
+    const cells = allElements(section).filter(
+      (element) => element.getAttribute("title") === STORE
+    );
+    expect(cells).toHaveLength(1);
+  });
+
+  it("shows no store ID as a text of the list: the ID rides in the title, and each link has its own accessible name (AC-CP5)", async () => {
+    const mounted = await open([page([hold(STORE), hold(OTHER)])]);
+    const section = sectionOf(mounted.root);
+    expect(visibleText(section)).not.toMatch(UUID_TEXT);
+    const links = byTag(section, "a");
+    expect(links.map((link) => link.parent?.getAttribute("title"))).toEqual([
+      STORE,
+      OTHER,
+    ]);
+    const tails = links.map(
+      (link) => link.parent?.children.at(-1)?.textContent
+    );
+    expect(tails).toEqual([
+      ` · final ${STORE.slice(-4)}`,
+      ` · final ${OTHER.slice(-4)}`,
+    ]);
+    const names = links.map((link) => link.getAttribute("aria-label"));
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) {
+      expect(name).not.toMatch(UUID_TEXT);
+    }
   });
 });

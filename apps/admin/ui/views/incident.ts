@@ -23,7 +23,7 @@ const PAGE_SIZE = "25";
 const REFERENCE_SHOWN = 200;
 
 export const FOREVER_TEXT =
-  "As ocorrências somam para sempre: acompanhe os eventos a reenviar.";
+  "O total conta desde a primeira falha e só cresce: acompanhe os eventos a reenviar.";
 export const RETRY_EFFECT =
   "O evento volta para a fila e será enviado no próximo ciclo (até uma hora). Reenviar de novo é seguro. Fica na auditoria.";
 export const NO_EVENTS = "Nenhum evento sem entrega nesta falha de envio.";
@@ -35,7 +35,7 @@ const HEADERS = [
   "Evento",
   "Tipo",
   "Estado",
-  "Ocorrências",
+  "Vezes que falhou",
   "Primeira",
   "Última",
   "Reenvios",
@@ -304,7 +304,7 @@ export function incidentView(tools: ScreenTools): HTMLElement {
         ["Tipo", incidentKindText(incident.kind)],
         ["Causa", incidentCauseText(incident.cause)],
         ["Assunto", dom.el("code", {}, labelName(incident.subject, 80))],
-        ["Ocorrências", String(incident.occurrenceCount)],
+        ["Vezes que falhou", String(incident.occurrenceCount)],
         ["Primeira", brasiliaMomentText(incident.firstSeenAt)],
         ["Última", brasiliaMomentText(incident.lastSeenAt)],
         [
