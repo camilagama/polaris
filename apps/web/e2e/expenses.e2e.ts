@@ -1723,16 +1723,17 @@ for (const width of [480, 1280]) {
     };
     const footerValue = page.locator("[data-list-total] .tabular-nums");
     const rowValues = page.locator("[data-expense-id] p.tabular-nums");
-    for (const tab of ["Ativas", "Anuladas"]) {
+    const expectColumn = async (tab: string) => {
       await page.getByRole("tab", { name: tab }).click();
       await expect(rowValues).toHaveCount(2);
       await expect(footerValue).not.toHaveText("…");
       const total = await rightEdge(footerValue);
-      for (const index of [0, 1]) {
-        expect(
-          Math.abs(total - (await rightEdge(rowValues.nth(index))))
-        ).toBeLessThanOrEqual(1);
-      }
-    }
+      const first = await rightEdge(rowValues.nth(0));
+      const second = await rightEdge(rowValues.nth(1));
+      expect(Math.abs(total - first)).toBeLessThanOrEqual(1);
+      expect(Math.abs(total - second)).toBeLessThanOrEqual(1);
+    };
+    await expectColumn("Ativas");
+    await expectColumn("Anuladas");
   });
 }
