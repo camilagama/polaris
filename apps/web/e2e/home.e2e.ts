@@ -780,12 +780,12 @@ test.describe("loja com venda", () => {
     await expect(today).toContainText("vs. média das sextas · 2 vendas");
     // no date at rest: the title says it is today
     await expect(today.locator("[data-kpi-date]")).toHaveCount(0);
-    // +1.500,5% is said as a multiple from +1.000% up: seen "16,0×", heard "16,0 vezes"
+    // +1.500,5% is said as a multiple from +1.000% up: seen "16,0×", heard "subiu para 16,0 vezes o valor anterior"
     await expect(
       today.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
     ).toHaveText("16,0×");
     await expect(today.locator("[data-kpi-delta=up] .sr-only")).toHaveText(
-      "16,0 vezes"
+      "subiu para 16,0 vezes o valor anterior"
     );
     // the base is in sight ("vs. média das sextas"), so the chip has no name of its own
     await expect(today.locator("[data-kpi-delta=up]")).not.toHaveAttribute(
