@@ -257,7 +257,10 @@ function ChartHeader({
   );
 }
 
-/** The totals written above the drawing (AC-5): the numbers hold without it. The costs only when the line is drawn. */
+/**
+ * The totals written above the drawing (AC-5): the numbers hold without it. The costs only when the line is drawn.
+ * Each total is as wide as its own value, which never breaks, so a long one takes a line when the two do not fit side by side.
+ */
 function Totals({
   costsTotal,
   salesTotal,
@@ -266,7 +269,7 @@ function Totals({
   salesTotal: string;
 }) {
   return (
-    <dl className="grid grid-cols-2 gap-3">
+    <dl className="flex flex-wrap gap-x-6 gap-y-2">
       <div className="grid gap-0.5">
         <dt className="text-muted-foreground text-support">Vendas líquidas</dt>
         <dd className="font-semibold text-lg tabular-nums">

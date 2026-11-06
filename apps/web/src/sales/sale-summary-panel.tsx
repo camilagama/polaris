@@ -83,7 +83,10 @@ export function Money({
   const number = text.replace(CURRENCY_PREFIX, "");
   return (
     <span
-      className={cn("inline-flex items-baseline gap-1 tabular-nums", className)}
+      className={cn(
+        "inline-flex items-baseline gap-1 whitespace-nowrap tabular-nums",
+        className
+      )}
     >
       <span className="font-medium text-muted-foreground text-xs">R$</span>
       <span>{number}</span>

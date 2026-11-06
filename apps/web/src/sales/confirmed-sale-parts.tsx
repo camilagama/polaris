@@ -1,3 +1,4 @@
+import { NoBreakMoney } from "@/ui/hidden-values";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { FeeValue } from "./sale-summary-panel";
 
@@ -50,9 +51,11 @@ export function ConfirmedItems({
             <span className="font-medium [overflow-wrap:anywhere]">
               {item.label}
             </span>
-            <span className="tabular-nums">{item.detail}</span>
+            <span className="tabular-nums">
+              <NoBreakMoney text={item.detail} />
+            </span>
             <span className="text-muted-foreground text-support">
-              {item.costText}
+              <NoBreakMoney text={item.costText} />
             </span>
           </li>
         ))}
