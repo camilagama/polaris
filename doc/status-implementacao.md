@@ -3091,3 +3091,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Admin | Em revisão | Mostra e manda o valor em vigor ("Valor da cobrança em vigor", "Não registrado"); sem ele, sem botão e a dica do painel do provedor; `amount_mismatch` com o texto VC1 e o reembolso daquela loja suspenso até recarregar (também no `amount_changed` que relê o mesmo valor); o tipo e a causa novos têm texto na lista de incidentes. |
 | Provas | Em revisão | `plan-view.test.ts`, `refund-window.test.ts` (domínio), `operator-commands.test.ts` (divergência, leitura velha, sem valor, log sem valores, falha do incidente), `ui/billing.test.ts` (a) a (d), `subscription-model.test.ts`, `notice-consumer.test.ts`, `billing-read-plan-router.test.ts`, repositório e rotas do Admin; gates `billing-operator-commands` (divergência com incidente), `billing-read-plan` e `billing-owner-commands` (rodam no CI). Capturas e verify-polaris em `~/tasks/t794-telas/`. |
 | Fora do PR | Registrado | Comando de troca de ciclo e `pending_price_amount`; edição de valor ou ciclo no painel do provedor (limite do ADR 0104). |
+
+### Início sem internet: uma frase só e "Atualizar" desligado no lugar (t822; corte 05e, item 2; PR567-1)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Frases | Em revisão | `newSaleOfflineText(canSellOffline, titleSaysNoConnection)`: sem cópia, a linha sob o título já diz "Sem internet." e a de "Nova venda" é só "A venda é enviada quando a conexão voltar." (ou nenhuma, quando o aparelho não guarda venda); com cópia, a da venda continua com o prefixo, a única do Início. As frases aguardam a confirmação do Petković. |
+| Atualizar | Em revisão | Fica no cabeçalho sem conexão, com `aria-disabled` e sem efeito no clique; só a sessão recusada o tira. A frase da venda saiu da caixa de "Nova venda" para uma linha sob a fileira de ações: no desktop ela alargava a caixa e empurrava "Atualizar" e o olho 206 px para a esquerda. |
+| Provas | Em revisão | `home-model.test.ts` (as quatro combinações, "Sem internet" uma vez só), `e2e/home.e2e.ts` (geometria da fileira de ações a 360 e 1280 px antes, sem conexão e depois, tolerância de 1 px; o sem cópia confere uma ocorrência e o estado desligado). Os dois e2e de geometria e o do sem cópia falham sem a correção. |
+| Layout shift (W3) | Em revisão | `copia-volta-a-conexao` no e2e-real: 0,0417 na `main` (o 0,0408 do Petković) e 0,0358 com a mudança, duas rodadas cada. Saiu o deslocamento de "Atualizar" e "Esconder valores" (304,80 → 256,80); ficam o cartão "Vendas hoje" (528 → 570 px de altura) e o chip do shell, que não são desta tarefa. |
+| Fora do PR | Registrado | O resto do Início sem conexão e o botão do Resultado. |

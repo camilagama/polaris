@@ -59,23 +59,26 @@ const REFRESHING_TEXT = "Atualizando…";
 
 /**
  * "Atualizar": reads every block again, past the copy of the day. An icon on a phone, as the eye beside it. While it
- * reads the button is `aria-disabled` and ignores the click, so the focus stays on it (a native `disabled` would drop
- * it on the body).
+ * reads, and without a connection, the button is `aria-disabled` and ignores the click, so the focus stays on it (a
+ * native `disabled` would drop it on the body) and the row of actions keeps its place when the connection comes back.
  */
 function RefreshButton({
   busy,
   className,
+  offline,
   onClick,
 }: {
   busy: boolean;
   className?: string;
+  offline: boolean;
   onClick: () => void;
 }) {
+  const off = busy || offline;
   return (
     <Button
-      aria-disabled={busy || undefined}
+      aria-disabled={off || undefined}
       className={cn("max-md:size-ctl-lg max-md:px-0", className)}
-      onClick={busy ? undefined : onClick}
+      onClick={off ? undefined : onClick}
       type="button"
       variant="outline"
     >
@@ -86,39 +89,20 @@ function RefreshButton({
 }
 
 /**
- * "Nova venda", and without a connection what it can do then (AC-30), said under it; without a copy either, the line
- * under the title says it once for the figures and the sale (`describedBy`).
+ * "Nova venda". What it can do without a connection (AC-30) is said in a line of its own under the row of actions
+ * (`HomeHeader`), not inside this box: a long sentence here would widen the box and push "Atualizar" and the eye to
+ * the left when the connection goes or comes back.
  */
-function NewSale({
-  describedBy,
-  offlineText,
-}: {
-  describedBy: string | null;
-  offlineText: string | null;
-}) {
-  const described =
-    [offlineText ? "home-new-sale-offline" : null, describedBy]
-      .filter(Boolean)
-      .join(" ") || undefined;
+function NewSale({ describedBy }: { describedBy: string | undefined }) {
   return (
-    <div className="grid w-full gap-1.5 sm:w-auto sm:justify-items-end">
-      <a
-        aria-describedby={described}
-        className={cn(buttonVariants({ size: "xl" }), "w-full sm:w-auto")}
-        href="/sales"
-      >
-        <PlusIcon aria-hidden="true" data-icon="inline-start" />
-        Nova venda
-      </a>
-      {offlineText ? (
-        <p
-          className="text-muted-foreground text-support sm:text-right"
-          id="home-new-sale-offline"
-        >
-          {offlineText}
-        </p>
-      ) : null}
-    </div>
+    <a
+      aria-describedby={describedBy}
+      className={cn(buttonVariants({ size: "xl" }), "w-full sm:w-auto")}
+      href="/sales"
+    >
+      <PlusIcon aria-hidden="true" data-icon="inline-start" />
+      Nova venda
+    </a>
   );
 }
 
@@ -395,8 +379,8 @@ function HomeHeader({
   /** The line under the title says why there are no figures and no sale without a connection: "Nova venda" points to it. */
   explained: boolean;
   offlineText: string | null;
-  /** The gesture "Atualizar", or null when there is nothing to read (no connection, session refused). */
-  refresh: { busy: boolean; onClick: () => void } | null;
+  /** The gesture "Atualizar", or null when the session is refused; `offline` keeps it in place, switched off. */
+  refresh: { busy: boolean; offline: boolean; onClick: () => void } | null;
   updated: React.ReactNode;
 }) {
   return (
@@ -415,7 +399,11 @@ function HomeHeader({
         </div>
         <div className="flex items-start gap-2 md:hidden">
           {refresh ? (
-            <RefreshButton busy={refresh.busy} onClick={refresh.onClick} />
+            <RefreshButton
+              busy={refresh.busy}
+              offline={refresh.offline}
+              onClick={refresh.onClick}
+            />
           ) : null}
           <HideValuesButton />
         </div>
@@ -425,15 +413,30 @@ function HomeHeader({
           <RefreshButton
             busy={refresh.busy}
             className="max-md:hidden"
+            offline={refresh.offline}
             onClick={refresh.onClick}
           />
         ) : null}
         <HideValuesButton className="max-md:hidden" />
         <NewSale
-          describedBy={explained ? "home-updated" : null}
-          offlineText={offlineText}
+          describedBy={
+            [
+              offlineText ? "home-new-sale-offline" : null,
+              explained ? "home-updated" : null,
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
         />
       </div>
+      {offlineText ? (
+        <p
+          className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right"
+          id="home-new-sale-offline"
+        >
+          {offlineText}
+        </p>
+      ) : null}
     </header>
   );
 }
@@ -454,23 +457,28 @@ function offlineLines(
   const explained = readsReport && offline.figures === null;
   return {
     explained,
-    offlineText:
-      explained && !canSellOffline ? null : newSaleOfflineText(canSellOffline),
+    offlineText: newSaleOfflineText(canSellOffline, explained),
   };
 }
 
-/** "Atualizar" is offered only where a read can happen; `refreshing` is true while the button's own read runs. */
+/**
+ * "Atualizar" stays in its place without a connection, switched off; only a refused session takes it away.
+ * `refreshing` is true while the button's own read runs.
+ */
 function refreshGesture(
-  canRefresh: boolean,
+  online: boolean,
+  sessionRefused: boolean,
   reloading: boolean,
   reload: () => void
 ): {
-  refresh: { busy: boolean; onClick: () => void } | null;
+  refresh: { busy: boolean; offline: boolean; onClick: () => void } | null;
   refreshing: boolean;
 } {
   return {
-    refresh: canRefresh ? { busy: reloading, onClick: reload } : null,
-    refreshing: canRefresh && reloading,
+    refresh: sessionRefused
+      ? null
+      : { busy: online && reloading, offline: !online, onClick: reload },
+    refreshing: online && !sessionRefused && reloading,
   };
 }
 
@@ -815,7 +823,8 @@ export function HomePage() {
         today,
       });
   const { refresh, refreshing } = refreshGesture(
-    online && !state.sessionRefused,
+    online,
+    state.sessionRefused,
     reloading,
     reload
   );
