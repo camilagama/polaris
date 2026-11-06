@@ -5,6 +5,7 @@ import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import {
   assertAmountsOnOneLine,
   assertNothingClipped,
+  assertTextsApart,
   expectReflowFont,
   openReflowViewport,
   skipOutsideChromium,
@@ -2698,7 +2699,7 @@ test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal
 test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 20 px", () => {
   skipOutsideChromium();
 
-  /** Millions of reais: the column of "Vendas líquidas" of the chart is 126 px wide at this size, and a value this long is wider. */
+  /** Millions of reais: the half of the chart totals is 126 px wide at this size when they sit in two fixed halves, and a value this long is wider. */
   const MILLIONS_MONTH: FixtureMonth = {
     expenses: [{ amount: 12_345, linked: false }],
     sales: [
@@ -2729,6 +2730,7 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
       );
       await expectReflowFont(page, fontPixels);
       await assertAmountsOnOneLine(chartRegion(page));
+      await assertTextsApart(chartRegion(page), "dd", 2);
       await assertNothingClipped(chartRegion(page), {
         allowScroll: ["[data-slot=card]"],
       });

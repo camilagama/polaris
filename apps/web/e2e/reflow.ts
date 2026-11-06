@@ -238,3 +238,43 @@ export async function assertAmountsOnOneLine(scope: Locator) {
   expect(apart, "amounts with the R$ and the number on two lines").toEqual([]);
   return amounts.length;
 }
+
+/**
+ * The text of each element under `scope` matched by `selector` (all of what it paints, even what overflows its box)
+ * does not touch the text of another: a value that overflows its cell and lands on the neighbour fails. Returns how many
+ * it measured and fails below `atLeast`, because a sweep that measured nothing proves nothing.
+ */
+export async function assertTextsApart(
+  scope: Locator,
+  selector: string,
+  atLeast: number
+) {
+  const boxes = await scope.locator(selector).evaluateAll((elements) =>
+    elements.map((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const { bottom, left, right, top } = range.getBoundingClientRect();
+      return { bottom, left, right, text: element.textContent ?? "", top };
+    })
+  );
+  expect(
+    boxes.length,
+    "fewer boxes than expected to compare"
+  ).toBeGreaterThanOrEqual(atLeast);
+  const touching: string[] = [];
+  for (const [index, first] of boxes.entries()) {
+    for (const second of boxes.slice(index + 1)) {
+      const sideways =
+        first.left < second.right - SLACK_PIXELS &&
+        second.left < first.right - SLACK_PIXELS;
+      const vertical =
+        first.top < second.bottom - SLACK_PIXELS &&
+        second.top < first.bottom - SLACK_PIXELS;
+      if (sideways && vertical) {
+        touching.push(`${first.text} | ${second.text}`);
+      }
+    }
+  }
+  expect(touching, "texts that overlap each other").toEqual([]);
+  return boxes.length;
+}
