@@ -164,6 +164,23 @@ describe("Lojas com trava legal", () => {
     expect(visibleText(sectionOf(withoutLink.root))).not.toContain(STORE);
   });
 
+  it("tells two stores apart by the visible end of the ID even without the capability to read stores", async () => {
+    const mounted = await open(
+      [page([hold(STORE), hold(OTHER)])],
+      WITHOUT_DIAGNOSE
+    );
+    const section = sectionOf(mounted.root);
+    expect(byTag(section, "a")).toHaveLength(0);
+    const text = visibleText(section);
+    expect(text).not.toMatch(UUID_TEXT);
+    expect(text).toContain(`Loja da trava · final ${STORE.slice(-4)}`);
+    expect(text).toContain(`Loja da trava · final ${OTHER.slice(-4)}`);
+    const cells = allElements(section).filter(
+      (element) => element.getAttribute("title") === STORE
+    );
+    expect(cells).toHaveLength(1);
+  });
+
   it("shows no store ID as a text of the list: the ID rides in the title, and each link has its own accessible name (AC-CP5)", async () => {
     const mounted = await open([page([hold(STORE), hold(OTHER)])]);
     const section = sectionOf(mounted.root);

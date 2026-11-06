@@ -95,7 +95,16 @@ export function legalHoldsView(tools: ScreenTools): HTMLElement {
             ` · final ${hold.organizationId.slice(-4)}`
           )
         )
-      : dom.el("span", { title: hold.organizationId }, STORE_CELL_TEXT);
+      : dom.el(
+          "span",
+          { title: hold.organizationId },
+          STORE_CELL_TEXT,
+          dom.el(
+            "span",
+            { class: "hint" },
+            ` · final ${hold.organizationId.slice(-4)}`
+          )
+        );
   };
 
   const row = (hold: LegalHoldSummary) =>

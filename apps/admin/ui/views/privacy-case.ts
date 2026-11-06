@@ -145,7 +145,7 @@ export const HELP: Readonly<Record<StepKey, string>> = {
   identity:
     "Identidade: como se conferiu quem está pedindo. O titular é a pessoa a quem os dados se referem.",
   resolve: "Resolução: fecha o pedido. Um pedido resolvido não reabre.",
-  role: "Papel do Polaris: controlador, quando o Polaris decide sobre o dado (a conta, o login, a cobrança e a segurança); operador, quando só trata o dado em nome da loja (os clientes que a loja cadastra).",
+  role: "Papel do Polaris: controlador, quando o Polaris decide sobre o dado (conta, autenticação, assinatura, segurança e suporte); operador, quando só trata o dado em nome da loja (os clientes que a loja cadastra).",
   scope:
     "Escopo: quais dados o pedido alcança. O titular é a pessoa a quem os dados se referem.",
 };
@@ -620,7 +620,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           const entityText = entity.control.value.trim();
           if (entityText !== "" && !isUuidText(entityText)) {
             entity.refuse(
-              "Use o código completo do registro, como aparece no cabeçalho da loja, ou deixe vazio."
+              "Use o código completo do registro (para a loja, o do cabeçalho; para um cliente, o que a loja informar), ou deixe vazio."
             );
             return null;
           }

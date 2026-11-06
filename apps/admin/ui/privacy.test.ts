@@ -1067,6 +1067,9 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     expect(visibleText(mounted.root)).toContain(
       "(conta, autenticação, assinatura, segurança e suporte)"
     );
+    expect(HELP.role).toContain(
+      "(conta, autenticação, assinatura, segurança e suporte)"
+    );
   });
 
   it("with a refusal decided, skips the actions and opens the resolution", async () => {
@@ -1540,7 +1543,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
     type(actions.root, "etapa-actions-registro", "cliente 42");
     await click(actions.root, "Revisar ações");
     expect(byId(actions.root, "etapa-actions-registro-erro").textContent).toBe(
-      "Use o código completo do registro, como aparece no cabeçalho da loja, ou deixe vazio."
+      "Use o código completo do registro (para a loja, o do cabeçalho; para um cliente, o que a loja informar), ou deixe vazio."
     );
   });
 });
