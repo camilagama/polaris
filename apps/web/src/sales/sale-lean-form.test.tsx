@@ -13,7 +13,8 @@ import {
   timeOfDay,
 } from "./sale-form-model";
 import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
-import { ItemEditor } from "./sale-item-editor";
+import { chosenItemCount } from "./sale-draft-restore";
+import { AddItemButton, ItemEditor, ItemsCount } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
 import { SummaryPanel } from "./sale-summary-panel";
 import { pickerView, storeHasNothingToSell } from "./sale-variant-picker-model";
@@ -21,6 +22,7 @@ import { pickerView, storeHasNothingToSell } from "./sale-variant-picker-model";
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
 const noop = () => undefined;
+const EMPTY_COUNT_LINE = /data-slot="card-description">\u00a0<\/div>/;
 const variantId = "22222222-2222-4222-8222-222222222222";
 const NOW = new Date(2026, 10, 3, 14, 5);
 const chosenItem: ItemDraft = {
@@ -137,6 +139,60 @@ describe("o item da venda, enxuto", () => {
     );
     const loading = stockView({ status: "loading" }, true);
     expect(loading && stockLineText(loading)).toBe("Consultando estoque…");
+  });
+});
+
+function renderItemsChrome(form: SaleFormState): string {
+  const chosen = chosenItemCount(form);
+  const total = form.items.length;
+  return renderToStaticMarkup(
+    <>
+      <ItemsCount chosen={chosen} total={total} />
+      <AddItemButton chosen={chosen} onAdd={noop} total={total} />
+    </>
+  );
+}
+
+describe("o contador e o Adicionar item da venda", () => {
+  const ids = () => {
+    let next = 0;
+    return () => {
+      next += 1;
+      return `draft-${next}`;
+    };
+  };
+
+  it("venda vazia: sem 'N item(s)' e sem Adicionar item, e a linha do contador segue no DOM", () => {
+    const html = renderItemsChrome(createBlankSaleForm(ids()));
+    expect(html).toMatch(EMPTY_COUNT_LINE);
+    expect(html).not.toContain("Adicionar");
+    expect(html).not.toContain("<button");
+  });
+
+  it("com o primeiro produto escolhido, aparecem 'Itens · 1 item' e Adicionar item", () => {
+    const blank = createBlankSaleForm(ids());
+    const form: SaleFormState = {
+      ...blank,
+      items: [{ ...chosenItem, draftId: "d1" }],
+    };
+    const html = renderItemsChrome(form);
+    expect(html).toContain(">1 item<");
+    expect(html).toContain("Adicionar item");
+  });
+
+  it("o rascunho que volta com 3 itens mostra '3 itens' e o botão; uma segunda linha em branco conta no total", () => {
+    const form: SaleFormState = {
+      ...createBlankSaleForm(ids()),
+      items: [
+        { ...chosenItem, draftId: "d1" },
+        { ...chosenItem, draftId: "d2" },
+        { ...blankItem, draftId: "d3" },
+      ],
+    };
+    const html = renderItemsChrome(form);
+    expect(html).toContain(">3 itens<");
+    expect(html).toContain("Adicionar item");
+    expect(html).not.toContain('disabled=""');
   });
 });
 

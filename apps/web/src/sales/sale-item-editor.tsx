@@ -1,10 +1,12 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
+import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
+import { CardDescription } from "@/ui/card";
 import { FieldDescription } from "@/ui/field";
 import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { stockEntryHref } from "../inventory/stock-entry-link";
@@ -15,6 +17,7 @@ import {
   type EvaluationContext,
   type ItemDraft,
   itemFieldKey,
+  MAX_SALE_ITEMS,
   type SaleSummary,
   type StockView,
   stepQuantity,
@@ -355,5 +358,50 @@ function ChosenItemFields({
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * "N itens" under "Itens", only once a variant is chosen. The line is always in the DOM (a no-break space while
+ * empty) so that the first choice does not push the item below it down.
+ */
+export function ItemsCount({
+  chosen,
+  total,
+}: {
+  chosen: number;
+  total: number;
+}) {
+  return (
+    <CardDescription>
+      {chosen > 0 ? `${total} ${total === 1 ? "item" : "itens"}` : "\u00a0"}
+    </CardDescription>
+  );
+}
+
+/** "Adicionar item" only after the first variant is chosen: before it, the search of the first line is the way in. */
+export function AddItemButton({
+  chosen,
+  onAdd,
+  total,
+}: {
+  chosen: number;
+  onAdd: () => void;
+  total: number;
+}) {
+  if (chosen === 0) {
+    return null;
+  }
+  return (
+    <Button
+      className="w-full sm:w-auto sm:justify-self-start"
+      disabled={total >= MAX_SALE_ITEMS}
+      onClick={onAdd}
+      type="button"
+      variant="outline"
+    >
+      <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
+      Adicionar item
+    </Button>
   );
 }
