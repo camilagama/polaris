@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { moneyDelta, percentDelta } from "../home/home-kpis";
+import { moneyDelta, percentDelta } from "./home-kpis";
 
 const hiddenValues = vi.hoisted(() => ({ hidden: false }));
 
@@ -10,7 +10,7 @@ vi.mock("../lib/hidden-values", async (importOriginal) => ({
   useHiddenValues: () => [hiddenValues.hidden, () => undefined],
 }));
 
-const { DeltaChip } = await import("./kpi-card");
+const { DeltaChip } = await import("../ui/kpi-card");
 
 const BASIS = "em relação a setembro (1 a 14/09)";
 const NAME = /aria-label="([^"]*)"/;
@@ -23,8 +23,21 @@ function chip(delta: Delta) {
   return renderToStaticMarkup(<DeltaChip delta={delta} />);
 }
 const nameOf = (markup: string) => NAME.exec(markup)?.[1];
-const visibleOf = (markup: string) =>
-  (VISIBLE.exec(markup)?.[1] ?? "").replace(/<[^>]*>/g, "");
+function textOf(markup: string): string {
+  let out = "";
+  let inTag = false;
+  for (const char of markup) {
+    if (char === "<") {
+      inTag = true;
+    } else if (char === ">") {
+      inTag = false;
+    } else if (!inTag) {
+      out += char;
+    }
+  }
+  return out;
+}
+const visibleOf = (markup: string) => textOf(VISIBLE.exec(markup)?.[1] ?? "");
 
 beforeEach(() => {
   hiddenValues.hidden = false;
