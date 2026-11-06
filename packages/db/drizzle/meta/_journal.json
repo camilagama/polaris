@@ -827,6 +827,13 @@
       "when": 1793905418836,
       "tag": "0118_valor_da_cobranca_em_vigor",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1793915000000,
+      "tag": "0119_tirar_admin_list_support_cases_4_argumentos",
+      "breakpoints": true
     }
   ]
 }
