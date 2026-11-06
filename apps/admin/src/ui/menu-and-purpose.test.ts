@@ -21,6 +21,10 @@ const BILLING = /cobrança/i;
 const TOOLTIP = /title="[^"]*abra um atendimento/;
 const HIDDEN_PURPOSE = /aria-hidden="true"[^>]*>\s*Para mexer/;
 const CONTA = /data-conta="">/;
+const SIGN_OUT_HREF = /\/cdn-cgi\/access\/logout/g;
+const SIGN_OUT_LINK = /<a [^>]*href="\/cdn-cgi\/access\/logout"[^>]*>/;
+const LINK_EXTRAS = / on[a-z]+=|target=|download|ping=|rel=/i;
+const ACTIVE_CONTENT = /<form|<button|<script/;
 const SUMMARY = /<summary/g;
 const COMPACT = /compact-menu/;
 const COMPACT_DETAILS =
@@ -100,9 +104,11 @@ describe("the menu by task (AC-IA1)", () => {
       ["Operação", "Funil de ativação", "/funil"],
       ["Para o jurídico", "Registro de acessos", "/registro"],
       [null, "Minha conta e permissões", "/configuracoes"],
+      [null, "Sair", "/cdn-cgi/access/logout"],
     ]);
     expect(entries.map((entry) => entry.account)).toEqual([
       ...new Array(8).fill(false),
+      true,
       true,
     ]);
   });
@@ -113,7 +119,7 @@ describe("the menu by task (AC-IA1)", () => {
     expect(NAV.exec(html)?.[1]).not.toMatch(BILLING);
   });
 
-  it("puts Minha conta e permissões alone in the menu of the account, in the header, as the dash does", async () => {
+  it("puts Minha conta e permissões and Sair, in that order, in the menu of the account, in the header, as the dash does", async () => {
     const html = await render("inicio");
     expect(NAV.exec(html)?.[1]).not.toContain("Minha conta");
     expect(menuEntries(html).filter((entry) => entry.account)).toEqual([
@@ -123,6 +129,13 @@ describe("the menu by task (AC-IA1)", () => {
         group: null,
         label: "Minha conta e permissões",
         path: "/configuracoes",
+      },
+      {
+        account: true,
+        current: false,
+        group: null,
+        label: "Sair",
+        path: "/cdn-cgi/access/logout",
       },
     ]);
   });
@@ -177,41 +190,61 @@ describe("the menu by task (AC-IA1)", () => {
   it("drops a group, label included, when no item of it is open to the operator", async () => {
     const entries = menuEntries(
       await render("inicio", { capabilities: ["access_log:read"] })
-    );
+    ).filter((entry) => !entry.account);
     expect(entries.map((entry) => entry.group)).toEqual(["Para o jurídico"]);
   });
 });
 
-describe("a header control that would open nothing is not drawn", () => {
-  it("shows the account of an operator without platform:read as avatar and e-mail, not as a <details>", async () => {
+describe("the menu of the account always has Sair (AC-S1, AC-S2)", () => {
+  it("offers an operator without platform:read only Sair, as a link, since there is no page of theirs to open", async () => {
     const html = await render("registro", {
       capabilities: ["access_log:read"],
     });
-    expect(html).toMatch(CONTA);
-    expect(html).not.toMatch(ACCOUNT);
+    expect(html).toMatch(ACCOUNT);
     expect(html).toContain('data-operador=""');
     expect(html).not.toContain("/configuracoes");
-    expect(html.match(SUMMARY)).toHaveLength(1);
+    expect(
+      entriesOf(ACCOUNT.exec(html)?.[1] ?? "", true).map((entry) => [
+        entry.label,
+        entry.path,
+      ])
+    ).toEqual([["Sair", "/cdn-cgi/access/logout"]]);
+    expect(html.match(SUMMARY)).toHaveLength(2);
     expect(html).toMatch(COMPACT);
   });
 
-  it("keeps the account as a <details> with its link for an operator with platform:read", async () => {
+  it("keeps the account as a <details> with the link of the page and Sair for an operator with platform:read", async () => {
     const html = await render("inicio");
     expect(html).toMatch(ACCOUNT);
     expect(ACCOUNT.exec(html)?.[1]).toContain('href="/configuracoes"');
+    expect(ACCOUNT.exec(html)?.[1]).toContain('href="/cdn-cgi/access/logout"');
     expect(html.match(SUMMARY)).toHaveLength(2);
   });
+
+  it.each([["platform:read"], ["access_log:read"]])(
+    "writes Sair as a relative <a href> with no handler, form, script or target, so it works without JavaScript (%s)",
+    async (capability) => {
+      const html = await render("inicio", { capabilities: [capability] });
+      const popup = ACCOUNT.exec(html)?.[1] ?? "";
+      const link = SIGN_OUT_LINK.exec(popup)?.[0];
+      expect(link).toBeDefined();
+      expect(link).not.toMatch(LINK_EXTRAS);
+      expect(html.match(SIGN_OUT_HREF)).toHaveLength(1);
+      expect(popup).not.toMatch(ACTIVE_CONTENT);
+    }
+  );
 
   it("writes the ☰ as the `details.compact-menu` whose first child is the summary, which is what the script closes with Esc", async () => {
     const html = await render("inicio");
     expect(html).toMatch(COMPACT_DETAILS);
   });
 
-  it("draws neither the ☰ nor the empty menu when no item is open to the operator", async () => {
+  it("draws neither the ☰ nor the empty menu when no item is open to the operator, but keeps the account with Sair", async () => {
     const html = await render("inicio", { capabilities: [], forbidden: true });
     expect(html).not.toMatch(COMPACT);
     expect(html).not.toContain("<nav");
-    expect(html).not.toContain("<summary");
+    expect(html.match(SUMMARY)).toHaveLength(1);
+    expect(ACCOUNT.exec(html)?.[1]).toContain('href="/cdn-cgi/access/logout"');
     expect(html).toMatch(CONTA);
     expect(html).toContain("Sem permissão para isto.");
   });
