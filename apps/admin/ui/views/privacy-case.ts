@@ -1112,7 +1112,7 @@ const AUDIT_EVENTS: Readonly<Record<string, string>> = {
   "privacy_case.stage_recorded": "Etapa registrada",
   "support_case.closed": "Atendimento fechado",
   "support_case.opened": "Atendimento aberto",
-  "tenant_access.granted": "Acesso aos dados dado",
+  "tenant_access.granted": "Acesso temporário liberado",
   "tenant_access.revoked": "Acesso aos dados encerrado",
 };
 
