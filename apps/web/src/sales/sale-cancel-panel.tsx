@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { type Ref, useCallback, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
@@ -41,6 +41,34 @@ interface CancelPanelProps {
   onSaleChanged: (notice: SaleNotice) => void;
   organizationId: string;
   saleId: string;
+}
+
+interface CancelReviewNoticeProps {
+  noticeRef: Ref<HTMLDivElement>;
+  reasonCode: string;
+}
+
+/** The effect of confirming, in a block set back into the card: muted fill, no border. */
+export function CancelReviewNotice({
+  noticeRef,
+  reasonCode,
+}: CancelReviewNoticeProps) {
+  return (
+    <Alert
+      className="focus-ring border-0 bg-muted p-4"
+      ref={noticeRef}
+      tabIndex={-1}
+    >
+      <AlertTitle>Confirme o cancelamento</AlertTitle>
+      <AlertDescription>
+        A venda será marcada como cancelada
+        {reasonCode === ""
+          ? " sem motivo informado"
+          : ` (motivo: ${cancellationReasonLabel(reasonCode)})`}
+        , o estoque voltará item a item e isso não poderá ser desfeito.
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 /**
@@ -190,16 +218,10 @@ export function SaleCancelPanel({
           />
           {confirming ? (
             // the effect, in a neutral notice (auditoria v5.1, rule 2)
-            <Alert className="focus-ring" ref={noticeRef} tabIndex={-1}>
-              <AlertTitle>Confirme o cancelamento</AlertTitle>
-              <AlertDescription>
-                A venda será marcada como cancelada
-                {draft.reasonCode === ""
-                  ? " sem motivo informado"
-                  : ` (motivo: ${cancellationReasonLabel(draft.reasonCode)})`}
-                , o estoque voltará item a item e isso não poderá ser desfeito.
-              </AlertDescription>
-            </Alert>
+            <CancelReviewNotice
+              noticeRef={noticeRef}
+              reasonCode={draft.reasonCode}
+            />
           ) : null}
           <OperationFailureNotice
             onDiscardCancel={handleDiscardCancel}
