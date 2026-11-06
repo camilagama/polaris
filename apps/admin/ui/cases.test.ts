@@ -319,13 +319,19 @@ describe("the list of cases (AC-P1.4)", () => {
     );
   });
 
-  it("without the capability to search stores, takes the ID as it was typed, untrimmed", async () => {
-    const { calls, root } = await mount(
-      [json(page([])), json(page([]))],
+  const mountWithoutStoreSearch = (responses: ReturnType<typeof json>[]) =>
+    mount(
+      responses,
       json({ ...OWNER, capabilities: ["support_case:manage"] }),
       undefined,
       listContext()
     );
+
+  it("without the capability to search stores, takes the ID as it was typed, untrimmed", async () => {
+    const { calls, root } = await mountWithoutStoreSearch([
+      json(page([])),
+      json(page([])),
+    ]);
 
     expect(
       allElements(root).find((item) => item.tagName === "label")?.textContent
@@ -334,6 +340,36 @@ describe("the list of cases (AC-P1.4)", () => {
 
     expect(calls).toHaveLength(3);
     expect(search(calls[2]).get("organizationId")).toBe(" abc ");
+  });
+
+  it.each([
+    ["a filter of 129 characters", "a".repeat(129)],
+    ["a filter with a control character", "ab\u0007c"],
+    ["a filter with a line break", "ab\nc"],
+  ])(
+    "without the capability to search stores, refuses %s without a request",
+    async (_name, typed) => {
+      const { calls, root } = await mountWithoutStoreSearch([json(page([]))]);
+
+      await typeAndFilter(root, typed);
+
+      expect(calls).toHaveLength(2);
+      expect(alertOf(root)?.textContent).toContain(
+        "O filtro aceita só o ID da loja, até 128 caracteres, sem caracteres de controle."
+      );
+    }
+  );
+
+  it("without the capability to search stores, accepts a filter of exactly 128 characters", async () => {
+    const { calls, root } = await mountWithoutStoreSearch([
+      json(page([])),
+      json(page([])),
+    ]);
+
+    await typeAndFilter(root, "a".repeat(128));
+
+    expect(calls).toHaveLength(3);
+    expect(search(calls[2]).get("organizationId")).toBe("a".repeat(128));
   });
 
   it("shows the store name and ID, the type, the reason and the state of an open support case, with a link to it", async () => {
