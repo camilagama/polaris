@@ -69,6 +69,21 @@ describe("HeroValue", () => {
       expect(markup).toContain("leading-5");
     }
   });
+
+  it("says its empty text in the same box in place of the dash, and only when there is no amount", () => {
+    const empty = renderToStaticMarkup(
+      <HeroValue amount={null} emptyText="sem custo neste dia" />
+    );
+    expect(empty).toContain("h-[1.05em]");
+    expect(empty).toContain("sem custo neste dia");
+    expect(empty).not.toContain("sem valor");
+    expect(empty).not.toContain("—");
+    const known = renderToStaticMarkup(
+      <HeroValue amount="90.00" emptyText="sem custo neste dia" />
+    );
+    expect(known).toContain("90");
+    expect(known).not.toContain("sem custo neste dia");
+  });
 });
 
 const TEXT_BETWEEN_TAGS = />[^<]+</;

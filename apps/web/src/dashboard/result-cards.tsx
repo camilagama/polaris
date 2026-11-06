@@ -49,6 +49,29 @@ export function IncompleteBadge() {
 /** What the margin says when no cost of the period is known (never a margin made of zero costs). */
 const NO_COST_MARGIN = "Sem custo informado";
 
+/** What the result says while a day with no cost is read, in place of the dash: the cause, not "sem valor". */
+const NO_COST_DAY = "sem custo neste dia";
+
+/**
+ * What the result says in place of the dash when the day under the pointer is itself a day with no cost (undefined
+ * otherwise): a month of a long period is not "this day", and a known day after an unknown one keeps its dash (its
+ * running total is unknown, but its cost is not what is missing).
+ */
+export function noCostDayText(
+  kpis: {
+    days: readonly { operatingResult?: string | null }[];
+    monthly: boolean;
+  },
+  index: number | null,
+  noCost: boolean
+): string | undefined {
+  if (noCost || kpis.monthly || index === null) {
+    return undefined;
+  }
+  const day = kpis.days[Math.min(index, kpis.days.length - 1)];
+  return day?.operatingResult === null ? NO_COST_DAY : undefined;
+}
+
 function IncompleteBadgeLine() {
   return (
     <span className="mb-1 block">
@@ -242,7 +265,12 @@ export function ResultCards({
               }
             : {})}
           title="Resultado estimado"
-          value={<HeroValue amount={noCost ? null : read.result.value} />}
+          value={
+            <HeroValue
+              amount={noCost ? null : read.result.value}
+              emptyText={noCostDayText(kpis, index, noCost)}
+            />
+          }
         />
         <KpiCard
           {...chip(read.sales)}
