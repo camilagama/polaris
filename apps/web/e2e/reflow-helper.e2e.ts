@@ -20,7 +20,7 @@ skipOutsideChromium();
 async function show(page: Page, body: string) {
   await openReflowViewport(page);
   await page.setContent(
-    `<!doctype html><html><body style="margin:0">${body}</body></html>`
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">${body}</body></html>`
   );
   await expectReflowFont(page);
 }
