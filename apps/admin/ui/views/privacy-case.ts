@@ -312,7 +312,11 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         "O que foi feito neste atendimento"
       ),
       events.length === 0
-        ? dom.el("p", {}, "Nada registrado ainda.")
+        ? dom.el(
+            "p",
+            {},
+            "Nada registrado ainda. Cada etapa registrada neste atendimento aparece aqui."
+          )
         : dom.el("ul", {}, ...events)
     );
   };
