@@ -1,7 +1,13 @@
 const SIMPLE_ESCAPE = /[nrt0bfv]/;
 
+/** `start` is the quote for a quoted text and the first character of the text for a template piece. */
+export interface StringLiteral {
+  start: number;
+  text: string;
+}
+
 class Lexer {
-  readonly found: string[] = [];
+  readonly found: StringLiteral[] = [];
   private readonly braceDepths: number[] = [];
   private index = 0;
 
@@ -11,7 +17,7 @@ class Lexer {
     this.source = source;
   }
 
-  run(): string[] {
+  run(): StringLiteral[] {
     while (this.index < this.source.length) {
       this.step();
     }
@@ -62,6 +68,7 @@ class Lexer {
 
   private readQuoted(quote: string) {
     let text = "";
+    const start = this.index;
     this.index += 1;
     while (this.index < this.source.length && this.at() !== quote) {
       if (this.at() === "\\") {
@@ -73,11 +80,12 @@ class Lexer {
       }
     }
     this.index += 1;
-    this.found.push(text);
+    this.found.push({ start, text });
   }
 
   private readTemplateText() {
     let text = "";
+    const start = this.index;
     while (this.index < this.source.length) {
       const char = this.at();
       if (char === "\\") {
@@ -95,10 +103,10 @@ class Lexer {
         this.index += 1;
       }
     }
-    this.found.push(text);
+    this.found.push({ start, text });
   }
 }
 
-export function stringLiterals(source: string): string[] {
+export function stringLiteralsAt(source: string): StringLiteral[] {
   return new Lexer(source).run();
 }

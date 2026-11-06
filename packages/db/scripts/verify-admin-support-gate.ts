@@ -58,7 +58,6 @@ const ADMIN_FUNCTIONS = [
   "admin_list_organization_legal_holds",
   "admin_list_privacy_cases",
   "admin_list_support_cases",
-  "admin_list_support_cases",
   "admin_open_privacy_case",
   "admin_open_support_case",
   "admin_organization_diagnostics",
@@ -574,15 +573,6 @@ async function run() {
       signatures.rows,
       [
         {
-          args: "p_status text, p_organization_id text, p_limit integer, p_after uuid",
-          config: ["search_path=pg_catalog, public, pg_temp"],
-          definer: true,
-          others_run: false,
-          owner: "polaris_admin_owner",
-          public_runs: false,
-          runtime_runs: true,
-        },
-        {
           args: "p_status text, p_organization_id text, p_limit integer, p_after uuid, p_kind text",
           config: ["search_path=pg_catalog, public, pg_temp"],
           definer: true,
@@ -592,20 +582,20 @@ async function run() {
           runtime_runs: true,
         },
       ],
-      "the four-argument signature stays beside the one with the kind until the contract migration, both as the Admin owner, definer, pinned and run only by the Admin role"
+      "the list function has only the signature with the kind (the four-argument one is gone), as the Admin owner, definer, pinned and run only by the Admin role"
     );
-    const previousVersion = await asAdmin((client) =>
-      client.query<{ page: { cases: { id: string }[] } }>(
-        "SELECT public.admin_list_support_cases(NULL, NULL, 50, NULL) AS page"
-      )
-    );
-    assert.deepEqual(
-      previousVersion.rows[0]?.page.cases.map((entry) => entry.id),
-      everyKind.cases.slice(0, 50).map((entry) => entry.id),
-      "the four-argument call of the previous Admin lists every kind, as before"
+    await expectSqlState(
+      () =>
+        asAdmin((client) =>
+          client.query(
+            "SELECT public.admin_list_support_cases(NULL, NULL, 50, NULL)"
+          )
+        ),
+      "42883",
+      "the four-argument call no longer exists"
     );
     tests.push(
-      "the list of cases narrows to one kind of the closed list (null lists every kind, another value is refused with 22023, the next page counts only that kind) and both signatures of the list function, the previous one kept for the Admin still running, are owned by the Admin owner, with a pinned search_path and EXECUTE only for the Admin role"
+      "the list of cases narrows to one kind of the closed list (null lists every kind, another value is refused with 22023, the next page counts only that kind) and the only signature of the list function is owned by the Admin owner, with a pinned search_path and EXECUTE only for the Admin role"
     );
     tests.push(
       "a case opens only for a real organization, with a known kind, a reason of 1 to 500 characters and a context of up to 2000, by an active operator (a disabled or unknown principal is refused); cases are listed newest first, by status or organization, a page at a time"
