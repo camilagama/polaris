@@ -304,40 +304,42 @@ function ChosenItemFields({
           {stockWarning}
         </p>
       ) : null}
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-4 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]">
-        <QuantityStepper
-          error={errors[itemFieldKey(item.draftId, "quantity")]}
-          id={`${prefix}-quantity`}
-          label="Quantidade"
-          less={stepQuantity(item.quantity, -1)}
-          more={stepQuantity(item.quantity, 1)}
-          onChange={onQuantity}
-          subject={item.label}
-          value={item.quantity}
-        />
-        <TextField
-          addon="R$"
-          error={errors[itemFieldKey(item.draftId, "chargedUnitPrice")]}
-          id={`${prefix}-charged`}
-          inputMode="decimal"
-          label="Preço cobrado"
-          maxLength={22}
-          onChange={onCharged}
-          placeholder="49,90"
-          value={item.chargedUnitPrice}
-        />
-        <TextField
-          addon="R$"
-          className="col-span-2 sm:col-span-1"
-          error={errors[itemFieldKey(item.draftId, "listedUnitPrice")]}
-          id={`${prefix}-listed`}
-          inputMode="decimal"
-          label="Preço de tabela"
-          maxLength={22}
-          onChange={onListed}
-          placeholder="59,90"
-          value={item.listedUnitPrice}
-        />
+      <div className="@container">
+        <div className="grid @[16.25rem]:grid-cols-[auto_minmax(0,1fr)] @[27rem]:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @[16.25rem]:[&>:first-child]:justify-self-auto [&>:first-child]:justify-self-start">
+          <QuantityStepper
+            error={errors[itemFieldKey(item.draftId, "quantity")]}
+            id={`${prefix}-quantity`}
+            label="Quantidade"
+            less={stepQuantity(item.quantity, -1)}
+            more={stepQuantity(item.quantity, 1)}
+            onChange={onQuantity}
+            subject={item.label}
+            value={item.quantity}
+          />
+          <TextField
+            addon="R$"
+            error={errors[itemFieldKey(item.draftId, "chargedUnitPrice")]}
+            id={`${prefix}-charged`}
+            inputMode="decimal"
+            label="Preço cobrado"
+            maxLength={22}
+            onChange={onCharged}
+            placeholder="49,90"
+            value={item.chargedUnitPrice}
+          />
+          <TextField
+            addon="R$"
+            className="@[16.25rem]:col-span-2 @[27rem]:col-span-1"
+            error={errors[itemFieldKey(item.draftId, "listedUnitPrice")]}
+            id={`${prefix}-listed`}
+            inputMode="decimal"
+            label="Preço de tabela"
+            maxLength={22}
+            onChange={onListed}
+            placeholder="59,90"
+            value={item.listedUnitPrice}
+          />
+        </div>
       </div>
       <div className="flex items-baseline justify-between gap-3">
         <FieldDescription
