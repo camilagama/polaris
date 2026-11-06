@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * The capa of a product in Produtos and in the sale, on the real routes with the API answered here: with the
+ * The capa of a product in Produtos, in Estoque and in the sale, on the real routes with the API answered here: with the
  * `mediaThumbs` of `organization.listMine` off nothing is asked and the rows are the ones from before; on, the box
  * is 40 px in Produtos and 32 px in the sale, as tall with a photo as with the marker, and a capa already shown is
  * never asked for again. The images are synthetic.
@@ -113,6 +113,7 @@ async function installStore(
     entries?: unknown[];
     mediaThumbs: boolean;
     mode?: () => ThumbsMode;
+    thumbsStatus?: () => number | null;
     products?: unknown[];
   }
 ): Promise<Store> {
@@ -132,6 +133,14 @@ async function installStore(
       .split(",")
       .filter(Boolean);
     store.thumbBatches.push(ids);
+    const refused = options.thumbsStatus?.() ?? null;
+    if (refused !== null) {
+      return route.fulfill({
+        body: "",
+        headers: { ...WORKER_MARK },
+        status: refused,
+      });
+    }
     if ((options.mode?.() ?? "ok") === "unavailable") {
       return route.fulfill({
         body: "",
@@ -422,4 +431,285 @@ test("Venda: com o servidor de miniaturas fora (marcador) o item tem a mesma alt
   ).toBeVisible();
   const withMarker = (await item.boundingBox())?.height ?? 0;
   expect(Math.abs(withPhoto - withMarker)).toBeLessThanOrEqual(ONE_PIXEL);
+});
+
+const STOCK_ENTRIES = [
+  entry(1, "Camiseta com foto", "Azul", COVER_A),
+  entry(1, "Camiseta com foto", "Preta", COVER_A),
+  entry(2, "Calça sem imagem", "Azul", null),
+  entry(3, "Boné com capa ausente", "Azul", COVER_MISSING),
+  entry(4, "Bolsa sem a capa na resposta", "Azul", undefined),
+].map((each) => ({ ...each, movingAverageCost: "12.000000" }));
+
+const CLOSE_PANEL = /^(Cancelar|Fechar)$/;
+
+const stockItems = (page: Page) =>
+  page.locator('ul[aria-label="Saldos por variante"] > li');
+
+async function stockGeometry(page: Page) {
+  return await page.evaluate(() =>
+    [
+      ...document.querySelectorAll('ul[aria-label="Saldos por variante"] > li'),
+    ].map((row) => {
+      const box = row.querySelector("[data-thumbnail]");
+      const rect = box?.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      return {
+        height: rowRect.height,
+        photo: box?.getAttribute("data-thumbnail") === "photo",
+        thumb: rect
+          ? { h: rect.height, w: rect.width, x: rect.left - rowRect.left }
+          : null,
+        thumbRadius: box ? getComputedStyle(box).borderTopLeftRadius : null,
+      };
+    })
+  );
+}
+
+for (const viewport of VIEWPORTS) {
+  test(`Estoque a ${viewport.name} px: chave desligada é a tela de hoje, sem caixa, sem withCover e sem pedido de miniatura`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const store = await installStore(page, {
+      entries: STOCK_ENTRIES.map((each) => {
+        const { coverAssetId: _omitted, ...rest } = each as {
+          coverAssetId?: string | null;
+        };
+        return rest;
+      }),
+      mediaThumbs: false,
+    });
+    await page.goto("/inventory");
+    await expect(stockItems(page)).toHaveCount(STOCK_ENTRIES.length);
+    await expect(page.locator("[data-thumbnail]")).toHaveCount(0);
+    await page.waitForLoadState("networkidle");
+    expect(store.thumbBatches).toEqual([]);
+    expect(store.balanceRequests.length).toBeGreaterThan(0);
+    for (const body of store.balanceRequests) {
+      expect(body).not.toContain("withCover");
+    }
+  });
+
+  test(`Estoque a ${viewport.name} px: a caixa é de 40 px e a linha tem a mesma altura com foto, marcador, capa ausente, servidor de miniaturas fora e chave desligada`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const first = await installStore(page, {
+      entries: STOCK_ENTRIES,
+      mediaThumbs: false,
+    });
+    await page.goto("/inventory");
+    await expect(stockItems(page)).toHaveCount(STOCK_ENTRIES.length);
+    const off = await stockGeometry(page);
+    expect(off.every((row) => row.thumb === null)).toBe(true);
+
+    await page.waitForLoadState("networkidle");
+    expect(first.thumbBatches).toEqual([]);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    const second = await installStore(page, {
+      entries: STOCK_ENTRIES,
+      mediaThumbs: true,
+    });
+    await page.goto("/inventory");
+    await expect(stockItems(page)).toHaveCount(STOCK_ENTRIES.length);
+    await expect
+      .poll(
+        async () =>
+          (await stockGeometry(page)).filter((row) => row.photo).length
+      )
+      .toBe(2);
+    const on = await stockGeometry(page);
+    expect(on.map((row) => row.photo)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    for (const row of on) {
+      expect(row.thumb?.h).toBe(40);
+      expect(row.thumb?.w).toBe(40);
+    }
+    expect(new Set(on.map((row) => row.thumb?.x)).size).toBe(1);
+    expect(new Set(on.map((row) => row.thumbRadius)).size).toBe(1);
+    const heights = on.map((row) => row.height);
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(
+      ONE_PIXEL
+    );
+    on.forEach((row, index) => {
+      expect(
+        Math.abs(row.height - (off[index]?.height ?? 0))
+      ).toBeLessThanOrEqual(ONE_PIXEL);
+    });
+
+    // the list is read once, asking for the capas; the two counts of the strip are the other reads, and none
+    // reads a product on its own
+    const listReads = second.balanceRequests.filter((body) =>
+      body.includes('"limit":50')
+    );
+    expect(listReads).toHaveLength(1);
+    expect(listReads[0]).toContain('"withCover":true');
+    expect(
+      second.balanceRequests.some((body) => body.includes("variantIds"))
+    ).toBe(false);
+    for (const batch of second.thumbBatches) {
+      expect(batch.length).toBeLessThanOrEqual(MAX_IDS_PER_REQUEST);
+    }
+    // the capa of the two variants of one product is asked once; the fourth row may sit just below the fold
+    const asked = second.thumbBatches.flat();
+    expect(new Set(asked).size).toBe(asked.length);
+    expect(asked).toContain(COVER_A);
+    expect(
+      asked.every((each) => each === COVER_A || each === COVER_MISSING)
+    ).toBe(true);
+  });
+}
+
+for (const refused of [401, 403, 429, 503]) {
+  test(`Estoque: miniaturas recusadas com ${refused} deixam o marcador na mesma altura e não impedem abrir Receber, Contar e Baixar`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const store = await installStore(page, {
+      entries: STOCK_ENTRIES,
+      mediaThumbs: true,
+      thumbsStatus: () => refused,
+    });
+    await page.goto("/inventory");
+    await expect(stockItems(page)).toHaveCount(STOCK_ENTRIES.length);
+    await expect.poll(() => store.thumbBatches.length).toBeGreaterThan(0);
+    const measured = await stockGeometry(page);
+    expect(measured.every((row) => !row.photo && row.thumb?.h === 40)).toBe(
+      true
+    );
+    const heights = measured.map((row) => row.height);
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(
+      ONE_PIXEL
+    );
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    for (const action of ["Receber", "Contar", "Baixar"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one panel at a time
+      await page
+        .getByRole("button", {
+          name: new RegExp(`^${action} estoque de Calça sem imagem`),
+        })
+        .click();
+      await expect(
+        page.getByRole("button", { name: CLOSE_PANEL }).first()
+      ).toBeVisible();
+      await page.getByRole("button", { name: CLOSE_PANEL }).first().click();
+    }
+  });
+}
+
+test("Estoque: a foto é decoração, o nome do botão da linha não muda e a linha não tem foco extra", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await installStore(page, { entries: STOCK_ENTRIES, mediaThumbs: true });
+  await page.goto("/inventory");
+  await expect(page.locator('[data-thumbnail="photo"]')).toHaveCount(2);
+  const first = stockItems(page).first();
+  await expect(
+    first.getByRole("button", {
+      name: "Receber estoque de Camiseta com foto, Azul",
+    })
+  ).toBeVisible();
+  const picture = first.locator("[data-thumbnail] img");
+  await expect(picture).toHaveAttribute("alt", "");
+  expect(
+    await first
+      .locator("[data-thumbnail]")
+      .evaluate((node) => node.getAttribute("aria-hidden"))
+  ).toBe("true");
+  expect(
+    await first
+      .locator("[data-thumbnail]")
+      .evaluate((node) => node.querySelectorAll("a, button, [tabindex]").length)
+  ).toBe(0);
+});
+
+const MANY = 30;
+const manyCover = (n: number) =>
+  `0199c2d0-0000-7000-8000-0000000d${String(n).padStart(4, "0")}`;
+
+test("Estoque: rolar uma lista longa pede só as linhas vistas, em lotes de até 5, uma capa nunca duas vezes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  const many = Array.from({ length: MANY }, (_, index) => ({
+    ...entry(index + 1, `Produto ${index + 1}`, "Azul", manyCover(index + 1)),
+    movingAverageCost: "12.000000",
+  }));
+  const store = await installStore(page, { entries: many, mediaThumbs: true });
+  await page.goto("/inventory");
+  await expect(stockItems(page)).toHaveCount(MANY);
+  await expect.poll(() => store.thumbBatches.length).toBeGreaterThan(0);
+  await page.waitForLoadState("networkidle");
+  const askedAtTop = store.thumbBatches.flat().length;
+  expect(askedAtTop).toBeGreaterThan(0);
+  expect(askedAtTop).toBeLessThan(MANY);
+
+  // a jump to the end would never show the rows in between: the list is rolled row by row, top to bottom
+  for (const row of await stockItems(page).all()) {
+    // biome-ignore lint/performance/noAwaitInLoops: one row after the other, as a thumb rolls
+    await row.scrollIntoViewIfNeeded();
+  }
+  await expect
+    .poll(() => new Set(store.thumbBatches.flat()).size, { timeout: 20_000 })
+    .toBe(MANY);
+  const asked = store.thumbBatches.flat();
+  expect(asked).toHaveLength(MANY);
+  for (const batch of store.thumbBatches) {
+    expect(batch.length).toBeLessThanOrEqual(MAX_IDS_PER_REQUEST);
+  }
+  expect(
+    store.balanceRequests.every((body) => !body.includes("variantIds"))
+  ).toBe(true);
+});
+
+test("Estoque a 320 px: com o selo Arquivado e nome longo a linha tem a mesma altura com a chave ligada e desligada", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 700, width: 320 });
+  const long = [
+    {
+      ...entry(
+        1,
+        "Camiseta de algodão egípcio manga longa edição especial",
+        "Azul",
+        COVER_A
+      ),
+      movingAverageCost: "12.000000",
+      productStatus: "archived",
+    },
+    {
+      ...entry(2, "Calça de sarja com nome comprido sem imagem", "Azul", null),
+      movingAverageCost: "12.000000",
+    },
+  ];
+  const off = await installStore(page, { entries: long, mediaThumbs: false });
+  await page.goto("/inventory");
+  await expect(stockItems(page)).toHaveCount(long.length);
+  const without = await stockGeometry(page);
+  expect(off.thumbBatches).toEqual([]);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await installStore(page, { entries: long, mediaThumbs: true });
+  await page.goto("/inventory");
+  await expect(stockItems(page)).toHaveCount(long.length);
+  await expect(page.locator('[data-thumbnail="photo"]')).toHaveCount(1);
+  const withThumbs = await stockGeometry(page);
+  withThumbs.forEach((row, index) => {
+    expect(row.thumb?.h).toBe(40);
+    expect(row.thumb?.w).toBe(40);
+    expect(
+      Math.abs(row.height - (without[index]?.height ?? 0))
+    ).toBeLessThanOrEqual(ONE_PIXEL);
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth
+    )
+  ).toBe(true);
 });

@@ -1,5 +1,6 @@
 import type { InventoryBalanceReadModel } from "@polaris/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { useDebouncedValue } from "../lib/use-debounced-value";
 import { orpcClient } from "../lib/orpc";
 import { readWithRetry } from "../lib/read-with-retry";
@@ -60,6 +61,7 @@ export function useStockList(
   }));
   const [state, setState] = useState(initialStockListState);
   const [reloadVersion, setReloadVersion] = useState(0);
+  const withCover = useMediaThumbsEnabled();
   const latest = useRef(0);
   const debouncedQuery = useDebouncedValue(filters.query, SEARCH_DELAY_MS);
   const { includeArchived, stock, unknownCost } = filters;
@@ -107,7 +109,7 @@ export function useStockList(
     readWithRetry(
       () =>
         orpcClient.inventory.listBalances(
-          stockListRequest(organizationId, effective, null)
+          stockListRequest(organizationId, effective, null, withCover)
         ),
       { isCurrent: () => request === latest.current }
     )
@@ -131,6 +133,7 @@ export function useStockList(
     localWriter,
     organizationId,
     reloadVersion,
+    withCover,
   ]);
 
   const loadMore = useCallback(() => {
@@ -144,7 +147,7 @@ export function useStockList(
     readWithRetry(
       () =>
         orpcClient.inventory.listBalances(
-          stockListRequest(organizationId, effective, cursor)
+          stockListRequest(organizationId, effective, cursor, withCover)
         ),
       { isCurrent: () => request === latest.current }
     )
@@ -158,7 +161,7 @@ export function useStockList(
           setState((current) => stockMoreFailed(current, error));
         }
       });
-  }, [effective, organizationId, state]);
+  }, [effective, organizationId, state, withCover]);
 
   const reload = useCallback(
     () => setReloadVersion((version) => version + 1),
