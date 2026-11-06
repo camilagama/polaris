@@ -45,7 +45,7 @@ export const EFFECT_LINES = {
   reactivate:
     "Reativar desfaz só a suspensão. Loja encerrada continua encerrada. Dá para suspender de novo.",
   refund:
-    "O pedido de estorno vai ao provedor; ao confirmar, o Pro da loja acaba na hora, sem carência. Não dá para desfazer.",
+    "O estorno vai ao provedor; quando ele confirmar, o Pro da loja acaba na hora, sem carência. Não dá para desfazer.",
   reissueNotice:
     "Um aviso novo vai ao dono atual e o anterior fica como está. Não dá para desfazer: o aviso novo é outra linha.",
   reveal: `Revelar mostra um dado do cliente por até ${REVEAL_SECONDS} segundos e fica na auditoria. Não dá para desfazer o registro.`,

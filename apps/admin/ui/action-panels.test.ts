@@ -202,7 +202,9 @@ describe("the sentences of effect", () => {
       "enquanto o apagamento não começar"
     );
     expect(EFFECT_LINES.purgeSchedule).not.toContain("primeiro arquivo");
-    expect(EFFECT_LINES.refund).toContain("acaba na hora, sem carência");
+    expect(EFFECT_LINES.refund).toContain(
+      "quando ele confirmar, o Pro da loja acaba na hora, sem carência"
+    );
     expect(EFFECT_LINES.refund.toLowerCase()).not.toContain("o valor volta");
   });
 
