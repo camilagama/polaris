@@ -29,24 +29,25 @@ export function SaleStatusBadges({
 }
 
 /**
- * Narrower than 17 rem the row stops being one line of cells: the data take the full width, wrapping instead of
+ * Narrower than 17.9 rem the row stops being one line of cells: the data take the full width, wrapping instead of
  * being cut, and the value goes under them, beside the chevron. The width is the row's own (`@container` on the
- * `li`) and in `rem`, so a bigger browser font reaches it on a wider window: a 320 px window is 18 rem of row at the
- * default font, which stays on one line (the name is cut, the method and the items stay), and about 14 rem at 20 px,
- * which wraps. At 20.5 rem (360 px, default font) and above the row is the one it was.
+ * `li`) and in `rem`, so a bigger browser font reaches it on a wider window. A 320 px window at the default font is
+ * 18 rem of row, the narrowest width the one-line layout is proven at (the name is cut first, then the method; the
+ * date and time stay whole), so it keeps that layout; at 20 px the same window is about 14 rem and wraps. From
+ * 20.5 rem (360 px, default font) up the avatar column fits and nothing wraps.
  */
 const ROW =
-  "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4 @max-[16.999rem]:flex-wrap";
-const WRAPPED_DATA = "@max-[16.999rem]:basis-full @max-[16.999rem]:flex-none";
+  "flex items-center gap-2 px-2.5 py-2.5 md:gap-3 md:px-4 @max-[17.9rem]:flex-wrap";
+const WRAPPED_DATA = "@max-[17.9rem]:basis-full @max-[17.9rem]:flex-none";
 const WRAPPED_LINE =
-  "@max-[16.999rem]:block @max-[16.999rem]:[&>span]:inline @max-[16.999rem]:[&_span]:overflow-visible @max-[16.999rem]:[&_span]:whitespace-normal @max-[16.999rem]:[&_span]:[overflow-wrap:anywhere]";
+  "@max-[17.9rem]:block @max-[17.9rem]:[&>span]:inline @max-[17.9rem]:[&_span]:overflow-visible @max-[17.9rem]:[&_span]:whitespace-normal @max-[17.9rem]:[&_span]:[overflow-wrap:anywhere]";
 
 function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
   return (
     <>
       <span
         aria-hidden="true"
-        className="@max-[16.999rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
+        className="@max-[17.9rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
       >
         {row.customerInitials}
       </span>
@@ -54,7 +55,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         className={`grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5 overflow-hidden ${WRAPPED_DATA}`}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="@max-[16.999rem]:whitespace-normal whitespace-nowrap font-medium">
+          <p className="@max-[17.9rem]:whitespace-normal whitespace-nowrap font-medium">
             {row.dateText}
             {row.timeText ? (
               <span className="font-normal text-muted-foreground tabular-nums">
@@ -81,7 +82,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         </p>
       </div>
       <Money
-        className="@max-[16.999rem]:ml-auto shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
+        className="@max-[17.9rem]:ml-auto shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
         text={row.totalText}
       />
       {chevron ? (
