@@ -392,6 +392,25 @@ describe("Apagamento e trava legal", () => {
     );
   });
 
+  it("does not point to the hold button when the operator cannot put a hold", async () => {
+    const { root } = await hold(
+      WHO(
+        "platform:read",
+        "organization:diagnose",
+        "privacy_case:manage",
+        "organization:purge"
+      ),
+      "closed"
+    );
+
+    expect(visibleText(root)).toContain(
+      "Trava legalO servidor confere ao agendar."
+    );
+    expect(visibleText(root)).not.toContain("Nenhuma trava legal vigente");
+    expect(visibleText(root)).not.toContain("abaixo");
+    expect(visibleText(root)).not.toContain("Pôr trava legal");
+  });
+
   it("says a purged store has nothing left to hold", async () => {
     const { root } = await hold(MAY(), "purged");
 
