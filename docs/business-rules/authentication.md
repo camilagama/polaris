@@ -29,7 +29,7 @@ A política de Unicode e expiração segue as recomendações de senhas do [NIST
 
 ## Bloqueio de conta por tentativas
 
-> As regras desta seção e da troca de senha valem a partir dos PRs P2 e P8 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). O servidor da entrada por senha as aplica só com `EMAIL_PASSWORD_AUTH_ENABLED` ligada, que segue desligada; as regras de aceite ficam para os PRs P4 e P7 (estado em [status-implementacao](../../doc/status-implementacao.md)).
+> As regras desta seção e da troca de senha valem a partir dos PRs P2 e P8 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). O servidor da entrada por senha as aplica só com `EMAIL_PASSWORD_AUTH_ENABLED` ligada, que fica desligada por padrão e na produção e ligada no staging (`apps/web/wrangler.jsonc`); as regras de aceite ficam para os PRs P4 e P7 (estado em [status-implementacao](../../doc/status-implementacao.md)).
 
 - "Bloqueio de conta" é o termo das regras e do código; a pessoa vê "entrada pausada", porque só a entrada por senha daquele e-mail fica parada, e não a conta.
 - Cinco falhas de login por senha na mesma janela de 15 minutos travam a entrada por senha daquele e-mail por 15 minutos. O contador é por e-mail digitado, exista a conta ou não, e guarda só um HMAC do e-mail normalizado (a chave funde tudo o que o Better Auth funde para achar o usuário; o formato é validado antes), sem e-mail em claro, ID de usuário nem IP.
@@ -67,7 +67,7 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 - A CSP que libera o Turnstile acrescenta apenas o arquivo `https://challenges.cloudflare.com/turnstile/v0/api.js` a `script-src` e a origem `https://challenges.cloudflare.com` a `frame-src`, e vale só nas rotas que usam o desafio (e nas mesmas rotas com barra final); o resto do app não a recebe. A site key é pública e vem do Worker. O hostname e a ação continuam conferidos no servidor.
 - Aplicar um limite geral por IP nas rotas protegidas e limite menor nas rotas que podem enviar email. As chaves usam HMAC e não incluem o IP em claro.
 - Os bindings nativos Workers Rate Limiting mantêm contadores aproximados por localidade Cloudflare, não um contador global. Eles são uma camada de contenção; não tratar o resultado como quota global ou como única defesa contra abuso distribuído.
-- A autenticação por email/senha permanece desligada até Turnstile, bindings, site key do cliente, Resend e domínio de envio estarem configurados. A interface de entrada deve obter um token novo para cada envio e transmiti-lo no header definido.
+- A autenticação por email/senha fica desligada por padrão e na produção e ligada no staging (`apps/web/wrangler.jsonc`); na produção só liga com Turnstile, bindings, site key do cliente, Resend e domínio de envio configurados. A interface de entrada deve obter um token novo para cada envio e transmiti-lo no header definido.
 
 ## Retorno após a entrada
 
