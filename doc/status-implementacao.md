@@ -3144,3 +3144,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Um botão de tinta | Em revisão | Fora de revisão aberta, no máximo um por tela (um por painel no Atendimento): Fechar atendimento, Agendar o apagamento, Reemitir o aviso, Cancelar a renovação, Ler a cobrança, Reenviar e Filtrar passaram a `.secondary`; `.ghost` é o estilo novo da ação de texto. A Loja continua com os três "Abrir atendimento" (AC-CP6, outra tarefa). |
 | Abas do Apagamento | Em revisão | Já usavam o mesmo `.tabs` de Atendimentos; `src/ui/one-tab-style.test.ts` guarda que a folha não tem um segundo estilo de aba. |
 | Provas | Em revisão | `ui/action-panels.test.ts` (ordem dos painéis, ordem dos filhos, no máximo um botão de tinta, a frase de até 120 caracteres com "dá para" acima do botão de cada ação) e as asserções novas de `billing`, `incidents` e `cases`. Nenhuma rota, capacidade, contrato ou `setTimeout` mudou. |
+
+### Textos de Pendências e do chip, "Aceitar e continuar" e a regra do botão (t832; corte ui-heyrico-2, T8, AC-T8.1 a AC-T8.4; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Subtítulo de Pendências | Em revisão | "O que o servidor recusou e espera uma decisão sua." sob o título, em `muted-foreground`, com a lista cheia e vazia; teste de DOM e de texto em `offline/attention-panel.test.tsx` (sem "o que mudou"). |
+| Chip sem conexão | Em revisão | Com N > 0, "Sem conexão · N operações guardadas, enviam quando voltar" (singular "1 operação guardada, envia quando voltar"); N = 0 só "Sem conexão"; teste de unidade de `syncStatusLabel` por N e por `onlineOnly` em `offline/runtime/runtime-ui.test.tsx`. |
+| Aceite legal | Em revisão | `ACCEPTANCE_CONTINUE` passou de "Continuar" a "Aceitar e continuar"; a caixa segue obrigatória e o botão nunca fica desligado por causa dela; o e2e `legal-acceptance` usa o nome novo. |
+| Regra do botão | Em revisão | DESIGN.md, "Diálogo de formulário": "O botão diz a escolha, não 'OK' nem 'Sim'". `scripts/button-labels.test.ts` varre os `.tsx` de `apps/web/src` (sem `ui-gallery/` nem `offline-poc/`) e reprova o rótulo "OK" ou "Sim" sozinho, com casos plantados e de controle. Nenhum uso existia na main; os "Sim, <verbo>" que já existem (desfazer o encerramento, descartar a fila, remover o cliente da venda) ficam fora, como o corte pede ("diálogos existentes: só o teste olha"). |

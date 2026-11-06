@@ -158,11 +158,11 @@ export const firstAccessStates = {
 };
 
 export const acceptanceStates = {
-  /** "Continuar" with the box unticked: the box says what is missing. */
+  /** "Aceitar e continuar" with the box unticked: the box says what is missing. */
   boxMissing: async (page: Page) => {
     await serveAcceptance(page);
     await openAcceptance(page, "Para usar o Polaris, leia e aceite.");
-    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.getByRole("button", { name: "Aceitar e continuar" }).click();
     await page.getByText("Marque a caixa para aceitar e continuar.").waitFor();
     await settle(page);
   },
@@ -212,7 +212,7 @@ export const acceptanceStates = {
     });
     await openAcceptance(page, "Para usar o Polaris, leia e aceite.");
     await page.getByRole("checkbox").click();
-    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.getByRole("button", { name: "Aceitar e continuar" }).click();
     await page.getByText("Não foi possível registrar o aceite.").waitFor();
     await settle(page);
   },
@@ -220,7 +220,7 @@ export const acceptanceStates = {
     await serveAcceptance(page, { accept: hold });
     await openAcceptance(page, "Para usar o Polaris, leia e aceite.");
     await page.getByRole("checkbox").click();
-    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.getByRole("button", { name: "Aceitar e continuar" }).click();
     await page.getByRole("button", { name: "Registrando o aceite…" }).waitFor();
     await settle(page);
   },

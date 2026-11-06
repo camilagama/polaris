@@ -51,6 +51,22 @@ describe("the attention panel", () => {
     }
   });
 
+  it("says under the title what the page holds, with or without items, and never promises what changed", () => {
+    for (const summary of [
+      { items: [], waitingBehind: 0 },
+      { items: [item()], waitingBehind: 0 },
+    ]) {
+      const html = render(summary);
+      expect(html).toContain(
+        '<p class="text-muted-foreground" id="attention-subtitle">O que o servidor recusou e espera uma decisão sua.</p>'
+      );
+      expect(html.indexOf("Pendências</h1>")).toBeLessThan(
+        html.indexOf("attention-subtitle")
+      );
+      expect(html.toLowerCase()).not.toContain("o que mudou");
+    }
+  });
+
   it("tells the cause of the account apart from the cause of the data without relying on color: an icon and the text", () => {
     const html = render({
       items: [

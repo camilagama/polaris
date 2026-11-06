@@ -109,6 +109,9 @@ function buttonIdOf(
     : undefined;
 }
 
+const ATTENTION_SUBTITLE =
+  "O que o servidor recusou e espera uma decisão sua.";
+
 /** The frame of the page of attention: the title, then what the page has to say. */
 export function AttentionFrame({ children }: { children: ReactNode }) {
   return (
@@ -117,6 +120,9 @@ export function AttentionFrame({ children }: { children: ReactNode }) {
         <h1 className="text-title" id="attention-title">
           Pendências
         </h1>
+        <p className="text-muted-foreground" id="attention-subtitle">
+          {ATTENTION_SUBTITLE}
+        </p>
       </header>
       {children}
     </div>
