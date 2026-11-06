@@ -18,7 +18,7 @@ const CHIP_THEN_NOTE =
   /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
 
 const PILL_THEN_AGAINST =
-  /data-kpi-pill=""[^>]*>.*\+30,0%<\/span><span[^>]*data-kpi-delta-against=""[^>]*>vs\. 07\/10 a 05\/11<\/span>/;
+  /data-kpi-pill=""[^>]*>.*\+30,0%<\/span>.*<\/span><span[^>]*data-kpi-delta-against=""[^>]*>vs\. 07\/10 a 05\/11<\/span>/;
 
 const card = (props: Partial<Parameters<typeof KpiCard>[0]>) =>
   renderToStaticMarkup(
@@ -156,6 +156,7 @@ describe("DeltaChip in a column of the strip", () => {
   const DELTA: KpiDelta = {
     against: "vs. 07/10 a 05/11",
     money: false,
+    spoken: "subiu 30,0 por cento",
     text: "+30,0%",
     trend: "up",
   };
@@ -199,7 +200,7 @@ describe("DeltaChip in a column of the strip", () => {
       basis: "em relação a setembro (1 a 14/09)",
     });
     expect(markup).toContain(
-      'aria-label="+30,0% em relação a setembro (1 a 14/09)"'
+      'aria-label="subiu 30,0 por cento em relação a setembro (1 a 14/09)"'
     );
     expect(markup.match(/aria-label=/g)).toHaveLength(1);
   });

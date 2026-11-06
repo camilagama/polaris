@@ -1621,12 +1621,16 @@ test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome 
   }
   await rename.click();
   await renameForm.getByLabel("Nome da categoria").fill("Frete e entregas");
-  await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await renameForm
+    .getByRole("button", { exact: true, name: "Salvar alterações" })
+    .click();
   await expect(renameForm.getByRole("alert")).toBeVisible();
   await expect(renameForm.getByLabel("Nome da categoria")).toHaveValue(
     "Frete e entregas"
   );
-  await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await renameForm
+    .getByRole("button", { exact: true, name: "Salvar alterações" })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(panel.getByText("Categoria renomeada.")).toBeVisible();
   await expect(

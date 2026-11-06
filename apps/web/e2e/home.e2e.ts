@@ -814,7 +814,7 @@ test.describe("loja com venda", () => {
     ).toHaveText("15,7×");
     await expect(month.locator("[data-kpi-delta=up]")).toHaveAttribute(
       "aria-label",
-      "15,7 vezes em relação a 1 a 23/09"
+      "subiu para 15,7 vezes o valor anterior em relação a 1 a 23/09"
     );
     await expect(month).toContainText("12 vendas");
 

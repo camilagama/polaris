@@ -160,7 +160,7 @@ export function ExpenseCategoryForm({
           disabled={disabled}
           type="submit"
         >
-          {editing ? "Salvar" : "Adicionar categoria"}
+          {editing ? "Salvar alterações" : "Adicionar categoria"}
         </Button>
       </DialogFooter>
     </DialogForm>
