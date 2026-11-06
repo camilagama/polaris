@@ -25,9 +25,9 @@ export const EFFECT_LINES = {
   dismissNotice:
     "A dispensa conta como entregue e o apagamento ainda espera 7 dias. Não dá para desfazer.",
   grantEnd:
-    "Encerrar volta a loja ao que o plano dá. Não dá para desfazer; uma nova concessão é outra decisão.",
+    "Encerrar volta a loja ao que o plano dá. Não dá para desfazer; uma nova liberação temporária é outra decisão.",
   grantGive:
-    "A concessão só eleva o plano da loja; nunca reduz um limite nem desliga um recurso. Dá para encerrar antes.",
+    "A liberação temporária só eleva o plano da loja; nunca reduz um limite nem desliga um recurso. Dá para encerrar antes.",
   holdPlace:
     "A loja não é apagada enquanto a trava valer. Dá para tirar a trava depois.",
   holdPlaced:

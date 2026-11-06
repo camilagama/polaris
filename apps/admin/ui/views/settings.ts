@@ -12,7 +12,7 @@ import { SIGN_OUT_LABEL, SIGN_OUT_PATH } from "../sign-out";
 const PERMISSION_TEXT: Readonly<Record<string, string>> = {
   "access_log:read": "Consultar o registro de acessos",
   "billing:operate":
-    "Dar e encerrar concessões, cancelar a renovação e ver a janela de reembolso",
+    "Dar e encerrar liberações temporárias, cancelar a renovação e ver a janela de reembolso",
   "billing:refund": "Reembolsar o período em vigor de uma loja",
   "operational_incident:read": "Ver as falhas de envio",
   "operational_incident:retry": "Reenviar um evento de uma falha de envio",
@@ -37,7 +37,7 @@ const ROLE_TEXT: Readonly<Record<string, string>> = {
 };
 
 export const PERMISSIONS_NOTE =
-  "Estas permissões vêm do cadastro do Admin; não se mudam por aqui.";
+  "Estas permissões vêm do cadastro do Admin; não se mudam por aqui. Para mudar o que você pode fazer, peça ao responsável pelo cadastro do painel.";
 export const SIGN_OUT_TEXT =
   "Sair encerra a sessão do Access e fecha o Polaris Admin em todos os aparelhos em até 30 segundos.";
 

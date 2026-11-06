@@ -157,11 +157,11 @@ async function fill(mounted: Mounted, typed: Typed = {}) {
   byId(mounted.root, "concessao-horas").value = typed.hours ?? "48";
   byId(mounted.root, "concessao-motivo").value =
     typed.reason ?? "Compensação pela queda";
-  await click(mounted.root, "Revisar a concessão");
+  await click(mounted.root, "Revisar a liberação temporária");
 }
 
 async function toReview(mounted: Mounted, typed: Typed = {}) {
-  await click(mounted.root, "Dar uma concessão");
+  await click(mounted.root, "Dar uma liberação temporária");
   await fill(mounted, typed);
 }
 
@@ -188,7 +188,9 @@ describe("the panel's place on the case screen (AC-P4.1, AC-C1, AC-C5)", () => {
     const mounted = await open([]);
 
     expect(shown(mounted)).toContain("Dar plano ou limite temporário");
-    expect(buttons(mounted.root, "Dar uma concessão")).toHaveLength(1);
+    expect(buttons(mounted.root, "Dar uma liberação temporária")).toHaveLength(
+      1
+    );
     expect(mounted.calls.map((call) => call.path)).toEqual([
       "/api/whoami",
       `/api/support-cases/${CASE}`,
@@ -226,7 +228,7 @@ describe("the panel's place on the case screen (AC-P4.1, AC-C1, AC-C5)", () => {
       })
     );
 
-    await click(mounted.root, "Dar uma concessão");
+    await click(mounted.root, "Dar uma liberação temporária");
     const options = allElements(byId(mounted.root, "concessao-chave"))
       .filter((element) => element.tagName === "option")
       .map((element) => [element.getAttribute("value"), element.textContent]);
@@ -256,7 +258,7 @@ describe("the grants in force and the way to end one (AC-P4.4, AC-P4.6)", () => 
       ]),
     ]);
 
-    await click(mounted.root, "Ver concessões em vigor");
+    await click(mounted.root, "Ver liberações temporárias em vigor");
 
     expect(mounted.calls[2]?.path).toBe(
       `/api/organizations/${STORE}/diagnostics`
@@ -266,28 +268,38 @@ describe("the grants in force and the way to end one (AC-P4.4, AC-P4.6)", () => 
     expect(text).toContain("2000");
     expect(text).toContain("02/11/2026");
     expect(text).toContain("Metas ativas");
-    expect(buttons(mounted.root, "Encerrar concessão")).toHaveLength(2);
-    expect(text).toContain("Concessões lidas às 12:07.");
-    expect(buttons(mounted.root, "Ver concessões em vigor")).toHaveLength(0);
-    expect(buttons(mounted.root, "Atualizar concessões")).toHaveLength(1);
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      2
+    );
+    expect(text).toContain("Liberações temporárias lidas às 12:07.");
+    expect(
+      buttons(mounted.root, "Ver liberações temporárias em vigor")
+    ).toHaveLength(0);
+    expect(
+      buttons(mounted.root, "Atualizar liberações temporárias")
+    ).toHaveLength(1);
   });
 
   it("says when there is none in force", async () => {
     const mounted = await open([report([])]);
 
-    await click(mounted.root, "Ver concessões em vigor");
+    await click(mounted.root, "Ver liberações temporárias em vigor");
 
     expect(shown(mounted)).toContain(NO_GRANTS);
-    expect(buttons(mounted.root, "Encerrar concessão")).toHaveLength(0);
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      0
+    );
   });
 
   it("lists a grant that came without an ID but offers no way to end it", async () => {
     const mounted = await open([report([inForce(undefined)])]);
 
-    await click(mounted.root, "Ver concessões em vigor");
+    await click(mounted.root, "Ver liberações temporárias em vigor");
 
     expect(shown(mounted)).toContain("Variantes ativas");
-    expect(buttons(mounted.root, "Encerrar concessão")).toHaveLength(0);
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      0
+    );
   });
 
   it("shows nothing of a report that is of another store", async () => {
@@ -295,9 +307,11 @@ describe("the grants in force and the way to end one (AC-P4.4, AC-P4.6)", () => 
       report([inForce(GRANT)], "0199a0a0-0000-7000-8000-0000000000a9"),
     ]);
 
-    await click(mounted.root, "Ver concessões em vigor");
+    await click(mounted.root, "Ver liberações temporárias em vigor");
 
-    expect(buttons(mounted.root, "Encerrar concessão")).toHaveLength(0);
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      0
+    );
     expect(alertOf(mounted.root)?.textContent).toBe(PROBLEM_TEXT.failed);
   });
 
@@ -307,8 +321,12 @@ describe("the grants in force and the way to end one (AC-P4.4, AC-P4.6)", () => 
       capabilities: ["support_case:manage", "billing:operate"],
     });
 
-    expect(buttons(mounted.root, "Ver concessões em vigor")).toHaveLength(0);
-    expect(buttons(mounted.root, "Dar uma concessão")).toHaveLength(1);
+    expect(
+      buttons(mounted.root, "Ver liberações temporárias em vigor")
+    ).toHaveLength(0);
+    expect(buttons(mounted.root, "Dar uma liberação temporária")).toHaveLength(
+      1
+    );
   });
 });
 
@@ -317,10 +335,10 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
     const mounted = await open([]);
 
     expect(shown(mounted)).toContain(GRANT_RAISES);
-    await click(mounted.root, "Dar uma concessão");
+    await click(mounted.root, "Dar uma liberação temporária");
     expect(shown(mounted)).toContain("Expira sozinha no prazo.");
     expect(GRANT_RAISES).toBe(
-      "A concessão só eleva o plano da loja; nunca reduz um limite nem desliga um recurso."
+      "A liberação temporária só eleva o plano da loja; nunca reduz um limite nem desliga um recurso."
     );
     expect(GRANT_EXPIRES).toBe("Expira sozinha no prazo.");
   });
@@ -328,7 +346,7 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
   it("counts the reason, and a flag is yes or no while a limit is a number", async () => {
     const mounted = await open([]);
 
-    await click(mounted.root, "Dar uma concessão");
+    await click(mounted.root, "Dar uma liberação temporária");
     expect(shown(mounted)).toContain(`0 de ${MAX_REASON_LENGTH} caracteres`);
     const reason = byId(mounted.root, "concessao-motivo");
     reason.value = "abc";
@@ -369,7 +387,9 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
       await toReview(mounted, typed);
 
       expect(writes(mounted.calls)).toHaveLength(0);
-      expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(0);
+      expect(
+        buttons(mounted.root, "Confirmar liberação temporária")
+      ).toHaveLength(0);
       expect(byId(mounted.root, "concessao-erro").textContent).not.toBe("");
       expect(mounted.document.activeElement?.getAttribute("aria-invalid")).toBe(
         "true"
@@ -385,13 +405,15 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
       reason: "x".repeat(MAX_REASON_LENGTH),
     });
 
-    expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(1);
+    expect(
+      buttons(mounted.root, "Confirmar liberação temporária")
+    ).toHaveLength(1);
   });
 
   it("counts a reason by characters a person sees: an emoji is one, so 300 with emoji go through", async () => {
     const mounted = await open([]);
     const reason = `${"😀".repeat(MAX_REASON_LENGTH - 1)}é`;
-    await click(mounted.root, "Dar uma concessão");
+    await click(mounted.root, "Dar uma liberação temporária");
     const field = byId(mounted.root, "concessao-motivo");
 
     expect(field.getAttribute("maxlength")).toBeNull();
@@ -403,13 +425,15 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
 
     await fill(mounted, { reason });
 
-    expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(1);
+    expect(
+      buttons(mounted.root, "Confirmar liberação temporária")
+    ).toHaveLength(1);
   });
 
   it("refuses 301 characters with an emoji among them, with the counter at 301 and the focus on the field", async () => {
     const mounted = await open([]);
     const reason = `${"😀".repeat(MAX_REASON_LENGTH)}é`;
-    await click(mounted.root, "Dar uma concessão");
+    await click(mounted.root, "Dar uma liberação temporária");
     const field = byId(mounted.root, "concessao-motivo");
     field.value = reason;
     field.dispatch("input");
@@ -422,7 +446,9 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
     expect(byId(mounted.root, "concessao-erro").textContent).toBe(
       `O motivo aceita até ${MAX_REASON_LENGTH} caracteres.`
     );
-    expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(0);
+    expect(
+      buttons(mounted.root, "Confirmar liberação temporária")
+    ).toHaveLength(0);
     expect(writes(mounted.calls)).toHaveLength(0);
     expect(mounted.document.activeElement?.getAttribute("aria-invalid")).toBe(
       "true"
@@ -432,10 +458,12 @@ describe("the form (AC-P4.1, AC-P4.2)", () => {
   it("goes back to the start on Cancelar, with nothing sent", async () => {
     const mounted = await open([]);
 
-    await click(mounted.root, "Dar uma concessão");
+    await click(mounted.root, "Dar uma liberação temporária");
     await click(mounted.root, "Cancelar");
 
-    expect(buttons(mounted.root, "Dar uma concessão")).toHaveLength(1);
+    expect(buttons(mounted.root, "Dar uma liberação temporária")).toHaveLength(
+      1
+    );
     expect(writes(mounted.calls)).toHaveLength(0);
   });
 });
@@ -446,7 +474,9 @@ describe("the review before giving (AC-C2, AC-C4, AC-P4.1)", () => {
 
     await toReview(mounted);
     const all = shown(mounted);
-    const text = all.slice(all.indexOf("Revise antes de dar a concessão"));
+    const text = all.slice(
+      all.indexOf("Revise antes de dar a liberação temporária")
+    );
 
     const positions = [
       "STAGING",
@@ -456,7 +486,7 @@ describe("the review before giving (AC-C2, AC-C4, AC-P4.1)", () => {
       ", sem mudar a cobrança.",
       GRANT_RAISES,
       GRANT_UNDO,
-      "A concessão fica na auditoria com o seu e-mail e o atendimento.",
+      "A liberação temporária fica na auditoria com o seu e-mail e o atendimento.",
     ].map((part) => text.indexOf(part));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -468,7 +498,7 @@ describe("the review before giving (AC-C2, AC-C4, AC-P4.1)", () => {
     expect(text).not.toContain("estimativa pelo relógio");
     expect(writes(mounted.calls)).toHaveLength(0);
     expect(mounted.document.activeElement?.textContent).toBe(
-      "Revise antes de dar a concessão"
+      "Revise antes de dar a liberação temporária"
     );
   });
 
@@ -513,7 +543,7 @@ describe("giving the grant (AC-P4.3, AC-C2, AC-C3)", () => {
     ]);
 
     await toReview(mounted);
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
 
     expect(writes(mounted.calls)).toHaveLength(1);
     const [, , post] = mounted.calls;
@@ -539,11 +569,13 @@ describe("giving the grant (AC-P4.3, AC-C2, AC-C3)", () => {
     );
     expect(mounted.calls).toHaveLength(4);
     const text = shown(mounted);
-    expect(text).toContain("Concessão dada às 12:07.");
+    expect(text).toContain("Liberação temporária dada às 12:07.");
     expect(text).toContain("A data em que acaba é a da lista.");
-    expect(buttons(mounted.root, "Encerrar concessão")).toHaveLength(1);
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      1
+    );
     expect(mounted.document.activeElement?.textContent).toContain(
-      "Concessão dada"
+      "Liberação temporária dada"
     );
   });
 
@@ -551,7 +583,7 @@ describe("giving the grant (AC-P4.3, AC-C2, AC-C3)", () => {
     const mounted = await open([granted(), report([])]);
 
     await toReview(mounted, { key: "public_catalog", value: "true" });
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
 
     expect(bodyOf(mounted.calls[2])).toMatchObject({
       key: "public_catalog",
@@ -564,7 +596,7 @@ describe("giving the grant (AC-P4.3, AC-C2, AC-C3)", () => {
     const mounted = await open([slow.answer, report([])]);
 
     await toReview(mounted);
-    const confirm = firstButton(mounted.root, "Confirmar concessão");
+    const confirm = firstButton(mounted.root, "Confirmar liberação temporária");
     confirm.click();
     confirm.click();
     await flush();
@@ -587,13 +619,15 @@ describe("giving the grant (AC-P4.3, AC-C2, AC-C3)", () => {
     ]);
 
     await toReview(mounted);
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
     expect(alertOf(mounted.root)?.textContent).toBe(GRANT_UNKNOWN);
-    expect(buttons(mounted.root, "Confirmar concessão")).toHaveLength(0);
+    expect(
+      buttons(mounted.root, "Confirmar liberação temporária")
+    ).toHaveLength(0);
 
     await click(mounted.root, "Voltar ao formulário");
-    await click(mounted.root, "Revisar a concessão");
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Revisar a liberação temporária");
+    await click(mounted.root, "Confirmar liberação temporária");
 
     const [first, second] = writes(mounted.calls);
     expect(bodyOf(first).commandId).toMatch(UUID);
@@ -605,11 +639,11 @@ describe("giving the grant (AC-P4.3, AC-C2, AC-C3)", () => {
     const mounted = await open([new Error("network"), granted(), report([])]);
 
     await toReview(mounted);
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
     await click(mounted.root, "Voltar ao formulário");
     byId(mounted.root, "concessao-horas").value = "72";
-    await click(mounted.root, "Revisar a concessão");
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Revisar a liberação temporária");
+    await click(mounted.root, "Confirmar liberação temporária");
 
     const [first, second] = writes(mounted.calls);
     expect(bodyOf(second).hours).toBe(72);
@@ -620,9 +654,9 @@ describe("giving the grant (AC-P4.3, AC-C2, AC-C3)", () => {
     const mounted = await open([granted(), report([]), granted(), report([])]);
 
     await toReview(mounted);
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
     await toReview(mounted);
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
 
     const [first, second] = writes(mounted.calls);
     expect(bodyOf(second).commandId).not.toBe(bodyOf(first).commandId);
@@ -633,7 +667,7 @@ describe("the sentence of each answer to giving (AC-C3, AC-P4.3)", () => {
   const confirmWith = async (answers: Answer[]) => {
     const mounted = await open(answers);
     await toReview(mounted);
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
     return mounted;
   };
 
@@ -656,7 +690,9 @@ describe("the sentence of each answer to giving (AC-C3, AC-P4.3)", () => {
     expect(OUTCOME_NOT_RECORDED).toContain("A ação foi feita");
     expect(OUTCOME_NOT_RECORDED.toLowerCase()).not.toContain("falh");
     expect(mounted.calls).toHaveLength(4);
-    expect(buttons(mounted.root, "Encerrar concessão")).toHaveLength(1);
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      1
+    );
   });
 
   it.each([
@@ -699,7 +735,7 @@ describe("the sentence of each answer to giving (AC-C3, AC-P4.3)", () => {
 
     expect(alertOf(mounted.root)?.textContent).toBe(PROBLEM_TEXT.forbidden);
     expect(
-      firstButton(mounted.root, "Confirmar concessão").getAttribute(
+      firstButton(mounted.root, "Confirmar liberação temporária").getAttribute(
         "aria-disabled"
       )
     ).toBe("false");
@@ -724,7 +760,7 @@ describe("the sentence of each answer to giving (AC-C3, AC-P4.3)", () => {
     expect(GRANT_RETRY).toContain("Tente de novo");
     expect(shown(mounted)).not.toMatch(TECHNICAL_TEXT);
 
-    await click(mounted.root, "Confirmar concessão");
+    await click(mounted.root, "Confirmar liberação temporária");
     const [first, second] = writes(mounted.calls);
     expect(bodyOf(second).commandId).toBe(bodyOf(first).commandId);
   });
@@ -752,7 +788,9 @@ describe("the sentence of each answer to giving (AC-C3, AC-P4.3)", () => {
 
       expect(alertOf(mounted.root)?.textContent).toBe(GRANT_UNKNOWN);
       expect(shown(mounted)).not.toMatch(TECHNICAL_TEXT);
-      expect(buttons(mounted.root, "Reler as concessões")).toHaveLength(1);
+      expect(
+        buttons(mounted.root, "Reler as liberações temporárias")
+      ).toHaveLength(1);
       expect(writes(mounted.calls)).toHaveLength(1);
     }
   );
@@ -770,14 +808,14 @@ describe("ending a grant (AC-P4.4)", () => {
       report([inForce(GRANT), inForce(OTHER_GRANT, "goals.active.max")]),
       ...answers,
     ]);
-    await click(mounted.root, "Ver concessões em vigor");
+    await click(mounted.root, "Ver liberações temporárias em vigor");
     return mounted;
   };
 
   it("asks first, with the text of the cut, the store, the case and what stays in the audit, and sends nothing", async () => {
     const mounted = await withList([]);
 
-    await click(mounted.root, "Encerrar concessão");
+    await click(mounted.root, "Encerrar liberação temporária");
     const all = shown(mounted);
     const text = all.slice(all.indexOf("Revise antes de encerrar"));
 
@@ -792,7 +830,7 @@ describe("ending a grant (AC-P4.4)", () => {
       expect(text).toContain(part);
     }
     expect(END_UNDO).toBe(
-      "Não: uma nova concessão é outra decisão registrada."
+      "Não: uma nova liberação temporária é outra decisão registrada."
     );
     expect(text.split("outra decisão registrada").length - 1).toBe(1);
     expect(text).not.toContain("poderá ser desfeito");
@@ -803,7 +841,7 @@ describe("ending a grant (AC-P4.4)", () => {
 
     await click(mounted.root, "Voltar");
     expect(
-      buttons(mounted.root, "Confirmar encerramento da concessão")
+      buttons(mounted.root, "Confirmar encerramento da liberação temporária")
     ).toHaveLength(0);
     expect(writes(mounted.calls)).toHaveLength(0);
   });
@@ -814,10 +852,10 @@ describe("ending a grant (AC-P4.4)", () => {
       report([inForce(OTHER_GRANT, "goals.active.max")]),
     ]);
 
-    await click(mounted.root, "Encerrar concessão");
+    await click(mounted.root, "Encerrar liberação temporária");
     const confirm = firstButton(
       mounted.root,
-      "Confirmar encerramento da concessão"
+      "Confirmar encerramento da liberação temporária"
     );
     confirm.click();
     confirm.click();
@@ -833,8 +871,12 @@ describe("ending a grant (AC-P4.4)", () => {
       `/api/organizations/${STORE}/diagnostics`
     );
     expect(mounted.calls).toHaveLength(5);
-    expect(shown(mounted)).toContain("Concessão encerrada às 12:07.");
-    expect(buttons(mounted.root, "Encerrar concessão")).toHaveLength(1);
+    expect(shown(mounted)).toContain(
+      "Liberação temporária encerrada às 12:07."
+    );
+    expect(buttons(mounted.root, "Encerrar liberação temporária")).toHaveLength(
+      1
+    );
   });
 
   it("ends the one that was chosen, not the first", async () => {
@@ -843,10 +885,10 @@ describe("ending a grant (AC-P4.4)", () => {
       report([]),
     ]);
 
-    const [, other] = buttons(mounted.root, "Encerrar concessão");
+    const [, other] = buttons(mounted.root, "Encerrar liberação temporária");
     other?.click();
     await flush();
-    await click(mounted.root, "Confirmar encerramento da concessão");
+    await click(mounted.root, "Confirmar encerramento da liberação temporária");
 
     expect(mounted.calls[3]?.path).toBe(
       `/api/support-cases/${CASE}/entitlement-grants/${OTHER_GRANT}`
@@ -859,8 +901,8 @@ describe("ending a grant (AC-P4.4)", () => {
       report([]),
     ]);
 
-    await click(mounted.root, "Encerrar concessão");
-    await click(mounted.root, "Confirmar encerramento da concessão");
+    await click(mounted.root, "Encerrar liberação temporária");
+    await click(mounted.root, "Confirmar encerramento da liberação temporária");
 
     expect(alertOf(mounted.root)?.textContent).toBe(NOTHING_ENDED);
     expect(NOTHING_ENDED).toBe("Nada foi encerrado.");
@@ -870,8 +912,8 @@ describe("ending a grant (AC-P4.4)", () => {
   it("says Nada foi encerrado. for a 404 too", async () => {
     const mounted = await withList([refusal("not_found", 404), report([])]);
 
-    await click(mounted.root, "Encerrar concessão");
-    await click(mounted.root, "Confirmar encerramento da concessão");
+    await click(mounted.root, "Encerrar liberação temporária");
+    await click(mounted.root, "Confirmar encerramento da liberação temporária");
 
     expect(alertOf(mounted.root)?.textContent).toBe(NOTHING_ENDED);
   });
@@ -882,8 +924,8 @@ describe("ending a grant (AC-P4.4)", () => {
       report([]),
     ]);
 
-    await click(mounted.root, "Encerrar concessão");
-    await click(mounted.root, "Confirmar encerramento da concessão");
+    await click(mounted.root, "Encerrar liberação temporária");
+    await click(mounted.root, "Confirmar encerramento da liberação temporária");
 
     expect(alertOf(mounted.root)?.textContent).toBe(OUTCOME_NOT_RECORDED);
     expect(shown(mounted)).toContain(NO_GRANTS);
@@ -904,8 +946,11 @@ describe("ending a grant (AC-P4.4)", () => {
     async (_name, answer, sentence) => {
       const mounted = await withList([answer()]);
 
-      await click(mounted.root, "Encerrar concessão");
-      await click(mounted.root, "Confirmar encerramento da concessão");
+      await click(mounted.root, "Encerrar liberação temporária");
+      await click(
+        mounted.root,
+        "Confirmar encerramento da liberação temporária"
+      );
 
       expect(alertOf(mounted.root)?.textContent).toBe(sentence);
       expect(shown(mounted)).not.toMatch(TECHNICAL_TEXT);

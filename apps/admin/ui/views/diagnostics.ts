@@ -97,7 +97,7 @@ function quotaTable(dom: Dom, report: OrganizationDiagnostics) {
 
 function grantsBlock(dom: Dom, report: OrganizationDiagnostics) {
   if (report.grants.length === 0) {
-    return dom.el("p", {}, "Nenhuma concessão.");
+    return dom.el("p", {}, "Nenhuma liberação temporária.");
   }
   const raised = report.entitlements.raisedByGrant;
   return dom.el(
@@ -105,8 +105,8 @@ function grantsBlock(dom: Dom, report: OrganizationDiagnostics) {
     {},
     table(
       dom,
-      "Concessões",
-      ["Direito", "Valor", "Começa", "Acaba", "Revogada em"],
+      "Liberações temporárias",
+      ["Recurso", "Valor", "Começa", "Acaba", "Revogada em"],
       report.grants.map((grant) => [
         entitlementText(grant.key),
         grantValueText(grant.limitValue, grant.flagValue),
@@ -119,15 +119,15 @@ function grantsBlock(dom: Dom, report: OrganizationDiagnostics) {
       "p",
       {},
       raised.length === 0
-        ? "Nenhum direito está acima do plano por concessão agora."
-        : `Acima do plano por concessão agora: ${raised.map(entitlementText).join(", ")}.`
+        ? "Nenhum recurso está acima do plano por liberação temporária agora."
+        : `Acima do plano por liberação temporária agora: ${raised.map(entitlementText).join(", ")}.`
     )
   );
 }
 
 function attentionBlock(dom: Dom, report: OrganizationDiagnostics) {
   if (report.attention.length === 0) {
-    return dom.el("p", {}, "Nenhum ponto de atenção.");
+    return dom.el("p", {}, "Nenhum aviso automático nesta loja.");
   }
   return dom.el(
     "ul",
@@ -179,9 +179,9 @@ export function diagnosticsView(
       planFacts(dom, report),
       subheading(dom, "Uso e limites"),
       quotaTable(dom, report),
-      subheading(dom, "Concessões"),
+      subheading(dom, "Liberações temporárias"),
       grantsBlock(dom, report),
-      subheading(dom, "Pontos de atenção"),
+      subheading(dom, "O que pede atenção"),
       attentionBlock(dom, report)
     );
   };

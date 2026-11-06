@@ -21,7 +21,7 @@ const HEADERS = [
   "Tipo",
   "Causa",
   "Assunto",
-  "Ocorrências",
+  "Vezes que falhou",
   "Primeira",
   "Última",
   "A reenviar",

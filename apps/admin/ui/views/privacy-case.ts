@@ -59,7 +59,7 @@ export const STEP_RECORD =
 export const STAGE_CONFLICT =
   "Esta etapa já foi registrada ou ainda não é a vez dela. Nada foi refeito.";
 export const ACTIONS_ONLY_RECORD =
-  "Isto registra o que foi feito pelos comandos próprios; não altera dado da loja.";
+  "Isto registra o que já foi feito em outro lugar; não altera dado da loja.";
 export const STEP_UNKNOWN =
   "Não deu para confirmar se a etapa foi registrada. Recarregue o atendimento para ver o estado antes de tentar de novo.";
 const STEP_REFUSED =
@@ -115,7 +115,7 @@ export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
   actions: [
     ACTIONS_ONLY_RECORD,
     "Uma recusa não tem ação a registrar. Um encaminhamento se cumpre com “Encaminhado à loja”, “Nada a fazer” ou “Outro”. Uma aceitação se cumpre fazendo algo: nem “Encaminhado à loja” nem “Nada a fazer”.",
-    "O registro alcançado, quando houver, é o ID (UUID) dele, nunca nome ou e-mail.",
+    "O registro alcançado, quando houver, é o código dele, nunca nome ou e-mail.",
   ],
   decision: [
     "Com a identidade não confirmada, só se recusa, com o motivo “Identidade não confirmada”; esse motivo só vale nesse caso.",
@@ -138,6 +138,24 @@ export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
     "Marque ao menos uma categoria de dado. A referência ao titular é um código opaco, nunca nome, e-mail ou documento.",
   ],
 };
+
+/**
+ * The one line each step shows, in the words of a person who has never seen the law: what the step is and the legal
+ * term it uses (titular, controlador, operador, escopo). The rest of the step's rules is behind "Entenda esta etapa".
+ */
+export const HELP: Readonly<Record<StepKey, string>> = {
+  actions:
+    "Ações: o que foi feito para atender o pedido. Aqui só se registra; nada muda nos dados da loja.",
+  decision:
+    "Decisão: o que o Polaris responde a quem pediu: aceitar, recusar ou encaminhar à loja (a controladora).",
+  identity:
+    "Identidade: como se conferiu quem está pedindo. O titular é a pessoa a quem os dados se referem.",
+  resolve: "Resolução: fecha o pedido. Um pedido resolvido não reabre.",
+  role: "Papel do Polaris: controlador, quando o Polaris decide sobre o dado (conta, autenticação, assinatura, segurança e suporte); operador, quando só trata o dado em nome da loja (os clientes que a loja cadastra).",
+  scope:
+    "Escopo: quais dados o pedido alcança. O titular é a pessoa a quem os dados se referem.",
+};
+export const UNDERSTAND_STEP = "Entenda esta etapa";
 
 const STEP_EFFECT: Readonly<Record<StepKey, EffectKey>> = {
   actions: "stepActions",
@@ -307,8 +325,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
 
   const skippedLine = (key: StepKey, detail: Detail): string =>
     key === "actions" && detail.privacy.decision === "reject"
-      ? "Sem ação: uma recusa não tem o que registrar."
-      : "Sem ação registrada.";
+      ? "sem ação: uma recusa não tem o que registrar."
+      : "sem ação registrada.";
 
   const history = (detail: Detail) => {
     const events = detail.audit.map((entry) =>
@@ -348,8 +366,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           dom.el(
             "p",
             { class: "step-line" },
-            dom.el("span", { class: "step-mark" }, "Feita: "),
-            `${number}: ${doneLine(spec.key, detail)}`
+            dom.el("span", { class: "step-name" }, number),
+            ` · feita: ${doneLine(spec.key, detail)}`
           )
         );
       }
@@ -360,8 +378,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           dom.el(
             "p",
             { class: "step-line" },
-            dom.el("span", { class: "step-mark" }, "Sem ação: "),
-            `${number}: ${skippedLine(spec.key, detail)}`
+            dom.el("span", { class: "step-name" }, number),
+            ` · ${skippedLine(spec.key, detail)}`
           )
         );
       }
@@ -372,8 +390,8 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           dom.el(
             "p",
             { class: "step-line" },
-            dom.el("span", { class: "step-mark" }, "Depois: "),
-            number
+            dom.el("span", { class: "step-name" }, number),
+            " · depois"
           )
         );
       }
@@ -388,7 +406,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         ? dom.el(
             "p",
             { class: "warning" },
-            "Este atendimento foi fechado fora do fluxo de privacidade: as etapas que faltam não podem mais ser registradas."
+            "Este atendimento foi fechado sem passar pelas etapas: as etapas que faltam não podem mais ser registradas."
           )
         : null;
     const drawn = turn;
@@ -602,9 +620,9 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const entity = plainField(
         dom,
         id("registro"),
-        "ID do registro alcançado (opcional)",
+        "Código do registro alcançado (opcional)",
         "text",
-        "O UUID do cliente ou da loja alcançado, quando houver."
+        "O código do cliente ou da loja alcançado, quando houver."
       );
       entity.control.setAttribute("maxlength", "36");
       return {
@@ -616,7 +634,9 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           }
           const entityText = entity.control.value.trim();
           if (entityText !== "" && !isUuidText(entityText)) {
-            entity.refuse("Use o ID (UUID) do registro, ou deixe vazio.");
+            entity.refuse(
+              "Use o código completo do registro (para a loja, o do cabeçalho; para um cliente, o que a loja informar), ou deixe vazio."
+            );
             return null;
           }
           const sent: Record<string, string> = { action: chosen };
@@ -754,12 +774,19 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
     const title = (text: string) =>
       dom.el("h4", { id: `etapa-${spec.key}-titulo`, tabindex: "-1" }, text);
 
-    const rules = () =>
+    const helpNodes = [
+      dom.el("p", { class: "hint step-help-line" }, HELP[spec.key]),
       dom.el(
-        "ul",
-        { "aria-label": "Regras do servidor", class: "rules" },
-        ...RULES[spec.key].map((rule) => dom.el("li", {}, rule))
-      );
+        "details",
+        { class: "step-help" },
+        dom.el("summary", {}, UNDERSTAND_STEP),
+        dom.el(
+          "ul",
+          { "aria-label": "Regras do servidor", class: "rules" },
+          ...RULES[spec.key].map((rule) => dom.el("li", {}, rule))
+        )
+      ),
+    ];
 
     const showForm = (focusButton = false) => {
       const next = dom.el(
@@ -770,7 +797,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       const element = dom.el(
         "form",
         { class: "step-form", novalidate: "" },
-        rules(),
+        ...helpNodes,
         ...form.fields,
         buttonRow(dom, next)
       );
@@ -1066,7 +1093,7 @@ function closedText(detail: Detail): string | null {
     return `Atendimento resolvido em ${brasiliaMomentText(detail.privacy.resolvedAt ?? detail.case.closedAt)}`;
   }
   if (detail.case.status !== "open") {
-    return `Atendimento fechado em ${brasiliaMomentText(detail.case.closedAt)}, sem resolução no fluxo de privacidade`;
+    return `Atendimento fechado em ${brasiliaMomentText(detail.case.closedAt)}, sem resolução pelas etapas do pedido`;
   }
   return null;
 }

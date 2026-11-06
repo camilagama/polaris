@@ -16,12 +16,12 @@ import type { OrganizationDiagnostics } from "../types";
 
 export const SUSPEND_EFFECTS: readonly string[] = [
   "A loja deixa de abrir para os próprios usuários assim que você confirmar.",
-  "Os aparelhos offline perdem a autorização (as concessões offline são revogadas) e o que estava guardado neles pode ser recusado ao sincronizar.",
+  "Os aparelhos offline perdem a autorização (os acessos offline são revogados) e o que estava guardado neles pode ser recusado ao sincronizar.",
   "A cobrança não muda.",
   "O cliente não é avisado.",
 ];
 export const SUSPEND_UNDO =
-  "Sim: Reativar, com um atendimento aberto desta loja. Reativar não devolve as concessões offline revogadas.";
+  "Sim: Reativar, com um atendimento aberto desta loja. Reativar não devolve os acessos offline revogados.";
 const SUSPEND_AUDIT =
   "A suspensão fica na auditoria com o seu e-mail e o atendimento.";
 export const REACTIVATE_EFFECT =

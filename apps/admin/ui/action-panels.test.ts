@@ -324,7 +324,7 @@ describe("the screen of a support case", () => {
     expect(close && hasClass(close, "secondary")).toBe(true);
     expect(inkButtons(root).map((button) => button.textContent)).toEqual([
       "Suspender a loja",
-      "Dar uma concessão",
+      "Dar uma liberação temporária",
       "Dar acesso aos clientes",
     ]);
   });
@@ -333,7 +333,7 @@ describe("the screen of a support case", () => {
     const { root } = await openCase([storeState("active")]);
 
     effectBefore(root, "Suspender a loja", "suspend");
-    effectBefore(root, "Dar uma concessão", "grantGive");
+    effectBefore(root, "Dar uma liberação temporária", "grantGive");
     effectBefore(root, "Dar acesso aos clientes", "accessGrant");
     effectBefore(
       root,
@@ -381,10 +381,10 @@ describe("the screen of a support case", () => {
       ],
       [OWN_ACCESS]
     );
-    await click(root, "Ver concessões em vigor");
+    await click(root, "Ver liberações temporárias em vigor");
     await click(root, "Ver clientes");
 
-    effectBefore(root, "Encerrar concessão", "grantEnd");
+    effectBefore(root, "Encerrar liberação temporária", "grantEnd");
     effectBefore(root, "Revelar ▾", "reveal");
   });
 
@@ -408,14 +408,14 @@ describe("the screen of a support case", () => {
       storeState("active"),
       json({ ...diagnostics({ id: STORE }), grants: [] }),
     ]);
-    await click(empty.root, "Ver concessões em vigor");
+    await click(empty.root, "Ver liberações temporárias em vigor");
     expect(visibleText(empty.root)).not.toContain(EFFECT_LINES.grantEnd);
 
     const read = await openCase([
       storeState("active"),
       json({ ...diagnostics({ id: STORE }), grants: [grant] }),
     ]);
-    await click(read.root, "Ver concessões em vigor");
+    await click(read.root, "Ver liberações temporárias em vigor");
     const order = allElements(read.root);
     const effect = order.findIndex(
       (element) =>
@@ -425,7 +425,7 @@ describe("the screen of a support case", () => {
     const end = order.findIndex(
       (element) =>
         element.tagName === "button" &&
-        element.textContent === "Encerrar concessão"
+        element.textContent === "Encerrar liberação temporária"
     );
     expect(effect).toBeGreaterThan(-1);
     const between = order

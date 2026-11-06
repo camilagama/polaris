@@ -38,6 +38,8 @@ describe("the elements dom.el makes", () => {
       "button",
       "select",
       "bdi",
+      "details",
+      "summary",
     ] as const) {
       expect(dom().el(tag).tagName).toBe(tag);
     }

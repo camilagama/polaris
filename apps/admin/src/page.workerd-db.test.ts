@@ -437,7 +437,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     });
     await page.shows("Etapa “Decisão” registrada.");
     expect(page.text()).toContain(
-      "Sem ação: uma recusa não tem o que registrar."
+      "sem ação: uma recusa não tem o que registrar."
     );
     record(page, "Revisar resolução", "Registrar resolução", () => {
       byId(page.root, "etapa-resolve-texto").value = "Recusado sem identidade";
