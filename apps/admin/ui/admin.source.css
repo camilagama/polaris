@@ -152,7 +152,7 @@
     @apply touch-hit focus-ring inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent font-medium text-sm active:not-aria-[haspopup]:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-disabled:opacity-50 aria-invalid:border-destructive h-ctl-md px-3;
   }
 
-  button:not(.secondary) {
+  button:not(.secondary, .ghost) {
     /* dash: apps/web/src/ui/button.tsx */
     @apply bg-primary text-primary-foreground shadow-[inset_0_1px_0_var(--btn-shine),0_1px_2px_var(--btn-drop)] hover:bg-primary/88;
   }
@@ -160,6 +160,11 @@
   button.secondary {
     /* dash: apps/web/src/ui/button.tsx */
     @apply bg-secondary text-secondary-foreground hover:bg-accent aria-expanded:bg-accent;
+  }
+
+  button.ghost {
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply text-foreground underline decoration-input underline-offset-4 hover:bg-accent hover:decoration-foreground aria-expanded:bg-accent;
   }
 
   /* a link that starts an action looks like the button it leads to; it is still a link (a GET, never a write) */
@@ -267,6 +272,21 @@
     overflow-wrap: anywhere;
     /* dash: apps/web/src/ui/card.tsx */
     @apply text-muted-foreground text-support;
+  }
+
+  .effect {
+    margin: 0.75rem 0 0;
+    overflow-wrap: anywhere;
+  }
+
+  .record {
+    margin-top: 0.5rem;
+  }
+
+  .grants-area {
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
   }
 
   .areas {
@@ -593,12 +613,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .internal {
-    padding-top: 0.75rem;
-    margin-top: 1rem;
-    border-top: 1px solid var(--border);
-  }
-
   .access-action:not(:empty),
   .customers:not(:empty) {
     margin-top: 1rem;
@@ -629,10 +643,6 @@
   .reveal-cell .hint {
     margin: 0.25rem 0 0.5rem;
     white-space: normal;
-  }
-
-  .internal:empty {
-    display: none;
   }
 
   .effects {

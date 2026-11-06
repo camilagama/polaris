@@ -3,6 +3,12 @@ import { environmentText, type ScreenTools } from "../app";
 import { facts } from "../blocks";
 import { labelName, storeName } from "../dom";
 import { brasiliaMomentText, brasiliaTime, storeStatusText } from "../format";
+import {
+  buttonRow,
+  type EffectKey,
+  effectLine,
+  recordLine,
+} from "../effect-lines";
 import { createNotice } from "../notice";
 import { RECORD_LABEL } from "../record-label";
 import { limitText, writeMayHaveHappened } from "../refusal";
@@ -24,8 +30,6 @@ export const REACTIVATE_UNDO =
   "Sim: suspender de novo, com um atendimento aberto desta loja.";
 const REACTIVATE_AUDIT =
   "A reativação fica na auditoria com o seu e-mail e o atendimento.";
-export const INTERNAL_EFFECT =
-  "A loja sai do funil de ativação. Desmarcar a devolve ao funil.";
 const INTERNAL_AUDIT = "A marcação fica na auditoria com o seu e-mail.";
 export const INTERNAL_UNREAD =
   "Marca de loja interna: ainda não lida. A tela só a conhece depois que você marca ou desmarca.";
@@ -76,6 +80,11 @@ const OPERATIONS: Readonly<Record<Operation, OperationText>> = {
       "Não deu para confirmar se a loja foi suspensa. Releia a situação antes de tentar de novo.",
   },
 };
+
+export interface StoreActionPanels {
+  internal: HTMLElement | null;
+  suspension: HTMLElement | null;
+}
 
 export interface StoreActionsCase {
   id: string;
@@ -148,13 +157,13 @@ function refusalText(failure: ApiFailure): string {
 export function storeActionsView(
   tools: ScreenTools,
   item: StoreActionsCase
-): HTMLElement {
+): StoreActionPanels {
   const { api, can, context, dom, now } = tools;
   const stateNotice = createNotice(dom);
   const notice = createNotice(dom);
   const internalNotice = createNotice(dom);
   const suspensionBox = dom.el("div", { class: "suspension" });
-  const internalBox = dom.el("div", { class: "internal" });
+  const internalBox = dom.el("div");
   let status: string | null = null;
   let internal: boolean | null = null;
   let reading = 0;
@@ -336,21 +345,19 @@ export function storeActionsView(
     if (status === "active") {
       dom.fill(
         suspensionBox,
-        dom.el(
-          "p",
-          {},
-          "Suspender tira o acesso dos usuários da loja. Você revisa os efeitos antes de confirmar."
-        ),
-        startButton("suspend")
+        effectLine(dom, "suspend"),
+        buttonRow(dom, startButton("suspend")),
+        recordLine(dom, SUSPEND_AUDIT)
       );
     } else if (status === "suspended") {
       dom.fill(
         suspensionBox,
-        dom.el("p", {}, REACTIVATE_EFFECT),
-        startButton("reactivate")
+        effectLine(dom, "reactivate"),
+        buttonRow(dom, startButton("reactivate")),
+        recordLine(dom, REACTIVATE_AUDIT)
       );
     } else if (status === "closed") {
-      dom.fill(suspensionBox, dom.el("p", {}, CLOSED_STORE));
+      dom.fill(suspensionBox, dom.el("p", { class: "hint" }, CLOSED_STORE));
     } else {
       dom.fill(suspensionBox, rereadButton());
     }
@@ -390,10 +397,10 @@ export function storeActionsView(
     }
   };
 
-  const classifyButton = (target: boolean) => {
+  const classifyButton = (target: boolean, ghost = false) => {
     const button = dom.el(
       "button",
-      { class: "secondary", type: "button" },
+      { class: ghost ? "ghost" : "secondary", type: "button" },
       target ? "Marcar como loja interna do Polaris" : "Desmarcar loja interna"
     );
     button.addEventListener("click", () => {
@@ -410,23 +417,23 @@ export function storeActionsView(
       return;
     }
     let stateText = INTERNAL_UNREAD;
+    let effect: EffectKey = "internalMarkOrUnmark";
     if (internal !== null) {
       stateText = internal
         ? "Esta loja está marcada como interna."
         : "Esta loja não está marcada como interna.";
+      effect = internal ? "internalUnmark" : "internalMark";
     }
     dom.fill(
       internalBox,
-      dom.el("h4", {}, "Loja interna"),
-      dom.el("p", {}, stateText),
-      dom.el("p", {}, INTERNAL_EFFECT),
-      dom.el("p", { class: "hint" }, INTERNAL_AUDIT),
-      dom.el(
-        "div",
-        { class: "button-row" },
+      dom.el("p", { class: "hint" }, stateText),
+      effectLine(dom, effect),
+      buttonRow(
+        dom,
         internal === true ? null : classifyButton(true),
-        internal === false ? null : classifyButton(false)
-      )
+        internal === false ? null : classifyButton(false, internal === null)
+      ),
+      recordLine(dom, INTERNAL_AUDIT)
     );
   }
 
@@ -435,14 +442,29 @@ export function storeActionsView(
   if (maySuspend && mayRead) {
     readState();
   }
-  return dom.el(
-    "section",
-    { "aria-labelledby": "loja-acoes-titulo", class: "action-panel" },
-    dom.el("h3", { id: "loja-acoes-titulo" }, "Suspender ou reativar a loja"),
-    maySuspend && mayRead ? stateNotice.element : null,
-    notice.element,
-    suspensionBox,
-    internalBox,
-    internalNotice.element
-  );
+  return {
+    internal: mayClassify
+      ? dom.el(
+          "section",
+          { "aria-labelledby": "loja-interna-titulo", class: "action-panel" },
+          dom.el("h3", { id: "loja-interna-titulo" }, "Loja interna"),
+          internalBox,
+          internalNotice.element
+        )
+      : null,
+    suspension: maySuspend
+      ? dom.el(
+          "section",
+          { "aria-labelledby": "loja-acoes-titulo", class: "action-panel" },
+          dom.el(
+            "h3",
+            { id: "loja-acoes-titulo" },
+            "Suspender ou reativar a loja"
+          ),
+          mayRead ? stateNotice.element : null,
+          suspensionBox,
+          notice.element
+        )
+      : null,
+  };
 }

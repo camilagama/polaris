@@ -19,6 +19,7 @@ import {
   refusalText,
 } from "../closure-notice-words";
 import { storeName } from "../dom";
+import { buttonRow, effectLine, recordLine } from "../effect-lines";
 import { brasiliaMomentText } from "../format";
 import { createNotice, type Notice } from "../notice";
 import {
@@ -29,6 +30,9 @@ import {
 import { RECORD_LABEL } from "../record-label";
 import type { OrganizationDiagnostics, PrivacyCaseDetail } from "../types";
 import { radioChoice } from "./privacy-form";
+
+const NOTICE_RECORD =
+  "Cada ato fica na auditoria, com o seu e-mail e o atendimento.";
 
 function problemText(problem: Problem): string {
   if (problem === "not_found") {
@@ -146,7 +150,11 @@ export function closureNoticeSection(
 
   const showActions = () => {
     const notice = createNotice(dom);
-    const reissue = dom.el("button", { type: "button" }, "Reemitir o aviso");
+    const reissue = dom.el(
+      "button",
+      { class: "secondary", type: "button" },
+      "Reemitir o aviso"
+    );
     const dismiss = dom.el(
       "button",
       { class: "secondary", type: "button" },
@@ -173,7 +181,10 @@ export function closureNoticeSection(
           "O aviso de 7 dias diz ao dono que os dados da loja serão apagados. Reemita enquanto ele não foi entregue nem dispensado, ou dispense quando ninguém pode ser avisado."
         ),
         caseFacts(),
-        dom.el("div", { class: "button-row" }, reissue, dismiss),
+        effectLine(dom, "reissueNotice"),
+        effectLine(dom, "dismissNotice"),
+        buttonRow(dom, reissue, dismiss),
+        recordLine(dom, NOTICE_RECORD),
         notice.element
       )
     );

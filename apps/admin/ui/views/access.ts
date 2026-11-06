@@ -8,6 +8,12 @@ import {
 import { environmentText, type ScreenTools } from "../app";
 import { facts, table } from "../blocks";
 import { labelName, storeName } from "../dom";
+import {
+  buttonRow,
+  type EffectKey,
+  effectLine,
+  recordLine,
+} from "../effect-lines";
 import { brasiliaMomentText } from "../format";
 import { createNotice } from "../notice";
 import { RECORD_LABEL } from "../record-label";
@@ -16,8 +22,6 @@ import type { MaskedCustomer, SupportCaseDetail } from "../types";
 import { createReveal, type Reveal } from "./reveal";
 import type { StoreActionsCase } from "./store-actions";
 
-export const ACCESS_TEXT =
-  "Você passa a ver os clientes desta loja, com nome, e-mail e telefone mascarados. Somente leitura, só neste atendimento. Acaba no prazo, ao revogar ou ao fechar o atendimento. Não se prorroga.";
 export const ACCESS_UNDO =
   'Sim: "Encerrar acesso agora", ou acaba sozinho no prazo. Não se prorroga.';
 const ACCESS_AUDIT =
@@ -104,6 +108,14 @@ function ownAccess(
     }
   }
   return found;
+}
+
+/** The sentence for an access in force, by what the operator may do with it. */
+function inUseEffect(canGrant: boolean, canRead: boolean): EffectKey | null {
+  if (!canGrant) {
+    return canRead ? "accessReadOnly" : null;
+  }
+  return canRead ? "accessInUse" : "accessEndOnly";
 }
 
 function failureText(failure: ApiFailure, notFound: string): string {
@@ -247,6 +259,7 @@ export function accessView(
     const count = `${customers.length} ${customers.length === 1 ? "cliente lido" : "clientes lidos"}.`;
     dom.fill(
       listBox,
+      reveal === null ? null : effectLine(dom, "reveal"),
       table(
         dom,
         "Clientes da loja, mascarados",
@@ -269,40 +282,35 @@ export function accessView(
     );
   };
 
-  const renderState = () => {
-    if (!open) {
-      dom.fill(
-        stateBox,
-        dom.el("p", {}, NO_ACCESS),
-        dom.el("p", { class: "hint" }, CASE_CLOSED)
-      );
-      return;
-    }
-    if (access === null) {
-      dom.fill(
-        stateBox,
-        dom.el("p", {}, NO_ACCESS),
-        canGrant ? dom.el("p", {}, ACCESS_TEXT) : null,
-        canGrant
-          ? control("Dar acesso aos clientes", false, () => {
+  const grantState = () =>
+    dom.fill(
+      stateBox,
+      dom.el("p", { class: "hint" }, NO_ACCESS),
+      canGrant ? effectLine(dom, "accessGrant") : null,
+      canGrant
+        ? buttonRow(
+            dom,
+            control("Dar acesso aos clientes", false, () => {
               notice.clear();
               openForm();
             })
-          : null
-      );
-      return;
-    }
+          )
+        : null,
+      canGrant ? recordLine(dom, ACCESS_AUDIT) : null
+    );
+
+  const inUseState = (current: ActiveAccess) => {
+    const effect = inUseEffect(canGrant, canRead);
     dom.fill(
       stateBox,
       dom.el(
         "p",
-        {},
-        `Acesso ativo até ${brasiliaMomentText(access.expiresAt)}. Somente leitura, só clientes; não se prorroga.`
+        { class: "hint" },
+        `Acesso ativo até ${brasiliaMomentText(current.expiresAt)}. Somente leitura, só clientes; não se prorroga.`
       ),
-      canRead ? dom.el("p", {}, READ_AUDIT) : null,
-      dom.el(
-        "div",
-        { class: "button-row" },
+      effect === null ? null : effectLine(dom, effect),
+      buttonRow(
+        dom,
         canRead
           ? control(
               listed ? "Atualizar a lista" : "Ver clientes",
@@ -318,8 +326,23 @@ export function accessView(
               reviewEnd();
             })
           : null
-      )
+      ),
+      canRead ? recordLine(dom, READ_AUDIT) : null
     );
+  };
+
+  const renderState = () => {
+    if (!open) {
+      dom.fill(
+        stateBox,
+        dom.el("p", {}, NO_ACCESS),
+        dom.el("p", { class: "hint" }, CASE_CLOSED)
+      );
+    } else if (access === null) {
+      grantState();
+    } else {
+      inUseState(access);
+    }
   };
 
   const leave = () => {

@@ -172,6 +172,7 @@ export function supportCasesView(
         {
           "aria-describedby": options.readHint?.getAttribute("id") ?? "",
           "aria-label": `Ler a cobrança: atendimento aberto em ${brasiliaMomentText(supportCase.openedAt)}`,
+          class: "secondary",
           type: "button",
         },
         "Ler a cobrança"

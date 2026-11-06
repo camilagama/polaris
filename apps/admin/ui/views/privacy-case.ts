@@ -2,6 +2,12 @@ import { PROBLEM_TEXT, type Problem } from "../api";
 import { environmentText, type ScreenTools } from "../app";
 import { facts } from "../blocks";
 import { type Dom, labelName, storeName } from "../dom";
+import {
+  buttonRow,
+  type EffectKey,
+  effectLine,
+  recordLine,
+} from "../effect-lines";
 import { brasiliaMomentText } from "../format";
 import { createNotice, type Notice } from "../notice";
 import {
@@ -131,6 +137,15 @@ export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
   scope: [
     "Marque ao menos uma categoria de dado. A referência ao titular é um código opaco, nunca nome, e-mail ou documento.",
   ],
+};
+
+const STEP_EFFECT: Readonly<Record<StepKey, EffectKey>> = {
+  actions: "stepActions",
+  decision: "stepDecision",
+  identity: "stepIdentity",
+  resolve: "stepResolve",
+  role: "stepRole",
+  scope: "stepScope",
 };
 
 type StepState = "current" | "done" | "later" | "skipped";
@@ -757,7 +772,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         { class: "step-form", novalidate: "" },
         rules(),
         ...form.fields,
-        dom.el("div", { class: "button-row" }, next)
+        buttonRow(dom, next)
       );
       element.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -767,7 +782,19 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           review(read);
         }
       });
-      dom.fill(panel, title(label), element, stepNotice.element);
+      dom.fill(
+        panel,
+        title(label),
+        dom.el(
+          "p",
+          { class: "hint" },
+          `Etapa ${index + 1} de ${STEPS.length}: é a vez dela.`
+        ),
+        effectLine(dom, STEP_EFFECT[spec.key]),
+        element,
+        recordLine(dom, STEP_RECORD),
+        stepNotice.element
+      );
       if (focusButton) {
         next.focus();
       }

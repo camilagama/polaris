@@ -7,6 +7,7 @@ import {
 import { environmentText, type ScreenTools } from "../app";
 import { facts } from "../blocks";
 import { labelName, storeName } from "../dom";
+import { buttonRow, effectLine, recordLine } from "../effect-lines";
 import { brasiliaDay, brasiliaMomentText, storeStatusText } from "../format";
 import { createNotice, type Notice } from "../notice";
 import { PURGE_SCOPE } from "../privacy";
@@ -361,7 +362,7 @@ export function purgeTab(
       pairs.push(["Situação da loja", statusText(state.status)]);
     }
     pairs.push(["Trava legal", holdText(state.hold, state.status)]);
-    const parts: (HTMLElement | null)[] = [caseFacts(pairs)];
+    const parts: (HTMLElement | null)[] = [facts(dom, pairs)];
     if (can("organization:purge")) {
       parts.push(purgePart(state));
     }
@@ -439,7 +440,9 @@ export function purgeTab(
         ? line(`Os dados serão apagados ${from}.`)
         : line(HELD_WHILE_SCHEDULED, "warning"),
       line(CANCEL_RULE),
-      dom.el("div", { class: "button-row" }, cancel)
+      effectLine(dom, "purgeCancel"),
+      buttonRow(dom, cancel),
+      recordLine(dom, CANCEL_RECORD)
     );
   };
 
@@ -472,7 +475,7 @@ export function purgeTab(
     }
     const schedule = dom.el(
       "button",
-      { type: "button" },
+      { class: "secondary", type: "button" },
       "Agendar o apagamento"
     );
     schedule.addEventListener("click", () => {
@@ -485,7 +488,9 @@ export function purgeTab(
       cancelled,
       line(SERVER_CHECKS),
       can("organization:legal_hold") ? null : line(HOLD_STOPS_PURGE),
-      dom.el("div", { class: "button-row" }, schedule)
+      effectLine(dom, "purgeSchedule"),
+      buttonRow(dom, schedule),
+      recordLine(dom, PURGE_RECORD)
     );
   };
 
@@ -502,7 +507,7 @@ export function purgeTab(
         holdForm(Boolean(hold));
       }
     });
-    const row = dom.el("div", { class: "button-row" }, put);
+    const row = buttonRow(dom, put);
     if (hold) {
       const release = dom.el(
         "button",
@@ -519,7 +524,10 @@ export function purgeTab(
     return area(
       title,
       holdStatedInPurge(state) ? null : line(HOLD_STOPS_PURGE),
-      row
+      effectLine(dom, hold ? "holdPlaced" : "holdPlace"),
+      row,
+      recordLine(dom, HOLD_RECORD),
+      hold ? recordLine(dom, RELEASE_RECORD) : null
     );
   };
 
@@ -694,7 +702,13 @@ export function purgeTab(
     back.addEventListener("click", goBack);
     dom.fill(
       slot,
-      wrap(heading("Cancelar o agendamento"), caseFacts(), form, notice.element)
+      wrap(
+        heading("Cancelar o agendamento"),
+        caseFacts(),
+        effectLine(dom, "purgeCancel"),
+        form,
+        notice.element
+      )
     );
     reason.control.focus();
   };
@@ -770,6 +784,7 @@ export function purgeTab(
       wrap(
         heading(renewing ? "Mudar a data de revisão" : "Pôr trava legal"),
         caseFacts(),
+        effectLine(dom, renewing ? "holdPlaced" : "holdPlace"),
         form,
         notice.element
       )
