@@ -65,6 +65,11 @@ export const STEP_UNKNOWN =
 const STEP_REFUSED =
   "A etapa não foi aceita: confira os campos e as regras desta etapa.";
 
+const RECORD_HELP =
+  "Para a loja, use o código do cabeçalho. Para um cliente, deixe vazio: o Admin não mostra o código do cliente.";
+const RECORD_REFUSED =
+  "Para a loja, use o código completo do cabeçalho. Para um cliente, deixe vazio: o Admin não mostra o código do cliente.";
+
 type Detail = PrivacyCaseDetail;
 type StepKey =
   | "actions"
@@ -115,7 +120,7 @@ export const RULES: Readonly<Record<StepKey, readonly string[]>> = {
   actions: [
     ACTIONS_ONLY_RECORD,
     "Uma recusa não tem ação a registrar. Um encaminhamento se cumpre com “Encaminhado à loja”, “Nada a fazer” ou “Outro”. Uma aceitação se cumpre fazendo algo: nem “Encaminhado à loja” nem “Nada a fazer”.",
-    "O registro alcançado, quando houver, é o código dele, nunca nome ou e-mail.",
+    "O registro alcançado é opcional. Para a loja, é o código do cabeçalho; para um cliente, fica vazio. Nunca nome ou e-mail.",
   ],
   decision: [
     "Com a identidade não confirmada, só se recusa, com o motivo “Identidade não confirmada”; esse motivo só vale nesse caso.",
@@ -622,7 +627,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
         id("registro"),
         "Código do registro alcançado (opcional)",
         "text",
-        "O código do cliente ou da loja alcançado, quando houver."
+        RECORD_HELP
       );
       entity.control.setAttribute("maxlength", "36");
       return {
@@ -634,9 +639,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
           }
           const entityText = entity.control.value.trim();
           if (entityText !== "" && !isUuidText(entityText)) {
-            entity.refuse(
-              "Use o código completo do registro (para a loja, o do cabeçalho; para um cliente, o que a loja informar), ou deixe vazio."
-            );
+            entity.refuse(RECORD_REFUSED);
             return null;
           }
           const sent: Record<string, string> = { action: chosen };
