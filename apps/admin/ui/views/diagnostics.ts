@@ -34,16 +34,18 @@ function withValue(pairs: readonly (readonly [string, string])[]) {
 }
 
 function storeFacts(dom: Dom, report: OrganizationDiagnostics) {
-  return facts(
-    dom,
-    withValue([
-      ["Situação", storeStatusText(report.organization.status)],
-      ["Criada em", brasiliaDay(report.organization.createdAt)],
-      ["Pessoas com acesso", String(report.organization.members)],
-      ["Aparelhos com venda offline", String(report.offline.devices)],
-      ["Última sincronização", brasiliaDay(report.sync.lastReceivedAt)],
-    ])
-  );
+  return facts(dom, [
+    ["Situação", storeStatusText(report.organization.status)],
+    ["Criada em", brasiliaDay(report.organization.createdAt)],
+    ["Pessoas com acesso", String(report.organization.members)],
+    ["Aparelhos com venda offline", String(report.offline.devices)],
+    [
+      "Última sincronização",
+      report.sync.lastReceivedAt === null
+        ? "nunca"
+        : brasiliaDay(report.sync.lastReceivedAt),
+    ],
+  ]);
 }
 
 function renewalText(billing: OrganizationDiagnostics["billing"]): string {

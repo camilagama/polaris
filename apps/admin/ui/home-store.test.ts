@@ -571,6 +571,21 @@ describe("Loja", () => {
     expect(labels).not.toContain("Último fato de cobrança");
   });
 
+  it("says the store never synced instead of leaving the fact out", async () => {
+    const { root } = await storeScreen([
+      json(page([])),
+      json(diagnostics({ lastReceivedAt: null })),
+    ]);
+    await flush();
+
+    const terms = byTag(root, "dt");
+    const index = terms.findIndex(
+      (term) => term.textContent === "Última sincronização"
+    );
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(byTag(root, "dd")[index]?.textContent).toBe("nunca");
+  });
+
   it("names the store above its cases once the diagnostics are read", async () => {
     const { root } = await storeScreen([
       json(page([summaryOf()])),

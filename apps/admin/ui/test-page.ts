@@ -148,6 +148,7 @@ export function diagnostics(
     entitlements?: Partial<OrganizationDiagnostics["entitlements"]>;
     grants?: OrganizationDiagnostics["grants"];
     id?: string;
+    lastReceivedAt?: string | null;
     name?: string;
     quotas?: OrganizationDiagnostics["quotas"];
     status?: string;
@@ -209,7 +210,10 @@ export function diagnostics(
     ],
     sync: {
       last7Days: {},
-      lastReceivedAt: "2026-10-27T03:30:00.000Z",
+      lastReceivedAt:
+        overrides.lastReceivedAt === undefined
+          ? "2026-10-27T03:30:00.000Z"
+          : overrides.lastReceivedAt,
       rejectedByCode: {},
     },
     usage: {

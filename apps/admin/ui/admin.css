@@ -1829,6 +1829,22 @@
     color: var(--muted-foreground);
     white-space: nowrap;
   }
+  @container (max-width: 40rem) {
+    .waiting-item {
+      flex-wrap: wrap;
+    }
+    .waiting-what {
+      flex-grow: 1;
+      flex-basis: 0;
+      min-width: 12ch;
+    }
+    .waiting-go {
+      flex-basis: 100%;
+    }
+    .waiting-count + .waiting-what + .waiting-go {
+      margin-left: calc(2ch + 0.5rem);
+    }
+  }
   .guide {
     padding-left: 1.25rem;
     margin: 0.75rem 0 0;
