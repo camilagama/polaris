@@ -26,6 +26,7 @@ import {
   billingActionsView,
   renewalLine,
 } from "./billing-actions";
+import { openCaseLink } from "./case-links";
 import { type CaseChoice, supportCasesView } from "./support-case";
 
 export interface RefundWindowArea {
@@ -187,13 +188,6 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
           cases.busy(on);
         },
         choice,
-        confirming: (open) => {
-          if (open) {
-            cases.form.setAttribute("hidden", "");
-          } else {
-            cases.form.removeAttribute("hidden");
-          }
-        },
         notice,
         organization,
         refundHeld: held.has(organization.id),
@@ -226,7 +220,6 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
     const mine = turn;
     reading = true;
     cases.busy(true);
-    cases.form.removeAttribute("hidden");
     result.replaceChildren();
     notice.status(
       after === null ? "Consultando a cobrança…" : "Lendo a cobrança de novo…"
@@ -272,6 +265,10 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
     say(after, answer.data);
   };
 
+  const openCase = dom.el("p", { class: "hint" });
+  if (tools.context.id !== null) {
+    dom.fill(openCase, openCaseLink(dom, tools.context.id));
+  }
   let body: (Node | string)[];
   if (capabilities.manageCases) {
     body = [
@@ -284,9 +281,9 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
         ? []
         : [dom.el("p", {}, "Sem permissão para ler a cobrança.")]),
       cases.element,
+      openCase,
       notice.element,
       result,
-      cases.form,
     ];
   } else {
     body = [dom.el("p", {}, PROBLEM_TEXT.forbidden)];
@@ -314,7 +311,7 @@ export function refundWindowView(tools: ScreenTools): RefundWindowArea {
       );
       notice.clear();
       result.replaceChildren();
-      cases.form.removeAttribute("hidden");
+      dom.fill(openCase, openCaseLink(dom, next.id));
       cases.show(next.id);
     },
   };
