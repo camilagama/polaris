@@ -100,15 +100,25 @@ function heroBox(size: "lg" | "md"): string {
 
 export function HeroValue({
   amount,
+  emptyText,
   size = "lg",
 }: {
   /** The amount as the server writes money ("1234.5"), or null when there is none. */
   amount: string | null;
+  /** What a missing amount says in place of the dash, in the same one-line box ("sem custo neste dia"). */
+  emptyText?: string | undefined;
   size?: "lg" | "md";
 }) {
   const [hidden] = useHiddenValues();
   const box = heroBox(size);
   const currency = "font-medium text-[0.56em] tracking-normal";
+  if (amount === null && emptyText) {
+    return (
+      <p className={cn(box, "text-muted-foreground")}>
+        <span className="font-medium text-sm tracking-normal">{emptyText}</span>
+      </p>
+    );
+  }
   if (amount === null) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
