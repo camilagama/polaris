@@ -144,43 +144,45 @@ function AdjustmentEditor({
           <Trash2Icon aria-hidden="true" />
         </Button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SelectField
-          disabled={disabled}
-          id={`${prefix}-kind`}
-          label="Tipo de ajuste"
-          onChange={handleKind}
-          options={adjustmentKindOptions}
-          placeholder="Escolha o tipo"
-          value={adjustment.kind}
-        />
-        {percentageAllowed ? (
+      <div className="@container">
+        <div className="grid @[26.5rem]:grid-cols-3 gap-3">
           <SelectField
             disabled={disabled}
-            id={`${prefix}-type`}
-            label="Como informar"
-            onChange={handleType}
-            options={adjustmentTypeOptions}
-            placeholder="Escolha"
-            value={adjustment.valueType}
+            id={`${prefix}-kind`}
+            label="Tipo de ajuste"
+            onChange={handleKind}
+            options={adjustmentKindOptions}
+            placeholder="Escolha o tipo"
+            value={adjustment.kind}
           />
-        ) : null}
-        <TextField
-          addon={percentage ? "%" : "R$"}
-          error={error}
-          hint={
-            percentage
-              ? "Em pontos percentuais: 2,5 = 2,5%. Incide sobre o subtotal e não compõe com outros ajustes."
-              : undefined
-          }
-          id={`${prefix}-value`}
-          inputMode="decimal"
-          label={percentage ? "Percentual (%)" : "Valor (R$)"}
-          maxLength={22}
-          onChange={handleValue}
-          placeholder={percentage ? "2,5" : "15,00"}
-          value={adjustment.value}
-        />
+          {percentageAllowed ? (
+            <SelectField
+              disabled={disabled}
+              id={`${prefix}-type`}
+              label="Como informar"
+              onChange={handleType}
+              options={adjustmentTypeOptions}
+              placeholder="Escolha"
+              value={adjustment.valueType}
+            />
+          ) : null}
+          <TextField
+            addon={percentage ? "%" : "R$"}
+            error={error}
+            hint={
+              percentage
+                ? "Em pontos percentuais: 2,5 = 2,5%. Incide sobre o subtotal e não compõe com outros ajustes."
+                : undefined
+            }
+            id={`${prefix}-value`}
+            inputMode="decimal"
+            label={percentage ? "Percentual (%)" : "Valor (R$)"}
+            maxLength={22}
+            onChange={handleValue}
+            placeholder={percentage ? "2,5" : "15,00"}
+            value={adjustment.value}
+          />
+        </div>
       </div>
     </fieldset>
   );
@@ -461,7 +463,7 @@ export function PaymentSection({
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-5">
-          <Field>
+          <Field className="@container">
             <RadioGroup
               aria-describedby={describedBy(
                 "sale-method",
@@ -470,7 +472,7 @@ export function PaymentSection({
               )}
               aria-invalid={methodError ? true : undefined}
               aria-label="Método de pagamento"
-              className="grid-cols-1 md:grid-cols-3 min-[22rem]:grid-cols-2"
+              className="@[18.5rem]:grid-cols-2 @[26.5rem]:grid-cols-3 grid-cols-1"
               disabled={disabled}
               id="sale-method"
               onValueChange={handleMethod}
@@ -501,26 +503,28 @@ export function PaymentSection({
             />
           </Field>
           {card ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                error={errors[formFieldKeys.installments]}
-                id="sale-installments"
-                inputMode="numeric"
-                label="Número de parcelas"
-                maxLength={10}
-                onChange={onInstallmentsChange}
-                value={form.payment.installments}
-              />
-              <SelectField
-                disabled={disabled}
-                error={errors[formFieldKeys.installmentPlan]}
-                id="sale-plan"
-                label={INSTALLMENT_PLAN_LABEL}
-                onChange={onInstallmentPlanChange}
-                options={INSTALLMENT_PLAN_OPTIONS}
-                placeholder={INSTALLMENT_PLAN_PLACEHOLDER}
-                value={form.payment.installmentPlan}
-              />
+            <div className="@container">
+              <div className="grid @[24.5rem]:grid-cols-2 gap-4">
+                <TextField
+                  error={errors[formFieldKeys.installments]}
+                  id="sale-installments"
+                  inputMode="numeric"
+                  label="Número de parcelas"
+                  maxLength={10}
+                  onChange={onInstallmentsChange}
+                  value={form.payment.installments}
+                />
+                <SelectField
+                  disabled={disabled}
+                  error={errors[formFieldKeys.installmentPlan]}
+                  id="sale-plan"
+                  label={INSTALLMENT_PLAN_LABEL}
+                  onChange={onInstallmentPlanChange}
+                  options={INSTALLMENT_PLAN_OPTIONS}
+                  placeholder={INSTALLMENT_PLAN_PLACEHOLDER}
+                  value={form.payment.installmentPlan}
+                />
+              </div>
             </div>
           ) : null}
           <Field orientation="horizontal">

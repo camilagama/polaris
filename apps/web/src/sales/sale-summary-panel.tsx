@@ -293,7 +293,7 @@ function FailureNotice({
                 </Button>
               </>
             ) : null}
-            {/* the safe button is the submit button below (the bar under 56.25 rem): it comes first, the discard last */}
+            {/* the safe button is the submit button below (the bar in one column): it comes first, the discard last */}
             <p className="text-foreground">
               Para repetir a mesma venda, toque em “Tentar novamente (seguro)”,
               abaixo. Repetir é seguro.
@@ -352,7 +352,7 @@ export function SummaryPanel({
   const failureRef = useRef<HTMLDivElement>(null);
   const failed = submission.phase === "failed" || submission.phase === "locked";
   useEffect(() => {
-    // Below 56.25 rem the notice sits far above the bar that was tapped: bring it to the person, unless something
+    // In one column the notice sits far above the bar that was tapped: bring it to the person, unless something
     // else took the focus meanwhile (the session notice of a 401, a field).
     if (!failed) {
       return;
@@ -372,7 +372,7 @@ export function SummaryPanel({
   return (
     <aside
       aria-labelledby="sale-summary-title"
-      className="min-w-0 min-[56.25rem]:sticky min-[56.25rem]:top-4 min-[56.25rem]:self-start"
+      className="@[44rem]/sale:sticky @[44rem]/sale:top-4 min-w-0 @[44rem]/sale:self-start"
     >
       <Card className="gap-0 py-0">
         <CardContent className="grid gap-3 py-(--card-spacing)">
@@ -460,10 +460,10 @@ export function SummaryPanel({
               submission={submission}
             />
           </div>
-          {/* below 56.25 rem the button lives in the bar fixed at the bottom (SubmitBar) */}
+          {/* in one column the button lives in the bar fixed at the bottom (SubmitBar) */}
           <Button
             aria-busy={isSubmitting(submission) || undefined}
-            className="not-min-[56.25rem]:hidden w-full"
+            className="@[44rem]/sale:inline-flex hidden w-full"
             disabled={isSubmitting(submission)}
             size="xl"
             type="submit"
@@ -486,7 +486,7 @@ interface SubmitBarProps {
 }
 
 /**
- * The total and the button at the bottom of the screen below 56.25 rem. It is sticky inside the form, not fixed to the
+ * The total and the button at the bottom of the screen in one column (the sale container under 44 rem). It is sticky inside the form, not fixed to the
  * window: it never covers a field of the form with the keyboard open, and it rests at the end of the form. Its
  * background is opaque (U-19): a translucent one let an error behind it show through and read as noise; the page
  * keeps `scroll-padding-bottom` for it (styles/index.css), so a focused field or error scrolls above it.
@@ -494,7 +494,7 @@ interface SubmitBarProps {
 export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
   return (
     <div
-      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 flex items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[56.25rem]:hidden"
+      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 flex @[44rem]/sale:hidden items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       data-submit-bar=""
     >
       <div className="grid min-w-0 shrink-0">
