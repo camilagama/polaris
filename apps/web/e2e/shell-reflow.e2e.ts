@@ -149,17 +149,20 @@ test("a 320 px com letra de 24 px os rótulos quebram em duas linhas, inteiros, 
   ).toBeGreaterThanOrEqual(heights.bar - SLACK);
 });
 
-for (const [width, fontPixels] of [
-  [316, 20],
-  [318, 20],
-  [320, 22],
+for (const [width, fontPixels, labelLines] of [
+  [316, 20, 2],
+  [318, 20, 2],
+  [320, 22, 2],
+  [320, 20, 1],
 ] as const) {
   test(`a ${width} px com letra de ${fontPixels} px a altura da barra é a reserva e o fim da página fica acima dela`, async ({
     page,
   }) => {
     await open(page, "/inventory", { fontPixels, width });
     const boxes = await labelBoxes(bar(page));
-    expect(boxes.find((box) => box.name === "Histórico")?.lines).toBe(2);
+    expect(boxes.find((box) => box.name === "Histórico")?.lines).toBe(
+      labelLines
+    );
     await page.evaluate(() =>
       window.scrollTo(0, document.documentElement.scrollHeight)
     );
@@ -172,7 +175,11 @@ for (const [width, fontPixels] of [
       probe.remove();
       const nav = document.querySelector("[data-bottom-bar]");
       const last = document.querySelector("main")?.lastElementChild;
+      const inset = document.querySelector("[data-slot=sidebar-inset]");
       return {
+        insetPadding: inset
+          ? Number.parseFloat(getComputedStyle(inset).paddingBottom)
+          : 0,
         barHeight: nav?.getBoundingClientRect().height ?? 0,
         barTop: nav?.getBoundingClientRect().top ?? 0,
         lastBottom: last?.getBoundingClientRect().bottom ?? Number.NaN,
@@ -183,6 +190,10 @@ for (const [width, fontPixels] of [
       measured.barHeight,
       0
     );
+    expect(
+      measured.insetPadding,
+      "o conteúdo reserva a altura da barra"
+    ).toBeGreaterThanOrEqual(measured.barHeight - SLACK);
     expect(
       measured.lastBottom,
       "o último elemento da página termina acima da barra"
