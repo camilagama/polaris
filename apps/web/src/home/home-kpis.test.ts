@@ -67,11 +67,13 @@ describe("percentDelta", () => {
   it("writes the signed percent with one place and a comma", () => {
     expect(percentDelta(15_290n, 10_000n)).toEqual({
       money: false,
+      spoken: "subiu 52,9 por cento",
       text: "+52,9%",
       trend: "up",
     });
     expect(percentDelta(8800n, 10_000n)).toEqual({
       money: false,
+      spoken: "caiu 12,0 por cento",
       text: "-12,0%",
       trend: "down",
     });
@@ -88,6 +90,7 @@ describe("percentDelta", () => {
   it("is flat without a sign when nothing moved or the move rounds to zero", () => {
     expect(percentDelta(500n, 500n)).toEqual({
       money: false,
+      spoken: "ficou igual",
       text: "0,0%",
       trend: "flat",
     });
@@ -99,12 +102,13 @@ describe("percentDelta", () => {
     // 10.999 / 1.000 = +999,9%; 11.000 / 1.000 = +1.000,0%, 11 times
     expect(percentDelta(10_999n, 1000n)).toEqual({
       money: false,
+      spoken: "subiu 999,9 por cento",
       text: "+999,9%",
       trend: "up",
     });
     expect(percentDelta(11_000n, 1000n)).toEqual({
       money: false,
-      spoken: "11,0 vezes",
+      spoken: "subiu para 11,0 vezes o valor anterior",
       text: "11,0×",
       trend: "up",
     });
@@ -115,7 +119,7 @@ describe("percentDelta", () => {
     expect(percentDelta(99_940n, 1000n)?.text).toBe("99,9×");
     expect(percentDelta(99_950n, 1000n)).toEqual({
       money: false,
-      spoken: "100 vezes",
+      spoken: "subiu para 100 vezes o valor anterior",
       text: "100×",
       trend: "up",
     });
@@ -132,16 +136,19 @@ describe("moneyDelta", () => {
   it("writes the difference in reais, marked as money", () => {
     expect(moneyDelta(50_000n, 6314n)).toEqual({
       money: true,
+      spoken: "subiu R$ 436,86",
       text: "+R$ 436,86",
       trend: "up",
     });
     expect(moneyDelta(0n, 1200n)).toEqual({
       money: true,
+      spoken: "caiu R$ 12,00",
       text: "-R$ 12,00",
       trend: "down",
     });
     expect(moneyDelta(700n, 700n)).toEqual({
       money: true,
+      spoken: "ficou igual",
       text: "R$ 0,00",
       trend: "flat",
     });
@@ -181,7 +188,12 @@ describe("dayReading (Vendas hoje)", () => {
       count: "4 vendas",
       // no date at rest: the title says it is today
       date: "",
-      delta: { money: false, text: "+52,9%", trend: "up" },
+      delta: {
+        money: false,
+        spoken: "subiu 52,9 por cento",
+        text: "+52,9%",
+        trend: "up",
+      },
       help: "Vendas líquidas de hoje. Compara com a média dos 4 domingos anteriores.",
       note: "vs. média dos domingos",
       value: "320.10",
@@ -393,6 +405,7 @@ describe("monthKpis: sales", () => {
       delta: {
         basis: "em relação a 1 a 17/09",
         money: false,
+        spoken: "subiu 100,0 por cento",
         text: "+100,0%",
         trend: "up",
       },
@@ -411,6 +424,7 @@ describe("monthKpis: sales", () => {
       delta: {
         basis: "em relação a 1 a 25/09",
         money: false,
+        spoken: "subiu 100,0 por cento",
         text: "+100,0%",
         trend: "up",
       },
@@ -533,6 +547,7 @@ describe("monthKpis: ticket", () => {
       delta: {
         basis: "em relação a 01/09",
         money: false,
+        spoken: "subiu 233,3 por cento",
         text: "+233,3%",
         trend: "up",
       },
@@ -745,6 +760,7 @@ describe("monthKpis: result (AC-9)", () => {
       delta: {
         basis: "em relação a 1 a 03/09",
         money: true,
+        spoken: "subiu R$ 9,00",
         text: "+R$ 9,00",
         trend: "up",
       },

@@ -260,7 +260,7 @@ describe("the chips of the cards and where they come from", () => {
     expect(words(sales)).toContain("+25,0%");
     // what it compares with is in sight, short, and in the name of the chip with the exact range
     expect(sales).toContain(
-      'aria-label="+25,0% em relação a setembro (1 a 25/09)"'
+      'aria-label="subiu 25,0 por cento em relação a setembro (1 a 25/09)"'
     );
     expect(words(sales)).toContain("+25,0%vs. setembro");
     const ticket = card(markup, "result-kpi-ticket");
@@ -354,7 +354,7 @@ describe("one column, one group, one (i) a card", () => {
     expect(headline).toContain("min-[900px]:@[14rem]:items-baseline");
     expect(words(sales)).toContain("+25,0%vs. setembro");
     expect(sales).toContain(
-      'aria-label="+25,0% em relação a setembro (1 a 25/09)"'
+      'aria-label="subiu 25,0 por cento em relação a setembro (1 a 25/09)"'
     );
     expect(sales).toContain('data-kpi-delta="up"');
   });

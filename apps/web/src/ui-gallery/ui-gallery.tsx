@@ -1272,6 +1272,7 @@ export function UiGallery() {
                     delta={{
                       basis: "em relação a 1 a 25/09",
                       money: false,
+                      spoken: "subiu 19,1 por cento",
                       text: "+19,1%",
                       trend: "up",
                     }}
@@ -1301,6 +1302,7 @@ export function UiGallery() {
                     delta={{
                       basis: "em relação a 1 a 25/09",
                       money: true,
+                      spoken: "caiu R$ 12,00",
                       text: "-R$ 12,00",
                       trend: "down",
                     }}

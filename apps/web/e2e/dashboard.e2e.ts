@@ -632,7 +632,10 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   // what it compares with is said short beside the chip, in full in its name and in the (i)
   await expect(
     card(page, CARD.netSales).locator("[data-kpi-delta]")
-  ).toHaveAttribute("aria-label", "+30,0% em relação a setembro (1 a 14/09)");
+  ).toHaveAttribute(
+    "aria-label",
+    "subiu 30,0 por cento em relação a setembro (1 a 14/09)"
+  );
   await expect(
     card(page, CARD.netSales).locator("[data-kpi-delta]")
   ).toContainText("vs. setembro");
@@ -2603,7 +2606,7 @@ test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal
         await expect(chip).toContainText("vs. setembro");
         await expect(chip).toHaveAttribute(
           "aria-label",
-          "+30,0% em relação a setembro (1 a 14/09)"
+          "subiu 30,0 por cento em relação a setembro (1 a 14/09)"
         );
         const value = await placeOf(sales.locator("[data-kpi-value]"));
         const chipPlace = await placeOf(chip);

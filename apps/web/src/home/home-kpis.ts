@@ -51,8 +51,8 @@ export interface Delta {
   basis?: string;
   /** True when the text is an amount in reais (the result's chip), which "Esconder valores" hides. */
   money: boolean;
-  /** What a screen reader says in place of `text`, when the sign does not read well ("16,0 vezes" for "16,0×"). */
-  spoken?: string;
+  /** What a screen reader says in place of `text`: the direction in words ("subiu 30,0 por cento"), never the sign alone. */
+  spoken: string;
   text: string;
   trend: "down" | "flat" | "up";
 }
@@ -63,6 +63,14 @@ const trendOf = (difference: bigint): Delta["trend"] => {
   }
   return difference < 0n ? "down" : "flat";
 };
+
+/** "subiu 30,0 por cento", "caiu R$ 12,00", "ficou igual": the direction in words, and the size of the move when there is one. */
+function spokenChange(trend: Delta["trend"], size: string): string {
+  if (trend === "flat") {
+    return "ficou igual";
+  }
+  return `${trend === "up" ? "subiu" : "caiu"} ${size}`;
+}
 
 /** "1.234": the digits of a whole number grouped by thousands. */
 const grouped = (whole: bigint): string =>
@@ -75,8 +83,12 @@ function percentText(tenths: bigint): string {
   if (tenths !== 0n) {
     sign = tenths > 0n ? "+" : "-";
   }
-  return `${sign}${grouped(absolute / 10n)},${absolute % 10n}%`;
+  return `${sign}${percentNumber(absolute)}%`;
 }
+
+/** "52,9": the size of a move of tenths of a percent, with no sign. */
+const percentNumber = (absoluteTenths: bigint): string =>
+  `${grouped(absoluteTenths / 10n)},${absoluteTenths % 10n}`;
 
 /** From +1.000,0% up, the chip says how many times the base: "16,0×", and "123×" with no place from 100 times up. */
 const MULTIPLE_FROM_TENTHS = 10_000n;
@@ -93,7 +105,10 @@ function multipleText(
     tenths >= 1000n
       ? grouped(divideHalfUp(current, base))
       : `${grouped(tenths / 10n)},${tenths % 10n}`;
-  return { spoken: `${number} vezes`, text: `${number}×` };
+  return {
+    spoken: `subiu para ${number} vezes o valor anterior`,
+    text: `${number}×`,
+  };
 }
 
 /**
@@ -122,6 +137,10 @@ export function percentDelta(
   return {
     ...named,
     money: false,
+    spoken: spokenChange(
+      trendOf(tenths),
+      `${percentNumber(tenths < 0n ? -tenths : tenths)} por cento`
+    ),
     text: percentText(tenths),
     trend: trendOf(tenths),
   };
@@ -135,11 +154,16 @@ export function moneyDelta(
 ): Delta {
   const difference = current - base;
   const text = formatBrlAmount(Money.fromMinorUnits(difference).toString());
+  const trend = trendOf(difference);
+  const size = formatBrlAmount(
+    Money.fromMinorUnits(difference < 0n ? -difference : difference).toString()
+  );
   return {
     ...(basis === undefined ? {} : { basis }),
     money: true,
+    spoken: spokenChange(trend, size),
     text: difference > 0n ? `+${text}` : text,
-    trend: trendOf(difference),
+    trend,
   };
 }
 

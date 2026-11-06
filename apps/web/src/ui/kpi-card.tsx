@@ -229,8 +229,8 @@ export interface KpiDelta {
   /** What the change is against, for the name of the chip: "em relação a 1 a 23/09". */
   basis?: string;
   money: boolean;
-  /** What a screen reader says in place of `text`, when the text does not read well. */
-  spoken?: string;
+  /** What a screen reader says in place of `text`: the direction in words ("subiu 30,0 por cento"). */
+  spoken: string;
   text: string;
   trend: "down" | "flat" | "up";
 }
@@ -247,26 +247,29 @@ function MoneyChipText({ text }: { text: string }) {
   );
 }
 
-/** A text seen one way and heard another ("16,0×", heard "16,0 vezes"). */
-function ChipText({ spoken, text }: { spoken: string; text: string }) {
-  return (
-    <span>
-      <span aria-hidden="true" data-kpi-delta-text="">
-        {text}
-      </span>
-      <span className="sr-only">{spoken}</span>
+/**
+ * The chip says what moved in words: the sign and the arrow are for the eye (hidden from a screen reader), and the
+ * words ("subiu 30,0 por cento") are the name of the whole chip when it has one, or a text only a screen reader gets
+ * when it has none, so the same phrase is never heard twice.
+ */
+function chipText(delta: KpiDelta, named: boolean, hidden: boolean): ReactNode {
+  const seen = (
+    <span aria-hidden="true" data-kpi-delta-text="">
+      {delta.money ? <MoneyChipText text={delta.text} /> : delta.text}
     </span>
   );
-}
-
-function chipText(delta: KpiDelta): ReactNode {
-  if (delta.money) {
-    return <MoneyChipText text={delta.text} />;
+  if (named) {
+    return seen;
   }
-  return delta.spoken ? (
-    <ChipText spoken={delta.spoken} text={delta.text} />
-  ) : (
-    delta.text
+  const spoken =
+    hidden && delta.money
+      ? maskMoney(delta.spoken, MASKED_SPOKEN)
+      : delta.spoken;
+  return (
+    <span>
+      {seen}
+      <span className="sr-only">{spoken}</span>
+    </span>
   );
 }
 
@@ -302,10 +305,10 @@ export function DeltaChip({
   } else if (delta.trend === "down") {
     Icon = ArrowDownIcon;
   }
-  // the name says the change and what it is against ("+1.465,1% em relação a 1 a 23/09"), and hides the amount of a result
+  // the name says the change and what it is against ("subiu 30,0 por cento em relação a setembro"), and hides the amount of a result
   let name: string | undefined;
   if (delta.basis) {
-    name = `${delta.spoken ?? delta.text} ${delta.basis}`;
+    name = `${delta.spoken} ${delta.basis}`;
     if (hidden && delta.money) {
       name = maskMoney(name, MASKED_SPOKEN);
     }
@@ -339,7 +342,7 @@ export function DeltaChip({
             strokeWidth={2.5}
           />
         ) : null}
-        {chipText(delta)}
+        {chipText(delta, name !== undefined, hidden)}
       </span>
       {delta.against ? (
         <span
