@@ -834,6 +834,13 @@
       "when": 1793915000000,
       "tag": "0119_tirar_admin_list_support_cases_4_argumentos",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1793932928034,
+      "tag": "0120_limite_de_revelacoes_por_hora",
+      "breakpoints": true
     }
   ]
 }

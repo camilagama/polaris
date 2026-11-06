@@ -213,6 +213,24 @@ const MAX_PAGE_SIZE = 50;
 const MAX_ID_LENGTH = 128;
 const NOT_FOUND_CODES = new Set(["unknown_case", "unknown_organization"]);
 
+function refusalAnswer(
+  context: Context<AdminEnv>,
+  error: InvalidSupportRequestError,
+  report: (event: string, fields?: Record<string, string>) => void
+) {
+  if (error.code === "operator_reveal_rate_limited") {
+    // the refusal leaves no audit row, so the operator's log is the only trace of a read in bulk; no field, no customer
+    report("admin_reveal_rate_limited", {
+      principal: context.get("principal").id,
+    });
+    return context.json({ error: "rate_limited" }, 429);
+  }
+  return context.json(
+    { error: error.code },
+    NOT_FOUND_CODES.has(error.code) ? 404 : 400
+  );
+}
+
 type Json = Record<string, unknown>;
 
 function controlCharacter(text: string): boolean {
@@ -334,10 +352,7 @@ export function supportRoutes(
       return context.json({ error: "not_found" }, 404);
     }
     if (error instanceof InvalidSupportRequestError) {
-      return context.json(
-        { error: error.code },
-        NOT_FOUND_CODES.has(error.code) ? 404 : 400
-      );
+      return refusalAnswer(context, error, report);
     }
     report("admin_error", describeError(error));
     return context.json({ error: "internal_error" }, 500);

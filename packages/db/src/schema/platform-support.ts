@@ -188,6 +188,11 @@ export const platformAuditEvents = pgTable(
       table.organizationId,
       table.id
     ),
+    index("platform_audit_events_principal_event_idx").on(
+      table.principalId,
+      table.eventType,
+      table.createdAt
+    ),
     check(
       "platform_audit_events_type_allowed",
       sql`${table.eventType} IN ('support_case.opened', 'support_case.closed', 'tenant_access.granted', 'tenant_access.revoked', 'tenant_data.customers_read', 'pii.revealed', 'organization.suspended', 'organization.reactivated', 'billing.entitlement_grant_requested', 'billing.entitlement_granted', 'billing.entitlement_revoke_requested', 'billing.entitlement_revoked', 'privacy_case.stage_recorded', 'privacy_case.action_recorded', 'operational_incident.retry', 'organization.purge_scheduled', 'organization.purge_cancelled', 'organization.purge_completed', 'organization.legal_hold_placed', 'organization.legal_hold_released', 'organization.legal_hold_reviewed', 'access_log.read', 'closure_notice.reissued', 'closure_notice.dismissed', 'billing.refund_window_read', 'organization.marked_internal', 'organization.unmarked_internal', 'activation_funnel.read', 'billing.operator_renewal_cancel_requested', 'billing.operator_renewal_cancel_recorded', 'billing.operator_refund_requested', 'billing.operator_refund_recorded')`
