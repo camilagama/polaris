@@ -29,7 +29,7 @@ A política de Unicode e expiração segue as recomendações de senhas do [NIST
 
 ## Bloqueio de conta por tentativas
 
-> As regras desta seção e da troca de senha valem a partir dos PRs P2 e P8 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). O servidor da entrada por senha as aplica só com `EMAIL_PASSWORD_AUTH_ENABLED` ligada, que fica desligada por padrão e na produção e ligada no staging (`apps/web/wrangler.jsonc`); as regras de aceite ficam para os PRs P4 e P7 (estado em [status-implementacao](../../doc/status-implementacao.md)).
+> As regras desta seção e da troca de senha valem a partir dos PRs P2 e P8 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). O servidor da entrada por senha as aplica só com `EMAIL_PASSWORD_AUTH_ENABLED` ligada. Essa variável fica desligada por padrão e na produção e ligada no staging (`apps/web/wrangler.jsonc`); as regras de aceite ficam para os PRs P4 e P7 (estado em [status-implementacao](../../doc/status-implementacao.md)).
 
 - "Bloqueio de conta" é o termo das regras e do código; a pessoa vê "entrada pausada", porque só a entrada por senha daquele e-mail fica parada, e não a conta.
 - Cinco falhas de login por senha na mesma janela de 15 minutos travam a entrada por senha daquele e-mail por 15 minutos. O contador é por e-mail digitado, exista a conta ou não, e guarda só um HMAC do e-mail normalizado (a chave funde tudo o que o Better Auth funde para achar o usuário; o formato é validado antes), sem e-mail em claro, ID de usuário nem IP.
