@@ -95,7 +95,12 @@ export function caseView(tools: ScreenTools): HTMLElement {
         "Aberto por",
         byWhom(item.openedBy) === "você" ? "Você" : "Outro operador",
       ],
-      ["Motivo", support ? item.reason : "Fica no fluxo de privacidade."],
+      [
+        "Motivo",
+        support
+          ? item.reason
+          : "Este é um pedido de dados: veja em Pedidos de dados.",
+      ],
     ];
     if (support && item.context !== null) {
       pairs.push(["Contexto", item.context]);
@@ -160,7 +165,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
       return dom.el(
         "p",
         { class: "hint" },
-        "Atendimento de privacidade: aqui ele é só leitura. Ele é conduzido e fechado no fluxo de privacidade."
+        "Atendimento de privacidade: aqui ele é só leitura. Ele é conduzido e fechado em Pedidos de dados."
       );
     }
     if (item.status !== "open") {

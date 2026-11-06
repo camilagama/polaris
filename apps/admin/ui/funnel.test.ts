@@ -364,7 +364,7 @@ describe("what the funnel shows (AC-8)", () => {
     const page = await openFunnel([json(funnel())]);
     const text = visibleText(page.root);
     expect(text).toContain(
-      "Fora de todos os números de lojas: 3 lojas internas criadas na janela (de teste, do dono e do time)."
+      "Fora de todos os números de lojas: 3 lojas internas criadas nas semanas escolhidas (de teste, do dono e do time)."
     );
     expect(text).toContain("Lojas já apagadas não entram em nenhum número.");
     expect(text).toContain(

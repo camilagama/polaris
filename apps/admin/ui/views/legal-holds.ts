@@ -12,7 +12,10 @@ export const NO_HOLDS = "Nenhuma loja com trava legal.";
 const HOLDS_READ_ONLY =
   "Só leitura. Pôr, mudar a data de revisão e liberar a trava são ações de um atendimento de privacidade aberto da loja, na aba Apagamento e trava legal.";
 
-const HEADERS = ["Loja (ID)", "Desde", "Revisão em", "Situação"] as const;
+const STORE_LINK_TEXT = "Ver loja";
+const STORE_CELL_TEXT = "Loja da trava";
+
+const HEADERS = ["Loja", "Desde", "Revisão em", "Situação"] as const;
 
 function countText(count: number, more: boolean): string {
   const found = count === 1 ? "1 trava legal." : `${count} travas legais.`;
@@ -26,9 +29,9 @@ function dueText(due: number): string {
 }
 
 /**
- * Lojas com trava legal (`/retencoes`, corte admin-v2, Parte 7, AC-P7.4): the holds in force, read only, as the server lists
- * them (the store by its ID, never by its name). A hold past its review date is marked "pendente de revisão" and is
- * still in force. Nothing here places or releases a hold: that is an act of a case.
+ * Lojas com trava legal (`/retencoes`, corte admin-v2, Parte 7, AC-P7.4): the holds in force, read only, as the server
+ * lists them. It names the store by its ID only, which rides in the tooltip and is not a text of the row. A hold past
+ * its review date is marked "pendente de revisão" and is still in force. Nothing here places or releases a hold: that is an act of a case.
  */
 export function legalHoldsView(tools: ScreenTools): HTMLElement {
   const { api, can, dom } = tools;
@@ -61,11 +64,18 @@ export function legalHoldsView(tools: ScreenTools): HTMLElement {
   let loading = false;
 
   const storeCell = (hold: LegalHoldSummary) => {
-    const id = dom.el("code", { class: "store-id" }, hold.organizationId);
     const path = storePath(hold.organizationId);
     return can("organization:diagnose") && path !== null
-      ? dom.el("a", { href: path }, id)
-      : id;
+      ? dom.el(
+          "a",
+          {
+            "aria-label": `${STORE_LINK_TEXT} da trava desde ${brasiliaDay(hold.placedAt)}`,
+            href: path,
+            title: hold.organizationId,
+          },
+          STORE_LINK_TEXT
+        )
+      : dom.el("span", { title: hold.organizationId }, STORE_CELL_TEXT);
   };
 
   const row = (hold: LegalHoldSummary) =>

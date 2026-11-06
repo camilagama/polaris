@@ -150,14 +150,7 @@ describe("searching for a store (AC-4, AC-11)", () => {
     expect(
       rows.map((row) => row.children.map((cell) => cell.textContent))
     ).toEqual([
-      [
-        "Loja A org-a",
-        "Ativa",
-        "Pro em teste",
-        "Pro",
-        "14/11/2026",
-        "Ver loja",
-      ],
+      ["Loja A", "Ativa", "Pro em teste", "Pro", "14/11/2026", "Ver loja"],
     ]);
     buttons(root, "Carregar mais")[0]?.click();
     await flush();
@@ -218,7 +211,7 @@ describe("searching for a store (AC-4, AC-11)", () => {
     "A".repeat(10_000),
   ];
 
-  it("shows hostile names as text, in <bdi>, cut, with the ID next to them, and never makes an element from them", async () => {
+  it("shows hostile names as text, in <bdi>, cut, with the ID only in the tooltip, and never makes an element from them", async () => {
     const organizations = hostile.map((name, index) =>
       summary({ id: `org-${index}`, name })
     );
@@ -231,7 +224,8 @@ describe("searching for a store (AC-4, AC-11)", () => {
     for (const [index, element] of names.entries()) {
       const name = hostile[index] ?? "";
       const shown = element.textContent;
-      expect(element.parent?.textContent).toBe(`${shown} org-${index}`);
+      expect(element.parent?.textContent).toBe(shown);
+      expect(element.getAttribute("title")).toContain(`(org-${index})`);
       expect([...shown].length).toBeLessThanOrEqual(NAME_LIMIT + 1);
       // what is shown is the name itself, cut, with control characters made visible
       expect(shown.replaceAll("�", "")).toBe(
@@ -243,9 +237,13 @@ describe("searching for a store (AC-4, AC-11)", () => {
     expect(names[5]?.textContent).toBe("Loja�com�controle�");
     expect(names[6]?.textContent).toBe("‮anaj al od aloj");
     expect(names[7]?.textContent).toBe(`${"A".repeat(NAME_LIMIT)}…`);
-    expect(names[7]?.getAttribute("title")?.length).toBeLessThanOrEqual(301);
+    expect(names[7]?.getAttribute("title")?.length).toBeLessThanOrEqual(
+      301 + " (org-7)".length
+    );
     // a tooltip or an accessible name has no bidi isolation: the override is shown, not obeyed
-    expect(names[6]?.getAttribute("title")).toBe("\uFFFDanaj al od aloj");
+    expect(names[6]?.getAttribute("title")).toBe(
+      "\uFFFDanaj al od aloj (org-6)"
+    );
     const labels = buttons(root, "Ver loja").map(
       (button) => button.getAttribute("aria-label") ?? ""
     );
@@ -330,7 +328,7 @@ describe("a store's diagnostics (AC-5)", () => {
     expect(fact("Último fato de cobrança")).toBe("15/10/2026");
     expect(fact("Última sincronização")).toBe("27/10/2026");
     expect(visibleText(section)).toContain("Loja: Loja do Bruno org-pro-1");
-    expect(visibleText(section)).toContain("Nenhum ponto de atenção.");
+    expect(visibleText(section)).toContain("Nada pede atenção nesta loja.");
   });
 
   it.each([
@@ -391,10 +389,10 @@ describe("a store's diagnostics (AC-5)", () => {
     const text = visibleText(section);
     expect(text).toContain("Variantes ativas20000");
     expect(text).toContain(
-      "Acima do plano por concessão agora: Variantes ativas."
+      "Acima do plano por liberação temporária agora: Variantes ativas."
     );
     expect(text).toContain("A loja passou dos limites do Free.");
-    expect(text).toContain("Ponto de atenção desconhecido: novo");
+    expect(text).toContain("Aviso desconhecido: novo");
   });
 
   it.each([

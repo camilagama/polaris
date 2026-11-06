@@ -24,6 +24,8 @@ import { NO_HOLDS } from "./views/legal-holds";
 
 const NOW = new Date("2026-11-05T15:00:00.000Z");
 const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
+const UUID_TEXT =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
 const OTHER = "0199a0a0-0000-7000-8000-0000000000a2";
 
 const MAY = {
@@ -159,6 +161,15 @@ describe("Lojas com trava legal", () => {
 
     const withoutLink = await open([page([hold(STORE)])], WITHOUT_DIAGNOSE);
     expect(byTag(sectionOf(withoutLink.root), "a")).toHaveLength(0);
-    expect(visibleText(sectionOf(withoutLink.root))).toContain(STORE);
+    expect(visibleText(sectionOf(withoutLink.root))).not.toContain(STORE);
+  });
+
+  it("shows no store ID as a text of the list, only in the title of the link (AC-CP5)", async () => {
+    const mounted = await open([page([hold(STORE), hold(OTHER)])]);
+    const section = sectionOf(mounted.root);
+    expect(visibleText(section)).not.toMatch(UUID_TEXT);
+    expect(
+      byTag(section, "a").map((link) => link.getAttribute("title"))
+    ).toEqual([STORE, OTHER]);
   });
 });

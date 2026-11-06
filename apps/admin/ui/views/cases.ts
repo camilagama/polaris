@@ -1,7 +1,7 @@
 import { PROBLEM_TEXT } from "../api";
 import type { ScreenTools } from "../app";
 import { tableRow } from "../blocks";
-import { hasControlCharacter, labelName, storeName } from "../dom";
+import { hasControlCharacter, labelName, storeNameInList } from "../dom";
 import { brasiliaMomentText, caseKindText } from "../format";
 import { createNotice } from "../notice";
 import type { SupportCasePage, SupportCaseSummary } from "../types";
@@ -116,11 +116,11 @@ export function casesView(tools: ScreenTools): HTMLElement {
           { class: "reason", title: labelName(item.reason, 500) },
           labelName(item.reason, REASON_SHOWN)
         )
-      : "Fica no fluxo de privacidade.";
+      : "Este é um pedido de dados: veja em Pedidos de dados.";
     const link = support ? caseLink(dom, item) : null;
     return tableRow(dom, HEADERS, [
       brasiliaMomentText(item.openedAt),
-      storeName(dom, item.organizationName, item.organizationId),
+      storeNameInList(dom, item.organizationName, item.organizationId),
       caseKindText(item.kind),
       reason,
       stateText(item),

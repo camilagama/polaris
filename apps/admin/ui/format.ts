@@ -157,21 +157,21 @@ const ENTITLEMENTS: Readonly<Record<string, string>> = {
 };
 
 export function entitlementText(key: string): string {
-  return ENTITLEMENTS[key] ?? `direito desconhecido: ${key}`;
+  return ENTITLEMENTS[key] ?? `recurso desconhecido: ${key}`;
 }
 
 const ATTENTION: Readonly<Record<string, string>> = {
   billing_events_failed: "Há eventos de cobrança com falha.",
   billing_events_stuck: "Há eventos de cobrança parados há mais de 1 hora.",
   billing_state_unknown: "O estado da assinatura é desconhecido.",
-  grant_ending_soon: "Uma concessão acaba nos próximos 7 dias.",
+  grant_ending_soon: "Uma liberação temporária acaba nos próximos 7 dias.",
   organization_not_active: "A loja não está ativa.",
   over_free_limit: "A loja passou dos limites do Free.",
   sync_rejections: "Houve sincronizações recusadas nos últimos 7 dias.",
 };
 
 export function attentionText(code: string): string {
-  return ATTENTION[code] ?? `Ponto de atenção desconhecido: ${code}`;
+  return ATTENTION[code] ?? `Aviso desconhecido: ${code}`;
 }
 
 /** A grant's value: a number for a limit, yes or no for a flag. */
@@ -323,10 +323,11 @@ export function caseStatusText(status: string): string {
 
 /** The events a support case's audit names (`admin_record_audit`), in words; the detail of an event is not shown. */
 const AUDIT_EVENTS: Readonly<Record<string, string>> = {
-  "billing.entitlement_grant_requested": "Concessão de plano pedida",
-  "billing.entitlement_granted": "Concessão de plano dada",
-  "billing.entitlement_revoke_requested": "Encerramento de concessão pedido",
-  "billing.entitlement_revoked": "Concessão de plano encerrada",
+  "billing.entitlement_grant_requested": "Liberação temporária de plano pedida",
+  "billing.entitlement_granted": "Liberação temporária de plano dada",
+  "billing.entitlement_revoke_requested":
+    "Encerramento de liberação temporária pedido",
+  "billing.entitlement_revoked": "Liberação temporária de plano encerrada",
   "billing.refund_window_read": "Janela de reembolso consultada",
   "organization.legal_hold_placed": "Trava legal posta",
   "organization.legal_hold_released": "Trava legal tirada",

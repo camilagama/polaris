@@ -174,7 +174,7 @@ describe("the review before suspending (AC-P3.1)", () => {
     expect(SUSPEND_EFFECTS[1]).toContain("pode ser recusado ao sincronizar");
     expect(SUSPEND_EFFECTS[2]).toBe("A cobrança não muda.");
     expect(SUSPEND_EFFECTS[3]).toBe("O cliente não é avisado.");
-    expect(SUSPEND_UNDO).toContain("Reativar não devolve as concessões");
+    expect(SUSPEND_UNDO).toContain("Reativar não devolve as autorizações");
     expect(text).not.toMatch(WAITING_TEXT);
     expect(posts(mounted.calls)).toHaveLength(0);
   });

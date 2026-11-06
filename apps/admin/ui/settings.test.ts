@@ -60,7 +60,7 @@ describe("Configurações: Você (AC-P9.1)", () => {
     ]);
     expect(text).toContain(PERMISSIONS_NOTE);
     expect(PERMISSIONS_NOTE).toBe(
-      "Estas permissões vêm do cadastro do Admin; não se mudam por aqui."
+      "Estas permissões vêm do cadastro do Admin; não se mudam por aqui. Para mudar o que você pode fazer, peça ao responsável pelo cadastro do painel."
     );
   });
 

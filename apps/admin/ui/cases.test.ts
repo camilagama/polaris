@@ -42,6 +42,8 @@ import {
 const CASE = "0199a0a0-0000-7000-8000-00000000c0de";
 const OTHER_CASE = "0199a0a0-0000-7000-8000-00000000c0df";
 const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
+const UUID_TEXT =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
 const OPENED_AT = "2026-10-28T13:05:00.000Z";
 const CLOSED_AT = "2026-10-28T15:05:00.000Z";
 const CLOSED_TEXT = "28/10/2026 12:05";
@@ -237,7 +239,7 @@ describe("the list of cases (AC-P1.4)", () => {
 
     const text = visibleText(rowsOf(root)[0] as FakeElement);
     expect(text).toContain("Loja da Ana");
-    expect(text).toContain(STORE);
+    expect(text).not.toMatch(UUID_TEXT);
     expect(text).toContain("Suporte");
     expect(text).toContain("Dono pediu ajuda com o estoque");
     expect(text).toContain("Aberto");
@@ -977,7 +979,9 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
 
     expect(buttons(root, "Fechar atendimento")).toHaveLength(0);
     expect(visibleText(root)).not.toContain("pedido de apagamento");
-    expect(factOf(root, "Motivo")).toBe("Fica no fluxo de privacidade.");
+    expect(factOf(root, "Motivo")).toBe(
+      "Este é um pedido de dados: veja em Pedidos de dados."
+    );
     expect(visibleText(root)).toContain("só leitura");
   });
 

@@ -30,6 +30,7 @@ const TAGS = new Set([
   "caption",
   "code",
   "dd",
+  "details",
   "div",
   "dl",
   "dt",
@@ -51,6 +52,7 @@ const TAGS = new Set([
   "section",
   "select",
   "span",
+  "summary",
   "table",
   "tbody",
   "td",
@@ -245,5 +247,28 @@ export function storeName(dom: Dom, name: string, id: string): HTMLElement {
     ),
     " ",
     dom.el("code", { class: "store-id" }, id)
+  );
+}
+
+/**
+ * The store's name for a list: the ID is a thing to look up, not to read, so it rides in the tooltip of the name and is
+ * not a text of the row. The store's own screen, its header and the reviews show it whole.
+ */
+export function storeNameInList(
+  dom: Dom,
+  name: string,
+  id: string
+): HTMLElement {
+  return dom.el(
+    "span",
+    { class: "store" },
+    dom.el(
+      "bdi",
+      {
+        class: "store-name",
+        title: `${labelName(name, TITLE_LIMIT)} (${id})`,
+      },
+      shownName(name)
+    )
   );
 }
