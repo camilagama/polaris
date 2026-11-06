@@ -60,6 +60,7 @@ export function CustomerSearch({ onChange, value }: CustomerSearchProps) {
     <SearchField
       className="md:max-w-sm"
       label="Buscar cliente"
+      narrowBelowRem={15}
       onValueChange={onChange}
       placeholder="Nome, telefone ou e-mail"
       value={value}

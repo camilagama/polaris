@@ -1,0 +1,387 @@
+/// <reference lib="dom" />
+import type { Locator, Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import {
+  assertNoEllipsis,
+  assertNoPageScroll,
+  assertNothingClipped,
+  expectReflowFont,
+  openReflowViewport,
+  skipOutsideChromium,
+} from "./reflow";
+import { serve } from "./shell-server";
+
+skipOutsideChromium();
+
+const BAR_LABELS = ["Início", "Histórico", "Vender", "Estoque", "Mais"];
+const FLOOR_PIXELS = 13.75;
+const NORMAL_LABEL_PIXELS = 12;
+const SLACK = 1;
+const ANY_ID = /.+/;
+const EXPENSES_CHUNK = /expenses-page[^/]*\.js/;
+const EXPENSE_TABS = "Lançamentos, recorrentes e categorias";
+const SEARCHES = [
+  { hint: "Produto, variante ou SKU", narrowBelowRem: 14, path: "/inventory" },
+  { hint: "Nome, telefone ou e-mail", narrowBelowRem: 15, path: "/customers" },
+  { hint: "Nome do produto", narrowBelowRem: 14, path: "/products" },
+] as const;
+
+const bar = (page: Page) =>
+  page.getByRole("navigation", { exact: true, name: "Destinos" });
+
+async function open(
+  page: Page,
+  path: string,
+  { fontPixels, width }: { fontPixels: number; width: number }
+) {
+  await openReflowViewport(page, { fontPixels, width });
+  await serve(page);
+  await page.goto(path);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expectReflowFont(page, fontPixels);
+}
+
+interface LabelBox {
+  clientWidth: number;
+  fontPixels: number;
+  letterSpacing: string;
+  lines: number;
+  name: string;
+  scrollWidth: number;
+}
+
+function labelBoxes(navigation: Locator) {
+  return navigation.evaluate((nav) =>
+    [...nav.querySelectorAll("a, button")].map((cell): LabelBox => {
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node && (node.textContent ?? "").trim() === "") {
+        node = walker.nextNode();
+      }
+      const target = node?.parentElement ?? (cell as HTMLElement);
+      const style = getComputedStyle(target);
+      const line = Number.parseFloat(style.lineHeight);
+      const range = document.createRange();
+      range.selectNodeContents(node ?? target);
+      return {
+        clientWidth: target.clientWidth,
+        fontPixels: Number.parseFloat(style.fontSize),
+        letterSpacing: style.letterSpacing,
+        lines: Math.round(range.getBoundingClientRect().height / line),
+        name: (target.textContent ?? "").trim(),
+        scrollWidth: target.scrollWidth,
+      };
+    })
+  );
+}
+
+for (const path of ["/", "/sales/history", "/inventory"]) {
+  test(`a 320 px com letra de 20 px os cinco rótulos da barra leem inteiros em ${path}`, async ({
+    page,
+  }) => {
+    await open(page, path, { fontPixels: 20, width: 320 });
+    const navigation = bar(page);
+    await expect(navigation).toBeVisible();
+    const boxes = await labelBoxes(navigation);
+    expect(boxes.map((box) => box.name)).toEqual(BAR_LABELS);
+    for (const box of boxes) {
+      expect(box.lines, `${box.name} em uma linha`).toBe(1);
+      expect(box.scrollWidth, box.name).toBeLessThanOrEqual(
+        box.clientWidth + SLACK
+      );
+      expect(box.fontPixels, box.name).toBeGreaterThanOrEqual(FLOOR_PIXELS);
+    }
+    const history = boxes.find((box) => box.name === "Histórico");
+    expect(history?.fontPixels).toBe(FLOOR_PIXELS);
+    expect(history?.letterSpacing).not.toBe("normal");
+    await assertNothingClipped(navigation);
+    await assertNoEllipsis(navigation);
+    await assertNoPageScroll(page);
+  });
+}
+
+test("a barra mantém os nomes, os destinos e a marca da tela atual", async ({
+  page,
+}) => {
+  await open(page, "/sales/history", { fontPixels: 20, width: 320 });
+  const navigation = bar(page);
+  const links = navigation.getByRole("link");
+  await expect(links).toHaveText(["Início", "Histórico", "Vender", "Estoque"]);
+  await expect(
+    links.evaluateAll((items) => items.map((item) => item.getAttribute("href")))
+  ).resolves.toEqual(["/", "/sales/history", "/sales", "/inventory"]);
+  await expect(
+    navigation.getByRole("link", { exact: true, name: "Histórico" })
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    navigation.getByRole("button", { exact: true, name: "Mais" })
+  ).toBeVisible();
+});
+
+test("a 320 px com letra de 24 px os rótulos quebram em duas linhas, inteiros, e a barra reserva a altura", async ({
+  page,
+}) => {
+  await open(page, "/inventory", { fontPixels: 24, width: 320 });
+  const navigation = bar(page);
+  const boxes = await labelBoxes(navigation);
+  for (const box of boxes) {
+    expect(box.scrollWidth, box.name).toBeLessThanOrEqual(
+      box.clientWidth + SLACK
+    );
+  }
+  expect(boxes.find((box) => box.name === "Histórico")?.lines).toBe(2);
+  await assertNoEllipsis(navigation);
+  const heights = await page.evaluate(() => {
+    const nav = document.querySelector("[data-bottom-bar]");
+    const inset = nav
+      ?.closest("body")
+      ?.querySelector("[data-slot=sidebar-inset]");
+    return {
+      bar: nav?.getBoundingClientRect().height ?? 0,
+      reserved: inset
+        ? Number.parseFloat(getComputedStyle(inset).paddingBottom)
+        : 0,
+    };
+  });
+  expect(
+    heights.reserved,
+    "o conteúdo termina acima da barra"
+  ).toBeGreaterThanOrEqual(heights.bar - SLACK);
+});
+
+for (const [width, height] of [
+  [360, 740],
+  [390, 844],
+] as const) {
+  test(`a ${width} px com letra de 16 px a barra é a de sempre: 12 px, uma linha, sem espaçamento apertado`, async ({
+    page,
+  }) => {
+    await open(page, "/", { fontPixels: 16, width });
+    await page.setViewportSize({ height, width });
+    const boxes = await labelBoxes(bar(page));
+    expect(boxes.map((box) => box.name)).toEqual(BAR_LABELS);
+    for (const box of boxes) {
+      expect(box.fontPixels, box.name).toBe(NORMAL_LABEL_PIXELS);
+      expect(box.letterSpacing, box.name).toBe("normal");
+      expect(box.lines, box.name).toBe(1);
+    }
+  });
+}
+
+interface Margins {
+  left: number;
+  name: string;
+  right: number;
+}
+
+function pageMargins(page: Page, panel: string) {
+  return page.evaluate((selector) => {
+    const width = document.documentElement.clientWidth;
+    const margins: Margins[] = [];
+    const take = (name: string, item: Element | null | undefined) => {
+      if (!item) {
+        return;
+      }
+      const { left, right } = item.getBoundingClientRect();
+      margins.push({ left, name, right: width - right });
+    };
+    const list = document.querySelector('[role="tablist"]');
+    take("faixa de abas", list?.parentElement?.parentElement);
+    const shown = document.querySelector(selector);
+    take("painel", shown);
+    for (const child of shown?.children ?? []) {
+      take(`filho ${child.tagName.toLowerCase()}`, child);
+    }
+    return margins;
+  }, panel);
+}
+
+for (const [path, tab] of [
+  ["/dashboard", "Resultado"],
+  ["/dashboard?aba=despesas", "Despesas"],
+] as const) {
+  test(`a 320 px com letra de 20 px a página de ${tab} não rola na horizontal e a margem direita é a da esquerda`, async ({
+    page,
+  }) => {
+    await open(page, path, { fontPixels: 20, width: 320 });
+    await expect(
+      page.getByRole("tab", { exact: true, name: tab })
+    ).toHaveAttribute("aria-selected", "true");
+    await assertNoPageScroll(page);
+    const margins = await pageMargins(page, '[role="tabpanel"]:not([hidden])');
+    expect(margins.length).toBeGreaterThan(2);
+    for (const margin of margins) {
+      expect(
+        Math.abs(margin.right - margin.left),
+        `${margin.name}: ${margin.left} px à esquerda, ${margin.right} px à direita`
+      ).toBeLessThanOrEqual(SLACK);
+    }
+  });
+}
+
+test("a 320 px com letra de 20 px a página não rola na horizontal nem enquanto o esqueleto de Despesas espera o código da tela", async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(EXPENSES_CHUNK, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await openReflowViewport(page, { fontPixels: 20, width: 320 });
+  await serve(page);
+  await page.goto("/dashboard?aba=despesas");
+  await expect(page.getByText("Carregando as despesas…")).toBeAttached();
+  await assertNoPageScroll(page);
+  release();
+  await expect(page.getByRole("tablist", { name: EXPENSE_TABS })).toBeVisible();
+  await assertNoPageScroll(page);
+});
+
+test("a 320 px com letra de 20 px a faixa de Despesas mostra o degradê do fim, que some quando se chega às Categorias", async ({
+  page,
+}) => {
+  await open(page, "/dashboard?aba=despesas", { fontPixels: 20, width: 320 });
+  const strip = page.getByRole("tablist", { name: EXPENSE_TABS });
+  const scroller = strip.locator("xpath=..");
+  const frame = scroller.locator("xpath=..");
+  const end = frame.locator('[data-tabs-edge="end"]');
+  const categories = strip.getByRole("tab", {
+    exact: true,
+    name: "Categorias",
+  });
+  await expect(end).toHaveCount(1);
+  const geometry = await frame.evaluate((element) => {
+    const fade = element.querySelector('[data-tabs-edge="end"]');
+    const tab = element.querySelector('[data-value="categorias"]');
+    const box = element.getBoundingClientRect();
+    return {
+      fadeOpacity: fade ? Number(getComputedStyle(fade).opacity) : 0,
+      fadeRight: fade?.getBoundingClientRect().right ?? 0,
+      frameRight: box.right,
+      tabRight: tab?.getBoundingClientRect().right ?? 0,
+      window: document.documentElement.clientWidth,
+    };
+  });
+  expect(geometry.fadeOpacity).toBeGreaterThan(0);
+  expect(geometry.tabRight, "Categorias começa fora da vista").toBeGreaterThan(
+    geometry.frameRight
+  );
+  expect(
+    geometry.fadeRight,
+    "o degradê fica dentro da janela"
+  ).toBeLessThanOrEqual(geometry.window);
+  expect(geometry.fadeRight).toBeLessThanOrEqual(geometry.frameRight + SLACK);
+  await scroller.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  await expect(end).toHaveCount(0);
+  await expect(frame.locator('[data-tabs-edge="start"]')).toHaveCount(1);
+  await expect(categories).toBeInViewport();
+});
+
+for (const { hint, narrowBelowRem, path } of SEARCHES) {
+  test(`a 320 px com letra de 20 px a dica de ${path} lê inteira: no campo ou na linha de baixo`, async ({
+    page,
+  }) => {
+    await open(page, path, { fontPixels: 20, width: 320 });
+    const field = page.getByRole("searchbox");
+    await expect(field).toHaveCount(1);
+    const state = await field.evaluate((input: HTMLInputElement, text) => {
+      const group = input.parentElement as HTMLElement;
+      const style = getComputedStyle(input);
+      const probe = document.createElement("span");
+      probe.style.cssText =
+        "position:absolute;visibility:hidden;white-space:nowrap;";
+      probe.style.font = style.font;
+      probe.style.fontFamily = style.fontFamily;
+      probe.style.fontSize = style.fontSize;
+      probe.style.fontWeight = style.fontWeight;
+      probe.style.letterSpacing = style.letterSpacing;
+      probe.textContent = input.placeholder;
+      document.body.append(probe);
+      const placeholderWidth = probe.getBoundingClientRect().width;
+      probe.remove();
+      const room =
+        input.clientWidth -
+        Number.parseFloat(style.paddingLeft) -
+        Number.parseFloat(style.paddingRight);
+      const describedBy = input.getAttribute("aria-describedby");
+      const note = describedBy ? document.getElementById(describedBy) : null;
+      return {
+        fieldBottom: group.getBoundingClientRect().bottom,
+        groupRem:
+          group.getBoundingClientRect().width /
+          Number.parseFloat(
+            getComputedStyle(document.documentElement).fontSize
+          ),
+        noteBottomOfField: note ? note.getBoundingClientRect().top : null,
+        noteClient: note?.clientWidth ?? 0,
+        noteScroll: note?.scrollWidth ?? 0,
+        noteText: note?.textContent ?? null,
+        placeholder: input.placeholder,
+        placeholderWidth,
+        room,
+        text,
+      };
+    }, hint);
+    if (state.noteText === null) {
+      expect(state.placeholder).toBe(hint);
+      expect(state.placeholderWidth).toBeLessThanOrEqual(state.room);
+      expect(state.groupRem).toBeGreaterThanOrEqual(narrowBelowRem);
+    } else {
+      expect(state.groupRem).toBeLessThan(narrowBelowRem);
+      expect(state.placeholder).toBe("Buscar");
+      expect(state.noteText).toBe(hint);
+      expect(state.noteScroll).toBeLessThanOrEqual(state.noteClient + SLACK);
+      expect(state.noteBottomOfField).toBeGreaterThanOrEqual(state.fieldBottom);
+    }
+    await assertNoPageScroll(page);
+  });
+}
+
+test("a 320 px com letra de 20 px a dica do Estoque desce para uma linha sua, ligada ao campo, com os textos de hoje", async ({
+  page,
+}) => {
+  await open(page, "/inventory", { fontPixels: 20, width: 320 });
+  const field = page.getByRole("searchbox", { name: "Buscar no estoque" });
+  await expect(field).toHaveAttribute("placeholder", "Buscar");
+  await expect(field).toHaveAccessibleDescription("Produto, variante ou SKU");
+  const hint = page.getByText("Produto, variante ou SKU", { exact: true });
+  await expect(hint).toBeVisible();
+  const [fieldBox, hintBox, filtersBox] = await Promise.all([
+    field.locator("xpath=..").boundingBox(),
+    hint.boundingBox(),
+    page.getByRole("button", { name: "Filtros" }).boundingBox(),
+  ]);
+  expect(hintBox?.y ?? 0).toBeGreaterThanOrEqual(
+    (fieldBox?.y ?? 0) + (fieldBox?.height ?? 0)
+  );
+  expect(
+    Math.abs((filtersBox?.y ?? 0) - (fieldBox?.y ?? 99)),
+    "o botão Filtros fica na linha do campo"
+  ).toBeLessThanOrEqual(8);
+  await field.fill("camiseta");
+  await expect(field).toHaveValue("camiseta");
+  await expect(hint).toBeVisible();
+  await assertNothingClipped(page.locator("main"));
+});
+
+for (const [width, fontPixels] of [
+  [360, 16],
+  [1280, 16],
+] as const) {
+  for (const { hint, path } of SEARCHES) {
+    test(`a ${width} px com letra de ${fontPixels} px a busca de ${path} é a de sempre: a dica no campo e nenhuma linha embaixo`, async ({
+      page,
+    }) => {
+      await open(page, path, { fontPixels, width });
+      const field = page.getByRole("searchbox");
+      await expect(field).toHaveAttribute("placeholder", hint);
+      await expect(field).not.toHaveAttribute("aria-describedby", ANY_ID);
+      await expect(page.getByText(hint, { exact: true })).toHaveCount(0);
+    });
+  }
+}

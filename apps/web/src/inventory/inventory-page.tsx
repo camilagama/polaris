@@ -391,9 +391,10 @@ export function InventoryPage() {
       ) : null}
 
       <search aria-label="Filtrar estoque" className="grid gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <SearchField
             className="min-w-0 flex-1 md:max-w-md"
+            hintClassName="order-last basis-full"
             label="Buscar no estoque"
             onValueChange={handleQuery}
             placeholder="Produto, variante ou SKU"

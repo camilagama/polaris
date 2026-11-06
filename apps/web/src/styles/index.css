@@ -133,6 +133,12 @@
       scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
     }
   }
+  /* "Histórico" no longer fits one line at the label floor: labels break in two, so the bar is taller. */
+  @media (max-width: 15.75rem) {
+    :root:has([data-bottom-bar]) {
+      --app-bottom-bar: calc(4.25rem + env(safe-area-inset-bottom));
+    }
+  }
 }
 
 /* The header of the shell: 48 px on the phone and 56 px from 760 px, the one source of its height (the header, the

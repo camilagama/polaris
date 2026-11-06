@@ -72,7 +72,7 @@ const RESULT_TABS = ["resultado", "metas", "despesas"] as const;
  */
 function ExpensesLoading() {
   return (
-    <div className="grid gap-4" role="status">
+    <div className="grid grid-cols-1 gap-4" role="status">
       <span className="sr-only">Carregando as despesas…</span>
       <div aria-hidden="true" className="grid gap-1">
         <div className="flex h-5 items-center">
@@ -410,7 +410,7 @@ export function DashboardPage() {
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <Heading />
-      <Tabs className="gap-5" onValueChange={handleTab} value={tab}>
+      <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
         <ScreenTabList label="Resultado, metas e despesas" value={tab}>
           <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>
           <ScreenTabTrigger value="metas">
