@@ -182,7 +182,6 @@ const ADMIN_OWN: Readonly<Record<string, readonly string[]>> = {
   ACCOUNT_ITEM: [],
   ACCOUNT_MENU: [],
   ACCOUNT_POPUP: ["top-full", "mt-1", "w-64", "max-w-[calc(100vw-1rem)]"],
-  ACCOUNT_STATIC: ["h-10", "max-w-[18rem]"],
   BADGE: [],
   BRAND: [],
   BRAND_ROW: [],
