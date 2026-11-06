@@ -43,6 +43,18 @@ export function legalHoldsView(tools: ScreenTools): HTMLElement {
     "Carregar mais"
   );
   const rows = dom.el("tbody");
+  const nextStep = dom.el(
+    "p",
+    { class: "hint", hidden: "" },
+    ...(can("privacy_case:manage")
+      ? [
+          "Para pôr uma trava, abra o pedido de dados da loja e use a aba Apagamento e trava legal. ",
+          dom.el("a", { href: "/privacidade" }, "Ir para Pedidos de dados"),
+        ]
+      : [
+          "Quem atende os pedidos de dados da loja põe a trava, na aba Apagamento e trava legal.",
+        ])
+  );
   const list = dom.el(
     "table",
     { class: "grid", hidden: "" },
@@ -115,6 +127,8 @@ export function legalHoldsView(tools: ScreenTools): HTMLElement {
     }
     if (shown > 0) {
       list.removeAttribute("hidden");
+    } else {
+      nextStep.removeAttribute("hidden");
     }
     if (next === null) {
       moreButton.setAttribute("hidden", "");
@@ -142,6 +156,7 @@ export function legalHoldsView(tools: ScreenTools): HTMLElement {
     dom.el("p", { class: "hint" }, HOLD_STOPS_PURGE),
     due,
     notice.element,
+    nextStep,
     dom.el("div", { class: "results" }, list),
     moreButton
   );

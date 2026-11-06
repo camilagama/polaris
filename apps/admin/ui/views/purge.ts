@@ -338,12 +338,18 @@ export function purgeTab(
     state.hold !== null &&
     state.hold !== undefined;
 
-  const holdText = (hold: StoreState["hold"]): string => {
+  const holdText = (
+    hold: StoreState["hold"],
+    status: StoreState["status"]
+  ): string => {
     if (hold === undefined) {
       return "O servidor confere ao agendar.";
     }
     if (hold === null) {
-      return "Nenhuma trava legal vigente.";
+      if (status === "purged") {
+        return "Nenhuma trava legal vigente. A loja já foi apagada: não há o que travar.";
+      }
+      return "Nenhuma trava legal vigente. Para pôr uma, use Pôr trava legal, abaixo.";
     }
     const due = hold.reviewDue ? ` (${REVIEW_DUE}: continua valendo)` : "";
     return `Vigente desde ${brasiliaDay(hold.placedAt)}, revisão em ${brasiliaDay(hold.reviewAt)}${due}.`;
@@ -354,7 +360,7 @@ export function purgeTab(
     if (state.status !== null) {
       pairs.push(["Situação da loja", statusText(state.status)]);
     }
-    pairs.push(["Trava legal", holdText(state.hold)]);
+    pairs.push(["Trava legal", holdText(state.hold, state.status)]);
     const parts: (HTMLElement | null)[] = [caseFacts(pairs)];
     if (can("organization:purge")) {
       parts.push(purgePart(state));

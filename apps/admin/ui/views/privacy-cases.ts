@@ -41,6 +41,28 @@ const STATES = {
   },
 } as const;
 
+function emptyNextStep(
+  dom: Dom,
+  listState: keyof typeof STATES
+): (HTMLElement | string)[] {
+  if (listState === "fechados") {
+    return [
+      "Para ver os que estão em andamento, abra ",
+      dom.el("a", { href: "/privacidade" }, "Pedidos de dados abertos"),
+      ".",
+    ];
+  }
+  return [
+    "Quando um titular pedir os dados dele, registre o pedido em ",
+    dom.el(
+      "a",
+      { href: "/privacidade/novo" },
+      "Abrir atendimento de privacidade"
+    ),
+    ".",
+  ];
+}
+
 function countText(count: number, more: boolean, empty: string): string {
   if (count === 0) {
     return empty;
@@ -124,6 +146,7 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
     "Carregar mais"
   );
   const rows = dom.el("tbody");
+  const nextStep = dom.el("p", { class: "hint", hidden: "" });
   const list = dom.el(
     "table",
     { class: "grid", hidden: "" },
@@ -210,6 +233,8 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
     next = typeof answer.data.next === "string" ? answer.data.next : null;
     if (shown === 0) {
       list.setAttribute("hidden", "");
+      dom.fill(nextStep, ...emptyNextStep(dom, context.listState));
+      nextStep.removeAttribute("hidden");
     } else {
       list.removeAttribute("hidden");
     }
@@ -270,6 +295,7 @@ export function privacyCasesView(tools: ScreenTools): HTMLElement {
       "O prazo de resposta de cada atendimento é o que o servidor guardou ao abri-lo, contado do recebimento do pedido. É provisório até a revisão jurídica."
     ),
     notice.element,
+    nextStep,
     dom.el("div", { class: "results" }, list),
     moreButton
   );

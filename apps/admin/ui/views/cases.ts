@@ -59,7 +59,7 @@ function stateText(item: SupportCaseSummary): string {
  * only: its reason and its steps belong to the privacy workflow.
  */
 export function casesView(tools: ScreenTools): HTMLElement {
-  const { api, context, dom } = tools;
+  const { api, can, context, dom } = tools;
   const state = STATES[context.listState];
   const notice = createNotice(dom);
   const storeInput = dom.el("input", {
@@ -79,6 +79,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
     "Carregar mais"
   );
   const rows = dom.el("tbody");
+  const nextStep = dom.el("p", { class: "hint", hidden: "" });
   const list = dom.el(
     "table",
     { class: "grid", hidden: "" },
@@ -144,6 +145,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
       next = null;
       list.setAttribute("hidden", "");
       moreButton.setAttribute("hidden", "");
+      nextStep.setAttribute("hidden", "");
     } else {
       parameters.set("after", after);
     }
@@ -174,6 +176,8 @@ export function casesView(tools: ScreenTools): HTMLElement {
     next = typeof answer.data.next === "string" ? answer.data.next : null;
     if (shown === 0) {
       list.setAttribute("hidden", "");
+      dom.fill(nextStep, ...emptyNextStep());
+      nextStep.removeAttribute("hidden");
     } else {
       list.removeAttribute("hidden");
     }
@@ -186,6 +190,32 @@ export function casesView(tools: ScreenTools): HTMLElement {
     if (after !== null) {
       added[0]?.querySelector("a")?.focus();
     }
+  };
+
+  const emptyNextStep = (): (HTMLElement | string)[] => {
+    if (store !== "") {
+      return [
+        "Confira o ID da loja ou deixe o campo vazio para ver os atendimentos de todas as lojas.",
+      ];
+    }
+    if (context.listState === "fechados") {
+      return [
+        "Para ver os que estão em andamento, abra ",
+        dom.el("a", { href: "/casos" }, "Atendimentos abertos"),
+        ".",
+      ];
+    }
+    return can("organization:diagnose")
+      ? [
+          "Para mexer em uma loja, abra um em ",
+          dom.el("a", { href: "/lojas" }, "Lojas"),
+          ".",
+        ]
+      : [
+          "Para mexer em uma loja, use ",
+          dom.el("a", { href: "/casos/novo" }, "Abrir atendimento"),
+          ".",
+        ];
   };
 
   const form = dom.el(
@@ -252,6 +282,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
     newCaseLink(dom, context.store),
     form,
     notice.element,
+    nextStep,
     dom.el("div", { class: "results" }, list),
     moreButton
   );

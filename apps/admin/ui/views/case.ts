@@ -112,6 +112,32 @@ export function caseView(tools: ScreenTools): HTMLElement {
     return facts(dom, pairs);
   };
 
+  const noGrantNextStep = (item: Case): (HTMLElement | string)[] => {
+    if (item.kind !== "support" || item.status !== "open") {
+      return can("organization:diagnose")
+        ? [
+            "Para ver os clientes de uma loja, abra um atendimento de suporte em ",
+            dom.el("a", { href: "/lojas" }, "Lojas"),
+            ".",
+          ]
+        : [
+            "Para ver os clientes de uma loja, use ",
+            dom.el("a", { href: "/casos/novo" }, "Abrir atendimento"),
+            ".",
+          ];
+    }
+    if (!can("tenant_access:grant")) {
+      return [
+        "Quem pode dar o acesso temporário é outra pessoa do painel: veja o que você pode fazer em ",
+        dom.el("a", { href: "/configuracoes" }, "Minha conta e permissões"),
+        ".",
+      ];
+    }
+    return [
+      "Para ver os clientes da loja (com dados escondidos), use Dar acesso aos clientes, em Ver clientes da loja, acima: o acesso acaba sozinho e fica registrado.",
+    ];
+  };
+
   const history = (detail: SupportCaseDetail) => {
     const grants = detail.grants.map((grant) => {
       let state = "vencido";
@@ -142,10 +168,19 @@ export function caseView(tools: ScreenTools): HTMLElement {
         "O que foi feito neste atendimento"
       ),
       grants.length === 0
-        ? dom.el("p", {}, "Nenhum acesso temporário neste atendimento.")
+        ? dom.el(
+            "p",
+            {},
+            "Nenhum acesso temporário neste atendimento. ",
+            ...noGrantNextStep(detail.case)
+          )
         : dom.el("ul", {}, ...grants),
       events.length === 0
-        ? dom.el("p", {}, "Nada registrado ainda.")
+        ? dom.el(
+            "p",
+            {},
+            "Nada registrado ainda. Cada ação feita neste atendimento aparece aqui."
+          )
         : dom.el("ul", {}, ...events)
     );
   };

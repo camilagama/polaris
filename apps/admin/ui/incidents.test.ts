@@ -858,7 +858,7 @@ describe("Início counts the incidents with events to send again (AC-P1.2b)", ()
     );
 
     expect(visibleText(root)).toContain("Nada esperando por você.");
-    expect(hrefs(root)).toEqual([]);
+    expect(hrefs(root)).toEqual(["/configuracoes"]);
   });
 
   it("does not read the incidents without the read capability", async () => {
