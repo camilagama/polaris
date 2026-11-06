@@ -8,7 +8,7 @@ O Histórico (`/sales/history`) lista as vendas da loja com filtros por período
 - `historico-vazio` loja sem venda: "Nenhuma venda ainda. Registre a primeira venda para vê-la aqui."
 - `historico-filtros` o `search "Filtrar vendas"` com o botão "Filtrar"; sem resultado: "Nenhuma venda encontrada com estes filtros." e o botão "Limpar filtros"
 - `historico-detalhe` o detalhe com as regiões "Venda", "Itens", "Devolução", "Cancelar venda" e "Cliente da venda".
-- `historico-linha-do-tempo` no detalhe, o `region "Linha do tempo"` (lista de eventos, do mais novo ao mais velho) só existe com 2 eventos ou mais: uma devolução, o cancelamento ou "Registrada" (venda com dia retroativo, confirmada 60 s ou mais depois). Venda feita agora e sem devolução não tem a seção.
+- `historico-linha-do-tempo` no detalhe, o `region "Linha do tempo"` (lista de eventos, do mais novo ao mais velho) só existe com 2 eventos ou mais: uma devolução, o cancelamento ou "Confirmada no servidor" (venda com dia retroativo, confirmada 60 s ou mais depois). Venda feita agora e sem devolução não tem a seção.
 - `venda-devolver` devolução parcial, com o que volta ao estoque.
 - `venda-cancelar` cancelamento inteiro (o estoque volta).
 - `venda-cliente` associar, trocar ou remover o cliente da venda.

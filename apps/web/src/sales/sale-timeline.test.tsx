@@ -12,7 +12,7 @@ const ITEM_LABEL = "Camiseta — Azul / M";
 const CANCEL_NOTE = "Cliente desistiu da compra";
 const RETURN_NOTE = "Veio rasgada";
 const CANCELLED_LINE = /^Cancelada, \d{1,2} jun \d{2}:\d{2}$/;
-const REGISTERED_LINE = /^Registrada, \d{1,2} jun \d{2}:\d{2}$/;
+const REGISTERED_LINE = /^Confirmada no servidor, \d{1,2} jun \d{2}:\d{2}$/;
 const SALE_LINE = /^Venda feita, \d{1,2} jun \d{2}:\d{2}$/;
 const OL = /<ol[\s>]/g;
 const LI = /<li[\s>]/g;
@@ -39,6 +39,7 @@ function detail(
     cancelledAt?: string;
     confirmedAt?: string;
     occurredAt?: string;
+    recordedAt?: string;
     returns?: SaleDetailReadModel["returns"];
   } = {}
 ): SaleDetailReadModel {
@@ -102,7 +103,7 @@ function detail(
         id: ID,
         occurredAt: overrides.occurredAt ?? "2026-06-10T12:00:00.000Z",
         occurredOn: "2026-06-10",
-        recordedAt: null,
+        recordedAt: overrides.recordedAt ?? null,
       },
       totals: {
         discountTotal: "0.00",
@@ -277,5 +278,23 @@ describe("the timeline inside the detail", () => {
     ]) {
       expect(own).not.toContain(text);
     }
+  });
+
+  it("names two different instants differently in the receipt and in the timeline", () => {
+    const html = top(
+      detail({
+        confirmedAt: "2026-06-10T18:00:00.000Z",
+        occurredAt: "2026-06-10T12:00:00.000Z",
+        recordedAt: "2026-06-10T12:00:30.000Z",
+      })
+    );
+    const own = section(html);
+    expect(own).toContain("Confirmada no servidor");
+    expect(own).not.toContain("Registrada");
+    expect(html.split("Registrada no dispositivo")).toHaveLength(2);
+    expect(html.split("Confirmada no servidor")).toHaveLength(3);
+    expect(html.indexOf("Registrada no dispositivo")).toBeLessThan(
+      html.indexOf('id="sale-timeline-title"')
+    );
   });
 });
