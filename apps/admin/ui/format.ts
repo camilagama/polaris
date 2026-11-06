@@ -321,7 +321,7 @@ export function caseStatusText(status: string): string {
   return CASE_STATES[status] ?? `estado desconhecido: ${status}`;
 }
 
-/** The events a support case's audit names (`admin_record_audit`), in words; the detail of an event is not shown. */
+/** The events a support or privacy case's audit names (`admin_record_audit`), in words; the detail of an event is not shown. */
 const AUDIT_EVENTS: Readonly<Record<string, string>> = {
   "billing.entitlement_grant_requested": "Liberação temporária de plano pedida",
   "billing.entitlement_granted": "Liberação temporária de plano dada",
@@ -330,13 +330,16 @@ const AUDIT_EVENTS: Readonly<Record<string, string>> = {
   "billing.entitlement_revoked": "Liberação temporária de plano encerrada",
   "billing.refund_window_read": "Janela de reembolso consultada",
   "organization.legal_hold_placed": "Trava legal posta",
-  "organization.legal_hold_released": "Trava legal tirada",
-  "organization.legal_hold_reviewed": "Trava legal revista",
-  "organization.purge_cancelled": "Apagamento cancelado",
-  "organization.purge_scheduled": "Apagamento agendado",
+  "organization.legal_hold_released": "Trava legal liberada",
+  "organization.legal_hold_reviewed": "Data de revisão da trava legal mudada",
+  "organization.purge_cancelled": "Agendamento do apagamento cancelado",
+  "organization.purge_completed": "Apagamento da loja concluído",
+  "organization.purge_scheduled": "Apagamento da loja agendado",
   "organization.reactivated": "Loja reativada",
   "organization.suspended": "Loja suspensa",
   "pii.revealed": "Dado pessoal revelado (o campo, não o valor)",
+  "privacy_case.action_recorded": "Ação registrada",
+  "privacy_case.stage_recorded": "Etapa registrada",
   "support_case.closed": "Atendimento fechado",
   "support_case.opened": "Atendimento aberto",
   "tenant_access.granted": "Acesso temporário liberado",
