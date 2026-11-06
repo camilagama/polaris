@@ -170,3 +170,38 @@ describe.each([
     }
   );
 });
+
+/**
+ * The timeline of the sale detail (src/sales/sale-timeline.tsx), over the card: the word in `card-foreground` and the
+ * time in `muted-foreground` are text (4.5:1), and the three dots (the sale's `chart-sales`, `destructive`, and the
+ * supporting `muted-foreground`) are graphic elements that carry no meaning alone (WCAG 1.4.11, 3:1). Each pair is a row
+ * of the tables above, so a token change that breaks one is read there too.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da linha do tempo da venda, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`card-foreground`", "texto do evento", 4.5],
+    ["`muted-foreground`", "hora do evento", 4.5],
+    ["`muted-foreground`", "ponto neutro", 3],
+    ["`chart-sales`", "ponto da venda", 3],
+    ["`destructive`", "ponto da venda cancelada", 3],
+  ] as const)(
+    "%s / `card` (%s) reaches %d:1 and is in the map",
+    (foreground, _use, bar) => {
+      const row = rows.find(
+        (item) => item.foreground === foreground && item.background === "`card`"
+      );
+      expect(row, `${foreground} / card is not in "${section}"`).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color("`card`", palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
