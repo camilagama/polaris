@@ -7,7 +7,7 @@ import {
   type ComponentProps,
   type RefObject,
   useCallback,
-  useEffect,
+  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -47,7 +47,7 @@ interface SearchFieldProps
 
 function useNarrow(input: RefObject<HTMLInputElement | null>) {
   const [narrow, setNarrow] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const group = input.current?.parentElement;
     if (!group) {
       return;

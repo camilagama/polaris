@@ -297,7 +297,7 @@ function AppSidebar({
   );
 }
 
-/* 4.4 em is the width of "Histórico", 0.25 rem the cell padding. Below the 0.6875 rem floor the label breaks in two
+/* 4.4 em is the width of "Histórico", 0.25 rem of slack. Below the 0.6875 rem floor the label breaks in two
    lines (`--app-bottom-bar` grows) instead of being cut. */
 const BOTTOM_BAR_LABEL =
   "max-w-full text-center [font-size:clamp(0.6875rem,calc((100cqw-0.25rem)/4.4),0.75rem)] [overflow-wrap:anywhere] @max-[3.275rem]/tab:tracking-[-0.01em]";
