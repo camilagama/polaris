@@ -133,10 +133,17 @@
       scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
     }
   }
-  /* "Histórico" no longer fits one line at the label floor: labels break in two, so the bar is taller. */
-  @media (max-width: 15.75rem) {
+  /* "Histórico" at the label floor (0.6875 rem) needs 2.94 rem, which the tab (a fifth of the window, less 0.25 rem of
+     padding) gives from 15.95 rem of window: below it the labels break in two. The reserve changes at the same point
+     (16 rem, a little above it, in `rem` like the label, so it holds at any font size). The bar is the taller of the
+     "Vender" tab (pill of 2 rem, 0.375 rem of padding and gap, a line of label: 3.375 rem) and a tab of icon (18 px)
+     and two lines of label (2.375 rem plus the icon), which wins only under 18 px of font. */
+  @media (max-width: 16rem) {
     :root:has([data-bottom-bar]) {
-      --app-bottom-bar: calc(4.25rem + env(safe-area-inset-bottom));
+      --app-bottom-bar: calc(
+        max(3.375rem, 2.375rem + 18px) +
+        env(safe-area-inset-bottom)
+      );
     }
   }
 }

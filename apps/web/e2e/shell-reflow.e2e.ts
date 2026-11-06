@@ -149,6 +149,62 @@ test("a 320 px com letra de 24 px os rótulos quebram em duas linhas, inteiros, 
   ).toBeGreaterThanOrEqual(heights.bar - SLACK);
 });
 
+// The emulated window is never narrower than 320 px, so the reserve is read at the narrowest real window with fonts
+// that put it clear of the 15.95 rem limit; at 20 px it sits 0.05 rem above it and the line count of the label depends
+// on the font the machine renders, so only the geometry is asserted there (`null`).
+for (const [width, fontPixels, labelLines] of [
+  [320, 22, 2],
+  [320, 21, 2],
+  [320, 20, null],
+] as const) {
+  test(`a ${width} px com letra de ${fontPixels} px a altura da barra é a reserva e o fim da página fica acima dela`, async ({
+    page,
+  }) => {
+    await open(page, "/inventory", { fontPixels, width });
+    const boxes = await labelBoxes(bar(page));
+    if (labelLines !== null) {
+      expect(boxes.find((box) => box.name === "Histórico")?.lines).toBe(
+        labelLines
+      );
+    }
+    await page.evaluate(() =>
+      window.scrollTo(0, document.documentElement.scrollHeight)
+    );
+    const measured = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.cssText =
+        "position:absolute;visibility:hidden;height:var(--app-bottom-bar)";
+      document.body.append(probe);
+      const reserve = probe.getBoundingClientRect().height;
+      probe.remove();
+      const nav = document.querySelector("[data-bottom-bar]");
+      const last = document.querySelector("main")?.lastElementChild;
+      const inset = document.querySelector("[data-slot=sidebar-inset]");
+      return {
+        insetPadding: inset
+          ? Number.parseFloat(getComputedStyle(inset).paddingBottom)
+          : 0,
+        barHeight: nav?.getBoundingClientRect().height ?? 0,
+        barTop: nav?.getBoundingClientRect().top ?? 0,
+        lastBottom: last?.getBoundingClientRect().bottom ?? Number.NaN,
+        reserve,
+      };
+    });
+    expect(measured.reserve, "a reserva é a altura real da barra").toBeCloseTo(
+      measured.barHeight,
+      0
+    );
+    expect(
+      measured.insetPadding,
+      "o conteúdo reserva a altura da barra"
+    ).toBeGreaterThanOrEqual(measured.barHeight - SLACK);
+    expect(
+      measured.lastBottom,
+      "o último elemento da página termina acima da barra"
+    ).toBeLessThanOrEqual(measured.barTop + SLACK);
+  });
+}
+
 for (const [width, height] of [
   [360, 740],
   [390, 844],
