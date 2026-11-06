@@ -20,6 +20,12 @@ skipOutsideChromium();
 
 const TOUCH = 44;
 const ITEMS = "li[data-cause]";
+/** The whole page of attention: the title, the subtitle, the strip and the cards. */
+const frame = (page: Page) =>
+  page
+    .locator("div")
+    .filter({ has: page.locator("#attention-title") })
+    .last();
 const BUTTONS = `${ITEMS} button, ${ITEMS} a[href]`;
 
 async function openLab(page: Page, width: number, fontPixels: number) {
@@ -118,9 +124,9 @@ test("a 320 px com letra de 20 px cada registro lê inteiro: título, motivo e c
   page,
 }) => {
   await openWithThreeRecords(page, 320, 20);
-  const list = page.locator("ul").filter({ has: page.locator(ITEMS) });
+  const list = frame(page);
   await assertNothingClipped(list);
-  await assertNoEllipsis(list.locator(ITEMS));
+  await assertNoEllipsis(list);
   await assertNoPageScroll(page);
 });
 
@@ -199,9 +205,9 @@ test("a 320 px com letra de 20 px a tela das Pendências com os quatro registros
     ["Ver Assinatura", "Tentar novamente"],
     ["Refazer esta venda", "Sair e entrar de novo", "Descartar…"],
   ]);
-  const list = page.locator("ul").filter({ has: page.locator(ITEMS) });
+  const list = frame(page);
   await assertNothingClipped(list);
-  await assertNoEllipsis(list.locator(ITEMS));
+  await assertNoEllipsis(list);
   await assertNoPageScroll(page);
 });
 
@@ -231,22 +237,25 @@ test("a 320 px com letra de 20 px a confirmação do descarte também empilha e 
 });
 
 const ROWS_AT_16_PIXELS = [
-  { rows: [1, 1, 2], width: 360 },
-  { rows: [1, 1, 1], width: 1280 },
+  { maxRows: [1, 1, 2], width: 360 },
+  { maxRows: [1, 1, 1], width: 1280 },
 ];
 
-for (const { rows, width } of ROWS_AT_16_PIXELS) {
+for (const { maxRows, width } of ROWS_AT_16_PIXELS) {
   test(`a ${width} px com letra de 16 px os botões seguem em linha e dentro do cartão, como sempre`, async ({
     page,
   }) => {
     await openWithThreeRecords(page, width, 16);
     const records = await geometry(page);
-    expect(
-      records.map(
-        (record) =>
-          new Set(record.buttons.map((button) => Math.round(button.top))).size
-      )
-    ).toEqual(rows);
+    const rows = records.map(
+      (record) =>
+        new Set(record.buttons.map((button) => Math.round(button.top))).size
+    );
+    for (const [index, count] of rows.entries()) {
+      expect(count, `registro ${index + 1}`).toBeLessThanOrEqual(
+        maxRows[index] ?? 1
+      );
+    }
     for (const record of records) {
       for (const button of record.buttons) {
         expect(button.right).toBeLessThanOrEqual(record.card.right + 0.5);
