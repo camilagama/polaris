@@ -160,7 +160,9 @@ describe("the list of customers", () => {
       ],
     });
     expect(html).toContain("Ana Lima");
-    expect(html).toContain("(11) 90000-0001 · ana@exemplo.com");
+    expect(html).toContain("(11) 90000-0001</span> · <span");
+    expect(html).toContain("ana@exemplo.com</span>");
+    expect(html).not.toContain("line-clamp");
     expect(html).not.toContain("Prefere o WhatsApp.");
     expect(html).not.toContain("Atualizado em");
     expect(html).toContain('data-customer-id="');
