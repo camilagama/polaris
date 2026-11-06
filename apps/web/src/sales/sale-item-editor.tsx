@@ -362,19 +362,14 @@ function ChosenItemFields({
 }
 
 /**
- * "N itens" under "Itens", only once a variant is chosen. The line is always in the DOM (a no-break space while
- * empty) so that the first choice does not push the item below it down.
+ * "N itens" under "Itens": N counts only the lines with a variant chosen, never the empty line "Adicionar item" opens.
+ * The line is always in the DOM (a no-break space while empty) so that the first choice does not push the item below
+ * it down.
  */
-export function ItemsCount({
-  chosen,
-  total,
-}: {
-  chosen: number;
-  total: number;
-}) {
+export function ItemsCount({ chosen }: { chosen: number }) {
   return (
     <CardDescription>
-      {chosen > 0 ? `${total} ${total === 1 ? "item" : "itens"}` : "\u00a0"}
+      {chosen > 0 ? `${chosen} ${chosen === 1 ? "item" : "itens"}` : "\u00a0"}
     </CardDescription>
   );
 }

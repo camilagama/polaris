@@ -260,7 +260,10 @@ test("a venda vazia não mostra o contador nem Adicionar item, e escolher o 1º 
   ).toBeLessThanOrEqual(1);
 
   await addItem.click();
-  await expect(count).toHaveText("2 itens");
+  await expect(
+    page.getByRole("group", { exact: true, name: "Item 2" })
+  ).toBeVisible();
+  await expect(count).toHaveText("1 item");
 });
 
 async function chooseNoProfile(page: Page) {
