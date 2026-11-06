@@ -20,6 +20,7 @@ import {
   assertNothingClipped,
   expectReflowFont,
   openReflowViewport,
+  skipOutsideChromium,
 } from "./reflow";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -1792,10 +1793,7 @@ for (const width of [480, 1280]) {
 }
 
 test.describe("a 320 px com letra de 20 px", () => {
-  test.skip(
-    ({ browserName }) => browserName !== "chromium",
-    "`Page.setFontSizes` is a Chrome DevTools command"
-  );
+  skipOutsideChromium();
 
   test("o rodapé Total na tela empilha a contagem e o valor, com as duas casas, dentro da janela, e tem a mesma altura com e sem despesas", async ({
     page,
