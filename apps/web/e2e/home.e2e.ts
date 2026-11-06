@@ -2740,12 +2740,17 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
           .poll(async () => {
             const now = await boxes();
             return Math.max(
-              ...now.flatMap((box, index) => [
-                Math.abs(box.x - before[index].x),
-                Math.abs(box.y - before[index].y),
-                Math.abs(box.width - before[index].width),
-                Math.abs(box.height - before[index].height),
-              ])
+              ...before.flatMap((ref, index) => {
+                const box = now[index];
+                return box
+                  ? [
+                      Math.abs(box.x - ref.x),
+                      Math.abs(box.y - ref.y),
+                      Math.abs(box.width - ref.width),
+                      Math.abs(box.height - ref.height),
+                    ]
+                  : [Number.POSITIVE_INFINITY];
+              })
             );
           })
           .toBeLessThanOrEqual(1);
