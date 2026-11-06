@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { COLLAPSIBLE_QUERY } from "@/lib/breakpoints";
 import { readMotionLevel } from "@/lib/motion-level";
 import { useIsMobile, useMediaQuery } from "@/lib/use-mobile";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -34,8 +35,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
 const SIDEBAR_WIDTH = "16rem";
 /** The folded column: 32 px items in 8 px of room on each side, and the 44 px of an item with touch. */
 const SIDEBAR_WIDTH_ICON = "3rem";
-/** The width from which the column folds (map of navigation, § 5). */
-const COLLAPSIBLE_QUERY = "(min-width: 1024px)";
 const SIDEBAR_STORAGE_KEY = "sidebar_state";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 

@@ -2881,6 +2881,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Unidade (`stock-list-model.test.ts`): `withCover` só com a chave, capa na linha, ordem das capas sem repetição, capa mantida ao aplicar um saldo. e2e (`e2e/product-thumbnails-screens.e2e.ts`, app real com a API simulada) a 360 e 1280 px: desligada, 0 pedidos de miniatura e nenhum `withCover`; ligada, caixa de 40 px na mesma posição, linha com a mesma altura com foto, sem imagem, com capa ausente, sem a capa na resposta, com a rota recusando (401, 403, 429, 503) e contra a lista com a chave desligada (≤ 1 px), Receber, Contar e Baixar abrem com a rota recusando, uma leitura de lista com `withCover` e nenhuma por variante, lista de 30 capas rolada linha a linha: cada capa uma vez, lotes de até 5. |
 | Não verificado | Registrado | Gate de banco (só CI); Estoque sem conexão com a cópia local no navegador (a leitura da capa pela coleção tem teste de unidade em `local-stock-entries.test.ts`; sem e2e de offline do Estoque nesta tarefa); lista de 1.248 itens no app real (AC-14 é da fila, provada na T3a); aparelho real (BrowserStack); aceite visual do Petković (AC-25). O painel de Imagens ainda diz "aparece em Produtos e na Venda" (AC-23, texto do Petković, fica fora desta tarefa). A chave segue desligada em produção; o AC-10 e o AC-26 seguram ligá-la. |
 
+### Pontos de quebra em rem no CSS e no JavaScript (t814; corte staging-proximos-itens, item 3; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Consultas | Em revisão | `src/lib/breakpoints.ts` guarda as três consultas do JavaScript em `rem` (47,5 / 64 / 80 rem = 760 / 1024 / 1280 px com a fonte de 16 px): `useIsMobile`, a lateral recolhível e os dois meses do seletor de período. `PHONE_QUERY` saiu de `dialog-history.ts` para lá. |
+| CSS | Em revisão | A variante `touch` e os `@media` de `theme.css`, e os dois de 760 px de `index.css` (barra de baixo, altura do cabeçalho), passam de `759.98px`/`760px` a `not all and (min-width: 47.5rem)`/`(min-width: 47.5rem)`, o complemento exato do `md:`. |
+| Provas | Em revisão | Unidade: `breakpoints.test.ts` (as linhas valem 760/1024/1280 px a 16 px e não têm px), `touch-roles.test.ts` e `css-layers.test.ts` com o texto novo. e2e: `e2e/breakpoints-rem.e2e.ts` com a fonte padrão do navegador em 16 e 20 px (`Page.setFontSizes`): barra de baixo, altura do cabeçalho e ficha `touch` (CSS) contra a coluna e o botão de recolher (JavaScript), 10 px de cada lado de cada linha, e nada rola de lado a 320 px com 20 px. |
+| Não feito | Registrado | Os 900 px da Venda (`max-[899.98px]`, `index.css`) seguem em px, e os dois critérios de `motion-level.ts` (largura de 760 px e altura de 500 px) também; o corte os deixa fora, então com a fonte aumentada o nível de movimento ainda cruza em 760 px. A folha do Admin (`admin.source.css`) acompanha o `theme.css` em rem, regenerada por `bun run admin:sheet`; a de `apps/catalog` tem 760 px próprios, sem JavaScript que a espelhe. |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |

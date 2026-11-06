@@ -6,7 +6,7 @@ A tela Vender (`/sales`) é o formulário "Nova venda": itens buscados no catál
 
 - `venda-abrir` abre a tela com o `h1` "Nova venda" e o `form "Nova venda"`.
 - `venda-buscar` busca um produto em "Produto ou variante" (combobox) e escolhe a variante no `listbox` "Variantes encontradas", que abre por cima do formulário só ao tocar no campo ou digitar; a escolhida vira a linha "✓ <variante> · Saldo N · Trocar".
-- `venda-itens` quantidade, preço cobrado e preço de tabela de cada item; "Adicionar item".
+- `venda-itens` quantidade, preço cobrado e preço de tabela de cada item; "Adicionar item" e o contador "N itens" só aparecem depois do 1º produto escolhido (venda vazia: só a busca do item 1).
 - `venda-ajuste` "Alterar data e ajustes" abre a linha fechada "Agora · Sem ajuste"; dentro, o dia (`DatePicker`), a hora e "Adicionar ajuste": desconto em percentual ou valor.
 - `venda-pagamento` o método ("Pix", "Dinheiro", "Crédito", "Débito", "Transferência", "Outro") e o perfil de pagamento.
 - `venda-confirmar` "Confirmar venda" mostra a região "Venda confirmada"; o estoque baixa.

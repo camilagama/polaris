@@ -248,7 +248,7 @@
     container-type: inline-size;
     container-name: header;
   }
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     .touch-hit {
       position: relative;
     }
@@ -718,7 +718,7 @@
     transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
     transition-duration: var(--tw-duration, var(--default-transition-duration));
   }
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     .touch\:h-11 {
       height: calc(var(--spacing) * 11);
     }
@@ -892,7 +892,7 @@
     }
   }
 }
-@media (pointer: coarse), (max-width: 759.98px) {
+@media (pointer: coarse), not all and (min-width: 47.5rem) {
   :root {
     --gutter: 1rem;
     --h-xs: 1.75rem;
@@ -968,7 +968,7 @@
   --sidebar-width: 16rem;
   --app-header: 3rem;
 }
-@media (min-width: 760px) {
+@media (min-width: 47.5rem) {
   :root {
     --app-header: 3.5rem;
   }
@@ -1132,7 +1132,7 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     button {
       position: relative;
     }
@@ -1223,7 +1223,7 @@
     user-select: none;
     text-decoration: none;
   }
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     .button-link {
       position: relative;
     }
@@ -1317,7 +1317,7 @@
       }
     }
   }
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     input[type=search],
     input[type=text],
     input[type=date],
@@ -1325,7 +1325,7 @@
       height: calc(var(--spacing) * 11);
     }
   }
-  @media (pointer: coarse), (max-width: 759.98px) {
+  @media (pointer: coarse), not all and (min-width: 47.5rem) {
     input[type=search],
     input[type=text],
     input[type=date],

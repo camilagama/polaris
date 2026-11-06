@@ -63,7 +63,9 @@ const editor = (page: Page, label: string) =>
 /** Whether the page is in the touch sizes (the `touch` variant of theme.css). */
 const isTouch = (page: Page) =>
   page.evaluate(
-    () => window.matchMedia("(pointer: coarse), (max-width: 759.98px)").matches
+    () =>
+      window.matchMedia("(pointer: coarse), not all and (min-width: 47.5rem)")
+        .matches
   );
 
 async function openMenu(page: Page) {

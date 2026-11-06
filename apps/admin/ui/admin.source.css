@@ -19,7 +19,7 @@
   --app-header: 3rem;
 }
 
-@media (min-width: 760px) {
+@media (min-width: 47.5rem) {
   :root {
     --app-header: 3.5rem;
   }

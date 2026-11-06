@@ -127,7 +127,7 @@
 /* Below 760 px the shell has the bar of destinations fixed at the bottom (52 px and the safe area): the content
    ends above it, a sticky bar of a screen sits on it (`--app-bottom-bar`) and what gets the focus scrolls above it. */
 @layer base {
-  @media (max-width: 759.98px) {
+  @media not all and (min-width: 47.5rem) {
     :root:has([data-bottom-bar]) {
       --app-bottom-bar: calc(3.25rem + env(safe-area-inset-bottom));
       scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
@@ -142,7 +142,7 @@
     --app-header: 3rem;
     scroll-padding-top: var(--app-header);
   }
-  @media (min-width: 760px) {
+  @media (min-width: 47.5rem) {
     :root:has([data-app-header]) {
       --app-header: 3.5rem;
     }

@@ -11,9 +11,6 @@
  */
 const STATE_KEY = "polarisDialog";
 
-/** Below `md` (760 px), where the form dialog is the whole screen: the exact complement of `md:`. */
-export const PHONE_QUERY = "not all and (min-width: 47.5rem)";
-
 /** The place of an open form dialog in the stack: its depth is known once its entry is in the history. */
 export interface DialogEntry {
   depth: number | null;
