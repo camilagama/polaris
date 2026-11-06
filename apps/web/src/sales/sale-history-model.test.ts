@@ -743,12 +743,12 @@ describe("sale detail", () => {
       expect(saleTimelineEvents(view).map((event) => event.label)).toEqual([
         "Cancelada",
         "Devolução",
-        "Registrada",
+        "Confirmada no servidor",
         "Venda feita",
       ]);
     });
 
-    it("breaks a tie of instants as Cancelada, Devolução, Registrada, Venda feita", () => {
+    it("breaks a tie of instants as Cancelada, Devolução, Confirmada no servidor, Venda feita", () => {
       const same = "2026-06-10T12:05:00.000Z";
       const view = at(
         "2026-06-10T12:00:00.000Z",
@@ -776,7 +776,7 @@ describe("sale detail", () => {
       ]);
     });
 
-    it("puts Registrada in only when the server took the sale 60 s or more after it happened", () => {
+    it("puts Confirmada no servidor in only when the server took the sale 60 s or more after it happened", () => {
       const occurred = "2026-06-10T12:00:00.000Z";
       expect(kinds(at(occurred, "2026-06-10T12:00:59.999Z"))).toEqual(["sale"]);
       expect(kinds(at(occurred, "2026-06-10T12:00:59.000Z"))).toEqual(["sale"]);
