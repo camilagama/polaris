@@ -10,6 +10,7 @@ import { facts, table } from "../blocks";
 import { labelName, storeName } from "../dom";
 import { brasiliaMomentText } from "../format";
 import { createNotice } from "../notice";
+import { RECORD_LABEL } from "../record-label";
 import { limitText, writeMayHaveHappened } from "../refusal";
 import type { MaskedCustomer, SupportCaseDetail } from "../types";
 import { createReveal, type Reveal } from "./reveal";
@@ -427,7 +428,7 @@ export function accessView(
       ...lines,
       ["O que acontece", effect],
       ["Dá para desfazer", undo],
-      ["Fica na auditoria", audit],
+      [RECORD_LABEL, audit],
     ]);
 
   const sendGrant = async () => {

@@ -300,7 +300,7 @@ describe("Aviso de encerramento: reissue (AC-P12.1, AC-C2, AC-C4)", () => {
     expect(text).toContain(REISSUE_EFFECT);
     expect(text).toContain(REISSUE_UNDO);
     expect(text).toContain("Dá para desfazer");
-    expect(text).toContain("Fica no registro");
+    expect(text).toContain("Fica registrado");
     expect(posts(mounted.calls)).toHaveLength(0);
     const heading = allElements(mounted.root).find(
       (element) => element.getAttribute("id") === "aviso-encerramento-revisao"

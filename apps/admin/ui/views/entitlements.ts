@@ -10,6 +10,7 @@ import {
 } from "../format";
 import { MAX_REASON_LENGTH } from "../grant-limits";
 import { createNotice } from "../notice";
+import { RECORD_LABEL } from "../record-label";
 import { limitText, writeMayHaveHappened } from "../refusal";
 import type {
   EndedEntitlement,
@@ -196,7 +197,7 @@ export function entitlementsView(
       ...lines,
       ["O que acontece", effect],
       ["Dá para desfazer", undo],
-      ["Fica na auditoria", audit],
+      [RECORD_LABEL, audit],
     ]);
 
   const button = (text: string, secondary: boolean, onClick: () => void) => {

@@ -9,6 +9,7 @@ import {
   caseStatusText,
 } from "../format";
 import { createNotice } from "../notice";
+import { RECORD_LABEL } from "../record-label";
 import type { ClosedSupportCase, SupportCaseDetail } from "../types";
 import { type AccessMessage, type AccessView, accessView } from "./access";
 import { newCaseLink, storePath } from "./case-links";
@@ -363,7 +364,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
           ["Resolução", typed === "" ? "Sem resolução escrita." : typed],
           ["O que acontece", CLOSE_EFFECT],
           ["Dá para desfazer", CLOSE_UNDO],
-          ["Fica na auditoria", CLOSE_AUDIT],
+          [RECORD_LABEL, CLOSE_AUDIT],
         ]),
         dom.el("div", { class: "button-row" }, confirm, back, reload)
       );
