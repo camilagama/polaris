@@ -304,7 +304,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     const first = await openPage({ id: caseId, screen: "caso" });
     const second = await openPage({ id: caseId, screen: "caso" });
     await first.shows("Fechar atendimento");
-    await second.shows("Atendimento em uso");
+    await second.shows("Fechar atendimento");
     const close = (page: Awaited<ReturnType<typeof openPage>>) => {
       buttons(page.root, "Fechar atendimento")[0]?.click();
       byId(page.root, "resolucao").value = "Senha trocada pelo dono";
