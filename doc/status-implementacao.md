@@ -2895,7 +2895,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Frases | Em revisão | `apps/admin/ui/purge-words.ts` e as duas frases de `ui/views/purge.ts` dizem "apagamento" onde diziam "purge" (o ciclo, o que o agendar não faz agora, o atendimento exigido, loja não encerrada, as recusas por prazo de 90 dias, trava legal, renovação viva, leitura indisponível, escopo e atendimento fechado). Só a palavra muda: o efeito, os prazos e o "Nada foi feito." ficam como estavam. |
-| Termos proibidos | Em revisão | `forbidden-terms.test.ts` perde as 14 exceções de "purge" que cobriam as frases; sobra só a classe CSS `purge action-panel`, que não é texto lido. |
+| Termos proibidos | Em revisão | `forbidden-terms.test.ts` perde as 15 exceções de "purge" que cobriam as frases; sobra só a classe CSS `purge action-panel`, que não é texto lido. |
 | Fora | Registrado | Códigos de recusa, rotas, capacidades, tipos de auditoria, nomes de constantes e o texto de erro do servidor (`support-routes.ts`, `packages/`) não mudam. |
 
 ### Altura estável na troca de estado por clique (t743; sem migration)
