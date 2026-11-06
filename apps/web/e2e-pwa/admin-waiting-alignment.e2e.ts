@@ -5,14 +5,25 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 /**
- * "Esperando por você" on the Admin's Início, on the real sheet (`apps/admin/ui/admin.css`) and the markup of
- * `apps/admin/ui/views/home.ts`: in a card narrower than 40 rem the destination drops under the text, and it must start
- * where the text starts whatever the digits of the figure; in a wide card the figure, the text and the destination
- * share one row. An item with no figure keeps the whole line for the text and the destination.
+ * "Esperando por você" on the Admin's Início, on the real sheet (`apps/admin/ui/admin.css`) and the markup of the
+ * items (`fixtures/admin-waiting-item.json`, which the Admin's unit test keeps equal to what `waitingItem` builds):
+ * in a card narrower than 40 rem the destination drops under the text, and it must start where the text starts
+ * whatever the digits of the figure; in a wide card the figure, the text and the destination share one row. An item
+ * with no figure keeps the whole line for the text and the destination.
  */
 const SHEET = readFileSync(
   join(import.meta.dirname, "../../admin/ui/admin.css"),
   "utf8"
+);
+
+const WAITING_ITEM_CASES: readonly {
+  figure: string | null;
+  markup: string;
+}[] = JSON.parse(
+  readFileSync(
+    join(import.meta.dirname, "fixtures/admin-waiting-item.json"),
+    "utf8"
+  )
 );
 
 const NARROW_PX = 340;
@@ -20,31 +31,21 @@ const WIDE_PX = 960;
 const SUBPIXEL = 1;
 const FIGURES = ["7", "42", "128", "1234"] as const;
 
-interface Item {
-  figure: string | null;
-  what: string;
-}
+test("a fixture traz os quatro números e, por último, o item sem contagem", () => {
+  expect(WAITING_ITEM_CASES.map(({ figure }) => figure)).toEqual([
+    ...FIGURES,
+    null,
+  ]);
+});
 
-const ITEMS: readonly Item[] = [
-  ...FIGURES.map((figure) => ({
-    figure,
-    what: "atendimentos abertos há mais de dois dias sem resposta",
-  })),
-  { figure: null, what: "lojas com cobrança pendente" },
-];
-
-const itemMarkup = ({ figure, what }: Item) => `<li>
-  <a class="waiting-item" href="#">${
-    figure === null ? "" : `<span class="waiting-count">${figure}</span> `
-  }<span class="waiting-what">${what}</span> <span class="waiting-go">Abrir fila →</span></a>
-</li>`;
+const ITEMS_MARKUP = WAITING_ITEM_CASES.map(({ markup }) => markup).join("");
 
 async function open(page: Page, width: number) {
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.setContent(
     `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>${SHEET}</style></head>
 <body><div id="admin" class="content"><section class="area" style="width:${width}px">
-<ul class="waiting">${ITEMS.map(itemMarkup).join("")}</ul></section></div></body></html>`
+<ul class="waiting">${ITEMS_MARKUP}</ul></section></div></body></html>`
   );
   await page.evaluate(() => document.fonts.ready);
 }
@@ -90,7 +91,7 @@ test.describe("Admin: o destino de 'Esperando por você'", () => {
   }) => {
     await open(page, NARROW_PX);
     const measured = await rows(page);
-    expect(measured).toHaveLength(ITEMS.length);
+    expect(measured).toHaveLength(WAITING_ITEM_CASES.length);
     for (const [index, figure] of FIGURES.entries()) {
       const { count, go, what } = measured[index] as Row;
       const found = count as Rect;
