@@ -32,8 +32,11 @@ function barWidth(netSales: string, top: bigint): number {
 
 /**
  * The three most sold products of the month, by units net of returns; none sold, no block (AC-16). Each line has its
- * position in a circle, the name (cut with an ellipsis only when it does not fit), the net sales and the units, and a green bar proportional to the net sales
- * (v7 § 3 item 11), drawn in CSS: it says the same as the value beside it.
+ * position in a circle, the name, the net sales and the units, and a green bar proportional to the net sales
+ * (v7 § 3 item 11), drawn in CSS: it says the same as the value beside it. Each line is its own container: from 15rem
+ * up the four are one row and the name is cut with an ellipsis when it does not fit; under 15rem (a phone with the
+ * browser font enlarged, a narrow column) the name takes its own line, up to two, and the net sales and the units go
+ * to the line under it.
  */
 export function TopProductsBlock({ products }: { products: TopProducts }) {
   const top = products.reduce((max, product) => {
@@ -46,16 +49,29 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
         {products.map((product, index) => {
           const content = (
             <>
-              <span className="flex min-w-0 items-center gap-3">
+              <span
+                data-top-line=""
+                className="@min-[15rem]:flex grid min-w-0 grid-cols-[1.375rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5"
+              >
                 <span className="grid size-[1.375rem] shrink-0 place-items-center rounded-full bg-muted font-semibold text-xs tabular-nums">
                   {index + 1}
                 </span>
-                <span className="min-w-0 flex-1 truncate">{product.name}</span>
-                <span className="shrink-0 font-semibold tabular-nums">
-                  <MoneyText text={formatBrlAmount(product.netSales)} />
+                <span
+                  data-top-name=""
+                  className="line-clamp-2 @min-[15rem]:line-clamp-none min-w-0 @min-[15rem]:flex-1 @min-[15rem]:truncate break-words"
+                >
+                  {product.name}
                 </span>
-                <span className="w-12 shrink-0 text-right text-muted-foreground tabular-nums">
-                  {`${formatQuantity(product.quantity)} un.`}
+                <span
+                  data-top-figures=""
+                  className="col-start-2 flex @min-[15rem]:contents flex-wrap items-baseline gap-x-3"
+                >
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    <MoneyText text={formatBrlAmount(product.netSales)} />
+                  </span>
+                  <span className="@min-[15rem]:ml-0 ml-auto @min-[15rem]:w-12 @min-[15rem]:shrink-0 text-right text-muted-foreground tabular-nums">
+                    {`${formatQuantity(product.quantity)} un.`}
+                  </span>
                 </span>
               </span>
               <span
@@ -73,7 +89,7 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
           const row = "grid min-h-12 content-center gap-1.5 py-2";
           return (
             <li
-              className="min-w-0 border-t first:border-t-0"
+              className="@container min-w-0 border-t first:border-t-0"
               key={product.productId}
             >
               {product.deleted ? (
