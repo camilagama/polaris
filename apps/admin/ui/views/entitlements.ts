@@ -263,6 +263,7 @@ export function entitlementsView(
     });
     dom.fill(
       listBox,
+      effectLine(dom, "grantEnd"),
       table(
         dom,
         "Concessões em vigor",
@@ -547,7 +548,6 @@ export function entitlementsView(
           "div",
           { class: "grants-area" },
           dom.el("h4", {}, "Concessões em vigor"),
-          effectLine(dom, "grantEnd"),
           readControl,
           listNotice.element,
           listBox

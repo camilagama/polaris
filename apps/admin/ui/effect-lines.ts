@@ -25,7 +25,7 @@ export const EFFECT_LINES = {
   dismissNotice:
     "A dispensa conta como entregue e o apagamento ainda espera 7 dias. Não dá para desfazer.",
   grantEnd:
-    "Encerrar volta a loja ao que o plano dá. Dá para dar de novo depois, com nova decisão.",
+    "Encerrar volta a loja ao que o plano dá. Não dá para desfazer; uma nova concessão é outra decisão.",
   grantGive:
     "A concessão só eleva o plano da loja; nunca reduz um limite nem desliga um recurso. Dá para encerrar antes.",
   holdPlace:
@@ -41,13 +41,13 @@ export const EFFECT_LINES = {
   purgeCancel:
     "A loja encerrada não será apagada neste ciclo. Dá para agendar de novo.",
   purgeSchedule:
-    "Agendar não apaga agora: roda no próximo ciclo. Dá para cancelar até o primeiro arquivo ser apagado.",
+    "Agendar não apaga agora: roda no próximo ciclo. Dá para cancelar enquanto o apagamento não começar.",
   reactivate:
     "Reativar desfaz só a suspensão. Loja encerrada continua encerrada. Dá para suspender de novo.",
   refund:
-    "O valor volta ao cliente pelo mesmo meio de pagamento e a renovação é cancelada. Não dá para desfazer.",
+    "O pedido de estorno vai ao provedor; ao confirmar, o Pro da loja acaba na hora, sem carência. Não dá para desfazer.",
   reissueNotice:
-    "Um aviso novo vai ao dono atual e o anterior fica como está. Dá para reemitir de novo.",
+    "Um aviso novo vai ao dono atual e o anterior fica como está. Não dá para desfazer: o aviso novo é outra linha.",
   reveal: `Revelar mostra um dado do cliente por até ${REVEAL_SECONDS} segundos e fica na auditoria. Não dá para desfazer o registro.`,
   stepActions:
     "Registra o que foi feito pelas ações da loja, sem alterar dado. Não dá para desfazer nem repetir.",

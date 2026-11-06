@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { DISMISS_UNDO, REISSUE_UNDO } from "./closure-notice-words";
 import {
   EFFECT_LINES,
   type EffectKey,
   MAX_EFFECT_LENGTH,
 } from "./effect-lines";
+import {
+  CANCEL_RULE,
+  CANCEL_UNDO,
+  HOLD_UNDO,
+  RELEASE_UNDO,
+} from "./purge-words";
+import { REFUND_UNDO } from "./refund-words";
 import {
   allElements,
   buttons,
@@ -21,7 +29,12 @@ import {
   screenContext,
 } from "./test-page";
 import type { PrivacyCaseDetail, SupportCaseDetail } from "./types";
+import { END_ACCESS_UNDO } from "./views/access";
+import { CLOSE_UNDO } from "./views/case";
+import { END_UNDO, GRANT_UNDO } from "./views/entitlements";
 import { RETRY_EFFECT } from "./views/incident";
+import { STEP_UNDO } from "./views/privacy-case";
+import { REACTIVATE_UNDO, SUSPEND_UNDO } from "./views/store-actions";
 import { REVEAL_SECONDS } from "./views/reveal";
 
 /**
@@ -155,6 +168,43 @@ describe("the sentences of effect", () => {
       expect(text).toMatch(UNDOES);
     }
   );
+
+  it.each([
+    ["grantEnd", END_UNDO],
+    ["reissueNotice", REISSUE_UNDO],
+    ["dismissNotice", DISMISS_UNDO],
+    ["closeCase", CLOSE_UNDO],
+    ["refund", REFUND_UNDO],
+    ["suspend", SUSPEND_UNDO],
+    ["reactivate", REACTIVATE_UNDO],
+    ["purgeCancel", CANCEL_UNDO],
+    ["holdPlace", HOLD_UNDO],
+    ["holdPlaced", RELEASE_UNDO],
+    ["grantGive", GRANT_UNDO],
+    ["accessEndOnly", END_ACCESS_UNDO],
+    ["stepScope", STEP_UNDO],
+    ["stepRole", STEP_UNDO],
+    ["stepIdentity", STEP_UNDO],
+    ["stepActions", STEP_UNDO],
+    ["stepDecision", STEP_UNDO],
+  ] as const)(
+    "%s answers 'dá para desfazer' the way the review of the same action does",
+    (key, undo) => {
+      expect(EFFECT_LINES[key].includes("Não dá para")).toBe(
+        undo.startsWith("Não")
+      );
+    }
+  );
+
+  it("does not promise a cancellation the server refuses, and does not hide that the refund ends the Pro at once", () => {
+    expect(CANCEL_RULE).toContain("enquanto nenhuma execução estiver em curso");
+    expect(EFFECT_LINES.purgeSchedule).toContain(
+      "enquanto o apagamento não começar"
+    );
+    expect(EFFECT_LINES.purgeSchedule).not.toContain("primeiro arquivo");
+    expect(EFFECT_LINES.refund).toContain("acaba na hora, sem carência");
+    expect(EFFECT_LINES.refund.toLowerCase()).not.toContain("o valor volta");
+  });
 
   it("keeps the reveal time and the retry sentence in step with the code that does them", () => {
     expect(EFFECT_LINES.reveal).toContain(`${REVEAL_SECONDS} segundos`);
@@ -334,6 +384,52 @@ describe("the screen of a support case", () => {
 
     effectBefore(root, "Encerrar concessão", "grantEnd");
     effectBefore(root, "Revelar ▾", "reveal");
+  });
+
+  it("puts the sentence of ending a grant on the list, right above the grant that ends it, and not before there is a grant", async () => {
+    const grant = {
+      expiresAt: "2026-11-02T15:00:00.000Z",
+      flagValue: null,
+      id: GRANT,
+      key: "variants.active.max",
+      limitValue: 2000,
+      revokedAt: null,
+      startsAt: "2026-10-28T12:00:00.000Z",
+    };
+    const unread = await openCase([
+      storeState("active"),
+      json({ ...diagnostics({ id: STORE }), grants: [grant] }),
+    ]);
+    expect(visibleText(unread.root)).not.toContain(EFFECT_LINES.grantEnd);
+
+    const empty = await openCase([
+      storeState("active"),
+      json({ ...diagnostics({ id: STORE }), grants: [] }),
+    ]);
+    await click(empty.root, "Ver concessões em vigor");
+    expect(visibleText(empty.root)).not.toContain(EFFECT_LINES.grantEnd);
+
+    const read = await openCase([
+      storeState("active"),
+      json({ ...diagnostics({ id: STORE }), grants: [grant] }),
+    ]);
+    await click(read.root, "Ver concessões em vigor");
+    const order = allElements(read.root);
+    const effect = order.findIndex(
+      (element) =>
+        hasClass(element, "effect") &&
+        element.textContent === EFFECT_LINES.grantEnd
+    );
+    const end = order.findIndex(
+      (element) =>
+        element.tagName === "button" &&
+        element.textContent === "Encerrar concessão"
+    );
+    expect(effect).toBeGreaterThan(-1);
+    const between = order
+      .slice(effect, end)
+      .filter((element) => element.tagName === "button");
+    expect(between).toEqual([]);
   });
 
   it("says nothing before the click that the review does not say after it, and sends nothing for the sentence", async () => {
