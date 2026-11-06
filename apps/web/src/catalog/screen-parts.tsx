@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
@@ -199,3 +200,54 @@ export function RowOpenButton({
 /** A row that opens by a `RowOpenButton`: the hover of the whole row while the button under the pointer opens. */
 export const OPENABLE_ROW_CLASS =
   "has-[[data-row-open]:not([aria-disabled]):hover]:bg-muted/50";
+
+interface ListTotalFooterProps {
+  className?: string | undefined;
+  /** "14 vendas": what the total counts. Empty while it is unknown. */
+  count: string;
+  /** What the total leaves out, always in the DOM (empty) when the screen can have it, so the height does not move. */
+  note?: string;
+  /** The total, already written (a dash while it is unknown). */
+  value: ReactNode;
+}
+
+/**
+ * The foot of a list: the total of what is on the screen, the figures right-aligned in tabular numerals so the
+ * column of the rows above reads straight down to it. The box has the same height with and without rows (the lines
+ * keep a minimum), so a filter that empties the list does not move what comes after.
+ */
+export function ListTotalFooter({
+  className,
+  count,
+  note,
+  value,
+}: ListTotalFooterProps) {
+  return (
+    <div
+      className={cn("grid gap-0.5 bg-muted/30 px-2.5 py-3 md:px-4", className)}
+      data-list-total=""
+    >
+      <div className="flex items-end justify-between gap-x-4">
+        <div className="grid min-w-0 gap-0.5">
+          <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            Total na tela
+          </p>
+          <p className="min-h-5 whitespace-nowrap text-muted-foreground text-support">
+            {count}
+          </p>
+        </div>
+        <p className="whitespace-nowrap text-right font-semibold text-value-md tabular-nums">
+          {value}
+        </p>
+      </div>
+      {note === undefined ? null : (
+        <p
+          className="min-h-5 text-muted-foreground text-support"
+          data-list-total-note=""
+        >
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
