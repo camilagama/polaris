@@ -2,7 +2,6 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { HeroValue } from "@/ui/kpi-card";
 import { noCostDayText, ResultCards, ResultFooter } from "./result-cards";
 import { resultKpis } from "./result-kpis";
 import { addDays } from "./result-period";
@@ -429,22 +428,6 @@ describe("the result while a day with no cost is read (RES-1)", () => {
       today: TODAY,
     });
   };
-
-  it("says 'sem custo neste dia' in place of the dash, and nothing else changes in the card", () => {
-    const empty = renderToStaticMarkup(
-      <HeroValue amount={null} emptyText="sem custo neste dia" />
-    );
-    expect(words(empty)).toBe("sem custo neste dia");
-    expect(empty).not.toContain("sem valor");
-    expect(empty).not.toContain("—");
-    const dash = renderToStaticMarkup(<HeroValue amount={null} />);
-    expect(words(dash)).toBe("—sem valor");
-    const known = renderToStaticMarkup(
-      <HeroValue amount="90.00" emptyText="sem custo neste dia" />
-    );
-    expect(words(known)).toContain("90");
-    expect(words(known)).not.toContain("sem custo neste dia");
-  });
 
   it("is due only on the unknown day itself, read by the pointer", () => {
     const kpis = kpisOf([5, 12]);

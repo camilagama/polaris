@@ -54,8 +54,8 @@ const NO_COST_DAY = "sem custo neste dia";
 
 /**
  * What the result says in place of the dash when the day under the pointer is itself a day with no cost (undefined
- * otherwise): a month of a long period is not "this day", and a
- * known day after an unknown one keeps its dash (its running total is unknown, but its cost is not what is missing).
+ * otherwise): a month of a long period is not "this day", and a known day after an unknown one keeps its dash (its
+ * running total is unknown, but its cost is not what is missing).
  */
 export function noCostDayText(
   kpis: {
