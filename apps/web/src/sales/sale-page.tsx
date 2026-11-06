@@ -1030,7 +1030,7 @@ export function SalePage() {
                   <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
                   Atualizar estoque e perfis
                 </Button>
-                <ItemsCount chosen={chosenCount} total={itemCount} />
+                <ItemsCount chosen={chosenCount} />
               </CardHeader>
               <CardContent className="grid gap-4">
                 {form.items.map((item, index) => (

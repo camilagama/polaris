@@ -147,7 +147,7 @@ function renderItemsChrome(form: SaleFormState): string {
   const total = form.items.length;
   return renderToStaticMarkup(
     <>
-      <ItemsCount chosen={chosen} total={total} />
+      <ItemsCount chosen={chosen} />
       <AddItemButton chosen={chosen} onAdd={noop} total={total} />
     </>
   );
@@ -180,7 +180,21 @@ describe("o contador e o Adicionar item da venda", () => {
     expect(html).toContain("Adicionar item");
   });
 
-  it("o rascunho que volta com 3 itens mostra '3 itens' e o botão; uma segunda linha em branco conta no total", () => {
+  it("1 escolhida e 1 linha vazia: o contador diz '1 item'", () => {
+    const form: SaleFormState = {
+      ...createBlankSaleForm(ids()),
+      items: [
+        { ...chosenItem, draftId: "d1" },
+        { ...blankItem, draftId: "d2" },
+      ],
+    };
+    const html = renderItemsChrome(form);
+    expect(html).toContain(">1 item<");
+    expect(html).not.toContain(">2 itens<");
+    expect(html).toContain("Adicionar item");
+  });
+
+  it("2 escolhidas e 1 linha vazia: o contador diz '2 itens' e o botão segue ligado", () => {
     const form: SaleFormState = {
       ...createBlankSaleForm(ids()),
       items: [
@@ -190,9 +204,24 @@ describe("o contador e o Adicionar item da venda", () => {
       ],
     };
     const html = renderItemsChrome(form);
-    expect(html).toContain(">3 itens<");
+    expect(html).toContain(">2 itens<");
+    expect(html).not.toContain(">3 itens<");
     expect(html).toContain("Adicionar item");
     expect(html).not.toContain('disabled=""');
+  });
+
+  it("só linhas vazias: o contador fica sem texto e não é região viva", () => {
+    const form: SaleFormState = {
+      ...createBlankSaleForm(ids()),
+      items: [
+        { ...blankItem, draftId: "d1" },
+        { ...blankItem, draftId: "d2" },
+      ],
+    };
+    const html = renderItemsChrome(form);
+    expect(html).toMatch(EMPTY_COUNT_LINE);
+    expect(html).not.toContain("aria-live");
+    expect(html).not.toContain('role="status"');
   });
 });
 
