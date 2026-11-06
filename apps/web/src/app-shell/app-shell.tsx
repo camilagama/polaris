@@ -297,9 +297,8 @@ function AppSidebar({
   );
 }
 
-/* The label of a destination of the bar scales down in `rem` with the width of its cell (`4.4` em is the widest label,
-   "Histórico", and 0.25 rem is the padding of the cell) to a floor of 0.6875 rem, where a tighter tracking takes
-   what is left; under that it breaks in two lines (`--app-bottom-bar` grows with it) and is never cut. */
+/* 4.4 em is the width of "Histórico", 0.25 rem the cell padding. Below the 0.6875 rem floor the label breaks in two
+   lines (`--app-bottom-bar` grows) instead of being cut. */
 const BOTTOM_BAR_LABEL =
   "max-w-full text-center [font-size:clamp(0.6875rem,calc((100cqw-0.25rem)/4.4),0.75rem)] [overflow-wrap:anywhere] @max-[3.275rem]/tab:tracking-[-0.01em]";
 

@@ -11,12 +11,6 @@ import {
 } from "./reflow";
 import { serve } from "./shell-server";
 
-/**
- * The shell read at 320 px with the browser font at 20 px (`./reflow`): the five labels of the bar of destinations are
- * whole, the page of Resultado does not scroll sideways, the strip of tabs of Despesas shows that there are more tabs
- * to the right, and the hint of a narrow search box goes under the field. With the default font (16 px) at 360 and
- * 1280 px the bar and the search boxes are the ones they always were.
- */
 skipOutsideChromium();
 
 const BAR_LABELS = ["Início", "Histórico", "Vender", "Estoque", "Mais"];
@@ -56,7 +50,6 @@ interface LabelBox {
   scrollWidth: number;
 }
 
-/** The label of each cell of the bar: its size, its tracking, how many lines it takes and whether it is whole. */
 function labelBoxes(navigation: Locator) {
   return navigation.evaluate((nav) =>
     [...nav.querySelectorAll("a, button")].map((cell): LabelBox => {
@@ -181,7 +174,6 @@ interface Margins {
   right: number;
 }
 
-/** The margin each block of the page leaves on the left and on the right of the window. */
 function pageMargins(page: Page, panel: string) {
   return page.evaluate((selector) => {
     const width = document.documentElement.clientWidth;

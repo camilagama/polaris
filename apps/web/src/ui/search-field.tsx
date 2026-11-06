@@ -20,10 +20,9 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
    "Limpar busca" button at the end that empties the field and gives the focus back to it. The name comes from the
    required `label` (there is no visible label above a search box). `type="search"` with the native cancel mark
    hidden, so there is one "X" and it is ours; the mobile keyboard shows "Buscar" (`enterKeyHint`). With touch the
-   button has the 44 px area of every control (`touch-hit`) and the group the one of a field. Under `NARROW_FIELD_REM` (14 rem,
-   measured on the group, so it follows the text size) the placeholder is only "Buscar" and what it would say (the
-   `placeholder` the screen gives) is a line under the field, tied to it by `aria-describedby`: a hint cut in the
-   middle of a word teaches nothing. */
+   button has the 44 px area of every control (`touch-hit`) and the group the one of a field. Under `NARROW_FIELD_REM`
+   (measured on the group, so it follows the text size) the placeholder is only "Buscar" and the screen's
+   `placeholder` becomes a line under the field (`aria-describedby`): cut mid-word, a hint teaches nothing. */
 const NARROW_FIELD_REM = 14;
 const NARROW_PLACEHOLDER = "Buscar";
 
@@ -39,7 +38,6 @@ interface SearchFieldProps
     | "enterKeyHint"
   > {
   className?: string;
-  /** Where the line under a narrow field goes in a row that lays its children out itself (a `flex-wrap` row: `order-last basis-full`). */
   hintClassName?: string;
   /** The accessible name of the field: required, there is no visible label. */
   label: string;
@@ -47,7 +45,6 @@ interface SearchFieldProps
   value: string;
 }
 
-/** Whether the group around `input` is narrower than `NARROW_FIELD_REM` of the current text size, followed as it changes. */
 function useNarrow(input: RefObject<HTMLInputElement | null>) {
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
