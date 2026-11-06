@@ -109,8 +109,7 @@ function buttonIdOf(
     : undefined;
 }
 
-const ATTENTION_SUBTITLE =
-  "O que o servidor recusou e espera uma decisão sua.";
+const ATTENTION_SUBTITLE = "O que o servidor recusou e espera uma decisão sua.";
 
 /** The frame of the page of attention: the title, then what the page has to say. */
 export function AttentionFrame({ children }: { children: ReactNode }) {
