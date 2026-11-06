@@ -244,3 +244,56 @@ for (const pixels of [REM, 20]) {
     });
   });
 }
+
+/** What the document reserves under the focused control against what the sticky total bar of the sale covers. */
+function submitBarReserve(page: Page) {
+  return page.evaluate(() => {
+    const bar = document.querySelector("[data-submit-bar]");
+    const padding = Number.parseFloat(
+      getComputedStyle(document.documentElement).scrollPaddingBottom
+    );
+    return {
+      barHeight: bar?.getBoundingClientRect().height ?? 0,
+      barShown: bar ? getComputedStyle(bar).display !== "none" : false,
+      padding: Number.isNaN(padding) ? 0 : padding,
+    };
+  });
+}
+
+for (const [width, pixels] of [
+  [360, REM],
+  [320, REM],
+  [360, 20],
+  [320, 20],
+] as const) {
+  test.describe(`a Venda a ${width} px, fonte padrão ${pixels} px`, () => {
+    test("o scroll-padding de baixo cobre a barra de total e a barra inferior", async ({
+      page,
+    }) => {
+      await openSale(page, width, pixels);
+      const reserve = await submitBarReserve(page);
+      const bottomBar = await page.evaluate(
+        () =>
+          document.querySelector("[data-bottom-bar]")?.getBoundingClientRect()
+            .height ?? 0
+      );
+      expect(reserve.barShown).toBe(true);
+      expect(reserve.barHeight).toBeGreaterThan(0);
+      expect(bottomBar).toBeGreaterThan(0);
+      expect(reserve.padding).toBeGreaterThanOrEqual(
+        reserve.barHeight + bottomBar
+      );
+    });
+  });
+}
+
+test.describe("a Venda a 1280 px: a regra do scroll-padding da barra de total não se aplica", () => {
+  test("o scroll-padding de baixo fica em 0 e a barra de total não aparece", async ({
+    page,
+  }) => {
+    await openSale(page, 1280, REM);
+    const reserve = await submitBarReserve(page);
+    expect(reserve.barShown).toBe(false);
+    expect(reserve.padding).toBe(0);
+  });
+});
