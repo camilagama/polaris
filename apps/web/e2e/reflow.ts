@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 
 /**
  * The sweep every reflow test uses: a screen read at 320 px of window with the browser font at 20 px, and proof that
- * nothing is cut, ellipsized or pushed sideways.
+ * nothing is cut sideways, ellipsized or pushed out of the window.
  *
  * ```ts
  * skipOutsideChromium();                      // once, at the top level of the spec
@@ -23,8 +23,8 @@ import { expect, test } from "@playwright/test";
  * It is a Chrome DevTools command, so every spec that uses this file skips the other browsers.
  *
  * What each check calls a defect:
- * - `assertNothingClipped`: an element that holds text of its own and has `scrollWidth` above `clientWidth` by more
- *   than 1 px. `allowScroll` lists the selectors of elements that scroll on purpose (a data table, the tab strip):
+ * - `assertNothingClipped`: an element that holds text of its own, or that hides what overflows it (`overflow-x` other than
+ *   `visible`) and has text inside, and has `scrollWidth` above `clientWidth` by more than 1 px. `allowScroll` lists the selectors of elements that scroll on purpose (a data table, the tab strip):
  *   those elements themselves are not measured, what is inside them still is.
  * - `assertNoEllipsis`: an element (or a descendant) whose `text-overflow: ellipsis` is hiding text (the text is wider
  *   than the box), or whose `line-clamp` hides lines. An ellipsis that has nothing to hide is not a defect.
@@ -101,6 +101,14 @@ export async function assertNothingClipped(
   await expect(root, "the root of the sweep is not on the page").toHaveCount(1);
   const { measured, offenders } = await root.evaluate(
     (element, { allowed, slack }) => {
+      const hiddenOnPurpose = (item: Element) => {
+        const style = getComputedStyle(item);
+        return style.clipPath !== "none" || style.clip !== "auto";
+      };
+      const mayCut = (item: Element) =>
+        (item.textContent ?? "").trim() !== "" &&
+        !hiddenOnPurpose(item) &&
+        (holdsText(item) || getComputedStyle(item).overflowX !== "visible");
       const holdsText = (item: Element) =>
         [...item.childNodes].some(
           (node) =>
@@ -111,7 +119,7 @@ export async function assertNothingClipped(
       let count = 0;
       for (const item of [element, ...element.querySelectorAll("*")]) {
         if (
-          !holdsText(item) ||
+          !mayCut(item) ||
           item.clientWidth === 0 ||
           allowed.some((selector) => item.matches(selector))
         ) {

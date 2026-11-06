@@ -224,20 +224,68 @@ test("a 320 px com letra de 20 px o Custo médio e o Saldo leem inteiros, e Cust
   const unknown = page.getByText("Custo desconhecido", { exact: true });
   await expect(unknown).toHaveCount(2);
   const fits = await unknown.evaluateAll((elements) =>
-    elements.map((element) => ({
-      cardRight: element.closest("li")?.getBoundingClientRect().right ?? 0,
-      client: element.clientWidth,
-      right: element.getBoundingClientRect().right,
-      scroll: element.scrollWidth,
-    }))
+    elements.map((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const lines = new Set(
+        [...range.getClientRects()].map((rect) => Math.round(rect.top))
+      );
+      const figure = element.closest("dd");
+      const row = element.closest("li");
+      const rowStyle = row ? getComputedStyle(row) : null;
+      return {
+        contentRight:
+          (row?.getBoundingClientRect().right ?? 0) -
+          Number.parseFloat(rowStyle?.paddingRight ?? "0"),
+        figureClient: figure?.clientWidth ?? 0,
+        figureScroll: figure?.scrollWidth ?? 0,
+        lines: lines.size,
+        right: range.getBoundingClientRect().right,
+      };
+    })
   );
   for (const fit of fits) {
-    expect(fit.scroll).toBeLessThanOrEqual(fit.client + 1);
-    expect(fit.right).toBeLessThanOrEqual(fit.cardRight);
+    expect(fit.figureScroll).toBeLessThanOrEqual(fit.figureClient + 1);
+    expect(fit.right).toBeLessThanOrEqual(fit.contentRight + 0.5);
+    // a word broken in the middle would make a third line
+    expect(fit.lines).toBeLessThanOrEqual(2);
   }
+  const columns = await page
+    .locator("li dl")
+    .evaluateAll((lists) =>
+      lists.map(
+        (figures) =>
+          getComputedStyle(figures).gridTemplateColumns.split(" ").length
+      )
+    );
+  expect(columns, "Saldo e Custo médio numa coluna só").toEqual(
+    ENTRIES.map(() => 1)
+  );
   const list = page.getByRole("list", { name: "Saldos por variante" });
   await assertNoEllipsis(list.locator("dl, dt, dd"));
   await assertNothingClipped(list);
+});
+
+test("a 320 px com letra de 20 px, com o painel aberto, os botões ficam desligados e empilhados e nada passa da janela", async ({
+  page,
+}) => {
+  await openStock(page, 320, 20);
+  await page
+    .getByRole("button", { name: "Baixar estoque de Calça jeans, 42" })
+    .click();
+  await expect(page.getByLabel("Quantidade a baixar")).toBeVisible();
+  await expect(page.locator(`${ACTIONS}[aria-disabled="true"]`)).toHaveCount(
+    ENTRIES.length * 3
+  );
+  const rows = await geometry(page);
+  for (const row of rows) {
+    const lefts = new Set(row.buttons.map((button) => Math.round(button.left)));
+    expect(lefts.size, `${row.groupName}: empilhados`).toBe(1);
+  }
+  await assertNoPageScroll(page);
+  await assertNothingClipped(
+    page.getByRole("list", { name: "Saldos por variante" })
+  );
 });
 
 test("o grupo continua um controle só, com o mesmo nome acessível, e os botões mantêm o nome de cada um", async ({
@@ -271,5 +319,16 @@ for (const width of [360, 1280]) {
       expect(third?.left).toBeGreaterThanOrEqual((second?.right ?? 0) - 1);
       expect(row.group.height).toBeLessThan(TOUCH);
     }
+    const columns = await page
+      .locator("li dl")
+      .evaluateAll((lists) =>
+        lists.map(
+          (figures) =>
+            getComputedStyle(figures).gridTemplateColumns.split(" ").length
+        )
+      );
+    expect(columns, "Saldo e Custo médio lado a lado").toEqual(
+      ENTRIES.map(() => 2)
+    );
   });
 }

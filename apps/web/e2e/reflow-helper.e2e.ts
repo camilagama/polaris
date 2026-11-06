@@ -45,6 +45,18 @@ test("o corte de um elemento com texto reprova, e o mesmo texto que cabe passa",
   await assertNothingClipped(page.locator("#root"));
 });
 
+test("o corte de um texto em linha dentro de uma caixa que esconde o excesso reprova", async ({
+  page,
+}) => {
+  await show(
+    page,
+    `<div id="root"><div style="width:60px;overflow:hidden"><span style="white-space:nowrap">${LONG}</span></div></div>`
+  );
+  await expect(assertNothingClipped(page.locator("#root"))).rejects.toThrow(
+    CUT_TEXT
+  );
+});
+
 test("o corte dentro de um elemento que rola de propósito ainda reprova, e o próprio elemento que rola não", async ({
   page,
 }) => {
