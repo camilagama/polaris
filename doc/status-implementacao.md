@@ -3125,6 +3125,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Vazios com próximo passo | Em revisão | Início, Lojas, Atendimentos (abertos e fechados), "O que foi feito" do atendimento e do pedido de dados, Pedidos de dados (abertos e fechados), Apagamento e trava legal e Lojas com trava legal dizem o que fazer ou onde ir, com link quando o destino está no menu; a primeira frase de cada um não muda. Ficam como estão "Nenhuma falha de envio. Tudo foi entregue." e "Nenhum acesso encontrado nessa janela…". Prova: `ui/empty-next-step.test.ts` (DOM por tela e estado) e `src/ui/empty-states-list.test.ts` (lista exata dos textos que começam como vazio; vazio novo reprova até ser classificado). Sem mudança de rota, capacidade, contrato nem `packages/`. |
 | Fora (próxima passada) | Registrado | Vazios de Loja (`diagnostics`), Atendimentos desta loja (`store`), concessões (`entitlements`), eventos de falha (`incident`), loja escolhida (`new-case`, `privacy-new`) e cobrança (`refund-words`, `refund-window`): estão na lista `PENDING_NEXT_STEP` do teste. |
 
+### Resultado: faixa de KPIs a partir de 900 px com o delta ao lado do valor (t831; corte ui-heyrico-2, T1, AC-T1.1 a AC-T1.5; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Faixa de quatro colunas | Em revisão | A partir de 900 px os quatro cartões do Resultado são um cartão só, com divisórias de 1 px e o valor em 24 px (peso 650, `tabular-nums`); abaixo ficam os cartões de hoje (duas colunas de 760 a 899 px). Sem outro ponto de quebra. Prova: e2e de geometria a 899 e 900 px em `apps/web/e2e/dashboard.e2e.ts`. |
+| Delta ao lado do valor | Em revisão | Por consulta de contêiner na coluna (14 rem de conteúdo): ao lado, na mesma linha de base; abaixo disso, na linha própria. O chip não passa da coluna (o "vs. …" se corta com reticências; o nome acessível segue inteiro, "+30,0% em relação a setembro (1 a 14/09)"). O nome do chip não mudou: não diz "subiu"; ficou para decisão do Petković. Prova: teste de DOM em `result-cards.test.tsx`, e2e de posição e axe sem violação nos dois temas. |
+| Altura estável (fecha o RES-E3) | Em revisão | `STRIP_RESERVE` guarda a altura da faixa por degraus da largura dela, medidos no navegador com o rodapé mais longo do cartão do resultado. Prova: o e2e mede a altura em mês completo e incompleto, sem custo, Este ano, sem comparação, seis dígitos e com "Esconder valores", a 900 e 1280 px com a lateral aberta e recolhida (simulada pelo espaço à esquerda: o laboratório não tem a casca), e a diferença é de no máximo 1 px. Remedir se um texto de coluna mudar. |
+| Sem leitura nova | Em revisão | Nada em `packages/` nem em `apps/web/src/server`; sem mini-barras nem troca de gráfico ao toque. |
+
 ### Admin: efeito antes do clique e anatomia única dos painéis (t829; corte admin-v2-clareza-2a-passada, AC-CL2, AC-CP1, AC-CP3, AC-CP4, AC-CP8, AC-CL9 e AC-CP9; sem migration)
 
 | Item | Estado | Detalhe |

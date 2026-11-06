@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -2292,5 +2293,247 @@ test.describe("Este ano até julho, sem custo por dia, e o mês na primeira sema
       await expect(drawn()).toBeVisible();
       expectSameBox(await chartPlaces(page), month);
     });
+  }
+});
+
+const stripOf = (page: Page) => page.locator("[data-kpi-row]");
+
+/** A box-shadow value that draws something: an offset, a blur or a spread above zero (the ring is a 1 px spread). */
+const NON_ZERO_PIXELS = /[1-9]\d*(\.\d+)?px/;
+const drawsShadow = (shadow: string) => NON_ZERO_PIXELS.test(shadow);
+
+/** The lab has no shell: the room of the side menu (16 rem open, 3 rem folded) is taken from the left of the page. */
+const SIDE_MENU = { aberta: 256, recolhida: 48 } as const;
+
+async function withSideMenu(page: Page, side: keyof typeof SIDE_MENU) {
+  await page.addInitScript((room) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = `#root { box-sizing: border-box; padding-left: ${room}px; }`;
+      document.head.append(style);
+    });
+  }, SIDE_MENU[side]);
+}
+
+/** The boxes of the four cards: where each is and what it paints. */
+const cardBoxes = (page: Page) =>
+  kpiCards(page).evaluateAll((cards) =>
+    cards.map((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        background: style.backgroundColor,
+        height: box.height,
+        left: box.left,
+        shadow: style.boxShadow,
+        top: box.top + window.scrollY,
+        width: box.width,
+      };
+    })
+  );
+
+test.describe("a faixa de KPIs do Resultado: uma peça a partir de 900 px, cartões abaixo (AC-T1.1)", () => {
+  for (const width of [899, 900]) {
+    test(`${width} px, lateral aberta`, async ({ page }) => {
+      await page.setViewportSize({ height: 800, width });
+      await withSideMenu(page, "aberta");
+      await openDashboard(page, new FakeReportServer());
+      await expect(kpiCards(page)).toHaveCount(4);
+      await settled(page);
+      const boxes = await cardBoxes(page);
+      const strip = await stripOf(page).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { background: style.backgroundColor, shadow: style.boxShadow };
+      });
+      if (width < 900) {
+        expect(new Set(boxes.map((box) => Math.round(box.top))).size).toBe(3);
+        for (const box of boxes) {
+          expect(box.background).not.toBe("rgba(0, 0, 0, 0)");
+          expect(drawsShadow(box.shadow)).toBe(true);
+        }
+        expect(drawsShadow(strip.shadow)).toBe(false);
+        return;
+      }
+      expect(new Set(boxes.map((box) => Math.round(box.top))).size).toBe(1);
+      expect(new Set(boxes.map((box) => Math.round(box.height))).size).toBe(1);
+      const lefts = boxes.map((box) => box.left);
+      expect([...lefts].sort((a, b) => a - b)).toEqual(lefts);
+      for (const box of boxes) {
+        expect(box.background).toBe("rgba(0, 0, 0, 0)");
+        expect(drawsShadow(box.shadow)).toBe(false);
+      }
+      expect(strip.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(drawsShadow(strip.shadow)).toBe(true);
+      const lines = await kpiCards(page).evaluateAll((cards) =>
+        cards.map((element) => getComputedStyle(element).borderRightWidth)
+      );
+      expect(lines).toEqual(["1px", "1px", "1px", "0px"]);
+      const figures = await page
+        .locator("[data-kpi-row] [data-kpi-value]")
+        .evaluateAll((values) =>
+          values.map((element) => {
+            const style = getComputedStyle(element);
+            return [style.fontSize, style.fontWeight, style.fontVariantNumeric];
+          })
+        );
+      expect(figures).toHaveLength(4);
+      for (const figure of figures) {
+        expect(figure).toEqual(["24px", "650", "tabular-nums"]);
+      }
+    });
+  }
+});
+
+const STRIP_FIXTURES = {
+  "Este ano": { fixture: CHART_BOX_FIXTURES.completo, preset: "Este ano" },
+  "Este ano incompleto": {
+    fixture: CHART_BOX_FIXTURES.incompleto,
+    preset: "Este ano",
+  },
+  "mês completo": { fixture: CHART_BOX_FIXTURES.completo, preset: null },
+  "mês incompleto": { fixture: CHART_BOX_FIXTURES.incompleto, preset: null },
+  "mês sem custo informado": {
+    fixture: {
+      "2025-11": NO_COST_MONTH,
+      "2026-01": NO_COST_MONTH,
+      "2026-10": NO_COST_MONTH,
+      "2026-11": NO_COST_MONTH,
+    },
+    preset: null,
+  },
+  "mês sem comparação": {
+    fixture: { "2026-11": COMPLETE_MONTH },
+    preset: null,
+  },
+  "seis dígitos": {
+    fixture: CHART_BOX_FIXTURES["valores de seis dígitos"],
+    preset: null,
+  },
+} as const;
+
+const HIDDEN_RUNS = ["mês completo", "mês incompleto", "seis dígitos"] as const;
+
+async function stripHeight(
+  page: Page,
+  name: keyof typeof STRIP_FIXTURES,
+  hidden: boolean
+) {
+  const { fixture, preset: period } = STRIP_FIXTURES[name];
+  if (hidden) {
+    await page.addInitScript(() =>
+      localStorage.setItem("polaris-valores", "escondidos")
+    );
+  }
+  const server = new MonthlyReportServer();
+  server.now = NOVEMBER_5;
+  server.fixture = fixture;
+  await openDashboard(page, server);
+  await expect(kpiCards(page)).toHaveCount(4);
+  if (period) {
+    await choosePreset(page, period);
+    await expect(page.locator("[data-kpi-group]")).toContainText(
+      "01/01 a 05/11"
+    );
+  }
+  await settled(page);
+  return (await placeOf(stripOf(page))).height;
+}
+
+test.describe("a altura da faixa de KPIs não muda com o período, a comparação, o custo nem Esconder valores (AC-T1.3, AC-T1.5)", () => {
+  for (const view of [
+    { side: "aberta", width: 900 },
+    { side: "aberta", width: 1280 },
+    { side: "recolhida", width: 1024 },
+    { side: "recolhida", width: 1280 },
+  ] as const) {
+    test(`${view.width} px, lateral ${view.side}`, async ({
+      baseURL,
+      browser,
+    }) => {
+      test.setTimeout(180_000);
+      const heights: Record<string, number> = {};
+      const runs = [
+        ...(
+          Object.keys(STRIP_FIXTURES) as Array<keyof typeof STRIP_FIXTURES>
+        ).map((name) => ({ hidden: false, name })),
+        ...HIDDEN_RUNS.map((name) => ({ hidden: true, name })),
+      ];
+      for (const { hidden, name } of runs) {
+        // biome-ignore lint/performance/noAwaitInLoops: one browser context at a time, the machine has two cores
+        const context = await browser.newContext({
+          ...(baseURL ? { baseURL } : {}),
+          viewport: { height: 800, width: view.width },
+        });
+        const page = await context.newPage();
+        await withSideMenu(page, view.side);
+        heights[`${name}${hidden ? ", escondido" : ""}`] = await stripHeight(
+          page,
+          name,
+          hidden
+        );
+        await context.close();
+      }
+      const values = Object.values(heights);
+      expect(
+        Math.max(...values) - Math.min(...values),
+        JSON.stringify(heights)
+      ).toBeLessThanOrEqual(1);
+    });
+  }
+});
+
+test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal e nome completo, e a faixa não tem violação de axe (AC-T1.2)", () => {
+  const CASES = [
+    { beside: false, side: "aberta", width: 900 },
+    { beside: true, side: "recolhida", width: 1280 },
+  ] as const;
+  for (const { beside, side, width } of CASES) {
+    for (const scheme of ["light", "dark"] as const) {
+      test(`${width} px, lateral ${side}, tema ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ height: 800, width });
+        await page.emulateMedia({ colorScheme: scheme });
+        await withSideMenu(page, side);
+        await openDashboard(page, new FakeReportServer());
+        await expect(kpiCards(page)).toHaveCount(4);
+        await settled(page);
+        const sales = card(page, CARD.netSales);
+        const chip = sales.locator("[data-kpi-delta]");
+        await expect(chip).toContainText("+30,0%");
+        await expect(chip).toContainText("vs. setembro");
+        await expect(chip).toHaveAttribute(
+          "aria-label",
+          "+30,0% em relação a setembro (1 a 14/09)"
+        );
+        const value = await placeOf(sales.locator("[data-kpi-value]"));
+        const chipPlace = await placeOf(chip);
+        if (beside) {
+          expect(chipPlace.top).toBeGreaterThanOrEqual(value.top - 1);
+          expect(chipPlace.top + chipPlace.height).toBeLessThanOrEqual(
+            value.top + value.height + 6
+          );
+        } else {
+          expect(chipPlace.top).toBeGreaterThanOrEqual(
+            value.top + value.height
+          );
+        }
+        const left = await sales
+          .locator("[data-kpi-value]")
+          .evaluate((element) => element.getBoundingClientRect().right);
+        const chipLeft = await chip.evaluate(
+          (element) => element.getBoundingClientRect().left
+        );
+        if (beside) {
+          expect(chipLeft - left).toBeGreaterThanOrEqual(5);
+        }
+        const [chipRight, columnRight] = await Promise.all([
+          chip.evaluate((element) => element.getBoundingClientRect().right),
+          sales.evaluate((element) => element.getBoundingClientRect().right),
+        ]);
+        expect(chipRight, "o delta não passa da coluna").toBeLessThanOrEqual(
+          columnRight
+        );
+        expect(await axeFaults(page, "[data-kpi-row]")).toEqual([]);
+      });
+    }
   }
 });

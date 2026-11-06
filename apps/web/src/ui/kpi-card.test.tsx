@@ -9,7 +9,7 @@ import { HeroValue, KpiCard, KpiCardSkeleton } from "./kpi-card";
  */
 
 const CHIP_THEN_NOTE =
-  /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
+  /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
 
 const card = (props: Partial<Parameters<typeof KpiCard>[0]>) =>
   renderToStaticMarkup(
