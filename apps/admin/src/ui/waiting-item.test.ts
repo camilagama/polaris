@@ -1,7 +1,18 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { createDom } from "./dom";
-import { FakeDocument, type FakeElement, markupOf } from "./test-dom";
-import { waitingItem } from "./views/home";
+import { createDom } from "../../ui/dom";
+import { FakeDocument, type FakeElement, markupOf } from "../../ui/test-dom";
+import { waitingItem } from "../../ui/views/home";
+
+const FIXTURE = join(
+  fileURLToPath(new URL("../../../..", import.meta.url)),
+  "apps/web/e2e-pwa/fixtures/admin-waiting-item.json"
+);
+const WAITING_ITEM_CASES: (Parameters<typeof waitingItem>[1] & {
+  markup: string;
+})[] = JSON.parse(readFileSync(FIXTURE, "utf8"));
 
 const dom = createDom(new FakeDocument() as unknown as Document);
 const markup = (item: Parameters<typeof waitingItem>[1]) =>
@@ -45,5 +56,13 @@ describe("o item de Esperando por você", () => {
     ).toContain(
       '<span class="waiting-what">&lt;b&gt;&quot;a&quot; &amp; b&lt;/b&gt;</span>'
     );
+  });
+
+  it.each(
+    WAITING_ITEM_CASES.map(
+      (item) => [item.figure ?? "no figure", item] as const
+    )
+  )("makes the markup the browser test measures (%s)", (_name, item) => {
+    expect(markup(item)).toBe(item.markup);
   });
 });

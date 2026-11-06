@@ -3,24 +3,24 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { createDom } from "../../admin/ui/dom";
-import {
-  FakeDocument,
-  type FakeElement,
-  markupOf,
-} from "../../admin/ui/test-dom";
-import { waitingItem } from "../../admin/ui/views/home";
 
 /**
- * "Esperando por você" on the Admin's Início, on the real sheet (`apps/admin/ui/admin.css`) and the items the view
- * itself builds (`waitingItem` in `apps/admin/ui/views/home.ts`): in a card narrower than 40 rem the destination
- * drops under the text, and it must start where the text starts whatever the digits of the figure; in a wide card
- * the figure, the text and the destination share one row. An item with no figure keeps the whole line for the text
- * and the destination.
+ * "Esperando por você" on the Admin's Início, on the real sheet (`apps/admin/ui/admin.css`) and the markup of the
+ * items (`fixtures/admin-waiting-item.json`, which the Admin's unit test keeps equal to what `waitingItem` builds):
+ * in a card narrower than 40 rem the destination drops under the text, and it must start where the text starts
+ * whatever the digits of the figure; in a wide card the figure, the text and the destination share one row. An item
+ * with no figure keeps the whole line for the text and the destination.
  */
 const SHEET = readFileSync(
   join(import.meta.dirname, "../../admin/ui/admin.css"),
   "utf8"
+);
+
+const WAITING_ITEM_CASES: readonly { markup: string }[] = JSON.parse(
+  readFileSync(
+    join(import.meta.dirname, "fixtures/admin-waiting-item.json"),
+    "utf8"
+  )
 );
 
 const NARROW_PX = 340;
@@ -28,25 +28,7 @@ const WIDE_PX = 960;
 const SUBPIXEL = 1;
 const FIGURES = ["7", "42", "128", "1234"] as const;
 
-const ITEMS = [
-  ...FIGURES.map((figure) => ({
-    destination: "Ver atendimentos",
-    figure,
-    href: "/casos",
-    what: "atendimentos abertos há mais de dois dias sem resposta",
-  })),
-  {
-    destination: "Ver cobranças",
-    figure: null,
-    href: "/lojas",
-    what: "lojas com cobrança pendente",
-  },
-];
-
-const dom = createDom(new FakeDocument() as unknown as Document);
-const ITEMS_MARKUP = ITEMS.map((item) =>
-  markupOf(waitingItem(dom, item) as unknown as FakeElement)
-).join("");
+const ITEMS_MARKUP = WAITING_ITEM_CASES.map(({ markup }) => markup).join("");
 
 async function open(page: Page, width: number) {
   await page.setViewportSize({ height: 800, width: 1280 });
@@ -99,7 +81,7 @@ test.describe("Admin: o destino de 'Esperando por você'", () => {
   }) => {
     await open(page, NARROW_PX);
     const measured = await rows(page);
-    expect(measured).toHaveLength(ITEMS.length);
+    expect(measured).toHaveLength(WAITING_ITEM_CASES.length);
     for (const [index, figure] of FIGURES.entries()) {
       const { count, go, what } = measured[index] as Row;
       const found = count as Rect;
