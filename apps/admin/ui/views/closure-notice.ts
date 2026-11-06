@@ -26,6 +26,7 @@ import {
   CLOSURE_NOTICE_ORGANIZATION_STATUSES,
   labelOf,
 } from "../privacy";
+import { RECORD_LABEL } from "../record-label";
 import type { OrganizationDiagnostics, PrivacyCaseDetail } from "../types";
 import { radioChoice } from "./privacy-form";
 
@@ -212,7 +213,7 @@ export function closureNoticeSection(
           ],
           ["O que acontece", REISSUE_EFFECT],
           ["Dá para desfazer", REISSUE_UNDO],
-          ["Fica no registro", REISSUE_RECORD],
+          [RECORD_LABEL, REISSUE_RECORD],
         ]),
         dom.el(
           "div",
@@ -288,7 +289,7 @@ export function closureNoticeSection(
           ["Motivo", labelOf(CLOSURE_NOTICE_DISMISSALS, code)],
           ["O que acontece", DISMISS_EFFECT],
           ["Dá para desfazer", DISMISS_UNDO],
-          ["Fica no registro", DISMISS_RECORD],
+          [RECORD_LABEL, DISMISS_RECORD],
         ]),
         dom.el(
           "div",

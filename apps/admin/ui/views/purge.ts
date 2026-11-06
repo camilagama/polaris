@@ -41,6 +41,7 @@ import {
   SERVER_CHECKS,
   TYPE_THE_NAME,
 } from "../purge-words";
+import { RECORD_LABEL } from "../record-label";
 import type {
   LegalHoldAnswer,
   LegalHoldPage,
@@ -640,7 +641,7 @@ export function purgeTab(
           ["O que é apagado", purgeErasedText(NEXT_PURGE_CYCLE)],
           ["O que fica", PURGE_KEPT],
           ["Dá para desfazer", PURGE_UNDO],
-          ["Fica no registro", PURGE_RECORD],
+          [RECORD_LABEL, PURGE_RECORD],
         ]),
         form,
         notice.element
@@ -700,7 +701,7 @@ export function purgeTab(
         ["Atenção", NO_PERSONAL_DATA],
         ["O que acontece", CANCEL_EFFECT],
         ["Dá para desfazer", CANCEL_UNDO],
-        ["Fica no registro", CANCEL_RECORD],
+        [RECORD_LABEL, CANCEL_RECORD],
       ],
       "Confirmar o cancelamento do agendamento",
       {
@@ -782,7 +783,7 @@ export function purgeTab(
         ["Data de revisão", shown],
         ["O que acontece", effect],
         ["Dá para desfazer", HOLD_UNDO],
-        ["Fica no registro", HOLD_RECORD],
+        [RECORD_LABEL, HOLD_RECORD],
       ],
       renewing ? "Confirmar a nova data de revisão" : "Confirmar a trava legal",
       {
@@ -801,7 +802,7 @@ export function purgeTab(
       [
         ["O que acontece", RELEASE_EFFECT],
         ["Dá para desfazer", RELEASE_UNDO],
-        ["Fica no registro", RELEASE_RECORD],
+        [RECORD_LABEL, RELEASE_RECORD],
       ],
       "Liberar trava legal",
       {

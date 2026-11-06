@@ -4,6 +4,7 @@ import { facts } from "../blocks";
 import { labelName, storeName } from "../dom";
 import { brasiliaMomentText, brasiliaTime, storeStatusText } from "../format";
 import { createNotice } from "../notice";
+import { RECORD_LABEL } from "../record-label";
 import { limitText, writeMayHaveHappened } from "../refusal";
 import type { OrganizationDiagnostics } from "../types";
 
@@ -173,7 +174,7 @@ export function storeActionsView(
       ],
       ["O que acontece", text.effect(tools)],
       ["Dá para desfazer", text.undo],
-      ["Fica na auditoria", text.audit],
+      [RECORD_LABEL, text.audit],
     ]);
 
   const readState = async (): Promise<boolean> => {

@@ -22,6 +22,7 @@ import {
   ROLES,
   STAGES,
 } from "../privacy";
+import { RECORD_LABEL } from "../record-label";
 import type { PrivacyCaseDetail, PrivacyStepAnswer } from "../types";
 import { storePath } from "./case-links";
 import { closureNoticeSection, mayShowClosureNotice } from "./closure-notice";
@@ -825,10 +826,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       if (spec.key === "actions") {
         pairs.push(["Só registro", ACTIONS_ONLY_RECORD]);
       }
-      pairs.push(
-        ["Dá para desfazer", STEP_UNDO],
-        ["Fica no registro", STEP_RECORD]
-      );
+      pairs.push(["Dá para desfazer", STEP_UNDO], [RECORD_LABEL, STEP_RECORD]);
       dom.fill(
         panel,
         heading,

@@ -13,6 +13,7 @@ import {
 } from "../format";
 import { MAX_REASON_LENGTH } from "../grant-limits";
 import type { Notice } from "../notice";
+import { RECORD_LABEL } from "../record-label";
 import {
   AMOUNT_PATTERN,
   amountChangedText,
@@ -243,7 +244,7 @@ export function billingActionsView(
       ...lines,
       ["O que acontece", effect],
       ["Dá para desfazer", undo],
-      ["Fica na auditoria", audit],
+      [RECORD_LABEL, audit],
     ]);
 
   const reasonField = (prefill: string) => {
