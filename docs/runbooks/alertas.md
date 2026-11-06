@@ -39,6 +39,7 @@
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
 | [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed`, `billing_amount_mismatch_incident_failed` | 60 min | 1 | critical | sim |
 | [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
+| [`revelacoes-por-hora`](#revelacoes-por-hora) | `admin_reveal_rate_limited` (Worker `polaris-admin`) | 60 min | 1 | warning | não |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
 
@@ -284,6 +285,16 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 **Como confirmar.** Workers Logs: `event = "billing_refund_pending_incident_failed"`, por `cause` e `sqlState`. Com `sqlState`, veja também [erros-de-banco](#erros-de-banco).
 
 **O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)). Para `billing_amount_mismatch_incident_failed`, o `billing_refund_amount_mismatch` logo antes no mesmo Worker nomeia a loja (ID opaco): trate como o incidente de divergência ([billing-providers](./billing-providers.md)).
+
+<a id="revelacoes-por-hora"></a>
+
+### revelacoes-por-hora — operador chegou ao limite de revelações de dado pessoal
+
+**O que significa.** Um operador pediu a 31ª revelação de campo de cliente na mesma hora e a função do banco recusou ([ADR 0072](../adr/0072-admin-casos-acesso-temporario-e-revelacao.md), limite de 30 por hora por operador, somando casos e lojas). O evento é `admin_reveal_rate_limited` (aviso, no Worker `polaris-admin`), com `operatorId` opaco; não leva campo, cliente nem loja, e a recusa não grava na auditoria. Nada foi mostrado.
+
+**Como confirmar.** Workers Logs do `polaris-admin`: `event = "admin.admin_reveal_rate_limited"`. As 30 revelações aceitas estão na auditoria (`pii.revealed`, por operador, com o campo e o cliente) e no caso de cada loja.
+
+**O que fazer.** Veja na auditoria quais clientes e lojas o operador abriu na última hora. Se foi um atendimento de verdade com muitos clientes, nada a fazer: a próxima hora libera. Se ninguém reconhece a leitura, trate como sessão de operador comprometida: desligue o operador (`platform_principals.status`) e revogue a sessão no Access.
 
 <a id="comando-de-cobranca-do-operador"></a>
 

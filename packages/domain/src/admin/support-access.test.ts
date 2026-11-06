@@ -125,6 +125,9 @@ describe("the rest", () => {
     expect(supportRefusalFromMessage("invalid page size")).toBe(
       "invalid_request"
     );
+    expect(supportRefusalFromMessage("operator_reveal_rate_limited")).toBe(
+      "operator_reveal_rate_limited"
+    );
     expect(supportRefusalFromMessage("")).toBe("invalid_request");
   });
 });

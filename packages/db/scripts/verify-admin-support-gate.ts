@@ -86,6 +86,318 @@ const ADMIN_FUNCTIONS = [
   "admin_tenant_customers",
 ];
 
+const AUDIT_INDEX_COLUMNS = /\(principal_id, event_type, created_at\)/;
+
+interface RevealLimitContext {
+  asAdmin: <T>(operation: (client: Client) => Promise<T>) => Promise<T>;
+  denied: (operation: () => Promise<unknown>) => Promise<void>;
+  joao: string;
+  maria: string;
+  open: (
+    principalId: string,
+    organizationId?: string
+  ) => Promise<{ id: string } | null>;
+  orgA: { organizationId: string };
+  orgB: { organizationId: string };
+  outsider: string;
+  owner: ReturnType<typeof createDatabase>;
+  principal: () => Promise<string>;
+  refused: (operation: () => Promise<unknown>, code: string) => Promise<void>;
+  reveal: (
+    principalId: string,
+    caseId: string,
+    customerId: string,
+    field?: "email" | "name" | "phone" | "notes"
+  ) => Promise<{
+    customerId: string;
+    field: string;
+    value: string | null;
+  } | null>;
+  tests: string[];
+}
+
+async function verifyRevealLimit(context: RevealLimitContext) {
+  const {
+    asAdmin,
+    denied,
+    joao,
+    maria,
+    open,
+    orgA,
+    orgB,
+    outsider,
+    owner,
+    principal,
+    refused,
+    reveal,
+    tests,
+  } = context;
+  // ------------------------------------------------- 8. the hourly limit of reveals
+  const REVEAL_LIMIT = 30;
+  const revealRows = async (principalId: string) =>
+    Number(
+      (
+        await owner.pool.query<{ total: string }>(
+          "SELECT count(*) AS total FROM public.platform_audit_events WHERE principal_id = $1 AND event_type = 'pii.revealed'",
+          [principalId]
+        )
+      ).rows[0]?.total
+    );
+  const limitedCase = async (principalId: string, organizationId: string) => {
+    const supportCase = await open(principalId, organizationId);
+    assert.ok(supportCase);
+    await asAdmin((client) =>
+      grantTenantAccess(client, principalId, supportCase.id, 60)
+    );
+    return supportCase.id;
+  };
+  const limited =
+    (code = "operator_reveal_rate_limited") =>
+    (error: unknown) =>
+      error instanceof InvalidSupportRequestError && error.code === code;
+  const backdatedReveals = (
+    principalId: string,
+    caseId: string,
+    count: number,
+    minutesAgo: number
+  ) =>
+    owner.pool.query(
+      `INSERT INTO public.platform_audit_events (principal_id, event_type, organization_id, support_case_id, entity_type, entity_id, detail, created_at)
+       SELECT $1, 'pii.revealed', $2, $3, 'customer', $4, 'email', now() - make_interval(mins => $5)
+         FROM generate_series(1, $6)`,
+      [principalId, orgA.organizationId, caseId, maria, minutesAgo, count]
+    );
+
+  // an unknown customer, or one of another store, leaves no row and spends no slot
+  const spender = await principal();
+  const spenderCase = await limitedCase(spender, orgA.organizationId);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: Probes, in order.
+    assert.equal(await reveal(spender, spenderCase, randomUUID()), null);
+    assert.equal(await reveal(spender, spenderCase, outsider), null);
+  }
+  assert.equal(await revealRows(spender), 0);
+  // the 30 that exist are accepted, and a repeat of one field counts as much as another field
+  for (let index = 0; index < REVEAL_LIMIT; index += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: The limit counts the reveals in order.
+    const answer = await reveal(
+      spender,
+      spenderCase,
+      index % 2 === 0 ? maria : joao,
+      index % 3 === 0 ? "email" : "phone"
+    );
+    assert.ok(answer, `reveal ${index + 1} is accepted`);
+  }
+  assert.equal(await revealRows(spender), REVEAL_LIMIT);
+  const auditBefore = Number(
+    (
+      await owner.pool.query<{ total: string }>(
+        "SELECT count(*) AS total FROM public.platform_audit_events"
+      )
+    ).rows[0]?.total
+  );
+  await assert.rejects(
+    () => reveal(spender, spenderCase, maria, "name"),
+    limited(),
+    "the 31st reveal of the hour is refused"
+  );
+  await assert.rejects(
+    () => reveal(spender, spenderCase, maria, "email"),
+    limited(),
+    "a repeat of a field already revealed is refused as well"
+  );
+  assert.equal(
+    Number(
+      (
+        await owner.pool.query<{ total: string }>(
+          "SELECT count(*) AS total FROM public.platform_audit_events"
+        )
+      ).rows[0]?.total
+    ),
+    auditBefore,
+    "a refused reveal leaves no row in the audit"
+  );
+  // the order of the checks: the grant and the field come before the count, so their refusals stay what they were
+  await refused(
+    () => reveal(spender, spenderCase, maria, "secret" as never),
+    "invalid_field"
+  );
+  await denied(() => reveal(spender, randomUUID(), maria));
+
+  // the limit is the operator's own: another operator, on the same store, is not affected
+  const other = await principal();
+  const otherCase = await limitedCase(other, orgA.organizationId);
+  assert.equal(
+    (await reveal(other, otherCase, maria, "email"))?.value,
+    "maria.souza@exemplo.com.br"
+  );
+
+  // two cases and two stores share one quota
+  const sharer = await principal();
+  const sharerCaseA = await limitedCase(sharer, orgA.organizationId);
+  const sharerCaseB = await limitedCase(sharer, orgB.organizationId);
+  for (let index = 0; index < REVEAL_LIMIT - 1; index += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: The limit counts the reveals in order.
+    await reveal(sharer, sharerCaseA, maria, "email");
+  }
+  assert.ok(await reveal(sharer, sharerCaseB, outsider, "email"));
+  await assert.rejects(
+    () => reveal(sharer, sharerCaseA, maria, "email"),
+    limited(),
+    "the quota is counted by operator, not by case"
+  );
+  await assert.rejects(
+    () => reveal(sharer, sharerCaseB, outsider, "email"),
+    limited(),
+    "the quota is counted by operator, not by store"
+  );
+
+  // the last slot, asked for by two requests at once: one gets it
+  const racer = await principal();
+  const racerCase = await limitedCase(racer, orgA.organizationId);
+  await backdatedReveals(racer, racerCase, REVEAL_LIMIT - 1, 5);
+  const raced = await Promise.allSettled([
+    reveal(racer, racerCase, maria, "email"),
+    reveal(racer, racerCase, maria, "phone"),
+    reveal(racer, racerCase, joao, "phone"),
+  ]);
+  assert.equal(
+    raced.filter((result) => result.status === "fulfilled").length,
+    1
+  );
+  for (const result of raced) {
+    if (result.status === "rejected") {
+      assert.ok(
+        limited()(result.reason),
+        "the others are refused by the limit"
+      );
+    }
+  }
+  assert.equal(await revealRows(racer), REVEAL_LIMIT);
+
+  // the lock is the operator's own and has its own key: a reveal waits for the lock of the same operator, and does
+  // not wait for the lock of the operator's refunds
+  const locker = await principal();
+  const lockerCase = await limitedCase(locker, orgA.organizationId);
+  const holder = await owner.pool.connect();
+  try {
+    await holder.query("BEGIN");
+    await holder.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('admin_operator_refund:' || $1::text, 0))",
+      [locker]
+    );
+    assert.ok(
+      await reveal(locker, lockerCase, maria, "email"),
+      "the lock of the refunds does not hold a reveal"
+    );
+    await holder.query("COMMIT");
+    await holder.query("BEGIN");
+    await holder.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('admin_operator_reveal:' || $1::text, 0))",
+      [locker]
+    );
+    let settled = false;
+    const waiting = reveal(locker, lockerCase, maria, "phone").finally(() => {
+      settled = true;
+    });
+    let queued = 0;
+    for (let poll = 0; poll < 200 && queued === 0; poll += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: Polls the signal that the reveal is waiting for the lock.
+      const waitingLocks = await owner.pool.query<{ total: string }>(
+        "SELECT count(*) AS total, pg_sleep(0.05) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+      );
+      queued = Number(waitingLocks.rows[0]?.total);
+    }
+    assert.equal(queued, 1, "the reveal waits for the lock of its operator");
+    assert.equal(settled, false);
+    await holder.query("COMMIT");
+    assert.ok(await waiting, "the reveal goes on when the lock is released");
+  } finally {
+    await holder.query("ROLLBACK").catch(() => undefined);
+    holder.release();
+  }
+
+  // the hour: 30 reveals 59 minutes ago still count; the same 30, 61 minutes ago, do not
+  const recent = await principal();
+  const recentCase = await limitedCase(recent, orgA.organizationId);
+  await backdatedReveals(recent, recentCase, REVEAL_LIMIT, 59);
+  await assert.rejects(
+    () => reveal(recent, recentCase, maria, "email"),
+    limited(),
+    "30 reveals of the last hour block"
+  );
+  const aged = await principal();
+  const agedCase = await limitedCase(aged, orgA.organizationId);
+  await backdatedReveals(aged, agedCase, REVEAL_LIMIT, 61);
+  assert.ok(
+    await reveal(aged, agedCase, maria, "email"),
+    "the hour after releases the operator"
+  );
+
+  // the new function keeps the permissions, the owner, the pinned search_path and the reads of the previous one
+  const revealFunction = await owner.pool.query<{
+    args: string;
+    config: string[];
+    definer: boolean;
+    grantees: string[];
+    owner: string;
+    public_runs: boolean;
+    others_run: boolean;
+    runtime_runs: boolean;
+  }>(
+    `SELECT pg_get_function_identity_arguments(p.oid) AS args,
+            p.proconfig AS config,
+            p.prosecdef AS definer,
+            pg_get_userbyid(p.proowner) AS owner,
+            has_function_privilege('public', p.oid, 'EXECUTE') AS public_runs,
+            has_function_privilege('polaris_admin_runtime', p.oid, 'EXECUTE') AS runtime_runs,
+            (has_function_privilege('polaris_pr11_runtime', p.oid, 'EXECUTE')
+             OR has_function_privilege('polaris_billing_runtime', p.oid, 'EXECUTE')
+             OR has_function_privilege('polaris_catalog_runtime', p.oid, 'EXECUTE')) AS others_run,
+            COALESCE((SELECT array_agg(DISTINCT grantee::regrole::text ORDER BY grantee::regrole::text) FROM aclexplode(p.proacl) WHERE privilege_type = 'EXECUTE'), '{}') AS grantees
+       FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'admin_reveal_customer_field'`
+  );
+  assert.deepEqual(
+    revealFunction.rows,
+    [
+      {
+        args: "p_principal uuid, p_case uuid, p_customer uuid, p_field text",
+        config: ["search_path=pg_catalog, public, pg_temp"],
+        definer: true,
+        grantees: ["polaris_admin_owner", "polaris_admin_runtime"],
+        others_run: false,
+        owner: "polaris_admin_owner",
+        public_runs: false,
+        runtime_runs: true,
+      },
+    ],
+    "the reveal function keeps its signature, owner, pinned search_path and EXECUTE only for the Admin role (and its owner)"
+  );
+  const definition = await owner.pool.query<{ source: string }>(
+    "SELECT prosrc AS source FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'admin_reveal_customer_field'"
+  );
+  const source = definition.rows[0]?.source ?? "";
+  assert.ok(
+    source.indexOf("operator_reveal_rate_limited") > 0 &&
+      source.indexOf("operator_reveal_rate_limited") <
+        source.indexOf("FROM public.customers"),
+    "the count comes before the customer is read"
+  );
+  assert.deepEqual(
+    [...source.matchAll(/customer\.(\w+)/g)].map((match) => match[1]).sort(),
+    ["email", "id", "name", "notes", "organization_id", "phone"],
+    "the columns of the customer read are the same four fields plus the key"
+  );
+  const index = await owner.pool.query<{ definition: string }>(
+    "SELECT pg_get_indexdef(indexrelid) AS definition FROM pg_index WHERE indrelid = 'public.platform_audit_events'::regclass AND indexrelid::regclass::text = 'platform_audit_events_principal_event_idx'"
+  );
+  assert.match(index.rows[0]?.definition ?? "", AUDIT_INDEX_COLUMNS);
+  tests.push(
+    `the reveal limit: ${REVEAL_LIMIT} reveals of one operator in an hour are accepted (a repeat of a field counts) and the next is refused with operator_reveal_rate_limited without a new audit row; an unknown customer or one of another store spends no slot; another operator is not affected; two cases and two stores share one quota; the last slot goes to one of three concurrent requests; a reveal waits for the lock of its own operator and not for the lock of the operator's refunds; 30 reveals 59 minutes ago block and 61 minutes ago do not; invalid field and missing grant keep their own refusals; the function keeps its signature, owner, search_path, EXECUTE only for the Admin role and the same customer columns, and the index by operator, type and time exists`
+  );
+}
+
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
   assert.match(branch, gateBranchPattern);
@@ -1097,6 +1409,22 @@ async function run() {
     tests.push(
       "access ends when the grant expires, when it is revoked (once, by any active operator) and when the case is closed (every grant at once, once); a closed case takes no new grant"
     );
+
+    await verifyRevealLimit({
+      asAdmin,
+      denied,
+      joao,
+      maria,
+      open,
+      orgA,
+      orgB,
+      outsider,
+      owner,
+      principal,
+      refused,
+      reveal,
+      tests,
+    });
 
     console.log(
       JSON.stringify(
