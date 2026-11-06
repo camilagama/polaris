@@ -13,7 +13,12 @@ import {
   screenContext,
   summary,
 } from "./test-page";
-import type { SupportCasePage, SupportCaseSummary } from "./types";
+import type {
+  PrivacyCasePage,
+  PrivacyCaseSummary,
+  SupportCasePage,
+  SupportCaseSummary,
+} from "./types";
 
 /**
  * Início and Loja in a small DOM, against a simulated API (corte admin-v2, Parte 1): what waits for the operator
@@ -78,6 +83,208 @@ const home = (answers: Answer[], who?: Answer) =>
 const storeScreen = (answers: Answer[], who?: Answer) =>
   mount(answers, who, undefined, screenContext({ id: STORE, screen: "loja" }));
 
+const PRIVACY_CASE = "0199a0a0-0000-7000-8000-00000000d0de";
+const WITH_PRIVACY = {
+  ...OWNER,
+  capabilities: [...OWNER.capabilities, "privacy_case:manage"],
+};
+
+function privacyOf(
+  overrides: Partial<PrivacyCaseSummary> = {}
+): PrivacyCaseSummary {
+  return {
+    dueAt: "2026-11-10T15:00:00.000Z",
+    dueInDays: 13,
+    id: PRIVACY_CASE,
+    openedAt: OPENED_AT,
+    organizationId: STORE,
+    organizationName: "Loja da Ana",
+    overdue: false,
+    requesterKind: "data_subject",
+    requestType: "deletion",
+    stage: "opened",
+    status: "open",
+    ...overrides,
+  };
+}
+
+const privacyPage = (
+  cases: PrivacyCaseSummary[],
+  next: string | null = null
+): PrivacyCasePage => ({ cases, next });
+
+const waitingItems = (root: Parameters<typeof byTag>[0]) =>
+  byTag(root, "a").filter(
+    (item) => item.getAttribute("class") === "waiting-item"
+  );
+
+describe("Início: o que pede atenção, antes da busca (AC-CL5, AC-CP2, AC-CL7)", () => {
+  const privacyHome = (answers: Answer[]) => home(answers, json(WITH_PRIVACY));
+
+  it("puts Esperando por você before Lojas", async () => {
+    const { root } = await privacyHome([
+      json(privacyPage([])),
+      json(page([summaryOf()])),
+    ]);
+
+    expect(byTag(root, "h2").map((heading) => heading.textContent)).toEqual([
+      "Esperando por você",
+      "Lojas",
+    ]);
+  });
+
+  it("reads the open privacy cases without audit and counts them, with the most urgent due day the server counted", async () => {
+    const { calls, root } = await privacyHome([
+      json(
+        privacyPage([
+          privacyOf({ dueInDays: 5 }),
+          privacyOf({ dueInDays: 2, id: OTHER_CASE }),
+        ])
+      ),
+      json(page([])),
+    ]);
+
+    expect(calls[1]?.path.startsWith("/api/privacy-cases?")).toBe(true);
+    expect(calls[1]?.init.method).toBe("GET");
+    expect(search(calls[1]).get("filter")).toBe("open");
+    expect(search(calls[1]).get("limit")).toBe("50");
+    const [link] = waitingItems(root);
+    expect(link?.getAttribute("href")).toBe("/privacidade");
+    expect(link?.textContent).toContain("2 pedidos de dados abertos");
+    expect(link?.textContent).toContain("o mais urgente vence em 2 dias");
+    expect(link?.getAttribute("aria-label")).toBe(
+      "2 pedidos de dados abertos, o mais urgente vence em 2 dias: ver pedidos de dados"
+    );
+  });
+
+  it.each([
+    [
+      "is past, by the server's own flag",
+      { dueInDays: 0, overdue: true },
+      "o mais urgente está vencido",
+    ],
+    ["is days behind", { dueInDays: -3 }, "o mais urgente está vencido"],
+    ["is today", { dueInDays: 0 }, "o mais urgente vence hoje"],
+    ["is tomorrow", { dueInDays: 1 }, "o mais urgente vence em 1 dia"],
+  ])(
+    "says in words that the most urgent due day %s",
+    async (_name, fields, words) => {
+      const { root } = await privacyHome([
+        json(privacyPage([privacyOf(fields)])),
+        json(page([])),
+      ]);
+
+      expect(visibleText(root)).toContain(words);
+    }
+  );
+
+  it("takes the days from the server, never from the date: a due date far in the past with 7 days says 7", async () => {
+    const { root } = await privacyHome([
+      json(
+        privacyPage([
+          privacyOf({ dueAt: "2020-01-01T00:00:00.000Z", dueInDays: 7 }),
+        ])
+      ),
+      json(page([])),
+    ]);
+
+    expect(visibleText(root)).toContain("o mais urgente vence em 7 dias");
+  });
+
+  it("says nothing of a due day when the server has none, and says 'ou mais' when there is another page", async () => {
+    const { root } = await privacyHome([
+      json(privacyPage([privacyOf({ dueInDays: null })], PRIVACY_CASE)),
+      json(page([])),
+    ]);
+
+    const [link] = waitingItems(root);
+    expect(link?.textContent).toContain("1 ou mais pedidos de dados abertos");
+    expect(link?.textContent).not.toContain("urgente");
+  });
+
+  it("says the due day of the most urgent is among the newest when there is another page", async () => {
+    const { root } = await privacyHome([
+      json(privacyPage([privacyOf({ dueInDays: 4 })], PRIVACY_CASE)),
+      json(page([])),
+    ]);
+
+    expect(visibleText(root)).toContain(
+      "entre os 50 mais recentes, o mais urgente vence em 4 dias"
+    );
+  });
+
+  it("shows no line for no privacy case, and says nothing waits when nothing does", async () => {
+    const { root } = await privacyHome([json(privacyPage([])), json(page([]))]);
+
+    expect(waitingItems(root)).toEqual([]);
+    expect(visibleText(root)).toContain("Nada esperando por você.");
+  });
+
+  it("says the privacy cases could not be counted when the read fails, and still counts the rest", async () => {
+    const { root } = await privacyHome([
+      json({ error: "boom" }, 503),
+      json(page([summaryOf()])),
+    ]);
+
+    expect(alertOf(root)?.textContent).toContain(
+      "Não foi possível contar os pedidos de dados."
+    );
+    expect(visibleText(root)).toContain("1 atendimento de suporte aberto");
+  });
+
+  it("does not read the privacy cases without the capability", async () => {
+    const { calls } = await home([json(page([]))]);
+
+    expect(calls.some((call) => call.path.includes("privacy-cases"))).toBe(
+      false
+    );
+  });
+
+  it("makes each item one link around its line, with the figure apart and the name 'N o quê: destino'", async () => {
+    const { root } = await privacyHome([
+      json(privacyPage([privacyOf()])),
+      json(page([summaryOf(), summaryOf({ id: OTHER_CASE })])),
+    ]);
+
+    const items = waitingItems(root);
+    expect(items.map((item) => item.getAttribute("href"))).toEqual([
+      "/privacidade",
+      "/casos",
+    ]);
+    const [, support] = items;
+    expect(support?.getAttribute("aria-label")).toBe(
+      "2 atendimentos de suporte abertos: ver atendimentos"
+    );
+    const figure = byTag(support as never, "span").find(
+      (span) => span.getAttribute("class") === "waiting-count"
+    );
+    expect(figure?.textContent).toBe("2");
+    for (const item of items) {
+      expect(item.parent?.tagName).toBe("li");
+      expect(item.parent?.parent?.getAttribute("class")).toBe("waiting");
+    }
+  });
+
+  it("shows the three-line guide always, as fixed text with no button, with nothing to dismiss", async () => {
+    const empty = await home([json(page([]))]);
+    const full = await home([json(page([summaryOf()]))]);
+    for (const { root } of [empty, full]) {
+      const guide = allElements(root).find((element) =>
+        (element.getAttribute("class") ?? "").includes("guide")
+      );
+      expect(guide?.tagName).toBe("ol");
+      expect(
+        byTag(guide as never, "li").map((line) => line.textContent)
+      ).toEqual([
+        "Ache a loja em Lojas.",
+        "Para agir, abra um atendimento: ele autoriza e registra.",
+        "Pedidos de dados e falhas aparecem aqui quando houver.",
+      ]);
+      expect(byTag(guide as never, "button")).toEqual([]);
+    }
+  });
+});
+
 describe("Início (AC-P1.2b)", () => {
   it("asks only who is signed in and the open cases, and nothing audited or heavy", async () => {
     const { calls } = await home([json(page([summaryOf()]))]);
@@ -104,9 +311,10 @@ describe("Início (AC-P1.2b)", () => {
     expect(visibleText(root)).toContain("2 atendimentos de suporte abertos");
     expect(visibleText(root)).not.toContain("Nada esperando por você.");
     const link = byTag(root, "a").find(
-      (item) => item.textContent === "Ver atendimentos"
+      (item) => item.getAttribute("class") === "waiting-item"
     );
     expect(link?.getAttribute("href")).toBe("/casos");
+    expect(link?.textContent).toContain("Ver atendimentos");
   });
 
   it("says 1 atendimento in the singular", async () => {
@@ -343,6 +551,24 @@ describe("Loja", () => {
       `/api/organizations/${STORE}/diagnostics`,
     ]);
     expect(hrefs(root)).not.toContain(`/casos/novo?loja=${STORE}`);
+  });
+
+  it("has no form to open a case, and says no paid subscription instead of rows of dashes", async () => {
+    const { root } = await storeScreen([
+      json(page([])),
+      json(diagnostics({ billing: null, entitlements: { plan: "free" } })),
+    ]);
+    await flush();
+
+    expect(byTag(root, "form")).toEqual([]);
+    expect(visibleText(root)).not.toContain("Motivo do novo atendimento");
+    expect(visibleText(root)).toContain("Sem assinatura paga.");
+    const dashes = byTag(root, "dd").filter((cell) => cell.textContent === "—");
+    expect(dashes).toEqual([]);
+    const labels = byTag(root, "dt").map((term) => term.textContent);
+    expect(labels).toContain("Plano em vigor");
+    expect(labels).not.toContain("Ciclo");
+    expect(labels).not.toContain("Último fato de cobrança");
   });
 
   it("names the store above its cases once the diagnostics are read", async () => {

@@ -4,11 +4,19 @@ import { tableRow } from "../blocks";
 import { hasControlCharacter, labelName, storeName } from "../dom";
 import { brasiliaMomentText, caseKindText } from "../format";
 import { createNotice } from "../notice";
-import type { SupportCasePage, SupportCaseSummary } from "../types";
+import type {
+  OrganizationPage,
+  OrganizationSummary,
+  SupportCasePage,
+  SupportCaseSummary,
+} from "../types";
 import { caseLink, newCaseLink } from "./case-links";
 
 /** The server's limits for the store filter of `GET /api/support-cases` (`MAX_ID_LENGTH`) and its page. */
 const MAX_STORE_LENGTH = 128;
+/** The server's limit for the name search of `GET /api/organizations`. */
+const MAX_NAME_LENGTH = 100;
+const CHOICES_PAGE = "10";
 const PAGE_SIZE = "25";
 const REASON_SHOWN = 120;
 
@@ -52,26 +60,31 @@ function stateText(item: SupportCaseSummary): string {
   return `estado desconhecido: ${item.status}`;
 }
 
+const NO_STORE_NAMED =
+  "Nenhuma loja com esse nome. Tente menos letras do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas.";
+
 /**
  * Atendimentos (AC-P1.4): the open or the closed cases, of every store or of one, a page at a time, read when the
- * screen opens (the list is not audited). The store filter goes to the server as it was typed, never trimmed or
- * rewritten, and stays out of the URL; the tabs are links with a fixed value. A privacy case is listed for reading
+ * screen opens (the list is not audited). The store is chosen by its name: the search is the Lojas one, and the ID
+ * it finds is only the value the filter sends, kept out of the URL and out of the field; an operator who cannot
+ * search stores types the ID, as before. The tabs are links with a fixed value. A privacy case is listed for reading
  * only: its reason and its steps belong to the privacy workflow.
  */
 export function casesView(tools: ScreenTools): HTMLElement {
   const { api, can, context, dom } = tools;
   const state = STATES[context.listState];
   const notice = createNotice(dom);
+  const byName = can("organization:diagnose");
   const storeInput = dom.el("input", {
     "aria-describedby": "casos-loja-dica",
     autocomplete: "off",
     id: "casos-loja",
-    maxlength: String(MAX_STORE_LENGTH),
+    maxlength: String(byName ? MAX_NAME_LENGTH : MAX_STORE_LENGTH),
     name: "loja",
     spellcheck: "false",
     type: "search",
   });
-  storeInput.value = context.store ?? "";
+  storeInput.value = byName ? "" : (context.store ?? "");
   const filterButton = dom.el(
     "button",
     { class: "secondary", type: "submit" },
@@ -84,6 +97,8 @@ export function casesView(tools: ScreenTools): HTMLElement {
   );
   const rows = dom.el("tbody");
   const nextStep = dom.el("p", { class: "hint", hidden: "" });
+  const chosen = dom.el("p", { class: "chosen", hidden: "" });
+  const choices = dom.el("ul", { class: "case-list", hidden: "" });
   const list = dom.el(
     "table",
     { class: "grid", hidden: "" },
@@ -100,11 +115,14 @@ export function casesView(tools: ScreenTools): HTMLElement {
     rows
   );
 
-  let store = storeInput.value;
+  let store = byName ? (context.store ?? "") : storeInput.value;
+  /** The name of the store chosen by the search; a store that came with the address is named from its cases or by its ID. */
+  let storeNamed: string | undefined;
   let next: string | null = null;
   let shown = 0;
   let loading = false;
   let turn = 0;
+  let searchTurn = 0;
 
   const busy = (on: boolean) => {
     loading = on;
@@ -165,7 +183,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
     if (!answer.ok) {
       notice.alert(
         answer.problem === "invalid"
-          ? "O filtro não foi aceito: use o ID da loja, até 128 caracteres."
+          ? "O filtro não foi aceito. Escolha a loja de novo pelo nome."
           : PROBLEM_TEXT[answer.problem]
       );
       return;
@@ -191,15 +209,109 @@ export function casesView(tools: ScreenTools): HTMLElement {
       moreButton.removeAttribute("hidden");
     }
     notice.status(countText(shown, next !== null, state.empty));
-    if (after !== null) {
+    if (after === null) {
+      nameChosen(answer.data.cases[0]?.organizationName);
+    } else {
       added[0]?.querySelector("a")?.focus();
     }
+  };
+
+  /** The store the filter holds, by name; with no case to take the name from, the store is asked for by its ID. */
+  const nameChosen = async (known: string | undefined) => {
+    if (!byName || store === "") {
+      chosen.setAttribute("hidden", "");
+      return;
+    }
+    let name = storeNamed ?? known;
+    if (name === undefined) {
+      const mine = searchTurn;
+      const found = await api.get<OrganizationPage>(
+        `/api/organizations?${new URLSearchParams({ limit: "1", query: store }).toString()}`
+      );
+      if (mine !== searchTurn) {
+        return;
+      }
+      name =
+        found.ok && Array.isArray(found.data?.organizations)
+          ? found.data.organizations.find((item) => item.id === store)?.name
+          : undefined;
+    }
+    if (name !== undefined) {
+      storeInput.value = name;
+    }
+    dom.fill(
+      chosen,
+      "Loja: ",
+      name === undefined ? "escolhida pelo endereço" : labelName(name),
+      "."
+    );
+    chosen.removeAttribute("hidden");
+  };
+
+  const choose = (organization: OrganizationSummary) => {
+    store = organization.id;
+    storeNamed = organization.name;
+    storeInput.value = organization.name;
+    choices.setAttribute("hidden", "");
+    load(null);
+  };
+
+  const searchByName = async (typed: string) => {
+    searchTurn += 1;
+    const mine = searchTurn;
+    choices.setAttribute("hidden", "");
+    busy(true);
+    notice.status("Buscando a loja…");
+    const answer = await api.get<OrganizationPage>(
+      `/api/organizations?${new URLSearchParams({ limit: CHOICES_PAGE, query: typed }).toString()}`
+    );
+    if (mine !== searchTurn) {
+      return;
+    }
+    busy(false);
+    if (!answer.ok) {
+      notice.alert(PROBLEM_TEXT[answer.problem]);
+      return;
+    }
+    const found = Array.isArray(answer.data?.organizations)
+      ? answer.data.organizations
+      : [];
+    if (found.length === 0) {
+      notice.alert(NO_STORE_NAMED);
+      return;
+    }
+    const [only] = found;
+    if (found.length === 1 && only !== undefined) {
+      choose(only);
+      return;
+    }
+    const more =
+      answer.data.next === null ? "" : " Há mais: escreva mais letras do nome.";
+    dom.fill(
+      choices,
+      ...found.map((organization) => {
+        const pick = dom.el(
+          "button",
+          { class: "secondary", type: "button" },
+          `Escolher ${labelName(organization.name)}`
+        );
+        pick.addEventListener("click", () => {
+          if (!loading) {
+            choose(organization);
+          }
+        });
+        return dom.el("li", {}, pick);
+      })
+    );
+    choices.removeAttribute("hidden");
+    notice.status(`${found.length} lojas com esse nome. Escolha uma.${more}`);
+    choices.querySelector("button")?.focus();
   };
 
   const emptyNextStep = (): (HTMLElement | string)[] => {
     if (store !== "") {
       return [
-        "Confira o ID da loja ou deixe o campo vazio para ver os atendimentos de todas as lojas.",
+        "Esta loja não tem atendimentos aqui. Deixe o campo vazio e filtre para ver os de todas as lojas.",
       ];
     }
     if (context.listState === "fechados") {
@@ -225,13 +337,20 @@ export function casesView(tools: ScreenTools): HTMLElement {
   const form = dom.el(
     "form",
     { class: "search", novalidate: "" },
-    dom.el("label", { for: "casos-loja" }, "ID da loja"),
+    dom.el(
+      "label",
+      { for: "casos-loja" },
+      byName ? "Nome da loja" : "ID da loja"
+    ),
     dom.el("div", { class: "search-row" }, storeInput, filterButton),
     dom.el(
       "p",
       { class: "hint", id: "casos-loja-dica" },
-      "Vazio lista os atendimentos de todas as lojas."
-    )
+      byName
+        ? "Digite parte do nome da loja. Vazio lista os atendimentos de todas as lojas."
+        : "Vazio lista os atendimentos de todas as lojas."
+    ),
+    choices
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -239,6 +358,22 @@ export function casesView(tools: ScreenTools): HTMLElement {
       return;
     }
     const typed = storeInput.value;
+    if (byName) {
+      if (typed.length > MAX_NAME_LENGTH || hasControlCharacter(typed)) {
+        notice.alert(
+          "A busca aceita o nome da loja, até 100 caracteres, sem caracteres de controle."
+        );
+        return;
+      }
+      if (typed !== "") {
+        searchByName(typed);
+        return;
+      }
+      store = "";
+      storeNamed = undefined;
+      load(null);
+      return;
+    }
     if (typed.length > MAX_STORE_LENGTH || hasControlCharacter(typed)) {
       notice.alert(
         "O filtro aceita só o ID da loja, até 128 caracteres, sem caracteres de controle."
@@ -285,6 +420,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
     ),
     newCaseLink(dom, context.store),
     form,
+    chosen,
     notice.element,
     nextStep,
     dom.el("div", { class: "results" }, list),

@@ -219,16 +219,20 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
       error: "refund_window_read_refused",
     });
 
-    // the page opens the case with the reason in the JSON body, then reads the window on one click
-    byId(refund, "motivo").value = "Dono pediu reembolso por e-mail";
-    buttons(refund, "Abrir atendimento")[0]?.click();
-    await page.shows("Atendimento aberto.");
-    const opened = page.calls.at(-1);
-    expect(opened).toEqual({
+    // the case is opened where cases are opened (Atendimentos); the store's screen lists it, then reads the window on one click
+    const mineOpened = await asBrowser("/api/support-cases", {
+      body: JSON.stringify({
+        kind: "support",
+        organizationId: hostile.id,
+        reason: "Dono pediu reembolso por e-mail",
+      }),
+      headers: { "content-type": "application/json" },
       method: "POST",
-      path: "/api/support-cases",
-      status: 201,
     });
+    expect(mineOpened.status).toBe(201);
+    expect(byTag(refund, "form")).toEqual([]);
+    buttons(refund, "Ver atendimentos abertos desta loja")[0]?.click();
+    await page.shows("1 atendimento aberto.");
     buttons(refund, "Ler a cobrança")[0]?.click();
     await page.shows(
       "Cobrança lida. A consulta ficou registrada na auditoria."
@@ -347,7 +351,7 @@ describe("the operator's page against the Worker and PostgreSQL (AC-17)", () => 
     ).toHaveLength(1);
     const list = await openPage({ listState: "fechados", screen: "casos" });
     await list.shows(CASES_COUNT);
-    byId(list.root, "casos-loja").value = free.id;
+    byId(list.root, "casos-loja").value = free.name;
     buttons(list.root, "Filtrar")[0]?.click();
     await vi.waitFor(
       () =>

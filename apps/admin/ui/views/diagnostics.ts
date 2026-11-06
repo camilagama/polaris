@@ -26,14 +26,24 @@ export interface DiagnosticsView {
   show: (organization: { id: string; name: string }) => Promise<void>;
 }
 
+const NO_VALUE = "—";
+
+/** A fact the server has no value for is left out: a dash says nothing, and a row of dashes is noise. */
+function withValue(pairs: readonly (readonly [string, string])[]) {
+  return pairs.filter(([, value]) => value !== NO_VALUE);
+}
+
 function storeFacts(dom: Dom, report: OrganizationDiagnostics) {
-  return facts(dom, [
-    ["Situação", storeStatusText(report.organization.status)],
-    ["Criada em", brasiliaDay(report.organization.createdAt)],
-    ["Pessoas com acesso", String(report.organization.members)],
-    ["Aparelhos com venda offline", String(report.offline.devices)],
-    ["Última sincronização", brasiliaDay(report.sync.lastReceivedAt)],
-  ]);
+  return facts(
+    dom,
+    withValue([
+      ["Situação", storeStatusText(report.organization.status)],
+      ["Criada em", brasiliaDay(report.organization.createdAt)],
+      ["Pessoas com acesso", String(report.organization.members)],
+      ["Aparelhos com venda offline", String(report.offline.devices)],
+      ["Última sincronização", brasiliaDay(report.sync.lastReceivedAt)],
+    ])
+  );
 }
 
 function renewalText(billing: OrganizationDiagnostics["billing"]): string {
@@ -47,17 +57,28 @@ function renewalText(billing: OrganizationDiagnostics["billing"]): string {
 
 function planFacts(dom: Dom, report: OrganizationDiagnostics) {
   const { billing, entitlements } = report;
-  return facts(dom, [
-    ["Plano em vigor", planText(entitlements.plan)],
-    ["Assinatura", billingStateText(billing?.state ?? null)],
-    ["Fim do acesso", brasiliaDay(entitlements.accessEndsAt)],
-    ["Ciclo", cycleText(billing?.cycleMonths ?? null)],
-    ["Forma de pagamento", paymentText(billing?.provider ?? null)],
-    ["Renovação", renewalText(billing)],
-    ["Teste do Pro começou em", brasiliaDay(billing?.trialStartedAt ?? null)],
-    ["Último fato de cobrança", brasiliaDay(billing?.lastFactAt ?? null)],
-    ["Pagamento revogado", revokedText(billing?.revokedReason ?? null)],
-  ]);
+  const shown = facts(
+    dom,
+    withValue([
+      ["Plano em vigor", planText(entitlements.plan)],
+      ["Assinatura", billingStateText(billing?.state ?? null)],
+      ["Fim do acesso", brasiliaDay(entitlements.accessEndsAt)],
+      ["Ciclo", cycleText(billing?.cycleMonths ?? null)],
+      ["Forma de pagamento", paymentText(billing?.provider ?? null)],
+      ["Renovação", renewalText(billing)],
+      ["Teste do Pro começou em", brasiliaDay(billing?.trialStartedAt ?? null)],
+      ["Último fato de cobrança", brasiliaDay(billing?.lastFactAt ?? null)],
+      ["Pagamento revogado", revokedText(billing?.revokedReason ?? null)],
+    ])
+  );
+  return billing === null
+    ? dom.el(
+        "div",
+        {},
+        shown,
+        dom.el("p", { class: "hint" }, "Sem assinatura paga.")
+      )
+    : shown;
 }
 
 function quotaTable(dom: Dom, report: OrganizationDiagnostics) {

@@ -42,6 +42,7 @@ import {
 const CASE = "0199a0a0-0000-7000-8000-00000000c0de";
 const OTHER_CASE = "0199a0a0-0000-7000-8000-00000000c0df";
 const STORE = "0199a0a0-0000-7000-8000-0000000000a1";
+const OTHER_STORE = "0199a0a0-0000-7000-8000-0000000000a2";
 const OPENED_AT = "2026-10-28T13:05:00.000Z";
 const CLOSED_AT = "2026-10-28T15:05:00.000Z";
 const CLOSED_TEXT = "28/10/2026 12:05";
@@ -161,21 +162,99 @@ describe("the list of cases (AC-P1.4)", () => {
     );
   });
 
-  it("sends the store filter as it was typed, untrimmed, and not in the URL of the screen", async () => {
+  const organizations = (...names: string[]) =>
+    json({
+      next: null,
+      organizations: names.map((name, index) =>
+        summary({ id: index === 0 ? STORE : OTHER_STORE, name })
+      ),
+    });
+
+  const typeAndFilter = async (root: FakeElement, typed: string) => {
+    byId(root, "casos-loja").value = typed;
+    buttons(root, "Filtrar")[0]?.click();
+    await flush();
+  };
+
+  it("asks for the store by name, and filters by the ID it found, which stays out of the field and the URL", async () => {
     const { calls, root } = await mount(
-      [json(page([])), json(page([]))],
+      [json(page([])), organizations("Loja da Ana"), json(page([]))],
       undefined,
       undefined,
       listContext()
     );
 
-    byId(root, "casos-loja").value = " abc ";
-    buttons(root, "Filtrar")[0]?.click();
+    expect(
+      allElements(root).find((item) => item.tagName === "label")?.textContent
+    ).toBe("Nome da loja");
+    await typeAndFilter(root, "Loja da");
+
+    expect(calls).toHaveLength(4);
+    expect(calls[2]?.path.startsWith("/api/organizations?")).toBe(true);
+    expect(search(calls[2]).get("query")).toBe("Loja da");
+    expect(search(calls[3]).get("organizationId")).toBe(STORE);
+    expect(search(calls[3]).get("status")).toBe("open");
+    expect(byId(root, "casos-loja").value).toBe("Loja da Ana");
+    expect(visibleText(root)).toContain("Loja: Loja da Ana.");
+    expect(visibleText(byId(root, "casos-loja-dica"))).not.toContain(STORE);
+  });
+
+  it("asks to choose when several stores match, and reads no case until one is chosen", async () => {
+    const { calls, root } = await mount(
+      [
+        json(page([])),
+        organizations("Loja da Ana", "Loja da Ana Maria"),
+        json(page([])),
+      ],
+      undefined,
+      undefined,
+      listContext()
+    );
+
+    await typeAndFilter(root, "Loja da Ana");
+    expect(calls).toHaveLength(3);
+    expect(visibleText(root)).toContain("2 lojas com esse nome. Escolha uma.");
+
+    buttons(root, "Escolher Loja da Ana Maria")[0]?.click();
     await flush();
+    expect(calls).toHaveLength(4);
+    expect(search(calls[3]).get("organizationId")).toBe(OTHER_STORE);
+  });
+
+  it("says how to search when no store has that name, and reads no case", async () => {
+    const { calls, root } = await mount(
+      [json(page([])), organizations()],
+      undefined,
+      undefined,
+      listContext()
+    );
+
+    await typeAndFilter(root, "zzz");
 
     expect(calls).toHaveLength(3);
-    expect(search(calls[2]).get("organizationId")).toBe(" abc ");
-    expect(search(calls[2]).get("status")).toBe("open");
+    expect(alertOf(root)?.textContent).toBe(
+      "Nenhuma loja com esse nome. Tente menos letras do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas."
+    );
+  });
+
+  it("lists the cases of every store again when the field is sent empty after a store was chosen", async () => {
+    const { calls, root } = await mount(
+      [
+        json(page([])),
+        organizations("Loja da Ana"),
+        json(page([])),
+        json(page([])),
+      ],
+      undefined,
+      undefined,
+      listContext()
+    );
+
+    await typeAndFilter(root, "Loja");
+    await typeAndFilter(root, "");
+
+    expect(calls).toHaveLength(5);
+    expect(search(calls[4]).has("organizationId")).toBe(false);
   });
 
   it("filters with an outline button, so the one ink of the list is Abrir atendimento", async () => {
@@ -191,22 +270,37 @@ describe("the list of cases (AC-P1.4)", () => {
     );
   });
 
-  it("starts with the store of the screen's context in the filter and sends it", async () => {
+  it("starts with the store of the screen's context in the filter, and names it from its first case", async () => {
     const { calls, root } = await mount(
-      [json(page([]))],
+      [json(page([summaryOf()]))],
       undefined,
       undefined,
       listContext({ store: STORE })
     );
 
-    expect(byId(root, "casos-loja").value).toBe(STORE);
     expect(search(calls[1]).get("organizationId")).toBe(STORE);
+    expect(calls).toHaveLength(2);
+    expect(visibleText(root)).toContain("Loja: Loja da Ana.");
+    expect(byId(root, "casos-loja").value).toBe("Loja da Ana");
+  });
+
+  it("asks for the name by the exact ID when the store of the context has no case to take it from", async () => {
+    const { calls, root } = await mount(
+      [json(page([])), organizations("Loja da Ana")],
+      undefined,
+      undefined,
+      listContext({ store: STORE })
+    );
+
+    expect(calls).toHaveLength(3);
+    expect(search(calls[2]).get("query")).toBe(STORE);
+    expect(visibleText(root)).toContain("Loja: Loja da Ana.");
   });
 
   it.each([
-    ["a filter of 129 characters", "a".repeat(129)],
-    ["a filter with a control character", "ab\u0007c"],
-    ["a filter with a line break", "ab\nc"],
+    ["a name of 101 characters", "a".repeat(101)],
+    ["a name with a control character", "ab\u0007c"],
+    ["a name with a line break", "ab\nc"],
   ])("refuses %s without a request", async (_name, typed) => {
     const { calls, root } = await mount(
       [json(page([]))],
@@ -215,29 +309,29 @@ describe("the list of cases (AC-P1.4)", () => {
       listContext()
     );
 
-    byId(root, "casos-loja").value = typed;
-    buttons(root, "Filtrar")[0]?.click();
-    await flush();
+    await typeAndFilter(root, typed);
 
     expect(calls).toHaveLength(2);
     expect(alertOf(root)?.textContent).toContain(
-      "O filtro aceita só o ID da loja"
+      "A busca aceita o nome da loja"
     );
   });
 
-  it("accepts a filter of exactly 128 characters", async () => {
+  it("without the capability to search stores, takes the ID as it was typed, untrimmed", async () => {
     const { calls, root } = await mount(
       [json(page([])), json(page([]))],
-      undefined,
+      json({ ...OWNER, capabilities: ["support_case:manage"] }),
       undefined,
       listContext()
     );
 
-    byId(root, "casos-loja").value = "a".repeat(128);
-    buttons(root, "Filtrar")[0]?.click();
-    await flush();
+    expect(
+      allElements(root).find((item) => item.tagName === "label")?.textContent
+    ).toBe("ID da loja");
+    await typeAndFilter(root, " abc ");
 
-    expect(search(calls[2]).get("organizationId")).toBe("a".repeat(128));
+    expect(calls).toHaveLength(3);
+    expect(search(calls[2]).get("organizationId")).toBe(" abc ");
   });
 
   it("shows the store name and ID, the type, the reason and the state of an open support case, with a link to it", async () => {

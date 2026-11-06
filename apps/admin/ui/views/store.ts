@@ -98,7 +98,7 @@ function storeCases(tools: ScreenTools, organizationId: string): HTMLElement {
  * Cobrança (design §2.3): the refund window of the v1, read by a click with an open case of the store, and the way
  * to the concession, which is an action of the case. The grants in force are in the diagnostics below.
  */
-function billingSection(tools: ScreenTools, organizationId: string) {
+function billingSection(tools: ScreenTools) {
   const { can, dom } = tools;
   const refund = refundWindowView(tools);
   const element = dom.el(
@@ -111,9 +111,6 @@ function billingSection(tools: ScreenTools, organizationId: string) {
           { class: "hint" },
           "Dar ou encerrar uma concessão de plano é ação do atendimento aberto desta loja. As concessões em vigor estão em Concessões, mais abaixo."
         )
-      : null,
-    can("billing:operate") && can("support_case:manage")
-      ? newCaseLink(dom, organizationId)
       : null,
     refund.element
   );
@@ -135,7 +132,7 @@ export function storeView(tools: ScreenTools): HTMLElement {
   if (can("support_case:manage")) {
     parts.push(storeCases(tools, id));
   }
-  const billing = billingSection(tools, id);
+  const billing = billingSection(tools);
   const diagnostics = diagnosticsView(dom, api, now, (organization) => {
     dom.fill(head, storeName(dom, organization.name, organization.id));
     billing.refund.show(organization);

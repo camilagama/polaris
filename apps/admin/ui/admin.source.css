@@ -655,15 +655,57 @@
   }
 
   .history ul,
-  .case-list,
-  .waiting {
+  .case-list {
     padding-left: 1.25rem;
     margin: 0.5rem 0;
   }
 
-  .case-list li,
-  .waiting li {
+  .case-list li {
     overflow-wrap: anywhere;
+  }
+
+  .waiting {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0;
+    margin: 0.5rem 0;
+    list-style: none;
+  }
+
+  /* the whole line is the link: the figure, what it counts and where it goes */
+  .waiting-item {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    padding: 0.5rem 0.75rem;
+    color: inherit;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    /* dash: apps/web/src/ui/button.tsx */
+    @apply touch-hit focus-ring hover:bg-accent;
+  }
+
+  .waiting-count {
+    min-width: 2ch;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .waiting-what {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .waiting-go {
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+
+  .guide {
+    padding-left: 1.25rem;
+    margin: 0.75rem 0 0;
   }
 
   .chosen {
