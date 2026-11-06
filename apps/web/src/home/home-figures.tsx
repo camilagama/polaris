@@ -1,16 +1,16 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
+import { Money } from "@polaris/domain/money/money";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
-import { Money } from "@polaris/domain/money/money";
 import { MoneyText } from "@/ui/hidden-values";
-import { formatBrlAmount, formatQuantity } from "../lib/format";
 import {
   currentFirstStep,
   FIRST_STEPS_ANCHOR,
   firstStepsDone,
 } from "../app-shell/first-steps";
+import { formatBrlAmount, formatQuantity } from "../lib/format";
 import { checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
 import type { HomeChecklist } from "./use-home";
@@ -169,9 +169,7 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
                     done[index] &&
                       "border-primary bg-primary text-primary-foreground",
                     index === current &&
-                      "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15",
-                    !(done[index] || index === current) &&
-                      "text-muted-foreground"
+                      "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15"
                   )}
                 >
                   {done[index] ? <CheckIcon className="size-3" /> : index + 1}

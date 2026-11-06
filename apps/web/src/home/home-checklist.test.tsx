@@ -75,7 +75,7 @@ describe("the checklist of the Início marks the step of the hour", () => {
     const rows = render(null);
     const future = rows[2] as string;
     expect(text(future)).toBe("3 Fazer a 1ª venda");
-    expect(circle(future)).toContain("text-muted-foreground");
+    expect(circle(future)).not.toContain("text-mark-foreground");
     expect(circle(future)).not.toContain("border-mark");
     expect(future).not.toContain("aria-current");
     expect(future).not.toContain("(feito)");

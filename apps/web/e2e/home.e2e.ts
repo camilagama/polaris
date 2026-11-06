@@ -1500,6 +1500,19 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
             )
           ),
         });
+        const circles = await Promise.all(
+          [0, 1, 2].map((index) =>
+            items
+              .nth(index)
+              .locator("span[aria-hidden='true']")
+              .first()
+              .boundingBox()
+          )
+        );
+        for (const box of circles) {
+          expect(box?.width).toBeCloseTo(circles[0]?.width ?? 0, 0);
+          expect(box?.height).toBeCloseTo(circles[0]?.height ?? 0, 0);
+        }
         const marked = await heights();
         // the same block with the mark of the current step taken off: the mark must not take a pixel of height
         await items.nth(current).evaluate((item) => {
