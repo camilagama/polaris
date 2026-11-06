@@ -99,24 +99,27 @@ async function assertDaysToDueDay(probe: DueDayProbe) {
     ].map((time) => ({ dayOffset, ...time }))
   );
   const attempt = async () => {
-    const opened = await Promise.all(
-      wanted.map(async (entry) => {
-        const due = await dueMoment(entry.dayOffset, entry.hour, entry.minute);
-        const created = await probe.open({
-          dueDays: 5,
-          receivedAt: new Date(due.getTime() - 5 * DAY_MS),
-        });
-        assert.ok(created);
-        return { ...entry, due, id: created.id };
-      })
-    );
+    const opened: ((typeof wanted)[number] & { due: Date; id: string })[] = [];
+    for (const entry of wanted) {
+      const due = await dueMoment(entry.dayOffset, entry.hour, entry.minute);
+      const created = await probe.open({
+        dueDays: 5,
+        receivedAt: new Date(due.getTime() - 5 * DAY_MS),
+      });
+      assert.ok(created);
+      opened.push({ ...entry, due, id: created.id });
+    }
     return { opened, page: await probe.list() };
   };
-  const dayBefore = await brasiliaDay();
-  let counted = await attempt();
-  if (dayBefore !== (await brasiliaDay())) {
-    counted = await attempt();
+  let counted: Awaited<ReturnType<typeof attempt>> | null = null;
+  for (let tries = 0; counted === null && tries < 2; tries += 1) {
+    const before = await brasiliaDay();
+    const result = await attempt();
+    if (before === (await brasiliaDay())) {
+      counted = result;
+    }
   }
+  assert.ok(counted, "São Paulo midnight passed on every attempt");
   for (const entry of counted.opened) {
     const listed = counted.page.cases.find((item) => item.id === entry.id);
     assert.ok(listed, "the case just opened is on the first page");

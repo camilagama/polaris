@@ -1,7 +1,7 @@
 -- The Admin's list of data requests now says by itself how many calendar days in `America/Sao_Paulo` lie between today and
--- the due day (`dueInDays`: 0 is the due day, below 0 is past, null without a due date), counted from the same `now()` that
--- decides `overdue` and the `overdue` filter, so a case can no longer be "overdue" under one clock and "due today" under
--- another around midnight in Brasília. The Worker used to count it from its own clock.
+-- the due day (`dueInDays`: 0 is the due day, below 0 is past), counted from the same `now()` that
+-- decides `overdue` and the `overdue` filter, so a case cannot be "overdue" under one clock and "due today" under
+-- another around midnight in Brasília.
 -- Same function in every other way: same signature and `jsonb` result (one key added, which the Admin of the previous
 -- version ignores, ADR 0096), SECURITY DEFINER owned by `polaris_admin_owner` with the search_path pinned to end in
 -- pg_temp (0077), EXECUTE only for `polaris_admin_runtime` (0067); CREATE OR REPLACE keeps owner and grants, which are
