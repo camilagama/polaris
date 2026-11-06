@@ -367,8 +367,9 @@ function figuresLine(
 }
 
 /**
- * The title, "Esconder valores" and "Nova venda": the part of the page that depends on no read (and on no connection).
- * On a phone the eye is an icon button in the corner of the title and "Nova venda" takes the whole width (v7 § 3).
+ * The title, "Atualizar", "Esconder valores" and "Nova venda" with the line that says what the sale can do without a
+ * connection: the part of the page that depends on no read (and on no connection). On a phone the two buttons are
+ * icons in the corner of the title and "Nova venda" takes the whole width (v7 § 3).
  */
 function HomeHeader({
   explained,
@@ -376,7 +377,7 @@ function HomeHeader({
   refresh,
   updated,
 }: {
-  /** The line under the title says why there are no figures and no sale without a connection: "Nova venda" points to it. */
+  /** The line under the title says why there are no figures (and no sales, when the device cannot keep one): "Nova venda" points to it. */
   explained: boolean;
   offlineText: string | null;
   /** The gesture "Atualizar", or null when the session is refused; `offline` keeps it in place, switched off. */
@@ -421,8 +422,8 @@ function HomeHeader({
         <NewSale
           describedBy={
             [
-              offlineText ? "home-new-sale-offline" : null,
               explained ? "home-updated" : null,
+              offlineText ? "home-new-sale-offline" : null,
             ]
               .filter(Boolean)
               .join(" ") || undefined
@@ -431,6 +432,7 @@ function HomeHeader({
       </div>
       {offlineText ? (
         <p
+          // sibling of the row of actions in a flex-wrap header with `gap-y-4`: the negative margin leaves 6 px between them
           className="-mt-2.5 w-full text-muted-foreground text-support sm:text-right"
           id="home-new-sale-offline"
         >
