@@ -27,7 +27,6 @@ import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldDescription, FieldLegend, FieldSet } from "@/ui/field";
 import { Label } from "@/ui/label";
 import { markLegalAcceptanceRequired } from "../lib/legal-acceptance";
-import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import {
   listProductMedia,
   prepareMediaUploadFile,
@@ -53,7 +52,6 @@ import {
   type MoveDirection,
   movedAssetOrder,
   movedNotice,
-  COVER_NOTICE,
   PRODUCT_IMAGES_LIMIT_REACHED,
   removedNotice,
   replacementAbandonedText,
@@ -71,6 +69,7 @@ import { ProductMediaFilePicker } from "./product-media-file-picker";
 import {
   type ConfirmKind,
   type ConfirmRequest,
+  CoverNotice,
   ProductMediaList,
   type RunningCommand,
 } from "./product-media-list";
@@ -736,12 +735,6 @@ export function ProductMediaPanel({
     uploadButtonLabel = "Processando…";
   }
 
-  const coverNotice = useMediaThumbsEnabled() ? (
-    <p className="text-muted-foreground text-support" data-cover-notice="">
-      {COVER_NOTICE}
-    </p>
-  ) : null;
-
   let list: ReactNode;
   if (isLoading) {
     list = (
@@ -906,7 +899,7 @@ export function ProductMediaPanel({
         >
           Imagens associadas
         </h3>
-        {coverNotice}
+        <CoverNotice />
         {list}
       </section>
     </div>

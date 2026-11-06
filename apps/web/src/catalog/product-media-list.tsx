@@ -5,6 +5,7 @@ import { Button } from "@/ui/button";
 import { productMediaAssetUrl } from "../lib/media-upload";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import {
+  COVER_NOTICE,
   type ImageActionAvailability,
   imageActionAvailability,
   imageActionLabel,
@@ -12,6 +13,17 @@ import {
   removeConfirmationText,
   replaceConfirmationText,
 } from "./media-commands-model";
+
+export function CoverNotice() {
+  if (!useMediaThumbsEnabled()) {
+    return null;
+  }
+  return (
+    <p className="text-muted-foreground text-support" data-cover-notice="">
+      {COVER_NOTICE}
+    </p>
+  );
+}
 
 export type ConfirmKind = "remove" | "replace";
 

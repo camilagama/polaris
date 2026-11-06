@@ -337,7 +337,7 @@ describe("describeMediaFailure", () => {
 describe("o aviso da capa no painel de imagens", () => {
   it("diz que a primeira imagem é a capa, onde ela aparece e que a miniatura mostra o centro", () => {
     expect(COVER_NOTICE).toContain("primeira imagem é a capa");
-    expect(COVER_NOTICE).toContain("Produtos e na Venda");
+    expect(COVER_NOTICE).toContain("Produtos, na Venda e no Estoque");
     expect(COVER_NOTICE).toContain("centro da imagem");
   });
 
