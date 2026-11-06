@@ -350,6 +350,7 @@ describe("one column, one group, one (i) a card", () => {
       headline.indexOf("data-kpi-note-row")
     );
     expect(headline).toContain("min-[900px]:@[14rem]:flex-row");
+    expect(headline).not.toContain("@[14rem]:flex-wrap");
     expect(headline).toContain("min-[900px]:@[14rem]:items-baseline");
     expect(words(sales)).toContain("+25,0%vs. setembro");
     expect(sales).toContain(

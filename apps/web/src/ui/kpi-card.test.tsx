@@ -86,6 +86,37 @@ describe("HeroValue", () => {
   });
 });
 
+describe("HeroValue in a column of the strip", () => {
+  const sizeOf = (amount: string | null) =>
+    renderToStaticMarkup(<HeroValue amount={amount} strip />);
+
+  it("is 24 px from 900 px for an amount that fits the narrowest column", () => {
+    const markup = sizeOf("129.90");
+    expect(markup).toContain("min-[900px]:text-[1.5rem]");
+    expect(markup).not.toContain("@max-");
+  });
+
+  it("steps an amount of 12 or 13 characters down to 20 px, and of 14 or more to 18 px, only in a column too narrow for it", () => {
+    const twelve = sizeOf("12345.67");
+    expect(twelve).toContain("min-[900px]:@[9rem]:text-[1.5rem]");
+    expect(twelve).toContain("min-[900px]:@max-[8.999rem]:text-[1.25rem]");
+    expect(sizeOf("999999.99")).toContain("@max-[8.999rem]:text-[1.25rem]");
+    const long = sizeOf("-9999999.99");
+    expect(long).toContain("min-[900px]:@[10.5rem]:text-[1.5rem]");
+    expect(long).toContain("min-[900px]:@max-[10.499rem]:text-[1.125rem]");
+  });
+
+  it("keeps the dash and the empty text at 24 px, with no step", () => {
+    expect(sizeOf(null)).toContain("min-[900px]:text-[1.5rem]");
+  });
+
+  it("does not touch the value of a card that is not in the strip", () => {
+    const markup = renderToStaticMarkup(<HeroValue amount="999999.99" />);
+    expect(markup).not.toContain("min-[900px]");
+    expect(markup).toContain("md:text-[1.875rem]");
+  });
+});
+
 const TEXT_BETWEEN_TAGS = />[^<]+</;
 const SKELETON_FOOT = /data-kpi-skeleton-foot=""/g;
 

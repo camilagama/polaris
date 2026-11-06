@@ -55,13 +55,32 @@ const KPI_STRIP_CELL =
 
 /**
  * A column of the strip lines value and change up on one baseline once its content box is 14 rem wide (the value, 6 px
- * and the chip "vs. …" of 12/500); narrower, the change keeps the line of its own it has in the cards.
+ * and the chip "vs. …" of 12/500); narrower, the change keeps the line of its own it has in the cards. The line never
+ * wraps: a chip that does not fit is cut at its "vs. …" (its name keeps the whole text), so the height does not depend
+ * on the length of the amount or of the chip.
  */
 const STRIP_HEADLINE =
-  "min-[900px]:@[14rem]:flex-row min-[900px]:@[14rem]:flex-wrap min-[900px]:@[14rem]:items-baseline min-[900px]:@[14rem]:gap-x-1.5";
+  "min-[900px]:@[14rem]:flex-row min-[900px]:@[14rem]:items-baseline min-[900px]:@[14rem]:gap-x-1.5";
 
-/** The figure of a column of the strip: 24 px in all four, whatever size the card has below 900 px. */
-const STRIP_VALUE_SIZE = "min-[900px]:text-[1.5rem]";
+/** Beside the number the row of the change keeps no height of its own: empty, it would move the baseline of the line. */
+const STRIP_CHIP_ROW = "min-[900px]:@[14rem]:min-h-0";
+
+/**
+ * The figure of a column of the strip: 24 px in all four, whatever size the card has below 900 px. An amount of 12
+ * characters or more ("R$ 12.345,67") needs more than the 120 px a column has with the side menu open at 900 px, and a
+ * cut figure is read as another number: such an amount steps down to 20 px (12 and 13 characters) or 18 px (14 or more)
+ * in a column narrower than it needs, measured at 24 px as 10.4 px a character. The two sizes exclude each other, so the
+ * order of the rules does not matter.
+ */
+function stripValueSize(characters: number): string {
+  if (characters >= 14) {
+    return "min-[900px]:@[10.5rem]:text-[1.5rem] min-[900px]:@max-[10.499rem]:text-[1.125rem]";
+  }
+  if (characters >= 12) {
+    return "min-[900px]:@[9rem]:text-[1.5rem] min-[900px]:@max-[8.999rem]:text-[1.25rem]";
+  }
+  return "min-[900px]:text-[1.5rem]";
+}
 
 /**
  * The group of the cards of one period: a line that says the period once ("Outubro · 1 a 23/10"), which is also the name
@@ -128,7 +147,7 @@ const SPLIT = /^(-?)R\$\s?(.*?)(,\d{2})?$/;
  * the number has been drawn with (a `leading` put before the size class was dropped by the merge of the classes); the
  * size class comes first so the merge keeps both.
  */
-function heroBox(size: "lg" | "md", strip = false): string {
+function heroBox(size: "lg" | "md", strip = false, characters = 0): string {
   return cn(
     "whitespace-nowrap font-[650] tabular-nums tracking-[-0.035em]",
     size === "lg"
@@ -137,7 +156,7 @@ function heroBox(size: "lg" | "md", strip = false): string {
           strip ? "md:max-[899.98px]:text-[1.875rem]" : "md:text-[1.875rem]"
         )
       : "text-[1.3125rem]",
-    strip && STRIP_VALUE_SIZE,
+    strip && stripValueSize(characters),
     "h-[1.05em] leading-5"
   );
 }
@@ -157,7 +176,9 @@ export function HeroValue({
   strip?: boolean;
 }) {
   const [hidden] = useHiddenValues();
-  const box = heroBox(size, strip);
+  const characters =
+    strip && amount !== null && !hidden ? formatBrlAmount(amount).length : 0;
+  const box = heroBox(size, strip, characters);
   const currency = "font-medium text-[0.56em] tracking-normal";
   if (amount === null && emptyText) {
     return (
@@ -392,7 +413,6 @@ export function KpiCard({
   dateReserve,
   entity,
   footer,
-  footReserve,
   help,
   id,
   note,
@@ -417,8 +437,6 @@ export function KpiCard({
   entity: KpiEntity;
   /** The line under the support line. `null` keeps its height empty, for a card whose foot comes and goes. */
   footer?: ReactNode;
-  /** In a column of the strip, the height the foot keeps from 900 px (a `min-h` class), so a longer foot moves nothing. */
-  footReserve?: string;
   /** The (i) beside the title: what the number is and what it compares with (never a warning). */
   help?: { about: string; text: string };
   /** The id of the title, the name of the region. */
@@ -482,7 +500,10 @@ export function KpiCard({
         data-kpi-headline=""
       >
         {value}
-        <div className={CHIP_ROW} data-kpi-chip-row="">
+        <div
+          className={cn(CHIP_ROW, strip && STRIP_CHIP_ROW)}
+          data-kpi-chip-row=""
+        >
           {chip}
         </div>
       </div>
@@ -490,7 +511,7 @@ export function KpiCard({
         {note}
       </div>
       {footer === undefined ? null : (
-        <div className={cn(FOOTER_ROW, strip && footReserve)} data-kpi-foot="">
+        <div className={FOOTER_ROW} data-kpi-foot="">
           {footer}
         </div>
       )}

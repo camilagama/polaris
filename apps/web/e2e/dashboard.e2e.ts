@@ -2407,13 +2407,42 @@ const STRIP_FIXTURES = {
   },
   "seis dígitos": {
     fixture: CHART_BOX_FIXTURES["valores de seis dígitos"],
-    preset: null,
+    preset: "Este ano",
   },
 } as const;
 
 const HIDDEN_RUNS = ["mês completo", "mês incompleto", "seis dígitos"] as const;
 
-async function stripHeight(
+const SWEEP_WIDTHS = [
+  900, 920, 940, 970, 980, 1024, 1060, 1080, 1150, 1280, 1300, 1440,
+] as const;
+
+/** What a state of the strip measures at one width: its box, where each card's note and foot sit, and what is cut. */
+async function measureStrip(page: Page) {
+  await settled(page);
+  return stripOf(page).evaluate((strip) => ({
+    cards: [...strip.querySelectorAll("[data-kpi]")].map((cell) => {
+      const box = cell.getBoundingClientRect();
+      const rowTop = (selector: string) => {
+        const row = cell.querySelector(selector);
+        return row ? row.getBoundingClientRect().top - box.top : null;
+      };
+      return {
+        foot: rowTop("[data-kpi-foot]"),
+        note: rowTop("[data-kpi-note-row]"),
+      };
+    }),
+    cut: [...strip.querySelectorAll("[data-kpi-value]")]
+      .filter((value) => value.scrollWidth > value.clientWidth)
+      .map((value) => value.textContent),
+    height: strip.getBoundingClientRect().height,
+  }));
+}
+
+type StripState = Awaited<ReturnType<typeof measureStrip>>;
+
+/** Opens a state of the strip once and measures it at every width of the sweep. */
+async function sweepStrip(
   page: Page,
   name: keyof typeof STRIP_FIXTURES,
   hidden: boolean
@@ -2435,49 +2464,97 @@ async function stripHeight(
       "01/01 a 05/11"
     );
   }
-  await settled(page);
-  return (await placeOf(stripOf(page))).height;
+  const states: Record<number, StripState> = {};
+  for (const width of SWEEP_WIDTHS) {
+    // biome-ignore lint/performance/noAwaitInLoops: the widths are set one after the other on the same page
+    await page.setViewportSize({ height: 800, width });
+    states[width] = await measureStrip(page);
+  }
+  return {
+    badge: await page.locator("[data-kpi-unknown]").count(),
+    noCost: await page.locator("[data-kpi-no-cost]").count(),
+    states,
+  };
+}
+
+type Measured = Record<string, Awaited<ReturnType<typeof sweepStrip>>>;
+
+function expectSameStripHeight(measured: Measured, width: number) {
+  const heights = Object.fromEntries(
+    Object.entries(measured).map(([name, run]) => [
+      name,
+      run.states[width]?.height ?? 0,
+    ])
+  );
+  const values = Object.values(heights);
+  expect(
+    Math.max(...values) - Math.min(...values),
+    `${width} px: ${JSON.stringify(heights)}`
+  ).toBeLessThanOrEqual(1);
+}
+
+function expectNothingCut(measured: Measured, width: number) {
+  for (const [name, run] of Object.entries(measured)) {
+    expect(
+      run.states[width]?.cut,
+      `${name} a ${width} px: valor cortado`
+    ).toEqual([]);
+  }
+}
+
+/** A change that comes and goes moves nothing under it: the note and the foot sit where they sat. */
+function expectChipMovesNothing(measured: Measured, width: number) {
+  const withChip = measured["mês completo"]?.states[width]?.cards ?? [];
+  const withoutChip =
+    measured["mês sem comparação"]?.states[width]?.cards ?? [];
+  expect(withChip).toHaveLength(4);
+  for (const [index, here] of withChip.entries()) {
+    for (const key of ["note", "foot"] as const) {
+      expect(
+        Math.abs((here[key] ?? 0) - (withoutChip[index]?.[key] ?? 0)),
+        `${width} px, cartão ${index}: ${key} com e sem comparação`
+      ).toBeLessThanOrEqual(1);
+    }
+  }
 }
 
 test.describe("a altura da faixa de KPIs não muda com o período, a comparação, o custo nem Esconder valores (AC-T1.3, AC-T1.5)", () => {
-  for (const view of [
-    { side: "aberta", width: 900 },
-    { side: "aberta", width: 1280 },
-    { side: "recolhida", width: 1024 },
-    { side: "recolhida", width: 1280 },
-  ] as const) {
-    test(`${view.width} px, lateral ${view.side}`, async ({
-      baseURL,
-      browser,
-    }) => {
-      test.setTimeout(180_000);
-      const heights: Record<string, number> = {};
+  for (const side of ["aberta", "recolhida"] as const) {
+    test(`lateral ${side}, de 900 a 1440 px`, async ({ baseURL, browser }) => {
+      test.setTimeout(300_000);
       const runs = [
         ...(
           Object.keys(STRIP_FIXTURES) as Array<keyof typeof STRIP_FIXTURES>
         ).map((name) => ({ hidden: false, name })),
         ...HIDDEN_RUNS.map((name) => ({ hidden: true, name })),
       ];
+      const measured: Record<
+        string,
+        Awaited<ReturnType<typeof sweepStrip>>
+      > = {};
       for (const { hidden, name } of runs) {
         // biome-ignore lint/performance/noAwaitInLoops: one browser context at a time, the machine has two cores
         const context = await browser.newContext({
           ...(baseURL ? { baseURL } : {}),
-          viewport: { height: 800, width: view.width },
+          viewport: { height: 800, width: SWEEP_WIDTHS[0] },
         });
         const page = await context.newPage();
-        await withSideMenu(page, view.side);
-        heights[`${name}${hidden ? ", escondido" : ""}`] = await stripHeight(
+        await withSideMenu(page, side);
+        measured[`${name}${hidden ? ", escondido" : ""}`] = await sweepStrip(
           page,
           name,
           hidden
         );
         await context.close();
       }
-      const values = Object.values(heights);
-      expect(
-        Math.max(...values) - Math.min(...values),
-        JSON.stringify(heights)
-      ).toBeLessThanOrEqual(1);
+      // the tallest states are the ones that show the longest foot of the result card
+      expect(measured["mês incompleto"]?.badge).toBeGreaterThan(0);
+      expect(measured["mês sem custo informado"]?.noCost).toBeGreaterThan(0);
+      for (const width of SWEEP_WIDTHS) {
+        expectSameStripHeight(measured, width);
+        expectNothingCut(measured, width);
+        expectChipMovesNothing(measured, width);
+      }
     });
   }
 });
