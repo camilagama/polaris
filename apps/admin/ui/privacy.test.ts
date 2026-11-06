@@ -35,12 +35,14 @@ import {
 import type { PrivacyCaseDetail, PrivacyCaseSummary } from "./types";
 import {
   ACTIONS_ONLY_RECORD,
+  HELP,
   RULES,
   STAGE_CONFLICT,
   STAGE_ORDER,
   STEP_RECORD,
   STEP_UNDO,
   STEP_UNKNOWN,
+  UNDERSTAND_STEP,
 } from "./views/privacy-case";
 import { OPEN_EFFECT } from "./views/privacy-new";
 
@@ -223,6 +225,9 @@ const opening = (
     screenContext({ screen: "privacidade-novo", store })
   );
 
+const UUID_TEXT =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+
 const openCase = (
   first: PrivacyCaseDetail,
   answers: Answer[] = [],
@@ -239,6 +244,8 @@ const stepItems = (root: FakeElement) =>
   byTag(root, "li").filter((item) =>
     (item.getAttribute("class") ?? "").startsWith("step ")
   );
+
+const LATER_STEP_LINE = /^\d\. .+ · depois$/;
 
 describe("the stage order of the case screen", () => {
   it("is the order of STAGES, the same codes", () => {
@@ -327,6 +334,10 @@ describe("Privacidade: the list (AC-P11.1)", () => {
       "Atenção: vence em 2 dias (até 07/11/2026, prazo provisório)"
     );
     expect(text).toContain("2 atendimentos.");
+    expect(text).not.toMatch(UUID_TEXT);
+    expect(
+      allElements(mounted.root).map((el) => el.getAttribute("title"))
+    ).toContain(`Loja da Ana (${STORE})`);
     const warned = allElements(mounted.root).filter(
       (element) => element.getAttribute("class") === "due due-warn"
     );
@@ -879,14 +890,17 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
       "step step-later",
     ]);
     expect(visibleText(items[0] as FakeElement)).toBe(
-      "Feita: 1. Identidade: Confirmada, por posse do e-mail"
+      "1. Identidade · feita: Confirmada, por posse do e-mail"
     );
     expect(visibleText(items[1] as FakeElement)).toBe(
-      "Feita: 2. Papel do Polaris: Controlador: o Polaris decide sobre o dado"
+      "2. Papel do Polaris · feita: Controlador: o Polaris decide sobre o dado"
     );
     expect(items[2]?.getAttribute("aria-current")).toBe("step");
     for (const later of items.slice(3)) {
       expect(byTag(later, "button")).toHaveLength(0);
+      const name = byTag(later, "span")[0] as FakeElement;
+      expect(name.getAttribute("class")).toBe("step-name");
+      expect(visibleText(later)).toMatch(LATER_STEP_LINE);
     }
     expect(visibleText(mounted.root)).toContain(
       "faltam 9 dias (até 14/11/2026, prazo provisório)"
@@ -919,6 +933,82 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
       ).toHaveLength(0);
     }
   );
+
+  it.each([
+    ["requested", "identity", "Identidade: como se conferiu", "titular"],
+    [
+      "identity_checked",
+      "role",
+      "Papel do Polaris: controlador, quando o Polaris decide",
+      "controlador",
+    ],
+    [
+      "role_determined",
+      "scope",
+      "Escopo: quais dados o pedido alcança",
+      "titular",
+    ],
+    ["scoped", "decision", "Decisão: o que o Polaris responde", "controladora"],
+    ["decided", "actions", "Ações: o que foi feito", "nada muda"],
+    ["executed", "resolve", "Resolução: fecha o pedido", "não reabre"],
+  ] as const)(
+    "gives the step open at %s one visible line of help and the rest of its rules in a details (AC-CL4, AC-CP7)",
+    async (stage, key, start, term) => {
+      const mounted = await openCase(detail(stage));
+      const panel = byTag(mounted.root, "section").find(
+        (section) =>
+          section.getAttribute("aria-labelledby") === `etapa-${key}-titulo`
+      ) as FakeElement;
+      const form = byTag(panel, "form")[0] as FakeElement;
+      const visibleHints = form.children.filter(
+        (child) =>
+          child.tagName === "p" &&
+          (child.getAttribute("class") ?? "").includes("step-help-line") &&
+          !child.hasAttribute("hidden")
+      );
+      expect(visibleHints.map((hint) => hint.textContent)).toEqual([HELP[key]]);
+      expect(visibleHints[0]?.textContent.startsWith(start)).toBe(true);
+      expect(visibleHints[0]?.textContent.toLowerCase()).toContain(term);
+      expect(
+        form.children.filter(
+          (child) => child.tagName === "details" || child.tagName === "summary"
+        )
+      ).toHaveLength(1);
+      const [details] = form.children.filter(
+        (child) => child.tagName === "details"
+      );
+      expect(byTag(details as FakeElement, "summary")[0]?.textContent).toBe(
+        UNDERSTAND_STEP
+      );
+      for (const rule of RULES[key]) {
+        expect(visibleText(details as FakeElement)).toContain(rule);
+      }
+      expect(
+        form.children.indexOf(visibleHints[0] as FakeElement)
+      ).toBeLessThan(form.children.indexOf(details as FakeElement));
+    }
+  );
+
+  it("explains titular, the Polaris's role and scope in the step where each one appears (AC-CL4)", () => {
+    expect(HELP.identity).toContain(
+      "O titular é a pessoa a quem os dados se referem"
+    );
+    expect(HELP.role).toContain("controlador");
+    expect(HELP.role).toContain("operador");
+    expect(HELP.scope).toContain("quais dados o pedido alcança");
+    expect(HELP.scope).toContain(
+      "O titular é a pessoa a quem os dados se referem"
+    );
+  });
+
+  it("writes the name of a done step in weight 500 and its state as plain text after it (AC-CP7)", async () => {
+    const mounted = await openCase(detail("role_determined"));
+    const [first] = stepItems(mounted.root);
+    const name = byTag(first as FakeElement, "span")[0] as FakeElement;
+    expect(name.getAttribute("class")).toBe("step-name");
+    expect(name.textContent).toBe("1. Identidade");
+    expect((first as FakeElement).textContent).toContain(" · feita: ");
+  });
 
   it("offers every category of the contract as a box, none of them marked", async () => {
     const mounted = await openCase(detail("role_determined"));
@@ -977,6 +1067,9 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     expect(visibleText(mounted.root)).toContain(
       "(conta, autenticação, assinatura, segurança e suporte)"
     );
+    expect(HELP.role).toContain(
+      "(conta, autenticação, assinatura, segurança e suporte)"
+    );
   });
 
   it("with a refusal decided, skips the actions and opens the resolution", async () => {
@@ -985,7 +1078,7 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     );
     const items = stepItems(mounted.root);
     expect(visibleText(items[4] as FakeElement)).toBe(
-      "Sem ação: 5. Ações: Sem ação: uma recusa não tem o que registrar."
+      "5. Ações · sem ação: uma recusa não tem o que registrar."
     );
     expect(items[5]?.getAttribute("aria-current")).toBe("step");
   });
@@ -1021,10 +1114,10 @@ describe("the case, step by step (AC-P11.2, AC-P11.3, AC-P11.8)", () => {
     });
     const text = visibleText(mounted.root);
     expect(text).toContain(
-      "Atendimento fechado em 03/11/2026 12:00, sem resolução no fluxo de privacidade"
+      "Atendimento fechado em 03/11/2026 12:00, sem resolução pelas etapas do pedido"
     );
     expect(text).not.toContain("Atendimento resolvido");
-    expect(text).toContain("fechado fora do fluxo de privacidade");
+    expect(text).toContain("fechado sem passar pelas etapas");
     expect(byTag(mounted.root, "button")).toHaveLength(0);
   });
 
@@ -1450,7 +1543,7 @@ describe("each step: reviewed in two steps, sent once (AC-P11.2, AC-P11.4, AC-C2
     type(actions.root, "etapa-actions-registro", "cliente 42");
     await click(actions.root, "Revisar ações");
     expect(byId(actions.root, "etapa-actions-registro-erro").textContent).toBe(
-      "Use o ID (UUID) do registro, ou deixe vazio."
+      "Use o código completo do registro (para a loja, o do cabeçalho; para um cliente, o que a loja informar), ou deixe vazio."
     );
   });
 });
@@ -1549,7 +1642,7 @@ describe("the actions step records, it does not execute (AC-P11.5)", () => {
     await click(mounted.root, "Registrar ações");
 
     expect(ACTIONS_ONLY_RECORD).toBe(
-      "Isto registra o que foi feito pelos comandos próprios; não altera dado da loja."
+      "Isto registra o que já foi feito em outro lugar; não altera dado da loja."
     );
     expect(
       mounted.calls.map((call) => `${call.init.method} ${call.path}`)

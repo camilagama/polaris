@@ -35,24 +35,25 @@ const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const GRANT_UNDO =
-  "Sim: Encerrar concessão. Uma nova concessão é outra decisão registrada.";
+  "Sim: Encerrar liberação temporária. Uma nova liberação temporária é outra decisão registrada.";
 const GRANT_AUDIT =
-  "A concessão fica na auditoria com o seu e-mail e o atendimento. O motivo digitado fica com ela.";
-export const END_UNDO = "Não: uma nova concessão é outra decisão registrada.";
+  "A liberação temporária fica na auditoria com o seu e-mail e o atendimento. O motivo digitado fica com ela.";
+export const END_UNDO =
+  "Não: uma nova liberação temporária é outra decisão registrada.";
 const END_AUDIT =
   "O encerramento fica na auditoria com o seu e-mail e o atendimento.";
 export const NOTHING_ENDED = "Nada foi encerrado.";
 export const OUTCOME_NOT_RECORDED =
   "A ação foi feita, mas o registro do resultado na auditoria não foi confirmado. O pedido ficou registrado. Não repita a ação; avise a engenharia.";
-export const NO_GRANTS = "Nenhuma concessão em vigor.";
+export const NO_GRANTS = "Nenhuma liberação temporária em vigor.";
 export const GRANT_RETRY =
-  "Outra ação ao mesmo tempo mexeu nesta concessão. Tente de novo.";
+  "Outra ação ao mesmo tempo mexeu nesta liberação temporária. Tente de novo.";
 export const GRANT_UNKNOWN =
-  "Não deu para confirmar se a concessão foi dada. Releia as concessões em vigor antes de tentar de novo; repetir o mesmo pedido pelo formulário, sem mudar nada, não cria uma segunda concessão.";
+  "Não deu para confirmar se a liberação temporária foi dada. Releia as liberações temporárias em vigor antes de tentar de novo; repetir o mesmo pedido pelo formulário, sem mudar nada, não cria uma segunda liberação temporária.";
 export const END_UNKNOWN =
-  "Não deu para confirmar se a concessão foi encerrada. Releia as concessões em vigor antes de tentar de novo.";
+  "Não deu para confirmar se a liberação temporária foi encerrada. Releia as liberações temporárias em vigor antes de tentar de novo.";
 export const GRANT_REPEATED =
-  "Este pedido já tinha sido feito: a concessão é a mesma e nada novo foi dado.";
+  "Este pedido já tinha sido feito: a liberação temporária é a mesma e nada novo foi dado.";
 const GRANT_CASE_GONE = "Este atendimento não foi encontrado. Nada foi dado.";
 const GRANT_NOT_ACCEPTED =
   "O atendimento não está aberto ou não é desta loja, ou o pedido não foi aceito. Nada foi mudado. Recarregue o atendimento.";
@@ -218,11 +219,15 @@ export function entitlementsView(
   const situation = dom.el(
     "p",
     { class: "hint" },
-    "Concessões em vigor: ainda não lidas."
+    "Liberações temporárias em vigor: ainda não lidas."
   );
-  const readControl = button("Ver concessões em vigor", true, () => {
-    readGrants();
-  });
+  const readControl = button(
+    "Ver liberações temporárias em vigor",
+    true,
+    () => {
+      readGrants();
+    }
+  );
   readControl.setAttribute("class", "ghost");
 
   const lockButtons = (buttons: Buttons, locked: boolean) => {
@@ -244,14 +249,14 @@ export function entitlementsView(
       const end =
         id === null
           ? "Sem como encerrar por aqui"
-          : button("Encerrar concessão", true, () => {
+          : button("Encerrar liberação temporária", true, () => {
               notice.clear();
               reviewEnd(grant, id);
             });
       if (typeof end !== "string") {
         end.setAttribute(
           "aria-label",
-          `Encerrar concessão de ${entitlementText(grant.key)}`
+          `Encerrar liberação temporária de ${entitlementText(grant.key)}`
         );
       }
       return [
@@ -266,7 +271,7 @@ export function entitlementsView(
       effectLine(dom, "grantEnd"),
       table(
         dom,
-        "Concessões em vigor",
+        "Liberações temporárias em vigor",
         ["Recurso ou limite", "Valor", "Acaba em", "Ação"],
         rows
       )
@@ -276,7 +281,7 @@ export function entitlementsView(
   const readGrants = async (): Promise<void> => {
     reading += 1;
     const mine = reading;
-    listNotice.status("Lendo as concessões em vigor…");
+    listNotice.status("Lendo as liberações temporárias em vigor…");
     const answer = await api.get<OrganizationDiagnostics>(
       `/api/organizations/${encodeURIComponent(item.organizationId)}/diagnostics`
     );
@@ -290,7 +295,7 @@ export function entitlementsView(
       !Array.isArray(read.grants)
     ) {
       grants = null;
-      situation.textContent = "Concessões em vigor: não lidas.";
+      situation.textContent = "Liberações temporárias em vigor: não lidas.";
       renderList();
       listNotice.alert(
         answer.ok
@@ -302,10 +307,12 @@ export function entitlementsView(
       return;
     }
     grants = listedGrants(read, now());
-    readControl.textContent = "Atualizar concessões";
+    readControl.textContent = "Atualizar liberações temporárias";
     renderList();
-    situation.textContent = `Concessões lidas às ${brasiliaTime(now())}: ${grants.length === 0 ? "nenhuma em vigor" : `${grants.length} em vigor`}.`;
-    listNotice.status(`Concessões lidas às ${brasiliaTime(now())}.`);
+    situation.textContent = `Liberações temporárias lidas às ${brasiliaTime(now())}: ${grants.length === 0 ? "nenhuma em vigor" : `${grants.length} em vigor`}.`;
+    listNotice.status(
+      `Liberações temporárias lidas às ${brasiliaTime(now())}.`
+    );
   };
 
   const afterWrite = async (said: string, outcomeRecorded: boolean) => {
@@ -323,7 +330,7 @@ export function entitlementsView(
   const sendEnd = async (grantId: string, buttons: Buttons) => {
     sending = true;
     lockButtons(buttons, true);
-    notice.status("Encerrando a concessão…");
+    notice.status("Encerrando a liberação temporária…");
     const answer = await api.delete<unknown>(
       `${grantsPath}/${encodeURIComponent(grantId)}`
     );
@@ -331,7 +338,7 @@ export function entitlementsView(
     if (answer.ok && isEnded(answer.data)) {
       if (answer.data.revoked) {
         await afterWrite(
-          `Concessão encerrada às ${brasiliaTime(now())}.`,
+          `Liberação temporária encerrada às ${brasiliaTime(now())}.`,
           answer.data.outcomeRecorded
         );
         return;
@@ -341,7 +348,7 @@ export function entitlementsView(
       notice.alert(END_UNKNOWN);
       dom.fill(
         actionBox,
-        button("Reler as concessões", true, () => {
+        button("Reler as liberações temporárias", true, () => {
           start();
           readGrants();
         })
@@ -366,7 +373,7 @@ export function entitlementsView(
     const confirm = dom.el(
       "button",
       { type: "button" },
-      "Confirmar encerramento da concessão"
+      "Confirmar encerramento da liberação temporária"
     );
     const back = button("Voltar", true, () => {
       start();
@@ -383,7 +390,7 @@ export function entitlementsView(
       reviewFacts(
         [
           [
-            "Concessão",
+            "Liberação temporária",
             `${entitlementText(grant.key)} = ${grantValueText(grant.limitValue, grant.flagValue)}, até ${brasiliaMomentText(grant.expiresAt)}`,
           ],
         ],
@@ -404,7 +411,7 @@ export function entitlementsView(
     current.sentFingerprint = fingerprintOf(fields);
     sending = true;
     lockButtons(buttons, true);
-    notice.status("Dando a concessão…");
+    notice.status("Dando a liberação temporária…");
     const answer = await api.post<unknown>(grantsPath, {
       commandId: current.commandId,
       hours: fields.hours,
@@ -417,7 +424,7 @@ export function entitlementsView(
       draft = null;
       await afterWrite(
         answer.data.created
-          ? `Concessão dada às ${brasiliaTime(now())}. A data em que acaba é a da lista.`
+          ? `Liberação temporária dada às ${brasiliaTime(now())}. A data em que acaba é a da lista.`
           : GRANT_REPEATED,
         answer.data.outcomeRecorded
       );
@@ -431,7 +438,7 @@ export function entitlementsView(
         dom.el(
           "div",
           { class: "button-row" },
-          button("Reler as concessões", true, () => {
+          button("Reler as liberações temporárias", true, () => {
             readGrants();
           }),
           button("Voltar ao formulário", true, () => {
@@ -451,9 +458,13 @@ export function entitlementsView(
     const heading = dom.el(
       "h4",
       { id: "concessao-revisao", tabindex: "-1" },
-      "Revise antes de dar a concessão"
+      "Revise antes de dar a liberação temporária"
     );
-    const confirm = dom.el("button", { type: "button" }, "Confirmar concessão");
+    const confirm = dom.el(
+      "button",
+      { type: "button" },
+      "Confirmar liberação temporária"
+    );
     const back = button("Voltar", true, () => openForm(fields));
     confirm.addEventListener("click", () => {
       if (!sending) {
@@ -517,7 +528,7 @@ export function entitlementsView(
       actionBox,
       buttonRow(
         dom,
-        button("Dar uma concessão", false, () => {
+        button("Dar uma liberação temporária", false, () => {
           notice.clear();
           draft = null;
           openForm();
@@ -537,7 +548,7 @@ export function entitlementsView(
       : dom.el(
           "p",
           { class: "hint" },
-          "Para ver e encerrar concessões é preciso poder ver a situação da loja."
+          "Para ver e encerrar liberações temporárias é preciso poder ver a situação da loja."
         ),
     effectLine(dom, "grantGive"),
     actionBox,
@@ -547,7 +558,7 @@ export function entitlementsView(
       ? dom.el(
           "div",
           { class: "grants-area" },
-          dom.el("h4", {}, "Concessões em vigor"),
+          dom.el("h4", {}, "Liberações temporárias em vigor"),
           readControl,
           listNotice.element,
           listBox

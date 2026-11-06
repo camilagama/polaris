@@ -109,7 +109,7 @@ function billingSection(tools: ScreenTools, organizationId: string) {
       ? dom.el(
           "p",
           { class: "hint" },
-          "Dar ou encerrar uma concessão de plano é ação do atendimento aberto desta loja. As concessões em vigor estão em Concessões, mais abaixo."
+          "Dar ou encerrar uma liberação temporária de plano é ação do atendimento aberto desta loja. As liberações temporárias em vigor estão em Liberações temporárias, mais abaixo."
         )
       : null,
     can("billing:operate") && can("support_case:manage")

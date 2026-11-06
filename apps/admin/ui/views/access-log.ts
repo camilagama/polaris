@@ -12,8 +12,8 @@ import { createNotice } from "../notice";
 import type { AccessLogEntry, AccessLogPage } from "../types";
 
 export const NO_ACCESS =
-  "Nenhum acesso encontrado nessa janela. O registro pode ter lacunas: isto não prova que não houve acesso.";
-export const NO_MORE_ACCESS = "Não há mais acessos nessa janela.";
+  "Nenhum acesso encontrado nesse período. O registro pode ter lacunas: isto não prova que não houve acesso.";
+export const NO_MORE_ACCESS = "Não há mais acessos nesse período.";
 export const REGISTERED_TEXT =
   "Esta consulta fica registrada na auditoria, com o número do processo.";
 export const WINDOW_TEXT = "O período pode ter no máximo 31 dias.";

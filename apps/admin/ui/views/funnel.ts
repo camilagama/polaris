@@ -153,8 +153,8 @@ function activeTable(dom: Dom, funnel: ActivationFunnelResponse) {
 function notesBlock(dom: Dom, funnel: ActivationFunnelResponse) {
   const internal =
     funnel.internalStoresExcluded === 1
-      ? "1 loja interna criada na janela"
-      : `${funnel.internalStoresExcluded} lojas internas criadas na janela`;
+      ? "1 loja interna criada nas semanas escolhidas"
+      : `${funnel.internalStoresExcluded} lojas internas criadas nas semanas escolhidas`;
   return dom.el(
     "ul",
     { class: "notes" },

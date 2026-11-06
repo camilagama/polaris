@@ -29,6 +29,7 @@ const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
 const TODAY_BR = "14/10/2026";
 const rpcPrefix = /^\/rpc\//;
+const TABULAR_NUMS = /tabular-nums/;
 
 interface FakeCategory {
   archivedAt: string | null;
@@ -1632,3 +1633,107 @@ test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome 
     panel.getByRole("button", { name: "Renomear categoria Frete e entregas" })
   ).toBeFocused();
 });
+
+function seedExpense(
+  server: FakeExpenseServer,
+  n: number,
+  amount: string,
+  categoryIndex = 1
+) {
+  const cat = server.categories[categoryIndex];
+  if (cat === undefined) {
+    throw new Error("categoria do teste");
+  }
+  server.expenses.push({
+    amount,
+    categoryGroup: cat.groupKey,
+    categoryId: cat.id,
+    categoryName: cat.name,
+    competenceOn: TODAY,
+    createdAt: NOW,
+    description: `Despesa ${n}`,
+    id: uuid(500 + n),
+    organizationId: ORGANIZATION,
+    payee: null,
+    recurringRuleId: null,
+    saleId: null,
+    status: "active",
+    updatedAt: NOW,
+    version: 1,
+    voidedAt: null,
+  });
+}
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`o rodapé Total na tela, a ${viewport.name} px: soma o que está carregado e tem a mesma altura com e sem despesas`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "0.10");
+    seedExpense(server, 2, "0.20");
+    seedExpense(server, 3, "1500.50");
+    await openExpenses(page, server);
+
+    const footer = page.locator("[data-list-total]");
+    await expect(footer).toContainText("Total na tela");
+    await expect(footer).toContainText("R$ 1.500,80");
+    await expect(footer).toContainText("3 despesas");
+    const value = footer.locator(".tabular-nums");
+    await expect(value).toHaveCSS("text-align", "right");
+    await expect(value).toHaveCSS("font-variant-numeric", TABULAR_NUMS);
+    const filled = await footer.boundingBox();
+
+    // a category with nothing in it empties the list: the foot stays, at zero, as tall as before
+    await choose(page, page, "Categoria", "Marketing");
+    await expect(page.getByText("Nenhuma despesa neste período")).toBeVisible();
+    await expect(footer).toContainText("R$ 0,00");
+    await expect(footer).toContainText("0 despesas");
+    const empty = await footer.boundingBox();
+    expect(filled).not.toBeNull();
+    expect(empty).not.toBeNull();
+    expect(
+      Math.abs((empty?.height ?? 0) - (filled?.height ?? 0))
+    ).toBeLessThanOrEqual(1);
+  });
+}
+
+for (const width of [480, 1280]) {
+  test(`o rodapé Total na tela, a ${width} px: o total termina onde terminam os valores das linhas, Ativas e Anuladas`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width });
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "0.10");
+    seedExpense(server, 2, "1500.50");
+    seedExpense(server, 3, "20.00");
+    seedExpense(server, 4, "7.00");
+    for (const voided of server.expenses.slice(2)) {
+      voided.status = "voided";
+      voided.voidedAt = NOW;
+    }
+    await openExpenses(page, server);
+
+    const rightEdge = async (locator: Locator) => {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      return (box?.x ?? 0) + (box?.width ?? 0);
+    };
+    const footerValue = page.locator("[data-list-total] .tabular-nums");
+    const rowValues = page.locator("[data-expense-id] p.tabular-nums");
+    const expectColumn = async (tab: string) => {
+      await page.getByRole("tab", { name: tab }).click();
+      await expect(rowValues).toHaveCount(2);
+      await expect(footerValue).not.toHaveText("…");
+      const total = await rightEdge(footerValue);
+      const first = await rightEdge(rowValues.nth(0));
+      const second = await rightEdge(rowValues.nth(1));
+      expect(Math.abs(total - first)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(total - second)).toBeLessThanOrEqual(0.5);
+    };
+    await expectColumn("Ativas");
+    await expectColumn("Anuladas");
+  });
+}
