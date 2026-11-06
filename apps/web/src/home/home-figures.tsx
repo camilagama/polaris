@@ -1,12 +1,16 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
+import { Money } from "@polaris/domain/money/money";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
-import { Money } from "@polaris/domain/money/money";
 import { MoneyText } from "@/ui/hidden-values";
+import {
+  currentFirstStep,
+  FIRST_STEPS_ANCHOR,
+  firstStepsDone,
+} from "../app-shell/first-steps";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
-import { FIRST_STEPS_ANCHOR, firstStepsDone } from "../app-shell/first-steps";
 import { checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
 import type { HomeChecklist } from "./use-home";
@@ -136,6 +140,7 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
   const link = checklistLink(next);
   const done = firstStepsDone(checklist);
+  const current = currentFirstStep(done);
   return (
     <HomeBlock
       className="lg:col-span-2"
@@ -149,6 +154,7 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
           const line = withWays ? "h-ctl-sm" : "";
           return (
             <li
+              aria-current={index === current ? "step" : undefined}
               className={cn(
                 "flex gap-2.5",
                 withWays ? "items-start" : "items-center"
@@ -161,7 +167,9 @@ export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
                   className={cn(
                     "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
                     done[index] &&
-                      "border-primary bg-primary text-primary-foreground"
+                      "border-primary bg-primary text-primary-foreground",
+                    index === current &&
+                      "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15"
                   )}
                 >
                   {done[index] ? <CheckIcon className="size-3" /> : index + 1}

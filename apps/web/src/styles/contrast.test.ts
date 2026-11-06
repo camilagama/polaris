@@ -201,6 +201,38 @@ describe.each([
       expect(row, `${foreground} / card is not in "${section}"`).toBeDefined();
       expect(
         ratio(color(foreground, palette), color("`card`", palette))
+
+ * The step of the hour of the "Primeiros passos" (Início): its number is `mark-foreground` over the tint of the circle
+ * (`mark/10`, `mark/15` in the dark) and its border is `mark` over the card. Both pairs are rows of the tables above;
+ * this one says they cannot leave the map, and holds the number to the 4.5:1 of text and the border to the 3:1 of a
+ * graphic element.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), "mark/10"],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    "mark/15",
+  ],
+])("contraste do passo atual, %s", (section, palette, tint) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`mark-foreground`", `\`${tint} sobre card\``, 4.5],
+    ["`mark`", "`card`", 3],
+  ] as const)(
+    "%s / %s is in the map and reaches %d:1",
+    (foreground, background, bar) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground && item.background === background
+      );
+      expect(
+        row,
+        `${foreground} / ${background} is not in "${section}"`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
       ).toBeGreaterThanOrEqual(bar);
     }
   );

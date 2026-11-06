@@ -21,6 +21,12 @@ export function firstStepsDone(facts: FirstStepsFacts): boolean[] {
   return [true, facts.firstProductId !== null, false];
 }
 
+/** The step of the hour: the first one not done, or null when all are. */
+export function currentFirstStep(done: readonly boolean[]): number | null {
+  const index = done.indexOf(false);
+  return index === -1 ? null : index;
+}
+
 /** How many of the three steps are done. */
 export function firstStepsCount(facts: FirstStepsFacts): number {
   return firstStepsDone(facts).filter(Boolean).length;
