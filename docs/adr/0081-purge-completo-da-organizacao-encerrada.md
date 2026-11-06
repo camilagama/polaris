@@ -98,7 +98,7 @@ As decisões acima não ligavam purge automático: o purge era só manual (agend
 
 ## Emenda de 05/11/2026: a tela do Admin
 
-Agendar e cancelar o purge, e pôr, mudar e liberar a trava legal, passam a ter tela no Admin, na aba "Purge e trava legal" do caso de privacidade, e as travas vigentes são listadas, só leitura, em `/retencoes`. As rotas e as funções não mudaram. Os detalhes da tela estão na emenda da Parte 7 do [ADR 0102](0102-apagamento-automatico-da-loja-encerrada.md).
+Agendar e cancelar o purge, e pôr, mudar e liberar a trava legal, passam a ter tela no Admin, na aba "Apagamento e trava legal" do caso de privacidade, e as travas vigentes são listadas, só leitura, em `/retencoes`. As rotas e as funções não mudaram. Os detalhes da tela estão na emenda da Parte 7 do [ADR 0102](0102-apagamento-automatico-da-loja-encerrada.md).
 
 ## Decisão
 
