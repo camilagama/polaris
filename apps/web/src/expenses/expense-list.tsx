@@ -107,6 +107,15 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
 }
 
 /**
+ * From 30 rem the buttons of a row have a fixed width (12 rem, enough for "Editar" and "Anulando…" and for
+ * "Reativando…"), so the figures end in the same x on every row. The total ends there too: the buttons, the 12 px
+ * gap of the row less the 1 px border of the box, as padding on the right.
+ */
+const ACTIONS_WIDTH = "min-[30rem]:w-48";
+const TOTAL_UNDER_VALUES =
+  "min-[30rem]:pr-[calc(12rem+11px)] md:pr-[calc(12rem+11px)]";
+
+/**
  * The total of the rows loaded, under them: the sum the eye does down the column. The "Total do período" above is the
  * server's and covers every page; this one is what is on the screen, so with "Carregar mais" pending they differ.
  */
@@ -122,7 +131,7 @@ function ExpenseListTotal({ state }: { state: ExpenseListState }) {
   }
   return (
     <ListTotalFooter
-      className="rounded-lg border"
+      className={cn("rounded-lg border", TOTAL_UNDER_VALUES)}
       count={unknown || failed ? "" : countLabel(state.expenses.length)}
       value={value}
     />
@@ -191,7 +200,12 @@ function ExpenseCard({
         >
           {formatBrlAmount(expense.amount)}
         </p>
-        <div className="flex items-center gap-2 touch:gap-3">
+        <div
+          className={cn(
+            "flex items-center gap-2 touch:gap-3 min-[30rem]:justify-end",
+            ACTIONS_WIDTH
+          )}
+        >
           {voided ? (
             <Button
               {...connectionControlProps(online)}

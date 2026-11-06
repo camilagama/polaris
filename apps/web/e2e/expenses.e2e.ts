@@ -1698,3 +1698,41 @@ for (const viewport of FORM_VIEWPORTS) {
     ).toBeLessThanOrEqual(1);
   });
 }
+
+for (const width of [480, 1280]) {
+  test(`o rodapé Total na tela, a ${width} px: o total termina onde terminam os valores das linhas, Ativas e Anuladas`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width });
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "0.10");
+    seedExpense(server, 2, "1500.50");
+    seedExpense(server, 3, "20.00");
+    seedExpense(server, 4, "7.00");
+    for (const voided of server.expenses.slice(2)) {
+      voided.status = "voided";
+      voided.voidedAt = NOW;
+    }
+    await openExpenses(page, server);
+
+    const rightEdge = async (locator: Locator) => {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      return (box?.x ?? 0) + (box?.width ?? 0);
+    };
+    const footerValue = page.locator("[data-list-total] .tabular-nums");
+    const rowValues = page.locator("[data-expense-id] p.tabular-nums");
+    for (const tab of ["Ativas", "Anuladas"]) {
+      await page.getByRole("tab", { name: tab }).click();
+      await expect(rowValues).toHaveCount(2);
+      await expect(footerValue).not.toHaveText("…");
+      const total = await rightEdge(footerValue);
+      for (const index of [0, 1]) {
+        expect(
+          Math.abs(total - (await rightEdge(rowValues.nth(index))))
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+}
