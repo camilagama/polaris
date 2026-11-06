@@ -3100,6 +3100,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Concluído (PR 621, e65c2808) | `plan-view.test.ts`, `refund-window.test.ts` (domínio), `operator-commands.test.ts` (divergência, leitura velha, sem valor, log sem valores, falha do incidente), `ui/billing.test.ts` (a) a (d), `subscription-model.test.ts`, `notice-consumer.test.ts`, `billing-read-plan-router.test.ts`, repositório e rotas do Admin; gates `billing-operator-commands` (divergência com incidente), `billing-read-plan` e `billing-owner-commands` (rodam no CI). Capturas e verify-polaris em `~/tasks/t794-telas/`. |
 | Fora do PR | Registrado | Comando de troca de ciclo e `pending_price_amount`; edição de valor ou ciclo no painel do provedor (limite do ADR 0104). |
 
+### Início sem internet: uma frase só e "Atualizar" desligado no lugar (t822; corte 05e, item 2; PR567-1)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Frases | Em revisão | `newSaleOfflineText(canSellOffline, titleSaysNoConnection)`: sem cópia, a linha sob o título já diz "Sem internet." e a de "Nova venda" é só "A venda é enviada quando a conexão voltar." (ou nenhuma, quando o aparelho não guarda venda); com cópia, a da venda continua com o prefixo, a única do Início. As frases aguardam a confirmação do Petković. |
+| Atualizar | Em revisão | Fica no cabeçalho sem conexão, com `aria-disabled` e sem efeito no clique; só a sessão recusada o tira. O motivo chega ao leitor de tela por `aria-describedby` na linha que já diz "Sem internet" (a do título sem cópia, a da venda com cópia), sem texto novo. A frase da venda saiu da caixa de "Nova venda" para uma linha sob a fileira de ações: no desktop ela alargava a caixa e empurrava "Atualizar" e o olho 206 px para a esquerda. |
+| Provas | Em revisão | `home-model.test.ts` (as quatro combinações, "Sem internet" uma vez só), `e2e/home.e2e.ts` (geometria da fileira de ações a 360 e 1280 px antes, sem conexão e depois, tolerância de 1 px; o sem cópia confere uma ocorrência e o estado desligado). Os dois e2e de geometria e o do sem cópia falham sem a correção. |
+| Layout shift (W3) | Em revisão | `copia-volta-a-conexao` no e2e-real: 0,0417 na `main` (o 0,0408 do Petković) e 0,0358 com a mudança, duas rodadas cada. Saiu o deslocamento de "Atualizar" e "Esconder valores" (304,80 → 256,80); ficam o cartão "Vendas hoje" (528 → 570 px de altura) e o chip do shell, que não são desta tarefa. |
+| Fora do PR | Registrado | O resto do Início sem conexão e o botão do Resultado. |
+
 ### Admin, limite de 30 revelações de dado pessoal por hora por operador (t818; migration 0120)
 
 | Item | Estado | Detalhe |
@@ -3107,3 +3117,10 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Migration 0120 | Concluído (PR 645, a2a2da18) | Recria `admin_reveal_customer_field` com a mesma assinatura, dono, `search_path` e grants; conta as linhas `pii.revealed` do operador na última hora (repetição conta) depois de `admin_require_grant` e da validação do campo e antes de ler o cliente, com `pg_advisory_xact_lock` de chave própria por operador; a 31ª sai com `22023 operator_reveal_rate_limited` sem gravar auditoria. Índice `platform_audit_events_principal_event_idx (principal_id, event_type, created_at)` com `lock_timeout`. Expand puro (ADR 0096): o Admin anterior só recebe o erro novo como genérico; o Admin sobe junto. O número pode mudar no merge. |
 | Rota e tela | Concluído (PR 645, a2a2da18) | `429 rate_limited` e o log `admin_reveal_rate_limited` (operador opaco, sem campo nem cliente); a tela diz "Limite de revelações por hora atingido. Nada foi revelado. Tente mais tarde." e não repete sozinha. |
 | Provas | Concluído (PR 645, a2a2da18) | Gate `admin-support` (30 aceitas, a 31ª recusada sem nova linha, repetição conta, cliente inexistente e de outra loja sem cota, outro operador livre, cota dividida entre casos e lojas, trava própria por pg_locks e corrida na última vaga, 59 min bloqueia e 61 min libera, permissões e colunas lidas iguais, índice); `src/support-routes.test.ts`; `ui/reveal.test.ts`; `support-access.test.ts`. Só roda no CI: o PostgreSQL 18 do CI e o navegador. |
+
+### Admin: todo estado vazio diz o próximo passo (t826; corte admin-v2-clareza-2a-passada, AC-CL1 e AC-CL9; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Vazios com próximo passo | Em revisão | Início, Lojas, Atendimentos (abertos e fechados), "O que foi feito" do atendimento e do pedido de dados, Pedidos de dados (abertos e fechados), Apagamento e trava legal e Lojas com trava legal dizem o que fazer ou onde ir, com link quando o destino está no menu; a primeira frase de cada um não muda. Ficam como estão "Nenhuma falha de envio. Tudo foi entregue." e "Nenhum acesso encontrado nessa janela…". Prova: `ui/empty-next-step.test.ts` (DOM por tela e estado) e `src/ui/empty-states-list.test.ts` (lista exata dos textos que começam como vazio; vazio novo reprova até ser classificado). Sem mudança de rota, capacidade, contrato nem `packages/`. |
+| Fora (próxima passada) | Registrado | Vazios de Loja (`diagnostics`), Atendimentos desta loja (`store`), concessões (`entitlements`), eventos de falha (`incident`), loja escolhida (`new-case`, `privacy-new`) e cobrança (`refund-words`, `refund-window`): estão na lista `PENDING_NEXT_STEP` do teste. |

@@ -39,11 +39,19 @@ export function homeView(tools: ScreenTools): HTMLElement {
   const { api, can, dom, navigate } = tools;
   const notice = createNotice(dom);
   const waiting = dom.el("ul", { class: "waiting", hidden: "" });
-  const empty = dom.el(
-    "p",
-    { class: "hint", hidden: "" },
-    "Nada esperando por você."
-  );
+  const empty = dom.el("p", { class: "hint", hidden: "" });
+  const emptyNextStep = () =>
+    can("organization:diagnose")
+      ? [
+          "Para atender uma loja, comece por ",
+          dom.el("a", { href: "/lojas" }, "Lojas"),
+          ".",
+        ]
+      : [
+          "Para ver o que você pode fazer, abra ",
+          dom.el("a", { href: "/configuracoes" }, "Minha conta e permissões"),
+          ".",
+        ];
 
   const unread: { text: string; what: string }[] = [];
   const failed = (what: string, answer: { ok: boolean; problem?: Problem }) => {
@@ -118,6 +126,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
     }
     if (found.length === 0) {
       if (first === undefined) {
+        dom.fill(empty, "Nada esperando por você. ", ...emptyNextStep());
         empty.removeAttribute("hidden");
       }
       return;

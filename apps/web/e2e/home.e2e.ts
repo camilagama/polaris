@@ -2712,6 +2712,83 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
   });
 
+  for (const viewport of [
+    { height: 740, width: 360 },
+    { height: 800, width: 1280 },
+  ]) {
+    test(`a linha de ações fica no mesmo lugar, com Atualizar desligado, sem conexão e na volta (${viewport.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      const server = new FakeServer(SOLD);
+      await openWithCopy(page, server);
+      const actions = [
+        refreshButton(page),
+        page.getByRole("button", { name: "Esconder valores" }),
+        newSale(page),
+      ];
+      const boxes = async () =>
+        Promise.all(
+          actions.map(async (action) => {
+            const box = await action.boundingBox();
+            expect(box).not.toBeNull();
+            return box as NonNullable<typeof box>;
+          })
+        );
+      const sameAs = (before: Awaited<ReturnType<typeof boxes>>) =>
+        expect
+          .poll(async () => {
+            const now = await boxes();
+            return Math.max(
+              ...before.flatMap((ref, index) => {
+                const box = now[index];
+                return box
+                  ? [
+                      Math.abs(box.x - ref.x),
+                      Math.abs(box.y - ref.y),
+                      Math.abs(box.width - ref.width),
+                      Math.abs(box.height - ref.height),
+                    ]
+                  : [Number.POSITIVE_INFINITY];
+              })
+            );
+          })
+          .toBeLessThanOrEqual(1);
+      await expect(refreshButton(page)).not.toHaveAttribute(
+        "aria-disabled",
+        "true"
+      );
+      const online = await boxes();
+
+      await page.context().setOffline(true);
+      await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
+      await expect(refreshButton(page)).toHaveAttribute(
+        "aria-disabled",
+        "true"
+      );
+      await expect(refreshButton(page)).toHaveAttribute(
+        "aria-describedby",
+        "home-new-sale-offline"
+      );
+      await expect(refreshButton(page)).toHaveAccessibleDescription(
+        OFFLINE_SALE
+      );
+      await sameAs(online);
+      const reads = server.calls.length;
+      await refreshButton(page).click({ force: true });
+      expect(server.calls.length).toBe(reads);
+
+      await page.context().setOffline(false);
+      await expect(page.getByText(OFFLINE_SALE)).toHaveCount(0);
+      await expect(refreshButton(page)).not.toHaveAttribute(
+        "aria-disabled",
+        "true"
+      );
+      await expect(refreshButton(page)).not.toHaveAttribute("aria-describedby");
+      await sameAs(online);
+    });
+  }
+
   test("a aba do gráfico e a rolagem sobrevivem à queda e à volta da conexão", async ({
     page,
   }) => {
@@ -2797,6 +2874,15 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     // the reason once, in the line under the title, which "Nova venda" points to: never in each card
     await expect(page.locator("#home-updated")).toContainText(NO_COPY_REASON);
     await expect(page.getByText(NO_COPY_REASON)).toHaveCount(1);
+    await expect(page.getByText("Sem internet")).toHaveCount(1);
+    await expect(page.locator("#home-new-sale-offline")).toHaveText(
+      "A venda é enviada quando a conexão voltar."
+    );
+    await expect(refreshButton(page)).toHaveAttribute("aria-disabled", "true");
+    await expect(refreshButton(page)).toHaveAttribute(
+      "aria-describedby",
+      "home-updated"
+    );
     await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
   });

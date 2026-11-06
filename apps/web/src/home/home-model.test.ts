@@ -560,13 +560,35 @@ describe("copyLine (AC-28, AC-31)", () => {
 });
 
 describe("newSaleOfflineText (AC-30)", () => {
-  it("promete a venda sem internet só quando o aparelho pode vender", () => {
-    expect(newSaleOfflineText(true)).toBe(
+  it("com cópia, a linha da venda é a única que diz 'Sem internet'", () => {
+    expect(newSaleOfflineText(true, false)).toBe(
       "Sem internet. A venda é enviada quando a conexão voltar."
     );
-    expect(newSaleOfflineText(false)).toBe(
+    expect(newSaleOfflineText(false, false)).toBe(
       "Sem internet: para vender é preciso conexão."
     );
+  });
+
+  it("sem cópia, a linha sob o título já diz 'Sem internet' e a da venda não repete", () => {
+    expect(newSaleOfflineText(true, true)).toBe(
+      "A venda é enviada quando a conexão voltar."
+    );
+    expect(newSaleOfflineText(false, true)).toBeNull();
+  });
+
+  it("'Sem internet' aparece uma vez só nos quatro casos, e cada frase continua verdadeira", () => {
+    for (const canSell of [true, false]) {
+      const withCopy = [
+        copyLine("2026-10-14T15:30:00.000Z", "America/Sao_Paulo", false),
+        newSaleOfflineText(canSell, false),
+      ];
+      const noCopy = [noCopyText(canSell), newSaleOfflineText(canSell, true)];
+      for (const lines of [withCopy, noCopy]) {
+        const said = lines.filter((line) => line?.includes("Sem internet"));
+        expect(said).toHaveLength(1);
+      }
+      expect(noCopyText(canSell).includes("vendas")).toBe(!canSell);
+    }
   });
 });
 
