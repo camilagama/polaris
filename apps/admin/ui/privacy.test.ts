@@ -1757,13 +1757,13 @@ describe("the lists the case's steps offer come from the contract (AC-P11.1)", (
 
 describe("the audit history of the case screen", () => {
   it.each([
-    "tenant_access.revoked",
-    "organization.legal_hold_released",
-    "organization.purge_scheduled",
-    "privacy_case.stage_recorded",
+    ["tenant_access.revoked", "Acesso temporário encerrado"],
+    ["organization.legal_hold_released", "Trava legal liberada"],
+    ["organization.purge_scheduled", "Apagamento da loja agendado"],
+    ["privacy_case.stage_recorded", "Etapa registrada"],
   ])(
     "names %s with the words of the support case screen",
-    async (eventType) => {
+    async (eventType, label) => {
       const base = detail("requested");
       const mounted = await openCase({
         ...base,
@@ -1778,11 +1778,9 @@ describe("the audit history of the case screen", () => {
         ],
       });
       const text = visibleText(mounted.root);
+      expect(text).toContain(label);
       expect(text).toContain(auditEventText(eventType));
       expect(text).not.toContain("Outra ação registrada");
-      if (eventType === "tenant_access.revoked") {
-        expect(text).toContain("Acesso temporário encerrado");
-      }
     }
   );
 });
