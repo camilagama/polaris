@@ -18,6 +18,10 @@ import { verifyOfflineLease } from "../../lib/offline-lease-token";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
 import { TenantRequestContextError } from "../request-context-error";
+import {
+  issueLeaseRefusalCodes,
+  unknownIssueLeaseRefusalCode,
+} from "./offline-handlers";
 import { createRpcRouter } from "./router";
 
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
@@ -915,6 +919,39 @@ describe("offline.issueLease", () => {
       const logged = JSON.stringify(warn.mock.calls);
       expect(logged).not.toContain(deviceId);
       expect(logged).not.toContain(organizationId);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("logs a fixed value for a 409 whose code or message is not in the closed list", async () => {
+    const { logger } = await import("@polaris/observability/logger");
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      const carriesClientText = Object.assign(new DeviceRevokedError(), {
+        code: "loja_da_maria_12",
+        message: "dispositivo_da_maria_12",
+      });
+      for (const error of [new DeviceLimitError(), carriesClientText]) {
+        const client = createClient({
+          issueOfflineLeaseGrant: () => Promise.reject(error),
+          withTenantRequestContext: tenantContext(),
+        });
+        // biome-ignore lint/performance/noAwaitInLoops: each refusal is verified on its own
+        await expect(
+          client.offline.issueLease({ deviceId, organizationId })
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+        expect(warn).toHaveBeenLastCalledWith("offline_lease_refused", {
+          reason: unknownIssueLeaseRefusalCode,
+        });
+      }
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("maria");
+      expect(issueLeaseRefusalCodes).toEqual([
+        "entitlement_denied",
+        "device_revoked",
+        "offline_lease_not_available",
+      ]);
     } finally {
       warn.mockRestore();
     }
