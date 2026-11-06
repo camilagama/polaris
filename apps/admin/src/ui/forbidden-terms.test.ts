@@ -62,81 +62,10 @@ const PURGE = /purge/gi;
 
 const KEPT: readonly Kept[] = [
   {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "a partir do próximo ciclo do purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "Agendar não apaga agora",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "Para agendar o purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "O purge só existe",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "Este atendimento está fechado: purge e trava legal",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "A loja foi encerrada há menos de 90 dias: o purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "Há uma trava legal vigente nesta loja: o purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "Este não é um atendimento de privacidade: o purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "O escopo do atendimento inclui dados que o purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "O escopo do atendimento não cobre tudo o que o purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start:
-      "A renovação da assinatura ainda não foi cancelada no provedor: o purge",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "Não deu para ler a cobrança da loja",
-  },
-  {
-    allowed: PURGE,
-    file: "ui/purge-words.ts",
-    start: "A loja volta a poder ser apagada pelas regras normais",
-  },
-  {
+    // a CSS class of the panel (admin.css selects it), not a text the operator reads
     allowed: PURGE,
     file: "ui/views/purge.ts",
-    start: "O escopo deste atendimento não é exatamente o que o purge apaga",
-  },
-  { allowed: PURGE, file: "ui/views/purge.ts", start: "purge action-panel" },
-  {
-    allowed: PURGE,
-    file: "ui/views/purge.ts",
-    start: "Este atendimento está fechado: purge e trava legal precisam",
+    start: "purge action-panel",
   },
   {
     allowed: /nesse caso/gi,

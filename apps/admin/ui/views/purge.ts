@@ -110,7 +110,7 @@ export function purgeCaseProblem(detail: Detail): string | null {
     PURGE_SCOPE.every((code) => scope.includes(code));
   return exact
     ? null
-    : "O escopo deste atendimento não é exatamente o que o purge apaga: dados da loja, clientes, vendas, estoque e catálogo, imagens.";
+    : "O escopo deste atendimento não é exatamente o que o apagamento apaga: dados da loja, clientes, vendas, estoque e catálogo, imagens.";
 }
 
 const PURGE_STATUSES: Readonly<Record<string, string>> = {
@@ -950,7 +950,7 @@ export function purgeTab(
       slot,
       wrap(
         line(
-          "Este atendimento está fechado: purge e trava legal precisam de um atendimento de privacidade aberto desta loja."
+          "Este atendimento está fechado: apagamento e trava legal precisam de um atendimento de privacidade aberto desta loja."
         ),
         dom.el("a", { href: "/privacidade" }, "Ir para Pedidos de dados")
       )

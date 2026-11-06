@@ -279,6 +279,29 @@ describe("opening and listing cases", () => {
     );
   });
 
+  it("answers the hourly limit of reveals with 429, logs the operator and leaves a customer out of the log", async () => {
+    const limited = setup({
+      reveal: () =>
+        Promise.reject(
+          new InvalidSupportRequestError("operator_reveal_rate_limited")
+        ),
+    });
+    const response = await limited.send(
+      "POST",
+      `/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+      { field: "email" }
+    );
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "rate_limited" });
+    expect(limited.dependencies.report).toHaveBeenCalledTimes(1);
+    const [event, fields] = vi.mocked(limited.dependencies.report).mock
+      .calls[0] ?? [""];
+    expect(event).toBe("admin_reveal_rate_limited");
+    expect(Object.keys(fields ?? {})).toEqual(["principal"]);
+    expect(JSON.stringify(fields)).not.toContain(customerId);
+    expect(JSON.stringify(fields)).not.toContain("email");
+  });
+
   it("answers a database refusal with its code and a status, never the database's words", async () => {
     const unknown = setup({
       open: () =>

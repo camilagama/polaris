@@ -372,6 +372,19 @@ export const alertSignals = [
     title: "Operador cancelou uma renovação ou reembolsou pelo Admin",
     windowMinutes: 15,
   },
+  {
+    // the refused 31st reveal of an operator leaves no audit row (ADR 0072), so this event is the only trace of a read in
+    // bulk; it is reported, not waking, because one refusal can be a long legitimate attendance
+    id: "revelacoes-por-hora",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["admin_reveal_rate_limited"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Operador chegou ao limite de revelações de dado pessoal por hora",
+    windowMinutes: 60,
+  },
 ] as const satisfies readonly AlertSignal[];
 
 export type AlertSignalId = (typeof alertSignals)[number]["id"];

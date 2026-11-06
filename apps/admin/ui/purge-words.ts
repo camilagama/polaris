@@ -5,7 +5,7 @@
  */
 
 /** Said where the server did not give the date the purge may start from (D-3 g). */
-export const NEXT_PURGE_CYCLE = "a partir do próximo ciclo do purge";
+export const NEXT_PURGE_CYCLE = "a partir do próximo ciclo do apagamento";
 
 /** What is erased, with the start the server gave ("a partir de {data}") or `NEXT_PURGE_CYCLE`. */
 export function purgeErasedText(from: string): string {
@@ -19,7 +19,7 @@ export const PURGE_UNDO =
   "Você pode cancelar o agendamento enquanto nenhuma execução estiver em curso e nada tiver sido apagado do armazenamento. Depois da primeira exclusão de arquivo, isso não poderá ser desfeito.";
 
 export const PURGE_NOT_NOW =
-  "Agendar não apaga agora: o apagamento roda depois, no ciclo do purge, e o servidor confere de novo cada condição antes de apagar.";
+  "Agendar não apaga agora: o apagamento roda depois, no ciclo do apagamento, e o servidor confere de novo cada condição antes de apagar.";
 
 export const PURGE_RECORD =
   "O agendamento fica na auditoria, com o seu e-mail e o atendimento.";
@@ -27,10 +27,10 @@ export const PURGE_RECORD =
 export const TYPE_THE_NAME = "Digite o nome da loja para continuar.";
 
 export const CASE_REQUIRED =
-  "Para agendar o purge, é preciso um atendimento de privacidade decidido (aceito) desta loja.";
+  "Para agendar o apagamento, é preciso um atendimento de privacidade decidido (aceito) desta loja.";
 
 export const ONLY_CLOSED =
-  "O purge só existe para loja encerrada: esta loja não está encerrada.";
+  "O apagamento só existe para loja encerrada: esta loja não está encerrada.";
 
 export const PURGE_DONE =
   "O apagamento já aconteceu. Não há o que cancelar nem agendar.";
@@ -64,7 +64,7 @@ export const HOLD_RECORD =
   "A trava fica na auditoria, com o seu e-mail e o atendimento.";
 
 export const RELEASE_EFFECT =
-  "A loja volta a poder ser apagada pelas regras normais, se os demais requisitos do purge forem cumpridos.";
+  "A loja volta a poder ser apagada pelas regras normais, se os demais requisitos do apagamento forem cumpridos.";
 export const RELEASE_UNDO = "Sim: pôr a trava de novo, com data de revisão.";
 export const RELEASE_RECORD =
   "A liberação fica na auditoria, com o seu e-mail e o atendimento.";
@@ -87,13 +87,13 @@ export const REFUSED_GENERIC =
  */
 export const PURGE_REFUSALS: Readonly<Record<string, string>> = {
   case_not_open:
-    "Este atendimento está fechado: purge e trava legal precisam de um atendimento aberto. Nada foi feito.",
+    "Este atendimento está fechado: apagamento e trava legal precisam de um atendimento aberto. Nada foi feito.",
   closure_period_not_elapsed:
-    "A loja foi encerrada há menos de 90 dias: o purge só pode ser agendado depois desse prazo, para o dono poder ler e exportar os dados. Nada foi feito.",
+    "A loja foi encerrada há menos de 90 dias: o apagamento só pode ser agendado depois desse prazo, para o dono poder ler e exportar os dados. Nada foi feito.",
   invalid_review_at:
     "A data de revisão não foi aceita: ela precisa ser no futuro e em até 366 dias. Nada foi feito.",
   legal_hold_active:
-    "Há uma trava legal vigente nesta loja: o purge não é agendado enquanto ela não for liberada. Nada foi feito.",
+    "Há uma trava legal vigente nesta loja: o apagamento não é agendado enquanto ela não for liberada. Nada foi feito.",
   organization_mismatch:
     "Este atendimento é de outra loja: a loja informada não é a deste atendimento. Nada foi feito.",
   organization_not_closed:
@@ -105,13 +105,13 @@ export const PURGE_REFUSALS: Readonly<Record<string, string>> = {
   privacy_case_not_deletion:
     "Este atendimento não é um pedido de exclusão. Nada foi feito.",
   privacy_case_required:
-    "Este não é um atendimento de privacidade: o purge só é agendado sob o atendimento de privacidade do pedido de exclusão. Nada foi feito.",
+    "Este não é um atendimento de privacidade: o apagamento só é agendado sob o atendimento de privacidade do pedido de exclusão. Nada foi feito.",
   privacy_requester_not_owner:
     "Este pedido de exclusão não foi feito pelo dono da loja. Nada foi feito.",
   privacy_scope_covers_kept_data:
-    "O escopo do atendimento inclui dados que o purge mantém (conta, entrada, cobrança ou auditoria). Nada foi feito.",
+    "O escopo do atendimento inclui dados que o apagamento mantém (conta, entrada, cobrança ou auditoria). Nada foi feito.",
   privacy_scope_incomplete:
-    "O escopo do atendimento não cobre tudo o que o purge apaga (dados da loja, clientes, vendas, estoque e catálogo, imagens). Nada foi feito.",
+    "O escopo do atendimento não cobre tudo o que o apagamento apaga (dados da loja, clientes, vendas, estoque e catálogo, imagens). Nada foi feito.",
   purge_already_done: "O apagamento já aconteceu. Isso não pode ser desfeito.",
   purge_in_progress:
     "O apagamento está em execução agora. Não dá para cancelar enquanto ele roda; espere até 15 minutos e releia o atendimento.",
@@ -122,9 +122,9 @@ export const PURGE_REFUSALS: Readonly<Record<string, string>> = {
   recovery_window_open:
     "A janela de recuperação da loja ainda não acabou. Nada foi feito.",
   renewal_alive:
-    "A renovação da assinatura ainda não foi cancelada no provedor: o purge espera o cancelamento. Nada foi feito.",
+    "A renovação da assinatura ainda não foi cancelada no provedor: o apagamento espera o cancelamento. Nada foi feito.",
   renewal_status_unavailable:
-    "Não deu para ler a cobrança da loja para confirmar que a renovação foi cancelada, por isso o purge não foi agendado. Tente de novo mais tarde.",
+    "Não deu para ler a cobrança da loja para confirmar que a renovação foi cancelada, por isso o apagamento não foi agendado. Tente de novo mais tarde.",
   tenant_access_active:
     "Há um acesso temporário do Admin vigente nesta loja: encerre-o no atendimento de suporte antes. Nada foi feito.",
 };
