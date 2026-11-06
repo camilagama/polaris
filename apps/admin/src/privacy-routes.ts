@@ -101,34 +101,7 @@ export interface PrivacyDependencies {
   ) => Promise<Step | null>;
 }
 
-/** What `GET /privacy-cases` answers: the database's page with the days to each due day counted by the server. */
-export interface PrivacyCaseListing {
-  cases: (PrivacyCasePage["cases"][number] & { dueInDays: number | null })[];
-  next: string | null;
-}
-
 const DEFAULT_PAGE_SIZE = 25;
-const DAY_MS = 86_400_000;
-const BRASILIA_DAY = new Intl.DateTimeFormat("en-CA", {
-  day: "2-digit",
-  month: "2-digit",
-  timeZone: "America/Sao_Paulo",
-  year: "numeric",
-});
-
-/** The calendar day of a moment in Brasília as a day count: two of them subtract into whole days, whatever the hour. */
-function brasiliaDayNumber(moment: Date): number {
-  const [year, month, day] = BRASILIA_DAY.format(moment).split("-").map(Number);
-  return Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1) / DAY_MS;
-}
-
-/** Whole calendar days from today in Brasília to the day a case is due: 0 is the due day, below 0 is past; null for a date that is not one. */
-function dueInDays(dueAt: string, now: Date): number | null {
-  const due = new Date(dueAt);
-  return Number.isNaN(due.getTime())
-    ? null
-    : brasiliaDayNumber(due) - brasiliaDayNumber(now);
-}
 const MAX_PAGE_SIZE = 50;
 const MAX_ID_LENGTH = 128;
 const NOT_FOUND_CODES = new Set(["unknown_case", "unknown_organization"]);
@@ -282,14 +255,7 @@ export function privacyRoutes(
       },
       context.env
     );
-    const today = new Date();
-    return context.json({
-      ...page,
-      cases: page.cases.map((item) => ({
-        ...item,
-        dueInDays: dueInDays(item.dueAt, today),
-      })),
-    });
+    return context.json(page);
   });
 
   routes.get("/privacy-cases/:caseId", guard, async (context) => {

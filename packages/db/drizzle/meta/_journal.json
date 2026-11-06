@@ -841,6 +841,13 @@
       "when": 1793932928034,
       "tag": "0120_limite_de_revelacoes_por_hora",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1793964218365,
+      "tag": "0121_prazo_dos_pedidos_de_dados_no_banco",
+      "breakpoints": true
     }
   ]
 }
