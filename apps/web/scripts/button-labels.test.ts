@@ -13,12 +13,15 @@ import { afterAll, describe, expect, it } from "vitest";
 
 /**
  * The button says the choice ("Excluir venda" / "Manter"), never "OK" or "Sim" alone (DESIGN.md, "Diálogo de
- * formulário"). The scan reads every `.tsx` of `src` as text, so a label added to any screen is caught; only
- * the gallery and the labs, which are not product screens, stay out, and the exclusions are listed exactly.
+ * formulário"). The scan reads every `.tsx` of `src` as text, so a label added to any screen is caught, and
+ * also the `*-texts.ts` constants that hold button text; a plain `.ts` is not read, because it would flag
+ * strings that are not labels. Only the gallery and the labs, which are not product screens, stay out, and
+ * the exclusions are listed exactly.
  */
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const EXCLUDED_FOLDERS = ["offline-poc/", "ui-gallery/"];
 const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
+const TEXTS_CONSTANTS = /-texts\.ts$/;
 const JSX_TEXT = />\s*(OK|Ok|Sim)[.!]?\s*<\//g;
 const STRING_LITERAL = /["'`](OK|Ok|Sim)[.!]?["'`]/g;
 
@@ -29,20 +32,20 @@ function genericButtonLabels(source: string): string[] {
   ];
 }
 
-function tsxFiles(directory: string): string[] {
+function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      return tsxFiles(path);
+      return sourceFiles(path);
     }
-    return entry.name.endsWith(".tsx") && !TEST_FILE.test(entry.name)
-      ? [path]
-      : [];
+    const isSource =
+      entry.name.endsWith(".tsx") || TEXTS_CONSTANTS.test(entry.name);
+    return isSource && !TEST_FILE.test(entry.name) ? [path] : [];
   });
 }
 
 function scan(root: string): string[] {
-  return tsxFiles(root)
+  return sourceFiles(root)
     .map((path) => relative(root, path).split(sep).join("/"))
     .filter(
       (path) => !EXCLUDED_FOLDERS.some((folder) => path.startsWith(folder))
@@ -77,6 +80,9 @@ describe("button labels say the choice, not OK or Sim", () => {
     expect(scanned.length).toBeGreaterThan(250);
     expect(scanned).toContain("legal/acceptance/acceptance-page.tsx");
     expect(scanned).toContain("offline/attention-panel.tsx");
+    expect(scanned).toContain("legal/acceptance/acceptance-texts.ts");
+    expect(scanned).toContain("sign-in/password-texts.ts");
+    expect(scanned).toContain("sign-in/sign-in-texts.ts");
     expect(
       readdirSync(SRC)
         .filter((name) => EXCLUDED_FOLDERS.includes(`${name}/`))
@@ -97,6 +103,34 @@ describe("button labels say the choice, not OK or Sim", () => {
       "sales/deep/screen.tsx: OK",
       "ui/dialog-sample.tsx: Sim",
     ]);
+  });
+
+  it("plant: a *-texts.ts constant with the label fails, and passes without it", () => {
+    const dirty = plant({
+      "legal/deep/sample-texts.ts":
+        'export const texts = { confirm: "OK", cancel: "Sim" } as const;',
+    });
+    expect(findings(dirty)).toEqual([
+      "legal/deep/sample-texts.ts: OK",
+      "legal/deep/sample-texts.ts: Sim",
+    ]);
+    const clean = plant({
+      "legal/deep/sample-texts.ts":
+        'export const texts = { confirm: "Aceitar e continuar", cancel: "Manter" } as const;',
+    });
+    expect(scan(clean)).toEqual(["legal/deep/sample-texts.ts"]);
+    expect(findings(clean)).toEqual([]);
+  });
+
+  it("control: a .ts that is not *-texts.ts, and a texts test, are not read", () => {
+    const root = plant({
+      "legal/helper.ts": 'export const a = "OK";',
+      "legal/sample-texts.test.ts": 'export const b = "Sim";',
+      "legal/sample-texts.ts": 'export const c = "Manter";',
+      "ui-gallery/sample-texts.ts": 'export const d = "OK";',
+    });
+    expect(scan(root)).toEqual(["legal/sample-texts.ts"]);
+    expect(findings(root)).toEqual([]);
   });
 
   it("control: the gallery, the labs and test files are left out, and only they", () => {
