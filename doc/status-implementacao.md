@@ -2890,6 +2890,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Provas | Em revisão | Unidade: `breakpoints.test.ts` (as linhas valem 760/1024/1280 px a 16 px e não têm px), `touch-roles.test.ts` e `css-layers.test.ts` com o texto novo. e2e: `e2e/breakpoints-rem.e2e.ts` com a fonte padrão do navegador em 16 e 20 px (`Page.setFontSizes`): barra de baixo, altura do cabeçalho e ficha `touch` (CSS) contra a coluna e o botão de recolher (JavaScript), 10 px de cada lado de cada linha, e nada rola de lado a 320 px com 20 px. |
 | Não feito | Registrado | Os 900 px da Venda (`max-[899.98px]`, `index.css`) seguem em px, e os dois critérios de `motion-level.ts` (largura de 760 px e altura de 500 px) também; o corte os deixa fora, então com a fonte aumentada o nível de movimento ainda cruza em 760 px. A folha do Admin (`admin.source.css`) acompanha o `theme.css` em rem, regenerada por `bun run admin:sheet`; a de `apps/catalog` tem 760 px próprios, sem JavaScript que a espelhe. |
 
+### Admin: "purge" sai das telas e vira "apagamento" (t820; corte staging-proximos-itens-2026-11-06a, item 1; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Frases | Em revisão | `apps/admin/ui/purge-words.ts` e as duas frases de `ui/views/purge.ts` dizem "apagamento" onde diziam "purge" (o ciclo, o que o agendar não faz agora, o atendimento exigido, loja não encerrada, as recusas por prazo de 90 dias, trava legal, renovação viva, leitura indisponível, escopo e atendimento fechado). Só a palavra muda: o efeito, os prazos e o "Nada foi feito." ficam como estavam. |
+| Termos proibidos | Em revisão | `forbidden-terms.test.ts` perde as 14 exceções de "purge" que cobriam as frases; sobra só a classe CSS `purge action-panel`, que não é texto lido. |
+| Fora | Registrado | Códigos de recusa, rotas, capacidades, tipos de auditoria, nomes de constantes e o texto de erro do servidor (`support-routes.ts`, `packages/`) não mudam. |
+
 ### Altura estável na troca de estado por clique (t743; sem migration)
 
 | Item | Estado | Detalhe |
