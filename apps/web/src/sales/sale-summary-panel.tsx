@@ -463,7 +463,7 @@ export function SummaryPanel({
           {/* below 56.25 rem the button lives in the bar fixed at the bottom (SubmitBar) */}
           <Button
             aria-busy={isSubmitting(submission) || undefined}
-            className="w-full not-min-[56.25rem]:hidden"
+            className="not-min-[56.25rem]:hidden w-full"
             disabled={isSubmitting(submission)}
             size="xl"
             type="submit"
