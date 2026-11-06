@@ -21,7 +21,7 @@ export function ConfirmedDetails({
           <dt className="text-muted-foreground text-xs">{detail.label}</dt>
           <dd className="text-sm [overflow-wrap:anywhere]">
             {detail.tone === "plain" ? (
-              detail.value
+              <NoBreakMoney text={detail.value} />
             ) : (
               <FeeValue line={{ text: detail.value, tone: detail.tone }} />
             )}
