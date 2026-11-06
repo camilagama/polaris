@@ -51,6 +51,7 @@ function saleLayout(page: Page) {
     const bar = document.querySelector("[data-submit-bar]");
     const aside = form?.querySelector("aside");
     const confirm = aside?.querySelector('button[type="submit"]');
+    const control = form?.querySelector("button");
     const shown = (element: Element | null | undefined) =>
       element ? getComputedStyle(element).display !== "none" : false;
     const rem = Number.parseFloat(
@@ -63,6 +64,9 @@ function saleLayout(page: Page) {
         : 0,
       confirmShown: shown(confirm),
       containerRem: (container?.getBoundingClientRect().width ?? 0) / rem,
+      controlMargin: control
+        ? getComputedStyle(control).scrollMarginBottom
+        : "",
       display: form ? getComputedStyle(form).display : "",
       sideScroll:
         document.documentElement.scrollWidth >
@@ -125,9 +129,7 @@ for (const pixels of [16, 20]) {
           seen.add(layout.columns);
         }
       }
-      if (pixels === 20) {
-        expect([...seen].sort()).toEqual([1, 2]);
-      }
+      expect([...seen].sort()).toEqual([1, 2]);
     });
   });
 }
@@ -285,6 +287,7 @@ for (const pixels of [16, 20]) {
       .toBe(TWO_COLUMNS.columns);
     const layout = await saleLayout(page);
     expect(layout).toMatchObject(TWO_COLUMNS);
+    expect(layout.controlMargin).toBe("0px");
     expect(layout.containerRem).toBeCloseTo(TWO_COLUMNS_FROM_REM, 2);
     const mainRem = await page.evaluate(
       () =>
@@ -313,7 +316,9 @@ for (const pixels of [16, 20]) {
     await expect
       .poll(async () => (await saleLayout(page)).columns)
       .toBe(ONE_COLUMN.columns);
-    expect(await saleLayout(page)).toMatchObject(ONE_COLUMN);
+    const narrower = await saleLayout(page);
+    expect(narrower).toMatchObject(ONE_COLUMN);
+    expect(narrower.controlMargin).toBe(`${7 * pixels}px`);
     expect(await cutTexts(page)).toEqual([]);
   });
 }

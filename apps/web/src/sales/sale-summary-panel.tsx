@@ -486,10 +486,11 @@ interface SubmitBarProps {
 }
 
 /**
- * The total and the button at the bottom of the screen in one column (the sale container under 44 rem). It is sticky inside the form, not fixed to the
- * window: it never covers a field of the form with the keyboard open, and it rests at the end of the form. Its
- * background is opaque (U-19): a translucent one let an error behind it show through and read as noise; the page
- * keeps `scroll-padding-bottom` for it (styles/index.css), so a focused field or error scrolls above it.
+ * The total and the button at the bottom of the screen in one column (the sale container under 44 rem). It is sticky
+ * inside the form, not fixed to the window: it never covers a field of the form with the keyboard open, and it rests at
+ * the end of the form. Its background is opaque (U-19): a translucent one let an error behind it show through and read
+ * as noise; what takes the focus inside the form keeps a `scroll-margin-bottom` for it (styles/index.css), so a
+ * focused field or error scrolls above it.
  */
 export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
   return (
