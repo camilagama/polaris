@@ -3,7 +3,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SCREENS } from "./page";
-import { stringLiterals } from "./visible-text";
+import { type StringLiteral, stringLiteralsAt } from "./visible-text";
 
 const NOT_LETTER = String.raw`(?<![\p{L}\p{N}_-])`;
 const NOT_LETTER_AFTER = String.raw`(?![\p{L}\p{N}_-])`;
@@ -153,26 +153,61 @@ const KEPT: readonly Kept[] = [
 ];
 
 interface Identifier {
+  before: RegExp;
   file: string;
   word: string;
 }
 
+const UNION_MEMBER = /^\s*\| $/;
+const ROUTE_ENTRY = /^\s*"\/[a-z]+": $/;
+const SCREENS_LIST = /\bscreens: \[("[a-z-]+", )*$/;
+const SCREEN_FIELD = /\bscreen: $/;
+const SCREEN_COMPARED = /\brequest\.screen === $/;
+const AREA_COMPARED = /\barea === $/;
+const ACTION_FIELD = /\baction\??: $/;
+const ACTION_KEY = /\baction: $/;
+const KIND_KEY = /\bkind: $/;
+const ACTION_COMPARED = /\b(request|context)\.action === $/;
+
 /**
  * Lowercase single words the scan would read as a label but that are code: a route segment, a kind, a screen id, a key
- * of the domain. Every entry must still be found by the scan, so none outlives the code it excuses.
+ * of the domain. Each entry says what must come before the opening quote on its line, so a label that reuses the word
+ * in another place is still caught. Every entry must still be found by the scan, so none outlives the code it excuses.
  */
 const IDENTIFIERS: readonly Identifier[] = [
-  { file: "ui/app.ts", word: "purge" },
-  { file: "ui/main.ts", word: "purge" },
-  { file: "ui/views/access.ts", word: "grants" },
-  { file: "ui/views/entitlements.ts", word: "grants" },
-  { file: "ui/views/privacy-case.ts", word: "purge" },
-  { file: "ui/views/purge.ts", word: "hold" },
-  { file: "src/ui/page.ts", word: "caso" },
-  { file: "src/ui/page.ts", word: "casos" },
-  { file: "src/ui/page.ts", word: "incidente" },
-  { file: "src/ui/page.ts", word: "incidentes" },
-  { file: "src/ui/page.ts", word: "purge" },
+  { before: ACTION_FIELD, file: "ui/app.ts", word: "purge" },
+  {
+    before: /\bgetAttribute\("data-acao"\) === $/,
+    file: "ui/main.ts",
+    word: "purge",
+  },
+  { before: ACTION_FIELD, file: "ui/main.ts", word: "purge" },
+  {
+    before: /\bSupportCaseDetail\[$/,
+    file: "ui/views/access.ts",
+    word: "grants",
+  },
+  { before: /\{ class: $/, file: "ui/views/entitlements.ts", word: "grants" },
+  { before: ACTION_COMPARED, file: "ui/views/privacy-case.ts", word: "purge" },
+  { before: /\bStoreState\[$/, file: "ui/views/purge.ts", word: "hold" },
+  { before: UNION_MEMBER, file: "src/ui/page.ts", word: "caso" },
+  { before: SCREENS_LIST, file: "src/ui/page.ts", word: "caso" },
+  { before: SCREEN_FIELD, file: "src/ui/page.ts", word: "caso" },
+  { before: SCREEN_COMPARED, file: "src/ui/page.ts", word: "caso" },
+  { before: UNION_MEMBER, file: "src/ui/page.ts", word: "casos" },
+  { before: SCREENS_LIST, file: "src/ui/page.ts", word: "casos" },
+  { before: ROUTE_ENTRY, file: "src/ui/page.ts", word: "casos" },
+  { before: AREA_COMPARED, file: "src/ui/page.ts", word: "casos" },
+  { before: SCREEN_COMPARED, file: "src/ui/page.ts", word: "casos" },
+  { before: UNION_MEMBER, file: "src/ui/page.ts", word: "incidente" },
+  { before: SCREENS_LIST, file: "src/ui/page.ts", word: "incidente" },
+  { before: SCREEN_FIELD, file: "src/ui/page.ts", word: "incidente" },
+  { before: UNION_MEMBER, file: "src/ui/page.ts", word: "incidentes" },
+  { before: SCREENS_LIST, file: "src/ui/page.ts", word: "incidentes" },
+  { before: ROUTE_ENTRY, file: "src/ui/page.ts", word: "incidentes" },
+  { before: AREA_COMPARED, file: "src/ui/page.ts", word: "incidentes" },
+  { before: ACTION_FIELD, file: "src/ui/page.ts", word: "purge" },
+  { before: ACTION_COMPARED, file: "src/ui/page.ts", word: "purge" },
 ];
 
 const repository = fileURLToPath(new URL("../../../..", import.meta.url));
@@ -192,13 +227,17 @@ function sourcesUnder(directory: string): string[] {
   });
 }
 
-function visibleLiterals(source: string): string[] {
-  return stringLiterals(source).filter(
-    (literal) =>
-      WHITESPACE.test(literal) ||
-      CAPITAL.test(literal) ||
-      ONE_LOWERCASE_WORD.test(literal)
+function visibleLiterals(source: string): StringLiteral[] {
+  return stringLiteralsAt(source).filter(
+    ({ text }) =>
+      WHITESPACE.test(text) ||
+      CAPITAL.test(text) ||
+      ONE_LOWERCASE_WORD.test(text)
   );
+}
+
+function lineBefore(source: string, start: number): string {
+  return source.slice(source.lastIndexOf("\n", start - 1) + 1, start);
 }
 
 interface Hit {
@@ -217,14 +256,17 @@ function hitsIn(
   const keptUsed = new Set<number>();
   const identifiersUsed = new Set<number>();
   for (const { file, source } of files) {
-    for (const literal of visibleLiterals(source)) {
+    for (const { start, text: literal } of visibleLiterals(source)) {
       const first = words.exec(literal)?.[1];
       if (first === undefined) {
         continue;
       }
       const identifier = ONE_LOWERCASE_WORD.test(literal)
         ? identifiers.findIndex(
-            (item) => item.file === file && item.word === literal
+            (item) =>
+              item.file === file &&
+              item.word === literal &&
+              item.before.test(lineBefore(source, start))
           )
         : -1;
       if (identifier !== -1) {
@@ -356,15 +398,49 @@ describe("the scan reads what it should (a planted word in each shape of text)",
     expect(scan(source)).toEqual([]);
   });
 
-  it("lets a lowercase single word through only when the file and the word are listed as an identifier", () => {
-    const source = 'const a = "purge";';
-    const listed = { file: "x.ts", word: "purge" };
+  it("lets a lowercase single word through only when the file, the word and what comes before it are listed as an identifier", () => {
+    const source = 'const a = { action: "purge" };';
+    const listed = { before: ACTION_KEY, file: "x.ts", word: "purge" };
     expect(scan(source)).toEqual(["purge"]);
     expect(scan(source, [], [listed])).toEqual([]);
     expect(scan(source, [], [{ ...listed, file: "y.ts" }])).toEqual(["purge"]);
     expect(scan(source, [], [{ ...listed, word: "caso" }])).toEqual(["purge"]);
+    expect(scan(source, [], [{ ...listed, before: KIND_KEY }])).toEqual([
+      "purge",
+    ]);
     expect(scan('const a = "O purge";', [], [listed])).toEqual(["purge"]);
   });
+
+  it("catches a label that reuses a listed identifier in the same file", () => {
+    const listed = { before: ACTION_KEY, file: "x.ts", word: "purge" };
+    const real = 'type A = { action: "purge" };';
+    const label = 'const b = { label: "purge" };';
+    expect(scan(`${real}\n${label}`, [], [listed])).toEqual(["purge"]);
+    expect(scan(`${label}\n${real}`, [], [listed])).toEqual(["purge"]);
+    expect(
+      scan('const c = { action: "purge", label: "purge" };', [], [listed])
+    ).toEqual(["purge"]);
+  });
+
+  it.each(
+    [...new Set(IDENTIFIERS.map((item) => `${item.file}|${item.word}`))].map(
+      (key) => key.split("|") as [string, string]
+    )
+  )(
+    "catches a label %s planted next to the real identifiers of %s",
+    (file, word) => {
+      const real = screenFiles.find((entry) => entry.file === file)?.source;
+      expect(real).toBeDefined();
+      const scanFile = (source: string) =>
+        hitsIn([{ file, source }], TEXT_WORDS, KEPT, IDENTIFIERS).hits.map(
+          (hit) => `${hit.word} in "${hit.literal}"`
+        );
+      expect(scanFile(real ?? "")).toEqual([]);
+      expect(
+        scanFile(`${real}\nexport const planted = { label: "${word}" };`)
+      ).toEqual([`${word} in "${word}"`]);
+    }
+  );
 
   it("lets a text through only when the file and the start of the text are listed, and only its allowed word", () => {
     const source = 'const a = "O purge só existe para loja encerrada.";';
