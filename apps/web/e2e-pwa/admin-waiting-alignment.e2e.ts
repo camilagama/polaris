@@ -42,7 +42,7 @@ const itemMarkup = ({ figure, what }: Item) => `<li>
 async function open(page: Page, width: number) {
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.setContent(
-    `<!doctype html><html><head><meta charset="utf-8"><style>${SHEET}</style></head>
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>${SHEET}</style></head>
 <body><div id="admin" class="content"><section class="area" style="width:${width}px">
 <ul class="waiting">${ITEMS.map(itemMarkup).join("")}</ul></section></div></body></html>`
   );
@@ -111,7 +111,12 @@ test.describe("Admin: o destino de 'Esperando por você'", () => {
   }) => {
     await open(page, NARROW_PX);
     const [first, , , last] = await rows(page);
-    expect((last as Row).what.x).toBeGreaterThan((first as Row).what.x + 8);
+    const gain = (last as Row).what.x - (first as Row).what.x;
+    const wider =
+      ((last as Row).count as Rect).width -
+      ((first as Row).count as Rect).width;
+    expect(wider).toBeGreaterThan(0);
+    expect(Math.abs(gain - wider)).toBeLessThanOrEqual(SUBPIXEL);
   });
 
   test("sem contagem o texto e o destino têm a linha inteira", async ({
