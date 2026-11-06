@@ -703,24 +703,21 @@
     white-space: nowrap;
   }
 
-  /* in a narrow card the destination drops under the text, so the text keeps the whole line instead of one word per row */
+  /* in a narrow card the destination drops under the text, so the text keeps the whole line instead of one word per row; the figure's own column sets where the text and the destination start, whatever its digits */
   @container (max-width: 40rem) {
     .waiting-item {
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
     }
 
-    .waiting-what {
-      flex-grow: 1;
-      flex-basis: 0;
-      min-width: 12ch;
-    }
-
+    .waiting-what,
     .waiting-go {
-      flex-basis: 100%;
+      grid-column: 1 / -1;
     }
 
+    .waiting-count + .waiting-what,
     .waiting-count + .waiting-what + .waiting-go {
-      margin-left: calc(2ch + 0.5rem);
+      grid-column: 2;
     }
   }
 
