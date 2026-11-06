@@ -178,13 +178,14 @@ export function syncStatusLabel(
 }
 
 /**
- * The sentence when there is no connection (U-54): "Sem conexão", and how much waits on the device when
- * something does. On a screen that works only online it adds that the screen needs internet.
+ * The sentence when there is no connection (U-54): "Sem conexão", and how much waits on the device and
+ * what happens to it when something does. On a screen that works only online it adds that the screen
+ * needs internet.
  */
 function offlineText(waiting: number, onlineOnly: boolean): string {
   const kept =
     waiting > 0
-      ? plural(waiting, "operação guardada", "operações guardadas")
+      ? `${plural(waiting, "operação guardada", "operações guardadas")}, ${waiting === 1 ? "envia" : "enviam"} quando voltar`
       : null;
   return ["Sem conexão", kept, onlineOnly ? NEEDS_INTERNET : null]
     .filter(Boolean)
