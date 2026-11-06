@@ -205,8 +205,10 @@ test.describe("Pendências, Precisa de ação", () => {
     await expect(strip(page)).toContainText(
       "Precisa de ação4 registros recusados · 2 na fila atrás deles"
     );
-    // only the refusal of the access says "O servidor recusou", by design; no card repeats a raw server message
-    await expect(page.getByText("O servidor recusou")).toHaveCount(1);
+    // the subtitle of the page also says "o servidor recusou"; the cards are the list, and only the refusal of the access says it there, by design: no card repeats a raw server message
+    await expect(
+      page.getByRole("list").getByText("O servidor recusou")
+    ).toHaveCount(1);
     expect(await axeFaults(page)).toEqual([]);
   });
 

@@ -127,7 +127,7 @@ interface AcceptanceFormProps {
 }
 
 /**
- * The box starts unticked and "Continuar" is never disabled for want of it: the screen says what is
+ * The box starts unticked and "Aceitar e continuar" is never disabled for want of it: the screen says what is
  * missing (V6). Only the server records the acceptance; this screen sends the versions it shows.
  */
 function AcceptanceForm({

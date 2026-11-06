@@ -8,7 +8,7 @@ export const ACCEPTANCE_NEW_VERSION =
   "Atualizamos os termos. Leia e aceite para continuar.";
 export const ACCEPTANCE_CHECKBOX =
   "Li e aceito os Termos de Uso e a Política de Privacidade.";
-export const ACCEPTANCE_CONTINUE = "Continuar";
+export const ACCEPTANCE_CONTINUE = "Aceitar e continuar";
 export const ACCEPTANCE_SAVING = "Registrando o aceite…";
 export const ACCEPTANCE_CHECKBOX_MISSING =
   "Marque a caixa para aceitar e continuar.";

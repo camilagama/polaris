@@ -66,7 +66,7 @@ describe("the sync status in the header", () => {
         snapshot({ counts: counts({ pending: 2 }), online: false })
       )
     ).toMatchObject({
-      text: "Sem conexão · 2 operações guardadas",
+      text: "Sem conexão · 2 operações guardadas, enviam quando voltar",
       tone: "offline",
     });
     // U-54: with nothing queued the sentence is only "Sem conexão", for the screen reader too
@@ -80,7 +80,26 @@ describe("the sync status in the header", () => {
       />
     );
     expect(html).toContain(
-      '<span class="sr-only">Sem conexão · 2 operações guardadas</span>'
+      '<span class="sr-only">Sem conexão · 2 operações guardadas, enviam quando voltar</span>'
+    );
+  });
+
+  it("says what happens to the kept operations when the connection comes back, in the singular and the plural", () => {
+    const text = (pending: number, onlineOnly = false) =>
+      syncStatusLabel(
+        snapshot({ counts: counts({ pending }), online: false }),
+        { onlineOnly }
+      ).text;
+    expect(text(0)).toBe("Sem conexão");
+    expect(text(1)).toBe(
+      "Sem conexão · 1 operação guardada, envia quando voltar"
+    );
+    expect(text(3)).toBe(
+      "Sem conexão · 3 operações guardadas, enviam quando voltar"
+    );
+    expect(text(0, true)).toBe("Sem conexão · esta tela precisa de internet");
+    expect(text(1, true)).toBe(
+      "Sem conexão · 1 operação guardada, envia quando voltar · esta tela precisa de internet"
     );
   });
 
@@ -99,7 +118,7 @@ describe("the sync status in the header", () => {
         onlineOnly
       ).text
     ).toBe(
-      "Sem conexão · 2 operações guardadas · esta tela precisa de internet"
+      "Sem conexão · 2 operações guardadas, enviam quando voltar · esta tela precisa de internet"
     );
     // online, nothing changes
     expect(syncStatusLabel(snapshot(), onlineOnly).text).toBe(
