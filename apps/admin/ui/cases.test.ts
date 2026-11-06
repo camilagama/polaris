@@ -1105,6 +1105,15 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
           id: "a1",
           principalId: OWNER.principal.id,
         },
+        {
+          createdAt: OPENED_AT,
+          detail: null,
+          entityId: null,
+          entityType: null,
+          eventType: "tenant_access.revoked",
+          id: "a2",
+          principalId: OWNER.principal.id,
+        },
       ],
       grants: [
         {
@@ -1120,8 +1129,9 @@ describe("the screen of a case and its close (AC-P1.6)", () => {
 
     const text = visibleText(root);
     expect(text).toContain(
-      "Acesso aos dados de 28/10/2026 11:05 até 28/10/2026 13:05: ativo."
+      "Acesso temporário de 28/10/2026 11:05 até 28/10/2026 13:05: ativo."
     );
+    expect(text).toContain("Acesso temporário encerrado");
     expect(text).toContain("28/10/2026 10:05");
     expect(text).toContain("por você");
   });

@@ -8,7 +8,7 @@ import {
   effectLine,
   recordLine,
 } from "../effect-lines";
-import { brasiliaMomentText } from "../format";
+import { auditEventText, brasiliaMomentText } from "../format";
 import { createNotice, type Notice } from "../notice";
 import {
   ACTIONS,
@@ -338,7 +338,7 @@ export function privacyCaseView(tools: ScreenTools): HTMLElement {
       dom.el(
         "li",
         {},
-        `${brasiliaMomentText(entry.at)} · ${auditText(entry.eventType)} · por ${byWhom(entry.principalId)}`
+        `${brasiliaMomentText(entry.at)} · ${auditEventText(entry.eventType)} · por ${byWhom(entry.principalId)}`
       )
     );
     return dom.el(
@@ -1099,23 +1099,4 @@ function closedText(detail: Detail): string | null {
     return `Atendimento fechado em ${brasiliaMomentText(detail.case.closedAt)}, sem resolução pelas etapas do pedido`;
   }
   return null;
-}
-
-const AUDIT_EVENTS: Readonly<Record<string, string>> = {
-  "organization.legal_hold_placed": "Trava legal posta",
-  "organization.legal_hold_released": "Trava legal liberada",
-  "organization.legal_hold_reviewed": "Data de revisão da trava legal mudada",
-  "organization.purge_cancelled": "Agendamento do apagamento cancelado",
-  "organization.purge_completed": "Apagamento da loja concluído",
-  "organization.purge_scheduled": "Apagamento da loja agendado",
-  "privacy_case.action_recorded": "Ação registrada",
-  "privacy_case.stage_recorded": "Etapa registrada",
-  "support_case.closed": "Atendimento fechado",
-  "support_case.opened": "Atendimento aberto",
-  "tenant_access.granted": "Acesso temporário liberado",
-  "tenant_access.revoked": "Acesso temporário encerrado",
-};
-
-function auditText(eventType: string): string {
-  return AUDIT_EVENTS[eventType] ?? "Outra ação registrada";
 }

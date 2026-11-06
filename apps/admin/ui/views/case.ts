@@ -150,7 +150,7 @@ export function caseView(tools: ScreenTools): HTMLElement {
       return dom.el(
         "li",
         {},
-        `Acesso aos dados de ${brasiliaMomentText(grant.startsAt)} até ${brasiliaMomentText(grant.expiresAt)}: ${state}.`
+        `Acesso temporário de ${brasiliaMomentText(grant.startsAt)} até ${brasiliaMomentText(grant.expiresAt)}: ${state}.`
       );
     });
     const events = detail.audit.map((entry) =>

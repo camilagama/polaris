@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROBLEM_TEXT } from "./api";
+import { auditEventText } from "./format";
 import {
   ACTIONS,
   CATEGORIES,
@@ -1750,6 +1751,38 @@ describe("the lists the case's steps offer come from the contract (AC-P11.1)", (
           option.getAttribute("value")
         )
       ).toEqual(["", ...codes.map(([code]) => code)]);
+    }
+  );
+});
+
+describe("the audit history of the case screen", () => {
+  it.each([
+    "tenant_access.revoked",
+    "organization.legal_hold_released",
+    "organization.purge_scheduled",
+    "privacy_case.stage_recorded",
+  ])(
+    "names %s with the words of the support case screen",
+    async (eventType) => {
+      const base = detail("requested");
+      const mounted = await openCase({
+        ...base,
+        audit: [
+          {
+            at: "2026-10-30T15:00:00.000Z",
+            detail: null,
+            entityType: null,
+            eventType,
+            principalId: OWNER.principal.id,
+          },
+        ],
+      });
+      const text = visibleText(mounted.root);
+      expect(text).toContain(auditEventText(eventType));
+      expect(text).not.toContain("Outra ação registrada");
+      if (eventType === "tenant_access.revoked") {
+        expect(text).toContain("Acesso temporário encerrado");
+      }
     }
   );
 });
