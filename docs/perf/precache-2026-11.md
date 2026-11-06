@@ -6,7 +6,7 @@ Todos os tamanhos são gzip nível 9, arquivo a arquivo (as fontes `.woff2` entr
 
 ## Resposta curta
 
-1. **O PR 611 acrescentou +5 011 B** à linha do resto (de +208 900 B para +213 911 B), 2,3 % do que o build relatou. Quase tudo está no chunk de entrada (`index-*.js`, +5 031 B). Os outros +208 900 B já estavam na `main` quando o PR 611 entrou.
+1. **O PR 611 acrescentou +5 011 B** à linha do resto (de +208 900 B para +213 911 B), 2,3 % do que o build relatou. Quase tudo está no chunk de entrada (`index-*.js`, +5 031 B), e o perfil por módulo (seção 3) liga esse crescimento ao carregador de miniaturas que o shell importa (99,5 % dos bytes renderizados novos do chunk); `current-organization` e a Venda não estão no chunk de entrada. A medida é em bytes renderizados por módulo, não em gzip: a parte do +5 031 B de gzip que cabe a cada módulo não foi separada. Os outros +208 900 B já estavam na `main` quando o PR 611 entrou.
 2. **A `main` atual (`4ee22b40`) mede +214 222 B**: mais +311 B depois do PR 611, de outros PRs (Assinatura +117 B, Venda +124 B, `sale-redo-storage` +71 B).
 3. **A referência de +44 000 B deixou de dizer quanto um PR custa.** A linha ultrapassou +44 000 B no fim de 23/10 e está acima dela há 13 dias; cada PR "excede em ~170 KB" por herança, e o excedente impresso não é do PR. Detalhe na seção 4.
 4. **`MEDIA_THUMBS_ENABLED` não muda o precache.** Conclusão por leitura de código, sem build com a flag ligada e outro desligada: a variável está só como `var` do Worker em `apps/web/wrangler.jsonc`, nunca como `VITE_*`; `organization-handlers.ts` a devolve em `organization.listMine` como `mediaThumbs`, e `media-thumbs-flag.ts` só lê o contexto. O código das miniaturas vai no build de qualquer jeito, e as imagens vêm por `/media`, fora do precache. Ligar a flag em produção não altera nenhum byte da lista abaixo.
@@ -109,7 +109,30 @@ Com o runtime offline ligado (`main`), a lista muda só no segundo lugar: `index
 | Outros 68 chunks que mudaram (soma) | | | −136 |
 | **Total do precache** | 1 512 308 | 1 517 437 | **+5 129** |
 
-O PR trocou arquivos já existentes (96 antes e depois): não criou chunk. O custo é o código de miniatura no caminho de entrada (`current-organization`, `media-thumbs-flag`, `product-thumbnail`, o seletor de variantes da Venda), que vai no build com a flag ligada ou desligada. A atribuição aos arquivos é pela diferença de tamanho entre os dois builds, não por perfil de módulos.
+O PR trocou arquivos já existentes (96 antes e depois): não criou chunk. A diferença por arquivo (tabela acima) é o que o gzip de cada chunk cresceu; ela não diz de qual módulo veio. O perfil por módulo, abaixo, diz.
+
+### Perfil por módulo do chunk de entrada (pai → merge)
+
+Medido nos mesmos dois commits, com os mesmos builds (o `PRECACHE-GROWTH` impresso pelo build com o plugin de medida é igual ao da tabela: +208 900 B e +213 911 B). Mede-se o tamanho que o Rolldown renderiza por módulo no chunk (`chunk.modules[id].renderedLength`, lido no `generateBundle`); não é gzip, e a soma por chunk é maior que o arquivo final porque a medida é anterior à minificação. Serve para dizer quais módulos entraram, não para dar bytes de gzip por módulo.
+
+| Módulo (chunk de entrada, `index.js`) | Pai | Merge | Diferença (B renderizados) |
+| --- | ---: | ---: | ---: |
+| `catalog/thumbnail-queue.ts` | não está | 6 035 | +6 035 |
+| `catalog/product-thumbnail.tsx` | não está | 4 521 | +4 521 |
+| `catalog/thumbnail-cache.ts` | não está | 4 487 | +4 487 |
+| `offline/thumbnail-store.ts` | 830 | 5 294 | +4 464 |
+| `catalog/thumbnail-transport.ts` | não está | 3 339 | +3 339 |
+| `packages/domain/src/catalog/media.ts` | não está | 2 446 | +2 446 |
+| `ui/thumbnail.tsx` | não está | 1 490 | +1 490 |
+| `catalog/media-thumbnail-scope.tsx` | não está | 541 | +541 |
+| `lib/media-thumbs-flag.ts` | não está | 262 | +262 |
+| `app-shell/app-shell.tsx` e `offline/outbox/indexeddb-storage.ts` | | | +138 |
+| **Chunk de entrada** | 1 505 998 | 1 533 721 | **+27 723** |
+
+- **O chunk de entrada cresce por inteiro com o carregador de miniaturas** (99,5 % dos bytes renderizados novos): fila, cache em disco, transporte, armazenamento local, o provedor `product-thumbnail` e o componente de interface. Entra no chunk de entrada porque o `app-shell.tsx` importa `MediaThumbnailScope`, que importa `ThumbnailProvider` de `product-thumbnail.tsx` (cadeia lida no código de `514923cb`). O `thumbnail-store` já estava na entrada no pai (830 B), por `logout-purge.ts` e `outbox-store.ts`, e o `product-thumbnail` estar na entrada, e não só nas telas de Produtos e Venda, é o provedor no shell, que vai no build com a flag ligada ou desligada.
+- **`current-organization` não está no chunk de entrada.** Ele e o `current-organization-model` ficam no `app-core.js` (grupo `APP_CORE` de `apps/web/vite.config.ts`); crescem +704 B renderizados (de +782 B do `app-core.js`, +91 B de gzip). `media-thumbs-flag.ts` está na entrada, com 262 B renderizados.
+- **A Venda não está no chunk de entrada.** O seletor de variantes cresce no `sale-page.js` (+729 B renderizados) e no `sale-redo-storage.js` (+454 B); `products-page.js` encolhe (−1 260 B renderizados, −84 B de gzip); a causa dessa queda não foi investigada.
+- Ficou sem medida o gzip por módulo: o +5 031 B de gzip do chunk de entrada é um número só, e a fração de cada módulo dele não foi separada. A proporção por bytes renderizados é o que sustenta "quase tudo é o carregador de miniaturas".
 
 ## 4. De onde vêm os +214 222 B, e a referência de +44 000 B
 
@@ -174,10 +197,10 @@ Por que ela deixou de servir:
 
 ## 5. Proposta (não aplicada aqui)
 
-1. **Imprimir o delta contra a `main` no build do PR**, além de contra a baseline: o PR leria "+5 011 B sobre a `main`" em vez de "+213 911 B sobre o piso", e o revisor julgaria o que o PR de fato custa. Pode ser um arquivo `precache-main.json` com os tamanhos por linha da `main`, atualizado pelo job `Push on main`, ou o próprio CI reconstruindo a `main` uma vez por run.
+1. **Imprimir o delta contra a base do PR no build, além de contra a baseline**: o PR leria "+5 011 B sobre a `main` em que se apoia" em vez de "+213 911 B sobre o piso", e o revisor julgaria o que o PR de fato custa. **Caminho preferido: construir o SHA-base no mesmo job do CI** (o SHA-base do PR, por `github.event.pull_request.base.sha` ou pelo primeiro pai da ref de merge, um build do `apps/web` com o mesmo Node, de 7 a 15 s, e o delta impresso por linha ao lado do `PRECACHE-GROWTH`). Ele não envelhece, não deixa arquivo para atualizar e mede o código real da base, com o mesmo Node e o mesmo lockfile do build do PR. **Alternativa não preferida: um `precache-main.json` versionado** com os tamanhos por linha da `main`, atualizado pelo job `Push on main`. Envelhece a cada PR que entra e fica errado enquanto o job não roda, gera conflito entre PRs abertos que o regeneram, e fica atrás da `main` enquanto o job não roda. Só valeria se o segundo build custasse mais caro que o arquivo, o que 7 a 15 s não indicam. Mudar o CI não é desta medida.
 2. **Somar a linha do resto, as fontes, os primitivos e os quatro chunks (gráficos, movimento, calendário e mapa) numa linha "total do precache"** no `PRECACHE-GROWTH` (hoje +499 412 B), para que o número do aviso não esconda 285 KB que moraram em outra linha.
 3. **Na etapa de corte antes do go-live, partir de um teto novo e firme**, medido em cima dos 1 232 549 B (ou do total de 1 517 739 B), em vez de perseguir +44 000 B; o alvo realista de corte já conhecido (tirar `tailwind-merge`, cerca de −8 KB) não chega perto de 170 KB. O maior bloco sozinho é o `opfs-worker` (699 309 B, 46 % do precache), que não mudou desde o piso; tirá-lo do precache ou carregá-lo sob demanda mexe no offline e é decisão de produto, não desta medida.
-4. **Para o PR 611**: nada a corrigir por tamanho. Ligar `MEDIA_THUMBS_ENABLED` não altera o precache (seção "Resposta curta", item 4); o +5 011 B está no chunk de entrada e pode ser movido para a tela de Produtos e Venda com `import()` se a etapa de corte quiser os bytes de volta.
+4. **Para o PR 611**: nada a corrigir por tamanho. Ligar `MEDIA_THUMBS_ENABLED` não altera o precache (seção "Resposta curta", item 4); o chunk de entrada cresce +5 031 B de gzip (a linha do resto, +5 011 B), e o perfil por módulo (seção 3) o liga ao carregador de miniaturas que o `app-shell.tsx` importa. O `import()` desse provedor tiraria os bytes da primeira carga, mas o chunk novo continuaria no precache (o precache é tudo menos a lista de exclusões da seção 6) e o `PRECACHE-GROWTH` não encolheria, a menos que o chunk saísse do precache, o que mexe no offline e é decisão de produto. Não foi testado aqui.
 
 ## 6. Como reproduzir
 
@@ -198,7 +221,7 @@ for sha in 9ce39451947999636d115945ed165a7e12f12020 514923cb42ed43ab8aba682be1b5
 done
 ```
 
-O build leva cerca de 7 a 15 s. As linhas `PRECACHE-GROWTH` e `precache (offline runtime ...)` vêm do próprio plugin (`apps/web/pwa/precache-budget.ts`) e são as que o CI imprime. Para a lista dos 10 maiores, salve o script abaixo como `medir-precache.mjs`, dentro de `apps/web/` e sem versionar, que soma o gzip nível 9 dos arquivos que o service worker precacheia (tudo menos `.map`, `sw.js`, `_headers`, `_redirects`, `.assetsignore`, o chunk `product-import-dialog-*` e o `sentry-sdk-*`):
+O build leva de 7 a 15 s. As linhas `PRECACHE-GROWTH` e `precache (offline runtime ...)` vêm do próprio plugin (`apps/web/pwa/precache-budget.ts`) e são as que o CI imprime. Para a lista dos 10 maiores, salve o script abaixo como `medir-precache.mjs`, dentro de `apps/web/` e sem versionar, que soma o gzip nível 9 dos arquivos que o service worker precacheia (tudo menos `.map`, `sw.js`, `_headers`, `_redirects`, `.assetsignore`, o chunk `product-import-dialog-*` e o `sentry-sdk-*`):
 
 ```js
 import { readdirSync, readFileSync } from "node:fs";
@@ -240,9 +263,44 @@ As tabelas por chunk (seções 3 e 4) comparam dois desses JSON pelo nome lógic
 
 A soma de todos os arquivos do `8c2ef580` (`git checkout --detach 8c2ef580e35dfc5069b23d36183a204fde0f7430`, build com o mesmo comando) dá 1 018 327 B, igual à baseline do verificador. A série diária da seção 4 usa o mesmo build, só com o runtime offline desligado, no último commit de cada dia da `main` pela data do commit (`git log --first-parent --format='%ad %H' --date=short origin/main`, o primeiro de cada data), lendo a linha `rest line` do log do build.
 
+### Perfil por módulo (seção 3)
+
+Mesmos dois commits (`9ce39451` e `514923cb`), mesmo Node 24, sem `SENTRY_DSN`, runtime offline desligado. Salve o arquivo abaixo como `vite.config.medida.ts` dentro de `apps/web/`, sem versionar: ele reaproveita a configuração do `vite.config.ts` e acrescenta um plugin que, no `generateBundle`, grava em JSON o `renderedLength` de cada módulo de cada chunk. Rode com `PERFIL_OUT=/tmp/perfil-<rotulo> node node_modules/vite/bin/vite.js build --config vite.config.medida.ts`; sai um `/tmp/perfil-<rotulo>.client.json`.
+
+```ts
+import { writeFileSync } from "node:fs";
+import base from "./vite.config";
+
+const dump = {
+  name: "medida-modulos",
+  enforce: "post" as const,
+  generateBundle(_o: unknown, bundle: Record<string, any>) {
+    const out: Record<string, Record<string, number>> = {};
+    for (const [file, chunk] of Object.entries(bundle)) {
+      if (chunk.type !== "chunk") continue;
+      const modules: Record<string, number> = {};
+      for (const [id, info] of Object.entries<any>(chunk.modules ?? {})) {
+        modules[id] = info.renderedLength;
+      }
+      out[file] = modules;
+    }
+    const name = (this as any).environment?.name ?? "x";
+    writeFileSync(`${process.env.PERFIL_OUT}.${name}.json`, JSON.stringify(out));
+  },
+};
+
+export default async (env: any) => {
+  const cfg: any = await (base as any)(env);
+  return { ...cfg, plugins: [...(cfg.plugins ?? []), dump] };
+};
+```
+
+O `PRECACHE-GROWTH` impresso pelos dois builds (+208 900 B e +213 911 B) confere com o da seção 2, o que mostra que o plugin não mudou o resultado. A comparação junta os chunks pelo nome lógico (seção 6) e subtrai, módulo a módulo, o `renderedLength` do pai do do merge.
+
 ## 7. O que não foi feito
 
 - Não mexi em código, na referência de +44 000 B, em `BUDGET_MODE` nem na baseline; as propostas da seção 5 são para decisão do Arrascaeta e do usuário.
-- A série diária pega um commit por dia: o degrau de um dia não diz qual PR o causou. O de 26/10 e o de 30/10 (cerca de 39 KB e 35 KB) cobrem 19 e 30 PRs; atribuir PR a PR pede um build por commit (cerca de 15 s cada).
+- A série diária pega um commit por dia: o degrau de um dia não diz qual PR o causou. O de 26/10 e o de 30/10 (cerca de 39 KB e 35 KB) cobrem 19 e 30 PRs; atribuir PR a PR pede um build por commit (de 7 a 15 s cada).
+- O perfil por módulo (seção 3) é em bytes renderizados do Rolldown, não em gzip: não separei o +5 031 B de gzip por módulo. Não usei `rollup-plugin-visualizer`, que seria dependência nova; o plugin de medida ficou fora do repositório.
 - Não medi o `bun run build` completo nem o e2e-real; só o `vite build` do `apps/web`, que é onde o verificador roda.
 - A medida é de bytes de download (gzip nível 9), não de tempo de instalação do service worker nem de uso de armazenamento.
