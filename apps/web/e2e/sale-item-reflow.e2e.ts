@@ -100,9 +100,9 @@ function expectedLayout(rem: number) {
 }
 
 /**
- * The longest common value does not fit the price field of the phone's own disposition below 18.25 rem (the field is
- * narrower than the value there, and was before the cut); the cut at 16.25 rem keeps 320 px with the default font in
- * that disposition, as it is today, so those widths are the only place a value scrolls inside its field.
+ * Below 18.25 rem, in the disposition with Quantidade and Preço cobrado side by side, the price field is narrower
+ * than the longest common value. The cut stays at 16.25 rem because 320 px with the default font (16.5 rem) must keep
+ * that disposition, so "Preço cobrado" is the only field whose value may scroll, and only in that range.
  */
 const VALUE_SCROLLS_BELOW_REM = 18.25;
 
@@ -112,7 +112,7 @@ function problems(geometry: ItemGeometry) {
     expectedLayout(rem) === "celular" && rem < VALUE_SCROLLS_BELOW_REM;
   return [
     ...geometry.clipped.filter(
-      (text) => !(valueMayScroll && text.endsWith("valor com rolagem"))
+      (text) => !(valueMayScroll && text === "Preço cobrado: valor com rolagem")
     ),
     ...geometry.overlaps,
   ];
@@ -138,7 +138,7 @@ for (const pixels of [16, 20]) {
       expect([...seen].sort()).toEqual(["celular", "empilhada", "tres"]);
     });
 
-    test("a janela não decide: nas larguras de 320 a 1280 px nada fica cortado nem sobreposto, e 320, 360 e 390 px com letra de 16 px seguem na disposição do celular", async ({
+    test("nas larguras de janela de 320 a 1280 px nada fica cortado nem sobreposto, e 320, 360 e 390 px com letra de 16 px seguem na disposição do celular", async ({
       page,
     }) => {
       const item = await openItem(page, pixels);
@@ -164,31 +164,39 @@ for (const pixels of [16, 20]) {
       }
     });
 
-    test("com erro sob o campo, aviso de estoque, dica de preço e linha de negociação nada sobrepõe nem corta, no menor e no maior item", async ({
+    test("com aviso de estoque, dica de preço e linha de negociação, e depois com erro sob cada campo, nada sobrepõe nem corta, no menor e no maior item", async ({
       page,
     }) => {
       const item = await openItem(page, pixels);
+      const sweep = async (minimum: number) => {
+        for (const rem of [12, 16.5, 24, 40]) {
+          // biome-ignore lint/performance/noAwaitInLoops: the widths are applied to the same page, one after the other
+          await setItemWidth(item, rem * pixels);
+          const geometry = await measureItem(item);
+          expect(problems(geometry), `${rem} rem`).toEqual([]);
+          const states = await measureStates(item);
+          expect(states.checked, `${rem} rem`).toBeGreaterThanOrEqual(minimum);
+          expect(states.problems, `${rem} rem`).toEqual([]);
+          expect(layoutOf(geometry)).toBe(expectedLayout(rem));
+        }
+      };
       await expect(
         item.getByText("Preços sugeridos pela última venda")
       ).toBeVisible();
       await expect(item.getByText("Negociação:")).toBeVisible();
       await item.getByLabel("Quantidade").fill("9");
       await expect(item.getByText("Acima do saldo (5)")).toBeVisible();
+      await sweep(3);
+      await item.getByLabel("Quantidade").fill("abc");
+      await item.getByLabel("Preço cobrado").fill("abc");
       await item.getByLabel("Preço de tabela").fill("abc");
-      await expect(item.locator("[id$=-listed-error]")).toBeVisible();
-      for (const rem of [NARROWEST_REM, 12, 16.5, 24, 40]) {
-        // biome-ignore lint/performance/noAwaitInLoops: the widths are applied to the same page, one after the other
-        await setItemWidth(item, rem * pixels);
-        const geometry = await measureItem(item);
-        expect(problems(geometry), `${rem} rem`).toEqual([]);
-        expect(await measureStates(item), `${rem} rem`).toEqual([]);
-        expect(layoutOf(geometry)).toBe(expectedLayout(rem));
-      }
+      await expect(item.locator("[id$=-error]:not(:empty)")).toHaveCount(3);
+      await sweep(4);
     });
   });
 }
 
-test("o DOM e o foco seguem Quantidade, Preço cobrado, Preço de tabela em qualquer disposição", async ({
+test("a ordem do DOM segue Quantidade, Preço cobrado, Preço de tabela em qualquer disposição", async ({
   page,
 }) => {
   const item = await openItem(page, 16);

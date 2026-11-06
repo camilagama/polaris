@@ -305,7 +305,7 @@ function ChosenItemFields({
         </p>
       ) : null}
       <div className="@container">
-        <div className="grid @[16.25rem]:grid-cols-[auto_minmax(0,1fr)] @[27rem]:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @[16.25rem]:[&>:first-child]:justify-self-auto [&>:first-child]:justify-self-start">
+        <div className="grid @[16.25rem]:grid-cols-[min-content_minmax(0,1fr)] @[27rem]:grid-cols-[min-content_minmax(0,1fr)_minmax(0,1fr)] grid-cols-1 items-start gap-x-3 gap-y-4 @max-[16.25rem]:[&>:first-child]:justify-self-start">
           <QuantityStepper
             error={errors[itemFieldKey(item.draftId, "quantity")]}
             id={`${prefix}-quantity`}

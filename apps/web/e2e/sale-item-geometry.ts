@@ -101,7 +101,7 @@ export async function measureItem(item: Locator): Promise<ItemGeometry> {
   return { ...read, boxes: read.boxes as ItemGeometry["boxes"], overlaps };
 }
 
-export type Layout = "tres" | "celular" | "empilhada";
+type Layout = "tres" | "celular" | "empilhada";
 
 /** The disposition of the three fields, read from where their boxes are. */
 export function layoutOf({ boxes }: ItemGeometry): Layout {
@@ -122,7 +122,7 @@ export async function setBrowserFont(page: Page, pixels: number) {
   });
 }
 
-function stateProblems(root: HTMLElement): string[] {
+function stateProblems(root: HTMLElement) {
   const problems: string[] = [];
   const itemRight = root.getBoundingClientRect().right + 0.5;
   const fields = [...root.querySelectorAll("[data-slot=field]")];
@@ -150,10 +150,11 @@ function stateProblems(root: HTMLElement): string[] {
       }
     }
   }
-  return problems;
+  return { checked: texts.length, problems };
 }
 
 /** The warnings, hints and errors of the item: none is cut by the item's right edge or sits over another field. */
-export function measureStates(item: Locator) {
-  return item.evaluate(stateProblems);
+export async function measureStates(item: Locator) {
+  const { checked, problems } = await item.evaluate(stateProblems);
+  return { checked, problems };
 }
