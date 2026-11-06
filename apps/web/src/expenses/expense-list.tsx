@@ -109,7 +109,8 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
 /**
  * From 30 rem the buttons of a row have a fixed width (12 rem, enough for "Editar" and "Anulando…" and for
  * "Reativando…"), so the figures end in the same x on every row. The total ends there too: the buttons, the 12 px
- * gap of the row less the 1 px border of the box, as padding on the right.
+ * gap of the row less the 1 px border of the box, as padding on the right. The `md:` copy stays: the box has its own
+ * `md:px-4`, which would win over the `min-[30rem]` one from 48 rem.
  */
 const ACTIONS_WIDTH = "min-[30rem]:w-48";
 const TOTAL_UNDER_VALUES =

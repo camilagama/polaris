@@ -1730,8 +1730,8 @@ for (const width of [480, 1280]) {
       const total = await rightEdge(footerValue);
       const first = await rightEdge(rowValues.nth(0));
       const second = await rightEdge(rowValues.nth(1));
-      expect(Math.abs(total - first)).toBeLessThanOrEqual(1);
-      expect(Math.abs(total - second)).toBeLessThanOrEqual(1);
+      expect(Math.abs(total - first)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(total - second)).toBeLessThanOrEqual(0.5);
     };
     await expectColumn("Ativas");
     await expectColumn("Anuladas");
