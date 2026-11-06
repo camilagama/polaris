@@ -9,6 +9,7 @@ import {
   stockAttentionLinks,
   stockAttentionRequest,
   stockCountText,
+  stockCoverIds,
   stockEmptyMessage,
   stockListRequest,
   stockListView,
@@ -577,5 +578,56 @@ describe("stockRowActions (the buttons of a row, AC-1 and AC-7)", () => {
     expect(
       labels(actionsOf({ movingAverageCost: null, quantity: 0 }, true))
     ).toEqual(["Receber", "Contar", "Baixar"]);
+  });
+});
+
+describe("capa na lista do Estoque", () => {
+  const COVER = "0199c2d0-0000-7000-8000-000000000c01";
+  const OTHER = "0199c2d0-0000-7000-8000-000000000c02";
+
+  it("só pede withCover quando a chave está ligada", () => {
+    expect(
+      stockListRequest(organizationId, defaultStockFilters, null, true)
+    ).toMatchObject({ withCover: true });
+    expect(
+      stockListRequest(organizationId, defaultStockFilters, "c", false)
+    ).not.toHaveProperty("withCover");
+  });
+
+  it("a linha leva a capa do produto, nula ou ausente como veio", () => {
+    const [withCover, none, absent] = stockRows([
+      entry(1, { coverAssetId: COVER }),
+      entry(2, { coverAssetId: null }),
+      entry(3),
+    ]);
+    expect(withCover?.coverAssetId).toBe(COVER);
+    expect(none?.coverAssetId).toBeNull();
+    expect(absent).not.toHaveProperty("coverAssetId");
+  });
+
+  it("a ordem das capas tem cada id uma vez, pela primeira linha, sem as linhas sem capa", () => {
+    expect(
+      stockCoverIds([
+        entry(1, { coverAssetId: COVER }),
+        entry(2, { coverAssetId: null }),
+        entry(3, { coverAssetId: OTHER }),
+        entry(4, { coverAssetId: COVER }),
+        entry(5),
+      ])
+    ).toEqual([COVER, OTHER]);
+  });
+
+  it("aplicar um saldo devolvido por comando mantém a capa da linha", () => {
+    const state = stockBalanceUpdated(
+      ready([entry(1, { coverAssetId: COVER })]),
+      {
+        movingAverageCost: null,
+        quantity: 9,
+        variantId: variantId(1),
+        version: 3,
+      },
+      null
+    );
+    expect(state.entries[0]?.coverAssetId).toBe(COVER);
   });
 });
