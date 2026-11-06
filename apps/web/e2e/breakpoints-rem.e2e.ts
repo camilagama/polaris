@@ -245,3 +245,42 @@ test.describe("a Venda a 1280 px: a reserva de rolagem da barra de total não se
     expect(reserve.padding).toBe(0);
   });
 });
+
+test.describe("a Venda a 800 px, fonte padrão 16 px: sem barra inferior, com a barra de total", () => {
+  test("a coluna única e a barra de total aparecem, a barra inferior não, e a reserva cobre só a barra de total", async ({
+    page,
+  }) => {
+    await openSale(page, 800, REM);
+    const column = await page.evaluate(() => {
+      const form = document.querySelector("[data-sale-form]");
+      const root = getComputedStyle(document.documentElement);
+      return {
+        bottomBar: document.querySelector("[data-bottom-bar]")
+          ? getComputedStyle(
+              document.querySelector("[data-bottom-bar]") as Element
+            ).display !== "none"
+          : false,
+        columns: form
+          ? getComputedStyle(form).gridTemplateColumns.split(" ").length
+          : 0,
+        formWidth: form?.getBoundingClientRect().width ?? 0,
+        rootPaddingBottom: Number.parseFloat(root.scrollPaddingBottom) || 0,
+      };
+    });
+    expect(column.bottomBar).toBe(false);
+    expect(column.formWidth).toBeLessThan(44 * REM);
+    expect(column.rootPaddingBottom).toBe(0);
+    const reserve = await submitBarReserve(page);
+    expect(reserve.barShown).toBe(true);
+    expect(reserve.barHeight).toBeGreaterThan(0);
+    expect(reserve.padding).toBeGreaterThanOrEqual(reserve.barHeight);
+    const barBottom = await page.evaluate(() => {
+      const bar = document.querySelector("[data-submit-bar]");
+      return bar
+        ? window.innerHeight - bar.getBoundingClientRect().bottom
+        : Number.NaN;
+    });
+    expect(barBottom).toBeLessThanOrEqual(1);
+    expect(await saleSideScroll(page)).toBe(false);
+  });
+});

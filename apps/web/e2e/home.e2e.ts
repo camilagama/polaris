@@ -4295,8 +4295,10 @@ const SOLD_IN_NOVEMBER: Scenario = {
 interface RankingRow {
   bottom: number;
   figuresTop: number;
+  fitsOnOneLine: boolean;
   height: number;
   nameBottom: number;
+  nameLines: number;
   nameText: string;
   top: number;
   visibleCharacters: number;
@@ -4316,6 +4318,17 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
           row.parentElement as HTMLElement
         ).getBoundingClientRect().top;
         const nameBox = name.getBoundingClientRect();
+        const nameStyle = getComputedStyle(name);
+        const parsedLine = Number.parseFloat(nameStyle.lineHeight);
+        const lineHeight = Number.isNaN(parsedLine)
+          ? Number.parseFloat(nameStyle.fontSize) * 1.2
+          : parsedLine;
+        const probe = name.cloneNode(true) as HTMLElement;
+        probe.style.cssText =
+          "position:absolute;visibility:hidden;width:max-content;white-space:nowrap;display:block;overflow:visible;-webkit-line-clamp:none";
+        name.parentElement?.appendChild(probe);
+        const naturalWidth = probe.getBoundingClientRect().width;
+        probe.remove();
         const text = name.firstChild as Text;
         let visible = 0;
         for (let at = 0; at < text.length; at += 1) {
@@ -4335,8 +4348,10 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
         return {
           bottom: box.bottom - origin,
           figuresTop: value.getBoundingClientRect().top - origin,
+          fitsOnOneLine: naturalWidth <= nameBox.width + 1,
           height: box.height,
           nameBottom: nameBox.bottom - origin,
+          nameLines: Math.round(nameBox.height / lineHeight),
           nameText: name.textContent ?? "",
           top: box.top - origin,
           visibleCharacters: visible,
@@ -4381,6 +4396,14 @@ test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"
         row.figuresTop,
         `valor ${index + 1} abaixo do nome`
       ).toBeGreaterThanOrEqual(row.nameBottom - 1);
+      expect(
+        row.fitsOnOneLine,
+        `o nome ${index + 1} não cabe em 1 linha a 320 px com letra de 20 px`
+      ).toBe(false);
+      expect(
+        row.nameLines,
+        `o nome ${index + 1} quebra em 2 linhas, sem cortar em 1`
+      ).toBe(2);
     }
     const block = region(page, "Mais vendidos do mês");
     await assertNothingClipped(block);

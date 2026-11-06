@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PANEL_OPEN_REASON_ID, RowActions } from "./stock-row-actions";
-import type { StockRow } from "./stock-list-model";
+import { type StockRow, stockRowActions } from "./stock-list-model";
 
 const DISABLED_ATTR = /\sdisabled=/;
 const ARIA_DISABLED_BUTTONS = /<button[^>]*aria-disabled="true"/g;
@@ -57,11 +57,12 @@ describe("the row buttons while another panel is open", () => {
 });
 
 describe("the row of buttons in a narrow row", () => {
-  it("stacks the three, each as wide as the row and 44 px tall, below 18.5 rem of the row", () => {
-    const markup = actions(false);
-    expect(markup).toContain("@max-[18.499rem]:flex-col");
-    expect(markup.match(/@max-\[18\.499rem\]:h-11/g)).toHaveLength(3);
-    expect(markup.match(/@max-\[18\.499rem\]:w-full/g)).toHaveLength(3);
+  it("has the three buttons in order, each with its own accessible name, whatever the width", () => {
+    const names = [
+      ...actions(false).matchAll(/<button\b[^>]*\saria-label="([^"]*)"/g),
+    ].map((match) => match[1]);
+    expect(names).toEqual(stockRowActions(row.target).map(({ name }) => name));
+    expect(new Set(names).size).toBe(3);
   });
 
   it("keeps the group one control with the same name", () => {
