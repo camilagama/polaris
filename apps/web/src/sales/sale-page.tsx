@@ -3,7 +3,6 @@ import type {
   PaymentProfileReadModel,
 } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
-import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type FormEvent,
@@ -14,13 +13,7 @@ import {
   useState,
 } from "react";
 import { Button } from "@/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { deviceSaleKept } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
@@ -113,7 +106,6 @@ import {
   type Loadable,
   isFormLocked,
   isSaleFormDirty,
-  MAX_SALE_ITEMS,
   type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
@@ -136,7 +128,7 @@ import {
   updatePayment,
   withdrawSalePreset,
 } from "./sale-form-model";
-import { ItemEditor } from "./sale-item-editor";
+import { AddItemButton, ItemEditor, ItemsCount } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
 import { SubmitBar, SummaryPanel } from "./sale-summary-panel";
 import {
@@ -984,12 +976,13 @@ export function SalePage() {
     (summary?.lines ?? []).map((line) => [line.draftId, line])
   );
   const itemCount = form.items.length;
+  const chosenCount = chosenItemCount(form);
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Nova venda</h1>
       <SaleDraftBar
         canClear={!locked}
-        itemCount={chosenItemCount(form)}
+        itemCount={chosenCount}
         notice={draftNotice}
         onClear={handleClearSale}
         open={isSaleFormDirty(form, preset)}
@@ -1037,9 +1030,7 @@ export function SalePage() {
                   <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
                   Atualizar estoque e perfis
                 </Button>
-                <CardDescription>
-                  {itemCount} {itemCount === 1 ? "item" : "itens"}
-                </CardDescription>
+                <ItemsCount chosen={chosenCount} total={itemCount} />
               </CardHeader>
               <CardContent className="grid gap-4">
                 {form.items.map((item, index) => (
@@ -1062,16 +1053,11 @@ export function SalePage() {
                     summaryLine={summaryLines.get(item.draftId)}
                   />
                 ))}
-                <Button
-                  className="w-full sm:w-auto sm:justify-self-start"
-                  disabled={form.items.length >= MAX_SALE_ITEMS}
-                  onClick={handleAddItem}
-                  type="button"
-                  variant="outline"
-                >
-                  <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
-                  Adicionar item
-                </Button>
+                <AddItemButton
+                  chosen={chosenCount}
+                  onAdd={handleAddItem}
+                  total={itemCount}
+                />
               </CardContent>
             </fieldset>
           </Card>
