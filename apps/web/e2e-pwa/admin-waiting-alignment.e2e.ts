@@ -16,7 +16,10 @@ const SHEET = readFileSync(
   "utf8"
 );
 
-const WAITING_ITEM_CASES: readonly { markup: string }[] = JSON.parse(
+const WAITING_ITEM_CASES: readonly {
+  figure: string | null;
+  markup: string;
+}[] = JSON.parse(
   readFileSync(
     join(import.meta.dirname, "fixtures/admin-waiting-item.json"),
     "utf8"
@@ -27,6 +30,13 @@ const NARROW_PX = 340;
 const WIDE_PX = 960;
 const SUBPIXEL = 1;
 const FIGURES = ["7", "42", "128", "1234"] as const;
+
+test("a fixture traz os quatro números e, por último, o item sem contagem", () => {
+  expect(WAITING_ITEM_CASES.map(({ figure }) => figure)).toEqual([
+    ...FIGURES,
+    null,
+  ]);
+});
 
 const ITEMS_MARKUP = WAITING_ITEM_CASES.map(({ markup }) => markup).join("");
 
