@@ -14,6 +14,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { PHONE_QUERY } from "@/lib/breakpoints";
 import { type MotionLevel, useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -29,7 +30,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/ui/dialog";
-import { PHONE_QUERY } from "@/ui/dialog-history";
 import {
   DropdownMenu,
   DropdownMenuContent,

@@ -27,7 +27,7 @@ const THEME_OUTSIDE_LAYER = [
   /^@theme( inline)?$/,
   /^@custom-variant [a-z-]+/,
   /^@utility [a-z-]+$/,
-  /^@media \(pointer: coarse\), \(max-width: 759\.98px\)$/,
+  /^@media \(pointer: coarse\), not all and \(min-width: 47\.5rem\)$/,
   /^@layer base$/,
 ];
 const COMMENT = /\/\*[\s\S]*?\*\//g;

@@ -6,6 +6,7 @@ import {
   useId,
   useState,
 } from "react";
+import { TWO_MONTHS_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { OnDemandCalendar, warmCalendar } from "@/ui/calendar-on-demand";
@@ -45,15 +46,14 @@ export interface DateRangePickerProps {
   value: DateRange | null;
 }
 
-/** From 1280 px the calendar shows two months side by side (`xl`, the same width as the `xl:flex-row` of the months). */
-const TWO_MONTHS = "(min-width: 1280px)";
-
 function useTwoMonths(): boolean {
   const [wide, setWide] = useState(
-    () => typeof window !== "undefined" && window.matchMedia(TWO_MONTHS).matches
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia(TWO_MONTHS_QUERY).matches
   );
   useEffect(() => {
-    const query = window.matchMedia(TWO_MONTHS);
+    const query = window.matchMedia(TWO_MONTHS_QUERY);
     const update = () => setWide(query.matches);
     query.addEventListener("change", update);
     update();
