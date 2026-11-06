@@ -2,11 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": ["node"]
   },
   "include": [
     "src/page.workerd-db.test.ts",
     "src/page-e2e-env.d.ts",
-    "src/purge-hold-review-date.test.ts"
+    "src/purge-hold-review-date.test.ts",
+    "src/ui/waiting-item.test.ts"
   ]
 }

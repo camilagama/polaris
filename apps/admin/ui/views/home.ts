@@ -1,5 +1,6 @@
 import { PROBLEM_TEXT, type Problem } from "../api";
 import type { ScreenTools } from "../app";
+import type { Dom } from "../dom";
 import { createNotice } from "../notice";
 import type {
   OperationalIncidentPage,
@@ -87,6 +88,39 @@ const GUIDE = [
   "Pedidos de dados e falhas aparecem aqui quando houver.",
 ] as const;
 
+interface WaitingItem {
+  destination: string;
+  figure: string | null;
+  href: string;
+  what: string;
+}
+
+/** One item of "Esperando por você": the whole line is one link, the figure apart from the text and the destination. */
+export function waitingItem(
+  dom: Dom,
+  { destination, figure, href, what }: WaitingItem
+): HTMLElement {
+  return dom.el(
+    "li",
+    {},
+    dom.el(
+      "a",
+      {
+        "aria-label": `${figure === null ? "" : `${figure} `}${what}: ${destination.toLowerCase()}`,
+        class: "waiting-item",
+        href,
+      },
+      figure === null
+        ? null
+        : dom.el("span", { class: "waiting-count" }, figure),
+      figure === null ? null : " ",
+      dom.el("span", { class: "waiting-what" }, what),
+      " ",
+      dom.el("span", { class: "waiting-go" }, `${destination} →`)
+    )
+  );
+}
+
 /**
  * Início (AC-P1.2b): what waits for the operator first, then the store search; of each list the operator may read, how
  * many wait, read once when the screen opens and only from lists that are not audited: the open privacy cases (with the
@@ -103,26 +137,7 @@ export function homeView(tools: ScreenTools): HTMLElement {
     what: string,
     destination: string,
     href: string
-  ) =>
-    dom.el(
-      "li",
-      {},
-      dom.el(
-        "a",
-        {
-          "aria-label": `${figure === null ? "" : `${figure} `}${what}: ${destination.toLowerCase()}`,
-          class: "waiting-item",
-          href,
-        },
-        figure === null
-          ? null
-          : dom.el("span", { class: "waiting-count" }, figure),
-        figure === null ? null : " ",
-        dom.el("span", { class: "waiting-what" }, what),
-        " ",
-        dom.el("span", { class: "waiting-go" }, `${destination} →`)
-      )
-    );
+  ) => waitingItem(dom, { destination, figure, href, what });
   const empty = dom.el("p", { class: "hint", hidden: "" });
   const emptyNextStep = () =>
     can("organization:diagnose")
