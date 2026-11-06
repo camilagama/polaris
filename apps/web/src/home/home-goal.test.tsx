@@ -23,8 +23,11 @@ const october: GoalReadModel = {
 
 const noRetry = () => undefined;
 
+const NO_BREAK_AMOUNT = /<span class="whitespace-nowrap">([^<]*)<\/span>/g;
+
 const text = (html: string) =>
   html
+    .replace(NO_BREAK_AMOUNT, "$1")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();

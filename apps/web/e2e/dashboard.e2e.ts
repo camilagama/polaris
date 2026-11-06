@@ -2,6 +2,14 @@
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import {
+  assertAmountsOnOneLine,
+  assertNothingClipped,
+  assertTextsApart,
+  expectReflowFont,
+  openReflowViewport,
+  skipOutsideChromium,
+} from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -2684,6 +2692,54 @@ test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal
         sales.evaluate((element) => element.getBoundingClientRect().right),
       ]);
       expect(lineRight).toBeLessThanOrEqual(columnRight);
+    });
+  }
+});
+
+test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 20 px", () => {
+  skipOutsideChromium();
+
+  /** Millions of reais: the half of the chart totals is 126 px wide at this size when they sit in two fixed halves, and a value this long is wider. */
+  const MILLIONS_MONTH: FixtureMonth = {
+    expenses: [{ amount: 12_345, linked: false }],
+    sales: [
+      {
+        anticipationFee: 0,
+        cogs: 600_000,
+        discount: 50_000,
+        gross: 170_710_000,
+        itemLines: 1,
+        items: 3,
+        processingFee: 1234,
+        returns: 0,
+        surcharge: 0,
+      },
+    ],
+  };
+
+  for (const fontPixels of [20, 16]) {
+    test(`com a letra em ${fontPixels} px, o R$ e o número de cada valor ficam na mesma linha`, async ({
+      page,
+    }) => {
+      const server = new FakeReportServer();
+      server.fixture = { "2026-10": MILLIONS_MONTH };
+      await openReflowViewport(page, { fontPixels });
+      await openDashboard(page, server);
+      await expect(chainRow(page, "(=) Vendas líquidas")).toContainText(
+        "R$ 1.706.600,00"
+      );
+      await expectReflowFont(page, fontPixels);
+      await assertAmountsOnOneLine(chartRegion(page));
+      await assertTextsApart(chartRegion(page), "dd", 2);
+      await assertNothingClipped(chartRegion(page), {
+        allowScroll: ["[data-slot=card]"],
+      });
+      expect(await assertAmountsOnOneLine(chain(page))).toBeGreaterThanOrEqual(
+        10
+      );
+      await assertNothingClipped(chain(page), {
+        allowScroll: ["[data-slot=table-container]"],
+      });
     });
   }
 });
