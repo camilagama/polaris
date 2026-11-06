@@ -252,31 +252,7 @@ async function verifyRevealLimit(context: RevealLimitContext) {
     "the quota is counted by operator, not by store"
   );
 
-  // the last slot, asked for by two requests at once: one gets it
-  const racer = await principal();
-  const racerCase = await limitedCase(racer, orgA.organizationId);
-  await backdatedReveals(racer, racerCase, REVEAL_LIMIT - 1, 5);
-  const raced = await Promise.allSettled([
-    reveal(racer, racerCase, maria, "email"),
-    reveal(racer, racerCase, maria, "phone"),
-    reveal(racer, racerCase, joao, "phone"),
-  ]);
-  assert.equal(
-    raced.filter((result) => result.status === "fulfilled").length,
-    1
-  );
-  for (const result of raced) {
-    if (result.status === "rejected") {
-      assert.ok(
-        limited()(result.reason),
-        "the others are refused by the limit"
-      );
-    }
-  }
-  assert.equal(await revealRows(racer), REVEAL_LIMIT);
-
-  // the lock is the operator's own and has its own key: a reveal waits for the lock of the same operator, and does
-  // not wait for the lock of the operator's refunds
+  // the lock is the operator's own and has its own key: the lock of the operator's refunds does not hold a reveal
   const locker = await principal();
   const lockerCase = await limitedCase(locker, orgA.organizationId);
   const holder = await owner.pool.connect();
@@ -291,27 +267,59 @@ async function verifyRevealLimit(context: RevealLimitContext) {
       "the lock of the refunds does not hold a reveal"
     );
     await holder.query("COMMIT");
+
+    // the last slot, asked for by two requests while the operator's lock is held: both wait, and once it is released
+    // the first counts 29 and takes the slot, and the second counts 30 and is refused
+    const racer = await principal();
+    const racerCase = await limitedCase(racer, orgA.organizationId);
+    await backdatedReveals(racer, racerCase, REVEAL_LIMIT - 1, 5);
     await holder.query("BEGIN");
     await holder.query(
       "SELECT pg_advisory_xact_lock(hashtextextended('admin_operator_reveal:' || $1::text, 0))",
-      [locker]
+      [racer]
     );
-    let settled = false;
-    const waiting = reveal(locker, lockerCase, maria, "phone").finally(() => {
-      settled = true;
-    });
+    const holderPid = Number(
+      (await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid"))
+        .rows[0]?.pid
+    );
+    let settled = 0;
+    const raced = [
+      reveal(racer, racerCase, maria, "email"),
+      reveal(racer, racerCase, maria, "phone"),
+    ].map((request) =>
+      request.finally(() => {
+        settled += 1;
+      })
+    );
+    const outcomes = Promise.allSettled(raced);
     let queued = 0;
-    for (let poll = 0; poll < 200 && queued === 0; poll += 1) {
-      // biome-ignore lint/performance/noAwaitInLoops: Polls the signal that the reveal is waiting for the lock.
-      const waitingLocks = await owner.pool.query<{ total: string }>(
-        "SELECT count(*) AS total, pg_sleep(0.05) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+    for (let poll = 0; poll < 200 && queued < 2; poll += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: Polls the signal that both reveals wait for the lock.
+      const blocked = await owner.pool.query<{ total: string }>(
+        "SELECT count(*) AS total, pg_sleep(0.05) FROM pg_stat_activity WHERE $1 = ANY (pg_blocking_pids(pid))",
+        [holderPid]
       );
-      queued = Number(waitingLocks.rows[0]?.total);
+      queued = Number(blocked.rows[0]?.total);
     }
-    assert.equal(queued, 1, "the reveal waits for the lock of its operator");
-    assert.equal(settled, false);
+    assert.equal(queued, 2, "both reveals wait for the lock of their operator");
+    assert.equal(settled, 0);
+    assert.equal(await revealRows(racer), REVEAL_LIMIT - 1);
     await holder.query("COMMIT");
-    assert.ok(await waiting, "the reveal goes on when the lock is released");
+    const results = await outcomes;
+    assert.equal(
+      results.filter((result) => result.status === "fulfilled").length,
+      1,
+      "one of the two takes the last slot"
+    );
+    for (const result of results) {
+      if (result.status === "rejected") {
+        assert.ok(
+          limited()(result.reason),
+          "the other is refused by the limit"
+        );
+      }
+    }
+    assert.equal(await revealRows(racer), REVEAL_LIMIT);
   } finally {
     await holder.query("ROLLBACK").catch(() => undefined);
     holder.release();
@@ -394,7 +402,7 @@ async function verifyRevealLimit(context: RevealLimitContext) {
   );
   assert.match(index.rows[0]?.definition ?? "", AUDIT_INDEX_COLUMNS);
   tests.push(
-    `the reveal limit: ${REVEAL_LIMIT} reveals of one operator in an hour are accepted (a repeat of a field counts) and the next is refused with operator_reveal_rate_limited without a new audit row; an unknown customer or one of another store spends no slot; another operator is not affected; two cases and two stores share one quota; the last slot goes to one of three concurrent requests; a reveal waits for the lock of its own operator and not for the lock of the operator's refunds; 30 reveals 59 minutes ago block and 61 minutes ago do not; invalid field and missing grant keep their own refusals; the function keeps its signature, owner, search_path, EXECUTE only for the Admin role and the same customer columns, and the index by operator, type and time exists`
+    `the reveal limit: ${REVEAL_LIMIT} reveals of one operator in an hour are accepted (a repeat of a field counts) and the next is refused with operator_reveal_rate_limited without a new audit row; an unknown customer or one of another store spends no slot; another operator is not affected; two cases and two stores share one quota; the last slot goes to one of two requests that both wait for the operator's own lock (the lock of the operator's refunds does not hold a reveal); 30 reveals 59 minutes ago block and 61 minutes ago do not; invalid field and missing grant keep their own refusals; the function keeps its signature, owner, search_path, EXECUTE only for the Admin role and the same customer columns, and the index by operator, type and time exists`
   );
 }
 

@@ -221,7 +221,7 @@ function refusalAnswer(
   if (error.code === "operator_reveal_rate_limited") {
     // the refusal leaves no audit row, so the operator's log is the only trace of a read in bulk; no field, no customer
     report("admin_reveal_rate_limited", {
-      operatorId: context.get("principal").id,
+      principal: context.get("principal").id,
     });
     return context.json({ error: "rate_limited" }, 429);
   }

@@ -297,7 +297,7 @@ describe("opening and listing cases", () => {
     const [event, fields] = vi.mocked(limited.dependencies.report).mock
       .calls[0] ?? [""];
     expect(event).toBe("admin_reveal_rate_limited");
-    expect(Object.keys(fields ?? {})).toEqual(["operatorId"]);
+    expect(Object.keys(fields ?? {})).toEqual(["principal"]);
     expect(JSON.stringify(fields)).not.toContain(customerId);
     expect(JSON.stringify(fields)).not.toContain("email");
   });

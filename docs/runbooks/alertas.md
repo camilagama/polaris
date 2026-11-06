@@ -290,9 +290,9 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 
 ### revelacoes-por-hora — operador chegou ao limite de revelações de dado pessoal
 
-**O que significa.** Um operador pediu a 31ª revelação de campo de cliente na mesma hora e a função do banco recusou ([ADR 0072](../adr/0072-admin-casos-acesso-temporario-e-revelacao.md), limite de 30 por hora por operador, somando casos e lojas). O evento é `admin_reveal_rate_limited` (aviso, no Worker `polaris-admin`), com `operatorId` opaco; não leva campo, cliente nem loja, e a recusa não grava na auditoria. Nada foi mostrado.
+**O que significa.** Um operador pediu a 31ª revelação de campo de cliente na mesma hora e a função do banco recusou ([ADR 0072](../adr/0072-admin-casos-acesso-temporario-e-revelacao.md), limite de 30 por hora por operador, somando casos e lojas). O evento é `admin_reveal_rate_limited` (aviso, no Worker `polaris-admin`), com `principal` (o ID opaco do operador); não leva campo, cliente nem loja, e a recusa não grava na auditoria. Nada foi mostrado.
 
-**Como confirmar.** Workers Logs do `polaris-admin`: `event = "admin.admin_reveal_rate_limited"`. As 30 revelações aceitas estão na auditoria (`pii.revealed`, por operador, com o campo e o cliente) e no caso de cada loja.
+**Como confirmar.** Workers Logs do `polaris-admin`: `event = "admin.admin_reveal_rate_limited"` (o Worker do Admin põe o prefixo `admin.` em todo evento; o registro de alertas usa o nome sem ele, como o código o escreve). As 30 revelações aceitas estão na auditoria (`pii.revealed`, por operador, com o campo e o cliente) e no caso de cada loja.
 
 **O que fazer.** Veja na auditoria quais clientes e lojas o operador abriu na última hora. Se foi um atendimento de verdade com muitos clientes, nada a fazer: a próxima hora libera. Se ninguém reconhece a leitura, trate como sessão de operador comprometida: desligue o operador (`platform_principals.status`) e revogue a sessão no Access.
 
