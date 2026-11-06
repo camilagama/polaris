@@ -20,7 +20,7 @@ const WITH_NEXT_STEP = [
   "views/case.ts | Nenhum acesso temporário neste atendimento. ",
   "views/cases.ts | Nenhum atendimento aberto.",
   "views/cases.ts | Nenhum atendimento fechado.",
-  "views/cases.ts | Nenhuma loja com esse nome. Tente menos letras do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas.",
+  "views/cases.ts | Nenhuma loja começa com esse nome. Tente menos letras do início do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas.",
   "views/home.ts | Nada esperando por você. ",
   "views/legal-holds.ts | Nenhuma loja com trava legal.",
   "views/organizations.ts | Nenhuma loja encontrada.",

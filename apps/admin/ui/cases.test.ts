@@ -233,7 +233,7 @@ describe("the list of cases (AC-P1.4)", () => {
 
     expect(calls).toHaveLength(3);
     expect(alertOf(root)?.textContent).toBe(
-      "Nenhuma loja com esse nome. Tente menos letras do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas."
+      "Nenhuma loja começa com esse nome. Tente menos letras do início do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas."
     );
   });
 

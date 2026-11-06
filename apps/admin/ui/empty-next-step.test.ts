@@ -177,8 +177,8 @@ describe("Atendimentos", () => {
     );
 
     expect(visibleText(root)).toContain("Nenhum atendimento aberto.");
-    expect(emptyBlock(root, "Esta loja não tem atendimentos")).toBe(
-      "Esta loja não tem atendimentos aqui. Deixe o campo vazio e filtre para ver os de todas as lojas."
+    expect(emptyBlock(root, "Não há atendimentos para esta loja")).toBe(
+      "Não há atendimentos para esta loja. Confira a loja ou deixe o campo vazio e filtre para ver os de todas as lojas."
     );
   });
 });

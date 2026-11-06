@@ -60,8 +60,12 @@ function stateText(item: SupportCaseSummary): string {
   return `estado desconhecido: ${item.status}`;
 }
 
+const INVALID_FILTER_BY_NAME =
+  "O filtro não foi aceito. Escolha a loja de novo pelo nome.";
+const INVALID_FILTER_BY_ID =
+  "O filtro não foi aceito: use o ID da loja, até 128 caracteres.";
 const NO_STORE_NAMED =
-  "Nenhuma loja com esse nome. Tente menos letras do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas.";
+  "Nenhuma loja começa com esse nome. Tente menos letras do início do nome ou deixe o campo vazio para ver os atendimentos de todas as lojas.";
 
 /**
  * Atendimentos (AC-P1.4): the open or the closed cases, of every store or of one, a page at a time, read when the
@@ -162,6 +166,8 @@ export function casesView(tools: ScreenTools): HTMLElement {
       parameters.set("organizationId", store);
     }
     if (after === null) {
+      searchTurn += 1;
+      choices.setAttribute("hidden", "");
       rows.replaceChildren();
       shown = 0;
       next = null;
@@ -181,10 +187,9 @@ export function casesView(tools: ScreenTools): HTMLElement {
     }
     busy(false);
     if (!answer.ok) {
+      const invalid = byName ? INVALID_FILTER_BY_NAME : INVALID_FILTER_BY_ID;
       notice.alert(
-        answer.problem === "invalid"
-          ? "O filtro não foi aceito. Escolha a loja de novo pelo nome."
-          : PROBLEM_TEXT[answer.problem]
+        answer.problem === "invalid" ? invalid : PROBLEM_TEXT[answer.problem]
       );
       return;
     }
@@ -225,10 +230,11 @@ export function casesView(tools: ScreenTools): HTMLElement {
     let name = storeNamed ?? known;
     if (name === undefined) {
       const mine = searchTurn;
+      const target = store;
       const found = await api.get<OrganizationPage>(
         `/api/organizations?${new URLSearchParams({ limit: "1", query: store }).toString()}`
       );
-      if (mine !== searchTurn) {
+      if (mine !== searchTurn || target !== store) {
         return;
       }
       name =
@@ -286,7 +292,9 @@ export function casesView(tools: ScreenTools): HTMLElement {
       return;
     }
     const more =
-      answer.data.next === null ? "" : " Há mais: escreva mais letras do nome.";
+      typeof answer.data.next === "string"
+        ? " Há mais: escreva mais letras do nome."
+        : "";
     dom.fill(
       choices,
       ...found.map((organization) => {
@@ -311,7 +319,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
   const emptyNextStep = (): (HTMLElement | string)[] => {
     if (store !== "") {
       return [
-        "Esta loja não tem atendimentos aqui. Deixe o campo vazio e filtre para ver os de todas as lojas.",
+        "Não há atendimentos para esta loja. Confira a loja ou deixe o campo vazio e filtre para ver os de todas as lojas.",
       ];
     }
     if (context.listState === "fechados") {
@@ -347,7 +355,7 @@ export function casesView(tools: ScreenTools): HTMLElement {
       "p",
       { class: "hint", id: "casos-loja-dica" },
       byName
-        ? "Digite parte do nome da loja. Vazio lista os atendimentos de todas as lojas."
+        ? "Digite o começo do nome da loja. Vazio lista os atendimentos de todas as lojas."
         : "Vazio lista os atendimentos de todas as lojas."
     ),
     choices
