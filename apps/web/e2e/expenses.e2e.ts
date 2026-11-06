@@ -1699,6 +1699,41 @@ for (const viewport of FORM_VIEWPORTS) {
   });
 }
 
+for (const viewport of [
+  { height: 740, name: "320", width: 320 },
+  ...FORM_VIEWPORTS,
+]) {
+  test(`o rodapé Total na tela, a ${viewport.name} px: com página pendente a contagem diz "há mais" sem quebrar a linha`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    for (let n = 1; n <= 51; n += 1) {
+      seedExpense(server, n, "1500.50");
+    }
+    await openExpenses(page, server);
+    const footer = page.locator("[data-list-total]");
+    await expect(footer).toContainText("50 despesas · há mais");
+    const count = footer.getByText("50 despesas · há mais");
+    const countBox = await count.boundingBox();
+    const valueBox = await footer.locator(".tabular-nums").boundingBox();
+    expect(countBox?.height ?? 99).toBeLessThanOrEqual(24);
+    expect(valueBox).not.toBeNull();
+    expect(
+      Math.abs(
+        (valueBox?.y ?? 0) +
+          (valueBox?.height ?? 0) -
+          ((countBox?.y ?? 0) + (countBox?.height ?? 0))
+      )
+    ).toBeLessThanOrEqual(8);
+    const overflow = await footer.evaluate(
+      (node) => node.scrollWidth - node.clientWidth
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+}
+
 for (const width of [480, 1280]) {
   test(`o rodapé Total na tela, a ${width} px: o total termina onde terminam os valores das linhas, Ativas e Anuladas`, async ({
     page,
