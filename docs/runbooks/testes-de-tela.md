@@ -94,6 +94,15 @@ Se a tela tem um padrão que a medida lê como falha de forma legítima (por exe
 
 Ficam no fim de `ui-guardrails.e2e.ts` (`controle: cada verificação pega a falha`), na segunda metade de `ui-source-rules.test.ts` e, para a 7, em `ui-shell-isolation.e2e.ts` (adota uma folha com a falha: a regra do campo de "Trocar senha" em `@layer legacy`, um `button` sem camada, `:focus-visible` sem camada dentro de `@media`, uma camada anônima, uma regra de tokens com uma propriedade comum, tokens num seletor que não é `:root` nem `.dark` e uma regra aninhada sem camada, e exige a linha da camada e do seletor; ao lado, regras em `components` e `utilities`, mesmo aninhadas, `@font-face`, `@keyframes` e uma regra só de tokens passam). Cada um injeta a falha (elemento mais largo que o cartão, link de 100% com padding, palavra longa, botão de 20 px, dois botões com áreas que se encontram, texto sem contraste, botão com `outline: none`, animação que ignora `reduce`, `#fff`, `bg-white`) e exige que a verificação a acuse; e põe ao lado o que não é falha (o botão dentro de um campo, `oklch(0 0 0)` de máscara, `-translate-x-1/2` de centralização) e exige que passe.
 
+## Guarda de reflow a 320 px com letra de 20 px
+
+`apps/web/e2e/reflow-rotas.e2e.ts` abre, a 320 px com a letra do navegador a 20 px (auxiliar `e2e/reflow.ts`), as telas que ainda não têm teste de reflow próprio, nos estados de `e2e-pwa/ui-screens.ts` (lojas fictícias), num celular com toque, só no projeto desktop do `test:offline-poc` (um arquivo, um shard). Reprova texto cortado de lado e página que rola para o lado, e olha o diálogo aberto como parte da tela.
+
+- **Cobertura:** o teste de consistência compara `screenKeys()` (as telas de `ROUTES` e cada aba) com as listas `COVERED` e `EXCLUDED` do arquivo; tela nova que não esteja em nenhuma reprova. Quem já tem teste próprio entra em `EXCLUDED` com o arquivo dele (o teste confere que existe).
+- **Achado conhecido:** o que a guarda acha e ainda não foi consertado fica em `KNOWN_FINDINGS`, com os casos, o seletor, `scrollWidth` e `clientWidth` e o motivo. O teste reprova o achado novo e o conhecido que sumiu: quem conserta tira a linha da lista no mesmo PR.
+- **Rolagem de propósito:** só `SCROLLS_ON_PURPOSE` (faixa de abas e tabela de dados).
+- O que não mede: Admin, letra de 24 px e tema escuro.
+
 ## Velocidade: Lighthouse num celular simulado
 
 `bun run --filter @polaris/web test:lighthouse` (depois de `bun run build` e de `bunx playwright install chromium`; precisa do Node e do Bun) mede três páginas com o Lighthouse CI: `/entrar`, a loja do catálogo público (o build `fixture-data` do `apps/catalog`) e o Início (login falso). Cada página roda 3 vezes e as asserções leem a mediana. A configuração é `apps/web/lighthouserc.json`; o resto está em `apps/web/scripts/lighthouse*.{mjs,ts,cjs}`.
