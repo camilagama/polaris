@@ -291,7 +291,7 @@ export function MonthPicker({
           <PopoverContent
             align="center"
             aria-label={label}
-            className="w-72 gap-2 p-2"
+            className="w-72 max-w-(--available-width) gap-2 p-2"
             initialFocus={false}
           >
             <MonthGrid
