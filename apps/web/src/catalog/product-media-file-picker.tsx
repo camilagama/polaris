@@ -68,7 +68,7 @@ export function ProductMediaFilePicker({
         accept={MEDIA_FILE_ACCEPT}
         aria-hidden="true"
         aria-label="Escolher imagem"
-        className="sr-only"
+        className="sr-only max-w-px"
         disabled={disabled}
         onChange={onChange}
         ref={setInput}
