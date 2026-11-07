@@ -17,13 +17,19 @@ import { afterAll, describe, expect, it } from "vitest";
  * length (`text-[11px]`, `min-[900px]`, `calc(12rem+11px)`); a `0px` is not a size and passes. The labs and the
  * gallery are read too. Only the strokes below stay in `px`, each with its reason, and the list is checked
  * exactly by file, class and number of uses: an entry nothing uses any more, or used once more, fails. Media queries written in JavaScript are not classes
- * (`motion-level.ts` keeps its 760 px and 500 px on purpose, DESIGN.md).
+ * (`motion-level.ts` keeps its 760 px and 500 px on purpose, DESIGN.md). A bare spacing, position or size token
+ * (`left-0.875`) only generates CSS in Tailwind when its number is a multiple of 0.25, so the second scan reports
+ * the ones off that scale: without the CSS the class disappears silently.
  */
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
 const SOURCE_FILE = /\.tsx?$/;
 const ARBITRARY_VALUE = /([\w@/.!-]*)\[([^[\]\s"'`]*)\]/g;
 const PX_LENGTH = /(?<![A-Za-z\d])(\d*\.?\d+)px/g;
+const SCALE_CLASS =
+  /(?<![\w-])-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|start|end|w|h|size|min-w|min-h|max-w|max-h)-(\d*\.?\d+)(?![\w./%[(-])/g;
+const SCALE_STEP = 0.25;
+const SCALE_FIX = "use um múltiplo de 0,25 ou um valor entre colchetes em rem";
 
 interface PxException {
   count: number;
@@ -128,6 +134,13 @@ function pxSegments(source: string): string[] {
   });
 }
 
+function offScaleSegments(source: string): string[] {
+  return [...source.matchAll(SCALE_CLASS)].flatMap((match) => {
+    const steps = Number(match[1]) / SCALE_STEP;
+    return Math.abs(steps - Math.round(steps)) > 1e-9 ? [match[0]] : [];
+  });
+}
+
 function scan(root: string): { path: string; segments: string[] }[] {
   return sourceFiles(root)
     .map((path) => ({
@@ -135,6 +148,18 @@ function scan(root: string): { path: string; segments: string[] }[] {
       segments: pxSegments(readFileSync(path, "utf8")),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function scaleFindings(root: string): string[] {
+  return sourceFiles(root)
+    .map((path) => ({
+      path: relative(root, path).split(sep).join("/"),
+      segments: offScaleSegments(readFileSync(path, "utf8")),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .flatMap(({ path, segments }) =>
+      segments.map((segment) => `${path}: ${segment}`)
+    );
 }
 
 function key(path: string, segment: string): string {
@@ -191,6 +216,13 @@ describe("classes use rem, not px", () => {
 
   it("finds no px outside the exceptions", () => {
     expect(findings(SRC)).toEqual([]);
+  });
+
+  it("finds no spacing or size class off the 0.25 scale", () => {
+    expect(
+      scaleFindings(SRC),
+      `classe fora da escala de 0,25: ${SCALE_FIX}`
+    ).toEqual([]);
   });
 
   it("keeps the list of exceptions exact: file, class and count", () => {
@@ -291,5 +323,38 @@ describe("classes use rem, not px", () => {
       "ui/notes.md": "text-[11px]",
     });
     expect(scan(root)).toEqual([]);
+  });
+
+  it("plant: a spacing or size class off the 0.25 scale fails, on-scale and other forms pass", () => {
+    const bad = plant({
+      "home/card.tsx": [
+        'export const A = "left-0.875 -mt-1.1 md:gap-x-0.3 [&_svg]:size-2.6";',
+        'export const B = "!pr-1.125 min-h-0.1 max-w-3.9 space-y-0.7 inset-x-0.2";',
+      ].join("\n"),
+      "ui/layout.ts": 'export const C = "top-1.3 bottom-0.15 w-4.6 h-1.05";',
+    });
+    expect(scaleFindings(bad)).toEqual([
+      "home/card.tsx: left-0.875",
+      "home/card.tsx: -mt-1.1",
+      "home/card.tsx: gap-x-0.3",
+      "home/card.tsx: size-2.6",
+      "home/card.tsx: pr-1.125",
+      "home/card.tsx: min-h-0.1",
+      "home/card.tsx: max-w-3.9",
+      "home/card.tsx: space-y-0.7",
+      "home/card.tsx: inset-x-0.2",
+      "ui/layout.ts: top-1.3",
+      "ui/layout.ts: bottom-0.15",
+      "ui/layout.ts: w-4.6",
+      "ui/layout.ts: h-1.05",
+    ]);
+    const clean = plant({
+      "ui/ok.tsx": [
+        'export const A = "left-0.25 -mt-1.5 gap-x-0.75 size-2.5 pr-1.75 w-1/2 h-1.5/3";',
+        'export const B = "ring-offset-1.1 inset-ring-1.1 scroll-mt-0.3x w-[0.875rem] top-[0.3rem] max-w-xs";',
+        'export const C = "w-0 h-12 min-w-px p-0.5 inset-0 space-x-reverse";',
+      ].join("\n"),
+    });
+    expect(scaleFindings(clean)).toEqual([]);
   });
 });
