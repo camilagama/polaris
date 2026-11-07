@@ -2,7 +2,7 @@ import type {
   InventoryBalanceEntryReadModel,
   InventoryBalanceReadModel,
 } from "@polaris/contracts";
-import { formatBrlAmount, formatQuantity } from "../lib/format";
+import { formatBrlCents, formatQuantity } from "../lib/format";
 
 /** The variant a stock command acts on, as the screen last read it. */
 export interface StockTarget {
@@ -124,7 +124,7 @@ export function targetBalanceText(target: StockTarget): string {
   const cost =
     target.movingAverageCost === null
       ? "custo médio desconhecido"
-      : `custo médio ${formatBrlAmount(target.movingAverageCost)}`;
+      : `custo médio ${formatBrlCents(target.movingAverageCost)}`;
   return `Saldo atual: ${formatQuantity(target.quantity)} · ${cost}`;
 }
 
@@ -146,5 +146,5 @@ export function targetMovementText(
 export function costText(movingAverageCost: string | null): string {
   return movingAverageCost === null
     ? "Custo desconhecido"
-    : formatBrlAmount(movingAverageCost);
+    : formatBrlCents(movingAverageCost);
 }
