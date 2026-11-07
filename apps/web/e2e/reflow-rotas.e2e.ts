@@ -67,14 +67,6 @@ interface KnownFinding {
 
 const KNOWN_FINDINGS: readonly KnownFinding[] = [
   {
-    clientWidth: 320,
-    reason:
-      "o seletor de mês de Despesas aberto alarga a janela: a página rola 45 px para o lado",
-    screens: ["despesas grade de meses aberta"],
-    scrollWidth: 365,
-    selector: "html",
-  },
-  {
     clientWidth: 280,
     reason:
       'o cartão "Como chegamos a este resultado" tem 22 px de conteúdo a mais que a caixa',
@@ -93,14 +85,6 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
       'tfoot[data-slot="table-footer"] > tr[data-slot="table-row"] > td[data-slot="table-cell"]',
   },
   {
-    clientWidth: 320,
-    reason:
-      'Categorias: o cabeçalho "Categorias / Agrupam os produtos…" alarga a página em 22 px',
-    screens: ["categorias lista", "categorias remover"],
-    scrollWidth: 342,
-    selector: "html",
-  },
-  {
     clientWidth: 280,
     reason:
       "o cartão da venda (Confirmada, Data da venda…) tem 10 px de conteúdo a mais que a caixa",
@@ -112,14 +96,6 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     ],
     scrollWidth: 290,
     selector: 'main > section > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 320,
-    reason:
-      'Catálogo público: o cabeçalho "Catálogo público / Mostre produtos…" alarga a página em 2 px',
-    screens: ["catálogo público no ar", "catálogo público endereço recusado"],
-    scrollWidth: 322,
-    selector: "html",
   },
 ];
 

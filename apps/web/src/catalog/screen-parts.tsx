@@ -49,7 +49,13 @@ export function StatusNav<T extends string>({
     <Tabs onValueChange={handleChange} value={value}>
       <TabsList activateOnFocus aria-label={label}>
         {options.map(([option, text]) => (
-          <TabsTrigger disabled={disabled} key={option} value={option}>
+          <TabsTrigger
+            // three words of 20 px do not fit a 320 px window with the usual padding of a tab, and the strip would widen the page
+            className="px-1 min-[18.5rem]:px-2.5"
+            disabled={disabled}
+            key={option}
+            value={option}
+          >
             {text}
           </TabsTrigger>
         ))}
