@@ -46,6 +46,7 @@ import {
   unsafeOverdueRefusal,
 } from "./subscription-commands-model";
 import type { Refusal } from "./subscription-model";
+import { WRAPS } from "./subscription-parts";
 
 /**
  * The owner's commands on the Assinatura (corte assinatura-e-cancelar, C and D, AC-42 to AC-44):
@@ -193,9 +194,6 @@ function useDialogExits(
 
 const DIALOG = "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md";
 const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
-
-/* A label longer than the card at a large browser font breaks into lines instead of widening the card. */
-const WRAPS = "h-auto min-h-ctl-md whitespace-normal py-1.5";
 
 interface CommandDialogProps {
   onOpenChange: (open: boolean) => void;

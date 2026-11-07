@@ -39,6 +39,7 @@ import {
   PlanLoadError,
   PlanLoading,
   SubscriptionFooter,
+  WRAPS,
 } from "./subscription-parts";
 import {
   CardConfirming,
@@ -264,7 +265,12 @@ function WaitingPart({
         waitedOut={waitedOut}
       />
       <div>
-        <Button onClick={onChooseAgain} type="button" variant="ghost">
+        <Button
+          className={WRAPS}
+          onClick={onChooseAgain}
+          type="button"
+          variant="ghost"
+        >
           Escolher outra forma de pagamento
         </Button>
       </div>

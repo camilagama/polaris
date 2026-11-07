@@ -5,15 +5,13 @@ import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/ui/field";
 import { Input } from "@/ui/input";
+import { WRAPS } from "./subscription-parts";
 
 /** The Pix authorization just made: the "copia e cola" and Woovi's page, when it gave one (no QR, R-4). */
 export interface PixHandoff {
   emv: string;
   url: string | null;
 }
-
-/* A label longer than the card at a large browser font breaks into lines instead of widening the card. */
-const WRAPS = "h-auto min-h-ctl-md whitespace-normal py-1.5";
 
 function PageLink({ className, url }: { className: string; url: string }) {
   return (

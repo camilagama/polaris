@@ -41,7 +41,7 @@ import {
   type Refusal,
   taxIdDigits,
 } from "./subscription-model";
-import { SectionTitle } from "./subscription-parts";
+import { SectionTitle, WRAPS } from "./subscription-parts";
 
 /** What the offer asks the server to start: the payer only for Pix Automático (the card sends nothing of it). */
 export type CheckoutRequest =
@@ -468,7 +468,7 @@ export function OfferCard({
             <Button
               {...connectionControlProps(online)}
               aria-busy={pending || undefined}
-              className="h-auto min-h-ctl-md whitespace-normal py-1.5"
+              className={WRAPS}
               disabled={pending}
               type="submit"
             >

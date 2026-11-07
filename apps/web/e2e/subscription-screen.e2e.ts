@@ -812,7 +812,7 @@ test("Pix: 'Copiar' copia o código inteiro, e o campo mostra o mesmo valor", as
           })
         ),
     ],
-    plans: [plan(), waiting, waiting, waiting, waiting],
+    plans: [plan(), waiting],
   });
   await page
     .getByRole("radiogroup", { name: "Como pagar" })
