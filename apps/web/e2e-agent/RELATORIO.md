@@ -19,7 +19,7 @@ Data: 27/10/2026. Versões fixadas: `e2e` 0.21.3, `@e2e-dev/web` 0.15.3 (`playwr
 - Instalado sem a chave: `env -u E2E_ANTHROPIC_API_KEY bun install --ignore-scripts` em `apps/web/e2e-agent/`. Nenhum pacote precisou de script de instalação.
 - O passo extra foi o download do navegador do `playwright-core` 1.64.1 (Chromium 1248, ~120 MiB), também com `env -u E2E_ANTHROPIC_API_KEY`: `node node_modules/playwright-core/cli.js install chromium`.
 - Também baixei o `gitleaks` 8.30.1, que não havia na máquina, do release oficial do GitHub, com o checksum conferido e sem a chave. Fica em `~/tools`, fora do repositório.
-- Li `docs/security.mdx`, `telemetry.mdx` e `reference/security.mdx#outbound-connections` e conferi no código instalado:
+- Li, na documentação do pacote (`node_modules/e2e/docs`), `security.mdx`, `telemetry.mdx` e `reference/security.mdx#outbound-connections` e conferi no código instalado:
   - `dist/telemetry/telemetry.js:99`: `E2E_TELEMETRY_DISABLED` desliga o PostHog (`eu.i.posthog.com`) em todo passo.
   - `dist/cli/update-check.js:78`: a mesma variável desliga a checagem diária em `registry.npmjs.org`, que de todo modo só roda num terminal.
   - Os outros destinos da lista só existem em comandos e integrações que o piloto não usa (`e2e login`, `models`, `feedback`, `upgrade`, `init`, Kernel, Limrun, EAS, smol, TestMu, o reporter do GitHub e `decisionFilter`).

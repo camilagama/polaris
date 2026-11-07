@@ -13,7 +13,7 @@ import {
 import { seedCashSale, seedProduct, seedStock } from "../../e2e-real/seed";
 
 /**
- * A pilha do piloto do `e2e` (t440), sobre o harness do e2e-real: o mesmo banco por run, os mesmos logins por
+ * A pilha do piloto do `e2e`, sobre o harness do e2e-real: o mesmo banco por run, os mesmos logins por
  * binding e a mesma sessão do `testUtils`, feita aqui no Node com o segredo do run. Tudo que é segredo (o run, as
  * senhas dos logins e os cookies de sessão) fica em `E2E_AGENT_STATE`, fora do repositório, com modo 0600.
  *
@@ -106,6 +106,15 @@ async function seedStore(
     rpc,
     organizationId,
     [{ price: "49.90", quantity: 2, variantId: camiseta.variantId }],
+    now.toISOString()
+  );
+  await seedCashSale(
+    rpc,
+    organizationId,
+    [
+      { price: "35.00", quantity: 1, variantId: bone.variantId },
+      { price: "12.50", quantity: 3, variantId: meia.variantId },
+    ],
     now.toISOString()
   );
 }

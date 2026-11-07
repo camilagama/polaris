@@ -38,7 +38,7 @@ test("despesa avulsa de R$ 100,00 pela aba Despesas do Resultado", {
   const before = cents(await expensesCell.textContent());
 
   await screen.getByRole("tab", { name: "Despesas" }).tap();
-  const description = `Despesa QA ${Date.now()}`;
+  const description = `Despesa QA ${crypto.randomUUID().slice(0, 8)}`;
   await agent.act(
     "Na aba Lançamentos, registre uma despesa avulsa de R$ 100,00 com competência neste mês e descrição {descricao}. Se não houver categoria de despesa, crie uma chamada Aluguel e use-a. Depois de registrar, fique na aba Despesas.",
     { params: { descricao: unique(description) } }

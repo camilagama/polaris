@@ -4,7 +4,7 @@ import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 
 /**
- * Uma sessão salva por loja fictícia (bb-venda, bb-estoque, bb-despesas e as dos testes de achado). O cookie é o do
+ * Uma sessão salva por loja fictícia de `E2E_AGENT_LOJAS` (uma por área e as dos testes de achado). O cookie é o do
  * `testUtils` do Better Auth com o segredo do run (pilha/preparar.ts): sem senha, sem Google e sem tela de entrada,
  * então o modelo nunca digita credencial e as capturas seguem ligadas. O valor do cookie também é um `secret` da
  * config, que o e2e troca por `<secret:sessao-...>` no relatório.
@@ -15,13 +15,9 @@ interface StoredSession {
   organizationId: string;
 }
 
-const STORES = [
-  "bb-venda",
-  "bb-estoque",
-  "bb-despesas",
-  "bb-achados-1",
-  "bb-achados-2",
-] as const;
+const STORES = (process.env.E2E_AGENT_LOJAS ?? "")
+  .split(" ")
+  .filter((store) => store !== "");
 
 function storedSession(store: string): StoredSession {
   const file = join(process.env.E2E_AGENT_STATE ?? "", "sessoes.json");

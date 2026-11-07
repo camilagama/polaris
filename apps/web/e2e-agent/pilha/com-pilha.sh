@@ -41,7 +41,7 @@ for pair in "${closed[@]}"; do
 done
 env -i "${build_env[@]}" node "$vite" build --outDir "$out" > "$state/build.log" 2>&1
 
-env -i "${closed[@]}" node "$vite" preview --outDir "$out" --host 127.0.0.1 --port "$port" --strictPort \
+env -i "${closed[@]}" CHOKIDAR_USEPOLLING=1 node "$vite" preview --outDir "$out" --host 127.0.0.1 --port "$port" --strictPort \
   > "$state/preview.log" 2>&1 &
 preview=$!
 parar() {

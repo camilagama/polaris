@@ -5,7 +5,7 @@ import { web } from "@e2e-dev/web";
 import type { E2EConfig } from "e2e";
 
 /**
- * Piloto do `e2e` (t440, não mesclar): a pilha local do e2e-real (vite preview + workerd + PostgreSQL de teste),
+ * Piloto do `e2e` (não mesclar): a pilha local do e2e-real (vite preview + workerd + PostgreSQL de teste),
  * subida por `pilha/com-pilha.sh`, sem `app.command`. A chave do modelo vem só de `E2E_ANTHROPIC_API_KEY`,
  * passada ao provider aqui; os cookies de sessão das lojas fictícias (sessoes.json, fora do repositório) entram
  * como `secrets`, que o e2e troca por `<secret:nome>` em relatório, saída e entrada do modelo.
@@ -41,7 +41,7 @@ const context =
   "Polaris é um app de gestão para pequenas lojas (pt-BR, valores em reais). A loja é fictícia e já começa logada; " +
   "não há e-mail, Google, pagamento real nem cobrança neste ambiente local. " +
   "Nunca encerre a organização, nunca exporte dados, nunca assine o plano Pro e nunca saia da conta (Sair). " +
-  "Não são bugs: dados de exemplo da semeadura (Camiseta básica, Boné aba curva, Meia cano alto e uma venda de 2 camisetas); " +
+  "Não são bugs: dados de exemplo da semeadura (Camiseta básica, Boné aba curva, Meia cano alto, uma venda de 2 camisetas e outra de 1 boné e 3 meias); " +
   "um link que abre outra aba; texto acessível partido em volta de links; imagens que carregam ao rolar.";
 
 const explorer = {
