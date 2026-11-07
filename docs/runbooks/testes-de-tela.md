@@ -103,6 +103,15 @@ Ficam no fim de `ui-guardrails.e2e.ts` (`controle: cada verificação pega a fal
 - **Rolagem de propósito:** só `SCROLLS_ON_PURPOSE` (faixa de abas e tabela de dados).
 - O que não mede: Admin, letra de 24 px e tema escuro.
 
+### Os testes de reflow com mouse e com toque
+
+Os specs de reflow (Histórico, Estoque, Clientes, "Mais vendidos" do Início, barra inferior, Despesas, Pendências, grade do item da Venda, valores do Detalhe e do Resultado, rodapé de Despesas) declaram cada caso com `reflowTest` (`e2e/reflow.ts`), que roda o caso duas vezes: com o ponteiro do projeto (`fine`, o `test` de sempre, com o mesmo título) e com toque (`coarse`, grupo "com toque": `hasTouch` e `isMobile` no projeto `chromium-desktop`, as mesmas duas opções do `reflow-rotas.e2e.ts`, e a prova de que o navegador responde `(pointer: coarse)` antes do corpo). O projeto `chromium-mobile-emulated` (Pixel 5) já é toque em todos os casos: nele o caso com toque é pulado, para não repetir.
+
+- **O que o toque muda:** a variante `touch` do Tailwind (`@media (pointer: coarse), not all and (min-width: 47.5rem)`) já vale a 320/20 e a 360/16 mesmo com mouse, por causa da largura; o que o toque acrescenta é a consulta `(pointer: coarse)` direta e o que o `isMobile` muda no navegador (janela de layout, barras de rolagem de sobreposição).
+- **Lista de conhecidos:** o que corta com toque e não com mouse entra em `KNOWN_COARSE_FINDINGS` (`e2e/reflow-known.ts`: spec, tela, seletor, `clientWidth`, `scrollWidth` e motivo). `assertNothingClipped` e `assertNoPageScroll` só deixam passar a linha que casa com o spec, o seletor e as duas medidas, e só quando a página tem ponteiro de toque; o mouse nunca é desculpado pela lista.
+- **Sem toque:** `reflowTest(..., { coarse: false })` deixa o caso de toque de fora (janela de 1280 px, que não é celular, e a letra de 24 px, melhor esforço). Cada uso tem a razão em `SPECS` de `apps/web/scripts/verify-reflow-pointers.test.ts`, que também reprova spec de reflow novo, `test(` solto num spec de reflow e `coarse:` sem linha. O caso que falha de propósito, com um campo que só corta com toque, está em `e2e/reflow-helper.e2e.ts`.
+- Os testes declarados por `reflowTest` aparecem no relatório como `e2e/reflow.ts:linha`: filtre por título (`-g`) ou por arquivo, não por `arquivo:linha`.
+
 ## Velocidade: Lighthouse num celular simulado
 
 `bun run --filter @polaris/web test:lighthouse` (depois de `bun run build` e de `bunx playwright install chromium`; precisa do Node e do Bun) mede três páginas com o Lighthouse CI: `/entrar`, a loja do catálogo público (o build `fixture-data` do `apps/catalog`) e o Início (login falso). Cada página roda 3 vezes e as asserções leem a mediana. A configuração é `apps/web/lighthouserc.json`; o resto está em `apps/web/scripts/lighthouse*.{mjs,ts,cjs}`.

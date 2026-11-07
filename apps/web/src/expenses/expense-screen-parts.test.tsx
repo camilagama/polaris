@@ -142,8 +142,8 @@ describe("ExpenseList", () => {
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     const edit = buttons.find((tag) => tag.includes("Editar despesa")) ?? "";
     const cancel = buttons.find((tag) => tag.includes("Anular despesa")) ?? "";
-    expect(edit).toContain("border-border");
-    expect(cancel).not.toContain("border-border");
+    expect(edit).toContain("border-input");
+    expect(cancel).not.toContain("border-input");
     expect(cancel).toContain("text-destructive");
   });
 

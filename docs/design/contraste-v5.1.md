@@ -38,7 +38,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **3.15** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **8.05** | 7 | ✓ |
 | `mark-foreground` / `mark/10 sobre card` | texto esmeralda sobre bg-mark/10 | composição | **7.16** | 4.5 | ✓ |
-| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.36** | 3 | ✓ |
+| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado e botão de contorno (cartão) | border-input | **3.36** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **3.22** | 3 | ✓ |
 | `input` / `muted` | borda de campo sobre faixa neutra | border-input | **3.01** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.36** | 3 | ✓ |
@@ -46,7 +46,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **3.79** | 3 | ✓ |
 | `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.36** | 3 | ✓ |
 | `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **3.57** | 3 | ✓ |
-| `border` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão) | border-border | **1.28** | 1.0 | ✓ |
+| `border` / `card` | divisória (decorativa) | border-border | **1.28** | 1.0 | ✓ |
 | `border` / `background` | divisória sobre o fundo | border-border | **1.23** | 1.0 | ✓ |
 | `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **3.71** | 3 | ✓ |
 | `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **3.70** | 3 | ✓ |
@@ -123,14 +123,14 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **5.64** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **10.07** | 7 | ✓ |
 | `mark-foreground` / `mark/15 sobre card` | texto esmeralda sobre bg-mark/15 (escuro) | composição | **7.66** | 4.5 | ✓ |
-| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.42** | 3 | ✓ |
+| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado e botão de contorno (cartão) | border-input | **3.42** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **3.71** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.18** | 3 | ✓ |
 | `ring` / `card` | anel de foco (borda) sobre cartão | focus-visible:border-ring | **5.28** | 3 | ✓ |
 | `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **5.73** | 3 | ✓ |
 | `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.88** | 3 | ✓ |
 | `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **6.03** | 3 | ✓ |
-| `border sobre card` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão); `border` é `branco a 6%` | border-border | **1.19** | 1.0 | ✓ |
+| `border sobre card` / `card` | divisória (decorativa); `border` é `branco a 6%` | border-border | **1.19** | 1.0 | ✓ |
 | `border sobre popover` / `popover` | borda de diálogo, menu e painel aberto dentro do cartão (decorativa) | border-border | **1.20** | 1.0 | ✓ |
 | `card-ring sobre card` / `card` | anel de 1 px do cartão do catálogo público (decorativo) | card-ring | **1.19** | 1.0 | ✓ |
 | `border sobre background` / `background` | divisória sobre o fundo | border-border | **1.17** | 1.0 | ✓ |
@@ -157,6 +157,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `muted/60 sobre card` | texto de apoio em linha de tabela em hover | TableRow | **7.61** | 4.5 | ✓ |
 | `muted-foreground` / `accent` | texto de apoio em item de lista em hover/foco | Item, Select, menu | **6.33** | 4.5 | ✓ |
 | `foreground` / `secondary/60 sobre card` | rótulo do botão de contorno no escuro (dark:bg-secondary/60) | Button outline | **12.57** | 7 | ✓ |
+| `input` / `secondary/60 sobre card` | borda do botão de contorno contra o próprio fundo no escuro (dark:bg-secondary/60) | Button outline | **3.06** | 3 | ✓ |
 | `input` / `input/30 sobre card` | borda do campo contra o próprio fundo (dark:bg-input/30) | Input, Select | **2.44** | 1.5 | ✓ |
 | `foreground` / `input/30 sobre card` | texto digitado no campo (dark:bg-input/30) | Input, Select | **10.15** | 7 | ✓ |
 | `muted-foreground` / `input/30 sobre card` | texto de apoio (placeholder) no campo (dark:bg-input/30) | Input, Select | **6.15** | 4.5 | ✓ |
@@ -186,7 +187,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 
 Notas:
 
-- `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
+- `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor, escolha e botão de contorno usam `--input` (≥ 3:1) ou `--foreground`.
 - O foco do teclado é `--ring` cheio (3,36 a 5,73:1 contra fundo, cartão, menu e hover): é o que conta, o halo dos campos é só reforço.
 - Estados com transparência estão na lista; nenhum cai abaixo da meta.
 - A moldura (lateral e cabeçalho em `--sidebar`) e o painel do conteúdo (`--background`) são superfícies decorativas: a diferença de cor entre as duas não é a marca do limite, que é o anel de 1 px (`--card-ring`) nas bordas esquerda e superior do painel. O chip do cabeçalho sincronizado ou enviando tem fundo próprio (`--card`), medido em `foreground` / `card`.

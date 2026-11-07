@@ -1,7 +1,9 @@
 /// <reference lib="dom" />
 
+import { basename } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { KNOWN_COARSE_FINDINGS, type KnownCoarseFinding } from "./reflow-known";
 
 /**
  * The sweep every reflow test uses: a screen read at 320 px of window with the browser font at 20 px, and proof that
@@ -22,6 +24,14 @@ import { expect, test } from "@playwright/test";
  * the former moves the `rem` of a media query, which is what makes the shell change layout (`breakpoints-rem.e2e.ts`).
  * It is a Chrome DevTools command, so every spec that uses this file skips the other browsers.
  *
+ * The pointer: a spec declares each case with `reflowTest` instead of `test`, and the case runs twice, with a mouse
+ * (`fine`, the project's own pointer) and with a finger (`coarse`: `hasTouch` and `isMobile` on the desktop project, the
+ * same two options `reflow-rotas.e2e.ts` uses). A phone has both the `touch` variant by width and a `(pointer: coarse)`
+ * query of its own, and the fields and targets change size with them. What cuts with `coarse` and not with `fine` goes
+ * in `KNOWN_COARSE_FINDINGS` (screen, selector, measure, reason); `assertNothingClipped` and `assertNoPageScroll` fail
+ * only for a finding that is not in it, and only when the page really has a coarse pointer. The Pixel 5 project is a
+ * coarse pointer already, so there the `fine` cases measure a finger too and the `coarse` ones are skipped.
+ *
  * What each check calls a defect:
  * - `assertNothingClipped`: an element that holds text of its own, or that hides what overflows it (`overflow-x` other than
  *   `visible`) and has text inside, and has `scrollWidth` above `clientWidth` by more than 1 px. `allowScroll` lists the selectors of elements that scroll on purpose (a data table, the tab strip):
@@ -37,6 +47,79 @@ const REFLOW_FONT_PIXELS = 20;
 const SLACK_PIXELS = 1;
 const REPORTED = 8;
 
+export type ReflowPointer = "fine" | "coarse";
+
+const COARSE_QUERY = "(pointer: coarse)";
+const DESKTOP_PROJECT = "chromium-desktop";
+
+const readCoarse = (page: Page) =>
+  page.evaluate((query) => matchMedia(query).matches, COARSE_QUERY);
+
+async function expectPointer(page: Page, pointer: ReflowPointer) {
+  expect(
+    await readCoarse(page),
+    `the case asks for a ${pointer} pointer and the browser reports the other`
+  ).toBe(pointer === "coarse");
+}
+
+/**
+ * One reflow case, run with a mouse and with a finger. The mouse case is the plain `test` it always was (same title,
+ * same project); the finger case sits in a group "com toque" with `hasTouch` and `isMobile`, only in the desktop project
+ * (the Pixel 5 project is a finger already), and proves the browser reports `(pointer: coarse)` before the body runs.
+ * The body gets `pointer` to tell the two apart. `coarse: false` leaves the finger case out, and each use of it has its
+ * reason in `verify-reflow-pointers.test.ts` (a window of 1280 px is not a phone; the font of 24 px is a best effort, not a promise).
+ */
+export function reflowTest(
+  title: string,
+  body: (args: { page: Page; pointer: ReflowPointer }) => Promise<void>,
+  { coarse = true }: { coarse?: boolean } = {}
+) {
+  test(title, ({ page }) => body({ page, pointer: "fine" }));
+  if (!coarse) {
+    return;
+  }
+  test.describe("com toque", () => {
+    test.use({ hasTouch: true, isMobile: true });
+    test(title, async ({ page }, testInfo) => {
+      test.skip(
+        testInfo.project.name !== DESKTOP_PROJECT,
+        "the Pixel 5 project is a finger already: its cases above measure it"
+      );
+      await expectPointer(page, "coarse");
+      await body({ page, pointer: "coarse" });
+    });
+  });
+}
+
+interface Finding {
+  clientWidth: number;
+  scrollWidth: number;
+  selector: string;
+}
+
+async function stillUnknown<T extends Finding>(
+  page: Page,
+  found: readonly T[],
+  known: readonly KnownCoarseFinding[]
+): Promise<T[]> {
+  if (!(await readCoarse(page))) {
+    return [...found];
+  }
+  const { title, titlePath } = test.info();
+  const spec = basename(titlePath[0] ?? "");
+  return found.filter(
+    (item) =>
+      !known.some(
+        (line) =>
+          line.spec === spec &&
+          line.cases.includes(title) &&
+          line.selector === item.selector &&
+          line.clientWidth === item.clientWidth &&
+          line.scrollWidth === item.scrollWidth
+      )
+  );
+}
+
 /** Call once at the top level of the spec: `Page.setFontSizes` exists only in Chromium. */
 export function skipOutsideChromium() {
   test.skip(
@@ -51,10 +134,20 @@ export async function openReflowViewport(
   {
     fontPixels = REFLOW_FONT_PIXELS,
     height = REFLOW_HEIGHT,
+    pointer,
     width = REFLOW_WIDTH,
-  }: { fontPixels?: number; height?: number; width?: number } = {}
+  }: {
+    fontPixels?: number;
+    height?: number;
+    /** When given, the browser has to report that pointer: a case that says `coarse` with a mouse proves nothing. */
+    pointer?: ReflowPointer;
+    width?: number;
+  } = {}
 ) {
   await page.setViewportSize({ height, width });
+  if (pointer !== undefined) {
+    await expectPointer(page, pointer);
+  }
   const session = await page.context().newCDPSession(page);
   await session.send("Page.setFontSizes", {
     fontSizes: { fixed: fontPixels, standard: fontPixels },
@@ -76,6 +169,8 @@ export async function expectReflowFont(
 interface ClippedOptions {
   /** Selectors of elements that scroll on purpose: they are not measured themselves. */
   allowScroll?: readonly string[];
+  /** The list of cuts excused with a coarse pointer; `KNOWN_COARSE_FINDINGS` unless a test of the helper passes its own. */
+  known?: readonly KnownCoarseFinding[];
 }
 
 interface Offender {
@@ -197,7 +292,12 @@ export async function assertNothingClipped(
   const { measured, offenders } = await findClipped(root, options);
   // a sweep that measured nothing proves nothing
   expect(measured, "no element with text was measured").toBeGreaterThan(0);
-  expect(describeOffenders(offenders)).toEqual([]);
+  const unknown = await stillUnknown(
+    root.page(),
+    offenders,
+    options.known ?? KNOWN_COARSE_FINDINGS
+  );
+  expect(describeOffenders(unknown)).toEqual([]);
 }
 
 /** None of the elements of `data` (or inside them) has an ellipsis or a line clamp hiding text. */
@@ -231,7 +331,10 @@ export async function assertNoEllipsis(data: Locator) {
 }
 
 /** The page does not scroll on the horizontal, not even by 1 px. */
-export async function assertNoPageScroll(page: Page) {
+export async function assertNoPageScroll(
+  page: Page,
+  { known = KNOWN_COARSE_FINDINGS }: Pick<ClippedOptions, "known"> = {}
+) {
   const scroll = await page.evaluate(() => {
     const scroller = document.scrollingElement ?? document.documentElement;
     return {
@@ -239,6 +342,22 @@ export async function assertNoPageScroll(page: Page) {
       scroll: scroller.scrollWidth,
     };
   });
+  if (scroll.scroll > scroll.client) {
+    const unknown = await stillUnknown(
+      page,
+      [
+        {
+          clientWidth: scroll.client,
+          scrollWidth: scroll.scroll,
+          selector: "html",
+        },
+      ],
+      known
+    );
+    if (unknown.length === 0) {
+      return;
+    }
+  }
   expect(
     scroll.scroll,
     `the page is ${scroll.scroll} px wide in a window of ${scroll.client} px`
