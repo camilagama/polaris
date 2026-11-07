@@ -523,7 +523,7 @@ test("U-54: numa tela que só funciona online, o chip sem conexão diz que a tel
   await page.getByLabel("Rede disponível").uncheck();
   // the strip follows the proved connection of the tab (emenda do ADR 0043), not only the lab's runtime
   await page.context().setOffline(true);
-  const chip = page.locator(".sync-status");
+  const chip = page.locator(".sync-status-short");
   await expect(chip).toHaveAttribute(
     "title",
     "Sem conexão · esta tela precisa de internet"
@@ -540,6 +540,9 @@ test("U-54: numa tela que guarda no aparelho, o chip sem fila diz só 'Sem conex
   await openLab(page, "customers");
   await page.getByLabel("Rede disponível").uncheck();
   const chip = page.locator(".sync-status");
-  await expect(chip).toHaveAttribute("title", "Sem conexão");
+  await expect(chip.locator(".sync-status-short")).toHaveAttribute(
+    "title",
+    "Sem conexão"
+  );
   await expect(chip.locator(".sr-only")).toHaveText("Sem conexão");
 });

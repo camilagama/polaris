@@ -19,7 +19,10 @@ import {
   syncStatusLabel,
 } from "./sync-status";
 
-const SHORT_TEXT = /<span aria-hidden="true" class="sync-status-short[^"]*">/;
+const SHORT_TEXT =
+  /<span aria-hidden="true" class="sync-status-short[^"]*" title="[^"]*">/;
+const OPENING_TAG = /^<[^>]*>/;
+const SHORT_SPAN = /<span aria-hidden="true"[^>]*sync-status-short[^>]*>/;
 const HIDDEN_ICON = /<svg[^>]*aria-hidden="true"/;
 
 const snapshot = (
@@ -224,9 +227,8 @@ describe("the sync status in the header", () => {
       expect(label.short.length).toBeLessThanOrEqual(13);
       expect(label.short.length).toBeLessThan(label.text.length);
       const html = renderToStaticMarkup(<SyncStatusView snapshot={item} />);
-      expect(html).toContain(`title="${label.text}"`);
       expect(html).toContain(`<span class="sr-only">${label.text}</span>`);
-      expect(html).toContain(`>${label.short}</span>`);
+      expect(html).toContain(`title="${label.text}">${label.short}</span>`);
       expect(html).toMatch(SHORT_TEXT);
       // never only color: an icon goes with the text
       expect(html).toMatch(HIDDEN_ICON);
@@ -542,4 +544,30 @@ describe("logging out end to end", () => {
       expect(leave).not.toHaveBeenCalled();
     });
   });
+});
+
+describe("the chip says its sentence to a screen reader once", () => {
+  const cases = [
+    snapshot({ phase: "unavailable", reason: PLAN_REFUSED_REASON }),
+    snapshot({ phase: "unavailable", reason: "no_lease_offline" }),
+    snapshot({ counts: counts({ rejected: 2 }) }),
+    snapshot({ online: false }),
+    snapshot(),
+  ];
+
+  it.each(cases.map((item) => [syncStatusLabel(item).text, item] as const))(
+    "%s: the chip has no name or description of its own, the sentence is the text read inside it",
+    (text, item) => {
+      const html = renderToStaticMarkup(<SyncStatusView snapshot={item} />);
+      const root = html.match(OPENING_TAG)?.[0] ?? "";
+      expect(root).not.toContain("title=");
+      expect(root).not.toContain("aria-label");
+      expect(root).not.toContain("aria-describedby");
+      expect(html.split(`<span class="sr-only">${text}</span>`)).toHaveLength(
+        2
+      );
+      const short = html.match(SHORT_SPAN)?.[0] ?? "";
+      expect(short).toContain(`title="${text}"`);
+    }
+  );
 });
