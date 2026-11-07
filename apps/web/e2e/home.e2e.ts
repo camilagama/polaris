@@ -12,6 +12,7 @@ import {
   assertNothingClipped,
   expectReflowFont,
   openReflowViewport,
+  reflowTest,
 } from "./reflow";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
@@ -4377,49 +4378,50 @@ test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"
     "`Page.setFontSizes` is a Chrome DevTools command"
   );
 
-  test("o nome tem a sua linha, o valor e as unidades ficam inteiros na de baixo e nada rola de lado", async ({
-    page,
-  }) => {
-    const server = new FakeServer(SOLD);
-    server.top = rankingOf(LONG_NAMES);
-    await openRanking(page, server);
-    const rows = await rankingRows(page);
-    expect(LONG_NAMES.map((name) => name.length)).toEqual([30, 45, 60]);
-    expect(rows).toHaveLength(3);
-    for (const [index, row] of rows.entries()) {
-      expect(row.nameText).toBe(LONG_NAMES[index]);
-      expect(
-        row.visibleCharacters,
-        `caracteres do nome ${index + 1} dentro da caixa`
-      ).toBeGreaterThanOrEqual(20);
-      expect(
-        row.figuresTop,
-        `valor ${index + 1} abaixo do nome`
-      ).toBeGreaterThanOrEqual(row.nameBottom - 1);
-      expect(
-        row.fitsOnOneLine,
-        `o nome ${index + 1} não cabe em 1 linha a 320 px com letra de 20 px`
-      ).toBe(false);
-      expect(
-        row.nameLines,
-        `o nome ${index + 1} quebra em 2 linhas, sem cortar em 1`
-      ).toBe(2);
+  reflowTest(
+    "o nome tem a sua linha, o valor e as unidades ficam inteiros na de baixo e nada rola de lado",
+    async ({ page }) => {
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(LONG_NAMES);
+      await openRanking(page, server);
+      const rows = await rankingRows(page);
+      expect(LONG_NAMES.map((name) => name.length)).toEqual([30, 45, 60]);
+      expect(rows).toHaveLength(3);
+      for (const [index, row] of rows.entries()) {
+        expect(row.nameText).toBe(LONG_NAMES[index]);
+        expect(
+          row.visibleCharacters,
+          `caracteres do nome ${index + 1} dentro da caixa`
+        ).toBeGreaterThanOrEqual(20);
+        expect(
+          row.figuresTop,
+          `valor ${index + 1} abaixo do nome`
+        ).toBeGreaterThanOrEqual(row.nameBottom - 1);
+        expect(
+          row.fitsOnOneLine,
+          `o nome ${index + 1} não cabe em 1 linha a 320 px com letra de 20 px`
+        ).toBe(false);
+        expect(
+          row.nameLines,
+          `o nome ${index + 1} quebra em 2 linhas, sem cortar em 1`
+        ).toBe(2);
+      }
+      const block = region(page, "Mais vendidos do mês");
+      await assertNothingClipped(block);
+      await assertNoEllipsis(block.locator("[data-top-figures]"));
+      await assertNoPageScroll(page);
+      await expect(block.locator("[data-top-figures]")).toHaveText([
+        "R$ 900,0012 un.",
+        "R$ 600,008 un.",
+        "R$ 300,004 un.",
+      ]);
+      await expect(block.getByRole("link")).toHaveCount(2);
+      await expect(block.getByRole("link").first()).toHaveAttribute(
+        "href",
+        `/products?produto=${PRODUCT}`
+      );
     }
-    const block = region(page, "Mais vendidos do mês");
-    await assertNothingClipped(block);
-    await assertNoEllipsis(block.locator("[data-top-figures]"));
-    await assertNoPageScroll(page);
-    await expect(block.locator("[data-top-figures]")).toHaveText([
-      "R$ 900,0012 un.",
-      "R$ 600,008 un.",
-      "R$ 300,004 un.",
-    ]);
-    await expect(block.getByRole("link")).toHaveCount(2);
-    await expect(block.getByRole("link").first()).toHaveAttribute(
-      "href",
-      `/products?produto=${PRODUCT}`
-    );
-  });
+  );
 
   test("a altura de cada linha não depende do estado: Esconder valores, o 3º produto ausente e outro mês", async ({
     browser,
@@ -4493,53 +4495,57 @@ function expectSameRows(
   }
 }
 
+const WIDE_WINDOW = 1280;
+
 test.describe("Mais vendidos do mês com a letra de 16 px: a linha de sempre", () => {
   for (const [label, width, height] of [
     ["360", 360, 740],
     ["1280", 1280, 800],
   ] as const) {
-    test(`a ${label} px nome, valor e unidades ficam numa linha só`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ height, width });
-      const server = new FakeServer(SOLD);
-      server.top = rankingOf(LONG_NAMES);
-      await openHome(page, server);
-      await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
-      const rows = await rankingRows(page);
-      for (const [index, row] of rows.entries()) {
+    reflowTest(
+      `a ${label} px nome, valor e unidades ficam numa linha só`,
+      async ({ page }) => {
+        await page.setViewportSize({ height, width });
+        const server = new FakeServer(SOLD);
+        server.top = rankingOf(LONG_NAMES);
+        await openHome(page, server);
+        await expect(region(page, "Mais vendidos do mês")).toContainText("un.");
+        const rows = await rankingRows(page);
+        for (const [index, row] of rows.entries()) {
+          expect(
+            row.nameBottom,
+            `valor na linha do nome ${index + 1}`
+          ).toBeGreaterThan(row.figuresTop);
+        }
+        const line = region(page, "Mais vendidos do mês").locator(
+          "[data-top-line]"
+        );
         expect(
-          row.nameBottom,
-          `valor na linha do nome ${index + 1}`
-        ).toBeGreaterThan(row.figuresTop);
-      }
-      const line = region(page, "Mais vendidos do mês").locator(
-        "[data-top-line]"
-      );
-      expect(
-        await line.evaluateAll((nodes) =>
-          nodes.map((node) => getComputedStyle(node).display)
-        )
-      ).toEqual(["flex", "flex", "flex"]);
-      const cut = await region(page, "Mais vendidos do mês")
-        .locator("[data-top-name]")
-        .last()
-        .evaluate((name) => {
-          const style = getComputedStyle(name);
-          return {
-            cut: name.scrollWidth > name.clientWidth,
-            ellipsis: style.textOverflow,
-            overflow: style.overflowX,
-            wrap: style.whiteSpace,
-          };
+          await line.evaluateAll((nodes) =>
+            nodes.map((node) => getComputedStyle(node).display)
+          )
+        ).toEqual(["flex", "flex", "flex"]);
+        const cut = await region(page, "Mais vendidos do mês")
+          .locator("[data-top-name]")
+          .last()
+          .evaluate((name) => {
+            const style = getComputedStyle(name);
+            return {
+              cut: name.scrollWidth > name.clientWidth,
+              ellipsis: style.textOverflow,
+              overflow: style.overflowX,
+              wrap: style.whiteSpace,
+            };
+          });
+        expect(cut).toEqual({
+          cut: true,
+          ellipsis: "ellipsis",
+          overflow: "hidden",
+          wrap: "nowrap",
         });
-      expect(cut).toEqual({
-        cut: true,
-        ellipsis: "ellipsis",
-        overflow: "hidden",
-        wrap: "nowrap",
-      });
-      await assertNoPageScroll(page);
-    });
+        await assertNoPageScroll(page);
+      },
+      { coarse: width < WIDE_WINDOW }
+    );
   }
 });

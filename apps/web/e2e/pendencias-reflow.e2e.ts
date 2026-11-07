@@ -1,12 +1,13 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
   openReflowViewport,
+  reflowTest,
   skipOutsideChromium,
 } from "./reflow";
 import { serveLabWorker } from "./worker-mark";
@@ -120,15 +121,16 @@ function geometry(page: Page) {
   }, ITEMS);
 }
 
-test("a 320 px com letra de 20 px cada registro lê inteiro: título, motivo e código sem corte nem reticências", async ({
-  page,
-}) => {
-  await openWithThreeRecords(page, 320, 20);
-  const list = frame(page);
-  await assertNothingClipped(list);
-  await assertNoEllipsis(list);
-  await assertNoPageScroll(page);
-});
+reflowTest(
+  "a 320 px com letra de 20 px cada registro lê inteiro: título, motivo e código sem corte nem reticências",
+  async ({ page }) => {
+    await openWithThreeRecords(page, 320, 20);
+    const list = frame(page);
+    await assertNothingClipped(list);
+    await assertNoEllipsis(list);
+    await assertNoPageScroll(page);
+  }
+);
 
 async function expectStackedButtons(page: Page, labels: string[][]) {
   const records = await geometry(page);
@@ -169,72 +171,80 @@ async function expectStackedButtons(page: Page, labels: string[][]) {
   await assertNoEllipsis(page.locator(BUTTONS));
 }
 
-test("a 320 px com letra de 20 px os botões de cada registro empilham, inteiros, dentro do cartão e com 44 px", async ({
-  page,
-}) => {
-  await openWithThreeRecords(page, 320, 20);
-  expect((await geometry(page)).map((record) => record.cause)).toEqual([
-    "insufficient_stock",
-    "sku_conflict",
-    "authorization_revoked",
-  ]);
-  await expectStackedButtons(page, [
-    ["Reenviar venda", "Descartar…"],
-    ["Descartar…"],
-    ["Refazer esta venda", "Sair e entrar de novo", "Descartar…"],
-  ]);
-});
-
-test("a 320 px com letra de 20 px a tela das Pendências com os quatro registros do laboratório das telas lê inteira", async ({
-  page,
-}) => {
-  await openReflowViewport(page, { fontPixels: 20, width: 320 });
-  await serveLabWorker(page);
-  await page.goto("/offline-screens-lab?screen=attention");
-  await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
-  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
-  await expect(page.getByTestId("message")).toContainText(
-    "Iniciar: ok (ready)",
-    { timeout: 20_000 }
-  );
-  await expect(page.locator(ITEMS)).toHaveCount(4);
-  await expectReflowFont(page, 20);
-  await expectStackedButtons(page, [
-    ["Reenviar venda", "Descartar…"],
-    ["Descartar…"],
-    ["Ver Assinatura", "Tentar novamente"],
-    ["Refazer esta venda", "Sair e entrar de novo", "Descartar…"],
-  ]);
-  const list = frame(page);
-  await assertNothingClipped(list);
-  await assertNoEllipsis(list);
-  await assertNoPageScroll(page);
-});
-
-test("a 320 px com letra de 20 px a confirmação do descarte também empilha e cabe", async ({
-  page,
-}) => {
-  await openWithThreeRecords(page, 320, 20);
-  await page.getByRole("button", { name: "Descartar…" }).last().click();
-  const dialog = page.getByRole("alertdialog");
-  await expect(dialog).toBeVisible();
-  const confirm = dialog.getByRole("button", { name: "Confirmar descarte" });
-  const keep = dialog.getByRole("button", { name: "Manter" });
-  const boxes = await Promise.all([confirm.boundingBox(), keep.boundingBox()]);
-  const [first, second] = boxes;
-  expect(first).not.toBeNull();
-  expect(second).not.toBeNull();
-  for (const box of boxes) {
-    expect(box?.height).toBeGreaterThanOrEqual(TOUCH);
-    expect(box?.width).toBeGreaterThanOrEqual(TOUCH);
+reflowTest(
+  "a 320 px com letra de 20 px os botões de cada registro empilham, inteiros, dentro do cartão e com 44 px",
+  async ({ page }) => {
+    await openWithThreeRecords(page, 320, 20);
+    expect((await geometry(page)).map((record) => record.cause)).toEqual([
+      "insufficient_stock",
+      "sku_conflict",
+      "authorization_revoked",
+    ]);
+    await expectStackedButtons(page, [
+      ["Reenviar venda", "Descartar…"],
+      ["Descartar…"],
+      ["Refazer esta venda", "Sair e entrar de novo", "Descartar…"],
+    ]);
   }
-  expect(second?.y).toBeGreaterThanOrEqual(
-    (first?.y ?? 0) + (first?.height ?? 0) - 0.5
-  );
-  await assertNothingClipped(dialog);
-  await assertNoEllipsis(dialog);
-  await assertNoPageScroll(page);
-});
+);
+
+reflowTest(
+  "a 320 px com letra de 20 px a tela das Pendências com os quatro registros do laboratório das telas lê inteira",
+  async ({ page }) => {
+    await openReflowViewport(page, { fontPixels: 20, width: 320 });
+    await serveLabWorker(page);
+    await page.goto("/offline-screens-lab?screen=attention");
+    await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
+    await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+    await expect(page.getByTestId("message")).toContainText(
+      "Iniciar: ok (ready)",
+      { timeout: 20_000 }
+    );
+    await expect(page.locator(ITEMS)).toHaveCount(4);
+    await expectReflowFont(page, 20);
+    await expectStackedButtons(page, [
+      ["Reenviar venda", "Descartar…"],
+      ["Descartar…"],
+      ["Ver Assinatura", "Tentar novamente"],
+      ["Refazer esta venda", "Sair e entrar de novo", "Descartar…"],
+    ]);
+    const list = frame(page);
+    await assertNothingClipped(list);
+    await assertNoEllipsis(list);
+    await assertNoPageScroll(page);
+  }
+);
+
+reflowTest(
+  "a 320 px com letra de 20 px a confirmação do descarte também empilha e cabe",
+  async ({ page }) => {
+    await openWithThreeRecords(page, 320, 20);
+    await page.getByRole("button", { name: "Descartar…" }).last().click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    const confirm = dialog.getByRole("button", { name: "Confirmar descarte" });
+    const keep = dialog.getByRole("button", { name: "Manter" });
+    const boxes = await Promise.all([
+      confirm.boundingBox(),
+      keep.boundingBox(),
+    ]);
+    const [first, second] = boxes;
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    for (const box of boxes) {
+      expect(box?.height).toBeGreaterThanOrEqual(TOUCH);
+      expect(box?.width).toBeGreaterThanOrEqual(TOUCH);
+    }
+    expect(second?.y).toBeGreaterThanOrEqual(
+      (first?.y ?? 0) + (first?.height ?? 0) - 0.5
+    );
+    await assertNothingClipped(dialog);
+    await assertNoEllipsis(dialog);
+    await assertNoPageScroll(page);
+  }
+);
+
+const WIDE_WINDOW = 1280;
 
 const ROWS_AT_16_PIXELS = [
   { maxRows: [1, 1, 2], width: 360 },
@@ -242,24 +252,26 @@ const ROWS_AT_16_PIXELS = [
 ];
 
 for (const { maxRows, width } of ROWS_AT_16_PIXELS) {
-  test(`a ${width} px com letra de 16 px os botões seguem em linha e dentro do cartão, como sempre`, async ({
-    page,
-  }) => {
-    await openWithThreeRecords(page, width, 16);
-    const records = await geometry(page);
-    const rows = records.map(
-      (record) =>
-        new Set(record.buttons.map((button) => Math.round(button.top))).size
-    );
-    for (const [index, count] of rows.entries()) {
-      expect(count, `registro ${index + 1}`).toBeLessThanOrEqual(
-        maxRows[index] ?? 1
+  reflowTest(
+    `a ${width} px com letra de 16 px os botões seguem em linha e dentro do cartão, como sempre`,
+    async ({ page }) => {
+      await openWithThreeRecords(page, width, 16);
+      const records = await geometry(page);
+      const rows = records.map(
+        (record) =>
+          new Set(record.buttons.map((button) => Math.round(button.top))).size
       );
-    }
-    for (const record of records) {
-      for (const button of record.buttons) {
-        expect(button.right).toBeLessThanOrEqual(record.card.right + 0.5);
+      for (const [index, count] of rows.entries()) {
+        expect(count, `registro ${index + 1}`).toBeLessThanOrEqual(
+          maxRows[index] ?? 1
+        );
       }
-    }
-  });
+      for (const record of records) {
+        for (const button of record.buttons) {
+          expect(button.right).toBeLessThanOrEqual(record.card.right + 0.5);
+        }
+      }
+    },
+    { coarse: width < WIDE_WINDOW }
+  );
 }

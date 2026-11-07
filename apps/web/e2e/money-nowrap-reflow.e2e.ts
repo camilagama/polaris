@@ -1,12 +1,13 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import {
   assertAmountsOnOneLine,
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
   openReflowViewport,
+  reflowTest,
   skipOutsideChromium,
 } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -140,42 +141,49 @@ async function openDetail(page: Page, fontPixels: number) {
   await expectReflowFont(page, fontPixels);
 }
 
-test("Detalhe da venda: o R$ e o número do custo e da linha do item ficam na mesma linha, com o texto de sempre", async ({
-  page,
-}) => {
-  await openDetail(page, 20);
-  const items = page.getByRole("region", { name: "Itens" });
-  await expect(items.locator("li")).toHaveText([
-    "Camiseta básica3 × R$ 1.234,50 (tabela R$ 1.300,00) = R$ 3.703,50Custo unitário registrado: R$ 17,00.",
-  ]);
-  expect(await assertAmountsOnOneLine(items)).toBe(4);
-  // the punched holes of the perforation sit half outside the card on purpose, and the card hides them
-  await assertNothingClipped(page.locator("main"), {
-    allowScroll: ['[data-slot="card"]'],
-  });
-  await assertNoPageScroll(page);
-});
+reflowTest(
+  "Detalhe da venda: o R$ e o número do custo e da linha do item ficam na mesma linha, com o texto de sempre",
+  async ({ page }) => {
+    await openDetail(page, 20);
+    const items = page.getByRole("region", { name: "Itens" });
+    await expect(items.locator("li")).toHaveText([
+      "Camiseta básica3 × R$ 1.234,50 (tabela R$ 1.300,00) = R$ 3.703,50Custo unitário registrado: R$ 17,00.",
+    ]);
+    expect(await assertAmountsOnOneLine(items)).toBe(4);
+    // the punched holes of the perforation sit half outside the card on purpose, and the card hides them
+    await assertNothingClipped(page.locator("main"), {
+      allowScroll: ['[data-slot="card"]'],
+    });
+    await assertNoPageScroll(page);
+  }
+);
 
-test("Detalhe da venda: o R$ e o número do bloco de pagamento ficam na mesma linha, com o texto de sempre", async ({
-  page,
-}) => {
-  await openDetail(page, 20);
-  const payment = page.locator("dl").filter({ hasText: "Valor do pagamento" });
-  await expect(payment.locator("dd").nth(1)).toHaveText("R$ 3.703,50");
-  await expect(
-    payment.locator("div").filter({ hasText: "Taxa de processamento" })
-  ).toHaveText(
-    "Taxa de processamentoR$ 18.894,09 (R$ 1.111,50 + 12,5% do total devido)"
-  );
-  expect(await assertAmountsOnOneLine(payment)).toBe(3);
-  await assertNoPageScroll(page);
-});
+reflowTest(
+  "Detalhe da venda: o R$ e o número do bloco de pagamento ficam na mesma linha, com o texto de sempre",
+  async ({ page }) => {
+    await openDetail(page, 20);
+    const payment = page
+      .locator("dl")
+      .filter({ hasText: "Valor do pagamento" });
+    await expect(payment.locator("dd").nth(1)).toHaveText("R$ 3.703,50");
+    await expect(
+      payment.locator("div").filter({ hasText: "Taxa de processamento" })
+    ).toHaveText(
+      "Taxa de processamentoR$ 18.894,09 (R$ 1.111,50 + 12,5% do total devido)"
+    );
+    expect(await assertAmountsOnOneLine(payment)).toBe(3);
+    await assertNoPageScroll(page);
+  }
+);
 
-test("Detalhe da venda: a 16 px o custo é a mesma linha", async ({ page }) => {
-  await openDetail(page, 16);
-  const cost = page.getByText(COST_LINE);
-  expect(
-    await cost.evaluate((element) => element.getClientRects().length)
-  ).toBe(1);
-  await assertAmountsOnOneLine(page.getByRole("region", { name: "Itens" }));
-});
+reflowTest(
+  "Detalhe da venda: a 16 px o custo é a mesma linha",
+  async ({ page }) => {
+    await openDetail(page, 16);
+    const cost = page.getByText(COST_LINE);
+    expect(
+      await cost.evaluate((element) => element.getClientRects().length)
+    ).toBe(1);
+    await assertAmountsOnOneLine(page.getByRole("region", { name: "Itens" }));
+  }
+);

@@ -7,9 +7,13 @@ import {
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
+  findClipped,
   openReflowViewport,
+  type ReflowPointer,
+  reflowTest,
   skipOutsideChromium,
 } from "./reflow";
+import type { KnownCoarseFinding } from "./reflow-known";
 
 /**
  * The sweep has to catch what it says it catches: each defect below is planted on purpose and the helper must fail on
@@ -17,8 +21,8 @@ import {
  */
 skipOutsideChromium();
 
-async function show(page: Page, body: string) {
-  await openReflowViewport(page);
+async function show(page: Page, body: string, pointer?: ReflowPointer) {
+  await openReflowViewport(page, pointer === undefined ? {} : { pointer });
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">${body}</body></html>`
   );
@@ -138,4 +142,140 @@ test("a janela é de 320 px e a letra do navegador é de 20 px, e não a de 16",
   await show(page, "<p>texto</p>");
   expect(await page.evaluate(() => window.innerWidth)).toBe(320);
   await expect(expectReflowFont(page, 16)).rejects.toThrow();
+});
+
+const FIELD_ONLY_CUT_WITH_TOUCH = `<style>@media (pointer: coarse) { #field { width: 60px; overflow: hidden; white-space: nowrap; } }</style><div id="root"><span id="field" style="display:block">${LONG}</span></div>`;
+const FIELD_ALWAYS_CUT =
+  '<div id="root"><span id="field" style="display:block;width:60px;overflow:hidden;white-space:nowrap">Cartão de crédito parcelado em doze vezes sem juros</span></div>';
+
+// the Pixel 5 project is a finger already: the cases that tell the two pointers apart run only where the mouse is real
+test.describe("ponteiros", () => {
+  test.beforeEach(({ browserName: _ }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "the Pixel 5 project is a coarse pointer in every case"
+    );
+  });
+
+  reflowTest(
+    "um campo que só corta com toque passa com o mouse e reprova com o dedo",
+    async ({ page, pointer }) => {
+      await show(page, FIELD_ONLY_CUT_WITH_TOUCH, pointer);
+      const root = page.locator("#root");
+      if (pointer === "fine") {
+        await assertNothingClipped(root);
+        return;
+      }
+      await expect(assertNothingClipped(root)).rejects.toThrow(CUT_TEXT);
+      await page.locator("#field").evaluate((element) => {
+        element.style.whiteSpace = "normal";
+        element.style.overflowWrap = "anywhere";
+      });
+      await assertNothingClipped(root);
+    }
+  );
+
+  reflowTest(
+    "a lista de conhecidos só desculpa o corte com toque, o nome e a medida que ela diz",
+    async ({ page, pointer }) => {
+      await show(page, FIELD_ALWAYS_CUT, pointer);
+      const root = page.locator("#root");
+      const { offenders } = await findClipped(root);
+      expect(offenders).toHaveLength(1);
+      const [cut] = offenders;
+      const line: KnownCoarseFinding = {
+        cases: [
+          "a lista de conhecidos só desculpa o corte com toque, o nome e a medida que ela diz",
+        ],
+        clientWidth: cut?.clientWidth ?? 0,
+        reason: "campo de teste que corta de propósito",
+        screen: "página de teste do auxiliar",
+        scrollWidth: cut?.scrollWidth ?? 0,
+        selector: cut?.selector ?? "",
+        spec: "reflow-helper.e2e.ts",
+      };
+      if (pointer === "fine") {
+        await expect(
+          assertNothingClipped(root, { known: [line] })
+        ).rejects.toThrow(CUT_TEXT);
+        return;
+      }
+      await assertNothingClipped(root, { known: [line] });
+      const others = [
+        { ...line, scrollWidth: line.scrollWidth + 1 },
+        { ...line, clientWidth: line.clientWidth + 1 },
+        { ...line, selector: "span#outro" },
+        { ...line, spec: "outro.e2e.ts" },
+        { ...line, cases: ["outro caso do mesmo spec"] },
+      ];
+      await Promise.all(
+        others.map((other) =>
+          expect(
+            assertNothingClipped(root, { known: [other] })
+          ).rejects.toThrow(CUT_TEXT)
+        )
+      );
+      await expect(assertNothingClipped(root, { known: [] })).rejects.toThrow(
+        CUT_TEXT
+      );
+    }
+  );
+
+  reflowTest(
+    "a rolagem lateral da página com toque também só passa se estiver na lista",
+    async ({ page, pointer }) => {
+      await show(
+        page,
+        '<div id="wide" style="width:400px;height:10px"></div>',
+        pointer
+      );
+      await expect(assertNoPageScroll(page)).rejects.toThrow(
+        "px wide in a window"
+      );
+      const scroll = await page.evaluate(() => ({
+        client: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+      }));
+      const line: KnownCoarseFinding = {
+        cases: [
+          "a rolagem lateral da página com toque também só passa se estiver na lista",
+        ],
+        clientWidth: scroll.client,
+        reason: "página de teste que rola de propósito",
+        screen: "página de teste do auxiliar",
+        scrollWidth: scroll.scroll,
+        selector: "html",
+        spec: "reflow-helper.e2e.ts",
+      };
+      if (pointer === "fine") {
+        await expect(
+          assertNoPageScroll(page, { known: [line] })
+        ).rejects.toThrow("px wide in a window");
+        return;
+      }
+      await assertNoPageScroll(page, { known: [line] });
+    }
+  );
+
+  test("o ponteiro pedido que o navegador não tem reprova, e o que ele tem passa", async ({
+    page,
+  }) => {
+    await expect(
+      openReflowViewport(page, { pointer: "coarse" })
+    ).rejects.toThrow("reports the other");
+    await openReflowViewport(page, { pointer: "fine" });
+  });
+});
+
+test.describe("com toque", () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  test("o ponteiro pedido confere com o do navegador: com toque o grosso passa e o fino reprova", async ({
+    page,
+  }) => {
+    await openReflowViewport(page, { pointer: "coarse" });
+    await expect(openReflowViewport(page, { pointer: "fine" })).rejects.toThrow(
+      "reports the other"
+    );
+  });
 });

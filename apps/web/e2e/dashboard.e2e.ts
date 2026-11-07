@@ -8,6 +8,7 @@ import {
   assertTextsApart,
   expectReflowFont,
   openReflowViewport,
+  reflowTest,
   skipOutsideChromium,
 } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -2718,28 +2719,29 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
   };
 
   for (const fontPixels of [20, 16]) {
-    test(`com a letra em ${fontPixels} px, o R$ e o número de cada valor ficam na mesma linha`, async ({
-      page,
-    }) => {
-      const server = new FakeReportServer();
-      server.fixture = { "2026-10": MILLIONS_MONTH };
-      await openReflowViewport(page, { fontPixels });
-      await openDashboard(page, server);
-      await expect(chainRow(page, "(=) Vendas líquidas")).toContainText(
-        "R$ 1.706.600,00"
-      );
-      await expectReflowFont(page, fontPixels);
-      await assertAmountsOnOneLine(chartRegion(page));
-      await assertTextsApart(chartRegion(page), "dd", 2);
-      await assertNothingClipped(chartRegion(page), {
-        allowScroll: ["[data-slot=card]"],
-      });
-      expect(await assertAmountsOnOneLine(chain(page))).toBeGreaterThanOrEqual(
-        10
-      );
-      await assertNothingClipped(chain(page), {
-        allowScroll: ["[data-slot=table-container]"],
-      });
-    });
+    reflowTest(
+      `com a letra em ${fontPixels} px, o R$ e o número de cada valor ficam na mesma linha`,
+      async ({ page }) => {
+        const server = new FakeReportServer();
+        server.fixture = { "2026-10": MILLIONS_MONTH };
+        await openReflowViewport(page, { fontPixels });
+        await openDashboard(page, server);
+        await expect(chainRow(page, "(=) Vendas líquidas")).toContainText(
+          "R$ 1.706.600,00"
+        );
+        await expectReflowFont(page, fontPixels);
+        await assertAmountsOnOneLine(chartRegion(page));
+        await assertTextsApart(chartRegion(page), "dd", 2);
+        await assertNothingClipped(chartRegion(page), {
+          allowScroll: ["[data-slot=card]"],
+        });
+        expect(
+          await assertAmountsOnOneLine(chain(page))
+        ).toBeGreaterThanOrEqual(10);
+        await assertNothingClipped(chain(page), {
+          allowScroll: ["[data-slot=table-container]"],
+        });
+      }
+    );
   }
 });
