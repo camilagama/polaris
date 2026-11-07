@@ -62,7 +62,7 @@ function ContactCard({
  */
 export function HelpPage() {
   return (
-    <div className="grid max-w-[640px] gap-6">
+    <div className="grid max-w-[40rem] gap-6">
       <header className="grid gap-2">
         <ScreenTitle>{HELP_LABEL}</ScreenTitle>
         <p className="m-0 text-muted-foreground">{HELP_INTRO}</p>

@@ -409,7 +409,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           {rejected > 0 ? (
             <span
               aria-hidden="true"
-              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground tabular-nums leading-4"
+              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[0.625rem] text-warning-foreground tabular-nums leading-4"
               data-attention-count=""
             >
               {countText(rejected)}
@@ -595,7 +595,7 @@ function FirstAccessPage({
   if (closedNotice) {
     return (
       <div className="flow-root min-h-dvh bg-background px-(--gutter) pt-4">
-        <main className="mx-auto max-w-[420px]" id="conteudo">
+        <main className="mx-auto max-w-[26.25rem]" id="conteudo">
           {closedNotice}
         </main>
       </div>
@@ -605,7 +605,7 @@ function FirstAccessPage({
     <>
       {sessionNotice || acceptanceNotice ? (
         <div className="flow-root bg-background px-(--gutter) pt-4">
-          <div className="mx-auto max-w-[420px]">
+          <div className="mx-auto max-w-[26.25rem]">
             {sessionNotice ? <SessionEndedNotice alone /> : null}
             {acceptanceNotice ? <LegalAcceptanceNotice /> : null}
           </div>

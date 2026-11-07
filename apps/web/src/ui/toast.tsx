@@ -69,7 +69,7 @@ function ToastList() {
     <ToastPrimitive.Portal>
       <ToastPrimitive.Viewport
         aria-label="Avisos"
-        className="fixed top-14 right-(--gutter) left-(--gutter) z-50 mx-auto flex w-auto max-w-[380px] flex-col items-stretch gap-2 md:top-auto md:right-6 md:bottom-6 md:left-auto md:mx-0 md:w-[380px]"
+        className="fixed top-14 right-(--gutter) left-(--gutter) z-50 mx-auto flex w-auto max-w-[23.75rem] flex-col items-stretch gap-2 md:top-auto md:right-6 md:bottom-6 md:left-auto md:mx-0 md:w-[23.75rem]"
         data-slot="toast-viewport"
       >
         {toasts.map((toast) => (

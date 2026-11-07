@@ -235,7 +235,7 @@
     margin: 0 0 0.75rem;
     list-style: none;
     /* dash: apps/web/src/ui/tabs.tsx */
-    @apply inline-flex w-fit items-center rounded-lg bg-muted p-[3px] text-muted-foreground;
+    @apply inline-flex w-fit items-center rounded-lg bg-muted p-0.75 text-muted-foreground;
   }
 
   .tabs li {
