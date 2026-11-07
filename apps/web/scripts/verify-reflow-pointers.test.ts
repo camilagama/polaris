@@ -38,7 +38,7 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   "dashboard.e2e.ts": {
     bare: 0,
     coarse: 0,
-    from: 'test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 20 px"',
+    from: 'test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 24, 20 e 16 px"',
     before: ["a 320 px, o valor do cartão não quebra em duas linhas"],
     why: "one card read at the default font, not the sweep with the browser font at 20 px",
   },
