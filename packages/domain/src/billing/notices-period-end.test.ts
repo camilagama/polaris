@@ -12,7 +12,7 @@ import { GRACE_DAYS } from "./subscription-state";
 const DAY = 86_400_000;
 const SAO_PAULO = "America/Sao_Paulo";
 const REF = "pol_0199f0aa-2b3c-7d4e-8f90-123456789abc";
-/** 00:00 of 2026-11-01 in São Paulo: the paid period covered up to 31 October. */
+/** 00:00 of `2026-11-01` in São Paulo: the paid period covered up to 31 October. */
 const PAID_END = new Date("2026-11-01T03:00:00.000Z");
 const GRACE_END = new Date(PAID_END.getTime() + GRACE_DAYS * DAY);
 

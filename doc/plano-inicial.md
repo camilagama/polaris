@@ -1200,7 +1200,7 @@ Adicionar:
 
 
 
-Aplicar [docs/business-rules/authentication.md](../docs/business-rules/authentication.md): 15–128 pontos de código Unicode após NFC, espaços permitidos, sem composição arbitrária nem expiração periódica; verificar HIBP antes de estabelecer/alterar credencial e falhar fechado se a consulta não estiver disponível. Reset revoga todas as sessões.
+Aplicar [docs/business-rules/authentication.md](../docs/business-rules/authentication.md): 8–128 pontos de código Unicode após NFC, com número, maiúscula e minúscula, espaços permitidos, sem expiração periódica e sem consulta HIBP (regra trocada na emenda de 4/11/2026 do ADR 0100, que também leva o hash para bcrypt no PostgreSQL). Reset revoga todas as sessões.
 
 Usar Resend com templates React Email minimalistas, idempotency key por token e secrets `RESEND_API_KEY` + `AUTH_EMAIL_FROM` de domínio verificado. Os fluxos ficam indisponíveis sem sender configurado e só são expostos após PR16 (rate limiting e Turnstile). O outbox/Queue e webhooks de delivery da proposta inicial ficam adiados para hardening pré-go-live; PR15 usa callback síncrono idempotente. `EMAIL_PASSWORD_AUTH_ENABLED` permanece `false` por padrão e só deve ser ligado após o PR16.
 
@@ -1322,7 +1322,7 @@ Ordem: **P0 → P1 → P6 → P2 → P3 → P4 → P5 → P7 → P8a → P8 → 
 
 - **P0 (docs):** o ADR 0100, as emendas dos ADRs 0017, 0044 e 0047 e os ajustes nas regras de autenticação e privacidade.
 - **P1 (app):** limitador do login social, 302 no callback e testes de open redirect no servidor.
-- **P6 (app):** páginas legais, conteúdo versionado, constante `LEGAL_DOCUMENTS`, renderizador e travas de build (`[preencher]` e aviso de rascunho). Vem antes do P3 para não haver link morto.
+- **P6 (app):** páginas legais, conteúdo versionado, constante `LEGAL_DOCUMENTS`, renderizador e travas de build (a lista está na seção "Emenda (30/10/2026)" do [ADR 0100](../docs/adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Vem antes do P3 para não haver link morto.
 - **P2 (db):** migration do bloqueio por e-mail, gate `login-lock`, classe de retenção e job de expurgo.
 - **P3 (app):** `/entrar` só com Google, `voltar` e motivo, "Entrar de novo", "Sair" com destino, o texto único de sessão encerrada e `/api/auth-methods`.
 - **P4 (db):** migration do aceite legal (só acrescenta), gate `legal-acceptance` e a classe de retenção `legal_acceptance`.
@@ -5184,7 +5184,7 @@ Provisionar:
 
 Documentar IDs/resources.
 
-Estado (ADR 0097, [runbook do staging](../docs/runbooks/staging.md)): staging fixo na conta Cloudflare atual, sem Previews; topo do `wrangler.jsonc` só local; `env.staging` e `env.production` explícitos nos três Workers, com placeholders que `verify:staging-isolation` recusa; banco num projeto Neon próprio com o marcador `polaris.environment`; login só pelo Google em modo Testing; Admin não exposto no staging. Workflows não entram no staging (ADR 0088). Os recursos e segredos são criados pelo responsável.
+Estado (ADR 0097, [runbook do staging](../docs/runbooks/staging.md)): staging fixo na conta Cloudflare atual, sem Previews; topo do `wrangler.jsonc` só local; `env.staging` e `env.production` explícitos nos três Workers, com placeholders que `verify:staging-isolation` recusa; banco num projeto Neon próprio com o marcador `polaris.environment`; login só pelo Google em modo Testing; Admin não exposto no staging (*mudou em 03/11/2026: Admin em `admin.araute.app`, só atrás do Access do staging, emenda do ADR 0097*). Workflows não entram no staging (ADR 0088). Os recursos e segredos são criados pelo responsável.
 
 
 

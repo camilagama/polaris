@@ -61,7 +61,9 @@
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
         "POLARIS_SITE_URL": "",
-        "CATALOG_ORIGIN": "https://catalogo.araute.app"
+        "CATALOG_ORIGIN": "https://catalogo.araute.app",
+        // /robots.txt declares the commit of the Worker (X-Polaris-Release), read by the smoke (ADR 0098, amended)
+        "RELEASE_HEADER_ENABLED": "true"
       },
       "observability": {
         "enabled": true,
@@ -91,7 +93,9 @@
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
         "POLARIS_SITE_URL": "",
-        "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin"
+        "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
+        // no release header in production until the item 8 of the release checklist; the isolation check refuses "true"
+        "RELEASE_HEADER_ENABLED": "false"
       },
       "observability": {
         "enabled": true,

@@ -28,6 +28,19 @@ export const ORGANIZATION_PURGE_STEPS = Object.freeze([
  */
 export const ORGANIZATION_PURGE_LEASE_SECONDS = 15 * 60;
 
+/**
+ * A purge whose step failed for the third time or more (a failure the database does not name as a refusal on purpose)
+ * is not advancing: the job reports it as stalled.
+ */
+export const ORGANIZATION_PURGE_STALLED_ATTEMPTS = 3;
+
+/**
+ * A purge claimed at least `ORGANIZATION_PURGE_STALLED_ATTEMPTS` times, with no step recorded as done in this many
+ * hours, is stalled even when no run logged it: a run the Worker killed (time or CPU) or a lease that ran out writes
+ * no event, and only the attempts, which grow at the claim, show it.
+ */
+export const ORGANIZATION_PURGE_STALLED_WINDOW_HOURS = 24;
+
 const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export class InvalidOrganizationIdError extends Error {
@@ -60,7 +73,7 @@ export function organizationMediaPrefix(organizationId: string): string {
 }
 
 /**
- * The closure period (decision of 18/10/2026, changed from 30 to 90 days on 19/10/2026, ADR 0081): the purge
+ * The closure period (ADR 0081): the purge
  * removes the tenant's operational data only once the organization has been closed for this long, and refuses
  * before it (`closure_period_not_elapsed`), whatever recovery window the closure had. Polaris is the processor
  * of that data and the fiscal duty to keep it is the customer's, who has the export. The owner only reads and
@@ -106,7 +119,7 @@ export function automaticPurgeSchedulingAllowed(
 /**
  * The categories a privacy case must cover for its accepted deletion to start a purge: every tenant
  * category the purge removes (ADR 0081), and exactly those. Account, authentication, billing and the audit
- * logs are not here (the audit of the tenant survives the purge, ADR 0081 amended on 19/10/2026): the purge keeps them, so a case that claims them is refused instead of recording a decision the
+ * logs are not here (the audit of the tenant survives the purge, ADR 0081 amended): the purge keeps them, so a case that claims them is refused instead of recording a decision the
  * purge does not carry out. The migration holds the same list (`whole_organization` in
  * `admin_schedule_organization_purge`), and the gate proves each category is required and each kept one refused.
  */

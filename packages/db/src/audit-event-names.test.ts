@@ -3,7 +3,7 @@ import { OUTBOX_EVENT_TYPES } from "@polaris/domain/events/outbox";
 import { describe, expect, it } from "vitest";
 
 /**
- * The naming of the events (dreaming of 27/10: the same review finding came back in 3 rounds of the billing ADR).
+ * The naming of the events.
  * An event type, in the audit tables and in the outbox, is `domain.action`. A log key (`billing_command_rate_limited`)
  * and an error `reason` have another shape and never go in a CHECK of `event_type`. And one name does not mean two
  * things: the type of a hint in the outbox is not reused as the type of an audit row with another meaning.

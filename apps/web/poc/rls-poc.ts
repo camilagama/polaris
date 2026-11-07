@@ -32,7 +32,6 @@ interface RlsPocRequest {
 
 export interface RlsPocEnv {
   Bindings: {
-    DB_RLS_POC_ENABLED?: string;
     HYPERDRIVE: HyperdriveBinding;
   };
 }
@@ -75,11 +74,9 @@ function isRlsPocRequest(value: unknown): value is RlsPocRequest {
   );
 }
 
+// No on/off variable: only the proof Worker (pr11.ts, with its own wrangler config) and the CI stand-in of the RLS
+// gate mount this route; the app's Worker never imports it.
 route.post("/run", async (context) => {
-  if (context.env.DB_RLS_POC_ENABLED !== "true") {
-    return context.json({ error: { code: "not_found" } }, 404);
-  }
-
   let requestBody: unknown;
   try {
     requestBody = await context.req.json();

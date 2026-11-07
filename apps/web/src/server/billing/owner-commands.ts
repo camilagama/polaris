@@ -1,4 +1,8 @@
 import {
+  cancelRenewalEventId,
+  refundCancelEventId,
+} from "@polaris/billing/operator-commands";
+import {
   type BillingProviderPort,
   NotFirstChargeError,
   ProviderUnavailableError,
@@ -18,7 +22,6 @@ import {
 } from "@polaris/domain/billing/plan-view";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
-import { cancelRenewalEventId, refundCancelEventId } from "./commands";
 
 /**
  * The owner's billing commands (ADR 0104, decision 3): cancel the renewal, ask for the refund of the right of
@@ -686,7 +689,7 @@ async function anchoredWindow(
 }
 
 /**
- * Step 1 of the owner's refund (ADR 0066, emenda de 23/10): the renewal is cancelled at the provider and, while the
+ * Step 1 of the owner's refund (ADR 0066): the renewal is cancelled at the provider and, while the
  * record gives Pro, written through the inbox (`command:refund_cancel:<requestId>:<digest>`). A failure refunds
  * nothing and keeps the anchor (`billing_provider_unavailable`; a repeat goes on from here).
  */

@@ -1,3 +1,5 @@
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
 import { describe, expect, it, vi } from "vitest";
 import {
   type Connection,
@@ -8,6 +10,7 @@ import {
   jittered,
   NoWorkerAnswerError,
 } from "./connection";
+import { isPlatformCut, rpcErrorReason } from "./rpc-error";
 
 const MARK = "0199c2d0-0000-7000-8000-000000000001";
 const START = 1_000_000;
@@ -264,6 +267,61 @@ describe("the fetch of the RPC client", () => {
     expect(response.status).toBe(502);
     expect(t.connection.isOnline()).toBe(true);
     expect(t.healthCalls).toHaveLength(0);
+  });
+
+  it("gives oRPC the RPC call the platform killed as its cut (platform_cut), and the Worker's own 503 as it came", async () => {
+    const t = setup();
+    const client = createORPCClient<{
+      ping: (input: unknown) => Promise<unknown>;
+    }>(
+      new RPCLink({
+        fetch: (request, init) => t.connection.fetch(request, init),
+        url: "http://localhost/rpc",
+      })
+    );
+    const failureOf = (call: Promise<unknown>) =>
+      call.then(
+        () => null,
+        (error: unknown) => error
+      );
+
+    t.routes.rpc = () =>
+      reply(
+        503,
+        { "cf-ray": "abc-GRU", "content-type": "text/html" },
+        "<html><body>Worker exceeded resource limits</body></html>"
+      );
+    const cut = await failureOf(client.ping({}));
+    expect(cut).toMatchObject({ code: "SERVICE_UNAVAILABLE", status: 503 });
+    expect(isPlatformCut(cut)).toBe(true);
+
+    t.routes.rpc = () =>
+      reply(
+        503,
+        { "content-type": "application/json", "x-request-id": MARK },
+        JSON.stringify({
+          json: {
+            code: "SERVICE_UNAVAILABLE",
+            data: { reason: "server_busy" },
+            defined: false,
+            message: "Service unavailable",
+            status: 503,
+          },
+        })
+      );
+    const busy = await failureOf(client.ping({}));
+    expect(rpcErrorReason(busy)).toBe("server_busy");
+    expect(isPlatformCut(busy)).toBe(false);
+  });
+
+  it("hands a call that is not RPC back as the platform answered it", async () => {
+    const t = setup();
+    t.routes.rpc = () => reply(503, { "cf-ray": "abc-GRU" }, "<html></html>");
+
+    const response = await t.connection.fetch("/api/auth/get-session");
+
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe("<html></html>");
   });
 
   it("an isolated network error with /health fine does not change the state", async () => {

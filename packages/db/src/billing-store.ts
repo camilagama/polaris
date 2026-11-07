@@ -7,6 +7,7 @@ import {
   type BillingCycleMonths,
   type BillingFact,
   type BillingRecord,
+  currentChargeAfter,
   dueTransition,
   type IgnoredFactReason,
   isBillingCycleMonths,
@@ -31,6 +32,12 @@ import {
   welcomeNotice,
 } from "@polaris/domain/billing/notices";
 import { episodeStartAfter } from "@polaris/domain/billing/operational-selection";
+import {
+  normalizeOperatorReason,
+  type OperatorCommandKind,
+  operatorDecisionEventId,
+  operatorDecisionFactType,
+} from "@polaris/domain/billing/operator-commands";
 import type { PlanViewRecord } from "@polaris/domain/billing/plan-view";
 import { applyBillingEvent } from "@polaris/domain/billing/subscription-state";
 import {
@@ -117,6 +124,9 @@ export interface StoredBillingNotice {
   event: { fact: BillingFact; id: string; providerRef: string | null } | null;
   /** When the consumer first went to send it (the database's clock); null while it was never tried. */
   firstAttemptedAt: Date | null;
+  /** The amount of the charge in force and its ledger row (migration 0118): the renewals' notices write it. */
+  currentChargeAmount: string | null;
+  currentChargeEventId: string | null;
   firstChargeAmount: string | null;
   firstChargeAt: Date | null;
   firstChargeEventId: string | null;
@@ -203,7 +213,7 @@ export interface UnclaimedTrialEvent {
 export type UnclaimedTrialOutcome = "cancelled" | "left_paid" | "not_pending";
 
 /**
- * What the checkout asked the provider for, recorded with the link (ADR 0104, §7 of design t268): the price of one
+ * What the checkout asked the provider for, recorded with the link (ADR 0104, §7): the price of one
  * cycle (`billing_prices`, as money.md writes it) with its catalog ID, and the day of the first charge (São Paulo).
  */
 export interface CheckoutTerms {
@@ -235,7 +245,6 @@ export interface RefundRearmReport {
 
 /** What the owner's read of the plan needs of the record; nothing of the provider but its name. */
 export interface OwnerPlanRecord extends PlanViewRecord {
-  cycleMonths: BillingCycleMonths | null;
   /** Neither the organization nor the person used the trial (AS-12). */
   trialAvailable: boolean;
 }
@@ -246,9 +255,8 @@ export interface OwnerPlanRecord extends PlanViewRecord {
  * every command: what the screen showed is never trusted.
  */
 export interface OwnerCommandRecord extends PlanViewRecord {
-  cycleMonths: BillingCycleMonths | null;
   /**
-   * The first charge recorded on the current link (ADR 0104, desenho t268 §7): the ID of its `billing_events` row
+   * The first charge recorded on the current link (ADR 0104, §7): the ID of its `billing_events` row
    * (`first_charge_event_id`) and the end of the period that fact says it paid for. The owner's refund refunds only
    * that charge; either one null refuses (it fails closed).
    */
@@ -411,6 +419,19 @@ export interface BillingStore {
   ) => Promise<boolean>;
   /** Applies one stored event to its organization; safe to call again for an event already processed. */
   processEvent: (eventId: string, now?: Date) => Promise<ProcessedBillingEvent>;
+  /**
+   * The charge in force the record holds (migration 0118): its amount as money.md writes it and its ledger row; both
+   * null without a record or a charge. The operator's refund compares it with the provider's charge.
+   */
+  readCurrentCharge: (
+    organizationId: string
+  ) => Promise<{ amount: string | null; eventId: string | null }>;
+  /**
+   * One occurrence of the operational incident `billing_amount_mismatch` (ADR 0105, ADR 0085): the amount in force the
+   * record holds is not the provider's. `eventId` is the record's `current_charge_event_id`; the incident keeps no
+   * store, no amount and no reference of the provider.
+   */
+  recordAmountMismatchIncident: (eventId: string) => Promise<void>;
   /** The provider link of the organization, or null when none is attached. */
   readProviderLink: (
     organizationId: string
@@ -449,6 +470,23 @@ export interface BillingStore {
     limit: number,
     providers: readonly string[]
   ) => Promise<RenewalCancellationRearmReport>;
+  /**
+   * Writes in the billing ledger the operator's decision to cancel the renewal or to refund (the Admin's provider
+   * commands), before the provider is asked: a `command` row of the organization whose fact holds the actor
+   * (`admin:<principal>`) and the reason typed, under `command:operator_<kind>:<commandId>`, so the same command
+   * repeated writes one row. It changes no state; what the provider did comes as its own facts. The reason is free text:
+   * the purge takes it out of the fact (it is not one of the keys it keeps).
+   */
+  recordOperatorDecision: (
+    input: {
+      actor: string;
+      commandId: string;
+      kind: OperatorCommandKind;
+      organizationId: string;
+      reason: string;
+    },
+    now?: Date
+  ) => Promise<void>;
   /**
    * Writes in the billing ledger that the checkout the link names was given up
    * at the provider at the closure (ADR 0074, L4): a `command` row of the
@@ -634,8 +672,7 @@ export interface BillingStore {
    */
   withPayerLock: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
   /**
-   * Runs `operation` while holding the organization's command lock (ADR 0066,
-   * emenda de 23/10): two commands that take it never run at once for the same
+   * Runs `operation` while holding the organization's command lock (ADR 0066): two commands that take it never run at once for the same
    * organization, and the second decides by the state the first left. The
    * refunds and the owner's three commands take it (ADR 0104, decision 4); the
    * operator's cancellation and the closure's consumer do not (their second fact
@@ -804,6 +841,8 @@ const OWED = "sent_at IS NULL AND failed_at IS NULL AND skipped_reason IS NULL";
 interface NoticeRow extends BillingRow {
   dedupe_key: string;
   due_at: Date;
+  current_charge_amount: string | null;
+  current_charge_event_id: string | null;
   first_attempted_at: Date | null;
   first_charge_amount: string | null;
   first_charge_at: Date | null;
@@ -855,6 +894,8 @@ async function claimOwedNotice(
             round(billing.first_charge_amount, 2)::text AS first_charge_amount,
             billing.first_charge_event_id::text AS first_charge_event_id,
             round(billing.price_amount, 2)::text AS price_amount, billing.refund_requested_at,
+            round(billing.current_charge_amount, 2)::text AS current_charge_amount,
+            billing.current_charge_event_id::text AS current_charge_event_id,
             -- processed_at is the Worker's clock and recorded_at the database's: seconds apart, and E-C1 also asks
             -- that the store is still on Free, which a charge applied before the notice would have changed
             EXISTS (
@@ -888,6 +929,8 @@ async function claimOwedNotice(
     event: NOTICES_OF_AN_EVENT.includes(kind)
       ? await noticeEventOf(pool, organizationId, row.dedupe_key)
       : null,
+    currentChargeAmount: row.current_charge_amount,
+    currentChargeEventId: row.current_charge_event_id,
     firstAttemptedAt: row.first_attempted_at,
     firstChargeAmount: row.first_charge_amount,
     firstChargeAt: row.first_charge_at,
@@ -1417,7 +1460,7 @@ const FIRST_CHARGE_FROM: ReadonlySet<BillingState> = new Set([
 ]);
 
 /**
- * The first charge of the link (ADR 0104, §7 of design t268), when an applied `charge_succeeded` takes the record
+ * The first charge of the link (ADR 0104, §7), when an applied `charge_succeeded` takes the record
  * from a trial or Free to `active`: the moment the provider says it happened (`occurredAt`), never the moment it was
  * processed, so a late webhook does not push the window of the right of withdrawal; the amount the fact carries (the
  * price sent to the provider without one); and the ledger row of the fact. Only the first one of the link: a renewal,
@@ -1454,6 +1497,78 @@ async function recordFirstCharge(
       input.eventId,
     ]
   );
+}
+
+/**
+ * The charge of the period in force (ADR 0104, §7), for every applied `charge_succeeded`: what it moves is decided by
+ * `currentChargeAfter` (only forward by the end of the period paid for), the row is the one `lockRecord` holds, and
+ * the ledger row is this event's own. A fact without amount falls back to the first charge's amount only when it is
+ * the first charge (the price the checkout sent, as `recordFirstCharge`); a renewal never takes the checkout's price.
+ */
+async function recordCurrentCharge(
+  client: PoolClient,
+  input: { eventId: string; fact: BillingFact; organizationId: string }
+): Promise<void> {
+  const { fact } = input;
+  if (fact.type !== "charge_succeeded") {
+    return;
+  }
+  const result = await client.query<{
+    current_charge_amount: string | null;
+    current_charge_event_id: string | null;
+    current_charge_period_ends_at: Date | null;
+    first_charge_amount: string | null;
+    first_charge_event_id: string | null;
+  }>(
+    `SELECT round(current_charge_amount, 2)::text AS current_charge_amount,
+            current_charge_event_id::text AS current_charge_event_id, current_charge_period_ends_at,
+            round(first_charge_amount, 2)::text AS first_charge_amount,
+            first_charge_event_id::text AS first_charge_event_id
+       FROM public.organization_billing WHERE organization_id = $1`,
+    [input.organizationId]
+  );
+  const [row] = result.rows;
+  if (!row) {
+    return;
+  }
+  const stored =
+    row.current_charge_period_ends_at && row.current_charge_event_id
+      ? {
+          amount: row.current_charge_amount,
+          eventId: row.current_charge_event_id,
+          periodEndsAt: row.current_charge_period_ends_at,
+        }
+      : null;
+  const firstChargeAmount =
+    row.first_charge_event_id === input.eventId
+      ? row.first_charge_amount
+      : null;
+  const change = currentChargeAfter(stored, {
+    amount: fact.amount?.value ?? firstChargeAmount,
+    eventId: input.eventId,
+    periodEndsAt: fact.periodEndsAt,
+  });
+  if (change.kind === "replace") {
+    await client.query(
+      `UPDATE public.organization_billing SET
+         current_charge_amount = $2::numeric,
+         current_charge_period_ends_at = $3::timestamptz,
+         current_charge_event_id = $4::uuid
+       WHERE organization_id = $1`,
+      [
+        input.organizationId,
+        change.charge.amount,
+        change.charge.periodEndsAt,
+        change.charge.eventId,
+      ]
+    );
+  } else if (change.kind === "fill_amount") {
+    await client.query(
+      `UPDATE public.organization_billing SET current_charge_amount = $2::numeric
+       WHERE organization_id = $1 AND current_charge_amount IS NULL`,
+      [input.organizationId, change.amount]
+    );
+  }
 }
 
 const ignoredCode: Record<IgnoredFactReason, string> = {
@@ -1723,6 +1838,7 @@ async function processInTransaction(
     fact,
     organizationId,
   });
+  await recordCurrentCharge(client, { eventId, fact, organizationId });
   // the notices this applied fact causes: an ignored or duplicated fact never gets here
   await recordTransitionNotices(client, organizationId, {
     after: result.record,
@@ -2492,12 +2608,13 @@ export function createBillingStore(
         }
         await client.query(
           // a new subscription reference is a new checkout: a payment taken back on the old one does not follow it,
-          // and neither do its first charge, the owner's refund request nor the safety net's back-off (ADR 0104: each
+          // and neither do its first and current charges, the owner's refund request nor the safety net's back-off (ADR 0104: each
           // new subscription opens a new window of the right of withdrawal)
           `UPDATE public.organization_billing SET provider = $2, provider_ref = $3, provider_subscription_id = NULL,
              revoked_through = NULL, revoked_reason = NULL, revoked_cycle_months = NULL, revoked_cancel_at_period_end = false,
              price_amount = $4::numeric, price_id = $5, first_charge_on = $6::date,
              first_charge_at = NULL, first_charge_amount = NULL, first_charge_event_id = NULL,
+             current_charge_amount = NULL, current_charge_period_ends_at = NULL, current_charge_event_id = NULL,
              refund_requested_at = NULL, refund_request_id = NULL, refund_rearm_attempts = NULL, refund_rearm_at = NULL,
              updated_at = now(), version = version + 1 WHERE organization_id = $1`,
           [
@@ -2820,6 +2937,39 @@ export function createBillingStore(
       );
       return result.rows.length > 0;
     },
+    async recordOperatorDecision(input, now = new Date()) {
+      if (!isValidGrantActor(input.actor)) {
+        throw new TypeError("invalid_operator_actor");
+      }
+      const reason = normalizeOperatorReason(input.reason);
+      if (reason === null) {
+        throw new TypeError("invalid_operator_reason");
+      }
+      const providerEventId = operatorDecisionEventId(
+        input.kind,
+        input.commandId
+      );
+      await inTransaction(pool, async (client) => {
+        const row = await lockRecord(client, input.organizationId);
+        await writeLedger(
+          client,
+          {
+            fact: {
+              actor: input.actor.trim(),
+              occurredAt: now.toISOString(),
+              reason,
+              type: operatorDecisionFactType(input.kind),
+            },
+            factType: "command",
+            organizationId: input.organizationId,
+            providerEventId,
+            stateAfter: row.state as BillingState,
+            stateBefore: row.state as BillingState,
+          },
+          now
+        );
+      });
+    },
     async recordCheckoutDiscarded(input, now = new Date()) {
       await inTransaction(pool, async (client) => {
         const row = await lockRecord(client, input.organizationId);
@@ -2838,6 +2988,24 @@ export function createBillingStore(
           now
         );
       });
+    },
+    async readCurrentCharge(organizationId) {
+      const result = await pool.query<{
+        amount: string | null;
+        event_id: string | null;
+      }>(
+        `SELECT round(current_charge_amount, 2)::text AS amount, current_charge_event_id::text AS event_id
+           FROM public.organization_billing WHERE organization_id = $1`,
+        [organizationId]
+      );
+      const [row] = result.rows;
+      return { amount: row?.amount ?? null, eventId: row?.event_id ?? null };
+    },
+    async recordAmountMismatchIncident(eventId) {
+      await pool.query(
+        "SELECT public.record_billing_amount_mismatch_incident($1::uuid, 'amount_mismatch')",
+        [eventId]
+      );
     },
     async readProviderLink(organizationId) {
       const result = await pool.query<{
@@ -2869,12 +3037,14 @@ export function createBillingStore(
       const result = await pool.query<{
         access_ends_at: Date | null;
         cancel_at_period_end: boolean;
+        current_charge_amount: string | null;
         cycle_months: number | null;
         first_charge_amount: string | null;
         first_charge_at: Date | null;
         first_charge_event_id: string | null;
         first_charge_on: string | null;
         first_charge_period_ends_at: Date | null;
+        pending_cycle_months: number | null;
         price_amount: string | null;
         provider: string | null;
         provider_ref: string | null;
@@ -2886,8 +3056,8 @@ export function createBillingStore(
         state: string;
       }>(
         // the same reading of the money and the day as `readOwnerPlan`
-        `SELECT state, access_ends_at, cancel_at_period_end, cycle_months, provider, provider_ref,
-                provider_subscription_id, revoked_through, revoked_reason,
+        `SELECT state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, provider, provider_ref,
+                provider_subscription_id, round(current_charge_amount, 2)::text AS current_charge_amount, revoked_through, revoked_reason,
                 to_char(first_charge_on, 'YYYY-MM-DD') AS first_charge_on, first_charge_at,
                 round(first_charge_amount, 2)::text AS first_charge_amount,
                 round(price_amount, 2)::text AS price_amount, refund_requested_at, refund_request_id::text AS refund_request_id,
@@ -2910,12 +3080,14 @@ export function createBillingStore(
         return {
           accessEndsAt: null,
           cancelAtPeriodEnd: false,
+          currentChargeAmount: null,
           cycleMonths: null,
           firstChargeAmount: null,
           firstCharge: { eventId: null, periodEndsAt: null },
           firstChargeAt: null,
           firstChargeOn: null,
           link: null,
+          pendingCycleMonths: null,
           priceAmount: null,
           provider: null,
           refundRequestId: null,
@@ -2934,6 +3106,7 @@ export function createBillingStore(
       return {
         accessEndsAt: row.access_ends_at,
         cancelAtPeriodEnd: row.cancel_at_period_end,
+        currentChargeAmount: row.current_charge_amount,
         cycleMonths: cycle(row.cycle_months),
         firstChargeAmount: row.first_charge_amount,
         firstCharge: {
@@ -2950,6 +3123,7 @@ export function createBillingStore(
                 providerSubscriptionId: row.provider_subscription_id,
               }
             : null,
+        pendingCycleMonths: cycle(row.pending_cycle_months),
         priceAmount: row.price_amount,
         provider: row.provider,
         refundRequestId: row.refund_request_id,
@@ -2962,10 +3136,12 @@ export function createBillingStore(
       const record = await pool.query<{
         access_ends_at: Date | null;
         cancel_at_period_end: boolean;
+        current_charge_amount: string | null;
         cycle_months: number | null;
         first_charge_amount: string | null;
         first_charge_at: Date | null;
         first_charge_on: string | null;
+        pending_cycle_months: number | null;
         price_amount: string | null;
         provider: string | null;
         refund_requested_at: Date | null;
@@ -2975,10 +3151,11 @@ export function createBillingStore(
         trial_started_at: Date | null;
       }>(
         // the money as text with its two decimals (money.md), the day as São Paulo's text: no parser in between
-        `SELECT state, access_ends_at, cancel_at_period_end, cycle_months, provider, trial_started_at,
+        `SELECT state, access_ends_at, cancel_at_period_end, cycle_months, pending_cycle_months, provider, trial_started_at,
                 revoked_through, revoked_reason, to_char(first_charge_on, 'YYYY-MM-DD') AS first_charge_on,
                 first_charge_at, round(first_charge_amount, 2)::text AS first_charge_amount,
-                round(price_amount, 2)::text AS price_amount, refund_requested_at
+                round(price_amount, 2)::text AS price_amount, refund_requested_at,
+                round(current_charge_amount, 2)::text AS current_charge_amount
            FROM public.organization_billing WHERE organization_id = $1`,
         [organizationId]
       );
@@ -2994,10 +3171,12 @@ export function createBillingStore(
         return {
           accessEndsAt: null,
           cancelAtPeriodEnd: false,
+          currentChargeAmount: null,
           cycleMonths: null,
           firstChargeAmount: null,
           firstChargeAt: null,
           firstChargeOn: null,
+          pendingCycleMonths: null,
           priceAmount: null,
           provider: null,
           refundRequestedAt: null,
@@ -3016,10 +3195,12 @@ export function createBillingStore(
       return {
         accessEndsAt: row.access_ends_at,
         cancelAtPeriodEnd: row.cancel_at_period_end,
+        currentChargeAmount: row.current_charge_amount,
         cycleMonths: cycle(row.cycle_months),
         firstChargeAmount: row.first_charge_amount,
         firstChargeAt: row.first_charge_at,
         firstChargeOn: row.first_charge_on,
+        pendingCycleMonths: cycle(row.pending_cycle_months),
         priceAmount: row.price_amount,
         provider: row.provider,
         refundRequestedAt: row.refund_requested_at,

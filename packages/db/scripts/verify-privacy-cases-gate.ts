@@ -15,6 +15,7 @@ import {
 } from "@polaris/domain/admin/privacy-case";
 import { Client } from "pg";
 import {
+  type PrivacyCasePage,
   closeSupportCase,
   grantTenantAccess,
   listPrivacyCases,
@@ -60,6 +61,98 @@ const NOTE_MARKER = "NOTA-PRIVADA-9731";
 const DAY_MS = 86_400_000;
 const AUDIT_DETAIL_CODES =
   /^(privacy|revoked=\d+|stage=[a-z_]+(;[a-z_]+=[a-z_0-9]+)*|action=[a-z_]+)$/;
+
+interface OpenedDueCase {
+  dayOffset: number;
+  due: Date;
+  hour: number;
+  id: string;
+  minute: number;
+}
+
+interface DueDayProbe {
+  list: () => Promise<PrivacyCasePage>;
+  open: (over: {
+    dueDays: number;
+    receivedAt: Date;
+  }) => Promise<{ id: string } | null>;
+  pool: Pick<Client, "query">;
+}
+
+/**
+ * `dueInDays` comes from the database's own now() and the São Paulo calendar: a due moment at 23:30 in São Paulo is
+ * already the next day in UTC, and it still counts as the São Paulo day it falls on. Every instant is built by the
+ * database, so the gate reads no clock of its own; a run that crosses midnight in São Paulo is repeated once.
+ */
+async function assertDaysToDueDay(probe: DueDayProbe) {
+  const brasiliaDay = async () =>
+    (
+      await probe.pool.query<{ day: string }>(
+        "SELECT to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS day"
+      )
+    ).rows[0]?.day;
+  const dueMoment = async (dayOffset: number, hour: number, minute: number) => {
+    const moment = await probe.pool.query<{ due: Date }>(
+      `SELECT (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')
+               + make_interval(days => $1::int, hours => $2::int, mins => $3::int)) AT TIME ZONE 'America/Sao_Paulo' AS due`,
+      [dayOffset, hour, minute]
+    );
+    const due = moment.rows[0]?.due;
+    assert.ok(due);
+    return due;
+  };
+  const wanted = [-1, 0, 1].flatMap((dayOffset) =>
+    [
+      { hour: 23, minute: 30 },
+      { hour: 0, minute: 30 },
+    ].map((time) => ({ dayOffset, ...time }))
+  );
+  const attempt = async (): Promise<{
+    opened: OpenedDueCase[];
+    page: PrivacyCasePage;
+  }> => {
+    const opened: OpenedDueCase[] = [];
+    for (const entry of wanted) {
+      const due = await dueMoment(entry.dayOffset, entry.hour, entry.minute);
+      const created = await probe.open({
+        dueDays: 5,
+        receivedAt: new Date(due.getTime() - 5 * DAY_MS),
+      });
+      assert.ok(created);
+      opened.push({ ...entry, due, id: created.id });
+    }
+    return { opened, page: await probe.list() };
+  };
+  const settled = async () => {
+    for (let tries = 0; tries < 2; tries += 1) {
+      const before = await brasiliaDay();
+      const result = await attempt();
+      if (before === (await brasiliaDay())) {
+        return result;
+      }
+    }
+    throw new Error("São Paulo midnight passed on every attempt");
+  };
+  const counted = await settled();
+  for (const entry of counted.opened) {
+    const listed = counted.page.cases.find((item) => item.id === entry.id);
+    assert.ok(listed, "the case just opened is on the first page");
+    assert.equal(
+      listed.dueInDays,
+      entry.dayOffset,
+      `a case due ${entry.dayOffset} day(s) from today at ${entry.hour}:${entry.minute} in São Paulo`
+    );
+    assert.equal(new Date(listed.dueAt).getTime(), entry.due.getTime());
+    if (entry.dayOffset < 0) {
+      assert.equal(listed.overdue, true, "a past due day is overdue");
+    }
+  }
+  assert.ok(
+    counted.page.cases.every(
+      (item) => item.dueInDays === null || Number.isInteger(item.dueInDays)
+    )
+  );
+}
 
 async function run() {
   const branch = requiredEnvironment("POLARIS_SALES_GATE_BRANCH");
@@ -164,12 +257,13 @@ async function run() {
     const decide = (
       caseId: string,
       decision: string,
-      reason: string | null = null
+      reason: string | null = null,
+      note: string | null = null
     ) =>
       asAdmin((client) =>
         recordPrivacyDecision(client, p1, caseId, {
           decision,
-          note: null,
+          note,
           reason,
         })
       );
@@ -448,7 +542,7 @@ async function run() {
       );
     }
     await assert.rejects(
-      () => decide(failedId, "reject", "legal_retention"),
+      () => decide(failedId, "reject", "legal_retention", "CTN art195"),
       refused("privacy_decision_not_allowed"),
       "and its refusal says why"
     );
@@ -502,6 +596,117 @@ async function run() {
     );
     tests.push(
       "a decision is refused when the case does not allow it: a failed identity check only rejects, with its own reason; a refusal needs a reason; a redirect needs Polaris to be the processor; Polaris does not accept data it only processes on the word of a data subject or an authority (only the organization's owner can ask); a refusal or a redirect resolves without execution, an acceptance only after it was carried out"
+    );
+
+    // ------------------------------------------------- 3a. a legal retention names the obligation
+    const noteOf = async (caseId: string) =>
+      (
+        await owner.pool.query<{ decision_note: string | null }>(
+          "SELECT decision_note FROM public.privacy_cases WHERE support_case_id = $1",
+          [caseId]
+        )
+      ).rows[0]?.decision_note;
+    const legalCase = await scoped("verified", "controller");
+    for (const note of [null, "", "   ", "lei", "123456789", "📜".repeat(9)]) {
+      await assert.rejects(
+        () => decide(legalCase, "reject", "legal_retention", note),
+        refused("invalid_privacy_step"),
+        `a legal retention with the note ${JSON.stringify(note)} is refused`
+      );
+      assert.equal(await stageOf(legalCase), "scoped");
+    }
+    await assert.rejects(
+      () => decide(legalCase, "reject", "legal_retention", "a".repeat(501)),
+      refused("invalid_privacy_step"),
+      "and the ceiling of 500 holds"
+    );
+    await decide(legalCase, "reject", "legal_retention", "  CTN art195  ");
+    assert.equal(await stageOf(legalCase), "decided");
+    assert.equal(
+      await noteOf(legalCase),
+      "CTN art195",
+      "ten characters after the trim are enough"
+    );
+    for (const note of ["📜".repeat(10), "a".repeat(500)]) {
+      const accepted = await scoped("verified", "controller");
+      await decide(accepted, "partially_accept", "legal_retention", note);
+      assert.equal(
+        await noteOf(accepted),
+        note,
+        "ten code points and 500 are taken as written"
+      );
+    }
+    for (const reason of [
+      "no_authority",
+      "controller_is_reseller",
+      "manifestly_unfounded",
+      "not_personal_data",
+      "other",
+    ]) {
+      const free = await scoped("verified", "controller");
+      await decide(free, "reject", reason);
+      assert.equal(await noteOf(free), null, `${reason} needs no note`);
+    }
+    const processorFree = await scoped("verified", "processor");
+    await decide(
+      processorFree,
+      "redirect_to_controller",
+      "controller_is_reseller"
+    );
+    // a decision taken before the rule has no note and no CHECK holds it back: it still moves on to executed and resolved
+    const poke = (sql: string, values: unknown[]) =>
+      owner.pool.query(sql, values);
+    const oldReject = await scoped("verified", "controller");
+    await poke(
+      "UPDATE public.privacy_cases SET stage = 'decided', decision = 'reject', decision_reason = 'legal_retention', decision_note = NULL WHERE support_case_id = $1",
+      [oldReject]
+    );
+    assert.equal(
+      (await resolve(oldReject, "Guarda anterior à regra"))?.stage,
+      "resolved"
+    );
+    const oldAccept = await scoped("verified", "controller");
+    await poke(
+      "UPDATE public.privacy_cases SET stage = 'decided', decision = 'partially_accept', decision_reason = 'legal_retention', decision_note = NULL WHERE support_case_id = $1",
+      [oldAccept]
+    );
+    assert.equal((await act(oldAccept))?.stage, "executed");
+    assert.equal(
+      (await resolve(oldAccept, "Guarda anterior à regra"))?.stage,
+      "resolved"
+    );
+    assert.equal(await noteOf(oldAccept), null);
+    const definition = await owner.pool.query<{
+      owner: string;
+      search_path: string[];
+      security_definer: boolean;
+    }>(
+      `SELECT pg_get_userbyid(proowner) AS owner, prosecdef AS security_definer, proconfig AS search_path
+         FROM pg_proc
+        WHERE oid = 'public.admin_privacy_record_decision(uuid, uuid, text, text, text)'::regprocedure`
+    );
+    assert.deepEqual(definition.rows[0], {
+      owner: "polaris_admin_owner",
+      search_path: ["search_path=pg_catalog, public, pg_temp"],
+      security_definer: true,
+    });
+    const reach = await owner.pool.query<{
+      public_runs: boolean;
+      runtime_runs: boolean;
+    }>(
+      `SELECT has_function_privilege('public', f.oid, 'EXECUTE') AS public_runs,
+              has_function_privilege('polaris_admin_runtime', f.oid, 'EXECUTE') AS runtime_runs
+         FROM (SELECT 'public.admin_privacy_record_decision(uuid, uuid, text, text, text)'::regprocedure::oid AS oid) AS f`
+    );
+    assert.deepEqual(reach.rows[0], { public_runs: false, runtime_runs: true });
+    const failedLegal = await scoped("failed", "controller");
+    await assert.rejects(
+      () => decide(failedLegal, "reject", "legal_retention"),
+      refused("invalid_privacy_step"),
+      "a missing note is refused before the case's facts are weighed, as the domain does"
+    );
+    tests.push(
+      "a legal retention needs a note of 10 to 500 code points after the trim (none, blank, 9 characters, 9 emoji and 501 are refused with invalid_privacy_step; 10 and 500 are taken), no other reason does; a decision taken before the rule, with no note, still moves on to executed and resolved because no CHECK holds it; the function stays SECURITY DEFINER of polaris_admin_owner with the search_path of 0077"
     );
 
     // ------------------------------------------------- 3b. the database agrees with the domain, combination by combination
@@ -785,8 +990,6 @@ async function run() {
     );
 
     // ------------------------------------------------- 5. the database refuses what the functions would not
-    const poke = (sql: string, values: unknown[]) =>
-      owner.pool.query(sql, values);
     const processorCase = await scoped("verified", "processor");
     await expectSqlState(
       () =>
@@ -916,6 +1119,17 @@ async function run() {
     assert.ok(
       !overdue.cases.some((entry) => entry.id === base),
       "a resolved case is never late"
+    );
+    await assertDaysToDueDay({
+      list: () =>
+        asAdmin((client) =>
+          listPrivacyCases(client, { after: null, filter: null, limit: 50 })
+        ),
+      open,
+      pool: owner.pool,
+    });
+    tests.push(
+      "the list counts the days to the due day on the database's own now() in the São Paulo calendar: yesterday is -1, today 0 and tomorrow 1, also for a due moment at 23:30 in São Paulo that is already the next day in UTC"
     );
     const openCases = await asAdmin((client) =>
       listPrivacyCases(client, { after: null, filter: "open", limit: 50 })

@@ -4,7 +4,7 @@ import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import { cn } from "@/lib/utils";
 
 /* The shadcn Tabs of the base-nova registry over Base UI, once, with the three rules of the project: the list is
-   `h-ctl-md` (32 px with a mouse, 36 px with touch), each tab has a 48 px touch area (`touch-hit`) and the keyboard
+   `h-ctl-md` (32 px with a mouse, 36 px with touch), each tab has a 44 px touch area (`touch-hit`) and the keyboard
    focus is the 3 px outline (`focus-ring`). Horizontal only and one style (the segmented list on the muted
    strip): the vertical layout and the `line` variant of the registry come back with the first screen that needs
    them. The active tab changes with no movement: background and color fade, nothing slides or scales. The open panel is a tab stop (Base UI

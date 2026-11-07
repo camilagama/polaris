@@ -28,7 +28,7 @@ export interface TrialStartedEmail {
 
 /**
  * The text of the corte. The days of Pro are counted to the first charge (a Pix approved late has fewer than 7), and
- * when the first charge is today the e-mail says so (emenda t268, AC-4) and promises no days.
+ * when the first charge is today the e-mail says so (AC-4) and promises no days.
  */
 export function trialStartedContent(
   email: TrialStartedEmail
@@ -39,7 +39,7 @@ export function trialStartedContent(
   const date = calendarDay(email.firstChargeOn);
   const method = methodText(email.method);
   const chargeToday = days === 0;
-  // with the first charge today there is no trial to speak of: the Pro began (Petković, 24/10, T329-1)
+  // with the first charge today there is no trial to speak of: the Pro began
   const title = chargeToday
     ? "Seu Polaris Pro começou"
     : "Seu teste do Polaris Pro começou";

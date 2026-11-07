@@ -1,7 +1,7 @@
 /*
  * The lab of the offline persistence (`/offline-poc`, not a screen of the shop): its own rules, in `components`, under the
  * utilities, and out of `legacy`, which goes away with the old screens (ADR 0103, section 3). Every color is a
- * var(--…) of styles/theme.css, which main.tsx loads before any lab: none is written here (DESIGN.md, "Changing a color").
+ * var(--…) of packages/ui/src/theme.css, which main.tsx loads before any lab: none is written here (DESIGN.md, "Changing a color").
  */
 @layer components {
   .offline-lab-entry-link {

@@ -37,6 +37,8 @@ export type SupportRefusalCode =
   | "invalid_privacy_step"
   | "invalid_request"
   | "invalid_review_at"
+  | "operator_refund_rate_limited"
+  | "operator_reveal_rate_limited"
   | "privacy_case_workflow_required"
   | "privacy_decision_not_allowed"
   | "privacy_stage_conflict"
@@ -76,6 +78,8 @@ const KNOWN_CODES: readonly SupportRefusalCode[] = [
   "invalid_privacy_request",
   "invalid_privacy_step",
   "invalid_review_at",
+  "operator_refund_rate_limited",
+  "operator_reveal_rate_limited",
   "privacy_case_workflow_required",
   "privacy_decision_not_allowed",
   "privacy_stage_conflict",

@@ -7,12 +7,12 @@ import { expectMotionLevel } from "./motion-expect";
 import { axeFaults, touchFaults } from "./ui-guardrails";
 
 /**
- * The filter bar of src/ui/ in the gallery (t383), at 360 and 1280 px and with the bar open (the menu and the
+ * The filter bar of src/ui/ in the gallery, at 360 and 1280 px and with the bar open (the menu and the
  * editors), as the review asks: the pills with their names, the menu with the fields used and the one that needs the
  * connection, adding, editing and taking out a filter, "Limpar tudo", the keyboard (Tab, Enter, Escape gives the focus
  * back to the pill), the sizes with a mouse and with touch, the row of pills that wraps into lines at every width (320, 360 and 1280 px), the
  * motion and its absence under `prefers-reduced-motion`, and axe with each part open in both themes. "Hoje" is
- * 24/10/2026 in the gallery and the bar starts with Período 01/10 a 24/10, Situação Paga and Cliente Maria Souza.
+ * `24/10/2026` in the gallery and the bar starts with Período `01/10` a `24/10`, Situação Paga and Cliente Maria Souza.
  */
 const REASON = /Só com conexão/;
 const CLOSED_FAULT = /Filtrar|Tirar o filtro|editar|Limpar tudo/;
@@ -63,7 +63,9 @@ const editor = (page: Page, label: string) =>
 /** Whether the page is in the touch sizes (the `touch` variant of theme.css). */
 const isTouch = (page: Page) =>
   page.evaluate(
-    () => window.matchMedia("(pointer: coarse), (max-width: 759.98px)").matches
+    () =>
+      window.matchMedia("(pointer: coarse), not all and (min-width: 47.5rem)")
+        .matches
   );
 
 async function openMenu(page: Page) {
@@ -110,7 +112,7 @@ for (const viewport of VIEWPORTS) {
       expect(csp.violations()).toEqual([]);
     });
 
-    test("tamanhos: pílula de 36 px com mouse e de 44 px no toque, o X de 36 px com mouse e de 48 px no toque", async ({
+    test("tamanhos: pílula de 36 px com mouse e de 44 px no toque, o X de 36 px com mouse e de 44 px no toque", async ({
       page,
     }) => {
       await openGallery(page);
@@ -120,8 +122,8 @@ for (const viewport of VIEWPORTS) {
       );
       expect(outer.height).toBeCloseTo(size, 0);
       const x = await box(remover(page, "Período"));
-      // 48 px wide with touch: its 48 px area then does not reach into the button of the pill
-      expect(x.width).toBeCloseTo((await isTouch(page)) ? 48 : 36, 0);
+      // 44 px wide with touch: its 44 px area then does not reach into the button of the pill
+      expect(x.width).toBeCloseTo((await isTouch(page)) ? 44 : 36, 0);
       const filtrar = await box(addButton(page));
       expect(filtrar.height).toBeCloseTo((await isTouch(page)) ? 36 : 32, 0);
     });
@@ -579,7 +581,7 @@ test.describe("a 360 px, com toque", () => {
   }) => {
     await openGallery(page);
     const closed = (
-      await touchFaults(page, { exemptInlineLinks: true, minimum: 48 })
+      await touchFaults(page, { exemptInlineLinks: true, minimum: 44 })
     ).filter((fault) => CLOSED_FAULT.test(fault));
     expect(closed).toEqual([]);
   });
@@ -630,6 +632,53 @@ for (const width of [360, 320]) {
     });
   });
 }
+
+test.describe("reaberto no meio da saída, a 1280 px", () => {
+  test.use({ viewport: { height: 800, width: 1280 } });
+
+  /**
+   * The shortcut "Hoje" applies and closes the popup; one turn of the page later (React has applied the close) the pill
+   * is clicked again. Resolves to whether the popup was still on screen, leaving: its exit lasts 100 ms at the full
+   * motion level, and below it the test would prove nothing.
+   */
+  const applyAndReopen = (page: Page) =>
+    page.evaluate(async () => {
+      const shortcut = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-slot="popover-content"] button'
+        ),
+      ].find((button) => button.textContent?.trim() === "Hoje");
+      shortcut?.click();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      const leaving =
+        document.querySelector('[data-slot="popover-content"]') !== null;
+      document
+        .querySelector<HTMLElement>(
+          'search[aria-label="Filtrar vendas"] button[aria-label^="Período: "]'
+        )
+        ?.click();
+      return leaving;
+    });
+
+  test("o painel do Período reaberto durante a saída abre no mês do filtro, não no que ficou na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    await pill(page, "Período").click();
+    const open = editor(page, "Período");
+    await open.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(open.getByText("Novembro de 2026")).toBeVisible();
+
+    expect(await applyAndReopen(page)).toBe(true);
+    await expect(pill(page, "Período")).toHaveAccessibleName(
+      "Período: 24/10/2026, editar"
+    );
+    await expect(open.getByText("Setembro de 2026")).toBeVisible();
+    await expect(open.getByText("Novembro de 2026")).toBeHidden();
+  });
+});
 
 /** The animations of the page have ended (a menu or an editor still fading in has a color between two): axe reads it then. */
 const settled = (page: Page) =>

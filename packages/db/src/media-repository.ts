@@ -626,7 +626,11 @@ export async function removeProductMedia(
   return { removed: true };
 }
 
-/** A position far above any real one, used to move links aside while they swap places. */
+/**
+ * A position far above any real one, used to move links aside while they swap places. The sync trigger of
+ * product_media (migration 0113) takes a statement whose new positions are all at or above it for this move and
+ * records nothing for it: the statement that settles the order records the change.
+ */
 const REORDER_OFFSET = 1_000_000;
 
 /**
@@ -743,4 +747,37 @@ export async function getMediaAssetForDelivery(
     throw new Error("media_asset_content_type_invalid");
   }
   return { ...row, contentType: "image/webp" };
+}
+
+/**
+ * The batch counterpart of {@link getMediaAssetForDelivery}: one query for the
+ * whole list, same rule (an image of a product of this organization). An id of
+ * another organization, an unknown id and a removed image are simply absent,
+ * so the caller cannot tell them apart.
+ */
+export async function listDeliverableMediaAssetIds(
+  transaction: TenantRequestTransaction,
+  organizationId: string,
+  assetIds: readonly string[]
+): Promise<Set<string>> {
+  if (assetIds.length === 0) {
+    return new Set();
+  }
+  const rows = await transaction
+    .selectDistinct({ assetId: mediaAssets.id })
+    .from(mediaAssets)
+    .innerJoin(
+      productMedia,
+      and(
+        eq(productMedia.organizationId, mediaAssets.organizationId),
+        eq(productMedia.mediaAssetId, mediaAssets.id)
+      )
+    )
+    .where(
+      and(
+        eq(mediaAssets.organizationId, organizationId),
+        inArray(mediaAssets.id, [...assetIds])
+      )
+    );
+  return new Set(rows.map((row) => row.assetId.toLowerCase()));
 }

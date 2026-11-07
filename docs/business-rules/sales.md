@@ -20,7 +20,7 @@ Itens marcados como "decidido na revisão do checkpoint Gate 4 (13/10/2026)" sã
 - O subtotal é a soma de `charged_unit_price × quantity`. A venda admite desconto e acréscimo fixos ou percentuais; frete e sobretaxa de pagamento são valores fixos.
 - Cada ajuste percentual usa o mesmo subtotal após a negociação por item, sem compor sobre outros ajustes. Calcular em decimal exato e arredondar half-up para centavos uma vez por ajuste. A soma dos descontos não pode exceder o subtotal.
 - O total devido é subtotal menos descontos, mais acréscimos, frete e sobretaxa de pagamento. A sobretaxa aumenta o valor devido pelo comprador; custos de processamento e antecipação permanecem separados e vêm do perfil de pagamento.
-- Decidido na revisão do checkpoint Gate 4 (13/10/2026): percentuais, quantidade de parcelas e prazo esperado passam a ter teto de domínio, de contrato e de banco, para que um valor digitado errado (por exemplo, 250 em vez de 2,50) não seja gravado. Os valores dos tetos são registrados em [money.md](money.md) quando implementados.
+- Decidido na revisão do checkpoint Gate 4 (13/10/2026): percentuais, quantidade de parcelas e prazo esperado passam a ter teto de domínio, de contrato e de banco, para que um valor digitado errado (por exemplo, 250 em vez de 2,50) não seja gravado. O teto do percentual de ajuste e de taxa está registrado em [money.md](money.md).
 
 ## Pagamento e perfil
 

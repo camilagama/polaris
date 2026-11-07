@@ -71,6 +71,11 @@ export default defineConfig({
         "harness/relogio.e2e.ts",
         "harness/chave-do-runtime.e2e.ts",
       ],
+      // the closure journeys need the preview with the lease and sync keys (the runtime one)
+      testIgnore: [
+        "jornadas/encerramento.e2e.ts",
+        "jornadas/encerramento-aparelho.e2e.ts",
+      ],
       use: { ...desktop, baseURL: origin("online") },
     },
     {
@@ -79,8 +84,18 @@ export default defineConfig({
       testMatch: [
         "jornadas/cliente.e2e.ts",
         "jornadas/venda.e2e.ts",
+        "jornadas/encerramento.e2e.ts",
+        "jornadas/encerramento-aparelho.e2e.ts",
         "harness/chave-do-runtime.e2e.ts",
       ],
+      use: { ...desktop, baseURL: origin("runtime-ligado") },
+    },
+    // layout shift of the phone on the runtime build (the deployed one); never retried: a flaky measurement shows at once
+    {
+      dependencies: ["pilha"],
+      name: "layout-shift",
+      retries: 0,
+      testMatch: "cls/*.e2e.ts",
       use: { ...desktop, baseURL: origin("runtime-ligado") },
     },
   ],

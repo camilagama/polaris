@@ -6,7 +6,10 @@ import {
   initialStockListState,
   STOCK_PAGE_SIZE,
   stockBalanceUpdated,
+  stockAttentionLinks,
+  stockAttentionRequest,
   stockCountText,
+  stockCoverIds,
   stockEmptyMessage,
   stockListRequest,
   stockListView,
@@ -18,7 +21,10 @@ import {
   stockMoreStarted,
   stockMoreView,
   readStockLinkFilters,
+  stockRowActions,
   stockRows,
+  type VariantCount,
+  variantCount,
 } from "./stock-list-model";
 
 const organizationId = "7b9c212a-f90b-4e05-9e9a-0c0eb1c9c9b0";
@@ -273,7 +279,7 @@ describe("list state", () => {
 });
 
 describe("stockRows", () => {
-  it("shows product, variant, SKU, quantity, average cost and last update", () => {
+  it("shows product, variant, SKU, quantity and average cost, and no date: the movement panel has it", () => {
     const [row] = stockRows([entry(1, { quantity: 1234 })]);
     expect(row).toMatchObject({
       archived: false,
@@ -285,7 +291,7 @@ describe("stockRows", () => {
       tone: "ok",
       variantText: "Azul / M",
     });
-    expect(row?.updatedText).not.toBe("Sem movimentos");
+    expect(row).not.toHaveProperty("updatedText");
   });
 
   it("never turns an unknown cost into zero", () => {
@@ -294,14 +300,11 @@ describe("stockRows", () => {
     expect(row?.costUnknown).toBe(true);
   });
 
-  it("marks a variant without movements and one without balance", () => {
+  it("marks a variant without balance", () => {
     const [row] = stockRows([
       entry(1, { movingAverageCost: null, quantity: 0, updatedAt: null }),
     ]);
-    expect(row).toMatchObject({
-      tone: "empty",
-      updatedText: "Sem movimentos",
-    });
+    expect(row).toMatchObject({ tone: "empty" });
   });
 
   it("labels the default variant and archived products", () => {
@@ -328,6 +331,7 @@ describe("stockRows", () => {
       movingAverageCost: "12.340000",
       productName: "Camiseta Polaris",
       quantity: 3,
+      updatedAt: "2026-10-09T12:00:00.000Z",
       variantId: variantId(7),
       variantText: "Azul / M",
       version: 4,
@@ -419,6 +423,211 @@ describe("views", () => {
     });
     expect(stockMoreView(ready([entry(1)])).visible).toBe(false);
     expect(stockCountText(ready([entry(1)]))).toBe("1 variante");
-    expect(stockCountText(withMore)).toBe("1 variante carregada; há mais");
+    expect(
+      stockCountText(ready([entry(1), entry(2), entry(3), entry(4)]))
+    ).toBe("4 variantes");
+    expect(stockCountText(withMore)).toBe("Mostrando 1 variante");
+    expect(
+      stockCountText(ready([entry(1), entry(2), entry(3), entry(4)], "c"))
+    ).toBe("Mostrando 4 variantes");
+  });
+});
+
+const page = (count: number, more = false): VariantCount => ({ count, more });
+
+describe("stockAttentionLinks", () => {
+  it("says the noun once and links each number to its filter", () => {
+    expect(
+      stockAttentionLinks({ unknownCost: page(1), withoutStock: page(1) })
+    ).toEqual([
+      {
+        href: "/inventory?filtro=sem-saldo",
+        id: "without-stock",
+        text: "1 variante sem saldo",
+      },
+      {
+        href: "/inventory?filtro=sem-custo",
+        id: "unknown-cost",
+        text: "1 sem custo",
+      },
+    ]);
+    expect(
+      stockAttentionLinks({ unknownCost: page(3), withoutStock: page(2) }).map(
+        (link) => link.text
+      )
+    ).toEqual(["2 variantes sem saldo", "3 sem custo"]);
+  });
+
+  it("leaves out what is zero, and gives the noun to the one that stays", () => {
+    expect(
+      stockAttentionLinks({ unknownCost: page(2), withoutStock: page(0) }).map(
+        (link) => link.text
+      )
+    ).toEqual(["2 variantes sem custo"]);
+    expect(
+      stockAttentionLinks({ unknownCost: page(0), withoutStock: page(1) }).map(
+        (link) => link.text
+      )
+    ).toEqual(["1 variante sem saldo"]);
+  });
+
+  it("is empty with nothing to do, so the strip does not show", () => {
+    expect(
+      stockAttentionLinks({ unknownCost: page(0), withoutStock: page(0) })
+    ).toEqual([]);
+  });
+
+  it("says '100 ou mais' when the page was full", () => {
+    expect(
+      stockAttentionLinks({
+        unknownCost: page(100, true),
+        withoutStock: page(100, true),
+      }).map((link) => link.text)
+    ).toEqual(["100 ou mais variantes sem saldo", "100 ou mais sem custo"]);
+  });
+
+  it("opens the filters the link of the Início opens", () => {
+    for (const link of stockAttentionLinks({
+      unknownCost: page(1),
+      withoutStock: page(1),
+    })) {
+      const filters = readStockLinkFilters(
+        new URL(link.href, "http://x").search
+      );
+      expect(filters).toEqual(
+        link.id === "without-stock"
+          ? { stock: "without_stock", unknownCost: false }
+          : { stock: "all", unknownCost: true }
+      );
+    }
+  });
+});
+
+describe("stockAttentionRequest and variantCount", () => {
+  it("reads a page of active products, by balance or by cost", () => {
+    expect(stockAttentionRequest(organizationId, "without-stock")).toEqual({
+      limit: 100,
+      organizationId,
+      productStatus: "active",
+      stock: "without_stock",
+    });
+    expect(stockAttentionRequest(organizationId, "unknown-cost")).toEqual({
+      cost: "unknown",
+      limit: 100,
+      organizationId,
+      productStatus: "active",
+    });
+  });
+
+  it("counts the entries and whether there is another page", () => {
+    expect(
+      variantCount({ entries: [entry(1), entry(2)], nextCursor: null })
+    ).toEqual(page(2));
+    expect(variantCount({ entries: [entry(1)], nextCursor: "c" })).toEqual(
+      page(1, true)
+    );
+  });
+});
+
+describe("stockRowActions (the buttons of a row, AC-1 and AC-7)", () => {
+  const actionsOf = (
+    overrides: Partial<InventoryBalanceEntryReadModel>,
+    costUnavailable = false
+  ) => {
+    const [row] = stockRows([entry(1, overrides)], costUnavailable);
+    if (!row) {
+      throw new Error("no row");
+    }
+    return stockRowActions(row.target);
+  };
+  const labels = (actions: ReturnType<typeof actionsOf>) =>
+    actions.map((action) => action.label);
+
+  it("offers to inform the cost where counting was, for units with no cost", () => {
+    const actions = actionsOf({ movingAverageCost: null, quantity: 3 });
+    expect(labels(actions)).toEqual(["Receber", "Informar custo", "Baixar"]);
+    expect(actions[1]).toEqual({
+      action: "cost",
+      label: "Informar custo",
+      name: "Informar custo de Camiseta Polaris · Azul / M",
+    });
+  });
+
+  it("does not offer it once the cost is known", () => {
+    expect(labels(actionsOf({ quantity: 3 }))).toEqual([
+      "Receber",
+      "Contar",
+      "Baixar",
+    ]);
+  });
+
+  it("offers to give entry, not to inform the cost, with no units and no cost", () => {
+    const actions = actionsOf({ movingAverageCost: null, quantity: 0 });
+    expect(labels(actions)).toEqual(["Dar entrada", "Contar", "Baixar"]);
+    expect(actions[0]).toEqual({
+      action: "receive",
+      label: "Dar entrada",
+      name: "Dar entrada no estoque de Camiseta Polaris, Azul / M",
+    });
+  });
+
+  it("keeps the three commands without a connection: the device does not know the cost", () => {
+    expect(
+      labels(actionsOf({ movingAverageCost: null, quantity: 3 }, true))
+    ).toEqual(["Receber", "Contar", "Baixar"]);
+    expect(
+      labels(actionsOf({ movingAverageCost: null, quantity: 0 }, true))
+    ).toEqual(["Receber", "Contar", "Baixar"]);
+  });
+});
+
+describe("capa na lista do Estoque", () => {
+  const COVER = "0199c2d0-0000-7000-8000-000000000c01";
+  const OTHER = "0199c2d0-0000-7000-8000-000000000c02";
+
+  it("só pede withCover quando a chave está ligada", () => {
+    expect(
+      stockListRequest(organizationId, defaultStockFilters, null, true)
+    ).toMatchObject({ withCover: true });
+    expect(
+      stockListRequest(organizationId, defaultStockFilters, "c", false)
+    ).not.toHaveProperty("withCover");
+  });
+
+  it("a linha leva a capa do produto, nula ou ausente como veio", () => {
+    const [withCover, none, absent] = stockRows([
+      entry(1, { coverAssetId: COVER }),
+      entry(2, { coverAssetId: null }),
+      entry(3),
+    ]);
+    expect(withCover?.coverAssetId).toBe(COVER);
+    expect(none?.coverAssetId).toBeNull();
+    expect(absent).not.toHaveProperty("coverAssetId");
+  });
+
+  it("a ordem das capas tem cada id uma vez, pela primeira linha, sem as linhas sem capa", () => {
+    expect(
+      stockCoverIds([
+        entry(1, { coverAssetId: COVER }),
+        entry(2, { coverAssetId: null }),
+        entry(3, { coverAssetId: OTHER }),
+        entry(4, { coverAssetId: COVER }),
+        entry(5),
+      ])
+    ).toEqual([COVER, OTHER]);
+  });
+
+  it("aplicar um saldo devolvido por comando mantém a capa da linha", () => {
+    const state = stockBalanceUpdated(
+      ready([entry(1, { coverAssetId: COVER })]),
+      {
+        movingAverageCost: null,
+        quantity: 9,
+        variantId: variantId(1),
+        version: 3,
+      },
+      null
+    );
+    expect(state.entries[0]?.coverAssetId).toBe(COVER);
   });
 });

@@ -1,11 +1,12 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
  * The owner's commands on the Assinatura (corte assinatura-e-cancelar, AC-21 to AC-34 and AC-42 to AC-44; design
- * t268 v2, § 4 and § 11) in the real route, with the API answered by the test: cancel the renewal (2 taps, the true
+ * da Assinatura v2, § 4 and § 11) in the real route, with the API answered by the test: cancel the renewal (2 taps, the true
  * loss, what stays, the optional reason, the result), the refund by the app with the card, by support with Pix, the
  * refund not done (AS-42), the edges of the window on the clock, paying the charge that failed (exact host,
  * `noopener`) and each refusal of the commands with its own text.
@@ -19,9 +20,9 @@ const ORGANIZATION = {
 const SESSION_USER = { email: "dona@exemplo.test", id: "u", name: "Ana Dona" };
 /** Asaas's page of the charge that failed: the test answers it, so nothing leaves the machine. */
 const OVERDUE_PAGE = "https://sandbox.asaas.com/i/e2e-overdue";
-/** 23/10/2026 at noon in São Paulo. */
+/** `23/10/2026` at noon in São Paulo. */
 const NOW = new Date("2026-10-23T15:00:00.000Z");
-/** The last second of a window whose first charge was on 23/10/2026: 23:59:59 of 30/10 in São Paulo. */
+/** The last second of a window whose first charge was on `23/10/2026`: 23:59:59 of `30/10` in São Paulo. */
 const UNTIL = "2026-10-31T02:59:59.999Z";
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -53,7 +54,7 @@ const ACTIVE: Plan = {
   kept: { historyMonths: 3, products: 18, sales: 47 },
   limits: { goals: 3, images: 5000, variants: 2000 },
   method: "card",
-  nextCharge: { amount: "24.90", on: "2026-11-23" },
+  nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
   offer: {
     methods: ["card", "pix_automatic"],
     prices: [
@@ -289,7 +290,7 @@ test("cancelar no teste: vai até o fim, nada é cobrado e não há outro teste 
       {
         ...ACTIVE,
         accessEndsAt: "2026-10-31T03:00:00.000Z",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       },
     ],
@@ -312,7 +313,7 @@ test("cancelar no teste: vai até o fim, nada é cobrado e não há outro teste 
   await expect(dialog.getByRole("button", CANCEL_BUTTON)).toHaveCount(0);
 });
 
-test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda o mesmo pedido; clique duplo, um pedido só", async ({
+test("cancelar com o provedor fora: não afirma que nada foi cancelado, sem tentar de novo, Atualizar lê o plano; clique duplo, um pedido só", async ({
   page,
 }) => {
   let release: () => void = () => undefined;
@@ -322,17 +323,10 @@ test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda
   const calls = await openScreen(page, {
     commands: {
       cancelRenewal: [
-        (route) =>
-          route.fulfill(
-            refusal("SERVICE_UNAVAILABLE", 503, "billing_provider_unavailable")
-          ),
         async (route) => {
           await held;
           await route.fulfill(
-            rpc({
-              accessEndsAt: "2026-11-24T03:00:00.000Z",
-              result: "cancelled",
-            })
+            refusal("SERVICE_UNAVAILABLE", 503, "billing_provider_unavailable")
           );
         },
       ],
@@ -341,24 +335,23 @@ test("cancelar com o provedor fora: o texto do AS-26, nada muda, e repetir manda
   });
   await page.getByRole("button", CANCEL_BUTTON).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", CANCEL_BUTTON).click();
-  await expect(dialog.getByRole("alert")).toHaveText(
-    "Não conseguimos cancelar agora. Nada foi cancelado e nada foi cobrado a mais. Tente de novo."
-  );
-  // the notice takes the focus, so it comes into view inside the dialog at 360 px
-  await expect(dialog.getByRole("alert")).toBeFocused();
-  await expect(planTitle(page)).toHaveText("Plano Pro");
-  // the same gesture again: the button waits off, and a double click sends one request
   await dialog.getByRole("button", CANCEL_BUTTON).dblclick();
   await expect(
     dialog.getByRole("button", { name: "Cancelando…" })
   ).toHaveAttribute("aria-disabled", "true");
   release();
-  await expect(planTitle(page)).toHaveText("Pro até 23/11/2026");
-  expect(calls.bodies.cancelRenewal).toHaveLength(2);
-  expect(nth(calls.bodies.cancelRenewal, 1).requestId).toBe(
-    nth(calls.bodies.cancelRenewal, 0).requestId
+  const alert = dialog.getByRole("alert");
+  await expect(alert).toContainText(
+    "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo."
   );
+  await expect(alert).not.toContainText("Nada foi cancelado");
+  // the notice takes the focus, so it comes into view inside the dialog at 360 px
+  await expect(alert).toBeFocused();
+  await expect(planTitle(page)).toHaveText("Plano Pro");
+  await alert.getByRole("button", { name: "Atualizar" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(planTitle(page)).toHaveText("Pro até 23/11/2026");
+  expect(calls.bodies.cancelRenewal).toHaveLength(1);
 });
 
 test("cada recusa dos comandos tem texto próprio: trava, limite, confirmação perdida e o plano que mudou (AS-17)", async ({
@@ -557,7 +550,7 @@ test("Pix na janela: sem botão, o caminho do suporte com a data, o que vale e s
   });
   await expect(
     page.getByText(
-      "Para desistir e receber o reembolso de R$ 24,90, escreva para o suporte do Polaris (o endereço está no fim dos e-mails da sua assinatura) até 30/10/2026, 23:59 com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento."
+      `Para desistir e receber o reembolso de R$ 24,90, escreva para o suporte do Polaris (${SUPPORT_ADDRESS}) até 30/10/2026, 23:59 com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento.`
     )
   ).toBeVisible();
   await expect(
@@ -596,10 +589,10 @@ test("relógio nas bordas da janela: às 23:59:59 do 7º dia o botão está; às
   });
   await expect(page.getByRole("button", REFUND_BUTTON)).toBeVisible();
   await page.clock.fastForward("00:59");
-  // 23:59:59 of 30/10 in São Paulo: still the last second of the window
+  // 23:59:59 of `30/10` in São Paulo: still the last second of the window
   await expect(page.getByRole("button", REFUND_BUTTON)).toBeVisible();
   await page.clock.fastForward("00:02");
-  // 00:00:01 of 31/10: the server's `until` has passed, and the plan read again has no refund (no clock of the
+  // 00:00:01 of `31/10`: the server's `until` has passed, and the plan read again has no refund (no clock of the
   // client hides the button: the server's answer does)
   await expect(page.getByRole("button", REFUND_BUTTON)).toHaveCount(0);
   await expect.poll(() => calls.reads).toBeGreaterThanOrEqual(2);

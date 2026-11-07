@@ -52,7 +52,7 @@ Legenda: **P** = teste de propriedade com oráculo; **E** = teste por exemplos j
 | ADM-4 | Um caso abre exatamente quando o tipo é conhecido e motivo e contexto, aparados, respeitam o tamanho em pontos de código e a regra de caracteres de controle. | P idem |
 | ADM-5 | A data de revisão da retenção legal é aceita só se futura e a no máximo 366 dias, em qualquer deslocamento, e volta em UTC. | P idem |
 | ADM-6 | Data que não existe (30 de fevereiro, hora 24, minuto 60, mês 13) é recusada, nunca "rolada" para uma real. | P idem |
-| ADM-7 | O acesso de suporte, o caso de privacidade, o registro de acesso e o incidente operacional seguem os estados e limites das regras. | E `admin/support-access.test.ts`, `admin/privacy-case.test.ts`, `admin/access-log.test.ts`, `admin/operational-incident.test.ts` |
+| ADM-7 | O acesso de suporte, o caso de privacidade e o registro de acesso seguem os estados e limites das regras. | E `admin/support-access.test.ts`, `admin/privacy-case.test.ts`, `admin/access-log.test.ts` |
 
 ### Events
 
@@ -95,7 +95,7 @@ Legenda: **P** = teste de propriedade com oráculo; **E** = teste por exemplos j
 
 ## Lacunas conhecidas
 
-- `canonical-json` do app web (hash estável), a ordem e a idempotência do outbox do navegador e a idempotência do `sync.push` (reenviar qualquer prefixo da fila não muda o resultado) ficam em `apps/web`, fora do pacote `domain`. Entram quando o helper for compartilhado com o app (hoje ele mora em `packages/domain/src/testing/`).
+- `canonical-json` do app web (hash estável), a ordem e a idempotência do outbox do navegador e a idempotência do `sync.push` (reenviar qualquer prefixo da fila não muda o resultado) ficam em `apps/web`, fora do pacote `domain`. Entram quando o helper for compartilhado com o app (hoje ele mora em `packages/domain/src/testing/`). Enquanto isso, a promessa de ponta a ponta (uma venda offline entra no servidor exatamente uma vez, com duas abas, reenvio e a limpeza da fila) tem um modelo TLA+ checado à mão pela skill [verify-formal-sync-offline](../../.claude/skills/verify-formal-sync-offline/SKILL.md), que não roda no CI.
 - Propriedade modelo × banco do ledger de estoque e devolução (T-124b): precisa do PostgreSQL e de gerar comandos válidos sem inflar o gate.
 - **Não há rodada agendada** com `POLARIS_PROPERTY_RUNS` alto e `POLARIS_PROPERTY_SEED=random`: seria um workflow, decisão do responsável. Até lá a exploração em profundidade é manual e o PR explora 300 casos por propriedade com semente por commit (ver "Quanta exploração isto é").
 - `catalog/` não tem teste de propriedade. Os módulos money, sales, inventory, economics, expenses, goals, billing (estado e fatos) já tinham propriedades e agora usam o helper, mas não foram reauditados contra esta lista. Duas bordas deles foram fechadas na revisão do PR: o teto de quantidade de `inventory-cost` e de `sale-return`, e o teto de parcelas e de valor de `sale-payment`.

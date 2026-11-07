@@ -6,7 +6,7 @@ export interface GenerateChartSkeletonDataOptions {
   dataKey?: string | undefined;
   /** Number of points. Default: 7. */
   pointCount?: number | undefined;
-  /** Start date for the x axis. Default: 2025-01-01. */
+  /** Start date for the x axis. Default: `2025-01-01`. */
   baseDate?: Date | undefined;
 }
 

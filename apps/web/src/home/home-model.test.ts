@@ -2,12 +2,15 @@ import type { GoalReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
   attentionLines,
-  bestDayText,
+  bestDay,
   checklistLink,
   checklistNext,
   copyStanding,
+  endedInPastMonth,
   goalDaysLeftText,
+  copyLine,
   goalPeriodShort,
+  periodShort,
   goalProjection,
   homePeriods,
   homeReads,
@@ -15,7 +18,9 @@ import {
   monthTitle,
   msUntilNextMidnight,
   newSaleOfflineText,
+  noCopyText,
   offlineGoal,
+  pastGoalSummary,
   pickGoal,
   shouldRefreshOnReturn,
   storeToday,
@@ -172,11 +177,11 @@ describe("the chart comes from the series of A and B (AC-17)", () => {
     expect(sumNetSales(month)).toBe("125.60");
   });
 
-  it("writes the best day once, and none when nothing sold", () => {
-    expect(bestDayText(lastDays(before, month, "2026-10-23", 7))).toBe(
-      "Melhor dia: 23/10, R$ 100,10"
+  it("finds the best day of a period, and none when nothing sold", () => {
+    expect(bestDay(lastDays(before, month, "2026-10-23", 7))?.date).toBe(
+      "2026-10-23"
     );
-    expect(bestDayText(series("2026-10-01", "2026-10-07"))).toBeNull();
+    expect(bestDay(series("2026-10-01", "2026-10-07"))).toBeNull();
   });
 });
 
@@ -245,7 +250,7 @@ describe("pickGoal (AC-10, AC-11, § 5.3)", () => {
       status: "cancelled",
       updatedAt: "2026-10-05T12:00:00.000Z",
     });
-    // settled on 01/10 of the store: shown from 01/10 to 07/10, seven days, and gone on the eighth
+    // settled on `01/10` of the store: shown from `01/10` to `07/10`, seven days, and gone on the eighth
     expect(pickGoal([settled, cancelled], "2026-10-07", zone)).toMatchObject({
       kind: "settled",
     });
@@ -259,8 +264,36 @@ describe("pickGoal (AC-10, AC-11, § 5.3)", () => {
     expect(pickGoal([], "2026-10-23", zone)).toEqual({ kind: "none" });
   });
 
-  it("writes the period as 'de dd/mm a dd/mm'", () => {
-    expect(goalPeriodShort(goal({}))).toBe("de 01/10 a 31/10");
+  it("writes the period of a goal the short way", () => {
+    expect(goalPeriodShort(goal({}))).toBe("1 a 31/10");
+  });
+
+  it("writes a period inside a month as '1 a 31/10', across two as '26/09 a 25/10', and one day as '25/10'", () => {
+    expect(periodShort("2026-10-17", "2026-10-23")).toBe("17 a 23/10");
+    expect(periodShort("2026-09-26", "2026-10-25")).toBe("26/09 a 25/10");
+    expect(periodShort("2026-10-25", "2026-10-25")).toBe("25/10");
+  });
+
+  it("writes the year on both ends when the range crosses a year or ends outside this year", () => {
+    expect(periodShort("2025-11-05", "2026-11-05")).toBe(
+      "05/11/2025 a 05/11/2026"
+    );
+    expect(periodShort("2026-01-01", "2026-11-05", "2026")).toBe(
+      "01/01 a 05/11"
+    );
+    expect(periodShort("2025-12-01", "2025-12-31", "2026")).toBe(
+      "1 a 31/12/2025"
+    );
+    expect(periodShort("2025-11-05", "2025-11-05", "2026")).toBe("05/11/2025");
+  });
+
+  it("keeps the year on both ends of a range that ends before this year or that crosses into it, given this year", () => {
+    expect(periodShort("2025-11-05", "2025-12-05", "2026")).toBe(
+      "05/11/2025 a 05/12/2025"
+    );
+    expect(periodShort("2025-11-05", "2026-11-05", "2026")).toBe(
+      "05/11/2025 a 05/11/2026"
+    );
   });
 });
 
@@ -287,8 +320,8 @@ describe("attentionLines (AC-12 to AC-14)", () => {
       {
         href: "/attention",
         id: "device",
-        next: "Corrija e envie de novo.",
-        text: "2 operações deste aparelho precisam de atenção",
+        next: null,
+        text: "2 registros recusados neste aparelho",
       },
       {
         href: "/inventory?filtro=sem-custo",
@@ -299,7 +332,7 @@ describe("attentionLines (AC-12 to AC-14)", () => {
       {
         href: "/inventory?filtro=sem-saldo",
         id: "without-stock",
-        next: "Dê entrada no estoque.",
+        next: null,
         text: "3 variantes sem saldo",
       },
     ]);
@@ -352,10 +385,8 @@ describe("checklist (AC-22, § 5.4)", () => {
   const productId = "0199c2d0-0000-7000-8000-0000000000aa";
 
   it("asks for the first product, then for stock on that product, then for the sale", () => {
-    expect(checklistLink(checklistNext(null, false))).toEqual({
-      href: "/products?novo=1",
-      label: "Cadastrar produto",
-    });
+    // the step has its own two ways (Cadastrar à mão, Importar planilha): no button repeats them
+    expect(checklistLink(checklistNext(null, false))).toBeNull();
     expect(checklistLink(checklistNext(productId, false))).toEqual({
       href: `/products?produto=${productId}`,
       label: "Dar entrada no estoque",
@@ -498,7 +529,7 @@ describe("offlineGoal (§ 7.3)", () => {
     });
     expect(
       offlineGoal({ goal: settled, kind: "settled" }, "2026-10-15", zone)
-    ).toEqual({ goal: settled, kind: "settled" });
+    ).toEqual({ currentMonth: "Outubro", goal: settled, kind: "settled" });
     expect(
       offlineGoal({ goal: settled, kind: "settled" }, "2026-10-22", zone)
     ).toEqual({ kind: "online-only" });
@@ -511,13 +542,63 @@ describe("offlineGoal (§ 7.3)", () => {
   });
 });
 
-describe("newSaleOfflineText (AC-30)", () => {
-  it("promete a venda sem internet só quando o aparelho pode vender", () => {
-    expect(newSaleOfflineText(true)).toBe(
-      "Você pode vender sem internet. A venda é enviada quando a conexão voltar."
+describe("copyLine (AC-28, AC-31)", () => {
+  // 15:30 UTC is 12:30 in São Paulo
+  const confirmed = "2026-10-14T15:30:00.000Z";
+
+  it("says when the copy was confirmed, in the store's clock", () => {
+    expect(copyLine(confirmed, "America/Sao_Paulo", false)).toBe(
+      "Confirmado em 14/10 12:30"
     );
-    expect(newSaleOfflineText(false)).toBe(
+  });
+
+  it("adds that it may be out of date, and only then", () => {
+    expect(copyLine(confirmed, "America/Sao_Paulo", true)).toBe(
+      "Confirmado em 14/10 12:30 · pode estar desatualizado"
+    );
+  });
+});
+
+describe("newSaleOfflineText (AC-30)", () => {
+  it("com cópia, a linha da venda é a única que diz 'Sem internet'", () => {
+    expect(newSaleOfflineText(true, false)).toBe(
+      "Sem internet. A venda é enviada quando a conexão voltar."
+    );
+    expect(newSaleOfflineText(false, false)).toBe(
       "Sem internet: para vender é preciso conexão."
+    );
+  });
+
+  it("sem cópia, a linha sob o título já diz 'Sem internet' e a da venda não repete", () => {
+    expect(newSaleOfflineText(true, true)).toBe(
+      "A venda é enviada quando a conexão voltar."
+    );
+    expect(newSaleOfflineText(false, true)).toBeNull();
+  });
+
+  it("'Sem internet' aparece uma vez só nos quatro casos, e cada frase continua verdadeira", () => {
+    for (const canSell of [true, false]) {
+      const withCopy = [
+        copyLine("2026-10-14T15:30:00.000Z", "America/Sao_Paulo", false),
+        newSaleOfflineText(canSell, false),
+      ];
+      const noCopy = [noCopyText(canSell), newSaleOfflineText(canSell, true)];
+      for (const lines of [withCopy, noCopy]) {
+        const said = lines.filter((line) => line?.includes("Sem internet"));
+        expect(said).toHaveLength(1);
+      }
+      expect(noCopyText(canSell).includes("vendas")).toBe(!canSell);
+    }
+  });
+});
+
+describe("noCopyText (sem conexão e sem cópia)", () => {
+  it("diz uma vez por que os cartões estão sem número, e as vendas só quando o aparelho não pode vender", () => {
+    expect(noCopyText(false)).toBe(
+      "Sem internet. Os números e as vendas voltam com a conexão."
+    );
+    expect(noCopyText(true)).toBe(
+      "Sem internet. Os números voltam com a conexão."
     );
   });
 });
@@ -539,7 +620,7 @@ describe("goalDaysLeftText (v7 § 3 item 9)", () => {
 
 describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
   const today = "2026-10-25";
-  // 18/10 to 24/10, the 7 whole days before today: R$ 100,00 and 2 sales each, R$ 700,00 and 14 sales in all
+  // `18/10` to `24/10`, the 7 whole days before today: R$ 100,00 and 2 sales each, R$ 700,00 and 14 sales in all
   const month = series("2026-10-01", "2026-10-31", (date) =>
     date >= "2026-10-18" && date <= "2026-10-24" ? ["100.00", 2] : undefined
   );
@@ -607,7 +688,7 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
     const september = series("2026-09-01", "2026-09-30", (date) =>
       date >= "2026-09-27" ? ["70.00", 1] : undefined
     );
-    // on 03/10 the 7 days are 26/09 to 02/10: 4 × 70,00 = 280,00; 28 days left → 280,00 × 28 ÷ 7 = 1.120,00
+    // on `03/10` the 7 days are `26/09` to `02/10`: 4 × 70,00 = 280,00; 28 days left → 280,00 × 28 ÷ 7 = 1.120,00
     expect(
       shortValue(
         goalProjection(
@@ -683,7 +764,7 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
   });
 
   it("says the day the rhythm crosses the target, from the daily total", () => {
-    // 400,00 + 100,00 a day: 1.000,00 is crossed on the 6th day after today, 31/10, the last one; 800,00 on the 4th
+    // 400,00 + 100,00 a day: 1.000,00 is crossed on the 6th day after today, `31/10`, the last one; 800,00 on the 4th
     expect(goalProjection(g({ target: "800.00" }), known, today)).toEqual({
       kind: "reaches",
       on: "29/10",
@@ -745,5 +826,71 @@ describe("goalProjection (v7 § 3 item 9): only from what is known", () => {
         today
       )
     ).toEqual({ kind: "no_sales" });
+  });
+});
+
+describe("a goal of a month already over (the Início of the next month)", () => {
+  const zone = "America/Sao_Paulo";
+  const october = goal({
+    achievedValue: "166619.00",
+    endsOn: "2026-10-31",
+    settledAt: "2026-11-01T03:05:00.000Z",
+    startsOn: "2026-10-01",
+    status: "missed",
+    target: "200000.00",
+  });
+
+  it.each([
+    ["on the last day of the month", "2026-10-31", false],
+    ["on the 1st of the next", "2026-11-01", true],
+    ["on the 2nd, no goal of the month yet", "2026-11-02", true],
+    ["a goal that ends in the current month", "2026-10-02", false],
+  ])("endedInPastMonth, %s", (_label, today, past) => {
+    expect(endedInPastMonth(october, today)).toBe(past);
+  });
+
+  it("says what the past month reached, with its name and whether it was met", () => {
+    expect(pastGoalSummary(october)).toBe(
+      "Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida)"
+    );
+    expect(pastGoalSummary({ ...october, status: "completed" })).toBe(
+      "Outubro: R$ 166.619,00 de R$ 200.000,00 (atingida)"
+    );
+    expect(pastGoalSummary({ ...october, achievedValue: null })).toBe(
+      "Outubro: meta não atingida"
+    );
+    expect(
+      pastGoalSummary({
+        ...october,
+        achievedValue: "1200",
+        kind: "sale_count",
+        target: "1500",
+      })
+    ).toBe("Outubro: 1.200 de 1.500 (não atingida)");
+  });
+
+  it("a goal that did not cover the month says its period, not the month", () => {
+    expect(pastGoalSummary({ ...october, startsOn: "2026-10-25" })).toBe(
+      "25 a 31/10: R$ 166.619,00 de R$ 200.000,00 (não atingida)"
+    );
+  });
+
+  it("the settled goal is still the one picked on the 2nd, and offline carries the month of today", () => {
+    expect(pickGoal([october], "2026-11-02", zone)).toEqual({
+      goal: october,
+      kind: "settled",
+    });
+    expect(
+      offlineGoal({ goal: october, kind: "settled" }, "2026-11-02", zone)
+    ).toEqual({ currentMonth: "Novembro", goal: october, kind: "settled" });
+    const thisMonth = goal({
+      endsOn: "2026-11-01",
+      settledAt: "2026-11-02T03:05:00.000Z",
+      startsOn: "2026-11-01",
+      status: "completed",
+    });
+    expect(
+      offlineGoal({ goal: thisMonth, kind: "settled" }, "2026-11-02", zone)
+    ).toEqual({ goal: thisMonth, kind: "settled" });
   });
 });

@@ -1,5 +1,9 @@
 import { createCspNonce } from "@polaris/http-security";
-import { configureLogging } from "@polaris/observability/logger";
+import {
+  configureLogging,
+  useLoggingEnvironment,
+} from "@polaris/observability/logger";
+import { env } from "cloudflare:workers";
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { requestWithNonce, secureResponse } from "./server/security";
 
@@ -10,6 +14,7 @@ configureLogging({ service: "polaris-catalog" });
 // which no production policy allows, so it runs without them; a build always has them.
 export default createServerEntry({
   fetch: async (request, options) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
     if (import.meta.env.DEV) {
       return await handler.fetch(request, options);
     }

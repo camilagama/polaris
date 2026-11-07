@@ -1,5 +1,6 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
+import { FreshSessionRequiredError } from "@polaris/db/device-repository";
 import { InvalidExportRequestError } from "@polaris/domain/privacy/data-export";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
@@ -42,9 +43,10 @@ function createClient(overrides: Record<string, unknown>) {
   };
 }
 
-function tenant(seen: string[] = []) {
+function tenant(seen: string[] = [], fresh: unknown[] = []) {
   return (input: TenantRequestContextInput<unknown>) => {
     seen.push(input.capability);
+    fresh.push(input.requireFreshSession);
     return input.operation({} as never, {
       capability: input.capability,
       organizationId: input.requestedOrganizationId,
@@ -73,6 +75,35 @@ describe("dataExport.request", () => {
       expect.objectContaining({ organizationId }),
       expect.objectContaining({ formats: ["json", "csv"] })
     );
+  });
+
+  it("asks the tenant context for a session signed in within 15 minutes", async () => {
+    const fresh: unknown[] = [];
+    const client = createClient({
+      dataExportRepository: {
+        requestDataExport: () =>
+          Promise.resolve({ id: "0199c2d0-0000-7000-8000-0000000000aa" }),
+      },
+      withTenantRequestContext: tenant([], fresh),
+    });
+    await client.dataExport.request({ formats: ["json"], organizationId });
+    expect(fresh).toEqual([true]);
+  });
+
+  it("answers 403 fresh_session_required when the context refuses the session, and saves nothing", async () => {
+    const requestDataExport = vi.fn();
+    const client = createClient({
+      dataExportRepository: { requestDataExport },
+      withTenantRequestContext: () =>
+        Promise.reject(new FreshSessionRequiredError()),
+    });
+    await expect(
+      client.dataExport.request({ formats: ["json"], organizationId })
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      data: { reason: "fresh_session_required" },
+    });
+    expect(requestDataExport).not.toHaveBeenCalled();
   });
 
   it("refuses an empty or unknown format list before reaching the database", async () => {
@@ -122,6 +153,16 @@ describe("dataExport.request", () => {
 });
 
 describe("dataExport.list", () => {
+  it("does not ask for a recent sign-in: following the copy is not asking for it", async () => {
+    const fresh: unknown[] = [];
+    const client = createClient({
+      dataExportRepository: { listDataExports: () => Promise.resolve([]) },
+      withTenantRequestContext: tenant([], fresh),
+    });
+    await client.dataExport.list({ organizationId });
+    expect(fresh).toEqual([undefined]);
+  });
+
   it("shows the exports with dates as text and without the storage keys", async () => {
     const requestedAt = new Date("2026-10-17T12:00:00.000Z");
     const listDataExports = vi.fn(() =>

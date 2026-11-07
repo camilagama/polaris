@@ -8,42 +8,46 @@
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
 @import "./shadcn-tailwind.css";
-@import "./theme.css";
+@import "@polaris/ui/theme.css";
 
 /* Utilities only for the files that draw the interface, file by file (styles/source-coverage.test.ts). */
 @source "../ui";
 @source "../ui-gallery";
 /* The entry (v5.2): every page of the password family, and "Trocar senha" inside the app. */
-@source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page}.tsx";
+@source "../sign-in/{entry-ui,sign-in-page,email-sign-in-form,sign-up-page,confirm-email-page,forgot-password-page,reset-password-page,unlock-page,change-password-page,new-password-field}.tsx";
 /* The stock screen (v5.1): the page, the panel, its fields and the row buttons; the logic files have no class. */
-@source "../inventory/{inventory-page,stock-command-panel,stock-panel-fields,stock-row-actions}.tsx";
+@source "../inventory/{inventory-page,stock-action-strip,stock-command-panel,stock-filters,stock-panel-fields,stock-row-actions}.tsx";
 /* The products screen (v5.1, third migrated screen): its own files, with the images panel. */
-@source "../catalog/{products-page,products-page-parts,product-dialog,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-file-picker,product-media-list,product-media-crop}.tsx";
+@source "../catalog/{products-page,products-page-parts,product-dialog,product-form,product-list,product-fields,product-variants-panel,product-variants-form,product-variant-parts,product-variant-sku-section,product-variant-price-section,product-media-panel,product-media-file-picker,product-media-list,product-media-crop,product-thumbnail,media-thumbnail-scope}.tsx";
 /* Categorias, Clientes and the public catalog of the ERP (v5.1, lot 2): their own files, and the pieces they share. The
    strip of the screens that need a connection is the shell's (`app-shell/connection-required-notice.tsx`, below). */
 @source "../catalog/{catalog-products-screen,categories-page,category-form,category-list,screen-parts,public-catalog-page,public-catalog-panels}.tsx";
+/* the import of a spreadsheet (corte 2.5): a chunk loaded on demand, out of the precache */
+@source "../catalog/product-import/{product-import-dialog,import-frame,import-file-step,import-preview-step,import-run-step,import-result-step,import-rows-table}.tsx";
 @source "../customers/{customers-page,customers-page-parts,customer-form,customer-list}.tsx";
 /* The payment profiles screen (v5.1): the page, the form and the list; the draft and the fee model have no class. */
 @source "../payment-profiles/{payment-profiles-page,payment-profile-form,payment-profile-list}.tsx";
 /* The shell (v5.1): the frame of every screen, the state chip and "Sair"; the old screens inside it are not here,
    only the files that import a piece of the shell (the entry, the router and Aparelhos, which uses "Sair"). */
-@source "../{main,app-shell/app,app-shell/app-shell,app-shell/store-card,app-shell/screen-tabs,app-shell/screen-title}.tsx";
+@source "../{main,app-shell/app,app-shell/app-shell,app-shell/store-card,app-shell/shell-header,app-shell/menu-progress,app-shell/screen-tabs,app-shell/screen-title}.tsx";
 @source "../offline/runtime/{sync-status,logout-control}.tsx";
 /* The first access, the acceptance and the legal texts (v5.1): the entry card of the screens outside the shell. */
-@source "../organization/organization-setup.tsx";
+@source "../organization/{organization-setup,close-store-section,closed-queue-section,closed-refresh-notice,closed-store-page}.tsx";
 @source "../legal/{legal-app,legal-frame,legal-page}.tsx";
 @source "../legal/acceptance/acceptance-page.tsx";
 /* The pieces around the screens (v5.1): the 404, the failure of a screen, "Carregando…", the notices of the session
-   and of the connection, the acceptance and the new version, "Sair" with work to lose, and the offline access that expired (and the line of
+   and of the connection, the acceptance, "Sair" with work to lose, and the offline access that expired (and the line of
    the attention page that uses the loading). */
-@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,grace-notice}.tsx";
-@source "../pwa/update-banner.tsx";
+@source "../app-shell/{state-panel,page-loading,read-wait,not-found-page,error-boundary,session-ended-notice,legal-acceptance-notice,connection-required-notice,closed-store-notice,first-access,grace-notice,action-strip}.tsx";
+@source "../help/help-page.tsx";
+/* the line of the version at the foot of Configurações (the build swaps by itself and says nothing elsewhere) */
+@source "../settings/app-version-line.tsx";
 @source "../offline/logout-dialog.tsx";
 @source "../offline/runtime/{offline-access-expired,attention-page}.tsx";
 /* The lab of those pieces (browser checks only). */
 @source "../offline-poc/screens-lab-shell-pieces.tsx";
 /* The sale screen (ADR 0103, PR 4): only its own files; the other sales screens are still old. */
-@source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels}.tsx";
+@source "../sales/{sale-page,sale-fields,sale-item-editor,sale-payment-section,sale-summary-panel,sale-confirmed-panel,sale-variant-picker,offline-sale-panels,sale-draft-bar}.tsx";
 /* The expenses screen (v5.1, segmented since UI-H): the page, the forms in dialogs, the list, the recurring rules, the categories and the month picker. */
 @source "../expenses/{expenses-page,expense-form,expense-list,expense-fields,expense-rules-panel,expense-rule-form,expense-categories-panel,expense-category-form,month-picker}.tsx";
 /* Aparelhos and Pendências (v5.1): the screens and their parts (the notice of the expired access and the loading of the
@@ -51,13 +55,15 @@
 @source "../offline/attention-panel.tsx";
 @source "../offline/runtime/{devices-page,device-item}.tsx";
 /* Resultado and Metas (v5.1): the page, the cards, the chain and the goals; the month picker is Despesas'. */
-@source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
+@source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,empty-result,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
 /* The Início (F2): the page and its blocks. */
-@source "../home/{home-page,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
+@source "../home/{home-page,closed-store-line,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
 /* the Assinatura (t268, PR E) */
 @source "../subscription/{subscription-commands,subscription-page,subscription-parts,subscription-offer,subscription-waiting,limit-help}.tsx";
+/* Seus dados in Configurações: the request and the list of copies, which the closed store's panel uses too. */
+@source "../data-export/{data-export-page,data-export-list,data-export-cards}.tsx";
 /* The sales history, the sale detail with its return, cancellation and customer panels, and the customer page (v5.1). */
-@source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt}.tsx";
+@source "../sales/{confirmed-sale-parts,sale-history-page,sale-history-empty,sale-history-filters,sale-history-list,sale-detail-page,sale-notice-region,sale-receipt,sale-timeline}.tsx";
 @source "../sales/{sale-return-panel,sale-return-table,sale-cancel-panel,sale-operation-actions,sale-reason-fields,operation-failure-notice,sale-customer-panel,sale-id-missing}.tsx";
 
 /*
@@ -77,6 +83,22 @@
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
     U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Until Geist arrives (first visit, before the cache), the text is drawn in Arial scaled to Geist's metrics, so the
+ * swap changes no line box and moves nothing. Measured from geist-latin-wght-normal.woff2 (default instance, wght 400)
+ * against Liberation Sans (Arial's metrics): the average advance of the app's Portuguese text gives size-adjust, and
+ * Geist's typo ascent 1005 and descent 295 per 1000 divided by it give the overrides. No Arial (Linux): the face is
+ * skipped and the next family of the stack is used.
+ */
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("ArialMT");
+  size-adjust: 103.19%;
+  ascent-override: 97.39%;
+  descent-override: 28.59%;
+  line-gap-override: 0%;
 }
 
 @font-face {
@@ -102,23 +124,53 @@
   }
 }
 
-/* Below 760 px the shell has the bar of destinations fixed at the bottom (52 px and the safe area): the content
+/* Below 760 px the shell has the bar of destinations fixed at the bottom (54 px and the safe area): the content
    ends above it, a sticky bar of a screen sits on it (`--app-bottom-bar`) and what gets the focus scrolls above it. */
 @layer base {
-  @media (max-width: 759.98px) {
+  @media not all and (min-width: 47.5rem) {
     :root:has([data-bottom-bar]) {
-      --app-bottom-bar: calc(3.25rem + env(safe-area-inset-bottom));
+      --app-bottom-bar: calc(3.375rem + env(safe-area-inset-bottom));
       scroll-padding-bottom: calc(var(--app-bottom-bar) + 1rem);
+    }
+  }
+  /* "Histórico" at the label floor (0.6875 rem) needs 2.94 rem, which the tab (a fifth of the window, less 0.25 rem of
+     padding) gives from 15.95 rem of window: below it the labels break in two. The reserve changes at the same point
+     (16 rem, a little above it, in `rem` like the label, so it holds at any font size). The bar is the taller of the
+     "Vender" tab (pill of 2 rem, 0.375 rem of padding and gap, a line of label: 3.375 rem) and a tab of icon (18 px)
+     and two lines of label (2.375 rem plus the icon), which wins only under 18 px of font. */
+  @media (max-width: 16rem) {
+    :root:has([data-bottom-bar]) {
+      --app-bottom-bar: calc(
+        max(3.375rem, 2.375rem + 18px) +
+        env(safe-area-inset-bottom)
+      );
     }
   }
 }
 
-/* A page with the sticky submit bar (the sale, below 900 px): what gets the focus scrolls above the bar, which is
-   about 4.5 rem tall and grows with the text size and the zoom, as `rem` does (U-19), and above the shell's. */
+/* The header of the shell: 48 px on the phone and 56 px from 760 px, the one source of its height (the header, the
+   minimum height of the content, the notices of "Sair" under it), and what gets the focus scrolls below it. */
 @layer base {
-  @media (max-width: 899.98px) {
-    :root:has([data-submit-bar]) {
-      scroll-padding-bottom: calc(8rem + var(--app-bottom-bar, 0rem));
+  :root:has([data-app-header]) {
+    --app-header: 3rem;
+    scroll-padding-top: var(--app-header);
+  }
+  @media (min-width: 47.5rem) {
+    :root:has([data-app-header]) {
+      --app-header: 3.5rem;
+    }
+  }
+}
+
+/* The sale in one column (its container, `sale`, under 44 rem) has the sticky submit bar, about 4.5 rem tall, which grows
+   with the text size and the zoom as `rem` does (U-19): what gets the focus scrolls above it. `scroll-padding` belongs
+   to the scroller and cannot ask the container, so the clearance is the `scroll-margin` of what takes the focus inside the form;
+   it adds to the scroll-padding the shell already keeps above its bottom bar (that bar's height plus 1 rem), so the
+   total is the bar's 8 rem on a phone. In two columns there is no bar and no margin. */
+@layer base {
+  @container sale not (width >= 44rem) {
+    [data-sale-form] :is(input, select, textarea, button, a, [tabindex]) {
+      scroll-margin-bottom: 7rem;
     }
   }
 }

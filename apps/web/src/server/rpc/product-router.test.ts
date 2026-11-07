@@ -13,6 +13,7 @@ import {
   ProductStockNotEmptyError,
   ProductVariantConfigurationError,
   ProductVariantSkuConflictError,
+  ProductVariantSkuError,
   ProductVersionConflictError,
 } from "@polaris/domain/catalog/product";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
@@ -279,7 +280,7 @@ describe("product RPCs", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("refuses more than 50 values for one option before touching anything", async () => {
+  it("takes 50 values for one option, the limit itself, and refuses 51 before touching anything", async () => {
     const withTenantRequestContext = vi.fn();
     const client = createRpcClient(
       createRpcRouter({
@@ -288,6 +289,20 @@ describe("product RPCs", () => {
     );
     const valuesOf = (count: number) =>
       Array.from({ length: count }, (_, index) => `Tamanho ${index}`);
+
+    // inside the limit the input passes and the call reaches the tenant context (which stops it here)
+    withTenantRequestContext.mockRejectedValueOnce(new Error("reached"));
+    await expect(
+      client.product.configureVariants({
+        expectedVersion: 1,
+        id: productRow.id,
+        options: [{ name: "size", values: valuesOf(50) }],
+        organizationId: identity.organizationId,
+        variants: [{ values: { size: "Tamanho 0" } }],
+      })
+    ).rejects.not.toMatchObject({ code: "BAD_REQUEST" });
+    expect(withTenantRequestContext).toHaveBeenCalledTimes(1);
+    withTenantRequestContext.mockClear();
 
     await expect(
       client.product.configureVariants({
@@ -419,7 +434,7 @@ describe("product RPCs", () => {
       expectedVersion: 1,
       id: productRow.id,
       requestId: expect.stringMatching(requestIdPattern),
-      sku: "  Sku-A1  ",
+      sku: "Sku-A1",
       variantId: "0199c2d0-0000-7000-8000-000000000002",
     });
   });
@@ -446,6 +461,54 @@ describe("product RPCs", () => {
         variantId: "0199c2d0-0000-7000-8000-000000000002",
       })
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("maps a SKU over the domain limit to a bad request", async () => {
+    const router = createRpcRouter({
+      setProductVariantSku: () => Promise.reject(new ProductVariantSkuError()),
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.setVariantSku({
+        expectedVersion: 1,
+        organizationId: identity.organizationId,
+        productId: productRow.id,
+        sku: "SKU-1",
+        variantId: "0199c2d0-0000-7000-8000-000000000002",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("refuses a SKU of 65 code points at the transport, before the procedure runs", async () => {
+    const setProductVariantSku = vi.fn();
+    const router = createRpcRouter({
+      setProductVariantSku,
+      withTenantRequestContext: (input: {
+        operation: (
+          transaction: unknown,
+          authorizedIdentity: typeof identity
+        ) => Promise<unknown>;
+      }) => tenantContext(input),
+    } as unknown as Parameters<typeof createRpcRouter>[0]);
+    const client = createRpcClient(router);
+
+    await expect(
+      client.product.setVariantSku({
+        expectedVersion: 1,
+        organizationId: identity.organizationId,
+        productId: productRow.id,
+        sku: "S".repeat(65),
+        variantId: "0199c2d0-0000-7000-8000-000000000002",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(setProductVariantSku).not.toHaveBeenCalled();
   });
 
   it("creates products with product:create and preserves duplicate names", async () => {

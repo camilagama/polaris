@@ -12,17 +12,19 @@ import type { PlatformCapability } from "@polaris/domain/admin/platform-capabili
 import { describeError } from "@polaris/observability/wide-event";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { AdminBindings, AdminEnv } from "./app";
+import { fromThisSite } from "./support-routes";
 
 /**
  * The activation funnel in the Admin (corte 2.4, ADR 0071 amended): `GET /api/funnel?weeks=N`, JSON only, read by the
- * operator in the browser behind Access; the screen comes with the Admin's own (Phase 9). It asks for `platform:read`
+ * operator in the browser behind Access, by the Admin page's Funil area (ui/views/funnel.ts), once when the area opens
+ * and once per "Atualizar". It asks for `platform:read`
  * (an aggregate of the platform, no store's), takes nothing but `weeks` (1 to 26: no window or filter to move, so no
  * store is isolated by difference), and reads only through `admin_read_activation_funnel`, which records an event of
  * the operator (no content) in the same transaction as the read. The answer is checked against a closed contract on
  * the way in and on the way out; nothing of it is logged.
  *
- * Every read writes an audit row, so a principal reads at most `ACTIVATION_FUNNEL_READS_PER_HOUR` times in an hour
- * (Rodrigo's condition), a brake on sweeping the function. The Admin has no rate limiter of its own, and the Workers
+ * Every read writes an audit row, so a principal reads at most `ACTIVATION_FUNNEL_READS_PER_HOUR` times in an hour,
+ * a brake on sweeping the function. The Admin has no rate limiter of its own, and the Workers
  * rate-limit binding counts only over 10 or 60 seconds, so the count lives in the isolate: a sliding hour per
  * principal. Two isolates count apart; the audit rows stay the full record either way.
  */
@@ -256,8 +258,8 @@ export function activationFunnelRoutes(
     if (weeks === null) {
       return context.json({ error: "invalid_request" }, 400);
     }
-    // every read is written down and counted: a link on another site must not spend the operator's reads
-    if (context.req.header("sec-fetch-site") === "cross-site") {
+    // every read is written down and counted: another origin, even of the same site, must not spend the operator's reads
+    if (!fromThisSite(context)) {
       return context.json({ error: "forbidden" }, 403);
     }
     const principalId = context.get("principal").id;

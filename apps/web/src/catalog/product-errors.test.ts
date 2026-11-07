@@ -24,6 +24,54 @@ describe("mensagem de erro de produto", () => {
     );
   });
 
+  it("a escrita que o servidor cortou (regime do Free) diz que pode ter sido salva, sem culpar a internet", () => {
+    const cut = Object.assign(new Error("cut"), {
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "platform_cut" },
+      status: 503,
+    });
+    for (const action of ["create", "update", "archive", "restore"] as const) {
+      expect(productErrorMessage(cut, action)).toBe(
+        "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir."
+      );
+    }
+    // a read keeps its own text: the reads try again by themselves
+    expect(productErrorMessage(cut)).not.toContain("ocupado");
+    // the Worker's own 503 is no cut of the platform
+    const workerBusy = Object.assign(new Error("busy"), {
+      code: "SERVICE_UNAVAILABLE",
+      data: { reason: "server_busy" },
+      status: 503,
+    });
+    expect(productErrorMessage(workerBusy, "create")).not.toContain("ocupado");
+  });
+
+  it("a escrita que o servidor ocupado não confirmou diz que pode ter sido salva e não convida a repetir", () => {
+    const busy = refusal("SERVICE_UNAVAILABLE", "server_busy");
+    for (const action of ["create", "update", "archive", "restore"] as const) {
+      const message = productErrorMessage(busy, action);
+      expect(message).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+      expect(message).not.toContain("Tente novamente");
+    }
+    expect(productErrorMessage(busy)).toBe(
+      "O catálogo está temporariamente indisponível. Tente novamente."
+    );
+  });
+
+  it("um 503 com outro motivo também é dúvida de escrita, e a leitura mantém o texto dela", () => {
+    const other = refusal("SERVICE_UNAVAILABLE", "other");
+    for (const action of ["create", "update", "archive", "restore"] as const) {
+      expect(productErrorMessage(other, action)).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+    }
+    expect(productErrorMessage(other)).toBe(
+      "O catálogo está temporariamente indisponível. Tente novamente."
+    );
+  });
+
   it("sessão recusada: ler diz que não carregou, escrever diz que o produto não mudou", () => {
     expect(productErrorMessage(refusal("UNAUTHORIZED"))).toBe(
       "Não foi possível carregar os produtos."

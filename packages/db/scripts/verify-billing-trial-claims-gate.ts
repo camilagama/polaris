@@ -1782,7 +1782,7 @@ async function main() {
         "Pix checkout (cobrança PR 6): the hourly reconciliation lists a link that may still change access whatever its age and one on Free only for 8 days, of that provider and within its limit; the payer's lock serializes the same key, leaves another key alone, is released by an operation that throws and refuses a key that is not 8 hex digits"
       );
 
-      // the organization's command lock (ADR 0066, emenda de 23/10): never waited for
+      // the organization's command lock (ADR 0066): never waited for
       const lockedOrganization = randomUUID();
       let releaseCommand: () => void = () => undefined;
       const commandHeld = new Promise<void>((resolve) => {

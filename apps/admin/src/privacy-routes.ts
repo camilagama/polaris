@@ -247,16 +247,15 @@ export function privacyRoutes(
     ) {
       return invalid(context);
     }
-    return context.json(
-      await dependencies.list(
-        {
-          after: after?.toLowerCase() ?? null,
-          filter: filter as "closed" | "open" | "overdue" | null,
-          limit,
-        },
-        context.env
-      )
+    const page = await dependencies.list(
+      {
+        after: after?.toLowerCase() ?? null,
+        filter: filter as "closed" | "open" | "overdue" | null,
+        limit,
+      },
+      context.env
     );
+    return context.json(page);
   });
 
   routes.get("/privacy-cases/:caseId", guard, async (context) => {

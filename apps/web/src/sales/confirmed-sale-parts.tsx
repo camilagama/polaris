@@ -1,20 +1,27 @@
+import { NoBreakMoney } from "@/ui/hidden-values";
 import type { ConfirmedSaleView } from "./sale-form-model";
 import { FeeValue } from "./sale-summary-panel";
 
-/** The dates or the payment of a confirmed sale: label above, value below. */
+/**
+ * The dates or the payment of a confirmed sale: label above, value below, in a block set back into the card (the
+ * muted fill, no border: a ring inside the card's ring reads as a box in a box). Two columns from 760 px, one on touch.
+ */
 export function ConfirmedDetails({
   details,
 }: {
   details: ConfirmedSaleView["saleDetails"];
 }) {
+  if (details.length === 0) {
+    return null;
+  }
   return (
-    <dl className="grid gap-2 text-support sm:grid-cols-2">
+    <dl className="grid gap-3 rounded-lg bg-muted p-4 min-[760px]:grid-cols-2">
       {details.map((detail) => (
         <div className="grid gap-0.5" key={detail.label}>
-          <dt className="text-muted-foreground">{detail.label}</dt>
-          <dd className="[overflow-wrap:anywhere]">
+          <dt className="text-muted-foreground text-xs">{detail.label}</dt>
+          <dd className="text-sm [overflow-wrap:anywhere]">
             {detail.tone === "plain" ? (
-              detail.value
+              <NoBreakMoney text={detail.value} />
             ) : (
               <FeeValue line={{ text: detail.value, tone: detail.tone }} />
             )}
@@ -44,9 +51,11 @@ export function ConfirmedItems({
             <span className="font-medium [overflow-wrap:anywhere]">
               {item.label}
             </span>
-            <span className="tabular-nums">{item.detail}</span>
+            <span className="tabular-nums">
+              <NoBreakMoney text={item.detail} />
+            </span>
             <span className="text-muted-foreground text-support">
-              {item.costText}
+              <NoBreakMoney text={item.costText} />
             </span>
           </li>
         ))}

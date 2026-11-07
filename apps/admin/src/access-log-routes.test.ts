@@ -64,6 +64,7 @@ function setup(
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: { diagnostics: vi.fn(), list: vi.fn() },
     privacy: {} as never,
+    providerCommands: { cancelRenewal: vi.fn(), refund: vi.fn() },
     refundWindow: { read: vi.fn() },
     report,
     resolvePrincipal: vi.fn(() => Promise.resolve({ ...principal, role })),
@@ -81,6 +82,8 @@ function setup(
         headers: {
           "cf-access-jwt-assertion": "token",
           "content-type": "application/json",
+          // a write must name the Admin's own origin, as the browser does
+          origin: "https://admin.example.invalid",
           ...headers,
         },
         method: "POST",

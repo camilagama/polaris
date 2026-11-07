@@ -12,7 +12,7 @@ import type { LogoutWorkspace } from "../logout-guard";
 import { MemoryOutboxStorage } from "../outbox/memory-storage";
 import { Outbox } from "../outbox/outbox";
 import { discardAndLeave, startLogout } from "./logout-flow";
-import type { RuntimeSnapshot } from "./offline-runtime";
+import { PLAN_REFUSED_REASON, type RuntimeSnapshot } from "./offline-runtime";
 import {
   SyncStatusMenuLineView,
   SyncStatusView,
@@ -33,6 +33,7 @@ const snapshot = (
   leaseExpiresAt: null,
   legalAcceptanceRequired: false,
   online: true,
+  organizationClosed: false,
   phase: "ready",
   reason: null,
   renewalRefused: false,
@@ -65,7 +66,7 @@ describe("the sync status in the header", () => {
         snapshot({ counts: counts({ pending: 2 }), online: false })
       )
     ).toMatchObject({
-      text: "Sem conexão · 2 operações guardadas",
+      text: "Sem conexão · 2 operações guardadas, enviam quando voltar",
       tone: "offline",
     });
     // U-54: with nothing queued the sentence is only "Sem conexão", for the screen reader too
@@ -79,7 +80,26 @@ describe("the sync status in the header", () => {
       />
     );
     expect(html).toContain(
-      '<span class="sr-only">Sem conexão · 2 operações guardadas</span>'
+      '<span class="sr-only">Sem conexão · 2 operações guardadas, enviam quando voltar</span>'
+    );
+  });
+
+  it("says what happens to the kept operations when the connection comes back, in the singular and the plural", () => {
+    const text = (pending: number, onlineOnly = false) =>
+      syncStatusLabel(
+        snapshot({ counts: counts({ pending }), online: false }),
+        { onlineOnly }
+      ).text;
+    expect(text(0)).toBe("Sem conexão");
+    expect(text(1)).toBe(
+      "Sem conexão · 1 operação guardada, envia quando voltar"
+    );
+    expect(text(3)).toBe(
+      "Sem conexão · 3 operações guardadas, enviam quando voltar"
+    );
+    expect(text(0, true)).toBe("Sem conexão · esta tela precisa de internet");
+    expect(text(1, true)).toBe(
+      "Sem conexão · 1 operação guardada, envia quando voltar · esta tela precisa de internet"
     );
   });
 
@@ -98,7 +118,7 @@ describe("the sync status in the header", () => {
         onlineOnly
       ).text
     ).toBe(
-      "Sem conexão · 2 operações guardadas · esta tela precisa de internet"
+      "Sem conexão · 2 operações guardadas, enviam quando voltar · esta tela precisa de internet"
     );
     // online, nothing changes
     expect(syncStatusLabel(snapshot(), onlineOnly).text).toBe(
@@ -121,6 +141,41 @@ describe("the sync status in the header", () => {
     expect(
       syncStatusLabel(snapshot({ reason: "sync_failed", syncing: false }))
     ).toMatchObject({ tone: "offline" });
+  });
+
+  it("says the server is busy when it died on the send, and keeps 'Envio falhou' for any other failure", () => {
+    expect(
+      syncStatusLabel(
+        snapshot({
+          counts: counts({ pending: 2 }),
+          reason: "server_busy",
+          syncing: false,
+        })
+      )
+    ).toEqual({
+      attention: false,
+      short: "Ocupado · 2",
+      text: "Servidor ocupado · 2 operações guardadas neste aparelho",
+      tone: "offline",
+    });
+    expect(
+      syncStatusLabel(snapshot({ reason: "server_busy", syncing: false }))
+    ).toMatchObject({
+      short: "Ocupado",
+      text: "Servidor ocupado · tentando de novo sozinho",
+    });
+    expect(
+      syncStatusLabel(
+        snapshot({
+          counts: counts({ pending: 2 }),
+          reason: "sync_failed",
+          syncing: false,
+        })
+      )
+    ).toMatchObject({
+      short: "Envio falhou",
+      text: "Não foi possível enviar · 2 operações guardadas",
+    });
   });
 
   it("a refused operation becomes a call for attention, whatever else is going on", () => {
@@ -151,6 +206,12 @@ describe("the sync status in the header", () => {
       snapshot({ online: false }),
       snapshot({ counts: counts({ pending: 12 }) }),
       snapshot({ reason: "sync_failed", syncing: false }),
+      snapshot({ reason: "server_busy", syncing: false }),
+      snapshot({
+        counts: counts({ pending: 12 }),
+        reason: "server_busy",
+        syncing: false,
+      }),
       snapshot({ syncing: true }),
       snapshot({ phase: "starting" }),
       snapshot({ phase: "unavailable", reason: "no_lease_offline" }),
@@ -254,6 +315,43 @@ describe("the sync status line at the top of Mais", () => {
     expect(syncStatusLabel(snapshot({ phase: "unavailable" })).short).toBe(
       "Sem offline"
     );
+  });
+});
+
+describe("the sync status when offline is not available", () => {
+  it("says offline is part of the Pro plan when the plan refused it, and keeps the short form", () => {
+    const label = syncStatusLabel(
+      snapshot({ phase: "unavailable", reason: PLAN_REFUSED_REASON })
+    );
+    expect(label).toEqual({
+      attention: false,
+      short: "Sem offline",
+      text: "O modo offline faz parte do plano Pro",
+      tone: "offline",
+    });
+  });
+
+  it.each([
+    ["the local queue does not open", "queue_open_failed"],
+    ["the session changed", "session_changed"],
+    ["the store was closed", "organization_closed"],
+    ["the session was refused", "session_refused"],
+    ["a purge failed", "purge_failed"],
+    ["the start failed without a message", "start_failed"],
+    ["no reason is known", null],
+  ])("keeps the device text when %s", (_name, reason) => {
+    const label = syncStatusLabel(snapshot({ phase: "unavailable", reason }));
+    expect(label.text).toBe("Offline indisponível neste aparelho");
+    expect(label.short).toBe("Sem offline");
+  });
+
+  it("never shows the plan text on a store with offline on", () => {
+    for (const phase of ["ready", "starting", "expired"] as const) {
+      const label = syncStatusLabel(
+        snapshot({ phase, reason: PLAN_REFUSED_REASON })
+      );
+      expect(label.text).not.toContain("plano Pro");
+    }
   });
 });
 

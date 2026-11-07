@@ -4,6 +4,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 
 export const MAX_ORGANIZATION_NAME_LENGTH = 128;
 const MAX_TIMEZONE_LENGTH = 64;
@@ -130,7 +131,7 @@ export function setupErrorMessage(error: unknown): string {
     return "O nome ou o horário foram recusados. Revise os campos.";
   }
   if (code === "CONFLICT" || reason === "multiple_existing_organizations") {
-    return "Sua conta já tem uma loja que não abriu sozinha. Fale com o suporte.";
+    return `Sua conta já tem uma loja que não abriu sozinha. Escreva para o suporte: ${SUPPORT_EMAIL}.`;
   }
   if (code === "SERVICE_UNAVAILABLE") {
     return "O Polaris está temporariamente indisponível. Tente novamente.";

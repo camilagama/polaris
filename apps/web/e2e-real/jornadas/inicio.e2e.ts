@@ -12,7 +12,7 @@ const FLUSH_MS = 11_000;
 type Stats = Map<string, { scans: number; writes: number }>;
 
 /**
- * Journey of the Início (corte inicio.md AC-5, AC-23; desenho t269 v2, § 5.4) on the real stack: the sale of today is
+ * Journey of the Início (corte inicio.md AC-5, AC-23; desenho do Início v2, § 5.4) on the real stack: the sale of today is
  * in Hoje with its exact amount, and opening the page inserts, updates and deletes nothing in any table of the
  * database (pg_stat_user_tables before and after, with the reads of the page shown in the same statistics). The goal
  * whose period ended, the one write the page may cause, is proved by the `home-writes` gate on PostgreSQL 18.
@@ -85,12 +85,15 @@ test("início: a venda de hoje aparece em Hoje e abrir a tela não grava nada no
   const today = page.getByRole("region", { name: "Vendas hoje" });
   await expect(today).toContainText("R$ 90,00");
   await expect(today).toContainText("1 venda");
-  await expect(page.getByRole("region", { name: "Meta" })).toContainText(
-    "Defina quanto quer vender no mês e acompanhe aqui."
-  );
   await expect(
-    page.getByRole("region", { name: "Precisa de atenção" })
-  ).toContainText("Nada precisa de atenção agora.");
+    page.getByRole("region", { name: "Meta" }).getByRole("link", {
+      name: "Definir meta",
+    })
+  ).toBeVisible();
+  // nothing to do: the block is not there
+  await expect(
+    page.getByRole("region", { name: "Precisa de ação" })
+  ).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "Mais vendidos do mês" })
   ).toContainText("Vela aromática");

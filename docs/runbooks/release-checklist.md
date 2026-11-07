@@ -80,8 +80,8 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 6. Smoke test definido e executado (BLOCK)
 
 - Critério: antes da promoção, a lista de verificações de fumaça está escrita: rota, resposta esperada e o que fazer se falhar, para cada Worker promovido. Ela é executada contra o ambiente que recebe o SHA e, depois da implantação em produção, contra produção.
-- **Proposta, pendente de decisão:** lista manual, escrita no relatório da execução e executada por uma pessoa com o perfil autorizado, porque o repositório não tem script de smoke test. A alternativa (script versionado ou verificação no CI) é decisão do time e muda este item.
-- Evidência: a lista, o resultado de cada verificação, a data e o host. Sem tokens nem dados de cliente.
+- **Decidido (decisão 4):** vale o smoke do workflow do staging, ampliado: `scripts/smoke-staging.mjs`, 19 verificações sem conta e sem escrita (release do Worker, shell igual ao artefato, métodos de entrada, `/rpc` com o ping, as três recusas de origem e as duas recusas anônimas, get-session, catálogo, desde 03/11/2026 o Admin redirecionado ao Access do staging em `/health` e `/api/whoami`, e desde 04/11/2026 os webhooks de cobrança do Asaas e da Woovi recusando entrega sem assinatura com 401). A lista, o que cada falha quer dizer e a regra do `cpu/plataforma` estão no [runbook do staging](./staging.md#smoke-do-deploy). A escrita fica de fora do automático: um passo manual no staging, por quem tem conta Google de teste, numa loja `smoke-<data>` (venda confirmada e cancelada). Produção ganha os hosts dela no mesmo script quando o deploy de produção existir.
+- Evidência: o log do passo `Smoke` do run (verificação e status, sem corpo), o passo manual de escrita, a data e o host. Sem tokens nem dados de cliente.
 
 ### 7. Critérios de rollback e responsável (BLOCK)
 
@@ -91,9 +91,10 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 8. SHA implantado conferido no host de deploy (BLOCK)
 
 - Critério: para cada Worker promovido, o SHA lido de volta no host de deploy (versão do Worker ou identificador exposto pelo deploy) é igual ao SHA candidato. A promoção só é dada como feita depois disso.
-- **Proposta, pendente de decisão:** leitura manual, por quem tem o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)), sem script. O repositório não expõe o SHA no Worker nem tem script de deploy.
+- **Decidido (decisão 5):** o SHA é lido do host e comparado com o commit. Cada Worker declara o commit com que foi construído no cabeçalho `X-Polaris-Release` (12 hex; web em `/health`, catálogo em `/robots.txt`), só com `RELEASE_HEADER_ENABLED` igual a `"true"` ([ADR 0098, emenda de 31/10](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md)); o shell, servido pelos Static Assets sem o Worker, é comparado byte a byte com o artefato publicado. No staging o smoke faz as duas leituras a cada deploy. Em produção a var fica `"false"` até a primeira execução deste item lá, que decide entre ligá-la ou ler a API de deployments por quem tem o perfil autorizado ([política de perfis de CLI](./cli-profile-policy.md)).
+- **Staging:** além do cabeçalho, o passo de deploy confere no plano de controle da Cloudflare que a versão ativa de cada Worker é única, está a 100% e carrega o SHA no `--message` (`scripts/verify-deployed-sha.mjs`, [runbook do staging](./staging.md#smoke-do-deploy)); em produção essa leitura só roda quando o deploy de produção existir e por quem tem o perfil autorizado.
 - Se o host não expõe o SHA, o item fica como dados insuficientes. Não se presume que o deploy é igual ao candidato.
-- Evidência: a leitura de volta, com o identificador e a data.
+- Evidência: o log do passo `Smoke` (verificações 1 e 12, do release, e 2 a 4, do shell, com `ok`) ou a leitura de volta, com o identificador e a data.
 
 ### 9. Nenhum achado "bloqueia" aberto do revisor (BLOCK)
 
@@ -139,7 +140,7 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 ### 16. Exceção não capturada visível nos Workers Logs com `invocation_logs` desligado (BLOCK)
 
 - Critério: os três Workers têm `observability.logs.invocation_logs: false` ([ADR 0094](../adr/0094-tracing-e-amostragem-do-workers-observability.md)), e a documentação da Cloudflare não diz se as exceções não capturadas continuam nos Workers Logs com ele desligado. No staging, provocar uma exceção não capturada em cada Worker (`polaris-web`, `polaris-admin`, `polaris-catalog`) e conferir se ela aparece nos Workers Logs. Se não aparecer em algum Worker, ligar `invocation_logs` nele (o custo é uma linha por requisição, dentro da estimativa do ADR 0094) antes do go-live e repetir a prova.
-- Como provocar (decisão do Arrascaeta, [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)): uma versão temporária, enviada com `wrangler versions upload --env staging` a partir de uma cópia local não commitada, lança a exceção. Depois, a conferência nos Workers Logs e o rollback. **Nunca** uma rota de falha no código. Os passos estão no [runbook do staging](./staging.md#9-itens-do-release-checklist-no-staging). O Admin não é exposto no staging: a prova dele fica para o go-live, atrás do Access da produção.
+- Como provocar (decisão do Arrascaeta, [ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)): uma versão temporária, enviada com `wrangler versions upload --env staging` a partir de uma cópia local não commitada, lança a exceção. Depois, a conferência nos Workers Logs e o rollback. **Nunca** uma rota de falha no código. Os passos estão no [runbook do staging](./staging.md#9-itens-do-release-checklist-no-staging). O Admin está no staging atrás do Access do staging desde 03/11/2026 (emenda do ADR 0097) e segue o mesmo procedimento; o go-live repete a prova atrás do Access da produção.
 - Severidade BLOCK: decidida pelo Arrascaeta. Frequência: **em aberto, proposta pendente de decisão**: o item vale uma vez antes do go-live e de novo quando mudar a configuração `observability` de um Worker ou a `compatibility_date`; depois, as promoções citam o registro vigente (Worker, data, ambiente, resultado). Até a decisão, vale esta proposta.
 - Evidência: por Worker, o ambiente, a data, quem provocou a exceção, se ela apareceu nos Workers Logs (sim ou não) e, se não, o valor de `invocation_logs` depois da correção. Sem segredos nem dados de cliente.
 
@@ -164,8 +165,9 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 ### 20. Deploy de produção com `CLOUDFLARE_ENV=production` (BLOCK)
 
-- Critério: o build de `apps/web` define `LEGAL_DRAFT_BUILD=1` por padrão (`apps/web/package.json`), e esse valor só deixa passar os marcadores `[preencher: ...]` das páginas legais quando não há ambiente nomeado. O deploy de produção define `CLOUDFLARE_ENV=production` no comando de build, e com ele o guarda legal recusa o build que ainda tenha marcador ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Sem essa variável, o build sai como rascunho e a produção publicaria os marcadores.
-- Evidência: o comando ou a configuração de build do deploy com `CLOUDFLARE_ENV=production` e o resultado do build de produção do SHA candidato (o build tem de falhar enquanto houver marcador, e passar depois da revisão jurídica).
+- Critério: o build de `apps/web` define `LEGAL_DRAFT_BUILD=1` por padrão (`apps/web/package.json`), e esse valor só deixa passar os marcadores `[preencher: ...]` das páginas legais quando não há ambiente nomeado. O deploy de produção também define `VITE_LEGAL_RAZAO_SOCIAL`, `VITE_LEGAL_ENDERECO`, `VITE_LEGAL_CONTATO_EMAIL`, `VITE_LEGAL_DPO_EMAIL`, lidas das `vars` do GitHub Actions; o dia em que os textos entram em vigor não é `var` na produção: na publicação ele vai para `effectiveFrom` em `packages/domain/src/legal/legal-documents.ts` por PR, e o build de produção ignora `VITE_LEGAL_VIGENCIA` (só o staging a lê); a lista do que o build de produção reprova está na emenda de 30/10/2026 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). Estado: o passo que passa as `vars` ao build está no workflow do staging (`deploy-staging.yml`; variável ausente ou vazia mostra o exemplo do campo, e a de vigência ausente deixa o marcador da data, que só o staging aceita), e o de produção ainda não existe: confira que ele existe antes de promover. Trocar um dos valores da empresa é mudar a variável e fazer o deploy de novo; o hash e a versão do texto não mudam. A razão social do rodapé dos e-mails de cobrança é outra fonte (`BILLING_EMAIL_SUPPLIER`, [e-mail de autenticação e cobrança](email-auth.md#ordem-de-ligar)). O deploy de produção define `CLOUDFLARE_ENV=production` no comando de build, e com ele o guarda legal recusa o build que ainda tenha marcador ([ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md)). Sem essa variável, o build sai como rascunho e a produção publicaria os marcadores e os valores de exemplo no lugar dos dados da empresa.
+- Evidência: o comando ou a configuração de build do deploy com `CLOUDFLARE_ENV=production` e o resultado do build de produção do SHA candidato (o build tem de falhar enquanto houver marcador ou variável `VITE_LEGAL_*` da empresa faltando, ou o dia da vigência fora da constante, e passar depois da revisão jurídica), e a leitura de `/termos` e `/privacidade` no build do SHA candidato, com os quatro dados da empresa e o dia de vigência no texto.
+- Endereço de suporte, uma fonte só: `LEGAL_CONTATO_EMAIL` (variável do repositório, não do Environment) preenchida e passada ao build como `VITE_LEGAL_CONTATO_EMAIL` e ao `wrangler deploy` como `--var BILLING_SUPPORT_EMAIL:…`. O app (`/ajuda`, a linha "Precisa de ajuda?" da entrada e as frases que mandam escrever ao suporte, em `apps/web/src/lib/support-contact.ts`), o texto dos Termos e o rodapé dos e-mails de cobrança então mostram o mesmo endereço. Evidência: o endereço lido em `/ajuda`, em `/termos` (seção do contato) e no rodapé de um e-mail de cobrança do SHA candidato, iguais. Enquanto o passo do workflow não for aplicado, o `BILLING_SUPPORT_EMAIL` fica vazio, e com `BILLING_SELF_SERVICE_ENABLED` ligado os e-mails de cobrança não saem (linha do `BILLING_SUPPORT_EMAIL` mais abaixo). O `--var` vale para a produção: no staging ele não é passado, de propósito, porque o valor ficaria fora da guarda de isolamento, que lê o `wrangler.json` gerado antes do deploy, e é o `reply-to` dos e-mails de cobrança. No staging ele está no `wrangler.jsonc` desde que a cobrança foi ligada lá contra o sandbox (`suporte@araute.app`, um endereço só em `@araute.app`, conferido pela verificação de isolamento; [runbook do staging](./staging.md#5a-cobrança-no-sandbox-responsável)); para o `/ajuda` do staging mostrar o mesmo endereço, a variável `LEGAL_CONTATO_EMAIL` precisa ter esse valor.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
 
 ### 21. Sentry do navegador ligado, com source maps enviados e nenhum `.map` servido (WARN)
@@ -190,8 +192,8 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
   3. o lojista avisado antes de os dados saírem: os avisos por marco (D − 30, D − 7, D e o reagendamento depois de uma trava) e o e-mail ligados em produção, com o domínio definitivo (AC-30, AC-50 e AC-51), e o painel da loja encerrada com o pedido de cópia no ar; ou uma exceção registrada pelo responsável;
   4. a revisão de advogado dos termos;
   5. os sinais `apagamento-automatico` e `loja-encerrada-parada` do [runbook de alertas](./alertas.md) ligados no mesmo deploy.
-- `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. Antes dele, o e-mail manda o dono pedir a cópia ou desfazer o encerramento num painel que não existe. Com o PR G, o link e o botão do e-mail apontam para essa tela. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
-- `BILLING_SUPPORT_EMAIL` (a caixa do rodapé e do `reply-to` dos e-mails de cobrança e do E1, ADR 0104) fica vazia no `wrangler.jsonc` até o responsável definir a caixa do ambiente; sem ela, `BILLING_SELF_SERVICE_ENABLED` e `WELCOME_EMAIL_ENABLED` ligados não enviam nada e os avisos saem `email_not_configured`.
+- `CLOSURE_NOTICE_EMAIL_ENABLED` (o e-mail dos avisos, [runbook](./avisos-de-encerramento.md#ligar-o-e-mail)) só fica `"true"` no ambiente promovido com o PR G no ar: a tela da loja encerrada, com o pedido de cópia e o desfazer. O G1 entrega o painel `/loja-encerrada` com o pedido de cópia, e o link e o botão do e-mail já apontam para ele; o desfazer pelo painel é do G2, e até lá o e-mail convida a desfazer num painel que ainda não desfaz. A chave de idempotência do Resend vale 24 horas: um reenvio depois disso, de um aviso cuja marca de enviado falhou, pode chegar duas vezes ao dono.
+- `BILLING_SUPPORT_EMAIL` (a caixa do rodapé e do `reply-to` dos e-mails de cobrança e do E1, ADR 0104) fica vazia no `env.production` do `wrangler.jsonc` até o responsável definir a caixa do ambiente (no staging é `suporte@araute.app`); sem ela, `BILLING_SELF_SERVICE_ENABLED` e `WELCOME_EMAIL_ENABLED` ligados não enviam nada e os avisos saem `email_not_configured`.
 - `WELCOME_EMAIL_ENABLED` (boas-vindas, E1, ADR 0104) só fica `"true"` com o consumidor de `billing.notice` no ar (PR G do F1), a base legal do E1 confirmada (EM-37) e a P48. Antes do consumidor, cada boas-vindas gravada vira evento sem handler: tentativas, DLQ e incidente. Ligada, a varredura horária grava as boas-vindas só das lojas criadas nas últimas 24 horas (não manda atrasadas).
 - Evidência: o valor da variável no `wrangler.jsonc` do SHA candidato (o teste `maintenance.test.ts` confere que está desligada nos três blocos) e, no go-live, o registro da prova em staging e da decisão do usuário.
 - Severidade BLOCK: proposta, pendente de decisão do responsável.
@@ -213,6 +215,44 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 - Critério: passada manual de VoiceOver (iPhone) e TalkBack (Android) no BrowserStack em Despesa (DatePicker) e Histórico (DateRangePicker); dono Diego Alves (QA); campo mudo ou data não anunciada = correção antes do go-live. Os campos nativos `type="date"` traziam o leitor de tela do sistema; os seletores do `ui/` (t373) passam essa responsabilidade ao app. A suíte de aparelhos reais (fluxo 4 do [Gate 5](./gate-5-offline.md#suíte-em-aparelhos-reais-browserstack)) prova abrir, escolher e a falha do chunk, mas não o leitor de tela.
 - Evidência: data, SHA, aparelhos e versões do sistema; para cada tela, o que o leitor anunciou no botão (rótulo e data), na grade do mês e no dia escolhido; achados e a correção de cada um, ou "nenhum".
 - Severidade BLOCK: decidida pelo Filipe Luís (arquitetura, revisão de 25/10/2026 da t373).
+
+### 26. Página do Admin gerada antes do deploy do Admin (BLOCK, proposta)
+
+- Critério: o deploy do Admin Worker roda `bun run --filter @polaris/admin build:ui` **antes** do `wrangler deploy` do Admin, no mesmo checkout do SHA candidato. O script e a folha da página ficam em `apps/admin/src/ui/generated/`, fora do git, e o Worker os embute como módulo Text: um `wrangler deploy` direto falha sem eles ou, pior, publica um arquivo velho que estava no disco de quem publica. Nunca rode o `wrangler deploy` do Admin sem esse passo.
+- Evidência: a saída do `build:ui` e do deploy, na mesma sessão e no mesmo SHA, no relatório da execução.
+
+### 27. Erros do app no navegador ligados só depois de conferir a linha (BLOCK, proposta)
+
+- Critério: `CLIENT_ERRORS_ENABLED` fica `"0"` em `env.production` (a verificação de isolamento reprova `"1"`) até este item: no staging, com a flag de build `VITE_CLIENT_ERRORS_ENABLED=true` e `VITE_RELEASE` no deploy, um erro forçado numa tela gera uma linha `client_error` e conferir nos Workers Logs **o que a plataforma anexa a ela** (URL da requisição, cabeçalhos, IP, campos `cf`): só pode ter os campos da lista e os do logger. Com `invocation_logs` ligado (item 16), a rota passa a gerar uma linha por requisição, com a URL, e o orçamento dela deixa de valer: nesse caso não ligar sem nova decisão. Ver [runbook dos erros do navegador](./erros-do-navegador.md) e a emenda de 28/10/2026 do [ADR 0098](../adr/0098-sentry-no-navegador-so-erros-e-sanitizado.md).
+- Para ligar em produção: remover a trava de `scripts/verify-staging-isolation.mjs` no mesmo PR que muda a var, com a evidência deste item.
+- Severidade: proposta (BLOCK), pendente de decisão do Arrascaeta.
+- Evidência: o ambiente, a data, a linha vista (sem valores de cliente) e o valor de `invocation_logs`.
+
+### 28. Frases de estado dos Termos e da Política (BLOCK, proposta)
+
+- Critério: nenhuma frase dos Termos ou da Política que dependa do estado do produto ("ainda não…", "enquanto…") fica falsa no ambiente que a promoção liga. Cada linha da tabela abaixo é conferida contra o que a promoção liga; a frase falsa é trocada no mesmo PR que liga a função, nunca antes dela (a frase 2 muda no PR da ligação de `CLOSURE_NOTICE_EMAIL_ENABLED` de produção ou depois dele).
+- Regra de versão: enquanto só houver aceites de contas de teste, a v1 se edita no lugar; depois do primeiro aceite de pessoa real, mudança de texto vira v2 com novo aceite e "o que mudou" na tela de aceite (§11 dos Termos). O PR que troca uma frase diz qual dos dois casos vale.
+- `apps/web/src/legal/legal-state-phrases.test.ts` lê a tabela e procura cada frase, literalmente, no arquivo indicado. Frase que muda no `.md` sem mudar aqui, ou o contrário, reprova o teste; frase nova com "ainda não" ou "não estiver" no `.md` sem linha aqui também reprova (outras formas, como "quando estiver ligado", dependem da revisão).
+
+<!-- legal-state-phrases:start -->
+
+| # | Arquivo | Frase | Fica falsa quando | Quem troca |
+| --- | --- | --- | --- | --- |
+| 1 | termos | `ele não confere os outros aparelhos` | a fila dos outros aparelhos passar a ser conferida antes de encerrar | o PR que muda a conferência da tela de encerrar (`OTHER_DEVICES_TEXT`, `closure-model.ts`) |
+| 1 | privacidade | `ele não confere os outros aparelhos` | a mesma condição da linha anterior | o mesmo PR |
+| 2 | termos | `Os avisos por e-mail (ao encerrar, 30 dias antes, 7 dias antes e no dia) ainda não estão disponíveis.` | `CLOSURE_NOTICE_EMAIL_ENABLED` de produção for ligada | o PR que liga a flag de produção, ou um posterior |
+| 3 | termos | `enquanto o pagamento automático não estiver disponível, a tela avisa que a cobrança precisa ser cancelada lá` | `billingSelfService` / `BILLING_SELF_SERVICE_ENABLED` de produção for ligada (a tela já escolhe o texto pela flag; no staging ela está ligada contra o sandbox, com os mesmos Termos) | o PR que liga a flag de produção |
+| 4 | termos | `O pagamento por cartão (Asaas) ainda não está disponível.` | o cartão entrar no ar (decisão do lançamento e Gate 7) | o PR que liga o cartão |
+| 4 | privacidade | `O pagamento por cartão ainda não está disponível` | a mesma condição da linha anterior | o mesmo PR |
+| 4 | privacidade | `ainda não ligados: processam os pagamentos` | Asaas ou Woovi forem ligados em produção | o PR que liga o provedor |
+| 5 | privacidade | `Resend (Estados Unidos, a confirmar no contrato), ainda não ligado` | o envio dos e-mails do sistema for ligado no ambiente em que a pessoa lê a Política (o staging já envia por `araute.app`) | o PR que liga o envio; a conferência no staging é do Arrascaeta |
+| 6 | termos | `A exportação está na tela da loja e, depois do encerramento, no painel da loja encerrada.` | a aba "Seus dados" ou o painel da loja encerrada saírem | o PR que os remove ou move |
+| 7 | termos | `revogar um aparelho perdido ou roubado (tela Aparelhos)` | a aba Aparelhos não existir no build do ambiente (ela depende do runtime offline) | o PR que muda o build; a conferência no staging é do Arrascaeta |
+| 8 | termos | `Você pode abrir outra loja depois de encerrar uma` | o roteamento que leva a pessoa à criação de uma nova loja depois de encerrar sair | o PR que muda o roteamento |
+
+<!-- legal-state-phrases:end -->
+
+- Evidência: o SHA, a tabela conferida linha a linha contra o que a promoção liga, e o teste verde.
 
 ## Veredito
 
@@ -240,16 +280,16 @@ Este checklist não altera recursos. Quando o veredito é bloquear, ele não rev
 ## Estado atual
 
 - O checklist de go-live declara que nada foi executado. Enquanto um item tocado estiver aberto, a primeira execução tende a bloquear.
-- Nenhum `package.json` do repositório tem script de deploy nem de smoke test (o `build` de `apps/admin` usa `wrangler deploy --dry-run`). Os itens 6 e 8 precisam de definição antes da primeira execução. O staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)) traz a configuração `env.staging`/`env.production` e as verificações de isolamento. O workflow de deploy e o smoke do staging vêm num PR próprio.
+- Nenhum `package.json` do repositório tem script de deploy nem de smoke test (o `build` de `apps/admin` usa `wrangler deploy --dry-run`). Os itens 6 e 8 já têm forma no staging (o smoke do deploy); em produção dependem do deploy de produção. O staging ([ADR 0097](../adr/0097-staging-fixo-e-producao-em-conta-separada.md)) traz a configuração `env.staging`/`env.production` e as verificações de isolamento. O workflow `deploy-staging.yml` roda o smoke a cada deploy do staging.
 
 ## Decisões pendentes
 
 Cada uma está marcada no texto como proposta, pendente de decisão:
 
-1. Severidade final de cada item, exceto 10, 14, 15, 16, 18, 19, 24 e 25, já decididos (hoje 17 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
+1. Severidade final de cada item, exceto 10, 14, 15, 16, 18, 19, 24 e 25, já decididos (hoje 18 BLOCK e 4 WARN, mais o item 21, WARN proposto) e do aviso da auditoria de dependências (item 2).
 2. Se o item 5 bloqueia toda promoção ou só a primeira.
 3. Quem é o responsável no escalonamento e no item 7.
-4. Como fazer o smoke test do item 6.
-5. Como ler o SHA no host de deploy (item 8).
+4. ~~Como fazer o smoke test do item 6.~~ Decidido: o smoke do workflow do staging, ampliado (item 6).
+5. ~~Como ler o SHA no host de deploy (item 8).~~ Decidido: o cabeçalho `X-Polaris-Release` lido do host, atrás de `RELEASE_HEADER_ENABLED`; em produção, a decidir na primeira execução (item 8).
 6. Se uma execução anterior da suíte completa em Neon (a do fim da fase) vale como evidência do item 4, e se o nome `run-AAAA-MM-DD-<SHA curto>.md` é o adotado para o relatório.
 7. Frequência do item 16 (severidade BLOCK já decidida): se basta uma prova antes do go-live e outra quando mudar a configuração `observability` ou a `compatibility_date`, ou se é por promoção.

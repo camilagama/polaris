@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Request } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { SUPPORT_ADDRESS } from "./support-address";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const GOOGLE_URL =
@@ -122,6 +123,7 @@ const touchHeight = (control: Locator) =>
         : 0;
     return box.height + Math.max(0, grow);
   });
+const AN_ANSWER_TIME = /responderemos|respondemos|em até \d+|dias úteis/i;
 const googleButton = (page: Page) => page.getByRole("button", { name: BUTTON });
 
 test.describe("a tela de entrada, com o servidor interceptado", () => {
@@ -540,7 +542,34 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     ).toBeVisible();
   });
 
-  test("diz que a primeira vez é o mesmo botão e lista os dois textos legais com área de toque de 48 px (V4, V5)", async ({
+  test("sob o cartão, 'Precisa de ajuda? Escreva para {endereço}.' com o e-mail do suporte, sem prazo e sem rolar de lado a 320 e 360 px", async ({
+    page,
+  }) => {
+    await serve(page, newServer());
+    for (const width of [320, 360, 1280]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one width after the other
+      await page.setViewportSize({ height: 740, width });
+      await page.goto("/entrar");
+      const line = page.getByText("Precisa de ajuda? Escreva para");
+      await expect(line).toBeVisible();
+      await expect(line).toHaveText(
+        `Precisa de ajuda? Escreva para ${SUPPORT_ADDRESS}.`
+      );
+      await expect(
+        page.getByRole("link", {
+          name: `Escrever para o suporte: ${SUPPORT_ADDRESS}`,
+        })
+      ).toHaveAttribute("href", `mailto:${SUPPORT_ADDRESS}`);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    }
+    await expect(page.getByText(AN_ANSWER_TIME)).toHaveCount(0);
+  });
+
+  test("diz que a primeira vez é o mesmo botão e lista os dois textos legais com área de toque de 44 px (V4, V5)", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -554,7 +583,7 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
       const link = page.getByRole("link", { name: new RegExp(name) });
       // biome-ignore lint/performance/noAwaitInLoops: one link after the other
       await expect(link).toBeVisible();
-      expect(await touchHeight(link)).toBeGreaterThanOrEqual(48);
+      expect(await touchHeight(link)).toBeGreaterThanOrEqual(44);
     }
     await expect(page.getByText("Leia antes de entrar")).toHaveCount(0);
   });
@@ -590,14 +619,14 @@ test.describe("a tela de entrada, com o servidor interceptado", () => {
     expect(printed.filter((line) => SECRET_IN_CONSOLE.test(line))).toEqual([]);
   });
 
-  test("a 360 px o botão tem área de toque de 48 px e nada rola para o lado (AC-29)", async ({
+  test("a 360 px o botão tem área de toque de 44 px e nada rola para o lado (AC-29)", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 640, width: 360 });
     await serve(page, newServer());
     await page.goto("/entrar?erro=google&motivo=sessao");
     await expect(googleButton(page)).toBeVisible();
-    expect(await touchHeight(googleButton(page))).toBeGreaterThanOrEqual(48);
+    expect(await touchHeight(googleButton(page))).toBeGreaterThanOrEqual(44);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth
     );

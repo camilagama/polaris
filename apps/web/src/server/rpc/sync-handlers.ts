@@ -145,6 +145,7 @@ export function createSyncRpcHandlers(dependencies: SyncRpcDependencies) {
           hashKeys,
           keys,
           now: dependencies.now,
+          requestId: context.requestId,
           runSyncCommand: runCommand,
           withTenant: (operation) =>
             dependencies.withTenantRequestContext({

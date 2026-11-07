@@ -189,6 +189,7 @@ async function run() {
       entitlement_grants: [
         "expires_at",
         "flag_value",
+        "id",
         "key",
         "limit_value",
         "organization_id",
@@ -211,6 +212,7 @@ async function run() {
       organization_billing: [
         "access_ends_at",
         "cancel_at_period_end",
+        "current_charge_amount",
         "cycle_months",
         // the three of the operator's read of the refund window (0100, ADR 0104, decision 8)
         "first_charge_amount",
@@ -583,8 +585,8 @@ async function run() {
       "INSERT INTO public.goals (organization_id, kind, target, starts_on, ends_on) VALUES ($1, 'sale_count', 10, current_date, current_date + 30), ($1, 'sale_count', 5, current_date, current_date + 30)",
       [pro.organizationId]
     );
-    await owner.pool.query(
-      "INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at) VALUES ($1, 'variants.active.max', 3000, 'compensation for the secret outage', 'admin:gate', now() - interval '1 day', now() + interval '2 days')",
+    const insertedGrant = await owner.pool.query<{ id: string }>(
+      "INSERT INTO public.entitlement_grants (organization_id, key, limit_value, reason, granted_by, starts_at, expires_at) VALUES ($1, 'variants.active.max', 3000, 'compensation for the secret outage', 'admin:gate', now() - interval '1 day', now() + interval '2 days') RETURNING id",
       [pro.organizationId]
     );
     const device = await owner.pool.query<{ id: string }>(
@@ -660,6 +662,11 @@ async function run() {
     assert.ok(raw.billingEvents.oldestUnprocessedAt);
     assert.equal(raw.grants.length, 1);
     assert.equal(raw.grants[0]?.limitValue, 3000);
+    assert.equal(
+      raw.grants[0]?.id,
+      insertedGrant.rows[0]?.id,
+      "the grant is listed with its own ID, the one that ends it through the case"
+    );
     assert.equal(raw.planCatalog.length, 12);
     tests.push(
       "the figures are right for an organization with products, images, goals, a grant, a device with two leases, sync commands and billing events (counts of live and archived products, variants, images and the most on one product, active goals, devices and leases, accepted and rejected commands by code, events by status)"
@@ -691,6 +698,7 @@ async function run() {
       grant: [
         "expiresAt",
         "flagValue",
+        "id",
         "key",
         "limitValue",
         "revokedAt",

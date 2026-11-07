@@ -98,6 +98,7 @@ export function createDataExportRpcHandlers(
               requestId: dependencies.requestAuditId(context.requestId),
             }),
           request: context.request,
+          requireFreshSession: true,
           requestedOrganizationId: input.organizationId,
         })
         .catch(dependencies.toRpcError)

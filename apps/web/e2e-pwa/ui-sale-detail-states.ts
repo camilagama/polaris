@@ -5,7 +5,7 @@ import { DETAIL_SALE_ID, saleDetailAnswers } from "./sale-detail-fixture";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The states of the sale detail and of the customer page the interface guardrails measure (t255): the screens in the
+ * The states of the sale detail and of the customer page the interface guardrails measure: the screens in the
  * lab of the screens (`/offline-screens-lab?screen=sale-detail&saleId=…`), with the sale, its customer link and the
  * customers answered by the test (`page.route`), synthetic data only. Four states, as few as cover the parts: each
  * one starts the runtime of the lab in every context of the map. The lab's own controls are hidden at the end of
@@ -117,7 +117,7 @@ export const saleDetailStates = {
     await showScreenAlone(page);
   },
 
-  /** The read of the sale does not answer: the line for the screen reader and the skeleton of the receipt (t300). */
+  /** The read of the sale does not answer: the line for the screen reader and the skeleton of the receipt. */
   async loading(page: Page) {
     await openSaleLab(page, "sale-detail", "Detalhe da venda", true, true);
     await page

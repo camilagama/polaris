@@ -39,7 +39,7 @@ const MAX_ENTRY_BYTES = 0xff_ff_ff_ff - 1;
 const LOCAL_HEADER_BYTES = 30;
 const CENTRAL_HEADER_BYTES = 46;
 const END_OF_DIRECTORY_BYTES = 22;
-/** 1980-01-01 00:00:00, the earliest DOS date: entries carry no time, so an archive is the same bytes every time. */
+/** `1980-01-01` 00:00:00, the earliest DOS date: entries carry no time, so an archive is the same bytes every time. */
 const DOS_TIME = 0;
 const DOS_DATE = 33; // year 1980, month 1, day 1
 const UTF8_FLAG = 0x08_00;

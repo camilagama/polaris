@@ -251,7 +251,7 @@ function DeleteConfirm({
   }, [category, online, onConfirm]);
   return (
     <fieldset
-      className="grid w-full min-w-0 gap-3 outline-none"
+      className="focus-ring grid w-full min-w-0 gap-3"
       ref={groupRef}
       tabIndex={-1}
     >

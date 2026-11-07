@@ -6,6 +6,7 @@ import { LEGAL_DOCUMENTS } from "@polaris/domain/legal/legal-documents";
 import { configureLogging } from "@polaris/observability/logger";
 import type { BetterAuthPlugin } from "better-auth";
 import { testUtils } from "better-auth/plugins";
+import { queryAsFunctionOwner } from "../../../packages/db/scripts/gate-roles";
 import {
   disposableHostPattern,
   gateBranchPattern,
@@ -32,6 +33,8 @@ const expectedDatabase =
 
 const baseURL = "http://localhost";
 const secret = randomBytes(32).toString("hex");
+// the hash of the password runs in the database (migration 0112), over the HMAC with this pepper
+const passwordPepper = randomBytes(32).toString("base64");
 const RECORD = "public.record_auth_access(text,text,inet,text)";
 const PASSWORD = "Long passphrase for the access log gate 2026!";
 const SESSION_COOKIE = /better-auth\.session_token=/;
@@ -44,13 +47,6 @@ interface LockClient {
 interface Captured {
   fields: Record<string, unknown>;
   text: string;
-}
-
-function urlOf(input: RequestInfo | URL): string {
-  if (typeof input === "string") {
-    return input;
-  }
-  return input instanceof Request ? input.url : input.href;
 }
 
 function captureLogs() {
@@ -104,12 +100,14 @@ async function run() {
 
   configureLogging({ service: "polaris-access-log-login-gate" });
   const owner = createDatabase(adminUrl, { maxConnections: 2 });
+  // GRANT and REVOKE on the function are its owner role's, whatever the gate user is
+  const asRecordOwner = (statement: string) =>
+    queryAsFunctionOwner(owner.pool, RECORD, statement);
   const logins: [string, string][] = [];
   const tests: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const cleanupFailures: string[] = [];
   const userIds: string[] = [];
-  const realFetch = globalThis.fetch;
   let revoked = false;
   let lockClient: LockClient | undefined;
   let primaryFailure = false;
@@ -144,15 +142,6 @@ async function run() {
     logins.push([role, "polaris_auth_runtime"]);
     const authUrl = temporaryRuntimeUrl(adminUrl, role, password);
 
-    // the HIBP range lookup of the password policy is the only outbound call: answered locally
-    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = urlOf(input);
-      if (url.startsWith("https://api.pwnedpasswords.com/range/")) {
-        return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
-      }
-      return realFetch(input, init);
-    }) as typeof fetch;
-
     const verificationEmails: { token: string; url: string }[] = [];
     const emailDelivery: AuthEmailDelivery = {
       sendPasswordReset: () => Promise.resolve(),
@@ -168,6 +157,7 @@ async function run() {
         baseURL,
         database: database.db,
         emailDelivery,
+        passwordPepper,
         plugins: [testUtils() as unknown as BetterAuthPlugin],
         requestId,
         secret,
@@ -405,10 +395,11 @@ async function run() {
     );
 
     // ------------------------------------------------- EXECUTE revoked: the login goes on
-    await owner.pool.query(
+    // set first: the REVOKE may commit and the give-back of the owner role fail after it (the GRANT back is idempotent)
+    revoked = true;
+    await asRecordOwner(
       `REVOKE EXECUTE ON FUNCTION ${RECORD} FROM polaris_auth_runtime`
     );
-    revoked = true;
     const sizeBefore = logs.captured.length;
     const resilient = await call(requestOf(4), "/api/auth/sign-in/email", {
       ...json({ email, password: PASSWORD }),
@@ -461,7 +452,7 @@ async function run() {
       ip: ipOf(7),
     });
     assert.equal(failedRevoked.status, 401);
-    await owner.pool.query(
+    await asRecordOwner(
       `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
     );
     revoked = false;
@@ -538,7 +529,6 @@ async function run() {
     throw error;
   } finally {
     logs.restore();
-    globalThis.fetch = realFetch;
     if (lockClient) {
       await lockClient.query("ROLLBACK").catch(() => undefined);
       lockClient.release();
@@ -558,10 +548,13 @@ async function run() {
       }
     };
     if (revoked) {
-      await cleanup(
-        "restore execute",
-        `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
-      );
+      try {
+        await asRecordOwner(
+          `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
+        );
+      } catch (error) {
+        cleanupFailures.push(`restore execute (${redactedFailure(error)})`);
+      }
     }
     // test teardown (owner): the throwaway user, its account and sessions; the access log rows stay (append-only)
     for (const id of userIds) {

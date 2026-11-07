@@ -22,6 +22,7 @@
 | [`outbox-parado`](#outbox-parado) | `scheduled_job_run` do `outbox.dispatch` | 180 min | ausência | critical | sim |
 | [`outbox-falhando`](#outbox-falhando) | `outbox_send_failed`, `outbox_event_unsendable` | 120 min | 1 | warning | não |
 | [`cobranca-reconcile`](#cobranca-reconcile) | `billing_maintenance_incomplete` e outros | 180 min | 3 | critical | sim |
+| [`cobranca-provedor-nao-confirmou`](#cobranca-provedor-nao-confirmou) | `billing_unavailable_refused` (`reason` dos dois motivos) | 180 min | 3 | warning | não |
 | [`pix-cadastros-por-loja`](#pix-cadastros-por-loja) | `billing_payer_customer_created` | 60 min | 5 | warning | não |
 | [`erros-de-banco`](#erros-de-banco) | `server_error` com `sqlState` e outros | 15 min | 3 | critical | sim |
 | [`agendador-falhando`](#agendador-falhando) | `scheduled_job_claim_failed` e outros | 180 min | 2 | warning | não |
@@ -33,9 +34,12 @@
 | [`link-de-verificacao`](#link-de-verificacao) | `auth_verification_link_record_failed` | 24 h | 1 | warning | não |
 | [`apagamento-automatico`](#apagamento-automatico) | `closure_auto_purge_volume_high` | 24 h | 1 | critical | sim |
 | [`loja-encerrada-parada`](#loja-encerrada-parada) | `closure_purge_overdue` | 24 h | 1 | warning | não |
+| [`purge-parado`](#purge-parado) | `organization_purge_stalled` | 24 h | 1 | warning | não |
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
-| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed` | 60 min | 1 | critical | sim |
+| [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed`, `billing_amount_mismatch_incident_failed` | 60 min | 1 | critical | sim |
+| [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
+| [`revelacoes-por-hora`](#revelacoes-por-hora) | `admin_reveal_rate_limited` (Worker `polaris-admin`) | 60 min | 1 | warning | não |
 
 Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os revê. A taxa de 5xx é uma contagem por janela, sem denominador (só as rotas críticas emitem um evento por requisição).
 
@@ -67,7 +71,7 @@ Os limiares são um primeiro chute, sem medida de tráfego real; a Fase 14 os re
 
 **Como confirmar.** Workers Logs: os quatro eventos, agrupados por `reason` e `queue`. No banco: `SELECT kind, cause, occurrence_count, first_seen_at, last_seen_at FROM operational_incidents ORDER BY last_seen_at DESC LIMIT 20` (uma linha por causa, sem corpo da mensagem). No Admin, a lista de incidentes mostra o mesmo e permite reenviar.
 
-**O que fazer.** A causa diz o caminho: `retries_exhausted` (o handler falhou: ache o `queue_message_failed` do mesmo `eventId` e corrija, depois reenvie pelo Admin), `unknown_type` (o consumidor está mais velho que o produtor: faça o deploy do consumidor), `wrong_queue` (nome de fila com prefixo em vez de sufixo de ambiente), `invalid_envelope` (investigue quem escreveu na fila). Só reenvie depois de corrigir a causa; a retenção da fila é de 24 horas no Free.
+**O que fazer.** A causa diz o caminho: `retries_exhausted` (o handler falhou: ache o `queue_message_failed` do mesmo `eventId` e corrija, depois reenvie pelo Admin, com a regra do `Origin` do [runbook das filas](./queues.md)), `unknown_type` (o consumidor está mais velho que o produtor: faça o deploy do consumidor), `wrong_queue` (nome de fila com prefixo em vez de sufixo de ambiente), `invalid_envelope` (investigue quem escreveu na fila). Só reenvie depois de corrigir a causa; a retenção da fila é de 24 horas no Free.
 
 <a id="outbox-parado"></a>
 
@@ -99,6 +103,16 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 **Como confirmar.** Workers Logs: os cinco eventos, por `errorClass`/`errorCode`, `provider` e `sqlState`; veja também o `scheduled_job_run` de `billing.maintenance`. Uma só falha é retentada no tick seguinte; três em três horas é falha persistente (é o limiar).
 
 **O que fazer.** Com `sqlState` ou erro de conexão, siga [erros-de-banco](#erros-de-banco). Com erro de provedor, confira o painel de homologação ou produção do provedor (o responsável) e a assinatura do webhook. Não reprocesse pagamento à mão sem registrar: o efeito é de dinheiro e de acesso (use os comandos de cobrança do Admin). Nunca cole segredo do provedor em log ou chat.
+
+<a id="cobranca-provedor-nao-confirmou"></a>
+
+### cobranca-provedor-nao-confirmou — o provedor não confirmou o checkout ou o cancelamento antigo
+
+**O que significa.** O checkout de um dono foi recusado com 503 porque o Asaas ou a Woovi não respondeu ao que o Polaris precisa saber antes de abrir outro: se o checkout anterior foi pago (`previous_checkout_unverified`) ou se a renovação anterior foi cancelada (`previous_renewal_cancel_unverified`). Evento: `billing_unavailable_refused` (nível `warn`), um por 503 que vem de erro do provedor ou da checagem do checkout anterior (o 503 de `billing_not_configured` e o de `billing_audit_unavailable` não entram), com `reason` (o motivo que o cliente lê, de um conjunto fechado) e `errorCode` (o código do erro do Polaris), sem dado do provedor, id de loja nem dado pessoal. O limiar (3 em 180 min) é o do sinal vizinho mais parecido, [cobranca-reconcile](#cobranca-reconcile), mas só vai ao resumo diário: o 503 é o cliente tentando de novo, e o `http-5xx` já acorda no volume. O mesmo evento carrega também `billing_provider_unavailable` (provedor fora, não configurado ou resposta recusada), que o filtro deixa de fora: tire o filtro para ver todos.
+
+**Como confirmar.** Workers Logs: `event = "billing_unavailable_refused"`, agrupe por `reason` e `errorCode`. Um pico de um dos dois motivos com o `http-5xx` quieto é o provedor lento ou fora só na consulta que o motivo nomeia; compare com o painel de status do provedor e com `billing_provider_*` do [runbook de provedores](./billing-providers.md).
+
+**O que fazer.** Confira o provedor (o responsável vê o painel). Não libere checkout nem cancele renovação à mão sem confirmar no provedor: o efeito é cobrança em dobro. Quando o provedor voltar, o dono tenta de novo sozinho; se a loja insistir por horas, siga [cobranca-reconcile](#cobranca-reconcile) e o [runbook dos provedores](./billing-providers.md).
 
 <a id="pix-cadastros-por-loja"></a>
 
@@ -134,9 +148,11 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 ### r2-e-midia — falha do R2 ou da mídia
 
-**O que significa.** A limpeza de imagens removidas falhou ou o catálogo público não leu um arquivo do R2: `media_removed_asset_failed` (apagar objetos ou finalizar o ativo), `media_removed_asset_not_finalized` (o ativo ganhou vínculo depois de seus objetos serem apagados; **uma imagem pode ter perdido arquivos**), `media_removed_reconciliation_incomplete` (a execução terminou com falhas) e `catalog_media_read_failed` (leitura de objeto no catálogo). Falhas de rota de mídia do app aparecem como `server_error` nas rotas `/api/products/:productId/media` e `/api/media/:assetId`, e entram no sinal [http-5xx](#http-5xx).
+**O que significa.** A limpeza de imagens removidas falhou ou o catálogo público não leu um arquivo do R2: `media_removed_asset_failed` (apagar objetos ou finalizar o ativo), `media_removed_asset_not_finalized` (o ativo ganhou vínculo depois de seus objetos serem apagados; **uma imagem pode ter perdido arquivos**), `media_removed_reconciliation_incomplete` (a execução terminou com falhas) e `catalog_media_read_failed` (leitura de objeto no catálogo). Falhas de rota de mídia do app aparecem como `server_error` nas rotas `/api/products/:productId/media`, `/api/media/thumbs` e `/api/media/:assetId`, e entram no sinal [http-5xx](#http-5xx).
 
-**Como confirmar.** Workers Logs: os quatro eventos por `errorClass`/`errorCode`; confira o status do R2 e do binding `MEDIA_BUCKET` no console. O procedimento de reconciliação está em [media-storage-reconciliation.md](./media-storage-reconciliation.md).
+O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde inteiro: uma falha do R2 dá 503 `media_processing_unavailable` e entra no sinal acima; um derivado que sumiu entre a consulta e a leitura volta como `missing`, sem evento.
+
+**Como confirmar.** Workers Logs: os quatro eventos do alerta por `errorClass`/`errorCode`; confira o status do R2 e do binding `MEDIA_BUCKET` no console. O procedimento de reconciliação está em [media-storage-reconciliation.md](./media-storage-reconciliation.md).
 
 **O que fazer.** `not_finalized` é prioridade: o ativo e o produto afetados precisam de conferência (o evento traz o `assetId` do ativo, id opaco). Falha repetida de um ativo: ele sai do resto da execução e volta na seguinte; corrija a causa (chave inválida, permissão do binding) e espere o tick. R2 fora do ar: aguarde; as imagens servidas dependem dele, e os derivados de 320 e 640 px vêm do mesmo bucket.
 
@@ -206,9 +222,9 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 1. **Pare os agendamentos novos.** O responsável põe `CLOSURE_AUTO_PURGE_ENABLED` = `false` e faz o deploy. Os purges já agendados continuam valendo até serem cancelados.
 2. **Liste o que ainda pode ser cancelado.** É só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT organization_id, scheduled_at, not_before, locked_until FROM organization_purges WHERE trigger = 'closure_period' AND purged_at IS NULL AND storage_touched_at IS NULL ORDER BY not_before`. Um purge com `storage_touched_at` preenchido já começou a apagar o armazenamento e não pode mais ser cancelado. Registre esses no incidente.
-3. **Cancele um por um, pelo menor `not_before`.** Para cada organização da lista, o operador abre no Admin um caso de suporte da organização e cancela o purge com motivo (`POST /support-cases/:caseId/purge/cancel`, função `admin_cancel_organization_purge`). O cancelamento devolve a loja a `closed`, fica na auditoria e pausa o caminho automático dela neste encerramento. O primeiro `not_before` de um agendamento é, no mínimo, 7 dias depois dele. Um cancelamento recusado com `purge_in_progress` quer dizer que uma execução segura o purge agora: tente de novo depois de `locked_until` (até 15 minutos).
+3. **Cancele um por um, pelo menor `not_before`.** Para cada organização da lista, o operador abre no Admin um caso de suporte da organização e cancela o purge com motivo (`POST /support-cases/:caseId/purge/cancel`, função `admin_cancel_organization_purge`). Toda escrita no Admin manda `Origin: https://<host do Admin>`; sem ela, 403 ([ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md), emenda de 28/10). O cancelamento devolve a loja a `closed`, fica na auditoria e pausa o caminho automático dela neste encerramento. O primeiro `not_before` de um agendamento é, no mínimo, 7 dias depois dele. Um cancelamento recusado com `purge_in_progress` quer dizer que uma execução segura o purge agora: tente de novo depois de `locked_until` (até 15 minutos).
 4. **Se não der tempo de cancelar todos antes do `not_before`,** o último recurso é o responsável retirar o binding `PRIVACY_HYPERDRIVE` do Worker e fazer o deploy. Isso para o job inteiro de privacidade: nenhum purge, encerramento, aviso ou exportação roda, e nada é apagado. As exportações pedidas nesse intervalo esperam a volta do binding, quando o reenvio horário as manda de novo. Depois, termine os cancelamentos e devolva o binding.
-5. **Depois.** Cada loja cancelada é uma decisão: pôr a trava legal, agendar de novo pelo Admin sob o caso de exclusão ou deixá-la esperar a correção. O dono continua recebendo os avisos pelas datas (o de D diz "a partir de", que segue verdadeiro). Abra a correção por PR antes de religar a chave.
+5. **Depois.** Cada loja cancelada é uma decisão: pôr a trava legal, agendar de novo pelo Admin sob o caso de exclusão (toda escrita no Admin manda `Origin`, como no passo 3) ou deixá-la esperar a correção. O dono continua recebendo os avisos pelas datas (o de D diz "a partir de", que segue verdadeiro). Abra a correção por PR antes de religar a chave.
 
 <a id="loja-encerrada-parada"></a>
 
@@ -224,9 +240,21 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 **Como confirmar.** Banco, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): as organizações `closed` cujo `closure_deadlines(requested_at, timezone).deletable_from` mais 30 dias já passou e sem linha em `organization_legal_holds` com `released_at` nulo; para cada uma, veja `organization_purge_cancellations` (depois do `requested_at`), `organization_billing` (provedor, estado e `cancel_at_period_end`) e `tenant_access_grants` vigentes, e os `closure_notices` do ciclo atual (`closure_requested_at = organization_closures.requested_at`): sem um `d7` ou `rescheduled` com `sent_at` ou `dismissed_at` preenchido há 7 dias a loja espera. Para um purge já agendado (`purgesHeldBack`): `SELECT organization_id, trigger, not_before FROM organization_purges WHERE purged_at IS NULL AND not_before < now()`, e para cada um veja a trava legal, os acessos vigentes, a cobrança e esses avisos. Para os avisos parados: `SELECT organization_id, milestone, due_at FROM closure_notices WHERE NOT skipped AND sent_at IS NULL AND failed_at IS NULL AND dismissed_at IS NULL AND due_at < now() - interval '3 days'`.
 
-**O que fazer.** Cada loja é uma decisão: pôr a trava legal (se há motivo para guardar), agendar o purge pelo Admin sob o caso de exclusão, revogar o acesso temporário esquecido ou resolver a renovação no provedor (siga [cobranca-reconcile](#cobranca-reconcile) e o [runbook dos provedores](./billing-providers.md)) ou, se o aviso não foi entregue, corrigir o envio (o e-mail não configurado, um endereço recusado) para o aviso sair; não se grava `sent_at` à mão. Registre a decisão no caso.
+**O que fazer.** Cada loja é uma decisão: pôr a trava legal (se há motivo para guardar), agendar o purge pelo Admin sob o caso de exclusão (toda escrita no Admin manda `Origin: https://<host do Admin>`; sem ela, 403, [ADR 0070](../adr/0070-admin-acesso-identidade-e-capacidades.md)), revogar o acesso temporário esquecido ou resolver a renovação no provedor (siga [cobranca-reconcile](#cobranca-reconcile) e o [runbook dos provedores](./billing-providers.md)) ou, se o aviso não foi entregue, corrigir o envio (o e-mail não configurado, um endereço recusado) para o aviso sair; não se grava `sent_at` à mão. Registre a decisão no caso.
 
 **Com o e-mail desligado, nenhum purge sai**, nem o do Admin por caso de privacidade: nenhum aviso fica entregue, então o caso pode agendar o purge e a execução espera. Com o e-mail ligado, os avisos saem, e o repasse horário envia o mais recente de cada ciclo devido. O ato de suporte resolve o que sobra (aviso pulado, falho ou de dono sem conta). O prazo de resposta do caso (`PRIVACY_CASE_RESPONSE_DAYS`, 15 dias, provisório) segue valendo: responda ao titular dentro dele, dizendo que a exclusão está aceita e só ocorre depois do aviso, e registre o motivo da espera no caso.
+
+<a id="purge-parado"></a>
+
+### purge-parado — purge de loja encerrada que não avança
+
+**O que significa.** O job do purge ([ADR 0081](../adr/0081-purge-completo-da-organizacao-encerrada.md)) tentou o mesmo purge pela 3ª vez ou mais e o passo falhou de novo, por um erro que o banco não nomeia como espera de propósito. O evento é `organization_purge_stalled` (nível `error`), com `organizationId` opaco, `attempt`, `phase` (`purge` ou `sweep`), `operation` (`organization_purge.<passo>`: `mark_storage`, `exports_storage`, `media_storage`, `database` ou `second_sweep`) e `reason` (o código gravado em `organization_purges.last_error_code`, como `purge_media_storage_failed`). Sai junto do `organization_purge_step_failed` da mesma tentativa. Cada hora em que o purge falha de novo traz outro evento. **Sem log:** o mesmo evento também sai com `source = "no_log"` (nível `warn`) e `stalledPurges` (só a contagem, sem `organizationId`, `attempt`, `phase` nem `reason`), uma vez por varredura horária de privacidade, quando há purge com 3 tentativas ou mais, ainda não terminado, tomado pelo job nas últimas 24 horas e sem passo registrado nesse prazo (`storage_touched_at` ou `purged_at`). É o caso da execução que o Worker mata antes de logar.
+
+**Fora do sinal.** Um purge segurado de propósito (`legal_hold_active`, `closure_period_not_elapsed`, `closure_notice_not_delivered`, `renewal_alive`, `tenant_access_active`) sai como `organization_purge_step_failed` com `outcome = "rejected"` e não entra aqui: ele aparece em [loja-encerrada-parada](#loja-encerrada-parada) (`purgesHeldBack`) e na trava legal pendente de revisão (`GET /legal-holds`). **Limite:** a contagem sem log só enxerga o purge que o job ainda toma (`locked_until` nas últimas 24 horas) e usa `storage_touched_at` e `purged_at` como passos concluídos: um purge que avançou há menos de 24 horas e morreu de novo só entra no dia seguinte. A consulta abaixo continua sendo como achar qual é a loja.
+
+**Como confirmar.** Workers Logs: `event = "organization_purge_stalled"`, agrupado por `operation` e `reason` (o de `source = "no_log"` não traz os dois: ache a loja pela consulta abaixo); o `organization_purge_step_failed` da mesma `organizationId` mostra a sequência. Banco, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT organization_id, attempts, last_error_code, storage_touched_at, locked_until FROM organization_purges WHERE purged_at IS NULL AND attempts >= 3 ORDER BY attempts DESC`. Com `storage_touched_at` preenchido o armazenamento já perdeu objetos e o cancelamento é recusado para sempre: o purge precisa terminar.
+
+**O que fazer.** O passo diz onde olhar: `exports_storage` e `media_storage` (R2 fora do ar, cota ou chave de mídia fora do prefixo da organização: veja [r2-e-midia](#r2-e-midia)), `database` (a transação do purge falhou; o log do job não traz a mensagem do erro, então ache a causa em [erros-de-banco](#erros-de-banco), pelo horário da tentativa) e `second_sweep` (objetos que apareceram depois). O purge é reexecutável de ponta a ponta: corrigida a causa, o cron horário o pega de novo, sem ato manual, depois que o `locked_until` passa (até 15 minutos). Se a causa não é de infraestrutura, não force o purge: abra a correção por PR e deixe o caso de exclusão do dono com a nota do atraso.
 
 <a id="aviso-de-encerramento-falhando"></a>
 
@@ -252,8 +280,28 @@ A rede de reembolso da manutenção grava outros eventos: `billing_refund_renewa
 
 ### incidente-de-reembolso-nao-gravado — incidente do reembolso não gravado
 
-**O que significa.** O banco falhou ao gravar o incidente de um reembolso pendente há 24 h (`refund_not_completed`) ou de uma rede parada (`refund_rearm_exhausted`, campo `cause`). O evento é `billing_refund_pending_incident_failed` (erro, com `organizationId` opaco e o erro). Sem o incidente, o operador não vê o caso pela lista do Admin; a passada seguinte tenta de novo.
+**O que significa.** O banco falhou ao gravar o incidente de um reembolso pendente há 24 h (`refund_not_completed`) ou de uma rede parada (`refund_rearm_exhausted`, campo `cause`). O evento é `billing_refund_pending_incident_failed` (erro, com `organizationId` opaco e o erro). Sem o incidente, o operador não vê o caso pela lista do Admin; a passada seguinte tenta de novo. O mesmo sinal conta `billing_amount_mismatch_incident_failed` (erro, no Worker `polaris-admin`, com `organizationId` opaco, `provider` e o erro): o reembolso do operador foi recusado porque o valor registrado da cobrança em vigor não é o do provedor, e o incidente `billing_amount_mismatch` não foi gravado; nenhuma passada grava depois.
 
 **Como confirmar.** Workers Logs: `event = "billing_refund_pending_incident_failed"`, por `cause` e `sqlState`. Com `sqlState`, veja também [erros-de-banco](#erros-de-banco).
 
-**O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)).
+**O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)). Para `billing_amount_mismatch_incident_failed`, o `billing_refund_amount_mismatch` logo antes no mesmo Worker nomeia a loja (ID opaco): trate como o incidente de divergência ([billing-providers](./billing-providers.md)).
+
+<a id="revelacoes-por-hora"></a>
+
+### revelacoes-por-hora — operador chegou ao limite de revelações de dado pessoal
+
+**O que significa.** Um operador pediu a 31ª revelação de campo de cliente na mesma hora e a função do banco recusou ([ADR 0072](../adr/0072-admin-casos-acesso-temporario-e-revelacao.md), limite de 30 por hora por operador, somando casos e lojas). O evento é `admin_reveal_rate_limited` (aviso, no Worker `polaris-admin`), com `principal` (o ID opaco do operador); não leva campo, cliente nem loja, e a recusa não grava na auditoria. Nada foi mostrado.
+
+**Como confirmar.** Workers Logs do `polaris-admin`: `event = "admin.admin_reveal_rate_limited"` (o Worker do Admin põe o prefixo `admin.` em todo evento; o registro de alertas usa o nome sem ele, como o código o escreve). As 30 revelações aceitas estão na auditoria (`pii.revealed`, por operador, com o campo e o cliente) e no caso de cada loja.
+
+**O que fazer.** Veja na auditoria quais clientes e lojas o operador abriu na última hora. Se foi um atendimento de verdade com muitos clientes, nada a fazer: a próxima hora libera. Se ninguém reconhece a leitura, trate como sessão de operador comprometida: desligue o operador (`platform_principals.status`) e revogue a sessão no Access.
+
+<a id="comando-de-cobranca-do-operador"></a>
+
+### comando-de-cobranca-do-operador — operador cancelou uma renovação ou reembolsou pelo Admin
+
+**O que significa.** Uma pessoa do Access cancelou a renovação ou pediu o reembolso de uma loja pela seção Cobrança do Admin, e o comando chegou ao provedor ([ADR 0105](../adr/0105-comandos-de-provedor-pelo-operador.md)). O evento é `billing_operator_command` (aviso, no Worker `polaris-admin`, não no `polaris-web`), com `operation` (`billing.cancel_renewal` ou `billing.refund`), `reason` (o resultado: `cancelled`, `already_cancelled`, `nothing_to_cancel`, `refund_requested`, `nothing_to_refund`), `provider` e `organizationId` opaco. Não há segunda aprovação no Admin: o alerta existe para a **outra** pessoa do Access ver cada comando na hora. O e-mail do alerta tem de chegar às duas pessoas do Access.
+
+**Como confirmar.** Workers Logs do `polaris-admin`: `event = "billing_operator_command"`. No Admin, o caso da loja mostra a auditoria `billing.operator_*_requested` e `…_recorded`, com o ID do comando; o motivo digitado está no ledger de cobrança (`billing_events`, `provider_event_id = command:operator_<tipo>:<commandId>`).
+
+**O que fazer.** Se foi a outra pessoa, confira o caso e o motivo; nada a fazer. Se ninguém reconhece o comando, trate como sessão de operador comprometida: desligue o operador (`platform_principals.status`), revogue a sessão no Access e siga [suspeita de vazamento da chave](./billing-providers.md#suspeita-de-vazamento-da-chave). Um `admin.operator_refund_rate_limited` no mesmo Worker diz que alguém passou do limite de 3 reembolsos por hora.

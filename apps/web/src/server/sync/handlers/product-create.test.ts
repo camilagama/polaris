@@ -3,6 +3,7 @@ import {
   ProductIdConflictError,
   ProductNameError,
   ProductVariantSkuConflictError,
+  ProductVariantSkuError,
 } from "@polaris/domain/catalog/product";
 import { InventoryOccurredInFutureError } from "@polaris/domain/inventory/inventory";
 import { InvalidUnitCostError } from "@polaris/domain/inventory/inventory-cost";
@@ -218,6 +219,24 @@ describe("product.create handler", () => {
       })
     ).rejects.toBeInstanceOf(ProductVariantSkuConflictError);
     expect(receiveStock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a SKU over 64 code points as an invalid payload, and takes one of 64", () => {
+    const { handler } = handlerWith();
+    expect(handler.parse({ ...minimal, sku: "S".repeat(64) })).toMatchObject({
+      sku: "S".repeat(64),
+    });
+    let refusal: unknown;
+    try {
+      handler.parse({ ...minimal, sku: "S".repeat(65) });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(InvalidSyncPayloadError);
+    expect((refusal as Error).cause).toBeInstanceOf(ProductVariantSkuError);
+    expect(handler.classify(new ProductVariantSkuError())).toBe(
+      "invalid_payload"
+    );
   });
 
   it("classifies the expected refusals, and nothing else", () => {

@@ -87,7 +87,6 @@ export const EXPORT_EXCLUDED_TABLES: Readonly<Record<string, string>> =
       "eventos mortos do outbox, só IDs opacos: mecanismo interno de operação",
     queue_processing:
       "registro do consumidor de filas, só IDs opacos: mecanismo interno",
-    rls_poc_operations: "tabela de prova técnica",
     support_cases: "da plataforma, não do tenant",
     sync_changes: "mecanismo interno de sincronização",
     sync_commands: "mecanismo interno de sincronização",

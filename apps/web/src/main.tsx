@@ -5,6 +5,7 @@ import { CSPProvider } from "@base-ui/react/csp-provider";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app-shell/app";
+import { installClientErrorListeners } from "./lib/client-errors";
 import { followMotionLevel } from "./lib/motion-level";
 import { followSystemTheme } from "./lib/theme";
 import { initSentry } from "./observability/sentry";
@@ -12,7 +13,13 @@ import {
   browserRegisterEnvironment,
   registerServiceWorker,
 } from "./pwa/register";
-import { checkForUpdatesRegularly, getUpdateStore } from "./pwa/runtime";
+import { restoreScrollAfterSwap } from "./pwa/auto-swap";
+import {
+  checkForUpdatesRegularly,
+  getUpdateStore,
+  startUpdates,
+} from "./pwa/runtime";
+import { watchTypedFields } from "./pwa/swap-guard";
 
 // Error reporting is off unless the build has a Sentry DSN (ADR 0098); never blocks the first paint.
 // The guard is on the build constant, so a build without a DSN drops the SDK chunk altogether.
@@ -23,6 +30,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     VITE_SENTRY_RELEASE: import.meta.env.VITE_SENTRY_RELEASE,
   }).catch(() => undefined);
 }
+
+// The errors no boundary catches, reported as the boundary's are (lib/client-errors.ts): off unless the build says so.
+installClientErrorListeners(window);
 
 // The system can go from dark to light with the page open: the `dark` class follows it (U-40).
 followSystemTheme();
@@ -57,6 +67,8 @@ const isRuntimeLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-runtime-lab";
 const isLogoutLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-logout-lab";
+const isThumbnailsLabRoute =
+  isOfflinePocEnabled && window.location.pathname === "/offline-thumbnails-lab";
 const isAttentionLabRoute =
   isOfflinePocEnabled && window.location.pathname === "/offline-attention-lab";
 // The lab of the screens is also in the browser-check build: the interface guardrails measure the sale screen there.
@@ -122,6 +134,21 @@ if (isShellPiecesRoute) {
     }
   };
   loadRuntimeLab().catch(() => undefined);
+} else if (isThumbnailsLabRoute) {
+  const loadThumbnailsLab = async () => {
+    try {
+      const { ThumbnailsLab } = await import("./offline-poc/thumbnails-lab");
+      root.render(<ThumbnailsLab />);
+    } catch (error: unknown) {
+      root.render(
+        <main role="alert">
+          <h1>Falha ao abrir o laboratório das miniaturas</h1>
+          <p>{error instanceof Error ? error.message : "Erro desconhecido."}</p>
+        </main>
+      );
+    }
+  };
+  loadThumbnailsLab().catch(() => undefined);
 } else if (isLogoutLabRoute) {
   const loadLogoutLab = async () => {
     try {
@@ -218,7 +245,10 @@ if (isShellPiecesRoute) {
   };
   loadOfflineLab().catch(() => undefined);
 } else {
+  // what is typed counts from the first key, and an idle swap comes back to the scroll it left (pwa/auto-swap.ts)
+  watchTypedFields();
   root.render(<App />);
+  restoreScrollAfterSwap();
   if (import.meta.env.MODE === "pwa-e2e") {
     // Only in the browser-check build: lets the test play the part of the outbox.
     (window as unknown as { polarisUpdateStore: unknown }).polarisUpdateStore =
@@ -230,8 +260,9 @@ if (isShellPiecesRoute) {
     window.addEventListener("load", () => {
       registerServiceWorker(pwaEnvironment)
         .then((registration) => {
-          if (registration) {
-            getUpdateStore()?.attach(registration);
+          const updates = getUpdateStore();
+          if (registration && updates) {
+            startUpdates(updates, registration);
             checkForUpdatesRegularly(registration);
           }
         })

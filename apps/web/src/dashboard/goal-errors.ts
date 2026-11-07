@@ -1,5 +1,6 @@
 import {
-  legalAcceptanceMessage,
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -49,9 +50,11 @@ const READ_SUBJECTS: Partial<Record<GoalAction, string>> = {
 
 /** Portuguese text for a failed goal request. */
 export function goalErrorMessage(error: unknown, action: GoalAction): string {
-  const unaccepted = legalAcceptanceMessage(error, READ_SUBJECTS[action]);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  const common = commonFailureMessage(error, READ_SUBJECTS[action], {
+    directWrite: READ_SUBJECTS[action] === undefined,
+  });
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
@@ -81,7 +84,9 @@ export function goalErrorMessage(error: unknown, action: GoalAction): string {
     return "A meta não existe mais nesta loja.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "As metas estão temporariamente indisponíveis. Tente novamente.";
+    return READ_SUBJECTS[action] === undefined
+      ? CHANGE_FAULT_UNKNOWN
+      : "As metas estão temporariamente indisponíveis. Tente novamente.";
   }
   return fallbackMessage(action);
 }

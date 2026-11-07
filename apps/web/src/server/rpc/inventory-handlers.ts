@@ -134,6 +134,7 @@ export function createInventoryRpcHandlers(
               query: input.query ?? null,
               stock: input.stock,
               variantIds: input.variantIds,
+              ...(input.withCover ? { withCover: true } : {}),
             }),
           request: context.request,
           requestedOrganizationId: input.organizationId,

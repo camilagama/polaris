@@ -1,5 +1,6 @@
 import {
-  legalAcceptanceMessage,
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -49,6 +50,13 @@ export function profileRefusalText(reason: string): string | undefined {
   return REFUSALS[reason];
 }
 
+/** A 503 of a read keeps its text; a direct write may have been saved, so it never invites a second try. */
+function unavailableMessage(action: PublicCatalogAction): string {
+  return action === "load"
+    ? "O catálogo público está temporariamente indisponível. Tente novamente."
+    : CHANGE_FAULT_UNKNOWN;
+}
+
 function fallback(action: PublicCatalogAction): string {
   if (action === "load") {
     return "Não foi possível carregar o catálogo público. Tente novamente.";
@@ -79,9 +87,10 @@ export function publicCatalogErrorMessage(
   action: PublicCatalogAction
 ): string {
   return (
-    legalAcceptanceMessage(
+    commonFailureMessage(
       error,
-      action === "load" ? "o catálogo público" : undefined
+      action === "load" ? "o catálogo público" : undefined,
+      { directWrite: action !== "load" }
     ) ?? publicCatalogRefusalMessage(error, action)
   );
 }
@@ -121,7 +130,7 @@ function publicCatalogRefusalMessage(
     }
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "O catálogo público está temporariamente indisponível. Tente novamente.";
+    return unavailableMessage(action);
   }
   return fallback(action);
 }

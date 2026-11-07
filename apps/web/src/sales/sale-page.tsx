@@ -2,7 +2,7 @@ import type {
   InventoryBalanceEntryReadModel,
   PaymentProfileReadModel,
 } from "@polaris/contracts";
-import CirclePlusIcon from "lucide-react/dist/esm/icons/circle-plus";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type FormEvent,
@@ -13,30 +13,43 @@ import {
   useState,
 } from "react";
 import { Button } from "@/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { deviceSaleKept } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { isSigningOut } from "../lib/sign-out";
+import { useHoldSwap } from "../lib/unsent-work";
 import { useNow } from "../lib/use-now";
 import {
   filterLocalStockEntries,
   localStockEntries,
   readLocalCatalog,
 } from "../offline/local-stock-entries";
+import type { NamespaceKey } from "../offline/namespace";
 import type {
   OfflineRuntime,
   RuntimeContext,
 } from "../offline/runtime/offline-runtime";
+import { useOfflineRuntime } from "../offline/runtime/runtime-context";
+import { isSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { REDO_DONE_NOTICE, REDO_OPENED_NOTICE } from "../offline/sale-redo";
+import {
+  finishSaleRedo,
+  isOpenRedoDraft,
+  readSaleRedos,
+} from "../offline/sale-redo-storage";
 import { confirmOnServer } from "./confirm-on-server";
 import { type ConfirmationOutcome, confirmOnDevice } from "./confirm-outcome";
+import { firstSaleIdOf } from "./first-sale-id";
+import {
+  paymentOfSentForm,
+  type RememberedPayment,
+  readLastPayment,
+  salePresetFrom,
+  writeLastPayment,
+} from "./last-payment-model";
 import {
   mergeLastPrices,
   type RememberedPrices,
@@ -48,14 +61,32 @@ import {
 } from "./last-prices-model";
 import { OfflineSaleNotice, SavedSalesCard } from "./offline-sale-panels";
 import {
-  readSaleAttempt,
+  readSaleAttemptState,
   sessionStorageOrNull,
   writeSaleAttempt,
 } from "./sale-attempt-storage";
 import { ConfirmedSalePanel } from "./sale-confirmed-panel";
+import { SaleDraftBar } from "./sale-draft-bar";
+import {
+  chosenItemCount,
+  DRAFT_EXPIRED_MESSAGE,
+  DRAFT_RECORDED_MESSAGE,
+  DRAFT_UNREADABLE_MESSAGE,
+  draftVariantIds,
+  refreshedDraftMessage,
+  refreshRestoredItems,
+} from "./sale-draft-restore";
+import {
+  announceSaleSettled,
+  readSaleDraft,
+  type SaleDraftRead,
+  subscribeSaleSettled,
+  writeSaleDraft,
+} from "./sale-draft-storage";
 import {
   type AdjustmentDraft,
   acknowledgeProfileReview,
+  applySalePreset,
   addAdjustment,
   addItem,
   type CatalogView,
@@ -64,6 +95,7 @@ import {
   canKeepLockedSaleOnDevice,
   canStartSubmission,
   createBlankSaleForm,
+  describeStockRefusal,
   discardLockedSale,
   editSaleDate,
   editSaleForm,
@@ -71,9 +103,9 @@ import {
   formForOfflineSale,
   type ItemDraft,
   idleSubmission,
+  type Loadable,
   isFormLocked,
   isSaleFormDirty,
-  MAX_SALE_ITEMS,
   type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
@@ -85,6 +117,7 @@ import {
   type SaleAttempt,
   type SaleFormState,
   type SaleMethod,
+  type SalePreset,
   type SubmissionState,
   saleModeIsOffline,
   selectPaymentMethod,
@@ -93,12 +126,13 @@ import {
   updateAdjustment,
   updateItem,
   updatePayment,
+  withdrawSalePreset,
 } from "./sale-form-model";
-import { ItemEditor } from "./sale-item-editor";
+import { AddItemButton, ItemEditor, ItemsCount } from "./sale-item-editor";
 import { PaymentSection } from "./sale-payment-section";
 import { SubmitBar, SummaryPanel } from "./sale-summary-panel";
 import {
-  clearedItemChanges,
+  coversOfStock,
   itemChangesForEntry,
   PICKER_RESULT_LIMIT,
 } from "./sale-variant-picker-model";
@@ -124,6 +158,29 @@ function optionsOf(view: CatalogView | null): readonly ChoiceOption[] {
   return view?.kind === "ready" ? view.options : [];
 }
 
+function activeCount(
+  profiles: Loadable<readonly PaymentProfileReadModel[]>
+): number | null {
+  return profiles.status === "ready"
+    ? profiles.value.filter((profile) => profile.status === "active").length
+    : null;
+}
+
+/** Under the methods: the single payment, and that the method came from the last sale while it is unchanged. */
+function methodHint(
+  remembered: RememberedPayment | null,
+  form: SaleFormState,
+  preset: SalePreset
+): string {
+  const same =
+    remembered !== null &&
+    form.payment.method !== "" &&
+    form.payment.method === preset.method;
+  return same
+    ? `Igual à última venda neste aparelho. ${SINGLE_PAYMENT_TEXT}`
+    : SINGLE_PAYMENT_TEXT;
+}
+
 /** The single payment of the sale, said under the methods. */
 const SINGLE_PAYMENT_TEXT =
   "Um pagamento só, no valor total. O método não comprova o recebimento.";
@@ -145,24 +202,111 @@ function focusFirstInvalidField() {
 /** Re-evaluating the form every minute keeps "now" honest on a form left open. */
 const CLOCK_TICK_MS = 60_000;
 
+function draftReadMessage(read: SaleDraftRead): string | null {
+  if (read.kind === "expired") {
+    return DRAFT_EXPIRED_MESSAGE;
+  }
+  return read.kind === "unreadable" ? DRAFT_UNREADABLE_MESSAGE : null;
+}
+
+function openRedoNotice(
+  redoKey: NamespaceKey | null,
+  draft: { startedAt: string | null } | null
+): string | null {
+  return redoKey !== null &&
+    isOpenRedoDraft(
+      readSaleRedos(browserStorage(), redoKey),
+      draft?.startedAt ?? null
+    )
+    ? REDO_OPENED_NOTICE
+    : null;
+}
+
 export function SalePage() {
-  const { organizationId } = useCurrentOrganization();
+  const { organization, organizationId } = useCurrentOrganization();
   const workspace = useLocalWorkspace(organizationId);
+  const runtime = useOfflineRuntime();
+  const redoKey = runtime?.namespaceKey(organizationId) ?? null;
+  // the namespace closes and opens again while the runtime restarts; the page keeps the key it had for this store
+  const knownRedoKey = useRef<{
+    key: NamespaceKey;
+    organizationId: string;
+  } | null>(null);
+  if (redoKey) {
+    knownRedoKey.current = { key: redoKey, organizationId };
+  }
+  const redoKeyRef = useRef(redoKey);
+  redoKeyRef.current =
+    redoKey ??
+    (knownRedoKey.current?.organizationId === organizationId
+      ? knownRedoKey.current.key
+      : null);
+  const canAdjustStock = hasCapabilityForRole(
+    organization.role,
+    "inventory:adjust"
+  );
   const now = useNow(CLOCK_TICK_MS);
   const [lastPrices, setLastPrices] = useState<RememberedPrices>(() =>
     readLastPrices(browserStorage(), organizationId)
   );
-  const [form, setForm] = useState<SaleFormState>(() =>
-    createBlankSaleForm(newId)
+  const [lastPayment, setLastPayment] = useState<RememberedPayment | null>(() =>
+    readLastPayment(browserStorage(), organizationId)
+  );
+  const [draftRead] = useState<SaleDraftRead>(() =>
+    readSaleDraft(
+      sessionStorageOrNull(),
+      organizationId,
+      new Date(),
+      organization.timezone
+    )
+  );
+  const restoredDraft = draftRead.kind === "restored" ? draftRead.draft : null;
+  const draftStartedAt = useRef<string | null>(
+    restoredDraft?.startedAt ?? null
+  );
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [firstSaleId, setFirstSaleId] = useState<string | null>(null);
+  const [form, setForm] = useState<SaleFormState>(
+    () =>
+      restoredDraft?.form ??
+      applySalePreset(
+        createBlankSaleForm(newId),
+        salePresetFrom(lastPayment, null)
+      )
   );
   const [submission, setSubmission] = useState<SubmissionState>(idleSubmission);
   const submissionRef = useRef(submission);
   submissionRef.current = submission;
   const formRef = useRef(form);
   formRef.current = form;
+  // what the screen chose for the person (last sale's payment, "Sem perfil" without profiles): not work
+  const presetRef = useRef<SalePreset>(salePresetFrom(lastPayment, null));
+  const lastPaymentRef = useRef(lastPayment);
+  lastPaymentRef.current = lastPayment;
+  const activeProfileCountRef = useRef<number | null>(null);
+  /** The payment of the sale just recorded becomes the start of the next one; returns that start. */
+  const rememberSentPayment = useCallback((): SalePreset => {
+    // the form is still the one that was sent (locked while in flight)
+    const sent = paymentOfSentForm(formRef.current);
+    if (sent) {
+      writeLastPayment(browserStorage(), organizationId, sent);
+      setLastPayment(sent);
+    }
+    const next = salePresetFrom(
+      sent ?? lastPaymentRef.current,
+      activeProfileCountRef.current
+    );
+    presetRef.current = next;
+    return next;
+  }, [organizationId]);
+  const blankForm = useCallback(
+    (start: SalePreset = presetRef.current) =>
+      applySalePreset(createBlankSaleForm(newId), start),
+    []
+  );
   // the cart is work the session notice warns about, until the sale is confirmed or queued
-  useReportUnsentWork(
-    isSaleFormDirty(form) &&
+  useHoldSwap(
+    isSaleFormDirty(form, presetRef.current) &&
       submission.phase !== "confirmed" &&
       submission.phase !== "queued"
   );
@@ -183,30 +327,96 @@ export function SalePage() {
     modeRef.current && workspace !== null ? workspace : null;
   const offline = offlineWorkspace !== null;
   const [showRequired, setShowRequired] = useState(false);
-  const [restoredAttempt] = useState<SaleAttempt | null>(() =>
-    readSaleAttempt(sessionStorageOrNull(), organizationId, new Date())
+  const [restoredAttempt] = useState(() =>
+    readSaleAttemptState(
+      sessionStorageOrNull(),
+      organizationId,
+      new Date(),
+      restoredDraft?.startedAt ?? null
+    )
   );
-  const attemptRef = useRef<SaleAttempt | null>(restoredAttempt);
+  const attemptRef = useRef<SaleAttempt | null>(
+    restoredAttempt?.attempt ?? null
+  );
   const rememberAttempt = useCallback(
-    (attempt: SaleAttempt | null) => {
+    (attempt: SaleAttempt | null, unsettled = false, sending = false) => {
       attemptRef.current = attempt;
-      writeSaleAttempt(sessionStorageOrNull(), organizationId, attempt);
+      // an answer that arrives after "Sair" or a refused session must not put back the copy that was dropped
+      if (isSigningOut() || isSessionOver()) {
+        return;
+      }
+      writeSaleAttempt(
+        sessionStorageOrNull(),
+        organizationId,
+        attempt,
+        unsettled,
+        sending
+      );
     },
     [organizationId]
+  );
+  const readAttemptState = useCallback(
+    () =>
+      readSaleAttemptState(
+        sessionStorageOrNull(),
+        organizationId,
+        new Date(),
+        draftStartedAt.current
+      ),
+    [organizationId]
+  );
+  const attemptOutcomeUnknown = useCallback(
+    () => readAttemptState()?.outcomeUnknown === true,
+    [readAttemptState]
+  );
+  const attemptUnsettled = useCallback(
+    () => readAttemptState()?.unsettled === true,
+    [readAttemptState]
   );
   const inFlightRef = useRef<boolean>(false);
   const confirmedRef = useRef<HTMLElement | null>(null);
 
+  const forgetDraft = useCallback(() => {
+    draftStartedAt.current = null;
+    writeSaleDraft(sessionStorageOrNull(), organizationId, null);
+  }, [organizationId]);
+  useEffect(() => {
+    // after "Sair" or a session refused, the copies were dropped and must not be written again
+    if (isSigningOut() || isSessionOver()) {
+      return;
+    }
+    if (!isSaleFormDirty(form, presetRef.current)) {
+      forgetDraft();
+      return;
+    }
+    draftStartedAt.current ??= new Date().toISOString();
+    writeSaleDraft(sessionStorageOrNull(), organizationId, {
+      form,
+      startedAt: draftStartedAt.current,
+    });
+  }, [forgetDraft, form, organizationId]);
+
   const handleProfilesLoaded = useCallback(
     (profiles: PaymentProfileReadModel[]) => {
-      setForm((current) => reconcileProfileReload(current, profiles));
+      const outcomeUnknown = attemptOutcomeUnknown();
+      setForm((current) =>
+        reconcileProfileReload(current, profiles, outcomeUnknown)
+      );
     },
+    [attemptOutcomeUnknown]
+  );
+  const openVariantIds = useCallback(
+    () =>
+      formRef.current.items
+        .map((item) => item.variantId)
+        .filter((variantId) => variantId !== ""),
     []
   );
   const catalog = useSaleCatalog(
     organizationId,
     handleProfilesLoaded,
-    offlineWorkspace
+    offlineWorkspace,
+    openVariantIds
   );
   const refreshRef = useRef(catalog.refresh);
   refreshRef.current = catalog.refresh;
@@ -216,7 +426,8 @@ export function SalePage() {
     // coming back online undoes the "no profile" choice made for the person.
     // The mode never changes while a sale is in flight or locked (see above).
     if (offline) {
-      setForm(formForOfflineSale);
+      const outcomeUnknown = attemptOutcomeUnknown();
+      setForm((current) => formForOfflineSale(current, outcomeUnknown));
     }
     if (modeApplied.current) {
       // the lines on the sale keep the balances of the OTHER source otherwise
@@ -227,7 +438,7 @@ export function SalePage() {
       );
     }
     modeApplied.current = true;
-  }, [offline]);
+  }, [attemptOutcomeUnknown, offline]);
   const localWriter = offlineWorkspace?.stores.writer;
   const localOutbox = offlineWorkspace?.stores.outbox;
   const localSearch = useMemo<LocalSearch | undefined>(() => {
@@ -243,13 +454,103 @@ export function SalePage() {
       });
     };
   }, [localOutbox, localWriter]);
-  const { refresh, resetStock, seedStock } = catalog;
+  const { readLines, refresh, resetStock, seedStock } = catalog;
+  const covers = useMemo(() => coversOfStock(catalog.stock), [catalog.stock]);
+
+  useEffect(
+    () =>
+      subscribeSaleSettled((settledOrganization, commandId) => {
+        if (
+          settledOrganization !== organizationId ||
+          inFlightRef.current ||
+          attemptRef.current?.commandId !== commandId
+        ) {
+          return;
+        }
+        // this screen gave back, from the tab, a cart that another Vender of the page has just recorded
+        attemptRef.current = null;
+        const blank = blankForm();
+        setForm(modeRef.current ? formForOfflineSale(blank) : blank);
+        setShowRequired(false);
+        setDraftNotice(DRAFT_RECORDED_MESSAGE);
+        resetStock();
+      }),
+    [organizationId, resetStock]
+  );
+
+  useEffect(() => {
+    // set after the mount, so the live region is in the tree before the notice arrives and it is announced
+    const redoNotice = openRedoNotice(redoKeyRef.current, restoredDraft);
+    setDraftNotice(draftReadMessage(draftRead) ?? redoNotice);
+    const readIds = restoredDraft ? draftVariantIds(restoredDraft.form) : [];
+    if (readIds.length === 0) {
+      return;
+    }
+    let mounted = true;
+    readLines(readIds)
+      .then((entries) => {
+        if (!(mounted && entries)) {
+          return;
+        }
+        if (isFormLocked(submissionRef.current)) {
+          // confirmed during the read: the cart on its way is not changed under it
+          return;
+        }
+        const spareId = newId();
+        const outcomeUnknown = restoredAttempt?.outcomeUnknown === true;
+        const refreshed = refreshRestoredItems(
+          formRef.current,
+          readIds,
+          entries,
+          () => spareId,
+          outcomeUnknown
+        );
+        const message = refreshedDraftMessage(refreshed);
+        if (message === null) {
+          return;
+        }
+        setForm(
+          (current) =>
+            refreshRestoredItems(
+              current,
+              readIds,
+              entries,
+              () => spareId,
+              outcomeUnknown
+            ).form
+        );
+        const redoNoticeNow = openRedoNotice(redoKeyRef.current, restoredDraft);
+        setDraftNotice(redoNoticeNow ? `${redoNoticeNow} ${message}` : message);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+    // once, for the cart that came back with the mount
+  }, [draftRead, organizationId, readLines, restoredAttempt, restoredDraft]);
+
+  useEffect(() => {
+    // the queue namespace may open after the page did: the redo it names is only known from then on
+    const redoNotice = openRedoNotice(redoKey, {
+      startedAt: draftStartedAt.current,
+    });
+    if (redoNotice) {
+      setDraftNotice((current) => current ?? redoNotice);
+    }
+  }, [redoKey]);
 
   const activeProfiles = useMemo(
     () => (catalog.profiles.status === "ready" ? catalog.profiles.value : []),
     [catalog.profiles]
   );
   const profilesState = profilesView(catalog.profiles);
+  const activeProfileCount = activeCount(catalog.profiles);
+  activeProfileCountRef.current = activeProfileCount;
+  const preset = useMemo(
+    () => salePresetFrom(lastPayment, activeProfileCount),
+    [activeProfileCount, lastPayment]
+  );
+  presetRef.current = preset;
   const evaluation = useMemo(
     () =>
       evaluateSaleForm(
@@ -279,18 +580,19 @@ export function SalePage() {
       setForm((current) => editSaleForm(submission, current, edit)),
     [submission]
   );
+  const appliedPresetRef = useRef<SalePreset | null>(null);
+  useEffect(() => {
+    // the profiles were read: a store without an active one starts on "Sem perfil"; only empty choices are filled,
+    // and what an earlier preset filled in is taken back when this one no longer offers it
+    const previous = appliedPresetRef.current ?? preset;
+    appliedPresetRef.current = preset;
+    editForm((current) =>
+      applySalePreset(withdrawSalePreset(current, previous, preset), preset)
+    );
+  }, [editForm, preset]);
   const handleItemChange = useCallback(
     (draftId: string, changes: Partial<ItemDraft>) =>
       editForm((current) => updateItem(current, draftId, changes)),
-    [editForm]
-  );
-  const handleClearVariant = useCallback(
-    (draftId: string) => {
-      editForm((current) => updateItem(current, draftId, clearedItemChanges));
-      focusLater(() =>
-        document.getElementById(`sale-item-${draftId}-search`)?.focus()
-      );
-    },
     [editForm]
   );
   const handlePickVariant = useCallback(
@@ -395,7 +697,9 @@ export function SalePage() {
       outcome: ConfirmationOutcome,
       device: { runtime: OfflineRuntime; stores: RuntimeContext } | null
     ) => {
-      rememberAttempt(outcome.attempt);
+      const sentCommandId = attemptRef.current?.commandId ?? null;
+      const sentDraftStartedAt = draftStartedAt.current;
+      rememberAttempt(outcome.attempt, outcome.submission.phase === "locked");
       if (outcome.prices) {
         const remembered = mergeLastPrices(
           lastPrices,
@@ -405,13 +709,34 @@ export function SalePage() {
         setLastPrices(remembered);
         writeLastPrices(browserStorage(), organizationId, remembered);
       }
+      if (outcome.completed) {
+        // also when the person left Vender while it was sent: a recorded sale never comes back as a draft
+        forgetDraft();
+        const redone =
+          sentCommandId !== null &&
+          redoKeyRef.current !== null &&
+          finishSaleRedo(
+            browserStorage(),
+            redoKeyRef.current,
+            sentDraftStartedAt,
+            sentCommandId
+          );
+        setDraftNotice(redone ? REDO_DONE_NOTICE : null);
+        if (sentCommandId) {
+          announceSaleSettled(organizationId, sentCommandId);
+        }
+        if (device === null) {
+          setFirstSaleId(firstSaleIdOf(organizationId, outcome.submission));
+        } else {
+          deviceSaleKept(organizationId);
+        }
+      }
       setSubmission(outcome.submission);
       if (!outcome.completed) {
         return;
       }
-      const blank = createBlankSaleForm(newId);
-      // by the mode the screen is in now: a locked sale kept on the device while
-      // the screen is in the server mode must not leave "no profile" preselected
+      const blank = blankForm(rememberSentPayment());
+      // by the mode the screen is in now
       setForm(offline ? formForOfflineSale(blank) : blank);
       setShowRequired(false);
       resetStock();
@@ -422,7 +747,16 @@ export function SalePage() {
         device.runtime.syncNow().catch(() => undefined);
       }
     },
-    [lastPrices, offline, organizationId, rememberAttempt, resetStock]
+    [
+      blankForm,
+      rememberSentPayment,
+      forgetDraft,
+      lastPrices,
+      offline,
+      organizationId,
+      rememberAttempt,
+      resetStock,
+    ]
   );
 
   /** Tries the confirmation (on the server, or on the device when offline) and applies its outcome. */
@@ -437,9 +771,21 @@ export function SalePage() {
         );
         return;
       }
-      applyOutcome(await confirmOnServer(prepared), null);
+      const outcome = await confirmOnServer(prepared);
+      applyOutcome(
+        {
+          ...outcome,
+          submission: describeStockRefusal(outcome.submission, {
+            canAdjustStock,
+            items: prepared.request.items,
+            labels: itemLabels(form.items),
+            stock: catalog.stock,
+          }),
+        },
+        null
+      );
     },
-    [applyOutcome, form.items, offlineWorkspace]
+    [applyOutcome, canAdjustStock, catalog.stock, form.items, offlineWorkspace]
   );
 
   const handleSubmit = useCallback(
@@ -462,6 +808,7 @@ export function SalePage() {
         return;
       }
       const prepared = prepareConfirmation({
+        attemptUnsettled: attemptUnsettled(),
         body,
         createId: newId,
         now: submittedAt,
@@ -473,7 +820,7 @@ export function SalePage() {
         setSubmission(rejectSubmission(prepared.message));
         return;
       }
-      rememberAttempt(prepared.attempt);
+      rememberAttempt(prepared.attempt, true, true);
       inFlightRef.current = true;
       setSubmission(startSubmission(submission));
       try {
@@ -484,6 +831,7 @@ export function SalePage() {
     },
     [
       activeProfiles,
+      attemptUnsettled,
       catalog.stock,
       form,
       organizationId,
@@ -519,6 +867,7 @@ export function SalePage() {
       return;
     }
     const prepared = prepareConfirmation({
+      attemptUnsettled: attemptUnsettled(),
       body,
       createId: newId,
       now: clickedAt,
@@ -562,6 +911,7 @@ export function SalePage() {
   }, [
     activeProfiles,
     applyOutcome,
+    attemptUnsettled,
     catalog.stock,
     form,
     organizationId,
@@ -586,11 +936,32 @@ export function SalePage() {
       return;
     }
     rememberAttempt(discarded.attempt);
-    setForm(discarded.form);
+    setForm(applySalePreset(discarded.form, presetRef.current));
     setSubmission(discarded.submission);
     setShowRequired(false);
     resetStock();
   }, [rememberAttempt, resetStock, submission]);
+  const handleClearSale = useCallback(() => {
+    if (isFormLocked(submission)) {
+      return;
+    }
+    const blank = blankForm();
+    const next = offline ? formForOfflineSale(blank) : blank;
+    // the attempt stays: after a lost answer the same cart typed again must reach the sale the server may have
+    forgetDraft();
+    setForm(next);
+    setSubmission((current) =>
+      current.phase === "failed" ? idleSubmission : current
+    );
+    setShowRequired(false);
+    setDraftNotice(null);
+    resetStock();
+    focusLater(() =>
+      document
+        .getElementById(`sale-item-${next.items[0]?.draftId}-search`)
+        ?.focus()
+    );
+  }, [forgetDraft, offline, resetStock, submission]);
   const handleSubmitEvent = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       handleSubmit(event).catch(() => undefined);
@@ -605,9 +976,17 @@ export function SalePage() {
     (summary?.lines ?? []).map((line) => [line.draftId, line])
   );
   const itemCount = form.items.length;
+  const chosenCount = chosenItemCount(form);
   return (
-    <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
+    <div className="@container/sale grid gap-4 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">Nova venda</h1>
+      <SaleDraftBar
+        canClear={!locked}
+        itemCount={chosenCount}
+        notice={draftNotice}
+        onClear={handleClearSale}
+        open={isSaleFormDirty(form, preset)}
+      />
       {offline ? <OfflineSaleNotice /> : null}
       <SavedSalesCard
         justSaved={submission.phase === "queued" ? submission.sale : null}
@@ -616,6 +995,7 @@ export function SalePage() {
       />
       {submission.phase === "confirmed" ? (
         <ConfirmedSalePanel
+          firstSale={firstSaleId === submission.sale.saleId}
           key={submission.sale.saleId}
           organizationId={organizationId}
           panelRef={confirmedRef}
@@ -624,7 +1004,7 @@ export function SalePage() {
       ) : null}
       <form
         aria-label="Nova venda"
-        className="flex flex-col gap-4 min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_minmax(19rem,22rem)] min-[900px]:items-start"
+        className="flex @[44rem]/sale:grid @[44rem]/sale:grid-cols-[minmax(24rem,1fr)_minmax(19rem,22rem)] flex-col @[44rem]/sale:items-start gap-4"
         data-sale-form=""
         noValidate
         onSubmit={handleSubmitEvent}
@@ -650,21 +1030,20 @@ export function SalePage() {
                   <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
                   Atualizar estoque e perfis
                 </Button>
-                <CardDescription>
-                  {itemCount} {itemCount === 1 ? "item" : "itens"}
-                </CardDescription>
+                <ItemsCount chosen={chosenCount} />
               </CardHeader>
               <CardContent className="grid gap-4">
                 {form.items.map((item, index) => (
                   <ItemEditor
+                    canAdjustStock={canAdjustStock}
                     canRemove={form.items.length > 1}
+                    cover={covers[item.variantId]}
                     errors={evaluation.errors}
                     index={index}
                     item={item}
                     key={item.draftId}
                     localSearch={localSearch}
                     onChange={handleItemChange}
-                    onClearVariant={handleClearVariant}
                     onPick={handlePickVariant}
                     onRemove={handleRemoveItem}
                     organizationId={organizationId}
@@ -674,16 +1053,11 @@ export function SalePage() {
                     summaryLine={summaryLines.get(item.draftId)}
                   />
                 ))}
-                <Button
-                  className="w-full sm:w-auto sm:justify-self-start"
-                  disabled={form.items.length >= MAX_SALE_ITEMS}
-                  onClick={handleAddItem}
-                  type="button"
-                  variant="outline"
-                >
-                  <CirclePlusIcon aria-hidden="true" data-icon="inline-start" />
-                  Adicionar item
-                </Button>
+                <AddItemButton
+                  chosen={chosenCount}
+                  onAdd={handleAddItem}
+                  total={itemCount}
+                />
               </CardContent>
             </fieldset>
           </Card>
@@ -705,7 +1079,8 @@ export function SalePage() {
             onRetry={handleRefresh}
             profileOptions={profileOptions}
             profilesView={profilesState}
-            singlePaymentText={SINGLE_PAYMENT_TEXT}
+            singlePaymentText={methodHint(lastPayment, form, preset)}
+            timezone={organization.timezone}
           />
         </div>
         <SummaryPanel

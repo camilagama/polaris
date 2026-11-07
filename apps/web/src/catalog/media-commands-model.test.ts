@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { MediaUploadHttpError } from "../lib/media-upload";
 import {
+  COVER_NOTICE,
   describeMediaFailure,
   imageActionAvailability,
   imageActionLabel,
+  isMediaItemGone,
   isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
   movedAssetOrder,
@@ -231,6 +233,13 @@ describe("describeMediaFailure", () => {
     ).toMatchObject({ reloadList: true });
   });
 
+  it("tells a vanished item from other refusals that also reload the list", () => {
+    expect(isMediaItemGone(http("not_found", 404))).toBe(true);
+    expect(isMediaItemGone(http("invalid_media_order"))).toBe(false);
+    expect(isMediaItemGone(http("product_media_limit"))).toBe(false);
+    expect(isMediaItemGone(new TypeError("Failed to fetch"))).toBe(false);
+  });
+
   it("explains permission and session failures", () => {
     expect(
       describeMediaFailure("remove", http("forbidden", 403)).message
@@ -322,5 +331,17 @@ describe("describeMediaFailure", () => {
     expect(
       describeMediaFailure("prepare", new TypeError("x")).message
     ).toContain("Escolha outro arquivo");
+  });
+});
+
+describe("o aviso da capa no painel de imagens", () => {
+  it("diz que a primeira imagem é a capa, onde ela aparece e que a miniatura mostra o centro", () => {
+    expect(COVER_NOTICE).toContain("primeira imagem é a capa");
+    expect(COVER_NOTICE).toContain("Produtos, na Venda e no Estoque");
+    expect(COVER_NOTICE).toContain("centro da imagem");
+  });
+
+  it("não promete nada que o plano ou o servidor decidem: sem número, sem limite", () => {
+    expect(COVER_NOTICE).not.toMatch(NOT_IN_LIMIT_TEXT);
   });
 });

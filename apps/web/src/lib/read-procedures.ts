@@ -1,0 +1,41 @@
+/**
+ * The procedures that only read (`kind: "read"` in the contract), spelled out: making a procedure a read shows up
+ * here, in review. The Worker's rate limit reads the kind from the contract; the page uses this list to tell a write
+ * in flight from a read without bundling the contract (`writes-in-flight.ts`), and a test keeps the two equal.
+ */
+export const READ_PROCEDURES: readonly string[] = [
+  "account/legalStatus",
+  "billing/readPlan",
+  "category/list",
+  "customer/findPossibleDuplicates",
+  "customer/list",
+  "dataExport/list",
+  "dataExport/listClosed",
+  "device/list",
+  "expense/list",
+  "expense/listCategories",
+  "expense/listRules",
+  "goal/list",
+  "goal/targetChanges",
+  "inventory/getBalance",
+  "inventory/listBalances",
+  "organization/closedStatus",
+  "organization/listClosed",
+  "organization/listClosing",
+  "organization/listMine",
+  "paymentProfile/list",
+  "plan/operationalSelection",
+  "product/getVariants",
+  "product/list",
+  "product/namesExisting",
+  "publicCatalog/setup",
+  "report/dailySales",
+  "report/periodSummary",
+  "sale/get",
+  "sale/getCustomerLink",
+  "sale/list",
+  "sync/bootstrapPage",
+  "sync/getCursor",
+  "sync/pull",
+  "system/ping",
+];

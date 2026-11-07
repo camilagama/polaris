@@ -19,7 +19,10 @@ import {
   type Mock,
   vi,
 } from "vitest";
-import { cancelRenewalEventId, refundCancelEventId } from "./commands";
+import {
+  cancelRenewalEventId,
+  refundCancelEventId,
+} from "@polaris/billing/operator-commands";
 import {
   OWNER_COMMAND_BUDGET_MS,
   type OwnerCommandAudit,
@@ -50,12 +53,13 @@ const link = {
 const FIRST_CHARGE_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
 
 /**
- * Paid by card on 10/10 at 15:00 in São Paulo (the window of the right of withdrawal ends 17/10 at 23:59:59), a
+ * Paid by card on `10/10` at 15:00 in São Paulo (the window of the right of withdrawal ends `17/10` at 23:59:59), a
  * price that is not the first charge's amount, so the response is told apart.
  */
 const activeRecord: OwnerCommandRecord = {
   accessEndsAt: sp("2026-11-11T00:00:00"),
   cancelAtPeriodEnd: false,
+  currentChargeAmount: "24.90",
   cycleMonths: 12,
   firstCharge: {
     eventId: FIRST_CHARGE_EVENT,
@@ -65,6 +69,7 @@ const activeRecord: OwnerCommandRecord = {
   firstChargeAt: sp("2026-10-10T15:00:00"),
   firstChargeOn: "2026-10-10",
   link,
+  pendingCycleMonths: null,
   priceAmount: "29.90",
   provider: "asaas",
   refundRequestedAt: null,
@@ -803,7 +808,7 @@ describe("ownerRequestRefund", () => {
     });
 
     it("counts the window from the moment of the fact (firstChargeAt), not from when a late webhook was processed", async () => {
-      // only `firstChargeAt` exists on the record: the fact's own time (10/10), even if the webhook came on 12/10
+      // only `firstChargeAt` exists on the record: the fact's own time (`10/10`), even if the webhook came on `12/10`
       const record = {
         firstChargeAt: sp("2026-10-10T15:00:00"),
         firstChargeOn: "2026-10-10",

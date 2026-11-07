@@ -1,4 +1,4 @@
-import { type ChangeEvent, useState } from "react";
+import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
 import { ChartStates } from "./chart-states";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
@@ -20,6 +20,15 @@ import {
 import { OnDemandCalendar } from "@/ui/calendar-on-demand";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import { Checkbox } from "@/ui/checkbox";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxFooter,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/ui/combobox";
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
 import {
@@ -55,6 +64,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
 import {
@@ -118,6 +128,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table";
+import { Thumbnail, type ThumbnailSize } from "@/ui/thumbnail";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { Textarea } from "@/ui/textarea";
 import { ThemeSegmented } from "@/ui/theme-segmented";
@@ -165,6 +176,12 @@ const SALE_METHODS = [
   { label: "Outro", value: "outro" },
 ];
 
+const GROUP_ACTIONS = [
+  { Icon: PlusIcon, name: "Aumentar" },
+  { Icon: MinusIcon, name: "Diminuir" },
+  { Icon: CheckIcon, name: "Confirmar" },
+] as const;
+
 const LONG_LIST = Array.from(
   { length: 40 },
   (_, index) => `Movimento de estoque ${index + 1}`
@@ -180,6 +197,54 @@ function GallerySearch() {
       placeholder="Nome do produto"
       value={text}
     />
+  );
+}
+
+const GALLERY_VARIANTS = [
+  { detail: "Saldo 6 · SKU CAM-P", id: "preta", label: "Camiseta · Preta" },
+  { detail: "Saldo 0", id: "branca", label: "Camiseta · Branca" },
+  { detail: "Saldo 14", id: "caneca", label: "Caneca esmaltada" },
+] as const;
+type GalleryVariant = (typeof GALLERY_VARIANTS)[number];
+const galleryVariantLabel = (item: GalleryVariant) => item.label;
+
+/** The search of the sale: suggestions in a popup anchored to the field, the chosen one marked. */
+function GalleryCombobox() {
+  const [chosen, setChosen] = useState<GalleryVariant | null>(
+    GALLERY_VARIANTS[0]
+  );
+  const anchor = useRef<HTMLDivElement>(null);
+  return (
+    <div className="grid max-w-sm gap-1.5">
+      <Label htmlFor="galeria-variante">Produto ou variante</Label>
+      <Combobox
+        items={[...GALLERY_VARIANTS]}
+        itemToStringLabel={galleryVariantLabel}
+        onValueChange={setChosen}
+        value={chosen}
+      >
+        <InputGroup ref={anchor}>
+          <ComboboxInput
+            id="galeria-variante"
+            placeholder="Buscar por nome, variante ou SKU"
+          />
+        </InputGroup>
+        <ComboboxContent anchor={anchor}>
+          <ComboboxEmpty>Nenhuma variante encontrada.</ComboboxEmpty>
+          <ComboboxList aria-label="Variantes encontradas">
+            {(item: GalleryVariant) => (
+              <ComboboxItem key={item.id} value={item}>
+                <span className="font-medium">{item.label}</span>
+                <span className="text-muted-foreground text-support">
+                  {item.detail}
+                </span>
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+          <ComboboxFooter>Digite para refinar a busca.</ComboboxFooter>
+        </ComboboxContent>
+      </Combobox>
+    </div>
   );
 }
 
@@ -215,8 +280,111 @@ function Section({
 }
 
 /**
- * The date pickers (t363), as a screen uses them: the month grid alone, one date (empty, chosen, limited to today, with
- * its error) and a period. "Hoje" is fixed at 24/10/2026, so the browser checks and the captures see the same month on
+ * The thumbnail of a product (`@/ui/thumbnail`, used by `ProductThumbnail` of the catalog) in the states a list will
+ * show, at 40 px (Produtos, Estoque) and 32 px (Venda). The states differ in where the picture comes from (the cache,
+ * the network, nothing); for the box they are a picture or the marker ("Erro" is the marker: bytes that do not
+ * decode are proved in e2e/offline-thumbnails.e2e.ts, outside the shell's CSP, where Chrome reports their blob URL
+ * under `connect-src`). Plus a very wide and a very tall picture, for the crop. The pictures are drawn here in the
+ * chart tokens. Synthetic only.
+ */
+const THUMBNAIL_STATES = [
+  { key: "cache", label: "Em cache", picture: [320, 320] },
+  { key: "sem-imagem", label: "Sem imagem", picture: null },
+  { key: "carregando", label: "Carregando", picture: null },
+  { key: "erro", label: "Erro", picture: null },
+  { key: "offline-cache", label: "Offline com cache", picture: [320, 320] },
+  { key: "offline-vazio", label: "Offline sem cache", picture: null },
+  { key: "larga", label: "Foto larga (1200×300)", picture: [1200, 300] },
+  { key: "alta", label: "Foto alta (300×1200)", picture: [300, 1200] },
+] as const;
+
+type ThumbnailPicture = (typeof THUMBNAIL_STATES)[number]["picture"];
+
+function drawPicture(picture: ThumbnailPicture): Promise<Blob | null> {
+  if (picture === null) {
+    return Promise.resolve(null);
+  }
+  const [width, height] = picture;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return Promise.resolve(null);
+  }
+  const token = (name: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  context.fillStyle = token("--chart-1");
+  context.fillRect(0, 0, width, height / 2);
+  context.fillStyle = token("--chart-2");
+  context.fillRect(0, height / 2, width, height / 2);
+  context.fillStyle = token("--chart-4");
+  context.beginPath();
+  context.arc(
+    width / 2,
+    height / 2,
+    Math.min(width, height) / 3,
+    0,
+    Math.PI * 2
+  );
+  context.fill();
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/webp"));
+}
+
+function ThumbnailCell({
+  picture,
+  size,
+}: {
+  picture: ThumbnailPicture;
+  size: ThumbnailSize;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    let current = true;
+    drawPicture(picture).then((blob) => {
+      if (current && blob) {
+        url = URL.createObjectURL(blob);
+        setSrc(url);
+      }
+    });
+    return () => {
+      current = false;
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [picture]);
+  return <Thumbnail marker="CA" size={size} src={src} />;
+}
+
+function ThumbnailStates() {
+  return (
+    <Section title="Miniatura do produto">
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {THUMBNAIL_STATES.map((state) => (
+          <li
+            className="grid justify-items-start gap-2"
+            data-testid={`miniatura-${state.key}`}
+            key={state.key}
+          >
+            <span className="flex items-center gap-3">
+              <ThumbnailCell picture={state.picture} size={40} />
+              <ThumbnailCell picture={state.picture} size={32} />
+            </span>
+            <span className="text-muted-foreground text-support">
+              {state.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+/**
+ * The date pickers, as a screen uses them: the month grid alone, one date (empty, chosen, limited to today, with
+ * its error) and a period. "Hoje" is fixed at `24/10/2026`, so the browser checks and the captures see the same month on
  * any day. The calendar comes through the on-demand loader, as in the app.
  */
 const TODAY = "2026-10-24";
@@ -353,7 +521,7 @@ function DatePickerStates() {
 }
 
 /**
- * The filter bar (t383), as the sales history will use it: a period, a choice, a text and a field that needs the
+ * The filter bar, as the sales history will use it: a period, a choice, a text and a field that needs the
  * connection (aria-disabled, with its reason). "Hoje" is the same fixed day as the pickers. The status line is the
  * screen's own, inside the bar's `<search>`.
  */
@@ -537,6 +705,51 @@ export function UiGallery() {
             </div>
           </Section>
 
+          <Section title="Tamanho por papel">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-4">
+              <div className="grid content-start gap-2" data-papel="comum">
+                <p className="text-muted-foreground text-support">
+                  Controle comum
+                </p>
+                <Button className="w-fit" variant="outline">
+                  Cancelar
+                </Button>
+              </div>
+              <div className="grid content-start gap-2" data-papel="principal">
+                <p className="text-muted-foreground text-support">
+                  Ação principal
+                </p>
+                <Button className="w-fit" size="xl">
+                  Nova venda
+                </Button>
+              </div>
+              <div className="grid content-start gap-2" data-papel="grupo">
+                <p className="text-muted-foreground text-support">
+                  Controles em grupo
+                </p>
+                <div className="flex gap-2" data-target-group="">
+                  {GROUP_ACTIONS.map(({ Icon, name }) => (
+                    <Button
+                      aria-label={name}
+                      className="size-6 before:content-none!"
+                      key={name}
+                      size="icon-xs"
+                      variant="outline"
+                    >
+                      <Icon aria-hidden="true" />
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid content-start gap-2" data-papel="campo">
+                <p className="text-muted-foreground text-support">
+                  Campo de texto
+                </p>
+                <Input aria-label="Campo de texto" placeholder="Busca" />
+              </div>
+            </div>
+          </Section>
+
           <Section title="Campos">
             <div className="grid max-w-sm gap-1.5">
               <Label htmlFor="galeria-nome">Nome do produto</Label>
@@ -557,6 +770,7 @@ export function UiGallery() {
                 placeholder="Material, corte, cuidados"
               />
             </div>
+            <GalleryCombobox />
           </Section>
 
           <Section title="Sobreposições">
@@ -656,6 +870,50 @@ export function UiGallery() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
+            </div>
+          </Section>
+
+          <Section title="Ajuda (i)">
+            {/* The cards clip their overflow, as in the app: the popup is in a portal and must come out whole. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-1">
+                    <CardTitle aria-level={3} role="heading">
+                      Resultado estimado
+                    </CardTitle>
+                    <HelpTip about="Resultado estimado">
+                      Vendas menos custos, taxas e despesas de 1 a 23/10.
+                      Compara com 1 a 23/09.
+                    </HelpTip>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-support">
+                    1 a 23/10
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-1">
+                    <CardTitle aria-level={3} role="heading">
+                      Ticket médio
+                    </CardTitle>
+                    <HelpTip
+                      about="Ticket médio"
+                      link={{ href: "/dashboard", label: "Ver o resultado" }}
+                    >
+                      Vendas líquidas divididas pelo número de vendas.
+                    </HelpTip>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-support">
+                    1 a 23/10
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </Section>
 
@@ -776,7 +1034,7 @@ export function UiGallery() {
                   <FieldLabel htmlFor="galeria-observacao">
                     Observação (opcional)
                   </FieldLabel>
-                  <InputGroup className="h-auto items-stretch">
+                  <InputGroup className="h-auto touch:h-auto items-stretch">
                     <InputGroupTextarea id="galeria-observacao" rows={3} />
                   </InputGroup>
                 </Field>
@@ -1004,21 +1262,29 @@ export function UiGallery() {
             <div className="flex flex-wrap items-center gap-3">
               <HideValuesButton />
               <span className="text-support">
-                <MoneyText text="Melhor dia: 18/10, R$ 1.840,00" />
+                <MoneyText text="18/10 · R$ 1.840,00" />
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <KpiCard
                 chip={
                   <DeltaChip
-                    delta={{ money: false, text: "+19,1%", trend: "up" }}
+                    delta={{
+                      basis: "em relação a 1 a 25/09",
+                      money: false,
+                      spoken: "subiu 19,1 por cento",
+                      text: "+19,1%",
+                      trend: "up",
+                    }}
                   />
                 }
-                date="1 a 25/10"
                 entity="sales"
-                footer="41 vendas no mês"
+                help={{
+                  about: "Vendas",
+                  text: "Vendas líquidas de 1 a 25/10. Compara com 1 a 25/09.",
+                }}
                 id="galeria-kpi-vendas"
-                note="vs. 1 a 25/09"
+                note="41 vendas"
                 spark={
                   <OnDemandSparkline
                     color="var(--chart-sales)"
@@ -1027,20 +1293,28 @@ export function UiGallery() {
                     values={GALLERY_KPI_SERIES}
                   />
                 }
-                title="Vendas em outubro"
+                title="Vendas"
                 value={<HeroValue amount="2660.60" />}
               />
               <KpiCard
                 chip={
                   <DeltaChip
-                    delta={{ money: true, text: "-R$ 12,00", trend: "down" }}
+                    delta={{
+                      basis: "em relação a 1 a 25/09",
+                      money: true,
+                      spoken: "caiu R$ 12,00",
+                      text: "-R$ 12,00",
+                      trend: "down",
+                    }}
                   />
                 }
-                date="1 a 25/10"
                 entity="result"
-                footer="Não é lucro líquido nem dinheiro já recebido."
+                footer="Não é lucro líquido nem caixa"
+                help={{
+                  about: "Resultado estimado",
+                  text: "Vendas menos custos, taxas e despesas de 1 a 25/10. Compara com 1 a 25/09.",
+                }}
                 id="galeria-kpi-resultado"
-                note="vs. 1 a 25/09"
                 title="Resultado estimado"
                 value={<HeroValue amount="-48.30" size="md" />}
               />
@@ -1048,6 +1322,8 @@ export function UiGallery() {
           </Section>
 
           <ChartStates />
+
+          <ThumbnailStates />
 
           <DatePickerStates />
 

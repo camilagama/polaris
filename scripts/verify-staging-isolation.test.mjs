@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  BILLING_BASE_URLS,
   findHyperdriveProblems,
   findIsolationProblems,
   parseJsonc,
@@ -138,8 +139,8 @@ describe("the staging isolation check", () => {
       "web: env.staging: durable_objects is not used by staging",
       "web: env.staging: kv_namespaces is not used by staging",
       "web: env.staging: services is not used by staging",
-      "web: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
       "web: env.staging: vars.BETTER_AUTH_BASE_URL must be exactly https://dash.araute.app",
+      "web: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)",
     ]);
   });
 
@@ -230,7 +231,7 @@ describe("the staging isolation check", () => {
       { custom_domain: true, pattern: "catalogo.araute.app" },
     ];
     expect(findIsolationProblems(entries)).toEqual([
-      "catalog: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
+      "catalog: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)",
     ]);
   });
 
@@ -451,12 +452,72 @@ describe("the staging isolation check", () => {
       ...entry,
       built: {
         ...entry.config.env.staging,
+        assets: entry.config.assets,
         durable_objects: { bindings: [] },
         kv_namespaces: [],
         targetEnvironment: "staging",
       },
     }));
     expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("refuses the switches of the database proof routes in any block, even off", () => {
+    const entries = repositoryEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
+    }));
+    const web = entryOf(entries, "web").config;
+    web.vars = { ...web.vars, DB_POC_ENABLED: "false" };
+    web.env.staging.vars = {
+      ...web.env.staging.vars,
+      DB_RLS_POC_ENABLED: "false",
+    };
+    web.env.production.vars.DB_RLS_POC_ENABLED = "false";
+    const catalog = entryOf(entries, "catalog");
+    catalog.built = {
+      ...catalog.built,
+      vars: { ...catalog.built.vars, DB_POC_ENABLED: "true" },
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: top level: vars.DB_POC_ENABLED is a switch of a proof route that left the app; remove it",
+      "web: env.staging: vars.DB_RLS_POC_ENABLED is a switch of a proof route that left the app; remove it",
+      "web: env.production: vars.DB_RLS_POC_ENABLED is a switch of a proof route that left the app; remove it",
+      "catalog: built wrangler.json: vars.DB_POC_ENABLED is a switch of a proof route that left the app; remove it",
+    ]);
+  });
+
+  it("refuses the pepper of the password as a var in any block: it is a Worker secret of each environment", () => {
+    const entries = repositoryEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
+    }));
+    expect(findIsolationProblems(entries)).toEqual([]);
+    const web = entryOf(entries, "web");
+    web.config.vars = { ...web.config.vars, AUTH_PASSWORD_PEPPER: "" };
+    web.config.env.staging.vars.AUTH_PASSWORD_PEPPER = "planted";
+    web.config.env.production.vars.AUTH_PASSWORD_PEPPER = "planted";
+    web.built = {
+      ...web.built,
+      vars: { ...web.built.vars, AUTH_PASSWORD_PEPPER: "planted" },
+    };
+    expect(
+      findIsolationProblems(entries).filter((problem) =>
+        problem.includes("AUTH_PASSWORD_PEPPER")
+      )
+    ).toEqual([
+      "web: top level: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: env.staging: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: env.production: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+      "web: built wrangler.json: vars.AUTH_PASSWORD_PEPPER must not exist: it is a Worker secret of each environment (wrangler secret put AUTH_PASSWORD_PEPPER)",
+    ]);
   });
 
   it("refuses two staging roles on the same Hyperdrive configuration", () => {
@@ -613,7 +674,6 @@ describe("the staging isolation check", () => {
   it("accepts the closure notices flag in staging only as true or false", () => {
     const entries = repositoryEntries();
     const { staging } = entryOf(entries, "web").config.env;
-    expect(staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe("false");
     for (const value of ["true", "false"]) {
       staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED = value;
       expect(findIsolationProblems(entries), value).toEqual([]);
@@ -624,6 +684,15 @@ describe("the staging isolation check", () => {
         'web: env.staging: vars.CLOSURE_NOTICE_EMAIL_ENABLED must be "true" or "false"',
       ]);
     }
+  });
+
+  it("has the closure notices on in staging only, off at the top level and in production", () => {
+    const { config } = entryOf(repositoryEntries(), "web");
+    expect(config.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe("false");
+    expect(config.env.staging.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe("true");
+    expect(config.env.production.vars.CLOSURE_NOTICE_EMAIL_ENABLED).toBe(
+      "false"
+    );
   });
 
   it("accepts staging with the password off and refuses a value that is neither true nor false", () => {
@@ -670,6 +739,30 @@ describe("the staging isolation check", () => {
     ]);
   });
 
+  it("refuses the reports of errors of the browser on in production, before the item of the release checklist", () => {
+    const entries = repositoryEntries();
+    const { production } = entryOf(entries, "web").config.env;
+    expect(production.vars.CLIENT_ERRORS_ENABLED).toBe("0");
+    production.vars.CLIENT_ERRORS_ENABLED = "1";
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.production vars.CLIENT_ERRORS_ENABLED must not be "1" (the reports of errors of the browser stay off in production until the item of the release checklist, ADR 0098)',
+    ]);
+  });
+
+  it.each(["web", "catalog"])(
+    "refuses the release header on in the production of %s, and keeps it on in staging",
+    (app) => {
+      const entries = repositoryEntries();
+      const { production, staging } = entryOf(entries, app).config.env;
+      expect(staging.vars.RELEASE_HEADER_ENABLED).toBe("true");
+      expect(production.vars.RELEASE_HEADER_ENABLED).toBe("false");
+      production.vars.RELEASE_HEADER_ENABLED = "true";
+      expect(findIsolationProblems(entries)).toEqual([
+        `${app}: env.production vars.RELEASE_HEADER_ENABLED must not be "true" (the release header is on in staging only until the item 8 of the release checklist, ADR 0098)`,
+      ]);
+    }
+  );
+
   it("refuses production using the widget key of staging", () => {
     const entries = repositoryEntries();
     const { production, staging } = entryOf(entries, "web").config.env;
@@ -703,26 +796,220 @@ describe("the staging isolation check", () => {
     ]);
   });
 
-  it("refuses an Admin reachable in staging", () => {
-    const entries = repositoryEntries();
-    const { staging } = entryOf(entries, "admin").config.env;
-    staging.workers_dev = true;
-    staging.routes = [{ custom_domain: true, pattern: "admin.example.com" }];
-    staging.vars.ACCESS_AUDIENCE = "aud";
-    staging.hyperdrive = [
-      { binding: "ADMIN_HYPERDRIVE", id: "abcdefabcdefabcdefabcdefabcdefab" },
-    ];
-    expect(findIsolationProblems(entries)).toEqual([
-      "admin: env.staging: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)",
-      "admin: env.staging: the Admin is not exposed in staging (workers_dev must be false)",
-      "admin: env.staging: the Admin has no Access application in staging",
-      "admin: env.staging: the Admin has no database binding in staging",
-    ]);
+  describe("the Admin of staging, exposed only behind Access", () => {
+    const adminOf = (entries) => entryOf(entries, "admin").config.env;
+    const ROUTE =
+      "admin: env.staging: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)";
+
+    it("passes on the repository config: no route, the staging team and audience, its own Hyperdrive", () => {
+      expect(findIsolationProblems(repositoryEntries())).toEqual([]);
+      const { staging } = adminOf(repositoryEntries());
+      expect(staging.routes).toBeUndefined();
+      expect(staging.route).toBeUndefined();
+      expect(staging.workers_dev).toBe(false);
+      expect(staging.preview_urls).toBe(false);
+    });
+
+    it("refuses workers.dev or previews on", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.workers_dev = true;
+      staging.preview_urls = true;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: preview_urls must be false (no Cloudflare Previews)",
+        "admin: env.staging: workers_dev must be false (the Admin is reached only through Access at admin.araute.app)",
+      ]);
+    });
+
+    it("refuses an Admin without Access", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.vars.ACCESS_TEAM_DOMAIN = undefined;
+      staging.vars.ACCESS_AUDIENCE = undefined;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: vars.ACCESS_TEAM_DOMAIN must be the <team>.cloudflareaccess.com of the staging Access team",
+        "admin: env.staging: vars.ACCESS_AUDIENCE must be the 64-hex audience tag of the staging Access application",
+      ]);
+    });
+
+    it.each([
+      ["polaris-staging.example.com", "aud"],
+      ["polaris-staging.cloudflareaccess.com.example.com", "8E08"],
+      ["https://polaris-staging.cloudflareaccess.com", "0".repeat(63)],
+      [".cloudflareaccess.com", `${"a".repeat(64)} `],
+    ])("refuses the team %s and the audience %s", (team, audience) => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.vars.ACCESS_TEAM_DOMAIN = team;
+      staging.vars.ACCESS_AUDIENCE = audience;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: vars.ACCESS_TEAM_DOMAIN must be the <team>.cloudflareaccess.com of the staging Access team",
+        "admin: env.staging: vars.ACCESS_AUDIENCE must be the 64-hex audience tag of the staging Access application",
+      ]);
+    });
+
+    it("refuses the Access team and audience of production", () => {
+      const entries = repositoryEntries();
+      const { production, staging } = adminOf(entries);
+      production.vars.ACCESS_TEAM_DOMAIN = staging.vars.ACCESS_TEAM_DOMAIN;
+      production.vars.ACCESS_AUDIENCE = staging.vars.ACCESS_AUDIENCE;
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging: vars.ACCESS_TEAM_DOMAIN must not be the Access team of production",
+        "admin: env.staging: vars.ACCESS_AUDIENCE must not be the audience of production",
+      ]);
+    });
+
+    it.each([
+      [
+        "the Custom Domain of its own host",
+        (staging) => {
+          staging.routes = [
+            { custom_domain: true, pattern: "admin.araute.app" },
+          ];
+        },
+      ],
+      [
+        "a Custom Domain at another host",
+        (staging) => {
+          staging.routes = [
+            { custom_domain: true, pattern: "admin.example.com" },
+          ];
+        },
+      ],
+      [
+        "a zone route",
+        (staging) => {
+          staging.routes = [
+            { pattern: "admin.araute.app/*", zone_name: "araute.app" },
+          ];
+        },
+      ],
+      [
+        "a wildcard",
+        (staging) => {
+          staging.routes = [{ custom_domain: true, pattern: "*.araute.app" }];
+        },
+      ],
+      [
+        "a bare string route",
+        (staging) => {
+          staging.routes = ["admin.araute.app"];
+        },
+      ],
+      [
+        "a `route`",
+        (staging) => {
+          staging.route = "admin.araute.app/*";
+        },
+      ],
+    ])("refuses %s", (_label, change) => {
+      const entries = repositoryEntries();
+      change(adminOf(entries).staging);
+      expect(findIsolationProblems(entries)).toEqual([ROUTE]);
+    });
+
+    it("refuses an Admin without its database binding", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.hyperdrive = staging.hyperdrive.filter(
+        (item) => item.binding !== "ADMIN_HYPERDRIVE"
+      );
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.staging lacks hyperdrive:ADMIN_HYPERDRIVE (bindings are not inherited)",
+        "admin: env.staging: the Admin needs ADMIN_HYPERDRIVE in staging",
+      ]);
+    });
+
+    it("refuses an ADMIN_HYPERDRIVE shared with the web, with the billing configuration or with production", () => {
+      const share = (target) => {
+        const entries = repositoryEntries();
+        const admin = adminOf(entries).staging.hyperdrive.find(
+          (item) => item.binding === "ADMIN_HYPERDRIVE"
+        );
+        admin.id = target(entries);
+        return findIsolationProblems(entries);
+      };
+      const webId = (binding) => (entries) =>
+        entryOf(entries, "web").config.env.staging.hyperdrive.find(
+          (item) => item.binding === binding
+        ).id;
+      expect(share(webId("HYPERDRIVE"))).toEqual([
+        "admin: env.staging Hyperdrive ADMIN_HYPERDRIVE shares its id with web HYPERDRIVE",
+      ]);
+      expect(share(webId("BILLING_HYPERDRIVE"))).toEqual([
+        "admin: env.staging Hyperdrive ADMIN_HYPERDRIVE shares its id with web BILLING_HYPERDRIVE",
+      ]);
+      const production = "0123456789abcdef0123456789abcdef";
+      expect(
+        share((entries) => {
+          adminOf(entries).production.hyperdrive[0].id = production;
+          return production;
+        })
+      ).toEqual([
+        'admin: env.staging hyperdrive "0123456789abcdef0123456789abcdef" is also used by admin env.production',
+      ]);
+    });
+
+    it("requires the sandboxes of the providers in the Admin of staging, and the production hosts in production", () => {
+      const entries = repositoryEntries();
+      const { production, staging } = adminOf(entries);
+      staging.vars.ASAAS_BASE_URL = "https://api.asaas.com/v3";
+      staging.vars.WOOVI_BASE_URL = undefined;
+      staging.vars.WOOVI_REFUND_ENABLED = "yes";
+      production.vars.ASAAS_BASE_URL = "https://api-sandbox.asaas.com/v3";
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.production: vars.ASAAS_BASE_URL must be exactly https://api.asaas.com/v3 (the production host of the provider)",
+        "admin: env.production: vars.ASAAS_BASE_URL must not name a sandbox host of Asaas or Woovi",
+        "admin: env.staging: vars.ASAAS_BASE_URL must be exactly https://api-sandbox.asaas.com/v3 (the sandbox of the provider)",
+        "admin: env.staging: vars.WOOVI_BASE_URL must be exactly https://api.woovi-sandbox.com (the sandbox of the provider)",
+        'admin: env.staging: vars.WOOVI_REFUND_ENABLED must be "true" or "false"',
+        "admin: env.staging: vars.ASAAS_BASE_URL must not name the production API of Asaas or Woovi",
+      ]);
+    });
+
+    it("refuses a setting of the webhooks in the Admin, and a provider's secret written as a variable anywhere", () => {
+      const entries = repositoryEntries();
+      const { staging } = adminOf(entries);
+      staging.vars.ASAAS_WEBHOOK_TOKEN = "token";
+      staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS = "key";
+      staging.vars.ASAAS_API_KEY = "$aact_hmlg_key";
+      entryOf(entries, "web").config.env.production.vars.WOOVI_APP_ID = "app";
+      entryOf(entries, "admin").config.vars = {
+        ASAAS_API_KEY: "$aact_hmlg_key",
+      };
+      expect(findIsolationProblems(entries)).toEqual([
+        "web: env.production: vars.WOOVI_APP_ID is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: top level: vars.ASAAS_API_KEY is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: env.production lacks vars.ASAAS_WEBHOOK_TOKEN, which env.staging sets",
+        "admin: env.production lacks vars.WOOVI_WEBHOOK_PUBLIC_KEYS, which env.staging sets",
+        "admin: env.production lacks vars.ASAAS_API_KEY, which env.staging sets",
+        "admin: env.staging: vars.ASAAS_WEBHOOK_TOKEN belongs to the webhooks of the web; the Admin never receives a provider's call",
+        "admin: env.staging: vars.WOOVI_WEBHOOK_PUBLIC_KEYS belongs to the webhooks of the web; the Admin never receives a provider's call",
+        "admin: env.staging: vars.ASAAS_API_KEY is a secret of the Worker (wrangler secret put, per environment), never a variable",
+        "admin: env.staging: vars.ASAAS_WEBHOOK_TOKEN is a secret of the Worker (wrangler secret put, per environment), never a variable",
+      ]);
+    });
+
+    it("refuses a production route or variable that reaches the Admin of staging", () => {
+      const entries = repositoryEntries();
+      const { production } = adminOf(entries);
+      production.routes = [
+        { custom_domain: true, pattern: "admin.araute.app" },
+        "*.araute.app/*",
+      ];
+      production.vars.ADMIN_ORIGIN = "https://admin.araute.app";
+      expect(findIsolationProblems(entries)).toEqual([
+        "admin: env.production vars.ADMIN_ORIGIN must not use the host of staging",
+        "admin: env.production routes[0] must not use or reach a host of staging",
+        "admin: env.production routes[1] must not use or reach a host of staging",
+      ]);
+    });
   });
 
   describe("on the built wrangler.json", () => {
     const built = (config) => ({
       ...config.env.staging,
+      assets: config.assets,
       targetEnvironment: "staging",
     });
 
@@ -755,6 +1042,235 @@ describe("the staging isolation check", () => {
         "catalog: built wrangler.json bindings differ from env.staging",
       ]);
     });
+  });
+});
+
+describe("the paths the Worker answers reach it before the assets handler", () => {
+  const withBuilt = () =>
+    repositoryEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
+    }));
+
+  it("refuses a top level without /webhooks/*", () => {
+    const entries = withBuilt();
+    const web = entryOf(entries, "web");
+    web.config.assets = {
+      ...web.config.assets,
+      run_worker_first: ["/health", "/ready", "/rpc/*", "/api/*", "/assets/*"],
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: top level: assets.run_worker_first must list "/webhooks/*" (the assets handler would answer it and the Worker would never see the delivery)',
+    ]);
+  });
+
+  it("refuses an environment that repeats the block without it", () => {
+    const entries = withBuilt();
+    entryOf(entries, "web").config.env.production.assets = {
+      run_worker_first: ["/health", "/api/*"],
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: env.production: assets.run_worker_first must list "/webhooks/*" (the assets handler would answer it and the Worker would never see the delivery)',
+    ]);
+  });
+
+  it("refuses a built wrangler.json that lost it (run_worker_first as true or absent)", () => {
+    const entries = withBuilt();
+    const web = entryOf(entries, "web");
+    web.built = { ...web.built, assets: { run_worker_first: true } };
+    expect(findIsolationProblems(entries)).toEqual([
+      'web: built wrangler.json: assets.run_worker_first must list "/webhooks/*" (the assets handler would answer it and the Worker would never see the delivery)',
+    ]);
+    web.built = { ...web.built, assets: {} };
+    expect(findIsolationProblems(entries)).toHaveLength(1);
+  });
+
+  it("leaves the other Workers alone (they serve no assets)", () => {
+    expect(findIsolationProblems(withBuilt())).toEqual([]);
+  });
+});
+
+describe("billing in staging, against the sandboxes only", () => {
+  const webOf = (entries) => entryOf(entries, "web").config;
+  const STAGING = "web: env.staging";
+  const PRODUCTION = "web: env.production";
+
+  it("has billing on in staging with the sandbox URLs, and off in production with the production URLs", () => {
+    const { staging, production } = readConfig("web").env;
+    expect(staging.vars).toMatchObject({
+      ...BILLING_BASE_URLS.staging,
+      BILLING_SELF_SERVICE_ENABLED: "true",
+    });
+    expect(staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS).not.toBe("");
+    expect(production.vars).toMatchObject({
+      ...BILLING_BASE_URLS.production,
+      BILLING_SELF_SERVICE_ENABLED: "false",
+      WOOVI_REFUND_ENABLED: "false",
+    });
+  });
+
+  it("refuses a production base URL of a provider in staging", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.staging;
+    vars.ASAAS_BASE_URL = "https://api.asaas.com/v3";
+    vars.WOOVI_BASE_URL = "https://api.woovi.com";
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.ASAAS_BASE_URL must be exactly https://api-sandbox.asaas.com/v3 (the sandbox of the provider)`,
+      `${STAGING}: vars.WOOVI_BASE_URL must be exactly https://api.woovi-sandbox.com (the sandbox of the provider)`,
+      `${STAGING}: vars.ASAAS_BASE_URL must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`,
+      `${STAGING}: vars.WOOVI_BASE_URL must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`,
+    ]);
+  });
+
+  it("compares the sandbox URLs exactly: absent, http, a trailing slash or another path is refused", () => {
+    for (const [variable, value] of [
+      ["ASAAS_BASE_URL", undefined],
+      ["ASAAS_BASE_URL", "http://api-sandbox.asaas.com/v3"],
+      ["ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3/"],
+      ["WOOVI_BASE_URL", "https://api.woovi-sandbox.com/api/v1"],
+      ["WOOVI_BASE_URL", "https://API.woovi-sandbox.com"],
+    ]) {
+      const entries = repositoryEntries();
+      webOf(entries).env.staging.vars[variable] = value;
+      expect(findIsolationProblems(entries)).toEqual([
+        `${STAGING}: vars.${variable} must be exactly ${BILLING_BASE_URLS.staging[variable]} (the sandbox of the provider)`,
+      ]);
+    }
+  });
+
+  it("refuses the production API of a provider in any staging variable, whatever its name", () => {
+    for (const value of [
+      "https://api.asaas.com/v3",
+      "api.woovi.com",
+      "veja https://API.WOOVI.COM./api/v1 antes",
+      "https://api.asaas.com:443/v3",
+      "https%3A%2F%2Fapi.asaas.com%2Fv3",
+      "https://www.asaas.com/api/v3",
+      "https://api.openpix.com.br/api/v1",
+    ]) {
+      const entries = repositoryEntries();
+      const web = webOf(entries);
+      web.env.staging.vars.OUTRA = value;
+      web.env.production.vars.OUTRA = "";
+      expect(findIsolationProblems(entries)).toEqual([
+        `${STAGING}: vars.OUTRA must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`,
+      ]);
+    }
+  });
+
+  it("does not take a sandbox host or a longer name for the production API", () => {
+    for (const value of [
+      "https://api-sandbox.asaas.com/v3",
+      "https://sandbox.asaas.com/i/abc",
+      "https://api.asaas.com.example.org",
+      "https://xapi.woovi.com",
+      "100% sandbox",
+    ]) {
+      const entries = repositoryEntries();
+      const web = webOf(entries);
+      web.env.staging.vars.OUTRA = value;
+      web.env.production.vars.OUTRA = "";
+      expect(findIsolationProblems(entries)).toEqual([]);
+    }
+  });
+
+  it("refuses a flag of billing in staging that is neither true nor false", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.staging;
+    vars.BILLING_SELF_SERVICE_ENABLED = "1";
+    vars.WOOVI_REFUND_ENABLED = undefined;
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.BILLING_SELF_SERVICE_ENABLED must be "true" or "false"`,
+      `${STAGING}: vars.WOOVI_REFUND_ENABLED must be "true" or "false"`,
+    ]);
+  });
+
+  it("refuses the thumbnails flag of staging when it is neither true nor false", () => {
+    const entries = repositoryEntries();
+    webOf(entries).env.staging.vars.MEDIA_THUMBS_ENABLED = "True";
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.MEDIA_THUMBS_ENABLED must be "true" or "false"`,
+    ]);
+  });
+
+  it("wants the support box of staging, one bare address on araute.app, while billing is on", () => {
+    const refused = `${STAGING}: vars.BILLING_SUPPORT_EMAIL must be one bare address on @araute.app (it is the reply-to of the billing e-mails)`;
+    for (const [value, expected] of [
+      [
+        "",
+        [
+          `${STAGING}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.BILLING_SUPPORT_EMAIL (without it the billing e-mails are skipped)`,
+        ],
+      ],
+      ["alguem@gmail.com", [refused]],
+      ["suporte@araute.app, outro@araute.app", [refused]],
+      ["Suporte <suporte@araute.app>", [refused]],
+      ["suporte@dash.araute.app", [refused]],
+      ["suporte@araute.app.example.com", [refused]],
+      [" suporte@araute.app ", []],
+    ]) {
+      const entries = repositoryEntries();
+      webOf(entries).env.staging.vars.BILLING_SUPPORT_EMAIL = value;
+      expect(findIsolationProblems(entries)).toEqual(expected);
+    }
+  });
+
+  it("accepts billing off in staging without the support box and without the Woovi key", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.staging;
+    vars.BILLING_SELF_SERVICE_ENABLED = "false";
+    vars.BILLING_SUPPORT_EMAIL = "";
+    vars.WOOVI_WEBHOOK_PUBLIC_KEYS = "";
+    expect(findIsolationProblems(entries)).toEqual([]);
+  });
+
+  it("refuses billing on in staging without the public key of Woovi", () => {
+    const entries = repositoryEntries();
+    webOf(entries).env.staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS = " ";
+    expect(findIsolationProblems(entries)).toEqual([
+      `${STAGING}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.WOOVI_WEBHOOK_PUBLIC_KEYS (without it every Woovi webhook answers 503)`,
+    ]);
+  });
+
+  it("refuses a sandbox base URL in production, and a sandbox host in any variable of production", () => {
+    const entries = repositoryEntries();
+    const { vars } = webOf(entries).env.production;
+    vars.ASAAS_BASE_URL = "https://api-sandbox.asaas.com/v3";
+    vars.WOOVI_BASE_URL = undefined;
+    vars.AUTH_EMAIL_FROM = "Polaris <x@pay.woovi-sandbox.com>";
+    vars.CATALOG_ORIGIN = "https%3A%2F%2Fsandbox.asaas.com";
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: env.production lacks vars.WOOVI_BASE_URL, which env.staging sets",
+      `${PRODUCTION}: vars.ASAAS_BASE_URL must be exactly https://api.asaas.com/v3 (the production host of the provider)`,
+      `${PRODUCTION}: vars.WOOVI_BASE_URL must be exactly https://api.woovi.com (the production host of the provider)`,
+      `${PRODUCTION}: vars.AUTH_EMAIL_FROM must not name a sandbox host of Asaas or Woovi`,
+      `${PRODUCTION}: vars.ASAAS_BASE_URL must not name a sandbox host of Asaas or Woovi`,
+      `${PRODUCTION}: vars.CATALOG_ORIGIN must not name a sandbox host of Asaas or Woovi`,
+    ]);
+  });
+
+  it("refuses a production URL in the built wrangler.json of staging", () => {
+    const entries = repositoryEntries().map((entry) => ({
+      ...entry,
+      built: {
+        ...entry.config.env.staging,
+        assets: entry.config.assets,
+        targetEnvironment: "staging",
+      },
+    }));
+    const web = entryOf(entries, "web");
+    web.built = {
+      ...web.built,
+      vars: { ...web.built.vars, WOOVI_BASE_URL: "https://api.woovi.com" },
+    };
+    expect(findIsolationProblems(entries)).toEqual([
+      "web: built wrangler.json: vars.WOOVI_BASE_URL must be exactly https://api.woovi-sandbox.com (the sandbox of the provider)",
+      "web: built wrangler.json: vars.WOOVI_BASE_URL must not name the production API of Asaas or Woovi (staging bills against the sandbox only)",
+    ]);
   });
 });
 

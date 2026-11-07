@@ -31,7 +31,9 @@ import type {
   CreateSaleReturnResult,
   createSaleReturn,
 } from "@polaris/db/sale-return-repository";
+import { InsufficientStockError } from "@polaris/domain/inventory/inventory";
 import type { WorkerBindings } from "../environment";
+import { logSaleRefusedInsufficientStock } from "../observability/sale-refusal-log";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
 interface SaleRpcContext {
@@ -218,18 +220,30 @@ export function createSaleRpcHandlers(dependencies: SaleRpcDependencies) {
       .withTenantRequestContext({
         bindings: context.bindings,
         capability: "sale:create",
-        operation: (transaction, identity) =>
-          confirmSaleRepository(transaction, identity, {
-            adjustments: input.adjustments,
-            commandId: input.commandId,
-            commandVersion: input.commandVersion,
-            items: input.items,
-            occurredAt: input.occurredAt,
-            payment: input.payment,
-            paymentProfile: input.paymentProfile,
-            recordedAt: input.recordedAt ?? null,
-            requestId: dependencies.requestAuditId(context.requestId),
-          }),
+        operation: async (transaction, identity) => {
+          try {
+            return await confirmSaleRepository(transaction, identity, {
+              adjustments: input.adjustments,
+              commandId: input.commandId,
+              commandVersion: input.commandVersion,
+              items: input.items,
+              occurredAt: input.occurredAt,
+              payment: input.payment,
+              paymentProfile: input.paymentProfile,
+              recordedAt: input.recordedAt ?? null,
+              requestId: dependencies.requestAuditId(context.requestId),
+            });
+          } catch (error) {
+            if (error instanceof InsufficientStockError) {
+              logSaleRefusedInsufficientStock({
+                organizationId: identity.organizationId,
+                origin: "online",
+                requestId: context.requestId,
+              });
+            }
+            throw error;
+          }
+        },
         request: context.request,
         requestedOrganizationId: input.organizationId,
       })

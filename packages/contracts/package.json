@@ -4,7 +4,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./admin-activation-funnel": "./src/admin-activation-funnel.ts"
+    "./admin-activation-funnel": "./src/admin-activation-funnel.ts",
+    "./client-error": "./src/client-error.ts",
+    "./client-error-fields": "./src/client-error-fields.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

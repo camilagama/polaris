@@ -14,9 +14,10 @@ const mediaA = `media/v2/${orgA}/`;
 
 function claim(
   organizationId: string,
-  phase: "purge" | "sweep" = "purge"
+  phase: "purge" | "sweep" = "purge",
+  attempt = 1
 ): ClaimedOrganizationPurge {
-  return { attempt: 1, organizationId, phase };
+  return { attempt, organizationId, phase };
 }
 
 function seed(objects: Map<string, Uint8Array>, keys: string[]) {
@@ -403,12 +404,68 @@ describe("runOrganizationPurges", () => {
         organizationId: orgA,
         outcome: "failure",
         reason: "purge_database_failed",
-        step: "database",
+        operation: "organization_purge.database",
       })
     );
     expect(
       JSON.stringify([...error.mock.calls, ...warn.mock.calls])
     ).not.toContain("segredo-xyz");
+  });
+
+  it("reports a purge that fails for the third attempt as stalled, besides the failed step", async () => {
+    const { error, warn } = quiet();
+    const ctx = fixture({
+      claims: [claim(orgA, "purge", 3), null],
+      onPurge: () => Promise.reject(new Error("segredo-xyz")),
+    });
+
+    await ctx.run();
+
+    expect(error).toHaveBeenCalledWith("organization_purge_stalled", {
+      attempt: 3,
+      job: "organization_purge",
+      operation: "organization_purge.database",
+      organizationId: orgA,
+      outcome: "failure",
+      phase: "purge",
+      reason: "purge_database_failed",
+    });
+    expect(error).toHaveBeenCalledWith(
+      "organization_purge_step_failed",
+      expect.objectContaining({ attempt: 3 })
+    );
+    expect(
+      JSON.stringify([...error.mock.calls, ...warn.mock.calls])
+    ).not.toContain("segredo-xyz");
+  });
+
+  it("does not report as stalled a purge on its second attempt, one that succeeds on its third, or one held on purpose", async () => {
+    for (const { attempt, onPurge } of [
+      { attempt: 2, onPurge: () => Promise.reject(new Error("boom")) },
+      { attempt: 3, onPurge: () => Promise.resolve() },
+      {
+        attempt: 5,
+        onPurge: () => Promise.reject(new Error("legal_hold_active")),
+      },
+      {
+        attempt: 5,
+        onPurge: () => Promise.reject(new Error("tenant_access_active")),
+      },
+    ]) {
+      const { error, warn } = quiet();
+      const ctx = fixture({
+        claims: [claim(orgA, "purge", attempt), null],
+        onPurge,
+      });
+
+      // biome-ignore lint/performance/noAwaitInLoops: one case at a time, each with its own fixture
+      await ctx.run();
+
+      expect(
+        [...error.mock.calls, ...warn.mock.calls].map(([event]) => event)
+      ).not.toContain("organization_purge_stalled");
+      vi.restoreAllMocks();
+    }
   });
 
   it("logs a purge held by a legal hold as a refusal, with its code", async () => {
@@ -425,7 +482,7 @@ describe("runOrganizationPurges", () => {
       organizationId: orgA,
       outcome: "rejected",
       reason: "legal_hold_active",
-      step: "database",
+      operation: "organization_purge.database",
     });
     expect(error).not.toHaveBeenCalled();
   });
@@ -450,7 +507,7 @@ describe("runOrganizationPurges", () => {
         organizationId: orgA,
         outcome: "rejected",
         reason: code,
-        step: "database",
+        operation: "organization_purge.database",
       });
       expect(ctx.client.recordOrganizationPurgeFailure).toHaveBeenCalledWith(
         orgA,

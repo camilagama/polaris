@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { TabLabel } from "./product-dialog";
+import type { ProductReadModel } from "@polaris/contracts";
+import { dialogTexts, TabLabel } from "./product-dialog";
 
 vi.mock("../lib/orpc", () => ({ orpcClient: {} }));
 
@@ -26,5 +27,22 @@ describe("name of a tab of the product", () => {
     expect(
       renderToStaticMarkup(<TabLabel invalid={false} label="Dados" />)
     ).toBe("Dados");
+  });
+});
+
+describe("line under the title of the product dialog", () => {
+  it("says when the product was updated, since the list no longer does", () => {
+    const product = {
+      updatedAt: "2026-10-14T12:00:00.000Z",
+    } as ProductReadModel;
+    expect(dialogTexts(product, false).description).toBe(
+      "Produto · atualizado em 14 de out. de 2026"
+    );
+  });
+
+  it("keeps the invitation of a new product", () => {
+    expect(dialogTexts(null, false).description).toBe(
+      "Um passo só: o produto pode nascer com o estoque."
+    );
   });
 });

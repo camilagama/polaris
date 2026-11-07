@@ -1,4 +1,3 @@
-import { InvalidIncidentRetryError } from "@polaris/domain/admin/operational-incident";
 import { describe, expect, it, vi } from "vitest";
 import {
   type AdminBindings,
@@ -59,6 +58,7 @@ function setup(
   const dependencies: AdminDependencies = {
     accessLog: { read: vi.fn() },
     activationFunnel: { read: vi.fn() },
+    providerCommands: { cancelRenewal: vi.fn(), refund: vi.fn() },
     refundWindow: { read: vi.fn() },
     authenticate: vi.fn(() =>
       Promise.resolve({
@@ -89,6 +89,8 @@ function setup(
         headers: {
           "cf-access-jwt-assertion": "token",
           "content-type": "application/json",
+          // a write must name the Admin's own origin, as the browser does
+          origin: "https://admin.example.invalid",
           ...headers,
         },
         method,
@@ -228,7 +230,7 @@ describe("reading one incident", () => {
 });
 
 describe("retrying a dead event", () => {
-  it("sends it again for the verified operator with the trimmed reason and the IDs in lower case", async () => {
+  it("sends it again for the verified operator with the IDs in lower case, and passes on no reason", async () => {
     const { calls, send } = setup();
     const response = await send(
       "POST",
@@ -242,7 +244,6 @@ describe("retrying a dead event", () => {
       principal.id,
       incidentId,
       eventId,
-      "Fila voltou ao normal",
       bindings
     );
   });
@@ -266,34 +267,28 @@ describe("retrying a dead event", () => {
     }
   });
 
-  it("refuses a reason that is missing, empty, with a control character or over 150, and does not retry", async () => {
+  it("asks for no reason: a body without one retries, and one with a reason is not read for it", async () => {
     const { calls, send } = setup();
     for (const body of [
       {},
       { reason: "" },
-      { reason: "   " },
       { reason: 5 },
-      { reason: "a\u0000b" },
       { reason: "a\nb" },
-      { reason: "a".repeat(151) },
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: Cases, in order.
       const response = await send("POST", retryPath, body);
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({
-        error: "invalid_incident_reason",
-      });
+      expect(response.status).toBe(200);
     }
-    expect(calls.retry).not.toHaveBeenCalled();
-  });
-
-  it("accepts a reason of exactly 150 characters", async () => {
-    const { calls, send } = setup();
-    const response = await send("POST", retryPath, {
-      reason: "a".repeat(150),
-    });
-    expect(response.status).toBe(200);
-    expect(calls.retry).toHaveBeenCalledOnce();
+    expect(calls.retry).toHaveBeenCalledTimes(4);
+    for (const nth of [1, 2, 3, 4]) {
+      expect(calls.retry).toHaveBeenNthCalledWith(
+        nth,
+        principal.id,
+        incidentId,
+        eventId,
+        bindings
+      );
+    }
   });
 
   it("refuses IDs that are not UUIDs", async () => {
@@ -326,9 +321,9 @@ describe("retrying a dead event", () => {
     const brokenJson = await send("POST", retryPath, undefined, {
       "content-type": "application/json",
     });
-    // an empty body reads as {}: it has no reason
-    expect(brokenJson.status).toBe(400);
-    expect(calls.retry).not.toHaveBeenCalled();
+    // an empty body reads as {}: the retry needs nothing in it
+    expect(brokenJson.status).toBe(200);
+    expect(calls.retry).toHaveBeenCalledOnce();
   });
 
   it("needs its own capability: a role that only reads is refused", async () => {
@@ -357,15 +352,6 @@ describe("retrying a dead event", () => {
     expect(JSON.stringify(report.mock.calls)).not.toContain(
       "secret@example.com"
     );
-  });
-
-  it("answers 400 when the repository refuses the reason itself", async () => {
-    const { send } = setup({
-      retry: vi.fn(() => Promise.reject(new InvalidIncidentRetryError())),
-    });
-    const response = await send("POST", retryPath, { reason: "motivo" });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "invalid_incident_reason" });
   });
 
   it("answers 503 and reports when the Admin is not configured", async () => {

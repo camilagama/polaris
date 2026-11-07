@@ -2,7 +2,7 @@ import { calendarDayInTimezone, clockPartsInTimezone } from "./dates";
 
 /**
  * The words of a read that takes long or ran out of tries (paliativo dos 1102). Provisional: the final texts are the
- * design review's (Petković).
+ * design review's.
  */
 
 /** Under the skeleton after ~3 s, while the tries go on: no button, nothing to do yet. */
@@ -12,9 +12,9 @@ export const SLOW_READ_TEXT = "Demorando mais que o normal…";
 export const STALE_COPY_TITLE = "Não foi possível atualizar agora";
 
 /**
- * What the copy under the stale notice is, in the words of what is seen: "Mostrando os números de 12:00. Vendas feitas
- * depois não estão aqui." when the copy is of today in the store's zone, "Mostrando os números de 22/10 às 18:40. ..."
- * when it is of another day: the hour alone would pass an old copy for a fresh one.
+ * What the copy under the stale notice is, in the words of what is seen:
+ * "Mostrando os números de 12:00. Vendas feitas depois não estão aqui." when the copy is of today in the store's zone,
+ * "Mostrando os números de 22/10 às 18:40. ..." when it is of another day: the hour alone would pass an old copy for a fresh one.
  */
 export function copyShownText(
   generatedAt: string,

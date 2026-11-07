@@ -22,13 +22,17 @@
     "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
     // the owner's billing self-service (ADR 0104): off until the screens, the e-mails and the Gate 7 are in
     "BILLING_SELF_SERVICE_ENABLED": "false",
+    // the thumbnails of Produtos and Venda and their batch route: off until the CPU of the batch is measured
+    "MEDIA_THUMBS_ENABLED": "false",
     // the support box of the billing e-mails, their footer and reply-to (ADR 0104): empty on purpose until the
     // responsible sets it; without it the billing e-mails and the welcome stay off (their notices are skipped)
     "BILLING_SUPPORT_EMAIL": "",
     "WELCOME_EMAIL_ENABLED": "false",
     // the server control of the legal acceptance (ADR 0100): off until the client that pauses the sync
     // on it is published and the service worker had time to update every device (release checklist)
-    "LEGAL_ACCEPTANCE_ENFORCED": "false"
+    "LEGAL_ACCEPTANCE_ENFORCED": "false",
+    // POST /api/client-errors, the reports of errors of the browser (ADR 0098, amended): only "1" turns it on
+    "CLIENT_ERRORS_ENABLED": "1"
   },
   "main": "./worker/index.ts",
   // Structured logger output (see src/server/observability).
@@ -103,7 +107,10 @@
   // Rate limit namespace ids are per account: 900xxx is local, 902xxx staging, 901xxx production.
   // /rpc counts writes in RPC_MUTATION_RATE_LIMIT (per session and per address) and reads in a bucket of
   // their own: RPC_READ_RATE_LIMIT per session and RPC_READ_IP_RATE_LIMIT per address, wider because a
-  // whole store shares one address. Reads and writes come from the `kind` of each procedure in the contract.
+  // whole store shares one address. The calls of the import (`kind: "bulk"`, one row each) count in
+  // RPC_BULK_RATE_LIMIT, 30 per minute per session and per address (30 rows), and spend neither of the others.
+  // Reads, writes and bulk calls come from the `kind` of each procedure in the contract. CLIENT_ERROR_RATE_LIMIT counts
+  // the reports of errors of the browser (POST /api/client-errors) per address only, 10 per minute.
   "ratelimits": [
     {
       "name": "AUTH_RATE_LIMITER",
@@ -131,6 +138,11 @@
       "simple": { "limit": 1800, "period": 60 }
     },
     {
+      "name": "RPC_BULK_RATE_LIMIT",
+      "namespace_id": "900023",
+      "simple": { "limit": 30, "period": 60 }
+    },
+    {
       "name": "MEDIA_UPLOAD_RATE_LIMIT",
       "namespace_id": "900019",
       "simple": { "limit": 20, "period": 60 }
@@ -139,6 +151,11 @@
       "name": "AUTH_SOCIAL_RATE_LIMITER",
       "namespace_id": "900020",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "CLIENT_ERROR_RATE_LIMIT",
+      "namespace_id": "900024",
+      "simple": { "limit": 10, "period": 60 }
     }
   ],
   // The three queues of the plan and the dead-letter queue (ADR 0083, ADR 0085, runbook docs/runbooks/queues.md). Declaring them here
@@ -208,10 +225,20 @@
   },
   // The Worker also runs first for /assets/*: the single-page fallback would answer a chunk that does not exist
   // with the shell (200 text/html), and `import()` and the service worker took it for the chunk (src/server/built-assets.ts).
+  // Every path the Worker answers must be listed: the assets handler answers the rest, a POST to /webhooks/* with 405 and
+  // the Worker never sees the delivery. src/server/worker-first-routes.test.ts compares this list with the routes of the app.
+  // The environments inherit the block, so the list exists once.
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/health", "/ready", "/rpc/*", "/api/*", "/assets/*"]
+    "run_worker_first": [
+      "/health",
+      "/ready",
+      "/rpc/*",
+      "/api/*",
+      "/webhooks/*",
+      "/assets/*"
+    ]
   },
   "env": {
     // The fixed staging of this account (ADR 0097): synthetic data only, Google sign-in in Testing
@@ -228,7 +255,9 @@
       "vars": {
         "POLARIS_ENVIRONMENT": "staging",
         // Open to anyone on purpose: the staging data is synthetic. The sender must be on araute.app
-        // (the isolation check refuses another domain). RESEND_API_KEY is a Worker secret (runbook staging.md).
+        // (the isolation check refuses another domain). RESEND_API_KEY is a Worker secret (runbook staging.md), and
+        // so is AUTH_PASSWORD_PEPPER, the pepper of the password hash of this environment: without it the password is
+        // off (ADR 0100, amended). The isolation check refuses the pepper as a var.
         "EMAIL_PASSWORD_AUTH_ENABLED": "true",
         "AUTH_EMAIL_FROM": "Polaris (staging) <nao-responda@araute.app>",
         // The Turnstile widget `polaris-staging` (managed, hostname dash.araute.app only; runbook staging.md). The site
@@ -237,11 +266,23 @@
         // (runbook auth-abuse-protection.md). The isolation check refuses a Cloudflare test key (1x, 2x, 3x prefix).
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFhym3AGtjg2fgH0",
         "AUTH_ABUSE_PROTECTION_ENABLED": "true",
-        "WOOVI_REFUND_ENABLED": "false",
+        // Billing is on in staging against the providers' sandboxes only (ADR 0097, amended): the isolation check
+        // wants these two base URLs exactly and refuses a production host of Asaas or Woovi in any staging variable.
+        // The Asaas client also refuses a production key against the sandbox host. The secrets (ASAAS_API_KEY,
+        // ASAAS_WEBHOOK_TOKEN, WOOVI_APP_ID, BILLING_PAYER_KEY) are Worker secrets (runbook staging.md).
+        "ASAAS_BASE_URL": "https://api-sandbox.asaas.com/v3",
+        "WOOVI_BASE_URL": "https://api.woovi-sandbox.com",
+        // Woovi's public key that signs every webhook (public, the same in the sandbox and in production; runbook
+        // billing-providers.md): base64 of the DER, key_identifier 9dce618794f8986c603915a51b7029126c260e5cfdb2aa47e131d837fd62311c
+        "WOOVI_WEBHOOK_PUBLIC_KEYS": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC/+NtIkjzevvqD+I3MMv3bLXDtpvxBjY4BsRrSdca3rtAwMcRYYvxSnd7jagVLpctMiOxQO8ieUCKLSWHpsMAjO/zZWMKbqoG8MNpi/u3fp6zz0mcHCOSqYsPUUG19buW8bis5ZZ2IZgBObWSpTvJ0cnj6HKBAA82Jln+lGwS1MwIDAQAB",
+        // on in the sandbox, so the refund of a Pix installment can be proven there (S3.2, Gate 7)
+        "WOOVI_REFUND_ENABLED": "true",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
-        "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
-        "BILLING_SELF_SERVICE_ENABLED": "false",
-        "BILLING_SUPPORT_EMAIL": "",
+        "CLOSURE_NOTICE_EMAIL_ENABLED": "true",
+        "BILLING_SELF_SERVICE_ENABLED": "true",
+        "MEDIA_THUMBS_ENABLED": "true",
+        // the footer and reply-to of the billing e-mails: one address on araute.app (the isolation check refuses another domain)
+        "BILLING_SUPPORT_EMAIL": "suporte@araute.app",
         "WELCOME_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
         "BETTER_AUTH_BASE_URL": "https://dash.araute.app",
@@ -249,7 +290,11 @@
         "OFFLINE_LEASE_KEY_ID": "staging-1",
         // http_request_timed (with isolate.id/seq) on every matched /rpc procedure and named /api route, not only the critical ones:
         // the per-route CPU measure of CPU-1e (ADR 0094, amended 26/10/2026). Staging only; production keeps "false".
-        "ROUTE_TIMING_ALL": "true"
+        "ROUTE_TIMING_ALL": "true",
+        // the reports of errors of the browser: on here to measure the volume against the limit per address
+        "CLIENT_ERRORS_ENABLED": "1",
+        // /health declares the commit of the Worker (X-Polaris-Release), read by the smoke (ADR 0098, amended)
+        "RELEASE_HEADER_ENABLED": "true"
       },
       // Staging has little traffic: traces at 100% help the first measurements (ADR 0094).
       "observability": {
@@ -323,6 +368,11 @@
           "simple": { "limit": 1800, "period": 60 }
         },
         {
+          "name": "RPC_BULK_RATE_LIMIT",
+          "namespace_id": "902023",
+          "simple": { "limit": 30, "period": 60 }
+        },
+        {
           "name": "MEDIA_UPLOAD_RATE_LIMIT",
           "namespace_id": "902019",
           "simple": { "limit": 20, "period": 60 }
@@ -331,6 +381,11 @@
           "name": "AUTH_SOCIAL_RATE_LIMITER",
           "namespace_id": "902020",
           "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "CLIENT_ERROR_RATE_LIMIT",
+          "namespace_id": "902024",
+          "simple": { "limit": 10, "period": 60 }
         }
       ],
       "queues": {
@@ -388,16 +443,23 @@
       "preview_urls": false,
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
+        // on at the go-live only with AUTH_PASSWORD_PEPPER set as a secret of production, never the one of staging
         "EMAIL_PASSWORD_AUTH_ENABLED": "false",
         // empty on purpose (the parity check wants the name): the sender is set at the go-live, on a verified domain of production
         "AUTH_EMAIL_FROM": "",
         // empty on purpose (the parity check wants the name): the widget of production is created at the go-live
         "TURNSTILE_SITE_KEY": "",
         "AUTH_ABUSE_PROTECTION_ENABLED": "false",
+        // the production hosts of the providers; the isolation check refuses a sandbox host here
+        "ASAAS_BASE_URL": "https://api.asaas.com/v3",
+        "WOOVI_BASE_URL": "https://api.woovi.com",
+        // empty on purpose (the parity check wants the name): set at the go-live, after checking the key_identifier
+        "WOOVI_WEBHOOK_PUBLIC_KEYS": "",
         "WOOVI_REFUND_ENABLED": "false",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
         "CLOSURE_NOTICE_EMAIL_ENABLED": "false",
         "BILLING_SELF_SERVICE_ENABLED": "false",
+        "MEDIA_THUMBS_ENABLED": "false",
         "BILLING_SUPPORT_EMAIL": "",
         "WELCOME_EMAIL_ENABLED": "false",
         "LEGAL_ACCEPTANCE_ENFORCED": "false",
@@ -405,7 +467,11 @@
         "CATALOG_ORIGIN": "https://PLACEHOLDER-production-catalog-origin",
         "OFFLINE_LEASE_KEY_ID": "production-1",
         // the timing of every route is a staging measure (ADR 0094); the isolation check refuses "true" here
-        "ROUTE_TIMING_ALL": "false"
+        "ROUTE_TIMING_ALL": "false",
+        // off until the item of the go-live checklist (ADR 0098, amended); only "1" turns it on
+        "CLIENT_ERRORS_ENABLED": "0",
+        // no release header in production until the item 8 of the release checklist; the isolation check refuses "true"
+        "RELEASE_HEADER_ENABLED": "false"
       },
       "observability": {
         "enabled": true,
@@ -477,6 +543,11 @@
           "simple": { "limit": 1800, "period": 60 }
         },
         {
+          "name": "RPC_BULK_RATE_LIMIT",
+          "namespace_id": "901023",
+          "simple": { "limit": 30, "period": 60 }
+        },
+        {
           "name": "MEDIA_UPLOAD_RATE_LIMIT",
           "namespace_id": "901019",
           "simple": { "limit": 20, "period": 60 }
@@ -485,6 +556,11 @@
           "name": "AUTH_SOCIAL_RATE_LIMITER",
           "namespace_id": "901020",
           "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "CLIENT_ERROR_RATE_LIMIT",
+          "namespace_id": "901024",
+          "simple": { "limit": 10, "period": 60 }
         }
       ],
       "queues": {

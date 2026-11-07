@@ -26,10 +26,10 @@ import { stockStates } from "./ui-stock-states";
 import { subscriptionStates } from "./ui-subscription-states";
 
 /**
- * The screens the interface guardrails run on (t180), served by the static server of the pwa-e2e build under
+ * The screens the interface guardrails run on, served by the static server of the pwa-e2e build under
  * the CSP of `_headers`. The list grows with each new screen or state: docs/runbooks/testes-de-tela.md says how.
  *
- * Every screen is on the new interface since batch 6 (t256): touch area of 48 px, no fault waits for a migration,
+ * Every screen is on the new interface since batch 6: touch area of 44 px, no fault waits for a migration,
  * and the source folders of each one are read by the source rules (`scripts/ui-source-rules.test.ts`).
  */
 export interface UiScreen {
@@ -74,7 +74,7 @@ const light = (viewport: UiContext["viewport"], touch: boolean): UiContext => ({
  *
  * - overflow (1): the widths decide what fits; at 1280 it runs with a mouse and with touch (the context the touch
  *   check loads anyway); the theme does not move a box;
- * - touch (2): the areas of 48 px exist with a coarse pointer, at the two phone widths and on a tablet;
+ * - touch (2): the areas of 44 px exist with a coarse pointer, at the two phone widths and on a tablet;
  * - axe (3): the contrast is the theme's, and the phone is the width where the layout is tightest;
  * - focus (6): the ring is drawn with the keyboard, which is the wide screen with a mouse.
  *
@@ -246,6 +246,23 @@ const productScreen = (
   name: `produtos ${name}`,
   open,
   sourceDirs: PRODUCT_SOURCES,
+});
+
+/** The files of the import of a spreadsheet (corte 2.5): a chunk of its own, opened from the products screen. */
+const IMPORT_SOURCES = [
+  "src/catalog/product-import",
+  "src/catalog/products-page-parts.tsx",
+  "src/catalog/products-page.tsx",
+];
+
+/** One state of the import of a spreadsheet (`ui-product-states.ts`). */
+const importScreen = (
+  name: string,
+  open: (page: Page) => Promise<void>
+): UiScreen => ({
+  name: `importar planilha ${name}`,
+  open,
+  sourceDirs: IMPORT_SOURCES,
 });
 
 /** Opens the menu of a row and closes it with Escape, so the motion recorder sees it. */
@@ -436,7 +453,7 @@ async function exerciseHomePanels(page: Page) {
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await sheet.waitFor({ state: "hidden" });
-  // under the chart and under the map (t394)
+  // under the chart and under the map
   for (const numbers of await page
     .getByRole("button", { name: "Ver os números" })
     .all()) {
@@ -524,6 +541,7 @@ async function exerciseSaleCustomer(page: Page) {
 
 /** The files of the stock screen on the new interface (the logic files of `src/inventory` have no markup). */
 const STOCK_SOURCES = [
+  "src/app-shell/action-strip.tsx",
   "src/inventory/inventory-page.tsx",
   "src/inventory/stock-command-panel.tsx",
   "src/inventory/stock-panel-fields.tsx",
@@ -556,6 +574,7 @@ const DEVICE_SOURCES = [
   "src/offline/runtime/devices-page.tsx",
 ];
 const ATTENTION_SOURCES = [
+  "src/app-shell/action-strip.tsx",
   "src/offline/attention-panel.tsx",
   "src/offline/runtime/attention-page.tsx",
 ];
@@ -620,7 +639,7 @@ async function exercisePaymentMethod(page: Page) {
 
 /**
  * The files of the pieces around the screens on the new interface: the 404, the failure of a screen, the loading,
- * the notices of the session, the acceptance and the new version, "Sair" with work to lose and the expired access.
+ * the notices of the session and the acceptance, "Sair" with work to lose and the expired access.
  */
 const SHELL_PIECE_SOURCES = [
   "src/app-shell/connection-required-notice.tsx",
@@ -632,7 +651,6 @@ const SHELL_PIECE_SOURCES = [
   "src/app-shell/state-panel.tsx",
   "src/offline/logout-dialog.tsx",
   "src/offline/runtime/offline-access-expired.tsx",
-  "src/pwa/update-banner.tsx",
   "src/offline-poc/screens-lab-shell-pieces.tsx",
 ];
 
@@ -695,10 +713,11 @@ const ACCOUNT_SOURCES = [
   "src/sign-in/entry-ui.tsx",
 ];
 
-/** The files of the Assinatura (t328), with the notice of grace of the shell. */
+/** The files of the Assinatura, with the notice of grace and the foot of the menu of the shell. */
 const SUBSCRIPTION_SOURCES = [
   "src/subscription",
   "src/app-shell/grace-notice.tsx",
+  "src/app-shell/menu-progress.tsx",
 ];
 
 const subscriptionScreen = (
@@ -731,7 +750,7 @@ export const SCREENS: UiScreen[] = [
         .locator("[data-chart-loading]")
         .first()
         .waitFor({ state: "detached" });
-      // and the calendar of the date pickers, from its own chunk too (t363)
+      // and the calendar of the date pickers, from its own chunk too
       await page
         .locator("[data-calendar-loading]")
         .first()
@@ -758,7 +777,7 @@ export const SCREENS: UiScreen[] = [
   ),
   entryScreen("criar conta e-mail completo", entryStates.signUpEmailComplete),
   entryScreen("criar conta sem o aceite", entryStates.signUpAcceptMissing),
-  entryScreen("criar conta senha vazada", entryStates.signUpCompromised),
+  entryScreen("criar conta senha recusada", entryStates.signUpRuleRefused),
   entryScreen("criar conta criando", entryStates.signUpCreating),
   entryScreen("criar conta confirmando pessoa", entryStates.signUpChecking),
   entryScreen("criar conta desafio interativo", entryStates.signUpInteractive),
@@ -852,6 +871,7 @@ export const SCREENS: UiScreen[] = [
   saleScreen("sem conexão", saleStates.offline),
   stockScreen("lista", stockStates.list),
   stockScreen("carregando", stockStates.loading),
+  stockScreen("avisos indisponíveis", stockStates.attentionUnavailable),
   stockScreen("vazio", stockStates.empty),
   stockScreen("busca sem resultado", stockStates.noResult),
   stockScreen("erro ao ler", stockStates.error),
@@ -861,6 +881,9 @@ export const SCREENS: UiScreen[] = [
   stockScreen("recebimento registrado", stockStates.receiveDone),
   stockScreen("recebimento sem resposta", stockStates.receiveLocked),
   stockScreen("contagem", stockStates.count),
+  stockScreen("informar custo", stockStates.cost),
+  stockScreen("informar custo a confirmar", stockStates.costConfirming),
+  stockScreen("custo informado", stockStates.costDone),
   stockScreen(
     "baixa sem observação",
     stockStates.writeOffNote,
@@ -890,6 +913,7 @@ export const SCREENS: UiScreen[] = [
   subscriptionScreen("oferta com Pix", subscriptionStates.offer),
   subscriptionScreen("Pix aguardando o banco", subscriptionStates.pixWaiting),
   subscriptionScreen("Pro ativo", subscriptionStates.active),
+  subscriptionScreen("em teste, com o pé do menu", subscriptionStates.trial),
   subscriptionScreen("cancelar a renovação", subscriptionStates.cancelDialog),
   subscriptionScreen("carência com o aviso", subscriptionStates.grace),
   resultScreen("nova meta com erro", resultStates.newGoalErrors),
@@ -921,14 +945,9 @@ export const SCREENS: UiScreen[] = [
   shellPieceScreen("carregando", "carregando", async (page) => {
     await page.getByRole("status").getByText("Carregando…").waitFor();
   }),
-  shellPieceScreen(
-    "avisos de sessão, aceite e nova versão",
-    "avisos",
-    async (page) => {
-      await page.getByText("Sua sessão acabou.").first().waitFor();
-      await page.getByText("Há uma nova versão do Polaris").first().waitFor();
-    }
-  ),
+  shellPieceScreen("avisos de sessão e aceite", "avisos", async (page) => {
+    await page.getByText("Sua sessão acabou.").first().waitFor();
+  }),
   shellPieceScreen(
     "sair com trabalho a perder",
     "sair",
@@ -954,6 +973,14 @@ export const SCREENS: UiScreen[] = [
   productScreen(
     "imagens, recorte da imagem escolhida",
     productStates.mediaCrop
+  ),
+  importScreen(
+    "prévia com erro, já existe e sem categoria",
+    productStates.importPreview
+  ),
+  importScreen(
+    "resultado com a linha que não entrou",
+    productStates.importResult
   ),
   categoryScreen("lista", categoryStates.list, exerciseRowMenu("Camisetas")),
   categoryScreen("remover", categoryStates.remove),

@@ -150,25 +150,35 @@ async function tap(browser: Browser, element: WebdriverIO.Element) {
 const click = async (browser: Browser, selector: string) =>
   await tap(browser, await browser.$(selector));
 
-/** Botão cujo texto (somando os filhos) contém `text`; o seletor de texto parcial só olha o primeiro nó. */
-async function clickButtonContaining(browser: Browser, text: string) {
+/**
+ * Botão (ou outro controle, por `selector`) cujo texto, somando os filhos, contém `text`; o seletor de texto parcial
+ * só olha o primeiro nó.
+ */
+async function clickButtonContaining(
+  browser: Browser,
+  text: string,
+  selector = "button"
+) {
   const find = (wanted: string) =>
     browser.execute(
-      (needle) =>
-        [...document.querySelectorAll("button")].find((candidate) =>
+      (needle, within) =>
+        [...document.querySelectorAll(within)].find((candidate) =>
           candidate.textContent?.includes(needle)
         ) ?? null,
-      wanted
+      wanted,
+      selector
     );
   try {
     await browser.waitUntil(async () => (await find(text)) !== null, {
       timeout: WAIT_MS,
     });
   } catch (error: unknown) {
-    const seen = await browser.execute(() =>
-      [...document.querySelectorAll("button")].map((button) =>
-        button.textContent?.trim()
-      )
+    const seen = await browser.execute(
+      (within) =>
+        [...document.querySelectorAll(within)].map((button) =>
+          button.textContent?.trim()
+        ),
+      selector
     );
     throw new Error(
       `botão não apareceu: "${text}"; botões: ${JSON.stringify(seen)}`,
@@ -423,11 +433,11 @@ async function customersFlow(
     "Conferir: tudo sincronizado e a edição liberada",
     async () => {
       await waitForText(browser, "Tudo sincronizado");
-      // the actions of a customer are in the menu of its row
-      await click(browser, "button[aria-label='Mais ações para Bia Souza']");
-      const edit = await browser.$("[role='menuitem']*=Editar");
+      // the row of a customer is the button that opens its edit; locked, it says so by aria-disabled
+      const edit = await browser.$("button[data-row-open]*=Bia Souza");
+      await edit.waitForExist();
       if ((await edit.getAttribute("aria-disabled")) === "true") {
-        throw new Error("o item de editar continua desabilitado");
+        throw new Error("a linha do cliente continua sem abrir a edição");
       }
     }
   );
@@ -460,7 +470,8 @@ async function saleFlow(
       await setChecked(browser, "Rede disponível", false);
       await waitForText(browser, "Sem conexão. A venda será guardada");
       await searchShirt(browser);
-      await clickButtonContaining(browser, shirt);
+      // a variante é uma opção da lista que abre sob a busca
+      await clickButtonContaining(browser, shirt, '[role="option"]');
       await (await control(browser, "Quantidade")).setValue("2");
       await choose(browser, "Método de pagamento", "Pix");
       await choose(
@@ -877,7 +888,7 @@ async function datePickerFlow(
 }
 
 /**
- * O celular de verdade é o nível de movimento `essential` (t386, ADR 0103 "Níveis de movimento"): a emulação do
+ * O celular de verdade é o nível de movimento `essential` (ADR 0103 "Níveis de movimento"): a emulação do
  * Playwright prova o resto (`e2e-pwa/motion-level.e2e.ts`), mas não que um aparelho real dê `pointer: coarse`.
  */
 async function motionFlow(recorder: Recorder, browser: Browser) {
@@ -956,7 +967,7 @@ const dialogEntry = (browser: Browser) =>
   browser.execute(() => history.state?.polarisDialog ?? null);
 
 /**
- * O "voltar" do celular fecha o Dialog de tela inteira (t408, DESIGN.md "Diálogo de formulário"): a entrada do Dialog
+ * O "voltar" do celular fecha o Dialog de tela inteira (DESIGN.md "Diálogo de formulário"): a entrada do Dialog
  * no histórico é a que o voltar tira, o rascunho fica e o foco volta ao botão; fechado pelo ×, ele retira a entrada e o
  * voltar seguinte sai da tela. O WebDriver volta como o gesto e o botão do sistema (`history.back`); a emulação prova o
  * resto (dois Dialogs, recarga, aba nova, endereço: `e2e-pwa/dialog-voltar.e2e.ts` e `e2e/goals.e2e.ts`).

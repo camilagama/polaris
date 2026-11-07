@@ -1,4 +1,8 @@
-import { configureLogging, logger } from "@polaris/observability/logger";
+import {
+  configureLogging,
+  logger,
+  useLoggingEnvironment,
+} from "@polaris/observability/logger";
 import { createBillingStore } from "@polaris/db/billing-store";
 import { createAuthLoginLockMaintenanceClient } from "@polaris/db/auth-login-lock-maintenance";
 import { createAuthUnverifiedUserMaintenanceClient } from "@polaris/db/auth-unverified-user-maintenance";
@@ -32,7 +36,7 @@ import {
   handleBillingNotice,
   handOverOwedBillingNotices,
 } from "../src/server/billing/notice-consumer";
-import { billingProviderPortOf } from "../src/server/billing/provider-ports";
+import { billingProviderPortOf } from "@polaris/billing/provider-ports";
 import {
   handleRenewalCancelRequested,
   rearmRenewalCancellations,
@@ -64,6 +68,7 @@ import {
   handleQueueBatch,
   PermanentHandlerError,
   type QueueBatch,
+  type QueueHandlers,
 } from "../src/server/queue/consumer";
 import { billingProviderHandled } from "@polaris/domain/billing/renewal-cancellation";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
@@ -340,6 +345,14 @@ async function runPrivacyJobs(env: WorkerBindings): Promise<JobResult> {
           closureNoticesOverdue: report.closureNoticesOverdue,
           overduePurges: report.overduePurges,
           purgesHeldBack: report.purgesHeldBack,
+        });
+      }
+      if (report.stalledPurges > 0) {
+        // a purge claimed over and over with no step done: a run killed before its log leaves no event, so the
+        // count from the database stands in for it (the same signal, `purge-parado`; no organization is named)
+        logger.warn("organization_purge_stalled", {
+          source: "no_log",
+          stalledPurges: report.stalledPurges,
         });
       }
     } catch (error: unknown) {
@@ -757,7 +770,9 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
       handleDataExportRequested(env, envelope),
     "organization.closure_notice": (envelope: QueueEnvelope) =>
       handleClosureNoticeEvent(env, envelope),
-  };
+    // one handler per type of the outbox: a type added to the domain without one does not compile, instead of
+    // spinning on `queue_handler_missing` until the dead-letter queue
+  } satisfies QueueHandlers;
   const connectionString = env.OUTBOX_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // no check against the outbox and no deduplication across isolates: only the handler's own guards
@@ -788,6 +803,7 @@ export default {
     env: WorkerBindings,
     context?: ExecutionContext
   ) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
     if (env.ASSETS && isBuiltAssetRequest(request)) {
       countIsolateInvocation();
       return serveBuiltAsset(request, env.ASSETS);
@@ -795,10 +811,12 @@ export default {
     return app.fetch(request, env, context);
   },
   queue: (batch: QueueBatch, env) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
     countIsolateInvocation();
     return consumeQueue(batch, env);
   },
   scheduled: (controller, env) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
     countIsolateInvocation();
     return runScheduledTick(controller.cron, env);
   },

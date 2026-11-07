@@ -2,7 +2,7 @@ import CheckIcon from "lucide-react/dist/esm/icons/check";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import type { RuntimeSnapshot } from "./offline-runtime";
+import { PLAN_REFUSED_REASON, type RuntimeSnapshot } from "./offline-runtime";
 import { useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -70,7 +70,10 @@ function notReadyLabel(snapshot: RuntimeSnapshot): SyncStatusLabel {
     return {
       attention: false,
       short: "Sem offline",
-      text: "Offline indisponível neste aparelho",
+      text:
+        snapshot.reason === PLAN_REFUSED_REASON
+          ? "O modo offline faz parte do plano Pro"
+          : "Offline indisponível neste aparelho",
       tone: "offline",
     };
   }
@@ -89,6 +92,39 @@ export interface SyncStatusScreen {
 }
 
 const NEEDS_INTERNET = "esta tela precisa de internet";
+
+/**
+ * The last sync failed: `server_busy` when the server died on it (the regime of the Free plan: nothing was refused,
+ * and what waits is kept here), `sync_failed` for any other failure; null otherwise.
+ */
+function failedSyncLabel(
+  reason: string | null,
+  waiting: number
+): SyncStatusLabel | null {
+  if (reason === "server_busy") {
+    return {
+      attention: false,
+      short: waiting > 0 ? `Ocupado · ${waiting}` : "Ocupado",
+      text:
+        waiting > 0
+          ? `Servidor ocupado · ${plural(waiting, "operação guardada", "operações guardadas")} neste aparelho`
+          : "Servidor ocupado · tentando de novo sozinho",
+      tone: "offline",
+    };
+  }
+  if (reason === "sync_failed") {
+    return {
+      attention: false,
+      short: "Envio falhou",
+      text:
+        waiting > 0
+          ? `Não foi possível enviar · ${plural(waiting, "operação guardada", "operações guardadas")}`
+          : "Não foi possível sincronizar agora",
+      tone: "offline",
+    };
+  }
+  return null;
+}
 
 export function syncStatusLabel(
   snapshot: RuntimeSnapshot,
@@ -118,16 +154,9 @@ export function syncStatusLabel(
       tone: "offline",
     };
   }
-  if (snapshot.reason === "sync_failed") {
-    return {
-      attention: false,
-      short: "Envio falhou",
-      text:
-        waiting > 0
-          ? `Não foi possível enviar · ${plural(waiting, "operação guardada", "operações guardadas")}`
-          : "Não foi possível sincronizar agora",
-      tone: "offline",
-    };
+  const failed = failedSyncLabel(snapshot.reason, waiting);
+  if (failed) {
+    return failed;
   }
   if (snapshot.syncing || waiting > 0) {
     return {
@@ -149,13 +178,14 @@ export function syncStatusLabel(
 }
 
 /**
- * The sentence when there is no connection (U-54): "Sem conexão", and how much waits on the device when
- * something does. On a screen that works only online it adds that the screen needs internet.
+ * The sentence when there is no connection (U-54): "Sem conexão", and how much waits on the device and
+ * what happens to it when something does. On a screen that works only online it adds that the screen
+ * needs internet.
  */
 function offlineText(waiting: number, onlineOnly: boolean): string {
   const kept =
     waiting > 0
-      ? plural(waiting, "operação guardada", "operações guardadas")
+      ? `${plural(waiting, "operação guardada", "operações guardadas")}, ${waiting === 1 ? "envia" : "enviam"} quando voltar`
       : null;
   return ["Sem conexão", kept, onlineOnly ? NEEDS_INTERNET : null]
     .filter(Boolean)

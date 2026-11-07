@@ -1,7 +1,27 @@
 import { drizzle } from "drizzle-orm/node-postgres";
+import { pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import type { DatabaseOptions } from "./client";
-import { rlsPocOperations } from "./schema/rls-poc";
+
+/**
+ * The table of the RLS proof. It is not in `schema/` nor in the app's database: migration 0108 dropped it, and the
+ * gates that prove RLS on it create it on their disposable database and drop it at the end
+ * (`scripts/rls-gate-fixture.ts`).
+ */
+export const rlsPocOperations = pgTable(
+  "rls_poc_operations",
+  {
+    organizationId: text("organization_id").notNull(),
+    token: text().notNull(),
+    value: text().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.organizationId, table.token],
+      name: "rls_poc_operations_pk",
+    }),
+  ]
+);
 
 export function createRlsPocDatabase(
   connectionString: string,

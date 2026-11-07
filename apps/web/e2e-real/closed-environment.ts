@@ -25,7 +25,10 @@ export function closedEnvironment(
   for (const name of listed) {
     const value = environment[name];
     const secretOrConnection =
-      name === "BETTER_AUTH_SECRET" || name.startsWith("CLOUDFLARE_");
+      name === "BETTER_AUTH_SECRET" ||
+      name === "OFFLINE_LEASE_SECRET" ||
+      name === "SYNC_PAYLOAD_HASH_SECRET" ||
+      name.startsWith("CLOUDFLARE_");
     if (value !== undefined && !(stage === "build" && secretOrConnection)) {
       closed[name] = value;
     }

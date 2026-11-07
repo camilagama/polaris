@@ -1,6 +1,5 @@
 import type {
   InventoryBalanceEntryReadModel,
-  InventoryBalanceReadModel,
   PaymentProfileReadModel,
 } from "@polaris/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,13 +23,24 @@ import {
   balanceOfEntry,
   chunkIds,
   lineBalancesRequest,
+  rereadLinesForCover,
+  type SaleBalance,
   stockAfterRefresh,
 } from "./sale-variant-picker-model";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 
 type LoadableMap<T> = Record<string, Loadable<T>>;
 
 interface SaleCatalog {
   profiles: Loadable<PaymentProfileReadModel[]>;
+  /**
+   * Reads the variants of a cart that came back from the tab and keeps their balances. Only the server's answer is
+   * returned to judge the lines: the device's copy may simply not have a variant yet, so offline (or on a failed
+   * read) it is null, the lines stay, and the server checks them at the confirmation.
+   */
+  readLines: (
+    variantIds: readonly string[]
+  ) => Promise<InventoryBalanceEntryReadModel[] | null>;
   /**
    * Reloads the payment profiles and re-reads the balances of the variants on
    * the sale, all variants in one call (two for more than 100 lines).
@@ -40,7 +50,22 @@ interface SaleCatalog {
   resetStock: () => void;
   /** Keeps the balances a search already returned, so lines need no read. */
   seedStock: (entries: readonly InventoryBalanceEntryReadModel[]) => void;
-  stock: LoadableMap<InventoryBalanceReadModel>;
+  stock: LoadableMap<SaleBalance>;
+}
+
+function markLoadingAsError(
+  stock: LoadableMap<SaleBalance>,
+  variantIds: readonly string[],
+  error: unknown
+) {
+  for (const variantId of variantIds) {
+    if (stock[variantId]?.status === "loading") {
+      stock[variantId] = {
+        message: loadErrorMessage(error, "o estoque"),
+        status: "error",
+      };
+    }
+  }
 }
 
 function keepReady<T>(current: Loadable<T>): Loadable<T> {
@@ -59,17 +84,19 @@ function keepReady<T>(current: Loadable<T>): Loadable<T> {
 export function useSaleCatalog(
   organizationId: string,
   onProfilesLoaded: (profiles: PaymentProfileReadModel[]) => void,
-  local: LocalWorkspace | null = null
+  local: LocalWorkspace | null = null,
+  openVariantIds: () => readonly string[] = () => []
 ): SaleCatalog {
   const localRef = useRef(local);
   localRef.current = local;
   const usesLocal = local !== null;
+  const withCover = useMediaThumbsEnabled();
+  const withCoverRef = useRef(withCover);
+  withCoverRef.current = withCover;
   const [profiles, setProfiles] = useState<Loadable<PaymentProfileReadModel[]>>(
     { status: "loading" }
   );
-  const [stock, setStock] = useState<LoadableMap<InventoryBalanceReadModel>>(
-    {}
-  );
+  const [stock, setStock] = useState<LoadableMap<SaleBalance>>({});
   const generation = useRef(0);
   /** Only the latest read of the profiles may speak: an older answer arrives after the mode changed. */
   const profilesRequest = useRef(0);
@@ -185,7 +212,7 @@ export function useSaleCatalog(
       for (const chunk of chunkIds(variantIds)) {
         readWithRetry(() =>
           orpcClient.inventory.listBalances(
-            lineBalancesRequest(organizationId, chunk)
+            lineBalancesRequest(organizationId, chunk, withCoverRef.current)
           )
         )
           .then(({ entries }) => {
@@ -212,5 +239,88 @@ export function useSaleCatalog(
     [loadProfiles, organizationId]
   );
 
-  return { profiles, refresh, resetStock, seedStock, stock };
+  const readLines = useCallback(
+    async (variantIds: readonly string[]) => {
+      // this read supersedes the writes in flight: a refresh started without the cover would land later and drop it
+      generation.current += 1;
+      const { current } = generation;
+      const workspace = localRef.current;
+      try {
+        if (workspace) {
+          const { outbox, writer } = workspace.stores;
+          const { entries } = filterLocalStockEntries(
+            localStockEntries(await readLocalCatalog(writer, outbox)),
+            { productStatus: "all", variantIds }
+          );
+          if (generation.current === current) {
+            setStock((map) => stockAfterRefresh(map, variantIds, entries));
+          }
+          return null;
+        }
+        const chunks = chunkIds(variantIds);
+        const settled = await Promise.allSettled(
+          chunks.map((chunk) =>
+            readWithRetry(() =>
+              orpcClient.inventory.listBalances(
+                lineBalancesRequest(organizationId, chunk, withCoverRef.current)
+              )
+            )
+          )
+        );
+        const entries: InventoryBalanceEntryReadModel[] = [];
+        const answeredIds: string[] = [];
+        const failed: { ids: string[]; reason: unknown }[] = [];
+        settled.forEach((result, index) => {
+          const ids = chunks[index] ?? [];
+          if (result.status === "fulfilled") {
+            entries.push(...result.value.entries);
+            answeredIds.push(...ids);
+          } else {
+            failed.push({ ids, reason: result.reason });
+          }
+        });
+        if (generation.current === current) {
+          setStock((map) => {
+            const next = stockAfterRefresh(map, answeredIds, entries);
+            for (const { ids, reason } of failed) {
+              markLoadingAsError(next, ids, reason);
+            }
+            return next;
+          });
+        }
+        // a chunk that did not answer leaves its lines unjudged: the caller treats a line missing from the entries as gone
+        return failed.length === 0 ? entries : null;
+      } catch (error) {
+        if (generation.current === current) {
+          // the refresh this read superseded left these lines loading and will not write again
+          setStock((map) => {
+            const next = { ...map };
+            markLoadingAsError(next, variantIds, error);
+            return next;
+          });
+        }
+        return null;
+      }
+    },
+    [organizationId]
+  );
+
+  const openVariantIdsRef = useRef(openVariantIds);
+  openVariantIdsRef.current = openVariantIds;
+  const readLinesRef = useRef(readLines);
+  readLinesRef.current = readLines;
+  const seenWithCover = useRef<boolean | null>(null);
+  useEffect(() => {
+    // organization.listMine can reload with the sale open and flip the flag: the lines already read keep the
+    // balances of the other reading until the next one, so they are read again here and only here
+    seenWithCover.current = rereadLinesForCover({
+      local: usesLocal,
+      openVariantIds: openVariantIdsRef.current(),
+      read: readLinesRef.current,
+      seen: seenWithCover.current,
+      withCover,
+    });
+  }, [usesLocal, withCover]);
+
+  return { profiles, readLines, refresh, resetStock, seedStock, stock };
 }

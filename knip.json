@@ -35,6 +35,8 @@
         "poc/pr12-offline.ts",
         "e2e/**/*.e2e.ts",
         "e2e-pwa/**/*.e2e.ts",
+        "scripts/lighthouse-servers.ts",
+        "playwright.pwa.config.ts",
         "vite.ui.ts"
       ],
       "ignore": ["src/ui/bklit/**"],
@@ -43,7 +45,8 @@
         "cloudflare",
         "@fontsource-variable/geist",
         "@fontsource-variable/geist-mono",
-        "tw-animate-css"
+        "tw-animate-css",
+        "@polaris/ui"
       ],
       "project": [
         "src/**/*.{ts,tsx}",
@@ -64,9 +67,9 @@
       "ignoreDependencies": ["cloudflare"]
     },
     "apps/admin": {
-      "entry": ["src/**/*.test.ts"],
-      "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["cloudflare"]
+      "entry": ["src/**/*.test.ts", "ui/main.ts", "ui/**/*.test.ts"],
+      "project": ["src/**/*.ts", "ui/**/*.ts"],
+      "ignoreDependencies": ["cloudflare", "@polaris/ui"]
     }
   }
 }

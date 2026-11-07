@@ -2,7 +2,7 @@
  * Public catalog (apps/catalog), v5.1 direction, in plain CSS.
  * No Tailwind, no Base UI, no external font or stylesheet (ADR 0103, security condition 7).
  * No color is written here: every color is a var(--…) of tokens.generated.css (imported below; the build inlines
- * it, so the page still gets one file), which is generated from the one source, apps/web/src/styles/theme.css
+ * it, so the page still gets one file), which is generated from the one source, packages/ui/src/theme.css
  * (DESIGN.md, "Changing a color"). Light by default, dark by the system setting (prefers-color-scheme) and nothing
  * else.
  *
@@ -19,6 +19,17 @@
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
+}
+
+/* Arial scaled to Geist's metrics until Geist arrives, so the swap moves nothing; the numbers and how they were measured
+   are in the same face of apps/web/src/styles/index.css. No Arial: the face is skipped. */
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("ArialMT");
+  size-adjust: 103.19%;
+  ascent-override: 97.39%;
+  descent-override: 28.59%;
+  line-gap-override: 0%;
 }
 
 :root {
@@ -55,7 +66,8 @@ html {
 body {
   margin: 0;
   font-family:
-    "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    "Geist", "Geist Fallback", system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
   font-size: 0.875rem;
   font-feature-settings: "cv11", "ss01";
   font-synthesis-weight: none;

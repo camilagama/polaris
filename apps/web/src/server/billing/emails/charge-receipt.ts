@@ -45,7 +45,7 @@ export function chargeReceiptContent(
     ],
     preview: `Seu Pro está pago até ${paidThrough}.`,
     subject: "Recebemos o pagamento do Polaris Pro",
-    // the three lines of the receipt before the text (Petković, 24/10, T329-3)
+    // the three lines of the receipt before the text
     summary: [
       { label: "Valor", value: amount },
       { label: "Data", value: paidOn },

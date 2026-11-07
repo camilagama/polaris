@@ -4,11 +4,11 @@ import { expect, test } from "@playwright/test";
 import { watchCspViolations } from "../e2e/csp-fixture";
 
 /**
- * The editor of each pill of the filter bar on a phone (t414), in the gallery: below 760 px it is the form Dialog of
+ * The editor of each pill of the filter bar on a phone, in the gallery: below 760 px it is the form Dialog of
  * the whole screen (title = the field, "Aplicar" and "Cancelar" in the fixed footer), nothing is applied before
  * "Aplicar", and Cancelar, ×, Esc and the step back of the phone close it with the filter as it was and the focus on the
- * pill that opened it. From 760 px it is still the Popover of before. The bar starts with Período 01/10 a 24/10,
- * Situação Paga and Cliente Maria Souza ("hoje" is 24/10/2026).
+ * pill that opened it. From 760 px it is still the Popover of before. The bar starts with Período `01/10` a `24/10`,
+ * Situação Paga and Cliente Maria Souza ("hoje" is `24/10/2026`).
  */
 const PHONE = { height: 740, width: 360 } as const;
 const DESKTOP = { height: 800, width: 1280 } as const;
@@ -344,6 +344,58 @@ test.describe("a 360 px", () => {
     await blocked.click({ force: true });
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await entry(page)).toBeNull();
+  });
+});
+
+test.describe("reaberto no meio da saída, a 360 px com mouse", () => {
+  test.use({ hasTouch: false, isMobile: false, viewport: PHONE });
+
+  test("o Dialog do Período reaberto durante a saída abre no mês e no rascunho do filtro, não nos que ficaram na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const open = await openPill(page, "Período");
+    await open.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(open.getByText("Novembro de 2026")).toBeVisible();
+    await shortcut(open, "Hoje").click();
+    await expect(shortcut(open, "Hoje")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+
+    // Cancelar, then one turn of the page later the pill again: at the full level (a narrow window with a mouse) the
+    // Dialog leaves in 220 ms and is still mounted
+    const leaving = await page.evaluate(async () => {
+      const cancelButton = [
+        ...document.querySelectorAll<HTMLElement>(
+          '[data-slot="dialog-content"] button'
+        ),
+      ].find((button) => button.textContent?.trim() === "Cancelar");
+      cancelButton?.click();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      const stillThere =
+        document.querySelector('[data-slot="dialog-content"]') !== null;
+      document
+        .querySelector<HTMLElement>(
+          'search[aria-label="Filtrar vendas"] button[aria-label^="Período: "]'
+        )
+        ?.click();
+      return stillThere;
+    });
+    expect(leaving).toBe(true);
+    const again = editor(page, "Período");
+    await expect(again.getByText("Outubro de 2026")).toBeVisible();
+    await expect(again.getByText("Novembro de 2026")).toBeHidden();
+    await expect(shortcut(again, "Este mês")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(shortcut(again, "Hoje")).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
   });
 });
 

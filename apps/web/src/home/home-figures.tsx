@@ -1,9 +1,15 @@
 import type { PeriodSummaryReadModel } from "@polaris/contracts";
+import { Money } from "@polaris/domain/money/money";
 import CheckIcon from "lucide-react/dist/esm/icons/check";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
-import { Money } from "@polaris/domain/money/money";
 import { MoneyText } from "@/ui/hidden-values";
+import {
+  currentFirstStep,
+  FIRST_STEPS_ANCHOR,
+  firstStepsDone,
+} from "../app-shell/first-steps";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 import { checklistLink, checklistNext } from "./home-model";
 import { HomeBlock } from "./home-parts";
@@ -26,8 +32,12 @@ function barWidth(netSales: string, top: bigint): number {
 
 /**
  * The three most sold products of the month, by units net of returns; none sold, no block (AC-16). Each line has its
- * position in a circle, the name (cut with an ellipsis only when it does not fit), the net sales and the units, and a green bar proportional to the net sales
- * (v7 § 3 item 11), drawn in CSS: it says the same as the value beside it.
+ * position in a circle, the name, the net sales and the units, and a green bar proportional to the net sales
+ * (v7 § 3 item 11), drawn in CSS: it says the same as the value beside it. Each line is its own container: the four are
+ * one row, and the name is cut with an ellipsis when it does not fit, from 15rem on a phone and from 20rem from the
+ * sidebar up (a column that narrow left the name 75 to 118 px beside the sidebar); under that (a phone with the browser
+ * font enlarged, a narrow column) the name takes its own line, up to two, and the net sales and the units go to the
+ * line under it.
  */
 export function TopProductsBlock({ products }: { products: TopProducts }) {
   const top = products.reduce((max, product) => {
@@ -40,16 +50,29 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
         {products.map((product, index) => {
           const content = (
             <>
-              <span className="flex min-w-0 items-center gap-3">
+              <span
+                data-top-line=""
+                className="grid min-w-0 grid-cols-[1.375rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 max-[47.499rem]:@min-[15rem]:flex min-[47.5rem]:@min-[20rem]:flex"
+              >
                 <span className="grid size-[1.375rem] shrink-0 place-items-center rounded-full bg-muted font-semibold text-xs tabular-nums">
                   {index + 1}
                 </span>
-                <span className="min-w-0 flex-1 truncate">{product.name}</span>
-                <span className="shrink-0 font-semibold tabular-nums">
-                  <MoneyText text={formatBrlAmount(product.netSales)} />
+                <span
+                  data-top-name=""
+                  className="line-clamp-2 min-w-0 break-words max-[47.499rem]:@min-[15rem]:line-clamp-none max-[47.499rem]:@min-[15rem]:flex-1 max-[47.499rem]:@min-[15rem]:truncate min-[47.5rem]:@min-[20rem]:line-clamp-none min-[47.5rem]:@min-[20rem]:flex-1 min-[47.5rem]:@min-[20rem]:truncate"
+                >
+                  {product.name}
                 </span>
-                <span className="w-12 shrink-0 text-right text-muted-foreground tabular-nums">
-                  {`${formatQuantity(product.quantity)} un.`}
+                <span
+                  data-top-figures=""
+                  className="col-start-2 flex flex-wrap items-baseline gap-x-3 max-[47.499rem]:@min-[15rem]:contents min-[47.5rem]:@min-[20rem]:contents"
+                >
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    <MoneyText text={formatBrlAmount(product.netSales)} />
+                  </span>
+                  <span className="ml-auto text-right text-muted-foreground tabular-nums max-[47.499rem]:@min-[15rem]:ml-0 max-[47.499rem]:@min-[15rem]:w-12 max-[47.499rem]:@min-[15rem]:shrink-0 min-[47.5rem]:@min-[20rem]:ml-0 min-[47.5rem]:@min-[20rem]:w-12 min-[47.5rem]:@min-[20rem]:shrink-0">
+                    {`${formatQuantity(product.quantity)} un.`}
+                  </span>
                 </span>
               </span>
               <span
@@ -67,7 +90,7 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
           const row = "grid min-h-12 content-center gap-1.5 py-2";
           return (
             <li
-              className="min-w-0 border-t first:border-t-0"
+              className="@container min-w-0 border-t first:border-t-0"
               key={product.productId}
             >
               {product.deleted ? (
@@ -91,43 +114,109 @@ export function TopProductsBlock({ products }: { products: TopProducts }) {
 
 const STEPS = ["Loja criada", "Cadastrar o 1º produto", "Fazer a 1ª venda"];
 
+/** The two ways of the step "Cadastrar o 1º produto" while it is not done (corte 2.5, T-5): by hand or a spreadsheet. */
+const FIRST_PRODUCT_WAYS = [
+  { href: "/products?novo=1", label: "Cadastrar à mão", variant: "default" },
+  {
+    href: "/products?importar=1",
+    label: "Importar planilha",
+    variant: "outline",
+  },
+] as const;
+
+function FirstProductWays() {
+  return (
+    <span className="flex flex-wrap gap-x-2 gap-y-4">
+      {FIRST_PRODUCT_WAYS.map((way) => (
+        <a
+          className={buttonVariants({ size: "sm", variant: way.variant })}
+          href={way.href}
+          key={way.href}
+        >
+          {way.label}
+        </a>
+      ))}
+    </span>
+  );
+}
+
 /**
- * The store that never sold (AC-22, § 5.4): three steps from its real data, with one button to the next one; when
- * the first product has no stock, the next step is "Dar entrada no estoque" on its panel.
+ * The store that never sold (AC-22, § 5.4): three steps from its real data. While the first product is missing its
+ * step has two small buttons (by hand, spreadsheet) and no button under the steps; after it, one button goes to the next step ("Dar entrada no estoque" on the
+ * first product's panel while it has no stock).
  */
 export function ChecklistBlock({ checklist }: { checklist: HomeChecklist }) {
+  // the foot of the menu links here from any screen: the block comes after the reads, past the browser's own scroll
+  useEffect(() => {
+    if (window.location.hash === `#${FIRST_STEPS_ANCHOR}`) {
+      document
+        .getElementById(FIRST_STEPS_ANCHOR)
+        ?.scrollIntoView({ block: "center" });
+    }
+  }, []);
   const next = checklistNext(checklist.firstProductId, checklist.hasStock);
   const link = checklistLink(next);
-  const done = [true, checklist.firstProductId !== null, false];
+  const done = firstStepsDone(checklist);
+  const current = currentFirstStep(done);
   return (
     <HomeBlock
       className="lg:col-span-2"
-      id="home-checklist"
+      id={FIRST_STEPS_ANCHOR}
       title="Primeiros passos"
     >
       <ol className="grid gap-2">
-        {STEPS.map((step, index) => (
-          <li className="flex items-center gap-2.5" key={step}>
-            <span
-              aria-hidden="true"
+        {STEPS.map((step, index) => {
+          const withWays = index === 1 && next.kind === "product";
+          // with the two buttons the step is taller: number and name sit on the height of the first line of buttons
+          const line = withWays ? "h-ctl-sm" : "";
+          return (
+            <li
+              aria-current={index === current ? "step" : undefined}
               className={cn(
-                "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
-                done[index] &&
-                  "border-primary bg-primary text-primary-foreground"
+                "flex gap-2.5",
+                withWays ? "items-start" : "items-center"
               )}
+              key={step}
             >
-              {done[index] ? <CheckIcon className="size-3" /> : index + 1}
-            </span>
-            <span className={done[index] ? "text-muted-foreground" : ""}>
-              {step}
-              {done[index] ? <span className="sr-only"> (feito)</span> : null}
-            </span>
-          </li>
-        ))}
+              <span className={cn("flex items-center", line)}>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "grid size-5 shrink-0 place-items-center rounded-full border text-xs tabular-nums",
+                    done[index] &&
+                      "border-primary bg-primary text-primary-foreground",
+                    index === current &&
+                      "border-mark bg-mark/10 text-mark-foreground dark:bg-mark/15"
+                  )}
+                >
+                  {done[index] ? <CheckIcon className="size-3" /> : index + 1}
+                </span>
+              </span>
+              <span
+                className={cn(
+                  "flex flex-wrap items-center gap-x-3 gap-y-2",
+                  done[index] && "text-muted-foreground"
+                )}
+              >
+                <span className={cn("flex items-center", line)}>
+                  <span>
+                    {step}
+                    {done[index] ? (
+                      <span className="sr-only"> (feito)</span>
+                    ) : null}
+                  </span>
+                </span>
+                {withWays ? <FirstProductWays /> : null}
+              </span>
+            </li>
+          );
+        })}
       </ol>
-      <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
-        {link.label}
-      </a>
+      {link ? (
+        <a className={cn(buttonVariants(), "w-fit")} href={link.href}>
+          {link.label}
+        </a>
+      ) : null}
     </HomeBlock>
   );
 }

@@ -334,7 +334,7 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
   return (
     <div className="grid gap-3">
       <p className="text-muted-foreground text-support">
-        {`Últimas ${weeks} semanas · um quadrado por dia, mais escuro é mais venda`}
+        {`Últimas ${weeks} semanas`}
       </p>
       <p className="min-h-10 text-support md:min-h-5" data-rhythm-reading="">
         {reading ? (
@@ -393,6 +393,9 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
   );
 }
 
+/** What the (i) of the block says: how to read a square (the line under the title says only the weeks). */
+const RHYTHM_HELP = "Cada quadrado é um dia: quanto mais escuro, mais venda.";
+
 /** Where the series of the map comes from: the server's read, or without a connection the copy (null without one). */
 export type RhythmSource =
   | Block<DailySeries>
@@ -438,15 +441,20 @@ export function RhythmBlock({
         <p className="text-muted-foreground">O mapa abre com internet.</p>
       </HomeBlock>
     ) : (
+      // the height of the map with its legend and its lines under it, so the blocks under it stay
       <BlockSkeleton
-        className="h-72"
+        className="h-[39rem] lg:h-[29.5rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />
     );
   }
   return (
-    <HomeBlock id="home-rhythm" title="Ritmo de vendas">
+    <HomeBlock
+      help={{ about: "Ritmo de vendas", text: RHYTHM_HELP }}
+      id="home-rhythm"
+      title="Ritmo de vendas"
+    >
       <RhythmMap days={days} />
     </HomeBlock>
   );

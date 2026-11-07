@@ -1,9 +1,10 @@
 import type { LocalNamespace } from "../namespace";
 import {
-  deleteOutboxDatabase,
+  clearOutboxDatabase,
   IndexedDbOutboxStorage,
   outboxDatabaseName,
 } from "./indexeddb-storage";
+import { wipeThumbnails } from "../thumbnail-store";
 import { Outbox } from "./outbox";
 
 /**
@@ -45,26 +46,28 @@ export async function openOutboxStore(
 }
 
 /**
- * Deletes the outbox of a namespace (logout, leaving an organization). It never
+ * Empties the outbox of a namespace (logout, leaving an organization). It never
  * discards queued commands silently: with any left it throws
  * `PendingCommandsError` unless the caller passes the explicit discard flag the
- * person chose in the interface.
+ * person chose in the interface. Counting and clearing are one IndexedDB
+ * transaction, so a command another tab queues lands either before it (and is
+ * counted) or after it (and stays); the database is never deleted. The thumbnails of
+ * the namespace go with it: an emptied queue is a namespace being left.
  */
 export async function wipeOutboxStore(
   namespace: LocalNamespace,
   options: { discardPending: boolean }
 ): Promise<{ discarded: number }> {
-  const name = outboxDatabaseName(namespace.key);
-  const storage = await IndexedDbOutboxStorage.open(name);
-  let pending = 0;
-  try {
-    pending = (await storage.transaction((tx) => tx.all())).length;
-    if (pending > 0 && !options.discardPending) {
-      throw new PendingCommandsError(pending);
+  const discarded = await clearOutboxDatabase(
+    outboxDatabaseName(namespace.key),
+    (pending) => {
+      if (pending > 0 && !options.discardPending) {
+        throw new PendingCommandsError(pending);
+      }
     }
-  } finally {
-    storage.close();
-  }
-  await deleteOutboxDatabase(name);
-  return { discarded: pending };
+  );
+  // the queue is already empty: a thumbnails database that will not go is tried again by the purge, never a reason
+  // to report the queue as not emptied
+  await wipeThumbnails(namespace.key).catch(() => undefined);
+  return { discarded };
 }

@@ -13,6 +13,8 @@ import {
   TextField,
 } from "../sales/sale-fields";
 import {
+  costSummaryText,
+  costUnitsText,
   type StockCommandState,
   type StockFailure,
   type StockFieldName,
@@ -70,7 +72,7 @@ function NoteField({
   return (
     <Field className="min-w-0 md:col-span-2" data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <InputGroup className="h-auto items-stretch">
+      <InputGroup className="h-auto touch:h-auto items-stretch">
         <InputGroupTextarea
           aria-describedby={describedBy(id, error, undefined)}
           aria-invalid={error ? true : undefined}
@@ -159,6 +161,22 @@ export function EditFields({
           />
         </>
       ) : null}
+      {draft.action === "cost" ? (
+        <>
+          <p className="md:col-span-2">{costUnitsText(target.quantity)}</p>
+          <TextField
+            error={errors.valuationUnitCost}
+            hint="Vale para as unidades de agora e para as próximas vendas. Depois não dá para editar."
+            id={id("valuationUnitCost")}
+            inputMode="decimal"
+            label="Custo de cada unidade (R$)"
+            maxLength={26}
+            onChange={handleValuation}
+            placeholder="Ex.: 12,50"
+            value={draft.valuationUnitCost}
+          />
+        </>
+      ) : null}
       {draft.action === "count" ? (
         <>
           <QuantityStepper
@@ -174,10 +192,10 @@ export function EditFields({
           {valuationApplies(target) ? (
             <TextField
               error={errors.valuationUnitCost}
-              hint="Opcional. Estabelece o custo desta variante, hoje desconhecido; só vale com quantidade contada maior que zero."
+              hint="Opcional. Vale só se a quantidade contada for maior que zero."
               id={id("valuationUnitCost")}
               inputMode="decimal"
-              label="Custo unitário para valoração (R$)"
+              label="Custo de cada unidade (R$)"
               maxLength={26}
               onChange={handleValuation}
               placeholder="Ex.: 12,50"
@@ -222,18 +240,20 @@ export function EditFields({
           />
         </>
       ) : null}
-      <DateField
-        disabled={disabled}
-        disabledReason="Só até hoje"
-        error={errors.occurredOn}
-        hint="Dia do movimento, no horário da loja."
-        id={id("occurredOn")}
-        label="Data"
-        max={state.today}
-        onChange={handleDate}
-        today={state.today}
-        value={draft.occurredOn}
-      />
+      {draft.action === "cost" ? null : (
+        <DateField
+          disabled={disabled}
+          disabledReason="Só até hoje"
+          error={errors.occurredOn}
+          hint="Dia do movimento, no horário da loja."
+          id={id("occurredOn")}
+          label="Data"
+          max={state.today}
+          onChange={handleDate}
+          today={state.today}
+          value={draft.occurredOn}
+        />
+      )}
     </div>
   );
 }
@@ -299,6 +319,14 @@ export function Confirmation({ state }: { state: StockCommandState }) {
   const { body } = validateStockDraft(state.draft, state.target, state.today);
   if (body === null) {
     return null;
+  }
+  if (body.action === "cost") {
+    return (
+      <Alert variant="warning">
+        <TriangleAlertIcon aria-hidden="true" />
+        <AlertDescription>{costSummaryText(body)}</AlertDescription>
+      </Alert>
+    );
   }
   return (
     <>

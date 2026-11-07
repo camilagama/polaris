@@ -111,8 +111,7 @@ function appOrigin(value: string | undefined): string | null {
 /**
  * Sends one closure notice (ADR 0102, amended), for its consumer and for the handover alike. The notice is read by ID
  * and organization through the privacy role's own function, so a notice already settled, of a closure the owner undid
- * or of a store no longer in closure finds nothing to do. With the e-mail off it is left owed, neither sent nor failed
- * (decision of 20/10/2026). With it on, the address comes from the one function of the authentication role that
+ * or of a store no longer in closure finds nothing to do. With the e-mail off it is left owed, neither sent nor failed. With it on, the address comes from the one function of the authentication role that
  * answers it, only for a notice still owed and only when verified (an e-mail not verified leaves the notice owed, not
  * failed); the message goes under the notice's ID as the provider's idempotency key, and the notice is marked sent,
  * or failed when the provider refuses the message for good. A failure of the provider or the network throws

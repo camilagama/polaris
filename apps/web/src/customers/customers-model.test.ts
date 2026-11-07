@@ -5,6 +5,7 @@ import type { PendingCustomerUpdate } from "../offline/customer-update";
 import {
   customerErrorMessage,
   customerStatusLabel,
+  filterCustomers,
   formatCustomerPhone,
   hasCustomerContact,
   isCustomerListStatus,
@@ -139,5 +140,127 @@ describe("what the screen says when a call fails", () => {
     expect(
       customerErrorMessage(new Error("customer_has_pending_command"), "archive")
     ).toContain("resolva em Pendências");
+  });
+});
+
+describe("customerErrorMessage com o 503 de uma escrita", () => {
+  const busy = {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+  };
+
+  it("salvar, arquivar, restaurar e anonimizar dizem que pode ter sido salvo", () => {
+    for (const action of ["save", "archive", "restore", "anonymize"] as const) {
+      const message = customerErrorMessage(busy, action);
+      expect(message).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+      expect(message).not.toContain("Tente novamente");
+      expect(customerErrorMessage(refusal("SERVICE_UNAVAILABLE"), action)).toBe(
+        message
+      );
+    }
+  });
+
+  it("a lista e a conferência de repetidos são leituras e mantêm o texto de antes", () => {
+    expect(customerErrorMessage(busy, "load")).toBe(
+      "A lista de clientes está temporariamente indisponível. Tente novamente."
+    );
+    expect(customerErrorMessage(busy, "duplicate-check")).toContain(
+      "possíveis clientes repetidos"
+    );
+  });
+
+  it("um 503 com outro motivo, numa escrita, também diz que pode ter sido salvo, sem convidar a repetir", () => {
+    for (const action of ["save", "archive", "restore", "anonymize"] as const) {
+      const message = customerErrorMessage(
+        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
+        action
+      );
+      expect(message).toBe(
+        "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+      );
+      expect(message).not.toContain("Tente novamente");
+    }
+  });
+
+  it("um 503 com outro motivo, na conferência de repetidos, mantém o texto da conferência", () => {
+    expect(
+      customerErrorMessage(
+        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
+        "duplicate-check"
+      )
+    ).toContain("possíveis clientes repetidos");
+  });
+
+  it("um 503 com outro motivo, na leitura da lista, mantém o texto das leituras", () => {
+    expect(
+      customerErrorMessage(
+        { code: "SERVICE_UNAVAILABLE", data: { reason: "other" } },
+        "load"
+      )
+    ).toBe(
+      "A lista de clientes está temporariamente indisponível. Tente novamente."
+    );
+  });
+});
+
+describe("the search of the customers", () => {
+  const people = [
+    { email: "bia@exemplo.com", name: "Beatriz Souza", phone: "11987654321" },
+    { email: null, name: "João Araújo", phone: "(21) 3000-1234" },
+    { email: "loja2@exemplo.com", name: "Loja 2", phone: null },
+  ];
+  const names = (query: string) =>
+    filterCustomers(people, query).map((person) => person.name);
+
+  it("keeps everyone, in order, with no text", () => {
+    expect(names("")).toEqual(["Beatriz Souza", "João Araújo", "Loja 2"]);
+    expect(names("   ")).toHaveLength(3);
+  });
+
+  it("finds by name without accents or case", () => {
+    expect(names("joao ARAUJO")).toEqual(["João Araújo"]);
+    expect(names("souz")).toEqual(["Beatriz Souza"]);
+  });
+
+  it("finds by e-mail", () => {
+    expect(names("BIA@")).toEqual(["Beatriz Souza"]);
+    expect(names("exemplo.com")).toEqual(["Beatriz Souza", "Loja 2"]);
+  });
+
+  it("finds by phone with or without the marks, on either side", () => {
+    expect(names("(11) 98765")).toEqual(["Beatriz Souza"]);
+    expect(names("1198765")).toEqual(["Beatriz Souza"]);
+    expect(names("3000-12")).toEqual(["João Araújo"]);
+    expect(names("213000")).toEqual(["João Araújo"]);
+    // pasted with the country code
+    expect(names("+55 (11) 98765-4321")).toEqual(["Beatriz Souza"]);
+    expect(names("5521 3000-1234")).toEqual(["João Araújo"]);
+  });
+
+  it("takes a typed +55 as the country code even for a partial phone", () => {
+    expect(names("+55 11")).toEqual(["Beatriz Souza"]);
+    expect(names("+55 (11) 9876")).toEqual(["Beatriz Souza"]);
+    expect(names("+5511")).toEqual(["Beatriz Souza"]);
+    expect(names("+55 21 30")).toEqual(["João Araújo"]);
+    expect(names("+55")).toEqual([]);
+  });
+
+  it("keeps the 55 without the plus, which is also a real area code", () => {
+    const withRs = [
+      ...people,
+      { email: null, name: "Gaúcho", phone: "55991234567" },
+    ];
+    const found = (query: string) =>
+      filterCustomers(withRs, query).map((person) => person.name);
+    expect(found("55 11")).toEqual([]);
+    expect(found("55 99")).toEqual(["Gaúcho"]);
+    expect(found("55")).toEqual(["Gaúcho"]);
+  });
+
+  it("reads a text with letters as a name, not as the digits of a phone", () => {
+    expect(names("Loja 2")).toEqual(["Loja 2"]);
+    expect(names("nada 1")).toEqual([]);
   });
 });

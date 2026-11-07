@@ -1,4 +1,8 @@
-import { configureLogging, logger } from "@polaris/observability/logger";
+import {
+  configureLogging,
+  logger,
+  useLoggingEnvironment,
+} from "@polaris/observability/logger";
 import { readAuthAccessLog } from "@polaris/db/admin-access-log-repository";
 import {
   listOperationalIncidents,
@@ -37,6 +41,12 @@ import {
 } from "@polaris/db/admin-support-repository";
 import { readRefundWindow } from "@polaris/db/admin-refund-window-repository";
 import { createBillingStore } from "@polaris/db/billing-store";
+import {
+  operatorCancelRenewal,
+  refundCurrentPeriod,
+} from "@polaris/billing/operator-commands";
+import type { BillingProviderPort } from "@polaris/billing/provider-port";
+import { operatorProviderPortOf } from "@polaris/billing/provider-ports";
 import { renewalBlocksPurge } from "@polaris/domain/billing/renewal-cancellation";
 import {
   listOrganizations,
@@ -48,11 +58,18 @@ import {
   withAdminDatabase,
 } from "@polaris/db/platform-principal-repository";
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
+import adminCss from "./ui/generated/admin.css.txt";
+import adminJs from "./ui/generated/admin.js.txt";
 import {
   type BillingCommandPorts,
   grantEntitlementCommand,
   revokeEntitlementCommand,
 } from "./billing-commands";
+import {
+  cancelRenewalCommand,
+  type ProviderCommandPorts,
+  refundCommand,
+} from "./provider-commands";
 import {
   type AccessKeyStore,
   accessIssuer,
@@ -135,6 +152,55 @@ async function withBillingPorts<T>(
   }
 }
 
+/** The whole of one provider command, from the lock to the last write: past it, the outcome is unknown (503). */
+const PROVIDER_COMMAND_DEADLINE_MS = 45_000;
+
+/**
+ * The ports of the operator's provider commands (ADR 0105): the audit through the Admin role, the command through the
+ * billing role, and the provider's port built here and only here, from the Worker's secret and the environment's base
+ * URL, for the one command of this request (no checkout: `operatorProviderPortOf`). One connection per request,
+ * closed after; every call to the provider is cut at the deadline.
+ */
+async function withProviderPorts<T>(
+  bindings: AdminBindings,
+  operation: (ports: ProviderCommandPorts) => Promise<T>
+): Promise<T> {
+  const store = createBillingStore(billingConnectionOf(bindings));
+  const signal = AbortSignal.timeout(PROVIDER_COMMAND_DEADLINE_MS);
+  const portFor = (provider: string): BillingProviderPort =>
+    operatorProviderPortOf(bindings, provider, { signal });
+  try {
+    return await operation({
+      audit: (principalId, caseId, event, entityId, detail) =>
+        withAdminDatabase(connectionOf(bindings), (client) =>
+          auditBillingCommand(
+            client,
+            principalId,
+            caseId,
+            event,
+            entityId,
+            detail
+          )
+        ),
+      cancelRenewal: (input) =>
+        operatorCancelRenewal({ portFor, store }, input),
+      refund: (input) =>
+        refundCurrentPeriod(
+          { portFor, store },
+          {
+            decision: input.decision,
+            expectedAmount: input.expectedAmount,
+            organizationId: input.organizationId,
+            requestId: input.commandId,
+          }
+        ),
+      report: (event, fields) => logger.warn(`admin.${event}`, fields),
+    });
+  } finally {
+    await store.close();
+  }
+}
+
 const dependencies: AdminDependencies = {
   accessLog: {
     read: (principalId, request, bindings) =>
@@ -181,9 +247,9 @@ const dependencies: AdminDependencies = {
       withAdminDatabase(connectionOf(bindings), (client) =>
         listOperationalIncidents(client, input)
       ),
-    retry: (principalId, incidentId, eventId, reason, bindings) =>
+    retry: (principalId, incidentId, eventId, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
-        retryDeadLetter(client, principalId, incidentId, eventId, reason)
+        retryDeadLetter(client, principalId, incidentId, eventId)
       ),
   },
   privacy: {
@@ -222,6 +288,16 @@ const dependencies: AdminDependencies = {
     scope: (principalId, caseId, input, bindings) =>
       withAdminDatabase(connectionOf(bindings), (client) =>
         recordPrivacyScope(client, principalId, caseId, input)
+      ),
+  },
+  providerCommands: {
+    cancelRenewal: (principalId, caseId, command, bindings) =>
+      withProviderPorts(bindings, (ports) =>
+        cancelRenewalCommand(ports, principalId, caseId, command)
+      ),
+    refund: (principalId, caseId, command, bindings) =>
+      withProviderPorts(bindings, (ports) =>
+        refundCommand(ports, principalId, caseId, command)
       ),
   },
   refundWindow: {
@@ -365,9 +441,11 @@ const dependencies: AdminDependencies = {
 
 configureLogging({ service: "polaris-admin" });
 
-const app = createAdminApp(dependencies);
+const app = createAdminApp(dependencies, { css: adminCss, js: adminJs });
 
 export default {
-  fetch: (request: Request, env: AdminBindings, context: ExecutionContext) =>
-    app.fetch(request, env, context),
+  fetch: (request: Request, env: AdminBindings, context: ExecutionContext) => {
+    useLoggingEnvironment(env.POLARIS_ENVIRONMENT);
+    return app.fetch(request, env, context);
+  },
 } satisfies ExportedHandler<AdminBindings>;

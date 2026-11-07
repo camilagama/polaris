@@ -10,7 +10,7 @@ import { isTaxIdDigits, isWooviPayerCorrelationId } from "./ids";
  * created (ADR 0101, emenda do PR 6; LGPD art. 6º, V). Woovi keeps one
  * customer per CPF or CNPJ in Polaris's account and reuses it: a subscription
  * created with another name or e-mail for the same CPF keeps the ones stored
- * first (sandbox, 20/10/2026), and the name is what the payer's bank shows.
+ * first (sandbox), and the name is what the payer's bank shows.
  * Polaris creates the customer under its own key (`correlationID`, an HMAC of
  * the document) and reads it back by that key, one request, never a list of
  * the account. A customer whose name or e-mail differ from what the payer just

@@ -1,5 +1,6 @@
 import type { BillingPlanView } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import {
   canCancelRenewal,
   cancelDialogText,
@@ -26,7 +27,7 @@ function plan(overrides: Partial<BillingPlanView> = {}): BillingPlanView {
     kept: { historyMonths: 3, products: 18, sales: 47 },
     limits: { goals: 3, images: 5000, variants: 2000 },
     method: "card",
-    nextCharge: { amount: "24.90", on: "2026-11-23" },
+    nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
     offer: { methods: ["card"], prices: [] },
     recovery: null,
     refund: null,
@@ -50,7 +51,7 @@ const A_FAILURE = /Nada foi|falhou/;
 /** The contract's rule for the reason (`billingCancelRenewalInput`). */
 const CONTRACT_REASON = /^(?:[^\p{C}]|[\n\t])*$/u;
 
-/** The window of a first charge on 23/10/2026: it ends at 23:59:59 of 30/10 in São Paulo (02:59:59Z on 31/10). */
+/** The window of a first charge on `23/10/2026`: it ends at 23:59:59 of `30/10` in São Paulo (02:59:59Z on `31/10`). */
 const UNTIL = "2026-10-31T02:59:59.999Z";
 const REFUND = { amount: "24.90", until: UNTIL, via: "app" as const };
 const RPC_ERROR = (code: string, reason: string) => ({
@@ -160,12 +161,11 @@ describe("the right of withdrawal (AC-30, AC-34, AC-42, AC-44)", () => {
     expect(text.description).not.toMatch(A_DEADLINE);
   });
 
-  it("Pix by support: the day, the box of the configuration, what counts and no personal data (AC-44)", () => {
-    const text = supportRefundText(
-      { ...REFUND, via: "suporte" },
-      "caixa@exemplo.test"
+  it("Pix by support: the day, the support address of the legal texts, what counts and no personal data (AC-44)", () => {
+    const text = supportRefundText({ ...REFUND, via: "suporte" });
+    expect(text).toContain(
+      `escreva para o suporte do Polaris (${SUPPORT_EMAIL}) até`
     );
-    expect(text).toContain("escreva para caixa@exemplo.test");
     expect(text).toContain("até 30/10/2026, 23:59");
     expect(text).toContain("com o nome da loja");
     expect(text).toContain(
@@ -174,14 +174,6 @@ describe("the right of withdrawal (AC-30, AC-34, AC-42, AC-44)", () => {
     expect(text).toContain("Não mande CPF, CNPJ nem dados de pagamento.");
     // no answer time is promised (AC-44 d)
     expect(text).not.toMatch(AN_ANSWER_TIME);
-  });
-
-  it("Pix by support without the box: no address made up", () => {
-    const text = supportRefundText({ ...REFUND, via: "suporte" }, null);
-    expect(text).toContain(
-      "escreva para o suporte do Polaris (o endereço está no fim dos e-mails da sua assinatura)"
-    );
-    expect(text).not.toContain("@");
   });
 
   it("the card's refund taken: asked, and confirmed only once the plan read again left the Pro (AS-34)", () => {
@@ -239,33 +231,61 @@ describe("pay the charge that failed (AC-43)", () => {
 });
 
 describe("commandRefusal: each reason its own text (AS-17)", () => {
-  it("the provider down: AC-26 on cancel, nothing cancelled; try again", () => {
-    expect(
-      commandRefusal(
-        "cancel",
-        RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable")
-      )
-    ).toEqual({
-      reread: false,
-      retry: true,
-      text: "Não conseguimos cancelar agora. Nada foi cancelado e nada foi cobrado a mais. Tente de novo.",
-    });
-    // never "Nada foi cancelado" on the refund: on a repeat the renewal is already cancelled (AS-42)
-    expect(
-      commandRefusal(
-        "refund",
-        RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable")
-      ).text
-    ).toBe(
-      "Não conseguimos pedir o reembolso agora. Nada foi cobrado a mais. Tente de novo."
-    );
-    expect(
-      commandRefusal(
-        "overdue",
-        RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable")
-      ).text
-    ).toContain("página de pagamento");
-  });
+  const CANCEL_TEXT =
+    "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.";
+  const REFUND_TEXT =
+    "Não deu para confirmar o pedido de reembolso. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.";
+  const OVERDUE_TEXT =
+    "Não conseguimos abrir a página de pagamento agora. Nada foi cobrado. Tente de novo em alguns minutos.";
+
+  const unavailable = [
+    [
+      "billing_provider_unavailable",
+      RPC_ERROR("SERVICE_UNAVAILABLE", "billing_provider_unavailable"),
+    ],
+    ["no reason", { code: "SERVICE_UNAVAILABLE", status: 503 }],
+    ["empty data", { code: "SERVICE_UNAVAILABLE", data: {}, status: 503 }],
+    ["server_busy", RPC_ERROR("SERVICE_UNAVAILABLE", "server_busy")],
+    ["platform_cut", RPC_ERROR("SERVICE_UNAVAILABLE", "platform_cut")],
+    ["an unknown reason", RPC_ERROR("SERVICE_UNAVAILABLE", "some_new_reason")],
+  ] as const;
+
+  it.each(unavailable)(
+    "cancel, %s: may have been done, so the plan is read and nothing says nothing was cancelled",
+    (_label, error) => {
+      const refusal = commandRefusal("cancel", error);
+      expect(refusal).toEqual({
+        reread: true,
+        retry: false,
+        text: CANCEL_TEXT,
+      });
+      expect(refusal.text).not.toContain("Nada foi cancelado");
+    }
+  );
+
+  it.each(unavailable)(
+    "refund, %s: may have been done, so the plan is read and nothing says nothing was charged",
+    (_label, error) => {
+      const refusal = commandRefusal("refund", error);
+      expect(refusal).toEqual({
+        reread: true,
+        retry: false,
+        text: REFUND_TEXT,
+      });
+      expect(refusal.text).not.toContain("Nada foi cobrado");
+    }
+  );
+
+  it.each(unavailable)(
+    "overdue, %s: opening the page only reads, so nothing was charged and it is tried again",
+    (_label, error) => {
+      expect(commandRefusal("overdue", error)).toEqual({
+        reread: false,
+        retry: true,
+        text: OVERDUE_TEXT,
+      });
+    }
+  );
 
   it.each([
     ["command_in_progress", "Já tem um pedido em andamento"],

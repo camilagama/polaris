@@ -2,6 +2,7 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import {
   test as base,
+  type BrowserContextOptions,
   type Page,
   expect as playwrightExpect,
   type TestInfo,
@@ -64,7 +65,15 @@ export interface Journey {
   user: JourneyUser;
 }
 
+/** The device of the browser context (viewport, touch, user agent), as a Playwright descriptor gives it. */
+export type JourneyDevice = Pick<
+  BrowserContextOptions,
+  "deviceScaleFactor" | "hasTouch" | "isMobile" | "userAgent" | "viewport"
+>;
+
 export interface JourneyOptions {
+  /** The device of the context; Playwright's default context (1280 × 720, no touch) when absent. */
+  device?: JourneyDevice;
   /** Creates the organization through `organization.createInitial` (the onboarding journey does it on screen). */
   organization?: { timezone: string } | false;
 }
@@ -178,6 +187,7 @@ export async function openJourney(
   }
   const clientIp = journeyClientIp(name);
   const context = await browser.newContext({
+    ...options.device,
     baseURL: origin,
     // the same address as the user's rpc calls: one rate limit bucket per test and attempt (journeyClientIp)
     extraHTTPHeaders: { [CLIENT_IP_HEADER]: clientIp },

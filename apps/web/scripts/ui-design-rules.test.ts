@@ -20,7 +20,7 @@ const componentFiles = uiFiles.filter((file) => !file.endsWith(".test.tsx"));
 const AXE_IMPORT = /["'`]axe-core["'`/]/;
 const BASE_CSS = [
   "src/styles/index.css",
-  "src/styles/theme.css",
+  "../../packages/ui/src/theme.css",
   "src/styles/shadcn-tailwind.css",
 ];
 // a `//` comment starts a line or follows a space, so the `//` of a URL inside a string is not one
@@ -35,11 +35,11 @@ const MOTION_IMPORT = /from\s+"motion|import\s+"motion/;
 
 /**
  * A component that only loads on demand is in the gallery through its loader, as in the app: a static import of it
- * would put its chunk in the gallery's and fail the placement guard of `pwa/precache-budget.ts` (t363).
+ * would put its chunk in the gallery's and fail the placement guard of `pwa/precache-budget.ts`.
  */
 const ON_DEMAND_LOADER: Record<string, string> = {
   calendar: "calendar-on-demand",
-  // the animated layer of the bar comes by `import()` only at the full level of motion (t386)
+  // the animated layer of the bar comes by `import()` only at the full level of motion
   "filter-bar-motion": "filter-bar",
 };
 
@@ -92,9 +92,9 @@ describe("design rules of src/ui/ (ADR 0103)", () => {
   );
 
   it.each(["radio-group.tsx", "checkbox.tsx"])(
-    "%s grows to a touch area of at least 48 px with touch (18 + 2 × 16 = 50 px; measured in e2e-pwa/ui-components)",
+    "%s grows to a touch area of at least 44 px with touch (16 + 2 × 14 = 44 px: the inner box of 18 minus the 1 px border, plus 14 px each side; measured in e2e-pwa/ui-components)",
     (file) => {
-      expect(read(`src/ui/${file}`)).toContain("touch:after:-inset-4");
+      expect(read(`src/ui/${file}`)).toContain("touch:after:-inset-3.5");
     }
   );
 

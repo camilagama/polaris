@@ -28,7 +28,6 @@ import {
   restoreCategory,
 } from "../src/category-repository";
 import { createDatabase } from "../src/client";
-import { deleteOrganizationsWithAudit } from "./teardown-support";
 import { createInitialOrganizationInDatabase } from "../src/organization-repository";
 import {
   archiveProduct,
@@ -44,6 +43,13 @@ import {
 import { categories } from "../src/schema/category";
 import { products } from "../src/schema/product";
 import { withAuthorizedTenantTransaction } from "../src/tenant-transaction";
+import { becomeGateRole } from "./gate-roles";
+import {
+  RUNNER_LOGIN_GRANTS_SQL,
+  type RunnerLoginGrantRow,
+  runnerLoginState,
+} from "./runner-login-grant";
+import { deleteOrganizationsWithAudit } from "./teardown-support";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -52,8 +58,8 @@ const gateDatabase =
 
 const runtimeRole = "polaris_pr11_runtime";
 const onboardingRole = "polaris_onboarding_runtime";
+const onboardingOwnerRole = "polaris_onboarding_owner";
 const expectedHost = /^ep-[a-z-]+-[a-z0-9]+\.c-2\.sa-east-1\.aws\.neon\.tech$/;
-const sqlIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const rollbackMessagePattern = /intentional Gate 2 rollback/;
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 const errorStackLineBreak = /\r?\n/;
@@ -110,24 +116,6 @@ async function expectSqlState(
     },
     label
   );
-}
-
-async function ensureSetRole(
-  pool: ReturnType<typeof createDatabase>["pool"],
-  roleName: string
-): Promise<{ adminRole: string; canSet: boolean }> {
-  const result = await pool.query<{
-    adminRole: string;
-    canSet: boolean;
-  }>(
-    'SELECT current_user AS "adminRole", ' +
-      "pg_has_role(current_user, $1, 'SET') AS \"canSet\"",
-    [roleName]
-  );
-  const [row] = result.rows;
-  assert.ok(row);
-  assert.match(row.adminRole, sqlIdentifierPattern);
-  return { adminRole: row.adminRole, canSet: row.canSet };
 }
 
 async function expectForgedCategoryInsertDenied(
@@ -454,6 +442,12 @@ async function main() {
       "Set POLARIS_GATE2_TEST_CONFIRM_DISPOSABLE=gate2-runtime-proof only for the auto-expiring disposable Neon branch."
     );
   }
+  const runnerLogin = process.env.POLARIS_GATE_RUNTIME_LOGIN;
+  if (!runnerLogin) {
+    throw new Error(
+      "POLARIS_GATE_RUNTIME_LOGIN names the login of the runtime group; run the gate through scripts/run-gates.ts, which creates and passes it."
+    );
+  }
   const databaseUrl = new URL(connectionString);
   assert.equal(databaseUrl.hostname, expectedHostname);
   assert.equal(databaseUrl.pathname, `/${gateDatabase}`);
@@ -470,12 +464,23 @@ async function main() {
   const runtimeDb = drizzle({ client: runtimeClient }) as unknown as ReturnType<
     typeof createDatabase
   >["db"];
+  const onboardingClient = new Client({
+    connectionString,
+    connectionTimeoutMillis: 5000,
+  });
+  const onboardingDb = drizzle({
+    client: onboardingClient,
+  }) as unknown as ReturnType<typeof createDatabase>["db"];
   const fixtureUsers: string[] = [];
   const fixtureOrganizations: string[] = [];
   let connected = false;
-  let adminRole: string | undefined;
-  let grantedRuntimeRole = false;
-  let grantedOnboardingRole = false;
+  let onboardingConnected = false;
+  let releaseOnboardingFixture:
+    | ((failed?: boolean) => Promise<void>)
+    | undefined;
+  // the owner's session acts as the tenant runtime, then the onboarding runtime, then the tenant runtime again;
+  // the fixture session of onboardingClient acts only as the onboarding runtime
+  let releaseRole: ((failed?: boolean) => Promise<void>) | undefined;
   let passed = false;
 
   async function createUser(
@@ -492,7 +497,18 @@ async function main() {
   }
 
   async function createOrganization(userId: string, name: string) {
-    const result = await createInitialOrganizationInDatabase(adminDb, {
+    // since migration 0095 only the onboarding runtime executes the writer: the owner's session cannot
+    if (!onboardingConnected) {
+      await onboardingClient.connect();
+      onboardingConnected = true;
+    }
+    if (!releaseOnboardingFixture) {
+      releaseOnboardingFixture = await becomeGateRole(
+        onboardingClient,
+        onboardingRole
+      );
+    }
+    const result = await createInitialOrganizationInDatabase(onboardingDb, {
       id: randomUUID(),
       name,
       requestId: randomUUID(),
@@ -548,8 +564,31 @@ async function main() {
       ]),
       [
         [onboardingRole, false, false],
-        [runtimeRole, false, true],
+        [runtimeRole, false, false],
       ]
+    );
+
+    const runnerGrants = await adminPool.query<RunnerLoginGrantRow>(
+      RUNNER_LOGIN_GRANTS_SQL,
+      [runnerLogin, runtimeRole]
+    );
+    const runnerState = runnerLoginState(runnerGrants.rows);
+    assert.deepEqual(
+      runnerState,
+      [
+        {
+          admin: false,
+          bypassRls: false,
+          canLogin: true,
+          createDb: false,
+          createRole: false,
+          inherit: true,
+          replication: false,
+          set: true,
+          superuser: false,
+        },
+      ],
+      "the gate runner's own login is the environment's runtime login: LOGIN, no SUPERUSER, BYPASSRLS, CREATEDB, CREATEROLE or REPLICATION, member of the runtime group with INHERIT and SET, without ADMIN (however many roles granted it)"
     );
 
     const rls = await adminPool.query<{
@@ -605,8 +644,9 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'categories' " +
-        // the purge owner's read and delete policies are checked by the purge gate (ADR 0081)
-        "AND roles NOT IN ('{polaris_purge_owner}') " +
+        // the purge owner's read and delete policies are checked by the purge gate (ADR 0081); the closed-store export
+        // reader's read policy by `closed-organization-readonly`. Exact role-array literals only, never a pattern
+        "AND roles NOT IN ('{polaris_purge_owner}', '{polaris_closed_export_reader}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -654,7 +694,7 @@ async function main() {
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'products' " +
         // the tenant policies; the billing owner's read policy is checked on its own below
-        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}') " +
+        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -695,7 +735,7 @@ async function main() {
       "SELECT policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' AND tablename = 'product_variants' " +
-        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}') " +
+        "AND roles NOT IN ('{polaris_billing_owner}', '{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}') " +
         "ORDER BY policyname"
     );
     assert.deepEqual(
@@ -774,7 +814,7 @@ async function main() {
       "SELECT tablename AS relation, policyname AS name, cmd AS command, roles, " +
         'qual AS "usingExpression", with_check AS "withCheck" ' +
         "FROM pg_policies WHERE schemaname = 'public' " +
-        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}') ORDER BY tablename, policyname",
+        "AND tablename = ANY($1::text[]) AND roles NOT IN ('{polaris_catalog_owner}', '{polaris_admin_owner}', '{polaris_purge_owner}', '{polaris_closed_export_reader}') ORDER BY tablename, policyname",
       [["product_option_values", "product_options", "variant_option_values"]]
     );
     assert.deepEqual(
@@ -1043,29 +1083,15 @@ async function main() {
     assert.deepEqual(functionAccess.rows[0], {
       config: ["search_path=pg_catalog, pg_temp"],
       onboardingCanExecute: true,
-      owner: ownerName,
+      owner: onboardingOwnerRole,
       publicCanExecute: false,
       runtimeCanExecute: false,
       securityDefiner: true,
     });
 
-    const runtimeSet = await ensureSetRole(adminPool, runtimeRole);
-    ({ adminRole } = runtimeSet);
-    if (!runtimeSet.canSet) {
-      grantedRuntimeRole = true;
-      await adminPool.query(`GRANT ${runtimeRole} TO ${adminRole}`);
-    }
-    const onboardingSet = await ensureSetRole(adminPool, onboardingRole);
-    if (!onboardingSet.canSet) {
-      grantedOnboardingRole = true;
-      await adminPool.query(
-        `GRANT ${onboardingRole} TO ${onboardingSet.adminRole}`
-      );
-    }
-
     await runtimeClient.connect();
     connected = true;
-    await runtimeClient.query(`SET ROLE ${runtimeRole}`);
+    releaseRole = await becomeGateRole(runtimeClient, runtimeRole);
 
     const userA = await createUser("Gate 2 tenant A");
     const userB = await createUser("Gate 2 tenant B");
@@ -1074,6 +1100,9 @@ async function main() {
     const organizationB = await createOrganization(userB, "Gate 2 tenant B");
     assert.equal(organizationA.created, true);
     assert.equal(organizationB.created, true);
+    // released here so the GRANT and REVOKE of the onboarding role below are exercised by the runtime session itself
+    await releaseOnboardingFixture?.();
+    releaseOnboardingFixture = undefined;
 
     const onboardingUser = await createUser("Gate 2 onboarding writer");
     const onboardingOrganizationId = randomUUID();
@@ -1093,8 +1122,8 @@ async function main() {
       "the tenant role cannot execute the onboarding writer"
     );
 
-    await runtimeClient.query("RESET ROLE");
-    await runtimeClient.query(`SET ROLE ${onboardingRole}`);
+    await releaseRole();
+    releaseRole = await becomeGateRole(runtimeClient, onboardingRole);
     const onboardingRequestId = randomUUID();
     const onboardingResult = await runtimeClient.query<{
       created: boolean;
@@ -1157,8 +1186,8 @@ async function main() {
       "42501",
       "the onboarding role has no direct table DML"
     );
-    await runtimeClient.query("RESET ROLE");
-    await runtimeClient.query(`SET ROLE ${runtimeRole}`);
+    await releaseRole();
+    releaseRole = await becomeGateRole(runtimeClient, runtimeRole);
 
     const onboardingMembership = await adminPool.query(
       "SELECT organization_id FROM public.memberships WHERE user_id = $1",
@@ -2795,23 +2824,16 @@ async function main() {
     );
   } finally {
     const cleanupErrors: unknown[] = [];
-    if (connected) {
+    if (connected && releaseRole) {
       try {
-        await runtimeClient.query("RESET ROLE");
+        await releaseRole();
       } catch (error) {
         cleanupErrors.push(error);
       }
     }
-    if (adminRole && grantedRuntimeRole) {
+    if (onboardingConnected && releaseOnboardingFixture) {
       try {
-        await adminPool.query(`REVOKE ${runtimeRole} FROM ${adminRole}`);
-      } catch (error) {
-        cleanupErrors.push(error);
-      }
-    }
-    if (adminRole && grantedOnboardingRole) {
-      try {
-        await adminPool.query(`REVOKE ${onboardingRole} FROM ${adminRole}`);
+        await releaseOnboardingFixture();
       } catch (error) {
         cleanupErrors.push(error);
       }
@@ -2838,6 +2860,7 @@ async function main() {
     }
     await Promise.allSettled([
       connected ? runtimeClient.end() : Promise.resolve(),
+      onboardingConnected ? onboardingClient.end() : Promise.resolve(),
       adminPool.end(),
     ]);
     if (cleanupErrors.length > 0) {

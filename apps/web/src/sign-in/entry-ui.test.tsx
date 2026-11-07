@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { challengeAlertId, EntryScreen, SubmitButton } from "./entry-ui";
 import type { Challenge } from "./turnstile";
 
@@ -7,6 +8,7 @@ type ChallengeState = Challenge["state"];
 
 const ALERT_ID = challengeAlertId("form");
 const DISABLED_ATTR = /\sdisabled=/;
+const AN_ANSWER_TIME = /respond|prazo|horas|dias úteis|em até/u;
 
 const challengeIn = (state: ChallengeState): Challenge => ({
   containerRef: { current: null },
@@ -124,5 +126,32 @@ describe("EntryScreen outside the entry pages (t239)", () => {
     expect(screen({ support: "Uma linha de apoio." })).toContain(
       "Uma linha de apoio."
     );
+  });
+});
+
+describe("EntryScreen with the line of help (AC-6)", () => {
+  const screen = (help: boolean) =>
+    renderToStaticMarkup(
+      <EntryScreen help={help} title="Entrar">
+        <p>corpo</p>
+      </EntryScreen>
+    );
+
+  it("says 'Precisa de ajuda? Escreva para' and the address, as a mailto link with its name", () => {
+    const markup = screen(true);
+    expect(markup).toContain("Precisa de ajuda? Escreva para");
+    expect(markup).toContain(`href="mailto:${SUPPORT_EMAIL}"`);
+    expect(markup).toContain(
+      `aria-label="Escrever para o suporte: ${SUPPORT_EMAIL}"`
+    );
+    expect(markup).toContain(`>${SUPPORT_EMAIL}</a>.`);
+  });
+
+  it("promises no time of answer", () => {
+    expect(screen(true).toLowerCase()).not.toMatch(AN_ANSWER_TIME);
+  });
+
+  it("is not there unless the screen asks for it", () => {
+    expect(screen(false)).not.toContain("Precisa de ajuda?");
   });
 });

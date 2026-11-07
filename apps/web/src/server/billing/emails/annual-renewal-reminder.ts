@@ -15,7 +15,7 @@ export interface AnnualRenewalReminderEmail {
   store: BillingEmailStore;
 }
 
-/** "The text of E-B adjusted (amount, date and method)", as ADR 0104 asks; approved by Petković (24/10, 20:31). */
+/** "The text of E-B adjusted (amount, date and method)", as ADR 0104 asks. */
 export function annualRenewalReminderContent(
   email: AnnualRenewalReminderEmail
 ): BillingNoticeContent {

@@ -1,7 +1,7 @@
 import { calendarDateInTimeZone } from "@polaris/domain/sales/confirm-sale";
 
 /**
- * The clock of a gate that works out a calendar day (t438; the economics gate of PR 306 failed the main CI
+ * The clock of a gate that works out a calendar day (an economics gate failed the main CI
  * because "3 hours ago" fell on yesterday before 03:00 in São Paulo and on today after it).
  *
  * A gate does not read the wall clock to find a day: it asks `runClock`, which is read once when the process starts

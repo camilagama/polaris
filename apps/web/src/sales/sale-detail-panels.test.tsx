@@ -211,6 +211,11 @@ const renderActions = (
     />
   );
 const DESTRUCTIVE = "bg-destructive/10";
+const INK = "bg-primary ";
+const GHOST_BACK = /hover:bg-accent[^>]*>Voltar</;
+const buttonsOf = (html: string) => html.match(/<button[^>]*>/g) ?? [];
+const inkButtonsOf = (html: string) =>
+  buttonsOf(html).filter((button) => button.includes(INK));
 const DESTRUCTIVE_CONFIRM = /bg-destructive\/10[^>]*>Confirmar cancelamento</;
 
 describe("OperationActions", () => {
@@ -230,6 +235,24 @@ describe("OperationActions", () => {
     expect(renderActions({ confirming: true, locked: true })).not.toContain(
       "Voltar"
     );
+  });
+
+  it("has exactly one ink button on each step that is not destructive, and none on a destructive confirm", () => {
+    const editing = { confirming: false, locked: false };
+    const confirming = { confirming: true, locked: false };
+    const retrying = { confirming: true, locked: true, retrying: true };
+    for (const step of [editing, confirming, retrying]) {
+      expect(inkButtonsOf(renderActions(step, false))).toHaveLength(1);
+    }
+    expect(inkButtonsOf(renderActions(editing, true))).toHaveLength(1);
+    expect(inkButtonsOf(renderActions(confirming, true))).toHaveLength(0);
+    expect(inkButtonsOf(renderActions(retrying, true))).toHaveLength(1);
+  });
+
+  it("makes Voltar the ghost button, with no outline", () => {
+    const last = renderActions({ confirming: true, locked: false });
+    expect(last).toMatch(GHOST_BACK);
+    expect(last).not.toContain("bg-card");
   });
 
   it("sends the same command again from a locked cancellation as the main action, not a destructive one", () => {

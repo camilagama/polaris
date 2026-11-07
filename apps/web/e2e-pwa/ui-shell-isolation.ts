@@ -2,7 +2,7 @@
 import type { Page } from "@playwright/test";
 
 /**
- * Since batch 6 (t256) there is no old CSS: every style rule on the page is in a layer of Tailwind (`properties`,
+ * Since batch 6 there is no old CSS: every style rule on the page is in a layer of Tailwind (`properties`,
  * `theme`, `base`, `components`, `utilities`). A rule outside them (no layer, or a layer of its own such as the old
  * `legacy`) beats or escapes the order the components count on, and reaches the screen without the review of the
  * base seeing it (ADR 0103, section 3). The check walks every sheet of the page, the adopted ones too, into `@media`,

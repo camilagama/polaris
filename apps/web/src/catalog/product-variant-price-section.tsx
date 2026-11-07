@@ -4,8 +4,12 @@ import type {
 } from "@polaris/contracts";
 import { type FormEvent, useCallback, useState } from "react";
 import { orpcClient } from "../lib/orpc";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import {
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
+  rpcErrorCode,
+} from "../lib/rpc-error";
+import { useHoldSwap } from "../lib/unsent-work";
 import { ProductTextField } from "./product-fields";
 import {
   VariantFieldRow,
@@ -24,12 +28,15 @@ import {
 
 const INVALID_PRICE = "Informe um valor em reais, como 59,90.";
 
-function priceErrorMessage(error: unknown): string {
-  const unaccepted = legalAcceptanceMessage(error);
-  if (unaccepted !== undefined) {
-    return unaccepted;
+export function priceErrorMessage(error: unknown): string {
+  const common = commonFailureMessage(error, undefined, { directWrite: true });
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
+  if (code === "SERVICE_UNAVAILABLE") {
+    return CHANGE_FAULT_UNKNOWN;
+  }
   if (code === "CONFLICT") {
     return "O produto mudou. Atualize as variantes antes de tentar novamente.";
   }
@@ -63,7 +70,7 @@ function PriceRow({
   const [text, setText] = useState(listPriceFieldText(variant.listPrice));
   const [invalid, setInvalid] = useState(false);
   // a typed text that differs from the saved price is unsent (a save puts the saved text back)
-  useReportUnsentWork(text !== listPriceFieldText(variant.listPrice));
+  useHoldSwap(text !== listPriceFieldText(variant.listPrice));
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

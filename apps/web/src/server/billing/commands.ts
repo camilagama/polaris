@@ -4,10 +4,8 @@ import {
   type PreparedSubscription,
   ProviderNotConfiguredError,
   ProviderNotFoundError,
-  ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import type {
-  BillingProviderLink,
   BillingStore,
   UnclaimedTrialEvent,
   UnclaimedTrialOutcome,
@@ -18,15 +16,15 @@ import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { TRIAL_DAYS } from "@polaris/domain/billing/subscription-state";
 import { logger, opaqueId } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
-import { sha256Hex } from "../../lib/canonical-json";
 
 /**
  * The billing commands (ADR 0101): start the checkout, and the operator's
- * reconcile, refund and cancel, plus the settling of trials no reservation
- * paid for. They talk to the provider only through its port and to the billing
- * records only through the store; the caller authorizes first (the checkout
- * runs as the owner, with `billing:manage`; the others are for scripts and,
- * later, the Admin). Nothing the provider answers reaches a log: only codes,
+ * reconcile, plus the settling of trials no reservation paid for (the
+ * operator's refund and cancellation live in `@polaris/billing/operator-commands`,
+ * shared with the Admin). They talk to the provider only through its port and
+ * to the billing records only through the store; the caller authorizes first
+ * (the checkout runs as the owner, with `billing:manage`; the others are for
+ * scripts and the maintenance). Nothing the provider answers reaches a log: only codes,
  * counts and opaque IDs. The checkout link is the payer's and is never logged.
  */
 
@@ -59,6 +57,34 @@ export class BillingCommandError extends Error {
     this.name = "BillingCommandError";
     this.code = code;
     this.until = options?.until ?? null;
+  }
+}
+
+/**
+ * The provider could not say whether the checkout the organization had before became a subscription, so the new
+ * one is not created. Its own code, apart from `provider_unavailable`: the old checkout may have been paid with its
+ * webhook late, and the client must not tell the owner that nothing was charged.
+ */
+class PreviousCheckoutUnverifiedError extends Error {
+  readonly code = "previous_checkout_unverified";
+
+  constructor(options?: ErrorOptions) {
+    super("previous_checkout_unverified", options);
+    this.name = "PreviousCheckoutUnverifiedError";
+  }
+}
+
+/**
+ * The provider could not confirm the cancellation of the old subscription's renewal, so the new checkout is not
+ * created. Its own code, apart from `provider_unavailable`: the cancellation may have been made before the answer
+ * was lost, and the client must not tell the owner that nothing was changed.
+ */
+class PreviousRenewalCancelUnverifiedError extends Error {
+  readonly code = "previous_renewal_cancel_unverified";
+
+  constructor(options?: ErrorOptions) {
+    super("previous_renewal_cancel_unverified", options);
+    this.name = "PreviousRenewalCancelUnverifiedError";
   }
 }
 
@@ -155,7 +181,7 @@ export interface StartCheckoutDependencies {
  * subscription would stay alive and charge with no organization behind it, so
  * the new checkout is refused (`checkout_pending_confirmation`) and the old
  * facts are read into the inbox now. A provider that cannot answer refuses too
- * (`provider_unavailable`): the swap is never made blind. Only here a provider's
+ * (`previous_checkout_unverified`): the swap is never made blind. Only here a provider's
  * "not found" is an empty answer: it is what a checkout nobody paid looks like.
  */
 async function assertOldCheckoutMadeNoSubscription(
@@ -186,7 +212,7 @@ async function assertOldCheckoutMadeNoSubscription(
       ...ids,
     });
     // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
-    throw new ProviderUnavailableError({ cause: error });
+    throw new PreviousCheckoutUnverifiedError({ cause: error });
   }
   if (!subscribed) {
     return;
@@ -218,14 +244,14 @@ async function assertOldCheckoutMadeNoSubscription(
 
 /**
  * Before the organization's link is replaced, the renewal of the subscription it names is cancelled at the
- * provider (ADR 0104, emenda de 24/10, condition (a) of PR 296): a subscription refunded or charged back whose
+ * provider (ADR 0104): a subscription refunded or charged back whose
  * renewal the hourly safety net had not cancelled yet would stay alive once the new link clears its memory
  * (`revoked_*`), and charge again with no organization behind it. Only a link a subscription came from
  * (`provider_subscription_id`); a checkout nobody paid is the next check's. The checkout is refused if the provider
- * cannot cancel it (`provider_unavailable`): the swap is never made with the old renewal alive. The rule reads the
+ * cannot cancel it (`previous_renewal_cancel_unverified`): the swap is never made with the old renewal alive. The rule reads the
  * link, not the state: in `trial_setup` too (the card paid at the provider and a fact stored the `sub_`, but the
  * trial's fact not applied yet), the old subscription is cancelled, since once the new link replaces it its trial
- * would run and charge with no organization behind it (ADR 0104, emenda de 24/10, item 1).
+ * would run and charge with no organization behind it (ADR 0104, item 1).
  */
 async function cancelOldRenewal(
   dependencies: StartCheckoutDependencies,
@@ -260,7 +286,7 @@ async function cancelOldRenewal(
       oldProvider: link.provider,
     });
     // biome-ignore lint/style/useErrorCause: the cause is passed in the options object.
-    throw new ProviderUnavailableError({ cause: error });
+    throw new PreviousRenewalCancelUnverifiedError({ cause: error });
   }
   if (result === "cancelled") {
     // a renewal that was still alive behind a store off Pro: the operator's log, the safety net did not get to it
@@ -682,202 +708,6 @@ export async function reconcileOrganization(
     provider: port.provider,
   });
   return report;
-}
-
-export interface RefundCommandDependencies
-  extends Omit<OperatorCommandDependencies, "store"> {
-  store: Pick<
-    BillingStore,
-    | "processEvent"
-    | "readProviderLink"
-    | "readRecord"
-    | "recordEvent"
-    | "withOrganizationLock"
-  >;
-}
-
-/**
- * The ID of the cancellation a refund makes first: its own prefix, so it is
- * told apart from the owner's cancellation (no "renewal cancelled" notice for
- * it), and, like `cancelRenewalEventId`, one per request and per subscription.
- */
-export async function refundCancelEventId(
-  requestId: string,
-  providerRef: string
-): Promise<string> {
-  const digest = await sha256Hex(providerRef);
-  return `command:refund_cancel:${requestId}:${digest.slice(0, 32)}`;
-}
-
-/**
- * Refunds in full the charge of the period in force, after cancelling the
- * renewal (ADR 0066, emenda de 23/10): a refund leaves the subscription alive
- * at the provider, and its next charge would give Pro back and charge again.
- * Under the organization's lock the command decides by the state: a renewal
- * the record already shows cancelled (by the owner, an earlier request whose
- * refund failed, or the closure) is not cancelled again, so a repeat with
- * another request ID writes no second cancellation and goes straight to the
- * refund. A cancellation that fails refunds nothing; a refund that fails after
- * it leaves "Pro until the end", and a repeat finishes it. The refund fact
- * comes back by webhook or reconciliation (Asaas), or the port answers it and
- * it is written here (Woovi: its refund event names no subscription).
- */
-export async function refundCurrentPeriod(
-  dependencies: RefundCommandDependencies,
-  input: { organizationId: string; requestId: string }
-): Promise<"nothing_to_refund" | "not_linked" | "refund_requested"> {
-  const { store } = dependencies;
-  const now = dependencies.now?.() ?? new Date();
-  return await store.withOrganizationLock(input.organizationId, async () => {
-    const link = await store.readProviderLink(input.organizationId);
-    if (!link) {
-      return "not_linked";
-    }
-    const port = dependencies.portFor(link.provider);
-    if (!port.refundsEnabled) {
-      // the renewal is not cancelled for a refund the provider cannot make here
-      throw new ProviderNotConfiguredError();
-    }
-    const record = await store.readRecord(input.organizationId);
-    const renewal = record?.cancelAtPeriodEnd
-      ? "record_shows_cancelled"
-      : await cancelBeforeRefund(dependencies, {
-          link,
-          organizationId: input.organizationId,
-          port,
-          // the record can hold the cancellation only while it gives Pro
-          recordsCancellation: record !== null && grantsPro(record.state),
-          requestId: input.requestId,
-        });
-    // the operator's refund: the paid charge of the period in force, whichever it is (ADR 0066)
-    const outcome = await port.refundCurrentPeriod(
-      link.providerRef,
-      now,
-      link.providerSubscriptionId,
-      "any_paid"
-    );
-    let result: "nothing_to_refund" | "refund_requested";
-    if (typeof outcome === "string") {
-      result = outcome;
-    } else {
-      // the provider's refund sends no webhook tied to the subscription (Woovi): the fact is
-      // written now, through the inbox, under the refund's own ID (a repeat is a duplicate)
-      const { event } = outcome;
-      const stored = await store.recordEvent({
-        fact: event.fact,
-        organizationId: input.organizationId,
-        provider: port.provider,
-        providerEventId: event.providerEventId,
-        providerRef: event.providerRef,
-        providerSubscriptionId: event.providerSubscriptionId ?? null,
-      });
-      await store.processEvent(stored.id, now);
-      result = outcome.kind;
-    }
-    logger.info("billing_refund_command", {
-      organizationId: opaqueId(input.organizationId),
-      provider: port.provider,
-      reason: result,
-      renewal,
-    });
-    return result;
-  });
-}
-
-/** Step 1 of the refund: cancels the renewal at the provider and writes it through the inbox. */
-async function cancelBeforeRefund(
-  dependencies: RefundCommandDependencies,
-  input: {
-    link: BillingProviderLink;
-    organizationId: string;
-    port: BillingProviderPort;
-    recordsCancellation: boolean;
-    requestId: string;
-  }
-): Promise<string> {
-  const { link, port } = input;
-  const result = await port.cancelRenewal(
-    link.providerRef,
-    link.providerSubscriptionId
-  );
-  if (result !== "nothing_to_cancel" && input.recordsCancellation) {
-    // the moment after the provider answered: a fact that arrived meanwhile must not make it stale
-    const now = dependencies.now?.() ?? new Date();
-    const stored = await dependencies.store.recordEvent({
-      fact: { occurredAt: now, type: "subscription_cancelled" },
-      organizationId: input.organizationId,
-      provider: port.provider,
-      providerEventId: await refundCancelEventId(
-        input.requestId,
-        link.providerRef
-      ),
-      providerRef: link.providerRef,
-    });
-    const processed = await dependencies.store.processEvent(stored.id, now);
-    // the log tells a cancellation the record did not take (ignored, failed) from one it did
-    return `${result}:${processed.status}`;
-  }
-  return result;
-}
-
-/**
- * The ID of the cancellation fact: one per request and per subscription. The
- * same request repeated for the same subscription is a duplicate; repeated
- * after the organization subscribed again (a new reference), it is a fact of
- * its own and applies, so the record says what the provider did. The reference
- * goes in as a digest: the ID has a bounded length, and the reference is kept in
- * its own column.
- */
-export async function cancelRenewalEventId(
-  requestId: string,
-  providerRef: string
-): Promise<string> {
-  const digest = await sha256Hex(providerRef);
-  return `command:cancel_renewal:${requestId}:${digest.slice(0, 32)}`;
-}
-
-/**
- * Cancels the renewal at the provider; access already paid for runs to its end.
- * The cancellation is written through the inbox at once
- * (`cancelRenewalEventId`), so the record does not wait for the provider's
- * webhook; the webhook that follows is a duplicate by value.
- */
-export async function cancelRenewal(
-  dependencies: OperatorCommandDependencies,
-  input: { organizationId: string; requestId: string }
-): Promise<
-  "already_cancelled" | "cancelled" | "not_linked" | "nothing_to_cancel"
-> {
-  const { store } = dependencies;
-  const now = dependencies.now?.() ?? new Date();
-  const link = await store.readProviderLink(input.organizationId);
-  if (!link) {
-    return "not_linked";
-  }
-  const port = dependencies.portFor(link.provider);
-  const result = await port.cancelRenewal(
-    link.providerRef,
-    link.providerSubscriptionId
-  );
-  if (result !== "nothing_to_cancel") {
-    const stored = await store.recordEvent({
-      fact: { occurredAt: now, type: "subscription_cancelled" },
-      organizationId: input.organizationId,
-      provider: port.provider,
-      providerEventId: await cancelRenewalEventId(
-        input.requestId,
-        link.providerRef
-      ),
-      providerRef: link.providerRef,
-    });
-    await store.processEvent(stored.id, now);
-  }
-  logger.info("billing_cancel_renewal_command", {
-    organizationId: opaqueId(input.organizationId),
-    provider: port.provider,
-    reason: result,
-  });
-  return result;
 }
 
 /**

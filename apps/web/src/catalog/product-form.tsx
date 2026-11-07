@@ -1,4 +1,5 @@
 import type { CategoryReadModel } from "@polaris/contracts";
+import { isBlankProductName } from "@polaris/domain/catalog/product";
 import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUpIcon from "lucide-react/dist/esm/icons/chevron-up";
 import {
@@ -19,6 +20,7 @@ import { SelectField } from "../sales/sale-fields";
 import { ProductTextAreaField, ProductTextField } from "./product-fields";
 import {
   emptyOpeningDraft,
+  PRODUCT_NAME_REQUIRED,
   type ProductOpeningDraft,
   validateOpening,
 } from "./product-opening-model";
@@ -41,7 +43,6 @@ export const PRODUCT_FORM_ID = "product-form";
 
 /** The choice that clears the category: the Select has no empty value of its own. */
 const NO_CATEGORY = "none";
-const NAME_REQUIRED = "Informe o nome do produto.";
 
 /**
  * Whether the data cannot be sent as typed: no name, or (only for a new product, the only one with a price and a
@@ -52,7 +53,7 @@ export function productFormHasErrors(
   editing: boolean
 ): boolean {
   return (
-    draft.name.trim() === "" ||
+    isBlankProductName(draft.name) ||
     (!editing && validateOpening(draft).value === null)
   );
 }
@@ -98,7 +99,9 @@ export function ProductForm({
     focusLater(() => document.getElementById("product-category")?.focus());
   }, [categoryRefusal]);
   const nameError =
-    showRequired && draft.name.trim() === "" ? NAME_REQUIRED : undefined;
+    showRequired && isBlankProductName(draft.name)
+      ? PRODUCT_NAME_REQUIRED
+      : undefined;
   // only a new product has a price and a stock to say: an edit changes the name, the category and the description
   const opening = editing ? null : validateOpening(draft);
   const openingErrors = showRequired ? (opening?.errors ?? {}) : {};

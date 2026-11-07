@@ -48,7 +48,7 @@ import { billingSelfServiceEnabled } from "../billing/self-service";
 import {
   type BillingPortOptions,
   billingProviderPortOf,
-} from "../billing/provider-ports";
+} from "@polaris/billing/provider-ports";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
 
@@ -101,13 +101,15 @@ function pixPayerKeyConfigured(bindings: WorkerBindings): boolean {
   return payerKey.length >= 32 && payerKey !== bindings.BETTER_AUTH_SECRET;
 }
 
-/** The provider errors that mean "try again later", with the code the client may show. */
-const unavailableCodes: ReadonlySet<string> = new Set([
-  "billing_provider_not_configured",
-  "provider_not_found",
-  "provider_rejected",
-  "provider_response_malformed",
-  "provider_unavailable",
+/** The errors that mean "try again later", each with the reason the client may show. */
+const unavailableReasons: ReadonlyMap<string, string> = new Map([
+  ["billing_provider_not_configured", "billing_provider_unavailable"],
+  ["previous_checkout_unverified", "previous_checkout_unverified"],
+  ["previous_renewal_cancel_unverified", "previous_renewal_cancel_unverified"],
+  ["provider_not_found", "billing_provider_unavailable"],
+  ["provider_rejected", "billing_provider_unavailable"],
+  ["provider_response_malformed", "billing_provider_unavailable"],
+  ["provider_unavailable", "billing_provider_unavailable"],
 ]);
 
 /** What the person reads when a refusal needs more than its code (the client may show it as it is). */
@@ -120,6 +122,19 @@ const refusalMessages: Readonly<Record<string, string>> = {
   payer_not_accepted:
     "Não foi possível iniciar o Pix Automático com esses dados. Confira o nome, o CPF ou CNPJ e o e-mail, ou escolha o cartão.",
 };
+
+/**
+ * The 503 of a provider failure or an unverified earlier checkout, counted with its closed reason and the error's own code (never the provider's answer, a
+ * provider id or anything of the store) so a spike of one reason shows apart from the other 503s.
+ */
+function unavailableRefusal(
+  reason: string,
+  code: string | undefined,
+  cause: unknown
+): ORPCError<"SERVICE_UNAVAILABLE", { reason: string }> {
+  logger.warn("billing_unavailable_refused", { errorCode: code, reason });
+  return new ORPCError("SERVICE_UNAVAILABLE", { cause, data: { reason } });
+}
 
 function billingRpcError(
   error: unknown,
@@ -147,12 +162,11 @@ function billingRpcError(
     typeof error.code === "string"
       ? error.code
       : undefined;
-  if (code !== undefined && unavailableCodes.has(code)) {
+  const unavailableReason =
+    code === undefined ? undefined : unavailableReasons.get(code);
+  if (unavailableReason !== undefined) {
     // nothing of the provider's answer: the errors carry only their code
-    throw new ORPCError("SERVICE_UNAVAILABLE", {
-      cause: error,
-      data: { reason: "billing_provider_unavailable" },
-    });
+    throw unavailableRefusal(unavailableReason, code, error);
   }
   return fallback(error);
 }
@@ -192,10 +206,7 @@ function ownerCommandRpcError(
     });
   }
   if (error instanceof OwnerCommandProviderFailure) {
-    throw new ORPCError("SERVICE_UNAVAILABLE", {
-      cause: error,
-      data: { reason: "billing_provider_unavailable" },
-    });
+    throw unavailableRefusal("billing_provider_unavailable", error.code, error);
   }
   return billingRpcError(error, fallback);
 }

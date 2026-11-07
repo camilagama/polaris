@@ -52,7 +52,7 @@ export function OperationActions({
             {confirmLabel}
           </Button>
           {locked ? null : (
-            <Button onClick={onBack} type="button" variant="outline">
+            <Button onClick={onBack} type="button" variant="ghost">
               Voltar
             </Button>
           )}

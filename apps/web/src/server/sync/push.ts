@@ -34,6 +34,7 @@ export class InvalidSyncPayloadError extends Error {
 interface SyncCommandContext {
   baseVersion: number | null;
   commandId: string;
+  requestId?: string;
 }
 
 /** How one command type is validated, authorized and executed on the server. */
@@ -87,6 +88,7 @@ export interface PushDependencies {
   hashKeys: SyncPayloadHashKeys;
   keys: OfflineLeaseKeys;
   now: () => Date;
+  requestId?: string;
   runSyncCommand: typeof runSyncCommand;
   /** Runs `operation` in an authorized tenant transaction for `sync:push`. */
   withTenant: <T>(
@@ -194,6 +196,9 @@ async function pushOne(
         return handler.execute(savepoint, identity, parsed, {
           baseVersion: command.baseVersion,
           commandId: command.commandId,
+          ...(dependencies.requestId === undefined
+            ? {}
+            : { requestId: dependencies.requestId }),
         });
       },
       (error) => handler?.classify(error) ?? null

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { queryAsFunctionOwner } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -1085,10 +1086,13 @@ async function run() {
     );
 
     // ------------------------------------------------------------- the grant revoked
-    await owner.pool.query(
+    // set first: the REVOKE may commit and the give-back of the owner role fail after it (the GRANT back is idempotent)
+    revoked = true;
+    await queryAsFunctionOwner(
+      owner.pool,
+      RECORD,
       `REVOKE EXECUTE ON FUNCTION ${RECORD} FROM polaris_auth_runtime`
     );
-    revoked = true;
     const rowsWhileRevoked = await countOf(
       "SELECT count(*)::text AS count FROM public.auth_access_log"
     );
@@ -1118,7 +1122,9 @@ async function run() {
       ),
       rowsWhileRevoked
     );
-    await owner.pool.query(
+    await queryAsFunctionOwner(
+      owner.pool,
+      RECORD,
       `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
     );
     revoked = false;
@@ -1162,9 +1168,12 @@ async function run() {
       }
     };
     if (revoked) {
-      await cleanup(
-        "restore execute",
+      await queryAsFunctionOwner(
+        owner.pool,
+        RECORD,
         `GRANT EXECUTE ON FUNCTION ${RECORD} TO polaris_auth_runtime`
+      ).catch((error: unknown) =>
+        cleanupFailures.push(`restore execute (${redactedFailure(error)})`)
       );
     }
     await cleanup(

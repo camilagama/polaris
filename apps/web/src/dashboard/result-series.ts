@@ -1,19 +1,20 @@
 import { Money } from "@polaris/domain/money/money";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
-import { cogsCoverageOf, type StoredDay } from "../lib/period-summary-cache";
+import {
+  cogsCoverageOf,
+  type StoredDay,
+  type StoredPeriodSummary,
+} from "../lib/period-summary-cache";
 import type { PeriodChain, PeriodQuality } from "./dashboard-model";
-import { monthAbbreviation, monthName } from "./result-period";
+import { lastOfMonth, monthAbbreviation, monthName } from "./result-period";
 
 /**
  * The series of the Resultado chart and its table (corte resultado-v2, AC-5 to AC-12): the days up to the store's today,
  * the days after it kept apart, the rule that a day with an unknown cost is hatched and breaks the cost line only on
- * itself (AC-9, emenda de 25/10: never a zero, never a partial sum as the total), the grouping by month of the
- * long periods, the parts of the cost and the sentences that depend on what is drawn. Money is added in exact cents
+ * itself (AC-9: never a zero, never a partial sum as the total), the months of the long periods as the server adds
+ * them up (AC-7), the parts of the cost and the sentences that depend on what is drawn. Money is added in exact cents
  * (`Money`); the numbers given to a drawing are only for the drawing.
  */
-
-/** Above this many days the chart and the table group by month (AC-7): at most 13 points. */
-const GROUP_ABOVE_DAYS = 62;
 
 /**
  * What the table, the reading of a day and the tooltip say for a day whose cost the server could not know (AC-9):
@@ -28,8 +29,8 @@ export interface ResultRow {
   /** The cost of the row: money, unknown (`null`) or not sent (`undefined`, an older server or copy). */
   costs: string | null | undefined;
   /**
-   * The expenses without a sale that fell on the day (the server's `operatingExpenses`, also on a day with sales),
-   * or null when there is none, or when the day cannot say (a group of months; an older server or copy that sends no
+   * The expenses without a sale that fell on the day or the month (the server's `operatingExpenses`, also on a day
+   * with sales), or null when there is none, or when the day cannot say (an older server or copy that sends no
    * `operatingExpenses`, where only a day with no sale is known: everything it costs is one, AC-8).
    */
   expenses: string | null;
@@ -40,8 +41,10 @@ export interface ResultRow {
   netSales: string;
   operatingResult: string | null | undefined;
   salesCount: number;
-  /** The text in the first column of the table: "18/10/2026", or "janeiro de 2026". */
+  /** The text in the first column of the table: "18/10/2026", "janeiro de 2026", or "março de 2026, de 15 a 31". */
   tableLabel: string;
+  /** A month only: how many of its days have an unknown cost, and how many days it has (AC-9). */
+  unknownDays?: { total: number; unknown: number };
 }
 
 const cents = (amount: string): bigint => Money.from(amount).minorUnits;
@@ -142,44 +145,42 @@ function dayRow(day: StoredDay): ResultRow {
   };
 }
 
-/** One field summed over the rows of a group: unknown if any day is, not sent if any day has none. */
-function sumOptional(
-  values: ReadonlyArray<string | null | undefined>
-): string | null | undefined {
-  if (values.some((value) => value === undefined)) {
-    return undefined;
+/**
+ * The name of a month in the table (AC-7): "janeiro de 2026" for the whole month, and the days it has when the period
+ * or today cuts it ("março de 2026, de 15 a 31"), so that a part of a month never reads as all of it.
+ */
+function monthTableLabel(from: string, to: string): string {
+  const name = `${monthName(from)} de ${from.slice(0, 4)}`;
+  const whole = from.endsWith("-01") && to === lastOfMonth(from);
+  if (whole) {
+    return name;
   }
-  if (values.some((value) => value === null)) {
-    return null;
-  }
-  return values
-    .reduce((total, value) => total.add(Money.from(value as string)), ZERO)
-    .toString();
+  const first = Number(from.slice(8, 10));
+  const last = Number(to.slice(8, 10));
+  return first === last
+    ? `${name}, dia ${first}`
+    : `${name}, de ${first} a ${last}`;
 }
 
 /**
- * The daily rows summed by calendar month, in order (AC-7): the net sales and the sales with `Money`, the cost and
- * the result unknown when any day of the month is. The month names itself on the axis ("jan") and in the table
- * ("janeiro de 2026"). The sum of the groups is the sum of the days.
+ * A month as the server adds it up (`granularity` "month", AC-7): the sums of its days, the cost and the result null
+ * when one of its days is unknown, its first and last days and how many of them are unknown.
  */
-function groupByMonth(rows: readonly ResultRow[]): ResultRow[] {
-  const groups = new Map<string, ResultRow[]>();
-  for (const row of rows) {
-    const month = row.key.slice(0, 7);
-    groups.set(month, [...(groups.get(month) ?? []), row]);
-  }
-  return [...groups].map(([month, members]) => ({
-    costs: sumOptional(members.map((row) => row.costs)),
-    expenses: null,
-    key: month,
-    label: monthAbbreviation(month),
-    netSales: members
-      .reduce((total, row) => total.add(Money.from(row.netSales)), ZERO)
-      .toString(),
-    operatingResult: sumOptional(members.map((row) => row.operatingResult)),
-    salesCount: members.reduce((total, row) => total + row.salesCount, 0),
-    tableLabel: `${monthName(month)} de ${month.slice(0, 4)}`,
-  }));
+function monthRow(month: StoredDay): ResultRow {
+  const days = month.days ?? 0;
+  return {
+    costs: month.costs,
+    expenses: dayExpenses(month),
+    key: month.date.slice(0, 7),
+    label: monthAbbreviation(month.date),
+    netSales: month.netSales,
+    operatingResult: month.operatingResult,
+    salesCount: month.salesCount,
+    tableLabel: monthTableLabel(month.date, month.to ?? month.date),
+    ...(month.unknownDays === undefined
+      ? {}
+      : { unknownDays: { total: days, unknown: month.unknownDays } }),
+  };
 }
 
 export interface ResultSeries {
@@ -187,7 +188,7 @@ export interface ResultSeries {
   afterToday: string | null;
   /**
    * The cost line is drawn: every day says its cost (`costsSent`) and at least one row up to today is known. The rows
-   * with an unknown cost are hatched and break the line (AC-9, emenda de 25/10).
+   * with an unknown cost are hatched and break the line (AC-9).
    */
   costsDrawn: boolean;
   /** Every day says its cost, known or unknown: the table has the cost columns. */
@@ -200,20 +201,30 @@ export interface ResultSeries {
   days: { total: number; unknown: number };
 }
 
+/** The shape of the summary's series: by date (no `granularity`), or by month with the days after today apart. */
+interface SeriesShape {
+  afterToday?: StoredDay | undefined;
+  granularity?: StoredPeriodSummary["granularity"] | undefined;
+}
+
 /**
  * The series of the screen from the server's days: every date of the period comes, and the client cuts it at the
  * store's today (AC-6, AC-10): a day to come is never drawn as zero, and what the days to come cost is kept for the
- * line "Depois de hoje" of the table, so that the table adds up to the total of the cards.
+ * line "Depois de hoje" of the table, so that the table adds up to the total of the cards. Above 62 days the server
+ * sends months instead (`granularity` "month", `monthlySeries`).
  */
 export function resultSeries(
   daily: readonly StoredDay[],
-  today: string
+  today: string,
+  shape: SeriesShape = {}
 ): ResultSeries {
+  if (shape.granularity === "month") {
+    return monthlySeries(daily, today, shape.afterToday);
+  }
   const sent = costsSent(daily);
   const upToToday = daily.filter((day) => day.date <= today);
   const toCome = daily.filter((day) => day.date > today);
   const rows = upToToday.map(dayRow);
-  const grouped = daily.length > GROUP_ABOVE_DAYS;
   // what the days to come cost is summed only when every day of the period is known: never a partial sum (AC-9)
   const known = costsKnown(daily);
   const total = known
@@ -233,8 +244,42 @@ export function resultSeries(
       total: upToToday.length,
       unknown: sent ? upToToday.filter(isUnknownDay).length : 0,
     },
-    grouped,
-    rows: grouped ? groupByMonth(rows) : rows,
+    grouped: false,
+    rows,
+  };
+}
+
+/**
+ * The months as the server sends them (AC-7): they already end at the store's today, the days after it come apart
+ * (`afterToday`), and the client only drops a month that would start after today (AC-6). What the days after today
+ * cost closes the table only when every month and those days are known (AC-9, AC-10); the days with an unknown cost are
+ * the sum of each month's (AC-11).
+ */
+function monthlySeries(
+  months: readonly StoredDay[],
+  today: string,
+  later: StoredDay | undefined
+): ResultSeries {
+  const upToToday = months.filter((month) => month.date <= today);
+  const all = later ? [...months, later] : months;
+  const sent = costsSent(all);
+  const rows = upToToday.map(monthRow);
+  const laterCost =
+    later && costsKnown(all) && typeof later.costs === "string"
+      ? later.costs
+      : null;
+  return {
+    afterToday: laterCost !== null && cents(laterCost) > 0n ? laterCost : null,
+    costsDrawn: sent && rows.some((row) => typeof row.costs === "string"),
+    costsSent: sent,
+    days: {
+      total: upToToday.reduce((sum, month) => sum + (month.days ?? 0), 0),
+      unknown: sent
+        ? upToToday.reduce((sum, month) => sum + (month.unknownDays ?? 0), 0)
+        : 0,
+    },
+    grouped: true,
+    rows,
   };
 }
 
@@ -256,7 +301,7 @@ export function hasAnyValue(
 
 /**
  * The cost line as the drawing gets it: the cost of each row in reais, or `null` for a row whose cost is unknown (or
- * not sent). Never a zero in place of an unknown cost (AC-9, emenda de 25/10, cuidado 1 do Filipe): the chart breaks
+ * not sent). Never a zero in place of an unknown cost (AC-9): the chart breaks
  * the line on a `null` and hatches the row.
  */
 export function costSeries(rows: readonly ResultRow[]): (number | null)[] {
@@ -265,7 +310,7 @@ export function costSeries(rows: readonly ResultRow[]): (number | null)[] {
   );
 }
 
-/** "3 de 25 dias sem custo informado" (AC-11, emenda de 25/10). */
+/** "3 de 25 dias sem custo informado" (AC-11). */
 export function unknownDaysCount(unknown: number, total: number): string {
   return `${unknown} de ${total} ${total === 1 ? "dia" : "dias"} sem custo informado`;
 }
@@ -294,11 +339,20 @@ export function bestRowText(series: ResultSeries): string | null {
     : `Melhor dia: ${best.label}, ${amount}`;
 }
 
-/** The third part of the reading of a day: only when an expense without a sale fell on it (AC-11). */
+/**
+ * The third part of the reading of a day or a month (AC-11): the expenses without a sale that fell on it, and, for a
+ * month with days of unknown cost, how many of its days those are (AC-9: never a cost of zero).
+ */
 export function readingNote(row: ResultRow | undefined): string | null {
-  return row?.expenses
-    ? `inclui ${formatBrlAmount(row.expenses)} de despesas do período`
-    : null;
+  const parts = [
+    row?.unknownDays && row.unknownDays.unknown > 0
+      ? unknownDaysCount(row.unknownDays.unknown, row.unknownDays.total)
+      : null,
+    row?.expenses
+      ? `inclui ${formatBrlAmount(row.expenses)} de despesas do período`
+      : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** What the table says in the cost column of a row: the amount, or "sem custo" for a day the server could not know. */
@@ -315,28 +369,28 @@ export function hasSurcharges(chain: PeriodChain): boolean {
 }
 
 const COMPETENCE = "Despesas do período entram no dia da competência.";
-const EQUALITY =
-  "A diferença entre as duas linhas é o resultado estimado do dia";
-const TO_THE_TABLE = "O resultado de cada dia está em Ver os números.";
+const EQUALITY = "A diferença entre as duas linhas é o resultado estimado do";
+const TO_THE_TABLE = "O resultado de cada";
 
 /**
- * The line that supports the chart (AC-11 with the emenda de 25/10, texto final do Petković, 26/10 00:41), in five
+ * The line that supports the chart (AC-11), in five
  * cases. The equality "the difference between the lines is the result" holds only when the period has no commercial
  * surcharge (a surcharge is in the result and not in the cost), and, with hatched days, only on the days without the
  * hatch; with a surcharge the line sends the reader to the table. With an unknown day it starts by how many there
  * are; with no known day there is a single line and no equality. No line when the costs are not sent at all.
  */
 export function supportText(
-  series: Pick<ResultSeries, "costsDrawn" | "costsSent" | "days">,
+  series: Pick<ResultSeries, "costsDrawn" | "costsSent" | "days" | "grouped">,
   chain: PeriodChain
 ): string | null {
   if (!series.costsSent) {
     return null;
   }
   const { total, unknown } = series.days;
+  const [unit, units] = series.grouped ? ["mês", "meses"] : ["dia", "dias"];
   const tail = hasSurcharges(chain)
-    ? `${TO_THE_TABLE} ${COMPETENCE}`
-    : `${EQUALITY}${unknown > 0 ? " nos dias sem hachura" : ""}. ${COMPETENCE}`;
+    ? `${TO_THE_TABLE} ${unit} está em Ver os números. ${COMPETENCE}`
+    : `${EQUALITY} ${unit}${unknown > 0 ? ` nos ${units} sem hachura` : ""}. ${COMPETENCE}`;
   if (unknown === 0) {
     return series.costsDrawn ? tail : null;
   }

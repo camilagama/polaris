@@ -43,6 +43,9 @@ function support(
     cancelPurge: vi.fn(() =>
       Promise.resolve({ changed: true, status: "closed" })
     ),
+    classify: vi.fn((_principal, _organization, internal) =>
+      Promise.resolve({ changed: true, internal })
+    ),
     close: vi.fn(() =>
       Promise.resolve({ changed: true, id: caseId, status: "closed" })
     ),
@@ -58,9 +61,6 @@ function support(
           noticeId: "0199a0a0-0000-7000-8000-0000000000f1",
           reissue: 1,
         })
-    ),
-    classify: vi.fn((_principal, _organization, internal) =>
-      Promise.resolve({ changed: true, internal })
     ),
     customers: vi.fn(() => Promise.resolve({ customers: [], next: null })),
     // the purge confirms the organization named is the case's own (org_1)
@@ -127,6 +127,8 @@ function setup(
 ) {
   const supportDependencies = support(overrides);
   const dependencies: AdminDependencies = {
+    accessLog: { read: vi.fn() },
+    activationFunnel: { read: vi.fn() },
     authenticate: vi.fn(() =>
       Promise.resolve({
         email: null,
@@ -136,9 +138,6 @@ function setup(
         subject: "subject-1",
       })
     ),
-    accessLog: { read: vi.fn() },
-    activationFunnel: { read: vi.fn() },
-    refundWindow: { read: vi.fn() },
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
       diagnostics: vi.fn(() => Promise.resolve(null)),
@@ -155,6 +154,8 @@ function setup(
       role: vi.fn(),
       scope: vi.fn(),
     },
+    providerCommands: { cancelRenewal: vi.fn(), refund: vi.fn() },
+    refundWindow: { read: vi.fn() },
     report: vi.fn(),
     resolvePrincipal: vi.fn(() => Promise.resolve({ ...principal, role })),
     support: supportDependencies,
@@ -166,6 +167,8 @@ function setup(
         ...init,
         headers: {
           "cf-access-jwt-assertion": "token",
+          // a write must name the Admin's own origin, as the browser does
+          origin: "https://admin.example.invalid",
           ...(init.headers ?? {}),
         },
       }),
@@ -276,6 +279,29 @@ describe("opening and listing cases", () => {
     );
   });
 
+  it("answers the hourly limit of reveals with 429, logs the operator and leaves a customer out of the log", async () => {
+    const limited = setup({
+      reveal: () =>
+        Promise.reject(
+          new InvalidSupportRequestError("operator_reveal_rate_limited")
+        ),
+    });
+    const response = await limited.send(
+      "POST",
+      `/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+      { field: "email" }
+    );
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "rate_limited" });
+    expect(limited.dependencies.report).toHaveBeenCalledTimes(1);
+    const [event, fields] = vi.mocked(limited.dependencies.report).mock
+      .calls[0] ?? [""];
+    expect(event).toBe("admin_reveal_rate_limited");
+    expect(Object.keys(fields ?? {})).toEqual(["principal"]);
+    expect(JSON.stringify(fields)).not.toContain(customerId);
+    expect(JSON.stringify(fields)).not.toContain("email");
+  });
+
   it("answers a database refusal with its code and a status, never the database's words", async () => {
     const unknown = setup({
       open: () =>
@@ -325,10 +351,37 @@ describe("opening and listing cases", () => {
       ).status
     ).toBe(200);
     expect(calls.list).toHaveBeenCalledWith(
-      { after: caseId, limit: 10, organizationId: "org-1", status: "open" },
+      {
+        after: caseId,
+        kind: null,
+        limit: 10,
+        organizationId: "org-1",
+        status: "open",
+      },
       bindings
     );
+    for (const kind of ["support", "privacy"]) {
+      vi.mocked(calls.list).mockClear();
+      expect(
+        // biome-ignore lint/performance/noAwaitInLoops: Two probes, in order.
+        (await call(`/api/support-cases?status=open&kind=${kind}`)).status
+      ).toBe(200);
+      expect(calls.list).toHaveBeenCalledWith(
+        {
+          after: null,
+          kind,
+          limit: 25,
+          organizationId: null,
+          status: "open",
+        },
+        bindings
+      );
+    }
+    vi.mocked(calls.list).mockClear();
     const badPaths = [
+      "/api/support-cases?kind=audit",
+      "/api/support-cases?kind=",
+      "/api/support-cases?kind=SUPPORT",
       "/api/support-cases?status=weird",
       "/api/support-cases?limit=0",
       "/api/support-cases?limit=51",
@@ -340,6 +393,7 @@ describe("opening and listing cases", () => {
     )) {
       expect(response.status).toBe(400);
     }
+    expect(calls.list).not.toHaveBeenCalled();
     expect((await call(`/api/support-cases/${caseId}`)).status).toBe(200);
     expect((await call("/api/support-cases/not-a-uuid")).status).toBe(404);
     const missing = setup({ detail: vi.fn(() => Promise.resolve(null)) });
@@ -472,6 +526,18 @@ describe("reading and revealing", () => {
       ).status
     ).toBe(404);
 
+    // no active access, or the case closed: the one refusal of the database, said without a value
+    const noGrant = setup({
+      reveal: () => Promise.reject(new TenantAccessDeniedError()),
+    });
+    const refused = await noGrant.send(
+      "POST",
+      `/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+      { field: "phone" }
+    );
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ error: "tenant_access_denied" });
+
     // the caller's command ID already holds a different grant: a conflict, not a server error
     const conflict = setup({
       grantEntitlement: () =>
@@ -531,6 +597,60 @@ describe("who may do what, and from where", () => {
       { origin: "https://admin.example.invalid" }
     );
     expect(sameOrigin.status).toBe(200);
+  });
+
+  it("refuses a change that does not name this origin, before anything is called", async () => {
+    const { dependencies, support: calls } = setup();
+    const app = createAdminApp(dependencies);
+    const response = await app.fetch(
+      new Request(
+        `https://admin.example.invalid/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+        {
+          body: JSON.stringify({ field: "email" }),
+          headers: {
+            "cf-access-jwt-assertion": "token",
+            "content-type": "application/json",
+          },
+          method: "POST",
+        }
+      ),
+      bindings
+    );
+    expect(response.status).toBe(403);
+    expect(calls.reveal).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["same-site", 403],
+    ["cross-site", 403],
+    ["same-origin", 200],
+    ["none", 200],
+  ] as const)(
+    "judges a change by Sec-Fetch-Site %s even with this origin",
+    async (site, status) => {
+      const { send, support: calls } = setup();
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/customers/${customerId}/reveal`,
+        { field: "email" },
+        { "sec-fetch-site": site }
+      );
+      expect(response.status).toBe(status);
+      expect(calls.reveal).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+    }
+  );
+
+  it("leaves the reads of the support routes as they were (no Origin is sent with a GET)", async () => {
+    const { dependencies, support: calls } = setup();
+    const app = createAdminApp(dependencies);
+    const response = await app.fetch(
+      new Request("https://admin.example.invalid/api/support-cases", {
+        headers: { "cf-access-jwt-assertion": "token" },
+      }),
+      bindings
+    );
+    expect(response.status).toBe(200);
+    expect(calls.list).toHaveBeenCalledTimes(1);
   });
 
   it("needs the login like every other API route", async () => {
@@ -633,6 +753,40 @@ describe("suspension and billing commands", () => {
     );
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "unknown_organization" });
+  });
+
+  it.each([
+    ["suspend", "case_not_open", 400],
+    ["suspend", "unknown_case", 404],
+    ["reactivate", "case_not_open", 400],
+    ["reactivate", "unknown_case", 404],
+  ] as const)(
+    "answers the code and the status the screen reads when %s is refused with %s",
+    async (action, code, status) => {
+      const { send } = setup({
+        [action]: vi.fn(() =>
+          Promise.reject(new InvalidSupportRequestError(code))
+        ),
+      });
+      const response = await send(
+        "POST",
+        `/api/support-cases/${caseId}/${action}`,
+        {}
+      );
+      expect(response.status).toBe(status);
+      expect(await response.json()).toEqual({ error: code });
+    }
+  );
+
+  it("answers 400 to a classification whose internal is not a boolean, and calls nothing", async () => {
+    const { send, support: calls } = setup();
+    const response = await send(
+      "POST",
+      "/api/organizations/org_1/classification",
+      { internal: "true" }
+    );
+    expect(response.status).toBe(400);
+    expect(calls.classify).not.toHaveBeenCalled();
   });
 
   it("schedules the purge of a case's organization, with the operator from the login", async () => {
@@ -1064,7 +1218,6 @@ describe("suspension and billing commands", () => {
         {
           id: caseId,
           organizationId: "org_1",
-          organizationName: "Loja",
           placedAt: "2026-10-01T12:00:00.000Z",
           placedBy: principal.id,
           reviewAt: "2026-10-10T12:00:00.000Z",
@@ -1080,6 +1233,20 @@ describe("suspension and billing commands", () => {
     const listed = await call("/api/legal-holds?limit=10");
     expect(listed.status).toBe(200);
     expect(await listed.json()).toEqual(page);
+    const leaky = setup({
+      listLegalHolds: vi.fn(() =>
+        Promise.resolve({
+          ...page,
+          holds: page.holds.map((hold) => ({
+            ...hold,
+            organizationName: "Loja da Maria",
+          })),
+        })
+      ),
+    });
+    const answered = await (await leaky.call("/api/legal-holds")).text();
+    expect(answered).not.toContain("Loja da Maria");
+    expect(JSON.parse(answered)).toEqual(page);
     expect(calls.listLegalHolds).toHaveBeenCalledWith(
       { after: null, limit: 10 },
       bindings
@@ -1210,6 +1377,76 @@ describe("suspension and billing commands", () => {
         )
       ).status
     ).toBe(403);
+  });
+
+  it("says a command ID that holds another grant as 409, and passes on that an outcome was not recorded", async () => {
+    const conflict = setup({
+      grantEntitlement: () =>
+        Promise.reject(new Error("entitlement_grant_id_conflict")),
+    });
+    const refused = await conflict.send(
+      "POST",
+      `/api/support-cases/${caseId}/entitlement-grants`,
+      {
+        commandId: grantId,
+        hours: 1,
+        key: "variants.active.max",
+        reason: "r",
+        value: 1,
+      }
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "grant_id_conflict" });
+
+    const unrecorded = setup({
+      grantEntitlement: () =>
+        Promise.resolve({
+          created: true,
+          id: grantId,
+          organizationId: "org-1",
+          outcomeRecorded: false,
+        }),
+      revokeEntitlement: () =>
+        Promise.resolve({ outcomeRecorded: false, revoked: true }),
+    });
+    const given = await unrecorded.send(
+      "POST",
+      `/api/support-cases/${caseId}/entitlement-grants`,
+      { hours: 1, key: "variants.active.max", reason: "r", value: 1 }
+    );
+    expect(given.status).toBe(201);
+    expect(await given.json()).toMatchObject({ outcomeRecorded: false });
+    const ended = await unrecorded.call(
+      `/api/support-cases/${caseId}/entitlement-grants/${grantId}`,
+      { method: "DELETE" }
+    );
+    expect(await ended.json()).toEqual({
+      outcomeRecorded: false,
+      revoked: true,
+    });
+  });
+
+  it("ends nothing for a grant ID that is not a UUID, and says nothing was ended for one that is not there", async () => {
+    const revokeEntitlement = vi.fn(() =>
+      Promise.resolve({ outcomeRecorded: true, revoked: false })
+    );
+    const { call } = setup({ revokeEntitlement });
+    const malformed = await call(
+      `/api/support-cases/${caseId}/entitlement-grants/not-a-uuid`,
+      { method: "DELETE" }
+    );
+    expect(malformed.status).toBe(404);
+    expect(revokeEntitlement).not.toHaveBeenCalled();
+
+    const absent = await call(
+      `/api/support-cases/${caseId}/entitlement-grants/${grantId}`,
+      { method: "DELETE" }
+    );
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toEqual({
+      outcomeRecorded: true,
+      revoked: false,
+    });
   });
 
   it("refuses a malformed grant request, names the grant refusals and says when billing is not configured", async () => {

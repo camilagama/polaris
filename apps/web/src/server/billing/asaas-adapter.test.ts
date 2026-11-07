@@ -11,8 +11,8 @@ import { createAsaasAdapter } from "./asaas-adapter";
 
 /**
  * The Asaas adapter behind the real webhook route, with the Asaas API and the
- * billing store faked. The payloads follow the shape the sandbox returned
- * (spike t092); every value is made up.
+ * billing store faked. The payloads follow the shape the sandbox returned;
+ * every value is made up.
  */
 
 const TOKEN = "fake-webhook-token-0123456789abcdef";

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { StoredDay } from "../lib/period-summary-cache";
 import {
   comparisonPeriod,
-  rangeText,
+  untilText,
   resultChipPeriod,
   resultKpis,
 } from "./result-kpis";
@@ -55,10 +55,15 @@ describe("the period the chips compare with", () => {
     ).toBeNull();
   });
 
-  it("writes its dates short", () => {
-    expect(rangeText("2026-10-01", "2026-10-25")).toBe("1 a 25/10");
-    expect(rangeText("2026-09-26", "2026-10-25")).toBe("26/09 a 25/10");
-    expect(rangeText("2026-10-25", "2026-10-25")).toBe("25/10");
+  it("says up to which day a reading goes, with the year when it is not this year's", () => {
+    expect(untilText({ date: "2026-10-17" }, "2026-11-05")).toBe("Até 17/10");
+    expect(
+      untilText({ date: "2026-12-01", to: "2026-12-31" }, "2026-12-31")
+    ).toBe("Até 31/12");
+    expect(
+      untilText({ date: "2025-12-01", to: "2025-12-31" }, "2026-01-10")
+    ).toBe("Até 31/12/2025");
+    expect(untilText(undefined, "2026-11-05")).toBe("Até 05/11");
   });
 });
 
@@ -84,19 +89,28 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect(kpis.month).toBe("outubro");
     const rest = kpis.read(null);
     expect(rest.sales).toMatchObject({
-      count: "25 vendas no mês",
+      count: "25 vendas",
       date: "1 a 25/10",
-      delta: { text: "+25,0%", trend: "up" },
-      note: "vs. 1 a 25/09",
+      delta: {
+        against: "vs. setembro",
+        basis: "em relação a setembro (1 a 25/09)",
+        text: "+25,0%",
+        trend: "up",
+      },
+      help: "Vendas líquidas de 1 a 25/10. Compara com 1 a 25/09.",
+      note: null,
       value: "1250.00",
     });
     // every day known: the result is the sum of the days, with its chip in reais
     expect(rest.result).toMatchObject({
       date: "1 a 25/10",
-      delta: { money: true, text: "+R$ 250,00" },
+      delta: { against: "vs. setembro", money: true, text: "+R$ 250,00" },
       value: "1000.00",
     });
-    expect(rest.ticket.delta?.text).toBe("+25,0%");
+    expect(rest.ticket.delta).toMatchObject({
+      against: "vs. setembro",
+      text: "+25,0%",
+    });
     expect(kpis.series.result).toHaveLength(25);
   });
 
@@ -131,7 +145,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     const rest = kpis.read(null);
     // vendas: 25 x 50,00 = 1250,00 against 25 x 40,00 = 1000,00
     expect(rest.sales.delta).toMatchObject({ text: "+25,0%", trend: "up" });
-    expect(rest.sales.note).toBe("vs. 1 a 25/09");
+    expect(rest.sales.delta?.basis).toBe("em relação a setembro (1 a 25/09)");
     // ticket: 50,00 against 1000,00 / 50 sales = 20,00
     expect(rest.ticket.delta).toMatchObject({ text: "+150,0%", trend: "up" });
     // resultado: 1000,00 against 25 x 30,00 = 750,00, from the summary's days, not from the sales read
@@ -141,8 +155,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
     // a day read compares the same days of the sales read: 10 x 50,00 against 10 x 40,00
     expect(kpis.read(9).sales).toMatchObject({
-      delta: { text: "+25,0%" },
-      note: "vs. 1 a 10/09",
+      delta: { basis: "em relação a setembro (1 a 10/09)", text: "+25,0%" },
     });
   });
 
@@ -156,7 +169,10 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       today: "2026-10-25",
     }).read(null);
     expect([rest.sales.delta, rest.ticket.delta]).toEqual([null, null]);
-    expect([rest.sales.note, rest.ticket.note]).toEqual([null, null]);
+    expect([rest.sales.help, rest.ticket.help]).toEqual([
+      "Vendas líquidas de 1 a 25/10.",
+      "Vendas líquidas divididas pelo número de vendas, de 1 a 25/10.",
+    ]);
     expect(rest.result.delta).toMatchObject({ text: "+R$ 250,00" });
   });
 
@@ -185,9 +201,8 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
     const day = kpis.read(9);
     expect(day.sales).toMatchObject({
-      count: "10 vendas até 10/10",
+      count: "10 vendas",
       date: "1 a 10/10",
-      note: "vs. 1 a 10/09",
       value: "500.00",
     });
     expect(day.result.value).toBe("400.00");
@@ -265,7 +280,7 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     expect([alone.sales.delta, alone.result.delta, alone.ticket.delta]).toEqual(
       [null, null, null]
     );
-    expect(alone.sales.note).toBeNull();
+    expect(alone.sales.help).toBe("Vendas líquidas de 1 a 25/10.");
     const unknownBefore = resultKpis({
       cards: CARDS,
       daily: days("2026-10-01", 31),
@@ -281,6 +296,37 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     }).read(null);
     expect(unknownBefore.result.delta).toBeNull();
     expect(unknownBefore.sales.delta).not.toBeNull();
+  });
+
+  describe("without any sale", () => {
+    const read = (period: { from: string; to: string }, today: string) =>
+      resultKpis({
+        cards: { ...CARDS, netSales: "0.00", salesCount: 0 },
+        daily: days(period.from, 31, () => ({
+          netSales: "0.00",
+          salesCount: 0,
+        })),
+        period,
+        previous: null,
+        previousSales: null,
+        today,
+      });
+
+    it("says 'ainda' only for a period that has not ended, read at rest", () => {
+      const kpis = read(OCTOBER, "2026-10-25");
+      expect(kpis.read(null).sales.count).toBe("Nenhuma venda ainda");
+    });
+
+    it("never says 'ainda' for a period already closed", () => {
+      const kpis = read(SEPTEMBER, "2026-10-25");
+      expect(kpis.read(null).sales.count).toBe("Sem vendas no período");
+      expect(kpis.read(5).sales.count).toBe("Sem vendas no período");
+    });
+
+    it("never says 'ainda' for a day of the open period already gone", () => {
+      const kpis = read(OCTOBER, "2026-10-25");
+      expect(kpis.read(5).sales.count).toBe("Sem vendas no período");
+    });
   });
 
   it("says the period before had no sale instead of a percent over nothing", () => {
@@ -299,7 +345,9 @@ describe("the cards of the Resultado (v7 § 8)", () => {
       today: "2026-10-25",
     }).read(null);
     expect(rest.sales.delta).toBeNull();
-    expect(rest.sales.note).toBe("Sem vendas de 1 a 25/09 para comparar");
+    expect(rest.sales.help).toBe(
+      "Vendas líquidas de 1 a 25/10. Sem vendas de 1 a 25/09, não há comparação."
+    );
   });
 
   it("compares the last 30 days with the 30 before them, and calls it a period", () => {
@@ -317,10 +365,64 @@ describe("the cards of the Resultado (v7 § 8)", () => {
     });
     expect(kpis.month).toBeNull();
     const rest = kpis.read(null);
-    expect(rest.sales.count).toBe("25 vendas no período");
+    expect(rest.sales.count).toBe("25 vendas");
     expect(rest.sales.date).toBe("26/09 a 25/10");
-    expect(rest.sales.note).toBe("vs. 27/08 a 25/09");
+    expect(rest.sales.delta?.basis).toBe("em relação a 27/08 a 25/09");
+    expect(rest.sales.delta?.against).toBe("vs. 27/08 a 25/09");
     expect(rest.sales.delta?.text).toBe("0,0%");
+  });
+
+  it("says the month before by name when the period is a whole month, also for a past one", () => {
+    const march = { from: "2026-03-01", to: "2026-03-31" };
+    const before = comparisonPeriod(march, "2026-04-02");
+    const february = before
+      ? { days: days(before.from, 28), period: before }
+      : null;
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-03-01", 31),
+      period: march,
+      previous: february,
+      previousSales: february,
+      today: "2026-04-02",
+    });
+    expect(kpis.read(null).sales.delta?.against).toBe("vs. fevereiro");
+  });
+
+  it("writes the year in the chip that compares with days of the year before", () => {
+    const period = { from: "2026-01-05", to: "2026-01-14" };
+    const before = comparisonPeriod(period, "2026-01-14");
+    const prior = before
+      ? { days: days(before.from, 10), period: before }
+      : null;
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-01-05", 10),
+      period,
+      previous: prior,
+      previousSales: prior,
+      today: "2026-01-14",
+    });
+    expect(kpis.read(null).sales.delta?.against).toBe(
+      "vs. 26/12/2025 a 04/01/2026"
+    );
+  });
+
+  it("writes the year in the basis of a whole month compared with a month of the year before", () => {
+    const january = { from: "2026-01-01", to: "2026-01-10" };
+    const before = { from: "2025-12-01", to: "2025-12-31" };
+    const prior = { days: days(before.from, 31), period: before };
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: days("2026-01-01", 10),
+      period: { from: "2026-01-01", to: "2026-01-31" },
+      previous: prior,
+      previousSales: prior,
+      today: january.to,
+    });
+    expect(kpis.read(null).sales.delta?.basis).toBe(
+      "em relação a dezembro (1 a 10/12/2025)"
+    );
   });
 
   it("names the whole period, never a range backwards, for a period that has not started", () => {
@@ -463,5 +565,135 @@ describe("the period before that the result's chip asks the engine for", () => {
       ({ date, netSales, salesCount }) => ({ date, netSales, salesCount })
     );
     expect(resultChipPeriod(summary(unsent as StoredDay[]), TODAY)).toBeNull();
+  });
+});
+
+describe("the cards of a long period, by month as the server adds it up (D1-1 to D1-8)", () => {
+  const YEAR = { from: "2026-01-15", to: "2026-11-04" };
+  const TODAY = "2026-11-04";
+  /** A month of the server's monthly series: R$ 50,00 and one sale a day, R$ 40,00 of result a day. */
+  const month = (
+    date: string,
+    to: string,
+    extra: Partial<StoredDay> = {}
+  ): StoredDay => {
+    const count =
+      Math.round(
+        (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) /
+          86_400_000
+      ) + 1;
+    return {
+      costs: `${10 * count}.00`,
+      date,
+      days: count,
+      netSales: `${50 * count}.00`,
+      operatingResult: `${40 * count}.00`,
+      salesCount: count,
+      to,
+      unknownDays: 0,
+      ...extra,
+    };
+  };
+  const months = [
+    month("2026-01-15", "2026-01-31"),
+    month("2026-02-01", "2026-02-28"),
+    month("2026-03-01", "2026-03-31", {
+      netSales: "0.00",
+      operatingResult: "0.00",
+      salesCount: 0,
+    }),
+    ...["04", "05", "06", "07", "08", "09", "10"].map((number) =>
+      month(
+        `2026-${number}-01`,
+        addDays(`2026-${String(Number(number) + 1).padStart(2, "0")}-01`, -1)
+      )
+    ),
+    month("2026-11-01", TODAY),
+  ];
+
+  it("has one point per month, the month without sales at the height of the one before", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months,
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.monthly).toBe(true);
+    expect(kpis.days).toHaveLength(11);
+    expect(kpis.series.sales).toHaveLength(11);
+    expect(kpis.series.sales[2]).toBe(kpis.series.sales[1]);
+    expect(kpis.result).toEqual({ kind: "known" });
+  });
+
+  it("reads a month up to its last day, the first one from the first day of the period, with no chip (D1-2, D1-7)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months,
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.read(0).sales).toMatchObject({
+      date: "15 a 31/01",
+      delta: null,
+      value: "850.00",
+    });
+    expect(kpis.read(2).sales.date).toBe("15/01 a 31/03");
+    expect(kpis.read(1).result.value).toBe(`${40 * (17 + 28)}.00`);
+    // the month of today ends today
+    expect(kpis.read(10).sales.date).toBe("15/01 a 04/11");
+  });
+
+  it("counts the days of the months with an unknown cost: no sparkline nor chip of the result, sales and ticket keep theirs (D1-4)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months.map((entry, index) =>
+        index === 4
+          ? { ...entry, costs: null, operatingResult: null, unknownDays: 2 }
+          : entry
+      ),
+      period: YEAR,
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.result).toEqual({
+      kind: "incomplete",
+      total: 17 + 28 + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31 + 4,
+      unknown: 2,
+    });
+    expect(kpis.series.result).toBeNull();
+    expect(kpis.series.sales).toHaveLength(11);
+  });
+
+  it("draws no month that starts after today (D1-5)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: months.slice(0, 10),
+      period: { from: YEAR.from, to: "2026-12-31" },
+      previous: null,
+      previousSales: null,
+      today: "2026-10-31",
+    });
+    expect(kpis.days.at(-1)?.date).toBe("2026-10-01");
+    expect(kpis.read(null).sales.date).toBe("15/01 a 31/10");
+  });
+
+  it("is a straight line of two points for a long period across two months (D1-8)", () => {
+    const kpis = resultKpis({
+      cards: CARDS,
+      daily: [
+        month("2026-09-01", "2026-09-30"),
+        month("2026-10-01", "2026-10-31"),
+      ],
+      period: { from: "2026-09-01", to: "2026-10-31" },
+      previous: null,
+      previousSales: null,
+      today: TODAY,
+    });
+    expect(kpis.series.sales).toHaveLength(2);
   });
 });

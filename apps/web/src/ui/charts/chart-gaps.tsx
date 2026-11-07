@@ -6,7 +6,7 @@ import { useChart, useYScale } from "../bklit/charts/chart-context";
 import type { ChartPoint, KnownRun } from "./chart-data";
 
 /**
- * A second series with unknown values (AC-9 of the Resultado, emenda de 25/10): the `Area` of Bklit UI draws a value
+ * A second series with unknown values (AC-9 of the Resultado): the `Area` of Bklit UI draws a value
  * that is not a number as a zero and has no gap, so the series is drawn here, inside the blocks' context and with
  * their scales, one dashed line per run of known values ("uma série por trecho contínuo"), in the color and the dash
  * of the series. A known day between two unknown ones is a 7 px grey point with the ring of the card; an unknown day

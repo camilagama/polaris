@@ -7,11 +7,19 @@ import { isMediaSessionEnded } from "../catalog/media-commands-model";
 import { createConnection, NoWorkerAnswerError } from "./connection";
 import {
   type MediaUploadHttpError,
+  mediaUploadMasterSize,
   prepareMediaUploadFile,
+  prepareMediaUploadMaster,
   removeProductMedia,
   reorderProductMedia,
   uploadProductMedia,
 } from "./media-upload";
+
+const fakeMaster = (bytes = "master-jpeg") =>
+  vi.fn(
+    async (_file: File, _crop: unknown) =>
+      new Blob([bytes], { type: "image/jpeg" })
+  );
 
 describe("prepareMediaUploadFile", () => {
   it("converts HEIC uploads to JPEG in the browser", async () => {
@@ -78,7 +86,7 @@ describe("prepareMediaUploadFile", () => {
     ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
   });
 
-  it("sends a prepared binary upload with the tenant, crop, and idempotency headers", async () => {
+  it("sends the cropped master with the whole-image crop, the tenant, and the idempotency headers", async () => {
     const file = new File(["image-bytes"], "product.png", {
       type: "image/png",
     });
@@ -104,16 +112,19 @@ describe("prepareMediaUploadFile", () => {
         })
     );
 
+    const crop = { height: 0.5, width: 0.4, x: 0.1, y: 0.2 };
+    const renderMaster = fakeMaster();
     const response = await uploadProductMedia(
       {
-        crop: { height: 1, width: 1, x: 0, y: 0 },
+        crop,
         file,
         organizationId: "org-1",
         origin: "https://polaris.example.invalid",
         productId: "0199c2d0-0000-7000-8000-000000000001",
         uploadCommandId: "de305d54-75b4-431b-adb2-eb6b9e546014",
       },
-      fetcher
+      fetcher,
+      { renderMaster }
     );
 
     expect(response).toEqual(responseBody);
@@ -122,7 +133,7 @@ describe("prepareMediaUploadFile", () => {
       "https://polaris.example.invalid/api/products/0199c2d0-0000-7000-8000-000000000001/media"
     );
     const headers = new Headers(init?.headers);
-    expect(headers.get("content-type")).toBe("image/png");
+    expect(headers.get("content-type")).toBe("image/jpeg");
     expect(headers.get("x-organization-id")).toBe("org-1");
     expect(headers.get("x-upload-id")).toBe(
       "de305d54-75b4-431b-adb2-eb6b9e546014"
@@ -130,7 +141,11 @@ describe("prepareMediaUploadFile", () => {
     expect(headers.get("x-media-crop")).toBe(
       JSON.stringify({ height: 1, width: 1, x: 0, y: 0 })
     );
-    expect(init?.body).toBe(file);
+    expect(renderMaster).toHaveBeenCalledWith(file, crop);
+    const body = init?.body as File;
+    expect(body.name).toBe("product.jpg");
+    expect(body.type).toBe("image/jpeg");
+    await expect(body.text()).resolves.toBe("master-jpeg");
   });
 
   it("preserves the server error code for a user-facing upload message", async () => {
@@ -155,7 +170,8 @@ describe("prepareMediaUploadFile", () => {
           productId: "0199c2d0-0000-7000-8000-000000000001",
           uploadCommandId: "de305d54-75b4-431b-adb2-eb6b9e546014",
         },
-        fetcher
+        fetcher,
+        { renderMaster: fakeMaster() }
       )
     ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
       code: "unsupported_media_image",
@@ -186,7 +202,8 @@ describe("prepareMediaUploadFile", () => {
             productId: "0199c2d0-0000-7000-8000-000000000001",
             uploadCommandId: "de305d54-75b4-431b-adb2-eb6b9e546014",
           },
-          fetcher
+          fetcher,
+          { renderMaster: fakeMaster() }
         )
       ).rejects.toMatchObject<Partial<MediaUploadHttpError>>({
         code: "entitlement_limit_reached",
@@ -194,6 +211,158 @@ describe("prepareMediaUploadFile", () => {
         status: 409,
       });
     }
+  });
+});
+
+describe("prepareMediaUploadMaster", () => {
+  const crop = { height: 0.5, width: 0.5, x: 0.25, y: 0.25 };
+
+  it("scales the crop down to 1200 px on its longer side, never up", () => {
+    expect(mediaUploadMasterSize({ height: 3000, width: 4000 })).toEqual({
+      height: 900,
+      width: 1200,
+    });
+    expect(mediaUploadMasterSize({ height: 4032, width: 3024 })).toEqual({
+      height: 1200,
+      width: 900,
+    });
+    expect(mediaUploadMasterSize({ height: 1200, width: 1200 })).toEqual({
+      height: 1200,
+      width: 1200,
+    });
+    expect(mediaUploadMasterSize({ height: 600, width: 800 })).toEqual({
+      height: 600,
+      width: 800,
+    });
+    expect(mediaUploadMasterSize({ height: 3, width: 6000 })).toEqual({
+      height: 1,
+      width: 1200,
+    });
+  });
+
+  it("prepares the master once per file and crop, so a retry sends the same bytes", async () => {
+    const file = new File(["png-bytes"], "foto.png", { type: "image/png" });
+    let encodings = 0;
+    const renderMaster = vi.fn(() => {
+      encodings += 1;
+      return Promise.resolve(
+        new Blob([`encoding-${encodings}`], { type: "image/jpeg" })
+      );
+    });
+
+    const first = await prepareMediaUploadMaster(file, crop, { renderMaster });
+    const retry = await prepareMediaUploadMaster(
+      file,
+      { ...crop },
+      { renderMaster }
+    );
+    const otherCrop = await prepareMediaUploadMaster(
+      file,
+      { ...crop, x: 0 },
+      { renderMaster }
+    );
+
+    expect(retry).toBe(first);
+    await expect(retry.text()).resolves.toBe("encoding-1");
+    await expect(otherCrop.text()).resolves.toBe("encoding-2");
+    expect(renderMaster).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends the same body on a retry of the same command, as the server's fingerprint needs", async () => {
+    const file = new File(["jpeg-bytes"], "foto.jpg", { type: "image/jpeg" });
+    let encodings = 0;
+    const renderMaster = vi.fn(() => {
+      encodings += 1;
+      return Promise.resolve(
+        new Blob([`encoding-${encodings}`], { type: "image/jpeg" })
+      );
+    });
+    const fetcher = vi.fn<typeof fetch>(() =>
+      Promise.reject(new TypeError("Failed to fetch"))
+    );
+    const input = {
+      crop,
+      file,
+      organizationId: "org-1",
+      origin: "https://polaris.example.invalid",
+      productId: "0199c2d0-0000-7000-8000-000000000001",
+      uploadCommandId: "de305d54-75b4-431b-adb2-eb6b9e546014",
+    };
+
+    await expect(
+      uploadProductMedia(input, fetcher, { renderMaster })
+    ).rejects.toThrow();
+    await expect(
+      uploadProductMedia(input, fetcher, { renderMaster })
+    ).rejects.toThrow();
+
+    const [first, second] = fetcher.mock.calls.map(([, init]) => init?.body);
+    expect(second).toBe(first);
+    expect(renderMaster).toHaveBeenCalledTimes(1);
+  });
+
+  it("tries the preparation again after it failed", async () => {
+    const file = new File(["jpeg-bytes"], "foto.jpg", { type: "image/jpeg" });
+    const renderMaster = vi
+      .fn<(file: File, crop: unknown) => Promise<Blob>>()
+      .mockRejectedValueOnce(new UnsupportedMediaImageError())
+      .mockResolvedValueOnce(new Blob(["ok"], { type: "image/jpeg" }));
+
+    await expect(
+      prepareMediaUploadMaster(file, crop, { renderMaster })
+    ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
+    const prepared = await prepareMediaUploadMaster(file, crop, {
+      renderMaster,
+    });
+
+    await expect(prepared.text()).resolves.toBe("ok");
+  });
+
+  it("draws a HEIC photo from its JPEG raster and names the master .jpg", async () => {
+    const file = new File(["heic-bytes"], "IMG_0001.HEIC", {
+      type: "image/heic",
+    });
+    const rasterizeHeic = vi.fn(
+      async () => new Blob(["full-jpeg"], { type: "image/jpeg" })
+    );
+    const renderMaster = fakeMaster();
+
+    const prepared = await prepareMediaUploadMaster(file, crop, {
+      rasterizeHeic,
+      renderMaster,
+    });
+
+    const [drawn] = renderMaster.mock.calls[0] ?? [];
+    expect(drawn?.type).toBe("image/jpeg");
+    await expect(drawn?.text()).resolves.toBe("full-jpeg");
+    expect(prepared.name).toBe("IMG_0001.jpg");
+    expect(prepared.type).toBe("image/jpeg");
+  });
+
+  it("refuses a master that is not a JPEG or is empty", async () => {
+    const png = new File(["png"], "foto.png", { type: "image/png" });
+    await expect(
+      prepareMediaUploadMaster(png, crop, {
+        renderMaster: async () => new Blob(["x"], { type: "image/png" }),
+      })
+    ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
+    await expect(
+      prepareMediaUploadMaster(png, crop, {
+        renderMaster: async () => new Blob([], { type: "image/jpeg" }),
+      })
+    ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
+  });
+
+  it("refuses an unsupported file before drawing it", async () => {
+    const renderMaster = fakeMaster();
+    await expect(
+      prepareMediaUploadMaster(
+        new File(["svg"], "x.svg", { type: "image/svg+xml" }),
+        crop,
+        { renderMaster }
+      )
+    ).rejects.toBeInstanceOf(UnsupportedMediaImageError);
+    expect(renderMaster).not.toHaveBeenCalled();
   });
 });
 

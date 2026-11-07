@@ -5,10 +5,14 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { deviceFamilyLabel } from "../src/server/device-family-label";
+import { activateByKeyboard, expectActiveElementRing } from "./focus-ring";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+
 /**
- * "Sair" revokes this device (ADR 0048, emenda de 22/10; U-50 and U-51), against a server played by network
+ * "Sair" revokes this device (ADR 0048; U-50 and U-51), against a server played by network
  * interception that keeps its state across the pages of a test: the devices, the session of each browser, the queue.
  * The real server, its database and the gate `device-sessions` are proven elsewhere; here it is the order of the
  * requests, what the browser sends and what the screen shows.
@@ -75,13 +79,18 @@ class Server {
   revokeAnswer: RevokeAnswer = "ok";
   /** Whether `sync.push` reaches the server or fails on the network. */
   pushReaches: boolean;
-  pushAccepted = 0;
+  /** The operations the server accepted, by id: a resend of one it already has is a replay, not another operation. */
+  private readonly acceptedIds = new Set<string>();
   private serial = 100;
   /** The browsers signed in, by context; a sign-out (or a revocation that ends the session) takes one out. */
   private readonly sessions = new Map<BrowserContext, string | null>();
 
   constructor() {
     this.pushReaches = true;
+  }
+
+  get pushAccepted() {
+    return this.acceptedIds.size;
   }
 
   signIn(context: BrowserContext) {
@@ -274,18 +283,18 @@ class Server {
         commands: { commandId: string }[];
       };
       this.log.push("push");
-      this.pushAccepted += commands.length;
-      await route.fulfill(
-        json({
-          results: commands.map(({ commandId }) => ({
-            code: null,
-            commandId,
-            replayed: false,
-            result: null,
-            status: "accepted",
-          })),
-        })
-      );
+      const results = commands.map(({ commandId }) => {
+        const replayed = this.acceptedIds.has(commandId);
+        this.acceptedIds.add(commandId);
+        return {
+          code: null,
+          commandId,
+          replayed,
+          result: null,
+          status: "accepted",
+        };
+      });
+      await route.fulfill(json({ results }));
     });
   }
 }
@@ -303,21 +312,11 @@ async function openApp(page: Page, server: Server, path = "/customers") {
   });
 }
 
-const STORE_MENU = "Loja, tema e Sair";
 const storeMenuButton = (page: Page) =>
-  page.getByRole("button", { exact: true, name: STORE_MENU });
+  page.getByRole("button", { name: STORE_MENU_NAME });
 
-/**
- * "Sair": on a wide screen, the last item of the menu of the store card (v7 § 3 item 12); under "Mais" on a narrow
- * one, as a button straight in the sheet (Rodrigo, 25/10).
- */
+/** "Sair": the last item of the menu of the store, in the header, on every width. */
 async function clickSair(page: Page) {
-  const more = page.getByRole("button", { exact: true, name: "Mais" });
-  if (await more.isVisible()) {
-    await more.click();
-    await page.getByRole("button", { exact: true, name: "Sair" }).click();
-    return;
-  }
   await storeMenuButton(page).click();
   await page.getByRole("menuitem", { exact: true, name: "Sair" }).click();
 }
@@ -450,7 +449,7 @@ test("com o envio falhando, o diálogo aparece e nada é revogado", async ({
   expect(await storedDevice(page)).not.toBeNull();
 });
 
-test("no celular, fechar Mais antes da resposta do Sair não esconde o aviso da fila: Mais abre de novo", async ({
+test("no celular, o aviso da fila aparece sob o cabeçalho depois de o menu fechar, sem empurrar a página", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 740, width: 360 });
@@ -458,18 +457,32 @@ test("no celular, fechar Mais antes da resposta do Sair não esconde o aviso da 
   await openApp(page, server);
   server.pushReaches = false;
   await queueCustomers(page, 2);
-  // the send answers late, after the person closed "Mais"
+  // the send answers late, after the menu closed
   await page.route("**/rpc/sync/push", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await route.fallback();
   });
+  // where the title is in the page (not in the window: scrolling is not pushing)
+  const heading = page.getByRole("heading", { level: 1 });
+  const inPage = () =>
+    heading.evaluate(
+      (element) => element.getBoundingClientRect().top + window.scrollY
+    );
+  const before = await inPage();
 
   await clickSair(page);
-  const sheet = page.getByRole("dialog", { name: "Mais" });
-  await page.keyboard.press("Escape");
-  await expect(sheet).toBeHidden();
-  await expect(sheet).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole("alertdialog")).toContainText("2 operações");
+  await expect(page.getByRole("menu")).toBeHidden();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("2 operações", { timeout: 10_000 });
+  // under the header, on the screen, and the page under it did not move
+  const header = await page.locator("[data-app-header]").boundingBox();
+  const box = await dialog.boundingBox();
+  expect(box?.y ?? 0).toBeGreaterThanOrEqual(
+    (header?.y ?? 0) + (header?.height ?? 0)
+  );
+  await expect(dialog).toBeInViewport();
+  expect(header?.height).toBe(48);
+  expect(await inPage()).toBe(before);
   expect(server.log).not.toContain("sign-out");
 });
 
@@ -487,12 +500,12 @@ test("cruzar 760 px durante o envio da fila não perde o Saindo… nem o aviso d
   });
 
   await clickSair(page);
-  // with the menu closed, the card says it is leaving and the button of the menu is busy
+  // with the menu closed, the shell says it is leaving and the button of the menu is busy
   await expect(
     page.getByRole("status").filter({ hasText: "Saindo…" })
   ).toBeVisible();
   await expect(storeMenuButton(page)).toHaveAttribute("aria-busy", "true");
-  // the width crosses 760 px before the answer: the sidebar becomes the sheet of "Mais"
+  // the width crosses 760 px before the answer: the header is the same, and so is the state of "Sair"
   await page.setViewportSize({ height: 740, width: 360 });
   await expect(page.getByRole("alertdialog")).toContainText("2 operações", {
     timeout: 10_000,
@@ -500,12 +513,12 @@ test("cruzar 760 px durante o envio da fila não perde o Saindo… nem o aviso d
   expect(server.log).not.toContain("sign-out");
 });
 
-test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rodrigo 25/10)", () => {
+test.describe("no desktop, Sair no menu da loja do cabeçalho (Rodrigo 25/10)", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
   });
 
-  test("com a fila pendente, o diálogo aparece depois de o menu fechar, sob o cartão, e a sessão continua", async ({
+  test("com a fila pendente, o diálogo aparece depois de o menu fechar, sob o cabeçalho, e a sessão continua", async ({
     page,
   }) => {
     const server = new Server();
@@ -525,7 +538,10 @@ test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rod
     await expect(menu).toBeVisible();
     // "Sair" is the last item, apart from the theme and the stores
     await expect(menu.getByRole("menuitem").last()).toHaveText("Sair");
-    await menu.getByRole("menuitem", { exact: true, name: "Sair" }).click();
+    await activateByKeyboard(
+      page,
+      menu.getByRole("menuitem", { exact: true, name: "Sair" })
+    );
     await expect(menu).toBeHidden();
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await expect.poll(() => sendAsked).toBe(true);
@@ -533,12 +549,11 @@ test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rod
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toContainText("2 operações", { timeout: 10_000 });
     await expect(menu).toBeHidden();
-    // the dialog is under the card, in the foot of the sidebar, and has the focus
-    const card = page.locator("[data-store-card]");
-    const cardBox = await card.boundingBox();
+    // the dialog is under the header, over the page, and has the focus
+    const header = await page.locator("[data-app-header]").boundingBox();
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox?.y ?? 0).toBeGreaterThanOrEqual(
-      (cardBox?.y ?? 0) + (cardBox?.height ?? 0)
+      (header?.y ?? 0) + (header?.height ?? 0)
     );
     expect(
       await page.evaluate(
@@ -547,6 +562,8 @@ test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rod
           document.activeElement?.querySelector('[role="alertdialog"]') !== null
       )
     ).toBe(true);
+    // the keyboard sees it: the focus of the warning has the ring
+    await expectActiveElementRing(page);
     expect(server.log).not.toContain("sign-out");
     expect(server.log.some((line) => line.startsWith("revokeCurrent"))).toBe(
       false
@@ -559,7 +576,7 @@ test.describe("no desktop, Sair no menu do cartão da loja (v7 § 3 item 12, Rod
     expect(server.log).not.toContain("sign-out");
   });
 
-  test("com a falha do sign-out, o aviso aparece sob o cartão depois de o menu fechar e o foco volta ao botão do menu", async ({
+  test("com a falha do sign-out, o aviso aparece sob o cabeçalho depois de o menu fechar e o foco volta ao botão do menu", async ({
     page,
   }) => {
     const server = new Server();
@@ -663,7 +680,8 @@ test("outro aparelho continua: depois do Sair de A, o envio de B é aceito", asy
     await expect(chip(b)).toContainText("Tudo sincronizado", {
       timeout: 20_000,
     });
-    expect(server.pushAccepted).toBe(1);
+    // the page that reloads may resend what the old one had already sent: the same id arrives twice, as a replay
+    await expect.poll(() => server.pushAccepted).toBe(1);
   } finally {
     await contextA.close();
     await contextB.close();

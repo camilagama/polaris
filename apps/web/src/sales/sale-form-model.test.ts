@@ -11,6 +11,7 @@ import {
   acknowledgeProfileReview,
   addAdjustment,
   addItem,
+  adjustmentFieldKey,
   attemptAfterFailure,
   autoSelectOnlyVariants,
   cancelDiscard,
@@ -19,6 +20,7 @@ import {
   confirmSubmission,
   createBlankSaleForm,
   describeFee,
+  describeStockRefusal,
   discardLockedSale,
   type EvaluationContext,
   editSaleDate,
@@ -39,6 +41,7 @@ import {
   mapSaleSubmitError,
   NO_PROFILE_CHOICE,
   parseLocalDateTime,
+  saleTimeIsWellFormed,
   parseMoneyText,
   parsePercentageText,
   prepareConfirmation,
@@ -49,6 +52,7 @@ import {
   removeItem,
   requestDiscard,
   resolveSaleAttempt,
+  type SaleAttempt,
   type SaleFormState,
   type SubmissionState,
   saleDateDetails,
@@ -459,6 +463,122 @@ describe("exact totals and command body", () => {
     ]);
   });
 
+  describe("percentage adjustment above the cap", () => {
+    const genericAdjustmentMessage =
+      "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.";
+
+    function withAdjustment(
+      kind: "discount" | "surcharge",
+      value: string,
+      valueType: "fixed" | "percentage" = "percentage"
+    ) {
+      return updateAdjustment(
+        addAdjustment(validForm(), "adj-cap"),
+        "adj-cap",
+        { kind, value, valueType }
+      );
+    }
+
+    it("says the cap for a discount of 150%", () => {
+      const result = evaluate(withAdjustment("discount", "150"));
+      expect(result.body).toBeNull();
+      expect(result.errors[formFieldKeys.adjustments]).toBe(
+        "O percentual vai até 100%."
+      );
+    });
+
+    it("says the cap for a surcharge above 100% and for 100,000001", () => {
+      for (const value of ["150", "100,000001", "101", "0150", "00150,5"]) {
+        const result = evaluate(withAdjustment("surcharge", value));
+        expect(result.errors[formFieldKeys.adjustments], value).toBe(
+          "O percentual vai até 100%."
+        );
+      }
+    });
+
+    it("accepts exactly 100% and 100,000000%", () => {
+      for (const value of ["100", "100,000000", "0100"]) {
+        const result = evaluate(withAdjustment("discount", value));
+        expect(result.errors[formFieldKeys.adjustments], value).toBeUndefined();
+        expect(result.body, value).not.toBeNull();
+      }
+    });
+
+    it("keeps the current message for a negative fixed value", () => {
+      const result = evaluate(withAdjustment("discount", "-5", "fixed"));
+      // the form refuses a minus sign as a format error before any calculation (the generic text is the server's)
+      expect(result.errors[adjustmentFieldKey("adj-cap")]).toBe(
+        "Use até 2 casas decimais, com vírgula ou ponto (ex.: 49,90)."
+      );
+      expect(result.body).toBeNull();
+    });
+
+    it("keeps the current message for the other invalid adjustment, and for the server when the percentage is within the cap", () => {
+      expect(
+        mapSaleSubmitError(
+          { code: "BAD_REQUEST", data: { reason: "invalid_sale_adjustment" } },
+          [
+            {
+              kind: "discount",
+              value: { percentage: "100", type: "percentage" },
+            },
+          ]
+        ).message
+      ).toBe(genericAdjustmentMessage);
+      expect(
+        mapSaleSubmitError(
+          {
+            code: "BAD_REQUEST",
+            data: { reason: "invalid_sale_adjustment" },
+          },
+          []
+        ).message
+      ).toBe(genericAdjustmentMessage);
+    });
+
+    it.each([
+      ["100", false],
+      ["100.00", false],
+      ["100.000000", false],
+      ["100.01", true],
+      ["100.000001", true],
+      ["99.99", false],
+      ["150", true],
+      ["0", false],
+      ["", false],
+      ["abc", false],
+      ["-5", false],
+      ["1e3", false],
+      ["+150", false],
+      ["100.0000001", false],
+      [" 150 ", true],
+    ])(
+      "percentage %j sent and refused: cap message is %s",
+      (percentage, above) => {
+        const failure = mapSaleSubmitError(
+          { code: "BAD_REQUEST", data: { reason: "invalid_sale_adjustment" } },
+          [{ kind: "discount", value: { percentage, type: "percentage" } }]
+        );
+        expect(failure.message === "O percentual vai até 100%.").toBe(above);
+      }
+    );
+
+    it("says the cap when the server refuses an adjustment and the sent percentage is above 100", () => {
+      const failure = mapSaleSubmitError(
+        { code: "BAD_REQUEST", data: { reason: "invalid_sale_adjustment" } },
+        [
+          {
+            kind: "surcharge",
+            value: { percentage: "150", type: "percentage" },
+          },
+        ]
+      );
+      expect(failure.message).toBe("O percentual vai até 100%.");
+      expect(failure.reason).toBe("invalid_sale_adjustment");
+      expect(failure.refreshData).toBe(false);
+    });
+  });
+
   it("warns, without blocking, when the quantity exceeds the shown balance", () => {
     const form = validForm();
     const result = evaluate(
@@ -466,9 +586,35 @@ describe("exact totals and command body", () => {
       context({ stock: { [variantId]: balance(1, null) } })
     );
     expect(result.body).not.toBeNull();
-    expect(result.stockWarnings[lineOf(form).draftId]).toContain(
-      "Quantidade acima do saldo exibido (1)"
+    expect(result.stockWarnings[lineOf(form).draftId]).toBe(
+      "Acima do saldo (1): a venda é recusada se ele não bastar."
     );
+  });
+
+  it("shows no quantity warning at balance 0, where the zero-balance line already says what to do", () => {
+    const form = validForm();
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(0, null) } })
+    );
+    expect(result.body).not.toBeNull();
+    expect(result.stockWarnings).toEqual({});
+  });
+
+  it("shows no quantity warning on any line of a variant at balance 0", () => {
+    let form = addItem(validForm(), "item-2");
+    form = selectItemProduct(form, "item-2", productId);
+    form = selectItemVariant(form, "item-2", variantId, "Camiseta — Azul / M");
+    form = updateItem(form, "item-2", {
+      chargedUnitPrice: "10",
+      listedUnitPrice: "10",
+      quantity: "2",
+    });
+    const result = evaluate(
+      form,
+      context({ stock: { [variantId]: balance(0, null) } })
+    );
+    expect(result.stockWarnings).toEqual({});
   });
 
   it("sums repeated lines of the same variant for the stock warning", () => {
@@ -615,6 +761,141 @@ describe("payment profile choice and fee preview", () => {
   });
 });
 
+describe("a profile that left the list after a lost answer", () => {
+  const now = new Date("2026-05-01T12:00:00.000Z");
+  const ids = sequentialIds();
+
+  function attemptOf(form: SaleFormState, previous: SaleAttempt | null) {
+    const { body } = evaluate(form, context({ profiles: [profile()] }));
+    if (body === null) {
+      throw new Error("expected a valid body");
+    }
+    return resolveSaleAttempt(previous, body, organizationId, ids, now);
+  }
+
+  it("keeps the body and the command ID while the outcome is unknown", () => {
+    const form = creditCardForm();
+    const sent = attemptOf(form, null);
+    const reloaded = reconcileProfileReload(form, [], true);
+    expect(reloaded).toBe(form);
+    expect(evaluate(reloaded, context({ profiles: [profile()] })).body).toEqual(
+      evaluate(form).body
+    );
+    expect(attemptOf(reloaded, sent).commandId).toBe(sent.commandId);
+    expect(
+      evaluate(reloaded, context({ profiles: [] })).errors[
+        formFieldKeys.profile
+      ]
+    ).toContain("não está na lista");
+  });
+
+  it("clears the choice and the next choice is a new attempt when no outcome is unknown", () => {
+    const form = creditCardForm();
+    const sent = attemptOf(form, null);
+    const reloaded = reconcileProfileReload(form, [], false);
+    expect(reloaded.profile.choice).toBe("");
+    expect(reloaded.profile.reviewNotice).toContain("não está mais ativo");
+    const retyped = selectProfileChoice(reloaded, NO_PROFILE_CHOICE, []);
+    expect(attemptOf(retyped, sent).commandId).not.toBe(sent.commandId);
+  });
+
+  it("asks for the review of a changed version and keeps the choice", () => {
+    const form = creditCardForm();
+    const reloaded = reconcileProfileReload(form, [profile(4)], true);
+    expect(reloaded.profile.reviewNotice).toContain("mudou");
+    expect(reloaded.profile.choice).toBe(form.profile.choice);
+  });
+});
+
+describe("a profile edited after a lost answer", () => {
+  const now = new Date("2026-05-01T12:00:00.000Z");
+  const later = new Date("2026-05-01T12:05:00.000Z");
+  const ids = sequentialIds();
+
+  function confirm(
+    form: SaleFormState,
+    version: number,
+    previous: SaleAttempt | null,
+    attemptUnsettled: boolean
+  ) {
+    const reviewed = acknowledgeProfileReview(form, [profile(version)]);
+    const { body } = evaluate(
+      reviewed,
+      context({ profiles: [profile(version)] })
+    );
+    if (body === null) {
+      throw new Error("expected a valid body");
+    }
+    const prepared = prepareConfirmation({
+      attemptUnsettled,
+      body,
+      createId: ids,
+      now: previous === null ? now : later,
+      organizationId,
+      previousAttempt: previous,
+    });
+    if (!prepared.ok) {
+      throw new Error(prepared.message);
+    }
+    return prepared;
+  }
+
+  const sent = () => confirm(creditCardForm(), 3, null, false);
+
+  it("records the profile and version the body was sent with", () => {
+    expect(sent().attempt.paymentProfile).toEqual({
+      expectedVersion: 3,
+      id: profileId,
+    });
+  });
+
+  it("resends the version of the first send, with the same command ID, while the outcome is unknown", () => {
+    const first = sent();
+    const again = confirm(creditCardForm(), 4, first.attempt, true);
+    expect(again.request.paymentProfile).toEqual({
+      expectedVersion: 3,
+      id: profileId,
+    });
+    expect(again.attempt).toBe(first.attempt);
+    expect(again.request).toEqual(first.request);
+  });
+
+  it("takes the live version, and a new command ID, once the outcome is not unknown", () => {
+    const first = sent();
+    const again = confirm(creditCardForm(), 4, first.attempt, false);
+    expect(again.request.paymentProfile?.expectedVersion).toBe(4);
+    expect(again.request.commandId).not.toBe(first.request.commandId);
+  });
+
+  it("takes the live version when the cart changed too: another payload, another sale", () => {
+    const first = sent();
+    const edited = updateItem(
+      creditCardForm(),
+      lineOf(creditCardForm()).draftId,
+      {
+        quantity: "3",
+      }
+    );
+    const again = confirm(edited, 4, first.attempt, true);
+    expect(again.request.paymentProfile?.expectedVersion).toBe(4);
+    expect(again.request.commandId).not.toBe(first.request.commandId);
+  });
+
+  it("does not carry the version to another profile", () => {
+    const first = sent();
+    const other = {
+      ...first.attempt,
+      paymentProfile: {
+        expectedVersion: 3,
+        id: "77777777-7777-4777-8777-777777777777",
+      },
+    };
+    const again = confirm(creditCardForm(), 4, other, true);
+    expect(again.request.paymentProfile?.expectedVersion).toBe(4);
+    expect(again.request.commandId).not.toBe(first.request.commandId);
+  });
+});
+
 describe("loading and empty states", () => {
   const loading = { status: "loading" } as const;
 
@@ -713,15 +994,24 @@ describe("loading and empty states", () => {
   });
 
   it("reports stock states, never treating an unknown cost as zero", () => {
-    expect(stockView(undefined)).toBeNull();
-    expect(stockView(loading)?.text).toBe("Consultando estoque…");
-    expect(stockView({ message: "Falhou.", status: "error" })?.tone).toBe(
+    expect(stockView(undefined, true)).toBeNull();
+    expect(stockView(loading, true)?.text).toBe("Consultando estoque…");
+    expect(stockView({ message: "Falhou.", status: "error" }, true)?.tone).toBe(
       "warning"
     );
-    const none = stockView(balance(0, null));
-    expect(none?.text).toContain("Sem estoque");
-    expect(none?.costText).toBe("Custo desconhecido. Margem indeterminada.");
-    const some = stockView(balance(5, "12.340000"));
+    const none = stockView(balance(0, null), true);
+    expect(none?.text).toBe(
+      "Sem estoque: saldo 0. Para vender, dê entrada no estoque."
+    );
+    expect(none?.needsEntry).toBe(true);
+    expect(none?.costText).toBeNull();
+    expect(stockView(balance(0, "12.340000"), true)?.costText).toBeNull();
+    const unknownCost = stockView(balance(3, null), true);
+    expect(unknownCost?.costText).toBe(
+      "Custo desconhecido. Margem indeterminada."
+    );
+    const some = stockView(balance(5, "12.340000"), true);
+    expect(some?.needsEntry).toBe(false);
     expect(some?.text).toBe("Saldo atual: 5 unidades.");
     expect(some?.costText).toBe("Custo médio: R$ 12,34.");
   });
@@ -961,65 +1251,74 @@ describe("idempotent attempts", () => {
 
 describe("server errors", () => {
   it("maps each oRPC code to a message", () => {
-    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).kind).toBe(
+    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }, []).kind).toBe(
       "unauthorized"
     );
     // the sentence about the session is the notice's, not the red box's
-    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }).message).toBe(
+    expect(mapSaleSubmitError({ code: "UNAUTHORIZED" }, []).message).toBe(
       "A venda não foi registrada."
     );
-    expect(mapSaleSubmitError({ code: "FORBIDDEN" }).message).toContain(
+    expect(mapSaleSubmitError({ code: "FORBIDDEN" }, []).message).toContain(
       "permissão"
     );
-    expect(mapSaleSubmitError({ code: "BAD_REQUEST" }).kind).toBe(
+    expect(mapSaleSubmitError({ code: "BAD_REQUEST" }, []).kind).toBe(
       "bad_request"
     );
-    const notFound = mapSaleSubmitError({ code: "NOT_FOUND" });
+    const notFound = mapSaleSubmitError({ code: "NOT_FOUND" }, []);
     expect(notFound.kind).toBe("not_found");
     expect(notFound.refreshData).toBe(true);
   });
 
   it("a refusal for lack of the legal acceptance keeps the items and says what is missing", () => {
-    const refused = mapSaleSubmitError({
-      code: "FORBIDDEN",
-      data: { reason: "legal_acceptance_required" },
-      status: 403,
-    });
+    const refused = mapSaleSubmitError(
+      {
+        code: "FORBIDDEN",
+        data: { reason: "legal_acceptance_required" },
+        status: 403,
+      },
+      []
+    );
     expect(refused.kind).toBe("forbidden");
     expect(refused.discardAttempt).toBe(false);
     expect(refused.message).toContain("Termos de Uso");
     expect(refused.message).toContain("Os itens continuam aqui");
     // a plain FORBIDDEN keeps the permission message
-    const plain = mapSaleSubmitError({ code: "FORBIDDEN" });
+    const plain = mapSaleSubmitError({ code: "FORBIDDEN" }, []);
     expect(plain.message).toContain("permissão");
     expect(plain.message).not.toContain("Termos de Uso");
   });
 
   it("explains a conflict generically and asks to refresh data", () => {
-    const conflict = mapSaleSubmitError({ code: "CONFLICT" });
+    const conflict = mapSaleSubmitError({ code: "CONFLICT" }, []);
     expect(conflict.kind).toBe("conflict");
     expect(conflict.message).toBe(
-      "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda."
+      "A venda não foi registrada: algo mudou (estoque, produto ou perfil de pagamento). Atualize os dados e revise a venda."
     );
     expect(conflict.refreshData).toBe(true);
     expect(conflict.unknownOutcome).toBe(false);
   });
 
   it("uses the stable data.reason for a specific message", () => {
-    const stock = mapSaleSubmitError({
-      code: "CONFLICT",
-      data: { reason: "insufficient_stock" },
-    });
+    const stock = mapSaleSubmitError(
+      {
+        code: "CONFLICT",
+        data: { reason: "insufficient_stock" },
+      },
+      []
+    );
     expect(stock.message).toBe(
-      "Estoque insuficiente para uma ou mais linhas. Atualize o saldo e ajuste as quantidades."
+      "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
     );
     expect(stock.refreshData).toBe(true);
     expect(stock.reason).toBe("insufficient_stock");
 
-    const future = mapSaleSubmitError({
-      code: "BAD_REQUEST",
-      data: { reason: "sale_occurred_in_future" },
-    });
+    const future = mapSaleSubmitError(
+      {
+        code: "BAD_REQUEST",
+        data: { reason: "sale_occurred_in_future" },
+      },
+      []
+    );
     expect(future.message).toBe(
       "O horário da venda está adiantado em relação ao servidor. Verifique o relógio do dispositivo."
     );
@@ -1038,9 +1337,9 @@ describe("server errors", () => {
       ["CONFLICT", "payment_profile_lifecycle_conflict"],
       ["NOT_FOUND", "payment_profile_not_found"],
     ] as const;
-    const generic = mapSaleSubmitError({ code: "CONFLICT" }).message;
+    const generic = mapSaleSubmitError({ code: "CONFLICT" }, []).message;
     for (const [code, reason] of refreshing) {
-      const failure = mapSaleSubmitError({ code, data: { reason } });
+      const failure = mapSaleSubmitError({ code, data: { reason } }, []);
       expect(failure.refreshData, reason).toBe(true);
       expect(failure.message, reason).not.toBe(generic);
       expect(failure.unknownOutcome, reason).toBe(false);
@@ -1054,29 +1353,38 @@ describe("server errors", () => {
       "sale_adjustment_limit",
     ] as const;
     for (const reason of validation) {
-      const failure = mapSaleSubmitError({
-        code: "BAD_REQUEST",
-        data: { reason },
-      });
+      const failure = mapSaleSubmitError(
+        {
+          code: "BAD_REQUEST",
+          data: { reason },
+        },
+        []
+      );
       expect(failure.refreshData, reason).toBe(false);
       expect(failure.reason).toBe(reason);
       expect(failure.message, reason).not.toBe(
-        mapSaleSubmitError({ code: "BAD_REQUEST" }).message
+        mapSaleSubmitError({ code: "BAD_REQUEST" }, []).message
       );
     }
     expect(
-      mapSaleSubmitError({
-        code: "CONFLICT",
-        data: { reason: "payment_profile_version_conflict" },
-      }).message
+      mapSaleSubmitError(
+        {
+          code: "CONFLICT",
+          data: { reason: "payment_profile_version_conflict" },
+        },
+        []
+      ).message
     ).toContain("revise a prévia");
   });
 
   it("starts a fresh attempt after a command conflict", () => {
-    const failure = mapSaleSubmitError({
-      code: "CONFLICT",
-      data: { reason: "sale_command_conflict" },
-    });
+    const failure = mapSaleSubmitError(
+      {
+        code: "CONFLICT",
+        data: { reason: "sale_command_conflict" },
+      },
+      []
+    );
     expect(failure.discardAttempt).toBe(true);
     expect(failure.message).toContain("nova tentativa será criada");
     const attempt = {
@@ -1085,50 +1393,60 @@ describe("server errors", () => {
       recordedAt: "r",
       signature: "z",
     };
-    const conflict = failSubmission({
-      code: "CONFLICT",
-      data: { reason: "sale_command_conflict" },
-    });
-    const stock = failSubmission({
-      code: "CONFLICT",
-      data: { reason: "insufficient_stock" },
-    });
+    const conflict = failSubmission(
+      {
+        code: "CONFLICT",
+        data: { reason: "sale_command_conflict" },
+      },
+      []
+    );
+    const stock = failSubmission(
+      {
+        code: "CONFLICT",
+        data: { reason: "insufficient_stock" },
+      },
+      []
+    );
     expect(attemptAfterFailure(conflict, attempt)).toBeNull();
-    expect(attemptAfterFailure(stock, attempt)).toBe(attempt);
+    expect(attemptAfterFailure(stock, attempt)).toBeNull();
   });
 
   it("falls back to the generic per-code message for a missing or unknown reason", () => {
-    const generic = mapSaleSubmitError({ code: "CONFLICT" }).message;
+    const generic = mapSaleSubmitError({ code: "CONFLICT" }, []).message;
     for (const data of [
       { reason: "something_new" },
       undefined,
       { reason: 42 },
     ]) {
-      expect(mapSaleSubmitError({ code: "CONFLICT", data }).message).toBe(
+      expect(mapSaleSubmitError({ code: "CONFLICT", data }, []).message).toBe(
         generic
       );
     }
     expect(
-      mapSaleSubmitError({ code: "BAD_REQUEST", data: { reason: "nope" } }).kind
+      mapSaleSubmitError({ code: "BAD_REQUEST", data: { reason: "nope" } }, [])
+        .kind
     ).toBe("bad_request");
   });
 
   it("ignores a reason on authorization errors", () => {
-    const forbidden = mapSaleSubmitError({
-      code: "FORBIDDEN",
-      data: { reason: "insufficient_stock" },
-    });
+    const forbidden = mapSaleSubmitError(
+      {
+        code: "FORBIDDEN",
+        data: { reason: "insufficient_stock" },
+      },
+      []
+    );
     expect(forbidden.kind).toBe("forbidden");
     expect(forbidden.reason).toBeNull();
   });
 
   it("treats network, 5xx and unknown failures as an unknown outcome", () => {
-    const network = mapSaleSubmitError(new TypeError("Failed to fetch"));
+    const network = mapSaleSubmitError(new TypeError("Failed to fetch"), []);
     expect(network.kind).toBe("network");
     expect(network.message).toContain("não sabemos se a venda foi registrada");
-    const server = mapSaleSubmitError({ code: "SERVICE_UNAVAILABLE" });
+    const server = mapSaleSubmitError({ code: "SERVICE_UNAVAILABLE" }, []);
     expect(server.kind).toBe("server");
-    const unknown = mapSaleSubmitError(new Error("boom"));
+    const unknown = mapSaleSubmitError(new Error("boom"), []);
     expect(unknown.kind).toBe("unknown");
     for (const failure of [network, server, unknown]) {
       expect(failure.unknownOutcome).toBe(true);
@@ -1228,7 +1546,7 @@ describe("submission state", () => {
       { code: "INTERNAL_SERVER_ERROR" },
       new Error("boom"),
     ]) {
-      const state = failSubmission(error);
+      const state = failSubmission(error, []);
       expect(state.phase).toBe("locked");
       expect(isFormLocked(state)).toBe(true);
       expect(submitButtonLabel(state)).toBe("Tentar novamente (seguro)");
@@ -1244,7 +1562,7 @@ describe("submission state", () => {
       { code: "UNAUTHORIZED" },
       { code: "FORBIDDEN" },
     ]) {
-      const state = failSubmission(error);
+      const state = failSubmission(error, []);
       expect(state.phase).toBe("failed");
       expect(isFormLocked(state)).toBe(false);
       expect(submitButtonLabel(state)).toBe("Confirmar venda");
@@ -1257,13 +1575,13 @@ describe("submission state", () => {
     const { draftId } = lineOf(form);
     const edit = (current: SaleFormState) =>
       updateItem(current, draftId, { quantity: "9" });
-    const locked = failSubmission(new TypeError("x"));
+    const locked = failSubmission(new TypeError("x"), []);
     expect(editSaleForm(locked, form, edit)).toBe(form);
     expect(editSaleForm(startSubmission(idleSubmission), form, edit)).toBe(
       form
     );
     expect(lineOf(editSaleForm(idleSubmission, form, edit)).quantity).toBe("9");
-    const rejected = failSubmission({ code: "CONFLICT" });
+    const rejected = failSubmission({ code: "CONFLICT" }, []);
     expect(lineOf(editSaleForm(rejected, form, edit)).quantity).toBe("9");
   });
 
@@ -1283,7 +1601,7 @@ describe("submission state", () => {
     if (!first.ok) {
       throw new Error("expected a prepared request");
     }
-    const locked = failSubmission(new TypeError("x"));
+    const locked = failSubmission(new TypeError("x"), []);
     expect(attemptAfterFailure(locked, first.attempt)).toBe(first.attempt);
     expect(canStartSubmission(locked, evaluate(validForm()))).toBe(true);
     expect(startSubmission(locked)).toEqual({ phase: "submitting" });
@@ -1298,7 +1616,7 @@ describe("submission state", () => {
   });
 
   it("needs an explicit second step to discard a locked sale", () => {
-    const locked = failSubmission({ code: "BAD_GATEWAY" });
+    const locked = failSubmission({ code: "BAD_GATEWAY" }, []);
     expect(discardLockedSale(locked, sequentialIds())).toBeNull();
     const confirming = requestDiscard(locked);
     expect(confirming).toMatchObject({
@@ -1320,7 +1638,7 @@ describe("submission state", () => {
     }
     const now = new Date("2026-05-01T12:00:00.000Z");
     const old = resolveSaleAttempt(null, body, organizationId, ids, now);
-    const confirming = requestDiscard(failSubmission(new TypeError("x")));
+    const confirming = requestDiscard(failSubmission(new TypeError("x"), []));
     const discarded = discardLockedSale(confirming, ids);
     expect(discarded).not.toBeNull();
     if (!discarded) {
@@ -1343,7 +1661,7 @@ describe("submission state", () => {
   });
 
   it("unlocks after a locked retry succeeds and reports a replay", () => {
-    let state: SubmissionState = failSubmission(new TypeError("x"));
+    let state: SubmissionState = failSubmission(new TypeError("x"), []);
     state = startSubmission(state);
     expect(isFormLocked(state)).toBe(true);
     state = confirmSubmission({ ...confirmed, replayed: true });
@@ -1354,7 +1672,9 @@ describe("submission state", () => {
   });
 
   it("locks again if the retry also ends with an unknown outcome", () => {
-    expect(failSubmission({ code: "GATEWAY_TIMEOUT" }).phase).toBe("locked");
+    expect(failSubmission({ code: "GATEWAY_TIMEOUT" }, []).phase).toBe(
+      "locked"
+    );
   });
 
   it("shows the confirmed sale as the server snapshot returned it", () => {
@@ -1419,6 +1739,22 @@ describe("sale date and time", () => {
       expect(parsed.date.getMinutes()).toBe(30);
     }
     expect(parseLocalDateTime("2026-04-20T09:30:15").kind).toBe("ok");
+  });
+
+  it("reads the time as the numeric keypad types it (no ':' on the iPhone keypad)", () => {
+    for (const time of ["9:30", "930", "0930", "09h30", "09.30"]) {
+      const parsed = parseLocalDateTime(`2026-04-20T${time}`);
+      expect(parsed.kind, time).toBe("ok");
+      if (parsed.kind === "ok") {
+        expect(parsed.date.getHours(), time).toBe(9);
+        expect(parsed.date.getMinutes(), time).toBe(30);
+      }
+    }
+    expect(saleTimeIsWellFormed("1430")).toBe(true);
+    for (const time of ["", "14", "14:3", "1430:", "14:30:"]) {
+      expect(saleTimeIsWellFormed(time), time).toBe(false);
+    }
+    expect(parseLocalDateTime("2026-04-20T2560").kind).toBe("invalid");
   });
 
   it("treats empty as now and rejects anything unparsable", () => {
@@ -1591,25 +1927,34 @@ describe("sale date and time", () => {
   });
 
   it("maps a sale too old to a message, without lock, with a fresh attempt", () => {
-    const failure = mapSaleSubmitError({
-      code: "BAD_REQUEST",
-      data: { reason: "sale_occurred_too_old" },
-    });
+    const failure = mapSaleSubmitError(
+      {
+        code: "BAD_REQUEST",
+        data: { reason: "sale_occurred_too_old" },
+      },
+      []
+    );
     expect(failure.message).toContain("limite retroativo de 30 dias");
     expect(failure.message).toContain("mais recente");
     expect(failure.discardAttempt).toBe(true);
     expect(failure.unknownOutcome).toBe(false);
     expect(
-      failSubmission({
-        code: "BAD_REQUEST",
-        data: { reason: "sale_occurred_too_old" },
-      }).phase
+      failSubmission(
+        {
+          code: "BAD_REQUEST",
+          data: { reason: "sale_occurred_too_old" },
+        },
+        []
+      ).phase
     ).toBe("failed");
     expect(
-      mapSaleSubmitError({
-        code: "BAD_REQUEST",
-        data: { reason: "sale_occurred_in_future" },
-      }).message
+      mapSaleSubmitError(
+        {
+          code: "BAD_REQUEST",
+          data: { reason: "sale_occurred_in_future" },
+        },
+        []
+      ).message
     ).toContain("adiantado");
   });
 
@@ -1731,5 +2076,254 @@ describe("stepQuantity", () => {
     const evaluation = evaluate(stepped);
     expect(evaluation.errors).toEqual({});
     expect(evaluation.summary?.lines[0]?.quantity).toBe(3);
+  });
+});
+
+describe("the refusal for stock", () => {
+  const first = "77777777-7777-4777-8777-777777777771";
+  const second = "77777777-7777-4777-8777-777777777772";
+  const third = "77777777-7777-4777-8777-777777777773";
+  const fourth = "77777777-7777-4777-8777-777777777774";
+  const fifth = "77777777-7777-4777-8777-777777777775";
+  const labels = new Map([
+    [first, "Caneca esmaltada"],
+    [second, "Vela aromática"],
+    [third, "Sabonete"],
+    [fourth, "Toalha"],
+    [fifth, "Chaveiro"],
+  ]);
+  const body = () => {
+    const { body: built } = evaluate(validForm());
+    if (!built) {
+      throw new Error("expected a valid body");
+    }
+    return built;
+  };
+  const refused = failSubmission(
+    {
+      code: "CONFLICT",
+      data: { reason: "insufficient_stock" },
+    },
+    []
+  );
+  const stockOf = (quantities: Record<string, number>) =>
+    Object.fromEntries(
+      Object.entries(quantities).map(([id, quantity]) => [
+        id,
+        {
+          status: "ready" as const,
+          value: {
+            movingAverageCost: null,
+            quantity,
+            variantId: id,
+            version: 1,
+          },
+        },
+      ])
+    ) as EvaluationContext["stock"];
+  const refuse = (
+    items: { quantity: number; variantId: string }[],
+    quantities: Record<string, number>,
+    canAdjustStock = true
+  ) => {
+    const described = describeStockRefusal(refused, {
+      canAdjustStock,
+      items,
+      labels,
+      stock: stockOf(quantities),
+    });
+    if (described.phase !== "failed") {
+      throw new Error("the refusal stays a definite failure");
+    }
+    return described.failure;
+  };
+
+  it("drops the attempt: the sale after the entry is a new one, with its own command and instant", () => {
+    expect(refused.phase === "failed" && refused.failure.discardAttempt).toBe(
+      true
+    );
+  });
+
+  it("after the refusal and the entry, the next confirmation is a new sale: new command, instant after the entry", () => {
+    const ids = sequentialIds();
+    const refusedAttempt = prepareConfirmation({
+      body: body(),
+      createId: ids,
+      now: new Date("2026-05-01T12:00:00.000Z"),
+      organizationId,
+      previousAttempt: null,
+    });
+    if (!refusedAttempt.ok) {
+      throw new Error("expected a prepared request");
+    }
+    const kept = attemptAfterFailure(refused, refusedAttempt.attempt);
+    expect(kept).toBeNull();
+    const afterEntry = prepareConfirmation({
+      body: body(),
+      createId: ids,
+      now: new Date("2026-05-01T12:20:00.000Z"),
+      organizationId,
+      previousAttempt: kept,
+    });
+    if (!afterEntry.ok) {
+      throw new Error("expected a prepared request");
+    }
+    expect(afterEntry.request.commandId).not.toBe(
+      refusedAttempt.request.commandId
+    );
+    expect(afterEntry.request.occurredAt).toBe("2026-05-01T12:20:00.000Z");
+    expect(afterEntry.request.recordedAt).toBe("2026-05-01T12:20:00.000Z");
+  });
+
+  it("names the one line that lacks stock, with what was asked and the balance, and points the link at it", () => {
+    const failure = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      { [first]: 0, [second]: 4 }
+    );
+    expect(failure.message).toBe(
+      "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 2, saldo 0)."
+    );
+    expect(failure.entry).toEqual({
+      label: "Caneca esmaltada",
+      variantId: first,
+    });
+  });
+
+  it("counts the lines of one variant together", () => {
+    const failure = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 2, variantId: first },
+      ],
+      { [first]: 3 }
+    );
+    expect(failure.message).toBe(
+      "A venda não foi registrada: falta estoque de Caneca esmaltada (pediu 4, saldo 3)."
+    );
+  });
+
+  it("says how many lines lack stock, lists them, and links the first", () => {
+    const failure = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      { [first]: 0, [second]: 0 }
+    );
+    expect(failure.message).toBe(
+      "A venda não foi registrada: faltam 2 itens no estoque. Caneca esmaltada (pediu 2, saldo 0) e Vela aromática (pediu 1, saldo 0)."
+    );
+    expect(failure.entry?.variantId).toBe(first);
+  });
+
+  it("lists three lines and says how many more", () => {
+    const items = [first, second, third, fourth, fifth].map((id) => ({
+      quantity: 1,
+      variantId: id,
+    }));
+    const failure = refuse(items, {
+      [first]: 0,
+      [fifth]: 0,
+      [fourth]: 0,
+      [second]: 0,
+      [third]: 0,
+    });
+    expect(failure.message).toBe(
+      "A venda não foi registrada: faltam 5 itens no estoque. Caneca esmaltada (pediu 1, saldo 0), Vela aromática (pediu 1, saldo 0), Sabonete (pediu 1, saldo 0) e mais 2."
+    );
+  });
+
+  it("asks for whoever takes care of the stock, with no link, when the role cannot make the entry", () => {
+    const one = refuse(
+      [{ quantity: 2, variantId: first }],
+      { [first]: 0 },
+      false
+    );
+    expect(one.message).toBe(
+      "A venda não foi registrada: falta estoque de Caneca esmaltada. Peça a quem cuida do estoque para dar entrada."
+    );
+    expect(one.entry).toBeNull();
+    const many = refuse(
+      [
+        { quantity: 2, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      { [first]: 0, [second]: 0 },
+      false
+    );
+    expect(many.message).toBe(
+      "A venda não foi registrada: faltam 2 itens no estoque. Caneca esmaltada e Vela aromática. Peça a quem cuida do estoque para dar entrada."
+    );
+    expect(many.entry).toBeNull();
+  });
+
+  it("says so plainly, with no link, when no line can be pointed at", () => {
+    const failure = refuse([{ quantity: 1, variantId: first }], {
+      [first]: 9,
+    });
+    expect(failure.message).toBe(
+      "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
+    );
+    expect(failure.entry).toBeNull();
+    const unread = describeStockRefusal(refused, {
+      canAdjustStock: true,
+      items: [{ quantity: 1, variantId: first }],
+      labels,
+      stock: {},
+    });
+    expect(unread.phase === "failed" && unread.failure.entry).toBeNull();
+  });
+
+  it("names no line when the balance of one of them was never read: that one may be the refused", () => {
+    const failure = describeStockRefusal(refused, {
+      canAdjustStock: true,
+      items: [
+        { quantity: 3, variantId: first },
+        { quantity: 1, variantId: second },
+      ],
+      labels,
+      stock: {
+        ...stockOf({ [first]: 1 }),
+        [second]: { message: "Falhou.", status: "error" },
+      },
+    });
+    expect(failure.phase === "failed" && failure.failure.entry).toBeNull();
+    expect(failure.phase === "failed" && failure.failure.message).toBe(
+      "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um."
+    );
+  });
+
+  it("leaves every other failure as it was", () => {
+    const other = failSubmission({ code: "CONFLICT" }, []);
+    expect(
+      describeStockRefusal(other, {
+        canAdjustStock: true,
+        items: [{ quantity: 2, variantId: first }],
+        labels,
+        stock: stockOf({ [first]: 0 }),
+      })
+    ).toBe(other);
+  });
+
+  it("offers the entry on the zero-balance line only to who can make it", () => {
+    const zero = balance(0, null);
+    expect(stockView(zero, false)?.text).toBe(
+      "Sem estoque: saldo 0. Peça a quem cuida do estoque para dar entrada."
+    );
+    expect(stockView(zero, false)?.text).not.toContain("servidor");
+  });
+
+  it("tells the seller they can still sell when the balance could not be read", () => {
+    const text = stockView(
+      { message: "Não foi possível ler o estoque.", status: "error" },
+      true
+    )?.text;
+    expect(text).toBe(
+      "Não foi possível ler o estoque. Você ainda pode vender: o saldo é conferido ao confirmar."
+    );
+    expect(text).not.toContain("servidor");
   });
 });

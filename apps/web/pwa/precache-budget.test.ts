@@ -2,12 +2,14 @@ import { randomBytes } from "node:crypto";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   BUDGET_MODE,
@@ -29,6 +31,8 @@ import {
   measurePrecache,
   motionLine,
   motionLoadProblems,
+  onlineOnlyLine,
+  onlineOnlyPlacementProblems,
   PRIMITIVES_BUDGET_GZIP_BYTES,
   precacheBudgetPlugin,
   primitiveShares,
@@ -47,6 +51,9 @@ const CALENDAR_LINE = /CALENDAR chunk \d+ B gzip of 26000 B/;
 const MOTION_LINE = /^MOTION chunk \d+ B gzip of 56000 B/;
 
 const CHARTS_LINE = /CHARTS chunk \d+ B gzip of 8000 B \(\d+ B left\)/;
+
+const SOURCE_FILE = /\.tsx?$/;
+const TEST_FILE = /\.test\.tsx?$/;
 
 const bytes = (length: number, fill = 0) => new Uint8Array(length).fill(fill);
 
@@ -217,7 +224,7 @@ describe("precache budget (ADR 0103, section 4)", () => {
     expect(
       budgetWarnings(withGrowth(REST_GROWTH_MARK_GZIP_BYTES + 1), floor, "warn")
     ).toEqual([expect.stringContaining("+80000 B mark by 1 B")]);
-    // far past (+83 007 B, the PR 306 on the main at +77 520 B): passes in "warn", fails in "block" (the reviewer's number)
+    // far past (+83 007 B, the main at +77 520 B): passes in "warn", fails in "block" (the reviewer's number)
     const pr306 = withGrowth(83_007);
     expect(budgetProblems(pr306, floor, "warn")).toEqual([]);
     const [pr306Warning] = budgetWarnings(pr306, floor, "warn");
@@ -760,6 +767,120 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
     ]);
   });
 
+  it("takes every file of the import in the source tree for a module of its chunk: none escapes the guard by its name", () => {
+    const catalog = fileURLToPath(new URL("../src/catalog", import.meta.url));
+    const files = [
+      ...readdirSync(catalog)
+        .filter((name) => name.startsWith("product-import-"))
+        .map((name) => join(catalog, name)),
+      ...readdirSync(join(catalog, "product-import"), { recursive: true })
+        .map(String)
+        .map((name) => join(catalog, "product-import", name)),
+    ].filter((path) => SOURCE_FILE.test(path) && !TEST_FILE.test(path));
+    // the tree as it is: the reading, the sending, the CSV and the screen (a new file joins this list, and the guard)
+    expect(
+      files.map((path) => path.slice(path.indexOf("src/catalog/"))).sort()
+    ).toEqual([
+      "src/catalog/product-import-csv.ts",
+      "src/catalog/product-import-failed-csv.ts",
+      "src/catalog/product-import-rows.ts",
+      "src/catalog/product-import-send.ts",
+      "src/catalog/product-import/import-file-step.tsx",
+      "src/catalog/product-import/import-frame.tsx",
+      "src/catalog/product-import/import-model.ts",
+      "src/catalog/product-import/import-preview-step.tsx",
+      "src/catalog/product-import/import-result-step.tsx",
+      "src/catalog/product-import/import-rows-table.tsx",
+      "src/catalog/product-import/import-run-step.tsx",
+      "src/catalog/product-import/product-import-dialog.tsx",
+      "src/catalog/product-import/use-product-import.ts",
+    ]);
+    const misplaced = onlineOnlyPlacementProblems([
+      {
+        fileName: "assets/index-abc.js",
+        modules: Object.fromEntries(
+          files.map((path) => [path, { renderedLength: 1 }])
+        ),
+      },
+    ]);
+    expect(misplaced).toHaveLength(files.length);
+  });
+
+  it("fails a module of the import of a spreadsheet in a precached chunk, or a static import of its chunk (control: alone in its chunk, loaded by import(), it passes)", () => {
+    const screen = "/repo/apps/web/src/catalog/product-import/import-model.ts";
+    const reading = "/repo/apps/web/src/catalog/product-import-csv.ts";
+    const page = "/repo/apps/web/src/catalog/products-page.tsx";
+    const form = "/repo/apps/web/src/catalog/product-opening-model.ts";
+    const importChunk = "assets/product-import-dialog-Ab12_x.js";
+    const own = {
+      fileName: importChunk,
+      isDynamicEntry: true,
+      modules: {
+        [reading]: { renderedLength: 1 },
+        [screen]: { renderedLength: 1 },
+      },
+    };
+    const pageChunk = {
+      fileName: "assets/products-page-abc.js",
+      imports: ["assets/index-abc.js"],
+      modules: {
+        [form]: { renderedLength: 1 },
+        [page]: { renderedLength: 1 },
+      },
+    };
+    expect(onlineOnlyPlacementProblems([own, pageChunk])).toEqual([]);
+    // a module of the import pulled into the page's chunk
+    expect(
+      onlineOnlyPlacementProblems([
+        own,
+        {
+          ...pageChunk,
+          modules: { ...pageChunk.modules, [reading]: { renderedLength: 1 } },
+        },
+      ])
+    ).toEqual([
+      "module of the import src/catalog/product-import-csv.ts is in assets/products-page-abc.js, a precached chunk",
+    ]);
+    // the screen of the import in the shell's first script
+    expect(
+      onlineOnlyPlacementProblems([
+        own,
+        {
+          fileName: "assets/index-abc.js",
+          isEntry: true,
+          modules: { [screen]: { renderedLength: 1 } },
+        },
+      ])
+    ).toEqual([
+      "module of the import src/catalog/product-import/import-model.ts is in assets/index-abc.js, a precached chunk",
+    ]);
+    // a static import of the chunk out of the precache
+    expect(
+      onlineOnlyPlacementProblems([
+        own,
+        { ...pageChunk, imports: ["assets/index-abc.js", importChunk] },
+      ])
+    ).toEqual([
+      `assets/products-page-abc.js imports ${importChunk} statically: the chunk out of the precache loads only by import()`,
+    ]);
+    // a screen file next to the reading, a folder under the screen, a module id with the query of the bundler
+    for (const id of [
+      "/repo/apps/web/src/catalog/product-import-summary.tsx",
+      "/repo/apps/web/src/catalog/product-import/steps/preview.tsx",
+      "/repo/apps/web/src/catalog/product-import/import-model.ts?used",
+    ]) {
+      expect(
+        onlineOnlyPlacementProblems([
+          own,
+          { ...pageChunk, modules: { [id]: { renderedLength: 1 } } },
+        ])
+      ).toHaveLength(1);
+    }
+    expect(onlineOnlyLine(12_410)).toBe(
+      "PRODUCT-IMPORT chunk 12410 B gzip, out of the precache (loaded online, when the import opens)"
+    );
+  });
+
   it("fails the calendar, react-day-picker or date-fns in a chunk that is not the calendar chunk (control: in its own chunk, and the loader and the pickers anywhere, it passes)", () => {
     const calendar = "/repo/apps/web/src/ui/calendar.tsx";
     const dayPicker =
@@ -1035,7 +1156,7 @@ describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", 
         isDynamicEntry: true,
         modules: anyModule,
       },
-      // a lazy screen with the bar: the bar itself does not import motion (t386)
+      // a lazy screen with the bar: the bar itself does not import motion
       {
         fileName: "assets/ui-gallery-ghi.js",
         imports: ["assets/react-def.js"],
@@ -1104,7 +1225,7 @@ describe("the motion chunk (ADR 0103, amendment Barra de filtros, t383, t385)", 
         modules: anyModule,
       },
     ];
-    // the screen imports a bar that imports motion statically, as the bar of t383 did
+    // the screen imports a bar that imports motion statically, as the bar did
     expect(motionLoadProblems(graph(["assets/filter-bar-ab1.js"]))).toEqual([
       expect.stringContaining(
         "assets/ui-gallery-ghi.js -> assets/filter-bar-ab1.js -> assets/motion-B0SXIb_6.js"

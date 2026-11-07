@@ -30,6 +30,7 @@ import {
 } from "@polaris/domain/sales/sale-adjustments";
 import { SaleOccurredTooOldError } from "@polaris/domain/sales/sale-dates";
 import { InvalidSalePaymentError } from "@polaris/domain/sales/sale-payment";
+import { logSaleRefusedInsufficientStock } from "../../observability/sale-refusal-log";
 import { InvalidSyncPayloadError, type SyncCommandHandler } from "../push";
 
 /**
@@ -142,21 +143,33 @@ export function createSaleConfirmHandler(
     classify,
     async execute(transaction, identity, payload, context) {
       const input = payload as OfflineSalePayload;
-      const result = await dependencies.confirmSale(
-        transaction,
-        withCapability(identity, SALE_CREATE),
-        {
-          adjustments: input.adjustments,
-          commandId: context.commandId,
-          commandVersion: 1,
-          items: input.items,
-          occurredAt: input.occurredAt,
-          payment: input.payment,
-          paymentProfile: input.paymentProfile ?? null,
-          recordedAt: input.recordedAt,
-          requestId: context.commandId,
+      let result: Awaited<ReturnType<typeof confirmSale>>;
+      try {
+        result = await dependencies.confirmSale(
+          transaction,
+          withCapability(identity, SALE_CREATE),
+          {
+            adjustments: input.adjustments,
+            commandId: context.commandId,
+            commandVersion: 1,
+            items: input.items,
+            occurredAt: input.occurredAt,
+            payment: input.payment,
+            paymentProfile: input.paymentProfile ?? null,
+            recordedAt: input.recordedAt,
+            requestId: context.commandId,
+          }
+        );
+      } catch (error) {
+        if (error instanceof InsufficientStockError) {
+          logSaleRefusedInsufficientStock({
+            organizationId: identity.organizationId,
+            origin: "sync",
+            requestId: context.requestId,
+          });
         }
-      );
+        throw error;
+      }
       return {
         confirmedAt: result.sale.confirmedAt.toISOString(),
         saleId: result.sale.id,

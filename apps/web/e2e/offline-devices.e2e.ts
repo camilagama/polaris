@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
@@ -374,7 +375,7 @@ test("com a senha ligada, 'Segurança' vem depois da lista, com 'Trocar senha' c
   const link = section.getByRole("link", { name: "Trocar senha" });
   await expect(link).toHaveAttribute("href", "/configuracoes?aba=senha");
   const box = await link.boundingBox();
-  // the outline button of the interface: 32 px with a mouse (36 with touch), and the 48 px touch area is the
+  // the outline button of the interface: 32 px with a mouse (36 with touch), and the 44 px touch area is the
   // guardrails' (check 2); it is still a button, not a link in a paragraph
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(32);
   // after the list, not in the paragraph of the heading
@@ -427,14 +428,14 @@ test("lista os aparelhos, pede confirmação clara e revoga um deles sem a opç�
   expect(state.revokeBodies).toHaveLength(0);
   expect(state.devices).toHaveLength(2);
 
-  await confirmButton(page).click();
+  await activateByKeyboard(page, confirmButton(page));
   await expect(
     page.getByText("Aparelho revogado. 1 permissão de uso offline cancelada.")
   ).toBeVisible();
   await expect(list.getByRole("listitem")).toHaveCount(1);
   await expect(list).not.toContainText("Celular da Ana");
-  // the confirmation is gone: the focus stays on the page, not on the body
-  await expect(page.getByRole("heading", { name: "Aparelhos" })).toBeFocused();
+  // the confirmation is gone: the focus stays on the page, not on the body, and the keyboard sees where it is
+  await expectFocusRing(page.getByRole("heading", { name: "Aparelhos" }));
   // the option was not ticked: the call carries false
   expect(state.revokeBodies).toHaveLength(1);
   expect(state.revokeBodies[0]?.endOtherSessions ?? false).toBe(false);
@@ -577,7 +578,7 @@ test("a opção só existe dentro da confirmação de outro aparelho, nunca no a
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   // this device has no button: it leaves through "Sair"
   await expect(list.getByRole("listitem").first()).toContainText(
-    "use Sair: no celular ele está em Mais; em tela grande, no menu ⋯ do cartão da loja, no pé da barra lateral"
+    "use Sair, no menu da loja, no alto da tela"
   );
   await expect(askRevoke(page, "Caixa da loja")).toHaveCount(0);
   await askRevoke(page, "Celular da Ana").click();
@@ -1304,7 +1305,7 @@ test("o destino de 'Entrar de novo' é a tela de entrada, com a frase do motivo 
   ).toBeVisible();
 });
 
-// the 48 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails.e2e.ts); here, the visible height
+// the 44 px touch area is measured by the guardrails (check 2, e2e-pwa/ui-guardrails.e2e.ts); here, the visible height
 // the design gives a control with touch (36 px) and that nothing scrolls sideways in the dialog and the panel
 test("os controles têm a altura de toque de 36 px e nada rola na horizontal, a 360 px e no iPhone SE", async ({
   page,

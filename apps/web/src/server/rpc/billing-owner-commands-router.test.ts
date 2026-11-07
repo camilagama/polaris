@@ -10,6 +10,7 @@ import {
   type OwnerCommandRecord,
 } from "@polaris/db/billing-store";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
+import { logger } from "@polaris/observability/logger";
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../app";
 import type { WorkerBindings } from "../environment";
@@ -60,10 +61,11 @@ const link = {
 /** The `billing_events` row of the first charge (`first_charge_event_id`). */
 const FIRST_CHARGE_EVENT = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
 
-/** Paid by card on 10/10 at 15:00 in São Paulo; the store's clock is 12/10 09:00 (inside the window). */
+/** Paid by card on `10/10` at 15:00 in São Paulo; the store's clock is `12/10` 09:00 (inside the window). */
 const activeRecord: OwnerCommandRecord = {
   accessEndsAt: sp("2026-11-11T00:00:00"),
   cancelAtPeriodEnd: false,
+  currentChargeAmount: "24.90",
   cycleMonths: 1,
   firstCharge: {
     eventId: FIRST_CHARGE_EVENT,
@@ -73,6 +75,7 @@ const activeRecord: OwnerCommandRecord = {
   firstChargeAt: sp("2026-10-10T15:00:00"),
   firstChargeOn: "2026-10-10",
   link,
+  pendingCycleMonths: null,
   priceAmount: "29.90",
   provider: "asaas",
   refundRequestedAt: null,
@@ -712,6 +715,7 @@ describe("the audit of the request is written after the billing, with the type o
   it.each(COMMANDS)(
     "answers SERVICE_UNAVAILABLE billing_provider_unavailable when the provider fails (%s), audited as accepted",
     async (command, record) => {
+      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
       const fixture = setup({ portFails: true, record });
 
       if (command === "requestRefund") {
@@ -724,6 +728,16 @@ describe("the audit of the request is written after the billing, with the type o
         code: "SERVICE_UNAVAILABLE",
         data: { reason: "billing_provider_unavailable" },
       });
+      const counted = warn.mock.calls
+        .filter(([event]) => event === "billing_unavailable_refused")
+        .map(([, fields]) => fields);
+      warn.mockRestore();
+      expect(counted).toEqual([
+        {
+          errorCode: "provider_unavailable",
+          reason: "billing_provider_unavailable",
+        },
+      ]);
 
       const accepted = {
         cancelRenewal: "billing.owner_renewal_cancel_requested",

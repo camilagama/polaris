@@ -30,8 +30,7 @@ import {
 import { seedQaStore } from "./seed-qa-store";
 
 /**
- * The local measure of the Início's reads (t277, items 1 and 2 of the
- * desenho-t269 round), on the PostgreSQL 18 of the gates (`CI=true`, local
+ * The local measure of the Início's reads, on the PostgreSQL 18 of the gates (`CI=true`, local
  * host only). For each store it seeds (`MEASURE_STORES`, sales per day, 60
  * days each) it prints:
  * - the rows read and an estimate of the bytes the database sends for A (the
@@ -42,6 +41,10 @@ import { seedQaStore } from "./seed-qa-store";
  * - the time of `evaluateActiveGoals` with an annual goal;
  * - `EXPLAIN (ANALYZE, BUFFERS)` of the period's sales query, as the runtime
  *   role under RLS.
+ *
+ * `readPeriodSummary` is aggregated by the database (ADR 0054): the rows read
+ * and the CPU of the engine here are those of `readPeriodFacts` and the engine,
+ * which the goals still run and which define the summary.
  *
  * The CPU of the Worker is NOT this: Bun on this machine is not workerd on
  * Cloudflare. The staging measure (in the PR) is the one that counts.

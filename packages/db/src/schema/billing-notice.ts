@@ -22,7 +22,7 @@ const noticeRecipientOwnerRole = "polaris_notice_recipient_owner";
 const kindList = BILLING_NOTICE_KINDS.map((kind) => `'${kind}'`).join(", ");
 
 /**
- * The notices of the billing cycle and the welcome (ADR 0104, decision 7; design t268 v2, §8 and §9): one row per
+ * The notices of the billing cycle and the welcome (ADR 0104, decision 7): one row per
  * notice, recorded in the same transaction as the change of the billing record that causes it (or by the hourly
  * sweep), with an outbox event `billing.notice` that names it. One per store, kind and `dedupe_key` (an opaque
  * reference, a date or an ID: the same transition twice records one), and one welcome per person.

@@ -7,11 +7,11 @@ import {
   openPrivacyCase,
   openSupportCase,
   placeOrganizationLegalHold,
+  readSupportCase,
   recordPrivacyDecision,
   recordPrivacyIdentity,
   recordPrivacyRole,
   recordPrivacyScope,
-  readSupportCase,
   releaseOrganizationLegalHold,
   revokeTenantAccess,
   scheduleOrganizationPurge,
@@ -26,6 +26,10 @@ import {
   closurePurgeNotBefore,
 } from "@polaris/domain/organization/closure-deadlines";
 import { ORGANIZATION_PURGE_REQUIRED_SCOPE } from "@polaris/domain/privacy/organization-purge";
+import {
+  queryAsGateRole,
+  withGateRole,
+} from "../../../packages/db/scripts/gate-roles";
 import {
   createTenantFixture,
   expectSqlState,
@@ -241,8 +245,9 @@ export async function asRole(
   const client = await owner.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`SET LOCAL ROLE ${role}`);
-    return await client.query(statement, values);
+    return await withGateRole(client, role, () =>
+      client.query(statement, values)
+    );
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
@@ -380,6 +385,7 @@ export async function verifyAutomaticPurge(
     const tests = await scenario(context);
     tests.push(...(await recheckScenario(context)));
     tests.push(...(await deliveredNoticeScenario(context)));
+    tests.push(...(await stalledWithoutLogScenario(context)));
     return tests;
   } finally {
     await restoreOthers();
@@ -1097,6 +1103,253 @@ async function scenario(context: AutomaticPurgeContext): Promise<string[]> {
   return tests;
 }
 
+/**
+ * The count of the purges that stall with no log (ADR 0081, amended): claimed 3 times or more, not finished, and no step
+ * recorded in 24 hours. Only a count leaves the database, and the login of the job reads nothing of the table.
+ */
+async function stalledWithoutLogScenario(
+  context: AutomaticPurgeContext
+): Promise<string[]> {
+  const { maintenance, owner, runtimes } = context;
+  const tests: string[] = [];
+  const stalled = () => maintenance.countStalledOrganizationPurges(3, 24);
+  const state = (
+    purgeOrganization: string,
+    values: {
+      attempts: number;
+      lockedHoursAgo: number;
+      purgedHoursAgo?: number;
+      sweptHoursAgo?: number;
+      touchedHoursAgo?: number;
+    }
+  ) =>
+    owner.query(
+      `UPDATE public.organization_purges
+          SET attempts = $2,
+              locked_until = now() - make_interval(hours => $3),
+              storage_touched_at = CASE WHEN $4::int IS NULL THEN NULL ELSE now() - make_interval(hours => $4) END,
+              purged_at = CASE WHEN $5::int IS NULL THEN NULL ELSE now() - make_interval(hours => $5) END,
+              swept_at = CASE WHEN $6::int IS NULL THEN NULL ELSE now() - make_interval(hours => $6) END
+        WHERE organization_id = $1`,
+      [
+        purgeOrganization,
+        values.attempts,
+        values.lockedHoursAgo,
+        values.touchedHoursAgo ?? null,
+        values.purgedHoursAgo ?? null,
+        values.sweptHoursAgo ?? null,
+      ]
+    );
+
+  const { organizationId } = await closedOrganization(
+    owner,
+    "stalled without log",
+    await localDayStart(owner, ZONE, -95)
+  );
+  await maintenance.scheduleClosedOrganizationPurges(1000);
+  assert.equal(await statusOf(owner, organizationId), "purge_pending");
+
+  await state(organizationId, { attempts: 0, lockedHoursAgo: 1 });
+  const baseline = await stalled();
+
+  await state(organizationId, { attempts: 3, lockedHoursAgo: 1 });
+  assert.equal(
+    await stalled(),
+    baseline + 1,
+    "3 attempts and no step in 24 hours is counted"
+  );
+  await state(organizationId, { attempts: 2, lockedHoursAgo: 1 });
+  assert.equal(await stalled(), baseline, "2 attempts are not");
+  await state(organizationId, {
+    attempts: 3,
+    lockedHoursAgo: 1,
+    touchedHoursAgo: 2,
+  });
+  assert.equal(
+    await stalled(),
+    baseline,
+    "a step done 2 hours ago is not counted"
+  );
+  await state(organizationId, {
+    attempts: 5,
+    lockedHoursAgo: 1,
+    touchedHoursAgo: 25,
+  });
+  assert.equal(await stalled(), baseline + 1, "a step done 25 hours ago is");
+  await state(organizationId, {
+    attempts: 5,
+    lockedHoursAgo: 1,
+    purgedHoursAgo: 2,
+    touchedHoursAgo: 25,
+  });
+  assert.equal(
+    await stalled(),
+    baseline,
+    "the rows purged 2 hours ago are a step done"
+  );
+  await state(organizationId, { attempts: 5, lockedHoursAgo: 48 });
+  assert.equal(
+    await stalled(),
+    baseline,
+    "a purge no run claimed in 24 hours is held on purpose, not stalled"
+  );
+  await state(organizationId, {
+    attempts: 5,
+    lockedHoursAgo: 1,
+    purgedHoursAgo: 30,
+    sweptHoursAgo: 30,
+    touchedHoursAgo: 30,
+  });
+  assert.equal(await stalled(), baseline, "a finished purge is not counted");
+  await state(organizationId, { attempts: 3, lockedHoursAgo: 1 });
+  assert.equal(await stalled(), baseline + 1);
+  await owner.query(
+    "UPDATE public.organization_purges SET locked_until = NULL WHERE organization_id = $1",
+    [organizationId]
+  );
+  assert.equal(
+    await stalled(),
+    baseline,
+    "a lease let go is not a purge the job is taking"
+  );
+  await state(organizationId, { attempts: 3, lockedHoursAgo: 1 });
+  const holdCase = await supportCaseOf(context, organizationId);
+  await placeOrganizationLegalHold(
+    context.admin,
+    context.principal,
+    holdCase,
+    organizationId,
+    new Date(Date.now() + 30 * DAY_MS).toISOString()
+  );
+  assert.equal(
+    await stalled(),
+    baseline,
+    "a purge a legal hold placed after its last claim stops is held on purpose, not stalled"
+  );
+  await releaseOrganizationLegalHold(
+    context.admin,
+    context.principal,
+    holdCase,
+    organizationId
+  );
+  await state(organizationId, { attempts: 3, lockedHoursAgo: 1 });
+  assert.equal(await stalled(), baseline + 1, "released, it is counted again");
+  await owner.query(
+    "UPDATE public.organizations SET status = 'purged' WHERE id = $1",
+    [organizationId]
+  );
+  await state(organizationId, {
+    attempts: 3,
+    lockedHoursAgo: 1,
+    purgedHoursAgo: 30,
+    touchedHoursAgo: 30,
+  });
+  assert.equal(
+    await stalled(),
+    baseline + 1,
+    "a purged organization whose second sweep did not finish is counted"
+  );
+  await owner.query(
+    "UPDATE public.organizations SET status = 'purge_pending' WHERE id = $1",
+    [organizationId]
+  );
+  await state(organizationId, { attempts: 3, lockedHoursAgo: 1 });
+  await owner.query(
+    "UPDATE public.organizations SET status = 'closed' WHERE id = $1",
+    [organizationId]
+  );
+  assert.equal(
+    await stalled(),
+    baseline,
+    "an organization no longer waiting for its purge is not counted"
+  );
+  await owner.query(
+    "UPDATE public.organizations SET status = 'purge_pending' WHERE id = $1",
+    [organizationId]
+  );
+  await state(organizationId, { attempts: 0, lockedHoursAgo: 1 });
+  tests.push(
+    "the count of stalled purges: 3 attempts with no step in 24 hours is counted; 2 attempts, a step done 2 hours ago (the storage touched or the rows purged), a lease not claimed in 24 hours, a finished purge and an organization that left the purge are not"
+  );
+
+  await expectSqlState(
+    () => maintenance.countStalledOrganizationPurges(0, 24),
+    "22023",
+    "0 attempts is refused"
+  );
+  await expectSqlState(
+    () => maintenance.countStalledOrganizationPurges(3, 0),
+    "22023",
+    "a window of 0 hours is refused"
+  );
+  await expectSqlState(
+    () => maintenance.countStalledOrganizationPurges(3, 721),
+    "22023",
+    "a window above 720 hours is refused"
+  );
+  for (const [label, pool] of [
+    ["tenant", runtimes.tenant],
+    ["admin", runtimes.admin],
+  ] as const) {
+    await expectSqlState(
+      () =>
+        pool.query(
+          "SELECT public.count_purges_stalled_without_progress(3, 24)"
+        ),
+      "42501",
+      `the ${label} runtime cannot count the stalled purges`
+    );
+  }
+  const grantees = await owner.query<{ grantee: string }>(
+    `SELECT acl.grantee::regrole::text AS grantee
+       FROM pg_catalog.pg_proc AS p, LATERAL pg_catalog.aclexplode(p.proacl) AS acl
+      WHERE p.oid = 'public.count_purges_stalled_without_progress(integer,integer)'::regprocedure
+      ORDER BY 1`
+  );
+  assert.deepEqual(
+    grantees.rows.map((row) => row.grantee),
+    ["polaris_privacy_runtime", "polaris_purge_owner"],
+    "only the privacy runtime and the owner execute it, and PUBLIC does not"
+  );
+  const definition = await owner.query<{
+    owner: string;
+    returns: string;
+    security_definer: boolean;
+  }>(
+    `SELECT p.proowner::regrole::text AS owner, p.prosecdef AS security_definer, p.prorettype::regtype::text AS returns
+       FROM pg_catalog.pg_proc AS p
+      WHERE p.oid = 'public.count_purges_stalled_without_progress(integer,integer)'::regprocedure`
+  );
+  assert.deepEqual(definition.rows[0], {
+    owner: "polaris_purge_owner",
+    returns: "integer",
+    security_definer: true,
+  });
+  const readable = await owner.query<{ attname: string }>(
+    `SELECT a.attname
+       FROM pg_catalog.pg_attribute AS a
+      WHERE a.attrelid = 'public.organization_purges'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+        AND pg_catalog.has_column_privilege('polaris_privacy_runtime', a.attrelid, a.attnum, 'SELECT, INSERT, UPDATE, REFERENCES')`
+  );
+  assert.deepEqual(
+    readable.rows,
+    [],
+    "the login of the job reads, writes and references no column of organization_purges"
+  );
+  const tablePrivilege = await owner.query<{ allowed: boolean }>(
+    "SELECT pg_catalog.has_table_privilege('polaris_privacy_runtime', 'public.organization_purges', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') AS allowed"
+  );
+  assert.equal(tablePrivilege.rows[0]?.allowed, false);
+  const reachesOwner = await owner.query<{ member: boolean; usage: boolean }>(
+    "SELECT pg_catalog.pg_has_role('polaris_privacy_runtime', 'polaris_purge_owner', 'MEMBER') AS member, pg_catalog.pg_has_role('polaris_privacy_runtime', 'polaris_purge_owner', 'USAGE') AS usage"
+  );
+  assert.deepEqual(reachesOwner.rows[0], { member: false, usage: false });
+  tests.push(
+    "the count of stalled purges answers one integer and refuses invalid limits (22023); only the privacy runtime and the function's owner execute it (the tenant and Admin runtimes get 42501, PUBLIC does not), it is a definer of polaris_purge_owner, and the login of the job has no privilege on any column of organization_purges"
+  );
+  return tests;
+}
+
 /** A refusal of the purge by name: SQLSTATE 55000 and the code as the message, as the job writes it down. */
 async function expectPurgeRefusal(
   operation: () => Promise<unknown>,
@@ -1335,7 +1588,10 @@ async function dropNotices(owner: Pool, organizationId: string) {
 }
 
 async function waitOf(owner: Pool, organizationId: string) {
-  const result = await owner.query<{ wait: string | null }>(
+  // the function is internal to the purge: only its owner executes it
+  const result = await queryAsGateRole<{ wait: string | null }>(
+    owner,
+    "polaris_purge_owner",
     `SELECT public.closed_organization_purge_wait(closure.organization_id, closure.requested_at) AS wait
        FROM public.organization_closures AS closure WHERE closure.organization_id = $1`,
     [organizationId]
@@ -1344,7 +1600,7 @@ async function waitOf(owner: Pool, organizationId: string) {
 }
 
 /**
- * No store is deleted before the owner was told (ADR 0102, amended, decision of 20/10/2026): the schedule and the run
+ * No store is deleted before the owner was told (ADR 0102, amended): the schedule and the run
  * wait while the current closure cycle has no `d7` or `rescheduled` notice with `sent_at` filled, for the closure period
  * and for the Admin's path alike, and a store held back lands in the alert of a store left behind. Each check removes
  * the notice to prove the refusal and puts it back to prove the purge goes on.
@@ -1628,7 +1884,7 @@ async function deliveredNoticeScenario(
     "the notice delivered is a condition of the Admin's purge too: scheduled by the case it is not taken, and with it gone while the run holds it the mark and the purge refuse; it runs when the notice is delivered"
   );
 
-  // the notice must have been delivered at least 7 days ago (decision of 20/10/2026): a late notice, or a purge the Admin
+  // the notice must have been delivered at least 7 days ago: a late notice, or a purge the Admin
   // schedules, never deletes the store hours after the owner was told. The latest of the d7 and rescheduled notices counts.
   const settle = CLOSURE_PURGE_MIN_NOTICE_DAYS * 24;
   const aged = (id: string, hoursAgo: number) =>

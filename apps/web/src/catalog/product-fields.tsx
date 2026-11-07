@@ -123,6 +123,8 @@ export function ProductTextField({
 }
 
 interface ProductTextAreaFieldProps extends FieldBaseProps {
+  /** `polite` for an error rewritten at each key, such as a count over a limit; the default announces at once. */
+  errorLive?: "assertive" | "polite" | undefined;
   maxLength?: number | undefined;
   onChange: (value: string) => void;
   rows?: number | undefined;
@@ -133,6 +135,7 @@ export function ProductTextAreaField({
   className,
   disabled,
   error,
+  errorLive,
   hint,
   id,
   label,
@@ -161,7 +164,7 @@ export function ProductTextAreaField({
         rows={rows}
         value={value}
       />
-      <FieldTexts error={error} hint={hint} id={id} />
+      <FieldTexts error={error} hint={hint} id={id} live={errorLive} />
     </Field>
   );
 }

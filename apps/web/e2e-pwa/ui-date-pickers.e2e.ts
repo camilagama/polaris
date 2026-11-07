@@ -6,12 +6,12 @@ import { expectMotionLevel } from "./motion-expect";
 import { axeFaults } from "./ui-guardrails";
 
 /**
- * The date pickers of src/ui/ in the gallery (t363): the calendar chunk loads on demand; one date is chosen with a
+ * The date pickers of src/ui/ in the gallery: the calendar chunk loads on demand; one date is chosen with a
  * touch, with "Hoje" and with the arrows; a disabled day is aria-disabled, says why and is not chosen; the period
  * keeps the popover open on the first touch and closes on the second, the shortcuts and "Limpar" work, and an
  * inverted range cannot be made. At 360 and 1280 px: the size of the days (36 px with a mouse, 44 with touch), one
  * month or two, nothing past the window, the focus of 3 px. The popover moves as Base UI's does, and the page that
- * asks for no motion stops it. axe finds nothing with each picker open, in both themes. "Hoje" is 24/10/2026 in the
+ * asks for no motion stops it. axe finds nothing with each picker open, in both themes. "Hoje" is `24/10/2026` in the
  * gallery.
  */
 // with or without the query of a second try (`?retry=1`)
@@ -40,9 +40,14 @@ async function openGallery(page: Page, theme: string | null = null) {
 const day = (scope: Locator | Page, iso: string) =>
   scope.locator(`button[data-day="${iso}"]`);
 
-/** The button of a picker: its accessible name starts with the label and a comma. */
+/**
+ * The button of a picker: its accessible name starts with the label and a comma. Anchored at the start because a day
+ * of a period also says "período," in its name.
+ */
 const trigger = (page: Page, name: string) =>
-  page.getByRole("button", { name });
+  page.getByRole("button", {
+    name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+  });
 
 async function openPicker(page: Page, name: string, label: string) {
   await trigger(page, name).click();
@@ -82,7 +87,9 @@ async function axeWithOpen(page: Page, label: string) {
 /** Whether the page is in the touch sizes (the `touch` variant of theme.css). */
 const isTouch = (page: Page) =>
   page.evaluate(
-    () => window.matchMedia("(pointer: coarse), (max-width: 759.98px)").matches
+    () =>
+      window.matchMedia("(pointer: coarse), not all and (min-width: 47.5rem)")
+        .matches
   );
 
 test("o calendário vem do seu próprio chunk, baixado quando a galeria pede um", async ({
@@ -547,6 +554,65 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+test.describe("reaberto no meio da saída, a 1280 px", () => {
+  test.use({ viewport: { height: 800, width: 1280 } });
+
+  /**
+   * A choice that closes the popup, then a click on the button one turn of the page later (React has applied the
+   * close by then). Resolves to whether the popup was still on screen, leaving, when the button was clicked: its exit
+   * lasts 100 ms at the full motion level and is instant below it, where the test would prove nothing.
+   */
+  const chooseAndReopen = (page: Page, prefix: string, choice: string) =>
+    page.evaluate(
+      async ({ choiceName, labelPrefix }) => {
+        const chosen = [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-slot="popover-content"] button'
+          ),
+        ].find((button) => button.textContent?.trim() === choiceName);
+        chosen?.click();
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+        const leaving =
+          document.querySelector('[data-slot="popover-content"]') !== null;
+        document
+          .querySelector<HTMLElement>(`button[aria-label^="${labelPrefix}"]`)
+          ?.click();
+        return leaving;
+      },
+      { choiceName: choice, labelPrefix: prefix }
+    );
+
+  test("data única: o calendário reaberto durante a saída abre no mês da data, não no que ficou na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(page, "Data da despesa,", "Data da despesa");
+    await popup.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(popup.getByText("Novembro de 2026")).toBeVisible();
+
+    expect(await chooseAndReopen(page, "Data da despesa,", "Hoje")).toBe(true);
+    await expect(trigger(page, "Data da despesa,")).toHaveText("24/10/2026");
+    await expect(popup.getByText("Outubro de 2026")).toBeVisible();
+    await expect(popup.getByText("Novembro de 2026")).toBeHidden();
+  });
+
+  test("período: o painel reaberto durante a saída abre no mês do período, não no que ficou na tela", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(page, "Período,", "Período");
+    await popup.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(popup.getByText("Novembro de 2026")).toBeVisible();
+
+    expect(await chooseAndReopen(page, "Período,", "Hoje")).toBe(true);
+    await expect(trigger(page, "Período,")).toHaveText("24/10/2026");
+    await expect(popup.getByText("Setembro de 2026")).toBeVisible();
+    await expect(popup.getByText("Novembro de 2026")).toBeHidden();
+  });
+});
+
 test.describe("a 320 px, com toque", () => {
   test.use({
     hasTouch: true,
@@ -564,7 +630,7 @@ test.describe("a 320 px, com toque", () => {
       .getByRole("button")
       .evaluateAll((buttons) =>
         buttons
-          // the text against the box inside the padding (scrollWidth would count the 48 px touch area around it)
+          // the text against the box inside the padding (scrollWidth would count the 44 px touch area around it)
           .filter((button) => {
             const text = document.createRange();
             text.selectNodeContents(button);

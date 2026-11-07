@@ -172,17 +172,22 @@ export interface BillingProviderPort {
    * another period, or no first charge was recorded, it throws
    * `NotFirstChargeError` and asks the provider for no refund: it fails
    * closed); the operator's refund passes `"any_paid"`, the paid charge of the
-   * period in force, whichever it is.
+   * period in force, whichever it is. `options.beforeRefund` runs once the
+   * charge to refund is found and before the provider is asked to refund it: a
+   * throw there refunds nothing, and the refund asked afterwards is of that
+   * same charge (the operator's command checks the amount and cancels the
+   * renewal in it).
    */
   refundCurrentPeriod: (
     providerRef: string,
     now: Date,
     providerSubscriptionId: string | null,
-    charge: RefundableCharge
+    charge: RefundableCharge,
+    options?: RefundOptions
   ) => Promise<RefundOutcome>;
   /**
    * Whether `refundCurrentPeriod` may call the provider here. The refund
-   * command cancels the renewal first (ADR 0066, emenda de 23/10), so it asks
+   * command cancels the renewal first (ADR 0066), so it asks
    * this before touching anything: a provider that cannot refund leaves the
    * renewal as it was.
    */
@@ -190,7 +195,7 @@ export interface BillingProviderPort {
 }
 
 /**
- * The first charge Polaris recorded for the link (ADR 0104, desenho t268 §7):
+ * The first charge Polaris recorded for the link (ADR 0104, §7):
  * the ID of its `billing_events` row (`first_charge_event_id`) and the end of
  * the period it paid for, as that fact says. The provider's charges are told
  * apart by the period each pays, the same `periodEndsAt` its fact carried.
@@ -198,6 +203,15 @@ export interface BillingProviderPort {
 export interface RecordedFirstCharge {
   eventId: string | null;
   periodEndsAt: Date | null;
+}
+
+/** The charge `refundCurrentPeriod` found, as the hook sees it: only its amount, as `money.md` writes it. */
+export interface ChargeToRefund {
+  amount: string;
+}
+
+export interface RefundOptions {
+  beforeRefund?: (charge: ChargeToRefund) => Promise<void>;
 }
 
 /**

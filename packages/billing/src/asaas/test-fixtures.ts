@@ -1,6 +1,6 @@
 /**
  * Asaas payloads for the tests, built from the SHAPE of what the sandbox
- * returned on 19/10/2026 (spike t092: key names and types, never the values).
+ * returned (key names and types, never the values).
  * Every value here is made up; the personal data and the card are fake on
  * purpose, so a test can prove none of it leaves the adapter (AC-3).
  */
@@ -35,7 +35,7 @@ export function subscriptionJson(
     dateCreated: "2026-10-19",
     deleted: false,
     description: "Polaris Pro mensal",
-    // null, as the sandbox answered for a finished checkout (S1.3, 19/10/2026)
+    // null, as the sandbox answered for a finished checkout
     externalReference: null,
     fine: { type: "PERCENTAGE", value: 0 },
     id: SUBSCRIPTION_ID,
@@ -77,7 +77,7 @@ export function paymentJson(
     dueDate: "2026-10-26",
     escrow: null,
     estimatedCreditDate: null,
-    // null, as the sandbox answered for a finished checkout (S1.3, 19/10/2026)
+    // null, as the sandbox answered for a finished checkout
     externalReference: null,
     fine: { type: "FIXED", value: 0 },
     id: PAYMENT_ID,

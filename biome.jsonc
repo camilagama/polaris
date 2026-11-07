@@ -9,7 +9,9 @@
   "files": {
     // Bklit UI as the registry distributes it (ADR 0103, amendment "Gráficos"): code of someone else, kept byte for byte so a
     // `shadcn add` shows its diff. Not linted nor formatted here; the adaptations of Polaris live in apps/web/src/ui/charts/.
-    "includes": ["!apps/web/src/ui/bklit"]
+    // The Admin's sheet is generated too: apps/web/scripts/admin-sheet.ts writes it from admin.source.css, and
+    // admin-sheet.test.ts compares it with what the script writes now.
+    "includes": ["!apps/web/src/ui/bklit", "!apps/admin/ui/admin.css"]
   },
   "overrides": [
     {
@@ -229,6 +231,8 @@
     {
       // The Admin app reaches the database only through its own modules (ADR 0070):
       // never tenant data, billing, auth or a driver. Each Admin PR that adds a module lists it here.
+      // Of @polaris/billing, only the operator's provider commands, the port they build and its errors (ADR 0105):
+      // never the webhooks, their signatures or a client directly.
       "includes": ["apps/admin/src/**"],
       "linter": {
         "rules": {
@@ -254,6 +258,9 @@
                       "!@polaris/db/billing-store",
                       "@polaris/billing",
                       "@polaris/billing/**",
+                      "!@polaris/billing/operator-commands",
+                      "!@polaris/billing/provider-port",
+                      "!@polaris/billing/provider-ports",
                       "drizzle-orm",
                       "drizzle-orm/**",
                       "pg",
@@ -262,6 +269,81 @@
                       "better-auth/**"
                     ],
                     "message": "The Admin app must not import tenant data, billing, auth or a database driver: it reaches the database only through its own repositories."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // The Admin page's script (corte admin-tela-v1, D-1 and D-2): browser code that writes only text. It imports
+      // nothing of the store's app, of the database, of auth or of the server (types of the domain and the contracts
+      // only), and the plugin refuses every way of turning a string into HTML or code, an inline style or script
+      // element, a timer and browser storage. `src/ui/ui-guard.test.ts` plants each one and expects it refused.
+      "includes": ["apps/admin/ui/**", "!apps/admin/ui/test-dom.ts"],
+      "plugins": ["./scripts/biome-plugins/admin-ui-text-only.grit"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
+          },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@polaris/*",
+                      "@polaris/*/**",
+                      "!@polaris/domain/admin/organization-diagnostics",
+                      "!@polaris/contracts/admin-activation-funnel",
+                      "@/**",
+                      "**/web/**",
+                      "**/src/**",
+                      "**/db/**",
+                      "hono",
+                      "hono/**",
+                      "react",
+                      "react/**",
+                      "react-dom",
+                      "react-dom/**",
+                      "pg",
+                      "pg/**",
+                      "drizzle-orm",
+                      "drizzle-orm/**",
+                      "better-auth",
+                      "better-auth/**",
+                      "evlog",
+                      "evlog/**",
+                      "cloudflare:*",
+                      "node:*"
+                    ],
+                    "message": "The Admin page's script imports nothing of the store's app, the database, auth or the server: only its own files and types of the Admin's domain report and contracts (corte admin-tela-v1, AC-13)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // The token package is plain CSS and constants that the dash and the Admin share: a framework in it would
+      // reach the Admin's page, which has none (ADR 0070).
+      "includes": ["packages/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["react", "react/**", "react-dom", "react-dom/**"],
+                    "message": "packages/ui must stay framework-free: the Admin page has no React, and the dash's components live in apps/web/src/ui."
                   }
                 ]
               }

@@ -36,7 +36,7 @@ Instantes são guardados em UTC; datas de negócio usam o fuso da organização 
 
 ## Identidade e ownership do domínio
 
-Better Auth é responsável por identidade, credenciais e sessões; organização, membership, capabilities, billing e entitlements são dados do domínio Polaris ([ADR 0004](../adr/0004-separar-autenticacao-de-tenancy.md)). O cliente pode solicitar uma organização, mas não autorizar seu próprio acesso. A política de sessão e de conta está no [ADR 0017](../adr/0017-politica-de-sessao-e-conta.md); as capabilities finas, atribuídas só ao owner na V1, no [ADR 0022](../adr/0022-capabilities-finas-apenas-owner.md).
+Better Auth é responsável por identidade, credenciais e sessões; organização, membership, capabilities, billing e entitlements são dados do domínio Polaris ([ADR 0004](../adr/0004-separar-autenticacao-de-tenancy.md)). O cliente pode solicitar uma organização, mas não autorizar seu próprio acesso. A política de sessão e de conta está no [ADR 0017](../adr/0017-politica-de-sessao-e-conta.md); as capabilities finas, atribuídas só ao owner na V1, no [ADR 0022](../adr/0022-capabilities-finas-apenas-owner.md). As tabelas do Better Auth (`user`, `account`, `session`, `verification`) são do Polaris, com migrations, RLS e grants próprios; o schema segue o do Better Auth 1.7, que é o da 1.6. Cada `account` tem uma chave única `(provider_id, account_id)` (migration 0106): o Better Auth 1.7 acha a conta por essa chave e recusa uma chave em duas linhas.
 
 ## Auditoria
 
@@ -50,7 +50,7 @@ Despesas são lançamentos por competência com categoria da organização, anul
 
 ## Operação offline
 
-Mutations offline usam commands idempotentes e versionados. O servidor valida cada command e permanece autoritativo; command pendente local ainda não é venda aceita ([ADR 0003](../adr/0003-offline-command-protocol.md)). A persistência local escolhida é TanStack DB com SQLite WASM em OPFS para as coleções e IndexedDB para o outbox, com Dexie como fallback; a escolha, os riscos e as condições estão no [ADR 0015](../adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md). O protocolo de sync não depende da escolha de storage. A Fase 5 do plano ainda não foi iniciada.
+Mutations offline usam commands idempotentes e versionados. O servidor valida cada command e permanece autoritativo; command pendente local ainda não é venda aceita ([ADR 0003](../adr/0003-offline-command-protocol.md)). A persistência local escolhida é TanStack DB com SQLite WASM em OPFS para as coleções e IndexedDB para o outbox, com Dexie como fallback; a escolha, os riscos e as condições estão no [ADR 0015](../adr/0015-offline-persistence-tanstack-db-opfs-indexeddb.md). O protocolo de sync não depende da escolha de storage. A Fase 5 do plano ainda não foi iniciada. As miniaturas de produto (a capa, derivado de 320 px) ficam num IndexedDB próprio de cada namespace (`polaris-thumbnails-<hash>`, store `thumbnails` com chave `assetId`): é cache de bytes que o servidor manda de novo, não dado da loja, com 10 MB por namespace e descarte do menos usado; só existe no disco quando a loja tem a cópia offline no aparelho (sem ela, só em memória), cai para a memória se o IndexedDB falhar e é apagado com o namespace (saída, revogação do acesso, esvaziamento da fila) e na troca de loja. A rota em lote e o `no-store` do HTTP estão no [ADR 0018](../adr/0018-midia-privada-cloudflare-images-r2.md).
 
 ## Retenção
 

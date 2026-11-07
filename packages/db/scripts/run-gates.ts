@@ -1,7 +1,17 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import type { Client } from "pg";
 import { isLocalGateHost } from "./gate-hosts";
+import {
+  checkCiOwnerSetup,
+  type GateRun,
+  inheritedEnvironment,
+  runMarkers,
+  runsOf,
+  runThenCleanUp,
+  type SuperuserNeed,
+} from "./gate-runs";
 import { connectToGateTarget, validateGateTarget } from "./gate-target";
 
 /**
@@ -16,6 +26,11 @@ import { connectToGateTarget, validateGateTarget } from "./gate-target";
  *   POLARIS_GATE_DATABASE_URL  direct (non-pooled) owner URL of the disposable database
  *   POLARIS_GATE_BRANCH        branch name, `prNN-...-gate`
  *   POLARIS_GATE_DATABASE      database name (default `neondb`)
+ *   POLARIS_GATE_SUPERUSER_URL local Postgres only: a superuser of the same database, given only to the gates that
+ *                              need one (`superuser`). Required when the target is the CI's local Postgres (CI=true):
+ *                              the executor stops without it, and the owner of POLARIS_GATE_DATABASE_URL must NOT be a
+ *                              superuser, so every other gate runs as on Neon, and a gate that proves more with a
+ *                              superuser (`also`) runs twice, once as each. Outside the CI it is optional
  * The target must be on the list of hosts in gate-hosts.ts: a Neon disposable
  * endpoint, or a local Postgres when the process runs in CI (`CI=true`); any
  * other host is refused before a connection opens. Each gate script keeps its own checks; this
@@ -35,6 +50,7 @@ interface Context {
   host: string;
   runtimeLogin: string;
   runtimeUrl: string;
+  superuserUrl: string | undefined;
   url: string;
 }
 
@@ -43,9 +59,9 @@ interface Gate {
   /** Proves nothing without the job's own Postgres: never selected against Neon. */
   localOnly?: boolean;
   name: string;
-  /** Reads the synthetic `rls_poc_operations` rows the Neon bootstrap seeds. */
-  needsPocFixture?: boolean;
   script: string;
+  /** See gate-runs.ts: with POLARIS_GATE_SUPERUSER_URL set, `only` runs as the superuser and `also` runs as both. */
+  superuser?: SuperuserNeed;
 }
 
 const salesEnv = (context: Context) => ({
@@ -53,6 +69,11 @@ const salesEnv = (context: Context) => ({
   POLARIS_SALES_GATE_DATABASE: context.database,
   POLARIS_SALES_GATE_DATABASE_URL: context.url,
 });
+
+// as a superuser they prove more (audit-retention: the append-only triggers under session_replication_role = replica;
+// definer-hardening: the planted superusers, the database owner's edges and the attributes only a superuser gives);
+// without one, as on Neon, that part is skipped and the gate says so
+const superuserAlso = new Set(["audit-retention", "definer-hardening"]);
 
 const gates: Gate[] = [
   ["sales-aggregate", "verify-sales-aggregate-gate.ts"],
@@ -71,6 +92,8 @@ const gates: Gate[] = [
   ["economics", "verify-economics-gate.ts"],
   // the daily sales series of the Início's map, aggregated in SQL, equals the engine's daily series
   ["daily-sales", "verify-daily-sales-gate.ts"],
+  // the period summary, aggregated in SQL, equals the engine in every field (scenarios and a property of 200 cases)
+  ["period-summary-sql", "verify-period-summary-sql-gate.ts"],
   ["goals", "verify-goals-gate.ts"],
   // opening the Início writes nothing but the settling of an ended goal (AC-23), measured by pg_stat_user_tables
   ["home-writes", "verify-home-writes-gate.ts"],
@@ -88,6 +111,12 @@ const gates: Gate[] = [
   [
     "billing-owner-commands",
     "../../../apps/web/scripts/verify-billing-owner-commands-gate.ts",
+  ],
+  // the operator's provider commands (ADR 0105), with the real store, inbox, ledger and lock: the refund once by the
+  // state of the charge, the amount checked first, the decision in the ledger, the lock of another command
+  [
+    "billing-operator-commands",
+    "../../../apps/web/scripts/verify-billing-operator-commands-gate.ts",
   ],
   // the consumer of billing.notice (ADR 0104, PR G), with the real store, the real recipient and the Worker's wiring:
   // the notice in the fact's transaction, the sweep once, the order of the arguments, the purge, cases 3 and 4 of item 5
@@ -130,6 +159,8 @@ const gates: Gate[] = [
   ["access-log", "verify-access-log-gate.ts"],
   // the lock of the sign-in by password (ADR 0100): the 5th failure, the release, the reservation, the expiry
   ["login-lock", "verify-login-lock-gate.ts"],
+  // lives in apps/web: the Worker's hasher against the bcrypt of pgcrypto (0112), who reaches it, the old hash refused
+  ["password-hash", "../../../apps/web/scripts/verify-password-hash-gate.ts"],
   // the purge of the user who never verified the e-mail (ADR 0100, Q-D2): every condition together, the limit, the audit
   ["unverified-user-purge", "verify-unverified-user-purge-gate.ts"],
   // the record of acceptance of the terms and the privacy policy (ADR 0100): append-only, per user, the minimum version, no IP
@@ -147,8 +178,14 @@ const gates: Gate[] = [
   ["device-sessions", "verify-device-sessions-gate.ts"],
   // row security with FORCE on Better Auth's tables and the auth audit (0098): catalog, real logins, planted defects
   ["auth-tables-row-security", "verify-auth-tables-row-security-gate.ts"],
+  // one account per (provider_id, account_id) (0106): Better Auth 1.7 refuses a key held by two rows
+  ["account-key", "verify-account-key-gate.ts"],
+  // size ceilings of the catalog in code points, the domain numbers (0107): option value 80, SKU 64
+  ["catalog-size-ceilings", "verify-catalog-size-ceilings-gate.ts"],
   ["offline-lease", "verify-offline-lease-gate.ts"],
   ["sync-log", "verify-sync-log-gate.ts"],
+  // the cover of a product (the image of lowest position): the reads, one sync change per image command, the plan
+  ["product-cover", "verify-product-cover-gate.ts"],
   ["bootstrap", "verify-bootstrap-gate.ts"],
   ["sync-push", "verify-sync-push-gate.ts"],
   ["offline-product", "verify-offline-product-gate.ts"],
@@ -162,10 +199,13 @@ const gates: Gate[] = [
     "product-opening-stock",
     "../../../apps/web/scripts/verify-product-opening-stock-gate.ts",
   ],
+  // lives in apps/web: the import of a spreadsheet, a row per transaction with the lock of the name (corte 2.5)
+  ["product-import", "../../../apps/web/scripts/verify-product-import-gate.ts"],
 ].map(([name, script]) => ({
   env: salesEnv,
   name: name as string,
   script: script as string,
+  ...(superuserAlso.has(name as string) ? { superuser: "also" as const } : {}),
 }));
 
 gates.push(
@@ -214,7 +254,6 @@ gates.push(
       POLARIS_TENANT_CONTEXT_TEST_EXPECTED_HOSTNAME: context.host,
     }),
     name: "tenant-context",
-    needsPocFixture: true,
     script: "verify-tenant-context-gate.ts",
   },
   // the environment marker as a database comment (ADR 0097): a throwaway database and a non-superuser owner, which the runner
@@ -224,6 +263,7 @@ gates.push(
     localOnly: true,
     name: "environment-marker",
     script: "verify-environment-marker-gate.ts",
+    superuser: "only",
   },
   // the activation funnel (corte 2.4, ADR 0071 amended): its fixtures write sale headers without items and its measure
   // loads auto_explain, both only for a superuser, so the job's Postgres only
@@ -232,6 +272,7 @@ gates.push(
     localOnly: true,
     name: "activation-funnel",
     script: "verify-activation-funnel-gate.ts",
+    superuser: "only",
   },
   // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
   // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
@@ -252,7 +293,6 @@ gates.push(
     }),
     localOnly: true,
     name: "rls",
-    needsPocFixture: true,
     script: "../../../apps/web/scripts/verify-rls-ci-gate.ts",
   },
   // every migration replayed by an owner who is not a superuser, as on Neon. It parks the polaris_* roles of the gate
@@ -262,6 +302,7 @@ gates.push(
     localOnly: true,
     name: "migrations-without-superuser",
     script: "verify-migrations-without-superuser-gate.ts",
+    superuser: "only",
   },
   // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
   // Local Postgres only, like admin-worker. They are the last gates of the list, which is the order they run in (not the order of a
@@ -287,18 +328,29 @@ gates.push(
   }
 );
 
+// the catalog of public read before any other gate runs, so what it sees is the migrated database and nothing a gate left;
+// local Postgres only: it proves nothing about the schemas a Neon project adds
+gates.unshift({
+  env: salesEnv,
+  localOnly: true,
+  name: "rls-forced-catalog",
+  script: "verify-rls-forced-catalog-gate.ts",
+});
+
 /**
  * Named suites. `gate3` proves catalog, stock and private media (plan Gate 3);
  * `gate4` proves the sales core (plan Gate 4). `all` is every gate. `concurrency`
  * is the races of the system (docs/architecture/concurrency-matrix.md): the gates
  * whose races hold the contended lock, start together and fail if they never
  * competed (concurrency-support.ts). Every one of them is also in `ci`, so the
- * suite adds no job and no gate; it only runs the races alone and repeated.
+ * suite adds no gate; it only runs the races alone and repeated, in the nightly
+ * `Concurrency nightly` workflow (3 rounds) and by hand before a release.
  */
 const suites: Record<string, string[]> = {
   // What the CI job runs against its own Postgres 18 service: the gates that do
   // not depend on Neon-specific roles or hostnames.
   ci: [
+    "rls-forced-catalog",
     "sales-aggregate",
     "sale-transaction",
     "sale-customer-link",
@@ -313,6 +365,7 @@ const suites: Record<string, string[]> = {
     "expense-recurrence",
     "economics",
     "daily-sales",
+    "period-summary-sql",
     "goals",
     "home-writes",
     "billing-catalog",
@@ -322,6 +375,7 @@ const suites: Record<string, string[]> = {
     "billing-self-service",
     "billing-read-plan",
     "billing-owner-commands",
+    "billing-operator-commands",
     "billing-notices",
     "billing-notice-consumer",
     "operational-selection",
@@ -349,6 +403,7 @@ const suites: Record<string, string[]> = {
     "scheduled-jobs",
     "access-log",
     "login-lock",
+    "password-hash",
     "unverified-user-purge",
     "legal-acceptance",
     "definer-hardening",
@@ -359,8 +414,11 @@ const suites: Record<string, string[]> = {
     "offline-devices",
     "device-sessions",
     "auth-tables-row-security",
+    "account-key",
+    "catalog-size-ceilings",
     "offline-lease",
     "sync-log",
+    "product-cover",
     "bootstrap",
     "sync-push",
     "offline-product",
@@ -368,6 +426,9 @@ const suites: Record<string, string[]> = {
     "offline-stock",
     "offline-sale",
     "offline-e2e",
+    // the creation of a product with its opening stock, and the import that runs it a row at a time
+    "product-opening-stock",
+    "product-import",
     "inventory",
     "customers",
     "media-upload",
@@ -420,6 +481,7 @@ const suites: Record<string, string[]> = {
     "device-sessions",
     "offline-lease",
     "sync-log",
+    "product-cover",
     "bootstrap",
     "sync-push",
     "offline-product",
@@ -434,6 +496,7 @@ const suites: Record<string, string[]> = {
     "expense-recurrence",
     "economics",
     "daily-sales",
+    "period-summary-sql",
     "goals",
   ],
   // Phase 7 (billing and entitlements): grows with every gate of the phase.
@@ -491,7 +554,8 @@ function redact(line: string): string {
 
 function runGate(
   gate: Gate,
-  context: Context
+  context: Context,
+  run: GateRun
 ): Promise<{
   code: number;
   notes: string[];
@@ -502,11 +566,20 @@ function runGate(
     const started = Date.now();
     const lines: string[] = [];
     const notes: string[] = [];
+    const superuserUrl = run.asSuperuser ? context.superuserUrl : undefined;
+    const inherited = inheritedEnvironment(process.env);
     const child = spawn(process.execPath, [`scripts/${gate.script}`], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
-        ...process.env,
-        ...gate.env(context),
+        ...inherited,
+        ...runMarkers(run),
+        ...(superuserUrl
+          ? {
+              ...gate.env({ ...context, url: superuserUrl }),
+              DATABASE_URL: superuserUrl,
+              POLARIS_GATE_DATABASE_URL: superuserUrl,
+            }
+          : gate.env(context)),
         POLARIS_GATE_BRANCH: context.branch,
         POLARIS_GATE_DATABASE: context.database,
         POLARIS_GATE_RUNTIME_LOGIN: context.runtimeLogin,
@@ -540,7 +613,89 @@ function runGate(
   });
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear script of validation, setup, sequential runs and teardown
+async function isSuperuser(client: Client): Promise<boolean> {
+  const result = await client.query<{ rolsuper: boolean }>(
+    "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
+  );
+  return result.rows[0]?.rolsuper === true;
+}
+
+/**
+ * The superuser URL of the gates that need one, checked against the owner's: the same local host and database, a real
+ * superuser, and an owner that is not one (the configuration that proves the other gates without superuser).
+ */
+async function superuserTarget(input: {
+  admin: Client;
+  branch: string;
+  database: string;
+  host: string;
+  isLocalCi: boolean;
+}): Promise<string | undefined> {
+  const url = process.env.POLARIS_GATE_SUPERUSER_URL;
+  await checkCiOwnerSetup({
+    hasSuperuserUrl: Boolean(url),
+    isLocalCi: input.isLocalCi,
+    ownerIsSuperuser: () => isSuperuser(input.admin),
+  });
+  if (!url) {
+    return undefined;
+  }
+  const parsed = validateGateTarget({
+    branch: input.branch,
+    database: input.database,
+    url,
+  });
+  if (!input.isLocalCi || parsed.host !== input.host) {
+    throw new Error(
+      "POLARIS_GATE_SUPERUSER_URL is for the local Postgres of the job only, on the same host as the owner."
+    );
+  }
+  const { admin } = await connectToGateTarget({
+    branch: input.branch,
+    database: input.database,
+    url,
+  });
+  try {
+    if (!(await isSuperuser(admin))) {
+      throw new Error("POLARIS_GATE_SUPERUSER_URL is not a superuser.");
+    }
+  } finally {
+    await admin.end();
+  }
+  return url;
+}
+
+async function runAndReport(
+  gate: Gate,
+  context: Context,
+  run: GateRun
+): Promise<GateResult> {
+  const result = await runGate(gate, context, run);
+  const status = result.code === 0 ? "passed" : "failed";
+  console.log(`    ${status} in ${result.seconds}s`);
+  for (const note of result.notes) {
+    console.log(`    note: ${note}`);
+  }
+  if (result.code !== 0) {
+    for (const line of result.tail) {
+      console.log(`    | ${line.slice(0, 220)}`);
+    }
+  }
+  return {
+    gate: run.label,
+    ...(result.notes.length > 0 ? { notes: result.notes } : {}),
+    seconds: result.seconds,
+    status,
+  };
+}
+
+interface GateResult {
+  gate: string;
+  notes?: string[];
+  seconds: number;
+  status: string;
+}
+
 async function main() {
   const url = process.env.POLARIS_GATE_DATABASE_URL;
   const branch = process.env.POLARIS_GATE_BRANCH ?? "";
@@ -577,71 +732,69 @@ async function main() {
   }
 
   const { admin } = await connectToGateTarget({ branch, database, url });
-  const login = `polaris_gate_runner_${randomBytes(6).toString("hex")}`;
-  const password = randomBytes(24).toString("hex");
-  const results: Array<{
-    gate: string;
-    notes?: string[];
-    seconds: number;
-    status: string;
-  }> = [];
+  let superuserUrl: string | undefined;
   try {
-    await admin.query(
-      `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
-    );
-    await admin.query(`GRANT polaris_pr11_runtime TO "${login}"`);
-    if (isLocalCi && selected.some((gate) => gate.needsPocFixture)) {
-      // what the Neon bootstrap seeds by hand; the migrations create only the table
-      await admin.query(
-        `INSERT INTO public.rls_poc_operations (organization_id, token, value)
-         VALUES ('org_a', 'seed-a', 'synthetic data for org_a'),
-                ('org_b', 'seed-b', 'synthetic data for org_b')
-         ON CONFLICT (organization_id, token) DO NOTHING`
-      );
-    }
-    const runtime = new URL(url);
-    runtime.username = login;
-    runtime.password = password;
-    const context: Context = {
+    superuserUrl = await superuserTarget({
+      admin,
       branch,
       database,
-      host: parsed.hostname,
-      runtimeLogin: login,
-      runtimeUrl: isLocalCi
-        ? runtime.toString()
-        : withVerifyFull(runtime.toString()),
-      url: isLocalCi ? url : withVerifyFull(url),
-    };
-
-    for (const gate of selected) {
-      console.log(`=== ${gate.name}`);
-      // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
-      const result = await runGate(gate, context);
-      const status = result.code === 0 ? "passed" : "failed";
-      results.push({
-        gate: gate.name,
-        ...(result.notes.length > 0 ? { notes: result.notes } : {}),
-        seconds: result.seconds,
-        status,
-      });
-      console.log(`    ${status} in ${result.seconds}s`);
-      for (const note of result.notes) {
-        console.log(`    note: ${note}`);
-      }
-      if (result.code !== 0) {
-        for (const line of result.tail) {
-          console.log(`    | ${line.slice(0, 220)}`);
-        }
-      }
-    }
-  } finally {
-    try {
-      await admin.query(`REVOKE polaris_pr11_runtime FROM "${login}"`);
-      await admin.query(`DROP ROLE IF EXISTS "${login}"`);
-    } finally {
-      await admin.end();
-    }
+      host: parsed.host,
+      isLocalCi,
+    });
+  } catch (error) {
+    await admin.end().catch(() => undefined);
+    throw error;
   }
+  const login = `polaris_gate_runner_${randomBytes(6).toString("hex")}`;
+  const password = randomBytes(24).toString("hex");
+  const results: GateResult[] = [];
+  await runThenCleanUp(
+    async () => {
+      await admin.query(
+        `CREATE ROLE "${login}" WITH LOGIN INHERIT PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
+      );
+      await admin.query(`GRANT polaris_pr11_runtime TO "${login}"`);
+      const runtime = new URL(url);
+      runtime.username = login;
+      runtime.password = password;
+      const context: Context = {
+        branch,
+        database,
+        host: parsed.hostname,
+        runtimeLogin: login,
+        runtimeUrl: isLocalCi
+          ? runtime.toString()
+          : withVerifyFull(runtime.toString()),
+        superuserUrl,
+        url: isLocalCi ? url : withVerifyFull(url),
+      };
+
+      const runs = selected.flatMap((gate) =>
+        runsOf(gate.name, gate.superuser, Boolean(superuserUrl)).map((run) => ({
+          gate,
+          run,
+        }))
+      );
+      for (const { gate, run } of runs) {
+        console.log(`=== ${run.label}`);
+        // biome-ignore lint/performance/noAwaitInLoops: gates must run strictly one at a time on one database
+        results.push(await runAndReport(gate, context, run));
+      }
+    },
+    async () => {
+      try {
+        await admin.query(`REVOKE polaris_pr11_runtime FROM "${login}"`);
+        await admin.query(`DROP ROLE IF EXISTS "${login}"`);
+      } finally {
+        await admin.end();
+      }
+    },
+    (cleanupError) => {
+      console.error(
+        `Gate runner cleanup also failed: ${redact(String(cleanupError))}`
+      );
+    }
+  );
   console.log(JSON.stringify({ branch, database, results }, null, 2));
   if (results.some((entry) => entry.status !== "passed")) {
     process.exitCode = 1;

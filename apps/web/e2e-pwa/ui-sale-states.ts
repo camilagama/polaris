@@ -4,7 +4,7 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The states of the sale screen the interface guardrails measure (t185): the screen in the lab of the screens
+ * The states of the sale screen the interface guardrails measure: the screen in the lab of the screens
  * (`/offline-screens-lab?screen=sale`) over the real offline runtime, with the server answered by the test
  * (`page.route`) and synthetic data only. The lab's own controls are hidden at the end of each state, so what
  * is measured is the screen alone.
@@ -79,7 +79,7 @@ const PROFILE = {
   version: 3,
 };
 
-const CONFIRMED = {
+export const CONFIRMED_SALE = {
   adjustments: [
     {
       amount: "10.00",
@@ -170,14 +170,14 @@ async function serveSale(page: Page) {
     return route.fulfill(rpc({ entries, nextCursor: null }));
   });
   await page.route("**/rpc/sale/confirm", (route: Route) =>
-    route.fulfill(rpc(CONFIRMED))
+    route.fulfill(rpc(CONFIRMED_SALE))
   );
   await page.route("**/rpc/sale/getCustomerLink", (route: Route) =>
     route.fulfill(
       rpc({
         current: { customerId: null, version: 0 },
         history: [],
-        saleId: CONFIRMED.sale.id,
+        saleId: CONFIRMED_SALE.sale.id,
       })
     )
   );
@@ -231,9 +231,9 @@ async function pick(
 ): Promise<Locator> {
   const item = page.getByRole("group", { exact: true, name: `Item ${index}` });
   await item.getByLabel("Produto ou variante").fill(search);
-  await item
-    .getByRole("list", { name: "Variantes encontradas" })
-    .getByRole("button", { name: option })
+  await page
+    .getByRole("listbox", { name: "Variantes encontradas" })
+    .getByRole("option", { name: option })
     .click();
   return item;
 }
@@ -334,6 +334,7 @@ export const saleStates = {
       page.getByRole("combobox", { exact: true, name: "Perfil de pagamento" }),
       page.getByRole("option", { name: PROFILE_OPTION })
     );
+    await page.getByRole("button", { name: "Alterar data e ajustes" }).click();
     await page.getByRole("button", { name: "Adicionar ajuste" }).click();
     const adjustment = page.getByRole("group", {
       exact: true,

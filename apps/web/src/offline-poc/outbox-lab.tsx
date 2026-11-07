@@ -4,6 +4,11 @@ import { signOfflineLease } from "../lib/offline-lease-token";
 import { localNamespace } from "../offline/namespace";
 import type { OutboxCommand } from "../offline/outbox/command";
 import {
+  clearOutboxDatabase,
+  outboxDatabaseName,
+} from "../offline/outbox/indexeddb-storage";
+import { anyOutboxOnDisk } from "../offline/outbox/outbox-on-disk";
+import {
   type OutboxStore,
   openOutboxStore,
   wipeOutboxStore,
@@ -42,6 +47,51 @@ async function leaseFor(
     }),
     LAB_KEY
   );
+}
+
+const RACE_ORDERS = [
+  "limpeza-antes",
+  "venda-antes",
+  "juntas-limpeza",
+  "juntas-venda",
+] as const;
+
+const FOREIGN_STORES = ["meta", "extra"] as const;
+
+function createForeignOutbox(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const opening = indexedDB.open(name, 1);
+    opening.onupgradeneeded = () => {
+      const database = opening.result;
+      for (const store of FOREIGN_STORES) {
+        database.createObjectStore(store).put("sobra", "chave");
+      }
+    };
+    opening.onsuccess = () => {
+      opening.result.close();
+      resolve();
+    };
+    opening.onerror = () => reject(opening.error);
+  });
+}
+
+function countForeignStores(name: string): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const opening = indexedDB.open(name);
+    opening.onerror = () => reject(opening.error);
+    opening.onsuccess = () => {
+      const database = opening.result;
+      const tx = database.transaction([...FOREIGN_STORES], "readonly");
+      const counts = FOREIGN_STORES.map((store) =>
+        tx.objectStore(store).count()
+      );
+      tx.oncomplete = () => {
+        database.close();
+        resolve(counts.map((counting) => counting.result));
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+  });
 }
 
 function describeCommand(command: OutboxCommand): string {
@@ -199,6 +249,84 @@ export function OutboxLab() {
       }),
     [organizationId, run, userId]
   );
+  /**
+   * A wipe on its own connection against a sale on another one, in each order:
+   * the sale must survive, or the wipe must refuse; it can never vanish. Each
+   * line is `order=wipe result/commands a fresh connection sees`.
+   */
+  const handleRace = useCallback(
+    () =>
+      run("Corrida", async () => {
+        const lines: string[] = [];
+        const round = crypto.randomUUID().slice(0, 8);
+        for (const order of RACE_ORDERS) {
+          const raceOrganization = `${organizationId}-${order}-${round}`;
+          // biome-ignore lint/performance/noAwaitInLoops: each order on its own namespace, one after the other
+          const namespace = await localNamespace(userId, raceOrganization);
+          const seller = await openOutboxStore(namespace, DEVICE_ID);
+          const sale = {
+            baseVersion: 1,
+            commandId: uuid(5000),
+            deviceId: DEVICE_ID,
+            lease: await leaseFor(userId, raceOrganization, false),
+            organizationId: raceOrganization,
+            payload: { n: 1, note: "venda sintética" },
+            type: "sale.confirm",
+          };
+          const wipe = () =>
+            wipeOutboxStore(namespace, { discardPending: false }).then(
+              () => "ok",
+              (error: unknown) =>
+                error instanceof Error ? error.name : "desconhecido"
+            );
+          let wiped = "";
+          if (order === "limpeza-antes") {
+            wiped = await wipe();
+            await seller.outbox.enqueue(sale);
+          } else if (order === "venda-antes") {
+            await seller.outbox.enqueue(sale);
+            wiped = await wipe();
+          } else if (order === "juntas-limpeza") {
+            [wiped] = await Promise.all([wipe(), seller.outbox.enqueue(sale)]);
+          } else {
+            [, wiped] = await Promise.all([
+              seller.outbox.enqueue(sale),
+              wipe(),
+            ]);
+          }
+          seller.close();
+          const fresh = await openOutboxStore(namespace, DEVICE_ID);
+          const left = (await fresh.outbox.snapshot()).commands.length;
+          fresh.close();
+          lines.push(`${order}=${wiped}/${left}`);
+        }
+        return lines.join(" ");
+      }),
+    [organizationId, run, userId]
+  );
+  const handleOnDisk = useCallback(
+    () =>
+      run("Fila no disco", async () => {
+        const queued = await anyOutboxOnDisk();
+        const databases = (await indexedDB.databases()).filter(({ name }) =>
+          name?.startsWith("polaris-outbox-")
+        ).length;
+        return `${queued ? "sim" : "não"}, ${databases} bancos`;
+      }),
+    [run]
+  );
+  const handleForeignWipe = useCallback(
+    () =>
+      run("Banco sem comandos", async () => {
+        const name = outboxDatabaseName(`sem-comandos-${crypto.randomUUID()}`);
+        await createForeignOutbox(name);
+        const before = await countForeignStores(name);
+        const wiped = await clearOutboxDatabase(name, () => undefined);
+        const after = await countForeignStores(name);
+        return `comandos=${wiped} antes=${before.join(",")} depois=${after.join(",")}`;
+      }),
+    [run]
+  );
   const handleWipeSafely = useCallback(() => handleWipe(false), [handleWipe]);
   const handleWipeDiscarding = useCallback(
     () => handleWipe(true),
@@ -275,6 +403,15 @@ export function OutboxLab() {
         </button>
         <button onClick={handleWipeDiscarding} type="button">
           Apagar descartando
+        </button>
+        <button onClick={handleOnDisk} type="button">
+          Fila no disco
+        </button>
+        <button onClick={handleForeignWipe} type="button">
+          Banco sem comandos
+        </button>
+        <button onClick={handleRace} type="button">
+          Corrida limpeza × venda
         </button>
         <button onClick={handlePersist} type="button">
           Pedir armazenamento persistente

@@ -1,6 +1,8 @@
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { describe, expect, it } from "vitest";
+import { formatShortInstant } from "../lib/format";
 import { signOfflineLease } from "../lib/offline-lease-token";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import {
   type AttentionItem,
   buildAttention,
@@ -17,6 +19,7 @@ import { createOfflineSale } from "./sale-confirm";
 import { countStockOffline, receiveStockOffline } from "./stock-commands";
 import { FakeWriter } from "./test-support";
 
+const SALE_TITLE = /^Venda de R\$ 20,00 · \d{2}\/\d{2} \d{2}:\d{2}$/;
 const key = { id: "k1", secret: "s".repeat(40) };
 const userId = "user-1";
 const organizationId = "org-1";
@@ -173,9 +176,11 @@ describe("the attention summary", () => {
       code: "insufficient_stock",
       commandId: refused.commandId,
       kind: "sale",
-      title: "Venda de 1 item",
+      title: `Venda de R$ 20,00 · ${formatShortInstant(now.toISOString())}`,
     });
-    expect(summary.items[0]?.detail).toContain("estoque");
+    expect(summary.items[0]?.detail).toBe(
+      "O estoque do servidor não cobre esta venda: o saldo mudou enquanto este aparelho estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu."
+    );
   });
 
   it("covers the causes of the plan, each with its own words and actions", async () => {
@@ -186,15 +191,15 @@ describe("the attention summary", () => {
       [
         "entitlement_changed",
         "entitlement_changed",
-        ["review_account", "retry"],
+        ["open_subscription", "retry"],
       ],
-      ["session_changed", "session_changed", ["review_account", "retry"]],
+      ["session_changed", "session_changed", ["sign_in_again", "retry"]],
       [
         "authorization_revoked",
         "authorization_revoked",
-        ["review_account", "discard"],
+        ["sign_in_again", "discard"],
       ],
-      ["lease_invalid", "authorization_revoked", ["review_account", "discard"]],
+      ["lease_invalid", "authorization_revoked", ["sign_in_again", "discard"]],
       ["command_too_old", "command_too_old", ["discard"]],
       ["something_new", "other", ["discard"]],
     ];
@@ -223,6 +228,30 @@ describe("the attention summary", () => {
       await outbox.discard(queued.commandId);
     }
     expect(details.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it("points a plan refusal to Assinatura when the tab exists, and to the support when it does not", async () => {
+    const { outbox, product, refuse } = await setup();
+    const queued = await product("Camisa", "CAM-E");
+    await refuse(queued.commandId, "entitlement_changed");
+    const snapshot = await outbox.snapshot();
+
+    const [available] = buildAttention(snapshot, new Set(), {
+      subscriptionAvailable: true,
+    }).items;
+    const [byDefault] = buildAttention(snapshot).items;
+    expect(available?.actions).toEqual(["open_subscription", "retry"]);
+    expect(available?.detail).toContain("em Ver Assinatura");
+    expect(byDefault).toEqual(available);
+
+    const [unavailable] = buildAttention(snapshot, new Set(), {
+      subscriptionAvailable: false,
+    }).items;
+    expect(unavailable?.actions).toEqual(["retry"]);
+    expect(unavailable?.detail).toBe(
+      `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`
+    );
+    expect(unavailable?.cause).toBe("entitlement_changed");
   });
 
   it("never offers anything that forces the sync, and resubmit only for a sale that can recover", async () => {
@@ -301,7 +330,7 @@ describe("resolving an item", () => {
     expect(after.commands[0]?.commandId).not.toBe(refused.commandId);
     expect(after.commands[0]?.status).toBe("pending");
 
-    const account = { ...item, actions: ["review_account" as const] };
+    const account = { ...item, actions: ["sign_in_again" as const] };
     await expect(
       discardAttentionItem(account, { outbox, writer })
     ).rejects.toThrow("action_not_available");
@@ -332,7 +361,7 @@ describe("resolving an item", () => {
     await refuse(refused.commandId, "session_changed");
     const item = await itemOf(outbox);
     expect(item.cause).toBe("session_changed");
-    expect(item.actions).toEqual(["review_account", "retry"]);
+    expect(item.actions).toEqual(["sign_in_again", "retry"]);
     expect(item.actions).not.toContain("discard");
 
     await resubmitAttentionItem(item, { lease, outbox });
@@ -343,6 +372,132 @@ describe("resolving an item", () => {
     expect(after.commands[0]?.status).toBe("pending");
   });
 
+  it("says a sale refused as authorization_revoked is not sent by itself, and never says the access may come back", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "authorization_revoked");
+
+    const item = await itemOf(outbox);
+
+    expect(item.title).toBe(
+      `Venda de R$ 20,00 · ${formatShortInstant(now.toISOString())}`
+    );
+    expect(item.detail).toBe(
+      "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta. Se o seu acesso mudou, use Sair e entrar de novo."
+    );
+    expect(item.detail).not.toContain("não o recebeu");
+    expect(item.detail).not.toContain("se o acesso não voltar");
+    expect(item.actions).toEqual(["redo_sale", "sign_in_again", "discard"]);
+    expect(item.redone).toBe(false);
+    expect(item.detail).not.toContain("registre a venda de novo e depois");
+  });
+
+  it("offers only the discard of the refused sale, said as such, once the new sale exists", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "authorization_revoked");
+
+    const [item] = buildAttention(
+      await outbox.snapshot(),
+      new Set([refused.commandId])
+    ).items;
+
+    expect(item?.redone).toBe(true);
+    expect(item?.actions).toEqual(["discard"]);
+    expect(item?.detail).toContain("Você já refez esta venda");
+    expect(discardWarning(item as AttentionItem)).toContain(
+      "A venda refeita já está registrada ou guardada e não muda"
+    );
+  });
+
+  it("offers no redo for a sale refused for another account code, nor for a product", async () => {
+    const { outbox, product, refuse, sale } = await setup();
+    const wrong = await sale();
+    await refuse(wrong.commandId, "wrong_device");
+    expect((await itemOf(outbox)).actions).toEqual([
+      "sign_in_again",
+      "discard",
+    ]);
+    await outbox.discard(wrong.commandId);
+
+    const queued = await product("Camiseta", "CAM");
+    await refuse(queued.commandId, "authorization_revoked");
+    expect((await itemOf(outbox)).actions).toEqual([
+      "sign_in_again",
+      "discard",
+    ]);
+  });
+
+  it("tells, before a discard of a sale refused for authorization, to redo it first", () => {
+    const base: AttentionItem = {
+      actions: ["redo_sale", "discard"],
+      blocksQueue: true,
+      cause: "authorization_revoked",
+      code: "authorization_revoked",
+      commandId: uuid(1),
+      detail: "",
+      kind: "sale",
+      redone: false,
+      title: "",
+    };
+    expect(discardWarning(base)).toContain("use Refazer esta venda antes");
+    expect(discardWarning({ ...base, code: "wrong_device" })).not.toContain(
+      "Refazer"
+    );
+  });
+
+  it("keeps the words about the access coming back for the other account codes, and sends them to sign in again", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const wrong = await sale();
+    await refuse(wrong.commandId, "wrong_device");
+    const item = await itemOf(outbox);
+    expect(item.detail).toContain("se o acesso não voltar");
+    expect(item.detail).toContain("Sair e entrar de novo");
+  });
+
+  it("titles every refused sale with its value and moment, so two of them are told apart", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const first = await sale();
+    const second = await sale();
+    await refuse(first.commandId, "sale_occurred_too_old");
+    await outbox.markSending(second.commandId);
+    await outbox.reject(second.commandId, "insufficient_stock");
+    const [one, two] = buildAttention(await outbox.snapshot()).items;
+    const expected = `Venda de R$ 20,00 · ${formatShortInstant(now.toISOString())}`;
+    expect([one?.title, two?.title]).toEqual([expected, expected]);
+    expect(expected).toMatch(SALE_TITLE);
+  });
+
+  it("falls back to the count of items when the sale cannot be priced", async () => {
+    const { outbox, refuse, sale } = await setup();
+    const refused = await sale();
+    await refuse(refused.commandId, "insufficient_stock");
+    const snapshot = await outbox.snapshot();
+    const unpriced = {
+      ...snapshot,
+      commands: snapshot.commands.map((command) => ({
+        ...command,
+        payload: {
+          ...(command.payload as object),
+          items: [{ quantity: "x", unitPrice: "y" }],
+        },
+      })),
+    };
+    expect(buildAttention(unpriced).items[0]?.title).toBe(
+      `Venda de 1 item · ${formatShortInstant(now.toISOString())}`
+    );
+  });
+
+  it("says a refused non-sale as redo-it", async () => {
+    const { outbox, product, refuse } = await setup();
+    const queued = await product("Camiseta", "CAM");
+    await refuse(queued.commandId, "authorization_revoked");
+    const item = await itemOf(outbox);
+    expect(item.detail).toBe(
+      "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, anote o que ele tinha, descarte este e faça o registro de novo. Se o seu acesso mudou, use Sair e entrar de novo."
+    );
+  });
+
   it("says what a discard loses, per kind", () => {
     const base = {
       actions: ["discard"],
@@ -351,6 +506,7 @@ describe("resolving an item", () => {
       code: "x",
       commandId: uuid(1),
       detail: "",
+      redone: false,
       title: "",
     } as const;
     for (const kind of [

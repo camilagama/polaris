@@ -6,12 +6,13 @@ import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { StatusNav } from "../catalog/screen-parts";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { ListTotalFooter, StatusNav } from "../catalog/screen-parts";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
+import { sumBrlAmounts } from "../lib/sum-brl";
 import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
-import { expenseGroupLabel, formatMonthLabel } from "./expense-model";
+import { formatMonthLabel } from "./expense-model";
 import type {
   ExpenseFilters,
   ExpenseListState,
@@ -29,41 +30,45 @@ interface ExpenseFiltersBarProps {
   onChange: (filters: ExpenseFilters) => void;
 }
 
-/** Category and status of the list (the month is above the list, at the top of Lançamentos). */
-export function ExpenseFiltersBar({
+/** The category of the list: beside the month at the top of Lançamentos, so both come before the list on one line. */
+export function ExpenseCategoryFilter({
   categories,
   filters,
   onChange,
 }: ExpenseFiltersBarProps) {
-  const { categoryId, status } = filters;
-
-  const handleStatus = useCallback(
-    (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
-    [filters, onChange]
-  );
   const handleCategory = useCallback(
     (value: string) => onChange({ ...filters, categoryId: value }),
     [filters, onChange]
   );
-
   return (
-    <div className="grid gap-4">
-      <ExpenseCategorySelect
-        allLabel="Todas as categorias"
-        categories={categories}
-        className="min-[30rem]:max-w-80"
-        id="expense-category-filter"
-        label="Categoria"
-        onChange={handleCategory}
-        value={categoryId}
-      />
-      <StatusNav
-        label="Situação das despesas"
-        onSelect={handleStatus}
-        options={statusTabs}
-        value={status}
-      />
-    </div>
+    <ExpenseCategorySelect
+      allLabel="Todas"
+      categories={categories}
+      className="min-[30rem]:w-64"
+      id="expense-category-filter"
+      label="Categoria"
+      onChange={handleCategory}
+      value={filters.categoryId}
+    />
+  );
+}
+
+/** Active and voided, inside the card of the list (the month and the category are above it). */
+export function ExpenseStatusTabs({
+  filters,
+  onChange,
+}: Omit<ExpenseFiltersBarProps, "categories">) {
+  const handleStatus = useCallback(
+    (value: ExpenseStatusFilter) => onChange({ ...filters, status: value }),
+    [filters, onChange]
+  );
+  return (
+    <StatusNav
+      label="Situação das despesas"
+      onSelect={handleStatus}
+      options={statusTabs}
+      value={filters.status}
+    />
   );
 }
 
@@ -71,18 +76,22 @@ function countLabel(count: number): string {
   return count === 1 ? "1 despesa" : `${count} despesas`;
 }
 
+function loadedCountLabel(count: number, hasMore: boolean): string {
+  return `${countLabel(count)}${hasMore ? " · há mais" : ""}`;
+}
+
 interface ExpenseSummaryProps {
   filters: ExpenseFilters;
   state: ExpenseListState;
 }
 
-/** The month total comes from the server: it covers every page, not only what is loaded. */
+/** The total comes from the server: it covers every page, not only what is loaded. It sits under the title of the list. */
 export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
   const showTotal = !state.isLoading || state.expenses.length > 0;
   return (
     <div
       aria-live="polite"
-      className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1 rounded-lg border bg-muted/40 px-3 py-2.5"
+      className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1"
     >
       <div className="grid gap-0.5">
         <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
@@ -94,10 +103,48 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
         </p>
       </div>
       <p className="text-muted-foreground text-support">
-        {formatMonthLabel(filters.month)}
-        {showTotal ? ` · ${countLabel(state.count)}` : ""}
+        {showTotal ? countLabel(state.count) : ""}
+        <span className="sr-only"> em {formatMonthLabel(filters.month)}</span>
       </p>
     </div>
+  );
+}
+
+/**
+ * From 30 rem the buttons of a row have a fixed width (12 rem, enough for "Editar" and "Anulando…" and for
+ * "Reativando…"), so the figures end in the same x on every row. The total ends there too: the buttons, the 12 px
+ * gap of the row less the 1 px border of the box, as padding on the right. The `md:` copy stays: the box has its own
+ * `md:px-4`, which would win over the `min-[30rem]` one from 48 rem.
+ */
+const ACTIONS_WIDTH = "min-[30rem]:w-48";
+const TOTAL_UNDER_VALUES =
+  "min-[30rem]:pr-[calc(12rem+11px)] md:pr-[calc(12rem+11px)]";
+
+/**
+ * The total of the rows loaded, under them: the sum the eye does down the column. The "Total do período" above is the
+ * server's and covers every page; this one is what is on the screen, so with "Carregar mais" pending they differ
+ * and the count says "há mais", as the sales history does.
+ */
+function ExpenseListTotal({ state }: { state: ExpenseListState }) {
+  const unknown = state.isLoading && state.expenses.length === 0;
+  const failed = state.error !== null && state.expenses.length === 0;
+  const sum = sumBrlAmounts(state.expenses.map((expense) => expense.amount));
+  let value = "—";
+  if (unknown) {
+    value = "…";
+  } else if (sum !== null && !failed) {
+    value = formatBrlAmount(sum);
+  }
+  return (
+    <ListTotalFooter
+      className={cn("rounded-lg border", TOTAL_UNDER_VALUES)}
+      count={
+        unknown || failed
+          ? ""
+          : loadedCountLabel(state.expenses.length, state.nextCursor !== null)
+      }
+      value={value}
+    />
   );
 }
 
@@ -150,10 +197,7 @@ function ExpenseCard({
           ) : null}
         </div>
         <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
-          {expense.categoryName} · {expenseGroupLabel(expense.categoryGroup)}
-        </p>
-        <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
-          Competência {formatCalendarDate(expense.competenceOn)}
+          {expense.categoryName} · {formatCalendarDate(expense.competenceOn)}
           {expense.payee ? ` · ${expense.payee}` : ""}
         </p>
       </div>
@@ -166,7 +210,12 @@ function ExpenseCard({
         >
           {formatBrlAmount(expense.amount)}
         </p>
-        <div className="flex gap-2">
+        <div
+          className={cn(
+            "flex items-center gap-2 touch:gap-3 min-[30rem]:justify-end",
+            ACTIONS_WIDTH
+          )}
+        >
           {voided ? (
             <Button
               {...connectionControlProps(online)}
@@ -195,11 +244,12 @@ function ExpenseCard({
               <Button
                 {...connectionControlProps(online)}
                 aria-label={`Anular despesa ${expense.description}`}
+                className="ml-3 text-destructive hover:text-destructive"
                 disabled={isBusy}
                 onClick={handleVoid}
                 size="sm"
                 type="button"
-                variant="outline"
+                variant="ghost"
               >
                 {thisBusy ? "Anulando…" : "Anular"}
               </Button>
@@ -270,6 +320,7 @@ export function ExpenseList({
           ))}
         </ul>
       ) : null}
+      <ExpenseListTotal state={state} />
       {state.nextCursor === null ? null : (
         <div className="flex justify-center pt-2">
           <Button

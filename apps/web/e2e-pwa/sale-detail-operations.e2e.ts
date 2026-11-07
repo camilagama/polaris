@@ -13,7 +13,7 @@ import { WORKER_MARK } from "./worker-mark";
 /**
  * The real route `/sales/detail` (the customer panel is part of it), the API answered by the test (`page.route`, synthetic data
  * only): the focus when a cancellation or a return changes step, and the customer panel that asks before it removes
- * and keeps a turned-off button reachable and with its reason (t260, on t255).
+ * and keeps a turned-off button reachable and with its reason.
  */
 const ORGANIZATION = {
   id: "0199c2d0-0000-7000-8000-00000000a001",

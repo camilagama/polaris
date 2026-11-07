@@ -9,6 +9,7 @@ import {
   type PlanMethod,
   planMethodOf,
   refundWindowClosesAt,
+  renewalAmountOf,
 } from "@polaris/domain/billing/plan-view";
 import type { BillingNoticeRecipientClient } from "@polaris/db/billing-notice-recipient";
 import type {
@@ -33,7 +34,7 @@ import {
 import type { BillingEmailStore } from "./emails/content";
 
 /**
- * The consumer of `billing.notice` (ADR 0104, decision 7; design t268 v2, §9): reads the notice and the billing record
+ * The consumer of `billing.notice` (ADR 0104, decision 7): reads the notice and the billing record
  * again (the billing role), checks it is still true (`noticeStillTrue`), reads the store it speaks of and the address of
  * its owner (the authentication role's `billing_notice_recipient`, never the payer of the Pix), renders the e-mail and
  * sends it under the notice's ID as the provider's idempotency key, then marks it sent, failed or skipped. The address,
@@ -325,16 +326,30 @@ function noticeProviderRefOf(delivery: BillingNoticeDelivery): string | null {
   return delivery.event?.providerRef ?? null;
 }
 
-/** The amount a notice writes: what the provider reported of the charge, or what the checkout recorded; never the catalog's. */
+/** The notices of a charge still to come before the first one is paid: the price the checkout sent is that charge. */
+const BEFORE_FIRST_CHARGE: ReadonlySet<BillingNoticeKind> = new Set([
+  "first_charge_failed",
+  "trial_charge_eve",
+  "trial_started",
+]);
+
+/**
+ * The amount a notice writes: what the provider reported of the charge, or what the record holds of it; never the
+ * catalog's. Before the first charge, the price the checkout sent; for a renewal (the annual reminder, a renewal that
+ * failed), the next charge's amount by `renewalAmountOf`: the charge in force, and none while a change of cycle waits.
+ */
 function amountOf(delivery: BillingNoticeDelivery): string | null {
   const { event } = delivery;
   if (delivery.kind === "charge_receipt") {
     if (event?.fact.type === "charge_succeeded" && event.fact.amount) {
       return event.fact.amount.value;
     }
-    return event?.id === delivery.firstChargeEventId
-      ? delivery.firstChargeAmount
-      : delivery.priceAmount;
+    if (event?.id === delivery.firstChargeEventId) {
+      return delivery.firstChargeAmount;
+    }
+    return event !== null && event.id === delivery.currentChargeEventId
+      ? delivery.currentChargeAmount
+      : null;
   }
   if (delivery.kind === "refund_confirmed") {
     if (event?.fact.type === "charge_refunded" && event.fact.amount) {
@@ -342,7 +357,14 @@ function amountOf(delivery: BillingNoticeDelivery): string | null {
     }
     return delivery.firstChargeAmount;
   }
-  return delivery.priceAmount;
+  if (BEFORE_FIRST_CHARGE.has(delivery.kind)) {
+    return delivery.priceAmount;
+  }
+  return renewalAmountOf({
+    currentChargeAmount: delivery.currentChargeAmount,
+    cycleMonths: delivery.record.cycleMonths,
+    pendingCycleMonths: delivery.record.pendingCycleMonths,
+  });
 }
 
 interface EmailInput {

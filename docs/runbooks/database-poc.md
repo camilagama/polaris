@@ -1,4 +1,6 @@
-# Database and Hyperdrive POC
+# Database and Hyperdrive POC (histórico)
+
+> **Histórico.** Esta prova da Fase 1 saiu do repositório: a migration 0108 apagou `db_poc_operations`, o script `poc` de `packages/db` foi removido e a rota `POST /api/poc/database` e o `DB_POC_ENABLED` já não existiam no código ([emenda do ADR 0027](../adr/0027-separacao-de-roles-auth-tenant-e-superficies-poc.md#emenda-30102026-as-superfícies-de-prova-saíram-do-banco-e-da-configuração)). O texto abaixo fica como registro do que foi provado; os comandos não funcionam mais.
 
 This POC uses one disposable table, `db_poc_operations`. It contains no product or tenant data.
 

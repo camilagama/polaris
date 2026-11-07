@@ -6,7 +6,7 @@ import { expectMotionLevel } from "./motion-expect";
 import { axeViolations } from "./ui-guardrails";
 
 /**
- * The charts and the Tabs of src/ui/ in the gallery (ADR 0103, amendment "Gráficos", t285): the charts open from
+ * The charts and the Tabs of src/ui/ in the gallery (ADR 0103, amendment "Gráficos"): the charts open from
  * their own chunk and not before, are an image with a name and a keyboard control, draw in the width of their box,
  * take their colors from the tokens, fade in and stop when the page asks for no motion; the chunk that fails leaves
  * the text; the Tabs have the height, the touch area and the focus of the other controls. Each measure is the one
@@ -625,14 +625,14 @@ test("as abas: papel, teclado, altura da lista, área de toque e foco de 3 px", 
   );
   expect(height).toBe(isMobile ? 36 : 32);
 
-  // with touch, each tab has a touch area of at least 48 px
+  // with touch, each tab has a touch area of at least 44 px
   if (isMobile) {
     const areas = await Promise.all(
       [sevenDays, thirtyDays].map((tab) => tab.evaluate(touchArea))
     );
     for (const area of areas) {
-      expect(area.height).toBeGreaterThanOrEqual(48);
-      expect(area.width).toBeGreaterThanOrEqual(48);
+      expect(area.height).toBeGreaterThanOrEqual(44);
+      expect(area.width).toBeGreaterThanOrEqual(44);
     }
   }
 

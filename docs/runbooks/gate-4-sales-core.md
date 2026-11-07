@@ -12,7 +12,7 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
 
 ### Pré-requisitos
 
-- PostgreSQL 18 em `localhost` (por exemplo, um container `postgres:18`, como o do CI), com o dono `neondb_owner` e um banco vazio e descartável (`polaris_gate`). Nunca aponte para um banco com dados que importem: as migrations e os gates escrevem no banco, e os gates de falha injetada criam gatilhos nele.
+- PostgreSQL 18 em `localhost` (por exemplo, um container `postgres:18`, como o do CI), com o dono `neondb_owner` **sem superusuário**, como no Neon (`CREATEDB`, `CREATEROLE`, `BYPASSRLS`, `REPLICATION`), e um banco vazio e descartável (`polaris_gate`) dele. Nunca aponte para um banco com dados que importem: as migrations e os gates escrevem no banco, e os gates de falha injetada criam gatilhos nele.
 - Cliente `psql` e `docker` (ou outro PostgreSQL 18 em `localhost`). Não é preciso CLI Cloudflare ou Neon, nem credencial alguma além da senha do PostgreSQL local, que fica só nas variáveis do processo.
 - O executor só aceita um host da lista de `packages/db/scripts/gate-hosts.ts`: um endpoint Neon direto em São Paulo, ou `localhost`/`127.0.0.1` com `CI=true`; qualquer outro é recusado antes de abrir conexão (teste em `gate-target.test.ts`). Fora do CI, o `CI=true` vai só no prefixo dos comandos do executor, como abaixo.
 - Não rode dois gates ao mesmo tempo no mesmo banco: os gates de falha injetada criam gatilhos nas tabelas compartilhadas e contaminam a execução do outro.
@@ -21,14 +21,19 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
 
 1. Subir o PostgreSQL 18 e preparar o ambiente do processo (valores iguais aos do job do CI; a senha abaixo é a do container descartável do CI, não um segredo):
 
-       docker run -d --rm --name polaris-gate-pg -p 5432:5432 -e POSTGRES_USER=neondb_owner -e POSTGRES_PASSWORD=polaris-ci -e POSTGRES_DB=polaris_gate postgres:18
-       until pg_isready -h localhost -U neondb_owner -d polaris_gate; do sleep 1; done
+       docker run -d --rm --name polaris-gate-pg -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=polaris-ci -e POSTGRES_DB=postgres postgres:18
+       until pg_isready -h localhost -U postgres -d postgres; do sleep 1; done
+       psql postgresql://postgres:polaris-ci@localhost:5432/postgres -v ON_ERROR_STOP=1 \
+         -c "CREATE ROLE neondb_owner LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS REPLICATION PASSWORD 'polaris-ci'" \
+         -c "GRANT pg_monitor, pg_signal_backend TO neondb_owner"
+       psql postgresql://neondb_owner:polaris-ci@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE polaris_gate"
        export DATABASE_URL=postgresql://neondb_owner:polaris-ci@localhost:5432/polaris_gate
        export POLARIS_GATE_DATABASE_URL="$DATABASE_URL"
+       export POLARIS_GATE_SUPERUSER_URL=postgresql://postgres:polaris-ci@localhost:5432/polaris_gate
        export POLARIS_GATE_BRANCH=pr0-local-gate
        export POLARIS_GATE_DATABASE=polaris_gate
 
-   `POLARIS_GATE_BRANCH` precisa casar `^pr\d+-[a-z0-9-]+-gate$`; fora do Neon é só um rótulo.
+   `POLARIS_GATE_BRANCH` precisa casar `^pr\d+-[a-z0-9-]+-gate$`; fora do Neon é só um rótulo. `POLARIS_GATE_SUPERUSER_URL` vai só para os gates que precisam de superusuário por desenho (`environment-marker`, `activation-funnel`, `migrations-without-superuser`); `audit-retention` e `definer-hardening` rodam duas vezes, como o dono e como o superusuário (`(superuser)` no resumo). Com `CI=true` no PostgreSQL local ela é obrigatória e o executor recusa um `POLARIS_GATE_DATABASE_URL` cujo dono seja superusuário (sem a URL, a execução para com a mensagem que nomeia a correção), e todos os outros gates rodam como no Neon ([ADR 0025](../adr/0025-estrategia-de-testes-de-banco.md), emenda do dono sem superusuário).
 2. Criar a role que vive fora das migrations (no Neon ela vem da `production`; aqui não existe) e aplicar as migrations do zero:
 
        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE polaris_pr11_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS"
@@ -39,7 +44,7 @@ O Gate 4 roda como os demais gates de banco: num PostgreSQL 18 que não é o Neo
        CI=true bun run --filter @polaris/db gates:ci   # o que o CI roda, incluindo os gates de venda e o gate4
 
    `gates:gate3` e `gates:all` incluem o `gate2-runtime`, só de Neon, e falham num PostgreSQL local (`gates:gate4` roda local). Para um subconjunto, escolha gates pelo nome: `CI=true bun scripts/run-gates.ts sale-return gate4` (a partir de `packages/db`). Cada gate termina com `"status": "passed"`; o executor imprime só o resumo (e a cauda redigida de um gate que falhar), nunca a URL.
-4. Para repetir do zero, derrube o container (`docker stop polaris-gate-pg`) e suba outro; as migrations são sempre reaplicadas desde a 0000. Remova as variáveis do processo ao final (`unset DATABASE_URL POLARIS_GATE_DATABASE_URL POLARIS_GATE_BRANCH POLARIS_GATE_DATABASE`).
+4. Para repetir do zero, derrube o container (`docker stop polaris-gate-pg`) e suba outro; as migrations são sempre reaplicadas desde a 0000. Remova as variáveis do processo ao final (`unset DATABASE_URL POLARIS_GATE_DATABASE_URL POLARIS_GATE_SUPERUSER_URL POLARIS_GATE_BRANCH POLARIS_GATE_DATABASE`).
 
 Gates avulsos continuam existindo (`poc:sales:verify`, `poc:sales:transaction:verify`, `poc:sales:customer-link:verify`, `poc:sales:cancellation:verify`, `poc:sales:return:verify`, `poc:sales:dates:verify`, `poc:gate4:verify`, `poc:review-hardening:verify`) e usam as variáveis `POLARIS_SALES_GATE_*`; o executor é o caminho recomendado.
 
@@ -49,7 +54,7 @@ Dois itens, cada um por um motivo que o PostgreSQL local não resolve:
 
 | Item | Por que só em Neon |
 | --- | --- |
-| `gate2-runtime` | Prova o onboarding e o RLS de Categories contra o Worker local com duas bindings Hyperdrive e papéis de login do Neon. Tem a trava de host de Neon própria e, num PostgreSQL local, falha numa verificação de papéis e privilégios (visto em 19/10/2026 com a trava de host afrouxada; a causa não foi investigada, fora do escopo do T-122a). |
+| `gate2-runtime` | Prova o onboarding e o RLS de Categories contra o Worker local com duas bindings Hyperdrive e papéis de login do Neon. Confere que `polaris_pr11_runtime` é NOLOGIN (grupo, como no CI e no staging) e que o login `polaris_gate_runner_*` do executor (nome em `POLARIS_GATE_RUNTIME_LOGIN`) é LOGIN, NOSUPERUSER e NOBYPASSRLS, membro do grupo com INHERIT e SET (o que o `IN ROLE` do [staging](./staging.md) dá). A lista de políticas de `categories` ignora, por literal exato, as do `polaris_purge_owner` e as do `polaris_closed_export_reader`, que têm gate próprio (`purge-functions`/`organization-purge` e `closed-organization-readonly`). Tem a trava de host de Neon própria e, num PostgreSQL local, falha numa verificação de papéis e privilégios (visto em 19/10/2026 com a trava de host afrouxada; a causa não foi investigada, fora do escopo do T-122a, e não foi revalidada depois de o gate passar a exigir o grupo NOLOGIN e de ignorar as políticas do leitor da loja encerrada). O login conferido não é o que o gate usa para conectar: a sessão é a do dono, que assume o grupo com `SET ROLE`. |
 | Caminho Worker, Hyperdrive e Neon (`poc:rls:verify` pelo Worker remoto) | A suíte `ci` roda o mesmo gate de RLS (`rls`), com a mesma rota e as mesmas transações, contra um servidor local que fala direto com o PostgreSQL. Isso prova a política, `FORCE RLS`, leitura e escrita entre tenants, rollback, contexto local à transação e o retry depois de matar o backend. Não prova o pool do Hyperdrive (reuso de backend entre tenants), o cache de SQL desligado nem a região: o relatório do `rls` local diz `not_applicable_local` nesses campos, e o gate com Worker remoto segue na prova de liberação. |
 
 O `rls` só roda contra o PostgreSQL local (`localOnly` no executor): `gates:all` num Neon o deixa de fora, e pedi-lo pelo nome num Neon é erro.
@@ -146,6 +151,8 @@ O Neon serve só para a prova que o PostgreSQL local e o CI não dão: o provedo
 
 2. Em um processo que obtenha a URL direta (sem pooler) com `neon connection-string ... --database-name polaris_pr900_gate --role-name neondb_owner --profile junior-pessoal`, exporte somente neste processo `DATABASE_URL`, `POLARIS_GATE_DATABASE_URL`, `POLARIS_GATE_BRANCH` e `POLARIS_GATE_DATABASE`. Confirme que o host tem o formato `ep-…sa-east-1.aws.neon.tech`, sem `pooler`.
 3. Aplicar as migrations do zero no banco novo (a role `polaris_pr11_runtime` já existe: vem da `production`; ver o checklist de go-live): `bun run --filter @polaris/db db:migrate`.
+
+   A `polaris_pr11_runtime` da `production` do projeto dos gates era um login (LOGIN, com senha), criado à mão. Em 01/11/2026 o ambiente foi ajustado fora do repositório (informado pelo Arrascaeta, com `pg_authid` conferido por ele) e ela passou a ser um grupo: `NOLOGIN` e sem senha (`rolpassword` nulo), como no CI e no staging. Confira `rolcanlogin` e `rolpassword` antes de cada prova. Nenhum Worker usa o Hyperdrive `polaris-pr11-rls-gate`, então não houve troca de credencial. O login que os gates usam e conferem é o `polaris_gate_runner_*` que o executor cria no início da execução (LOGIN, NOSUPERUSER, NOBYPASSRLS, membro do grupo) e apaga ao fim; o projeto não tem login permanente. Branch nova de `production` já nasce assim. Se uma `production` voltar a ter `polaris_pr11_runtime` com LOGIN, o `gate2-runtime` reprova na conferência dos papéis e o `definer-hardening` reprova a linha de base: corrija o papel (`ALTER ROLE polaris_pr11_runtime NOLOGIN PASSWORD NULL`, como o dono, antes de criar o banco da prova), nunca a regra do gate. Num projeto que ainda tenha o login antigo em uso, a ordem é criar o login novo, trocar a credencial de quem o usa e só então rodar o `ALTER ROLE ... NOLOGIN PASSWORD NULL`.
 4. Rodar o executor sem `CI=true` (a trava de host exige o endpoint Neon): `bun run --filter @polaris/db gates:all` para a prova de liberação. Aqui rodam também os quatro gates que o CI não cobre.
 5. Limpar o ambiente do processo (todas as variáveis acima) e apagar a branch própria, mesmo se um gate falhou: `neon branches delete pr900-release-gate --project-id "$NEON_PROJECT_ID" --profile junior-pessoal`. Confira com `neon branches list` que ela sumiu e registre o nome e a data na evidência (sem connection string).
 

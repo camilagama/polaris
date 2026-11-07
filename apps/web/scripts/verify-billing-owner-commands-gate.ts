@@ -6,6 +6,7 @@ import type {
   RefundableCharge,
   RefundOutcome,
 } from "@polaris/billing/provider-port";
+import { refundCancelEventId } from "@polaris/billing/operator-commands";
 import { ProviderUnavailableError } from "@polaris/billing/provider-port";
 import {
   type BillingStore,
@@ -28,7 +29,6 @@ import {
   temporaryRuntimeUrl,
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
-import { refundCancelEventId } from "../src/server/billing/commands";
 import {
   type OwnerCommandDependencies,
   OwnerCommandProviderFailure,
@@ -38,7 +38,7 @@ import {
 } from "../src/server/billing/owner-commands";
 
 /**
- * The owner's billing commands (ADR 0104, decisions 3 and 4; PR D of design t268 v2) on a real PostgreSQL 18, with
+ * The owner's billing commands (ADR 0104, decisions 3 and 4; PR D of the Assinatura design v2) on a real PostgreSQL 18, with
  * the real billing store and inbox (`recordEvent` and `processEvent`) and a fake provider:
  *   1. the refund decides by the state: cancel ok → refund fails (`refund_pending`) → another request ID → one
  *      `subscription_cancelled` and one refund, and the refund's webhook then answers every new request the same;
@@ -289,6 +289,12 @@ async function run() {
     );
     assert.equal(read.state, "active");
     assert.equal(read.firstChargeAmount, "24.90");
+    assert.equal(
+      read.currentChargeAmount,
+      "24.90",
+      "the charge in force the applied charge wrote (0118)"
+    );
+    assert.equal(read.pendingCycleMonths, null);
     assert.equal(read.link?.providerRef, shopZ.providerRef);
     assert.equal(read.refundRequestedAt, null);
     assert.equal(read.refundRequestId, null);
@@ -332,7 +338,7 @@ async function run() {
       false
     );
     tests.push(
-      "the commands read the database's clock, the record with its link, the anchor and the first charge (its event and the period its own fact paid for, none for another store's event or a malformed period; no record reads as Free with no link), and ask the ledger for their own fact by its ID"
+      "the commands read the database's clock, the record with its link, the amount in force, the anchor and the first charge (its event and the period its own fact paid for, none for another store's event or a malformed period; no record reads as Free with no link), and ask the ledger for their own fact by its ID"
     );
 
     // ------------------------------------------------ 1. the refund decides by the state (decision 1 of the design)

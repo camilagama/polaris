@@ -97,6 +97,14 @@ async function serveListing(page: Page, listing: () => Listing) {
       await route.fallback();
       return;
     }
+    if (route.request().url().includes("organization/listClosed")) {
+      await route.fulfill({
+        body: JSON.stringify({ json: { organizations: [] }, meta: [] }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+      });
+      return;
+    }
     await route.abort("internetdisconnected");
   });
 }

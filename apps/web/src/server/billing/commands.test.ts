@@ -2,17 +2,15 @@ import {
   type BillingProviderPort,
   type PreparedSubscription,
   type PrepareSubscriptionInput,
-  ProviderNotConfiguredError,
   ProviderNotFoundError,
   ProviderRejectedError,
   ProviderResponseMalformedError,
   ProviderUnavailableError,
 } from "@polaris/billing/provider-port";
 import { WooviCustomerMismatchError } from "@polaris/billing/woovi/customer";
-import {
-  BillingCommandInProgressError,
-  type BillingStore,
-  type UnclaimedTrialEvent,
+import type {
+  BillingStore,
+  UnclaimedTrialEvent,
 } from "@polaris/db/billing-store";
 import { RejectedBillingEventError } from "@polaris/domain/billing/subscription-state";
 import { logger } from "@polaris/observability/logger";
@@ -28,24 +26,18 @@ import {
 import { FAKE_PAYER } from "../../../../../packages/billing/src/asaas/test-fixtures";
 import {
   BillingCommandError,
-  cancelRenewal,
-  cancelRenewalEventId,
   checkoutPriceOf,
   firstChargeDateOf,
   PIX_CHECKOUT_MINIMUM_MS,
   payerCustomerKey,
   payerLockKey,
   reconcileOrganization,
-  refundCancelEventId,
-  refundCurrentPeriod,
   type StartPixCheckoutDependencies,
   settleUnclaimedTrials,
   startCardCheckout,
   startPixCheckout,
 } from "./commands";
 
-const CANCEL_RENEWAL_EVENT_ID = /^command:cancel_renewal:req-42:[0-9a-f]{32}$/;
-const REFUND_CANCEL_EVENT_ID = /^command:refund_cancel:req-42:[0-9a-f]{32}$/;
 const EIGHT_HEX = /^[\da-f]{8}$/;
 const PAYER_CUSTOMER_KEY = /^polaris-payer-[\da-f]{32}$/;
 
@@ -455,7 +447,7 @@ describe("startCardCheckout", () => {
       ["rejected", new ProviderRejectedError(401)],
       ["malformed", new ProviderResponseMalformedError()],
     ])(
-      "a provider that is down or fails (%s) refuses with provider_unavailable, failing closed",
+      "a provider that is down or fails (%s) refuses with previous_checkout_unverified, failing closed",
       async (_name, failure) => {
         vi.spyOn(console, "warn").mockImplementation(() => undefined);
         const port = fakePort({
@@ -467,13 +459,38 @@ describe("startCardCheckout", () => {
 
         await expect(
           startCardCheckout({ now: () => now, port, store }, input)
-        ).rejects.toBeInstanceOf(ProviderUnavailableError);
+        ).rejects.toMatchObject({
+          code: "previous_checkout_unverified",
+          name: "PreviousCheckoutUnverifiedError",
+        });
 
         expect(store.attachProvider).not.toHaveBeenCalled();
         expect(port.prepareSubscription).not.toHaveBeenCalled();
         expect(store.startTrial).not.toHaveBeenCalled();
       }
     );
+
+    it("creating the new checkout failing keeps provider_unavailable, not the old checkout's reason", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const port = fakePort({
+        prepareSubscription: vi.fn(() =>
+          Promise.reject(new ProviderUnavailableError())
+        ),
+      });
+      const store = fakeStore({
+        readProviderLink: vi.fn(() => Promise.resolve(unconfirmed)),
+      });
+
+      const failure = await startCardCheckout(
+        { now: () => now, port, store },
+        input
+      ).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(ProviderUnavailableError);
+      expect(failure).toMatchObject({ code: "provider_unavailable" });
+      expect(port.hasSubscription).toHaveBeenCalledTimes(1);
+      expect(store.attachProvider).not.toHaveBeenCalled();
+    });
 
     it("asks nothing when there is no link, the link has a sub_, or it is another provider's", async () => {
       vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -1270,6 +1287,42 @@ describe("startPixCheckout", () => {
       expect(store.attachProvider).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ["before the lock", 0, 0],
+      ["inside the lock", 1, 1],
+    ])(
+      "a provider that cannot answer about the old checkout %s refuses with previous_checkout_unverified",
+      async (_name, failingCall, lockCalls) => {
+        vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const oldLink = {
+          provider: "woovi",
+          providerRef: "woovi-old-ref",
+          providerSubscriptionId: null,
+        };
+        const hasSubscription = vi.fn<BillingProviderPort["hasSubscription"]>();
+        for (let call = 0; call < failingCall; call += 1) {
+          hasSubscription.mockResolvedValueOnce(false);
+        }
+        hasSubscription.mockRejectedValueOnce(new ProviderUnavailableError());
+        const port = wooviPort({ hasSubscription });
+        const store = recordingStore([], {
+          readProviderLink: vi.fn(() => Promise.resolve(oldLink)),
+        });
+
+        await expect(
+          startPix(
+            { now: () => now, port, store, ...timing(0, 3000) },
+            { ...pixInput, trial: false }
+          )
+        ).rejects.toMatchObject({ code: "previous_checkout_unverified" });
+
+        expect(hasSubscription).toHaveBeenCalledTimes(failingCall + 1);
+        expect(store.withPayerLock).toHaveBeenCalledTimes(lockCalls);
+        expect(port.prepareSubscription).not.toHaveBeenCalled();
+        expect(store.attachProvider).not.toHaveBeenCalled();
+      }
+    );
+
     it("answers checkout_in_progress when the lock times out (55P03)", async () => {
       const store = fakeStore({
         withPayerLock: vi.fn(() =>
@@ -1684,443 +1737,6 @@ describe("reconcileOrganization", () => {
   });
 });
 
-describe("refundCurrentPeriod", () => {
-  const request = { organizationId, requestId: "req-refund-1" };
-  const active = { cancelAtPeriodEnd: false, state: "active" };
-
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-  });
-
-  it("is not_linked without a link", async () => {
-    const port = fakePort();
-    const store = fakeStore({
-      readProviderLink: vi.fn(() => Promise.resolve(null)),
-    });
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).resolves.toBe("not_linked");
-    expect(port.cancelRenewal).not.toHaveBeenCalled();
-    expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
-  });
-
-  it.each(["refund_requested", "nothing_to_refund"] as const)(
-    "asks the provider about the linked subscription and returns %s",
-    async (answer) => {
-      const port = fakePort({
-        refundCurrentPeriod: vi.fn(() => Promise.resolve(answer)),
-      });
-
-      await expect(
-        refundCurrentPeriod(
-          { now: () => now, portFor: () => port, store: fakeStore() },
-          request
-        )
-      ).resolves.toBe(answer);
-      // the operator's refund: the paid charge in force, whichever it is
-      expect(port.refundCurrentPeriod).toHaveBeenCalledWith(
-        link.providerRef,
-        now,
-        link.providerSubscriptionId,
-        "any_paid"
-      );
-    }
-  );
-
-  it("cancels the renewal and writes it before it refunds", async () => {
-    const calls: string[] = [];
-    const port = fakePort({
-      cancelRenewal: vi.fn(() => {
-        calls.push("cancel");
-        return Promise.resolve("cancelled" as const);
-      }),
-      refundCurrentPeriod: vi.fn(() => {
-        calls.push("refund");
-        return Promise.resolve("refund_requested" as const);
-      }),
-    });
-    const store = fakeStore({
-      processEvent: vi.fn(() => {
-        calls.push("process");
-        return Promise.resolve({ status: "applied" });
-      }),
-      readRecord: vi.fn(() => Promise.resolve(active)),
-      recordEvent: vi.fn(() => {
-        calls.push("record");
-        return Promise.resolve({ duplicate: false, id: "ev-cancel" });
-      }),
-    });
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).resolves.toBe("refund_requested");
-
-    expect(calls).toEqual(["cancel", "record", "process", "refund"]);
-    expect(port.cancelRenewal).toHaveBeenCalledWith(
-      link.providerRef,
-      link.providerSubscriptionId
-    );
-    expect(store.recordEvent).toHaveBeenCalledWith({
-      fact: { occurredAt: now, type: "subscription_cancelled" },
-      organizationId,
-      provider: "asaas",
-      providerEventId: await refundCancelEventId(
-        request.requestId,
-        link.providerRef
-      ),
-      providerRef: link.providerRef,
-    });
-    expect(store.processEvent).toHaveBeenCalledWith("ev-cancel", now);
-  });
-
-  it("refunds nothing when the cancellation fails", async () => {
-    const port = fakePort({
-      cancelRenewal: vi.fn(() =>
-        Promise.reject(new ProviderUnavailableError())
-      ),
-    });
-    const store = fakeStore({
-      readRecord: vi.fn(() => Promise.resolve(active)),
-    });
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).rejects.toBeInstanceOf(ProviderUnavailableError);
-    expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
-    expect(store.recordEvent).not.toHaveBeenCalled();
-  });
-
-  it("does not cancel again a renewal the record already shows cancelled", async () => {
-    const port = fakePort();
-    const store = fakeStore({
-      readRecord: vi.fn(() =>
-        Promise.resolve({ cancelAtPeriodEnd: true, state: "active" })
-      ),
-    });
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).resolves.toBe("refund_requested");
-    expect(port.cancelRenewal).not.toHaveBeenCalled();
-    expect(store.recordEvent).not.toHaveBeenCalled();
-    expect(port.refundCurrentPeriod).toHaveBeenCalledTimes(1);
-  });
-
-  it("cancel ok, refund fails, a repeat with another request ID: one cancellation and one refund", async () => {
-    // the record as the inbox leaves it: the cancellation fact applied sets cancelAtPeriodEnd
-    const record = { ...active };
-    const cancellations: string[] = [];
-    const store = fakeStore({
-      processEvent: vi.fn(() => {
-        record.cancelAtPeriodEnd = true;
-        return Promise.resolve({ status: "applied" });
-      }),
-      readRecord: vi.fn(() => Promise.resolve({ ...record })),
-      recordEvent: vi.fn((event: { providerEventId: string }) => {
-        cancellations.push(event.providerEventId);
-        return Promise.resolve({ duplicate: false, id: "ev-cancel" });
-      }),
-    });
-    const port = fakePort({
-      refundCurrentPeriod: vi
-        .fn()
-        .mockRejectedValueOnce(new ProviderUnavailableError())
-        .mockResolvedValueOnce("refund_requested"),
-    });
-    const dependencies = { now: () => now, portFor: () => port, store };
-
-    await expect(
-      refundCurrentPeriod(dependencies, request)
-    ).rejects.toBeInstanceOf(ProviderUnavailableError);
-    await expect(
-      refundCurrentPeriod(dependencies, {
-        organizationId,
-        requestId: "req-refund-2",
-      })
-    ).resolves.toBe("refund_requested");
-
-    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
-    expect(cancellations).toEqual([
-      await refundCancelEventId(request.requestId, link.providerRef),
-    ]);
-    expect(port.refundCurrentPeriod).toHaveBeenCalledTimes(2);
-  });
-
-  it("still cancels at the provider when the record no longer gives Pro, without writing a fact it would ignore", async () => {
-    const port = fakePort({
-      cancelRenewal: vi.fn(() => Promise.resolve("already_cancelled" as const)),
-      refundCurrentPeriod: vi.fn(() =>
-        Promise.resolve("nothing_to_refund" as const)
-      ),
-    });
-    const store = fakeStore({
-      readRecord: vi.fn(() =>
-        Promise.resolve({ cancelAtPeriodEnd: false, state: "free" })
-      ),
-    });
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).resolves.toBe("nothing_to_refund");
-    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
-    expect(store.recordEvent).not.toHaveBeenCalled();
-  });
-
-  it.each(["trialing", "grace"])(
-    "writes the cancellation of a record in %s (it gives Pro)",
-    async (state) => {
-      const store = fakeStore({
-        readRecord: vi.fn(() =>
-          Promise.resolve({ cancelAtPeriodEnd: false, state })
-        ),
-      });
-
-      await refundCurrentPeriod(
-        { now: () => now, portFor: () => fakePort(), store },
-        request
-      );
-      expect(store.recordEvent).toHaveBeenCalledTimes(1);
-    }
-  );
-
-  it("still cancels at the provider without a record, and writes nothing", async () => {
-    const port = fakePort();
-    const store = fakeStore();
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).resolves.toBe("refund_requested");
-    expect(port.cancelRenewal).toHaveBeenCalledTimes(1);
-    expect(store.recordEvent).not.toHaveBeenCalled();
-  });
-
-  it("writes the cancellation when the provider had it cancelled but the record did not", async () => {
-    const port = fakePort({
-      cancelRenewal: vi.fn(() => Promise.resolve("already_cancelled" as const)),
-    });
-    const store = fakeStore({
-      readRecord: vi.fn(() => Promise.resolve(active)),
-    });
-
-    await refundCurrentPeriod(
-      { now: () => now, portFor: () => port, store },
-      request
-    );
-    expect(store.recordEvent).toHaveBeenCalledTimes(1);
-  });
-
-  it("touches nothing at a provider that cannot refund here (Woovi before S3.2)", async () => {
-    const port = fakePort({ refundsEnabled: false });
-    const store = fakeStore({
-      readRecord: vi.fn(() => Promise.resolve(active)),
-    });
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).rejects.toBeInstanceOf(ProviderNotConfiguredError);
-    expect(port.cancelRenewal).not.toHaveBeenCalled();
-    expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
-    expect(store.recordEvent).not.toHaveBeenCalled();
-  });
-
-  it("runs under the organization's lock, and a lock held elsewhere does nothing", async () => {
-    const port = fakePort();
-    const store = fakeStore({
-      readRecord: vi.fn(() => Promise.resolve(active)),
-      withOrganizationLock: vi.fn(() =>
-        Promise.reject(new BillingCommandInProgressError())
-      ),
-    });
-
-    await expect(
-      refundCurrentPeriod(
-        { now: () => now, portFor: () => port, store },
-        request
-      )
-    ).rejects.toBeInstanceOf(BillingCommandInProgressError);
-    expect(store.withOrganizationLock).toHaveBeenCalledWith(
-      organizationId,
-      expect.any(Function)
-    );
-    expect(store.readProviderLink).not.toHaveBeenCalled();
-    expect(port.cancelRenewal).not.toHaveBeenCalled();
-    expect(port.refundCurrentPeriod).not.toHaveBeenCalled();
-  });
-
-  it("names the cancellation apart from the owner's, one per request and subscription", async () => {
-    const id = await refundCancelEventId("req-42", link.providerRef);
-    expect(id).toMatch(REFUND_CANCEL_EVENT_ID);
-    expect(id).not.toBe(await cancelRenewalEventId("req-42", link.providerRef));
-    expect(await refundCancelEventId("req-42", "another-ref")).not.toBe(id);
-  });
-
-  describe("when the port returns the refund's own fact (Woovi)", () => {
-    const refundEvent = {
-      fact: { occurredAt: now, type: "subscription_cancelled" as const },
-      providerEventId: "woovi:refund:ref-0001",
-      providerRef: "woovi-sub-ref-0001",
-      providerSubscriptionId: "woovi-sub-0001",
-    };
-    const wooviLink = {
-      provider: "woovi",
-      providerRef: "woovi-sub-ref-0001",
-      providerSubscriptionId: "woovi-sub-0001",
-    };
-
-    it("writes the fact through the inbox with the organization, processes it, and returns refund_requested", async () => {
-      const calls: string[] = [];
-      const port = fakePort({
-        provider: "woovi" as never,
-        refundCurrentPeriod: vi.fn(() =>
-          Promise.resolve({
-            event: refundEvent,
-            kind: "refund_requested" as const,
-          })
-        ),
-      });
-      const store = fakeStore({
-        processEvent: vi.fn(() => {
-          calls.push("process");
-          return Promise.resolve({ status: "applied" });
-        }),
-        readProviderLink: vi.fn(() => Promise.resolve(wooviLink)),
-        recordEvent: vi.fn(() => {
-          calls.push("record");
-          return Promise.resolve({ duplicate: false, id: "ev-refund" });
-        }),
-      });
-
-      await expect(
-        refundCurrentPeriod(
-          { now: () => now, portFor: () => port, store },
-          request
-        )
-      ).resolves.toBe("refund_requested");
-
-      expect(store.recordEvent).toHaveBeenCalledWith({
-        fact: refundEvent.fact,
-        organizationId,
-        provider: "woovi",
-        providerEventId: "woovi:refund:ref-0001",
-        providerRef: "woovi-sub-ref-0001",
-        providerSubscriptionId: "woovi-sub-0001",
-      });
-      expect(store.processEvent).toHaveBeenCalledWith("ev-refund", now);
-      expect(calls).toEqual(["record", "process"]);
-    });
-
-    it("writes nothing when the port answers with a string (the older behavior)", async () => {
-      const store = fakeStore();
-
-      await refundCurrentPeriod(
-        { now: () => now, portFor: () => fakePort(), store },
-        request
-      );
-
-      expect(store.recordEvent).not.toHaveBeenCalled();
-      expect(store.processEvent).not.toHaveBeenCalled();
-    });
-  });
-});
-
-describe("cancelRenewal", () => {
-  const request = { organizationId, requestId: "req-42" };
-
-  it("is not_linked without a link", async () => {
-    const port = fakePort();
-    const store = fakeStore({
-      readProviderLink: vi.fn(() => Promise.resolve(null)),
-    });
-
-    await expect(
-      cancelRenewal({ now: () => now, portFor: () => port, store }, request)
-    ).resolves.toBe("not_linked");
-    expect(port.cancelRenewal).not.toHaveBeenCalled();
-    expect(store.recordEvent).not.toHaveBeenCalled();
-  });
-
-  it.each(["cancelled", "already_cancelled"] as const)(
-    "records the cancellation through the inbox at once and processes it (%s)",
-    async (answer) => {
-      const port = fakePort({
-        cancelRenewal: vi.fn(() => Promise.resolve(answer)),
-      });
-      const store = fakeStore({
-        recordEvent: vi.fn(() =>
-          Promise.resolve({ duplicate: false, id: "ev-9" })
-        ),
-      });
-
-      await expect(
-        cancelRenewal({ now: () => now, portFor: () => port, store }, request)
-      ).resolves.toBe(answer);
-
-      expect(port.cancelRenewal).toHaveBeenCalledWith(
-        link.providerRef,
-        link.providerSubscriptionId
-      );
-      expect(store.recordEvent).toHaveBeenCalledWith({
-        fact: { occurredAt: now, type: "subscription_cancelled" },
-        organizationId,
-        provider: "asaas",
-        providerEventId: await cancelRenewalEventId("req-42", link.providerRef),
-        providerRef: link.providerRef,
-      });
-      expect(store.processEvent).toHaveBeenCalledWith("ev-9", now);
-    }
-  );
-
-  it("names the fact by the request and the subscription, within the length of an event ID", async () => {
-    const first = await cancelRenewalEventId("req-42", "pol_a");
-    expect(first).toMatch(CANCEL_RENEWAL_EVENT_ID);
-    // the same request for the same subscription is the same fact; for another subscription, another
-    expect(await cancelRenewalEventId("req-42", "pol_a")).toBe(first);
-    expect(await cancelRenewalEventId("req-42", "pol_b")).not.toBe(first);
-    const longest = await cancelRenewalEventId(
-      "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a2d",
-      "r".repeat(128)
-    );
-    expect(longest.length).toBeLessThanOrEqual(160);
-    expect(longest).not.toContain("rrrr");
-  });
-
-  it("writes nothing when there was nothing to cancel", async () => {
-    const port = fakePort({
-      cancelRenewal: vi.fn(() => Promise.resolve("nothing_to_cancel" as const)),
-    });
-    const store = fakeStore();
-
-    await expect(
-      cancelRenewal({ now: () => now, portFor: () => port, store }, request)
-    ).resolves.toBe("nothing_to_cancel");
-
-    expect(store.recordEvent).not.toHaveBeenCalled();
-    expect(store.processEvent).not.toHaveBeenCalled();
-  });
-});
-
 describe("settleUnclaimedTrials", () => {
   const unclaimed = (id: string): UnclaimedTrialEvent => ({
     eventId: id,
@@ -2448,7 +2064,7 @@ describe("the old link's renewal is cancelled before a new checkout (ADR 0104, P
     expect(store.attachProvider).not.toHaveBeenCalled();
   });
 
-  it("refuses with provider_unavailable, creating nothing, when the provider cannot cancel the old renewal", async () => {
+  it("refuses with previous_renewal_cancel_unverified, creating nothing, when the provider cannot cancel the old renewal", async () => {
     const port = fakePort({
       cancelRenewal: vi.fn(() => Promise.reject(new Error("socket hang up"))),
     });
@@ -2462,8 +2078,11 @@ describe("the old link's renewal is cancelled before a new checkout (ADR 0104, P
       (caught: unknown) => caught
     );
 
-    expect(error).toBeInstanceOf(ProviderUnavailableError);
-    expect(error).toMatchObject({ code: "provider_unavailable" });
+    expect(error).not.toBeInstanceOf(ProviderUnavailableError);
+    expect(error).toMatchObject({
+      code: "previous_renewal_cancel_unverified",
+      name: "PreviousRenewalCancelUnverifiedError",
+    });
     expect(port.prepareSubscription).not.toHaveBeenCalled();
     expect(store.startTrial).not.toHaveBeenCalled();
     expect(store.attachProvider).not.toHaveBeenCalled();

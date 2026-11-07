@@ -8,6 +8,7 @@ import {
 import { Client } from "pg";
 import { type BillingStore, createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
+import { withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -24,8 +25,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The notices of the billing cycle and the welcome, the database part (ADR 0104, decision 7; PR F of design t268 v2,
- * migration 0101), on a real PostgreSQL 18:
+ * The notices of the billing cycle and the welcome, the database part (ADR 0104, decision 7; migration 0101), on a real PostgreSQL 18:
  *   1. `billing_notices`: forced row security, the exact policies and grants per role, nothing to the tenant, and its
  *      checks (the kinds, the welcome's person, the opaque key, one outcome, one notice per store, kind and key, one
  *      welcome per person);
@@ -130,7 +130,7 @@ async function run() {
         await client.end();
       }
     };
-    /** Runs as an owner role (the gate user is a superuser in CI), inside a transaction that is rolled back. */
+    /** Runs as an owner role (withGateRole: also when the gate user is not a superuser), inside a transaction that is rolled back. */
     const asOwnerRole = async <T>(
       role: string,
       operation: (client: Client) => Promise<T>
@@ -138,8 +138,7 @@ async function run() {
       as(adminUrl, async (client) => {
         await client.query("BEGIN");
         try {
-          await client.query(`SET LOCAL ROLE ${role}`);
-          return await operation(client);
+          return await withGateRole(client, role, () => operation(client));
         } finally {
           await client.query("ROLLBACK");
         }
@@ -888,9 +887,9 @@ async function run() {
       closed: false,
       name: shopName,
       ownerActive: true,
+      timezone: "America/Sao_Paulo",
       variantLimit: freeVariantLimit,
       variants: 2,
-      timezone: "America/Sao_Paulo",
     });
     const stranger = await newTenant("store-of-notice-other");
     assert.equal(
@@ -1277,20 +1276,21 @@ async function run() {
         await client.query(
           "DELETE FROM public.plan_entitlements WHERE plan_id = 'free' AND key = 'variants.active.max'"
         );
-        await client.query(`SET LOCAL ROLE ${BILLING_RUNTIME}`);
-        const pending = await client.query(
-          "SELECT id FROM public.billing_notices WHERE organization_id = $1 AND sent_at IS NULL LIMIT 1",
-          [farBack.organizationId]
-        );
-        await expectSqlState(
-          () =>
-            client.query("SELECT public.billing_notice_store($1, $2::uuid)", [
-              farBack.organizationId,
-              pending.rows[0]?.id,
-            ]),
-          "22023",
-          "the Free limit is missing"
-        );
+        await withGateRole(client, BILLING_RUNTIME, async () => {
+          const pending = await client.query(
+            "SELECT id FROM public.billing_notices WHERE organization_id = $1 AND sent_at IS NULL LIMIT 1",
+            [farBack.organizationId]
+          );
+          await expectSqlState(
+            () =>
+              client.query("SELECT public.billing_notice_store($1, $2::uuid)", [
+                farBack.organizationId,
+                pending.rows[0]?.id,
+              ]),
+            "22023",
+            "the Free limit is missing"
+          );
+        });
       } finally {
         await client.query("ROLLBACK");
       }

@@ -27,6 +27,7 @@ import {
 import { Input } from "@/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useHoldSwap } from "../lib/unsent-work";
 import {
   type CycleMonths,
   defaultCycle,
@@ -40,7 +41,7 @@ import {
   type Refusal,
   taxIdDigits,
 } from "./subscription-model";
-import { SectionTitle } from "./subscription-parts";
+import { SectionTitle, WRAPS } from "./subscription-parts";
 
 /** What the offer asks the server to start: the payer only for Pix Automático (the card sends nothing of it). */
 export type CheckoutRequest =
@@ -302,6 +303,11 @@ export function OfferCard({
       name: current.name || payerDefaults.name,
     }));
   }
+  useHoldSwap(
+    payer.taxId !== "" ||
+      payer.name !== payerDefaults.name ||
+      payer.email !== payerDefaults.email
+  );
   const chosen = cycles.find((item) => item.cycleMonths === cycle) ?? null;
 
   const handleCycle = useCallback(
@@ -462,7 +468,7 @@ export function OfferCard({
             <Button
               {...connectionControlProps(online)}
               aria-busy={pending || undefined}
-              className="h-auto min-h-ctl-md whitespace-normal py-1.5"
+              className={WRAPS}
               disabled={pending}
               type="submit"
             >

@@ -215,6 +215,7 @@ describe("route timing middleware", () => {
         context.json({ ok: true })
       );
       app.get("/api/export", (context) => context.json({ ok: true }));
+      app.post("/api/client-errors", (context) => context.body(null, 204));
       app.get("/api/auth/*", (context) => context.json({ ok: true }));
       return app;
     }
@@ -294,6 +295,29 @@ describe("route timing middleware", () => {
       const serialized = JSON.stringify(events);
       expect(serialized).not.toContain("0199c2d0");
       expect(serialized).not.toContain("abc123");
+    });
+
+    it("with true, never times /api/client-errors, accepted or refused, while another named /api route still is", async () => {
+      const logs = spyLogs();
+      const app = createWideApp();
+      const env = { ROUTE_TIMING_ALL: "true" };
+
+      const accepted = await app.request(
+        "/api/client-errors",
+        { method: "POST" },
+        env
+      );
+      await app.request(
+        "/api/client-errors?x=1",
+        { headers: { origin: "https://evil.example" }, method: "POST" },
+        env
+      );
+      await app.request("/api/export", {}, env);
+
+      expect(accepted.status).toBe(204);
+      expect(timedEvents(logs).map((event) => event.route)).toEqual([
+        "/api/export",
+      ]);
     });
 
     it("with true, logs nothing for a /rpc path no procedure matched or an /api path no route named, whatever its text", async () => {

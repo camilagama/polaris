@@ -42,6 +42,7 @@ import {
   unlockTokenUserId,
 } from "./login-lock";
 import { loginLockKey } from "./login-lock-key";
+import { usablePasswordPepper } from "./password-hash";
 import {
   currentAuthRequestState,
   currentRequestId,
@@ -92,7 +93,18 @@ function isEmailPasswordAuthRoute(request: Request): boolean {
 export function isEmailPasswordAuthEnabled(bindings: WorkerBindings): boolean {
   return (
     bindings.EMAIL_PASSWORD_AUTH_ENABLED === "true" &&
-    Boolean(bindings.RESEND_API_KEY?.trim() && bindings.AUTH_EMAIL_FROM?.trim())
+    Boolean(
+      bindings.RESEND_API_KEY?.trim() && bindings.AUTH_EMAIL_FROM?.trim()
+    ) &&
+    usablePasswordPepper(bindings.AUTH_PASSWORD_PEPPER) !== undefined
+  );
+}
+
+/** The password is asked for but cannot hash: off (fail closed), and said in the log, never with the value. */
+function passwordPepperMissing(bindings: WorkerBindings): boolean {
+  return (
+    bindings.EMAIL_PASSWORD_AUTH_ENABLED === "true" &&
+    usablePasswordPepper(bindings.AUTH_PASSWORD_PEPPER) === undefined
   );
 }
 const resetPasswordCallbackPathPattern = /\/reset-password\/[^/]+$/;
@@ -320,7 +332,7 @@ async function freshVerifiedSession(
   if (session.user.emailVerified !== true) {
     return { response: jsonError(403, "email_not_verified") };
   }
-  // The decision of 19/10/2026 (consolidation of the entry screen design, item 1): a password is
+  // Per the entry screen design (item 1), a password is
   // changed or added only by a session signed in within the last 15 minutes, as a device revocation.
   if (!isSessionFresh(session.session.createdAt)) {
     return { response: jsonError(403, "fresh_session_required") };
@@ -396,7 +408,7 @@ async function reserveChangePasswordAttempt(
     return {};
   }
   try {
-    await validateNewPassword(newPassword);
+    validateNewPassword(newPassword);
   } catch (error) {
     if (error instanceof PasswordPolicyError) {
       return { response: passwordPolicyResponse(error) };
@@ -573,9 +585,7 @@ export async function handleSetPasswordRequest(
   }
 
   try {
-    const normalizedPassword = await validateNewPassword(
-      requestBody.newPassword
-    );
+    const normalizedPassword = validateNewPassword(requestBody.newPassword);
     const response = await auth.api.setPassword({
       asResponse: true,
       body: { newPassword: normalizedPassword },
@@ -637,6 +647,7 @@ interface SharedAuthConfiguration {
   emailPasswordEnabled: boolean;
   googleClientId: string | undefined;
   googleClientSecret: string | undefined;
+  passwordPepper: string | undefined;
   secret: string;
 }
 
@@ -654,12 +665,13 @@ function sameConfiguration(
     a.emailPasswordEnabled === b.emailPasswordEnabled &&
     a.googleClientId === b.googleClientId &&
     a.googleClientSecret === b.googleClientSecret &&
+    a.passwordPepper === b.passwordPepper &&
     a.secret === b.secret
   );
 }
 
 /**
- * Built once per isolate (ADR 0017, emenda de 25/10/2026): assembling Better Auth costs more CPU than a request has.
+ * Built once per isolate (ADR 0017): assembling Better Auth costs more CPU than a request has.
  * It holds configuration only. The `db`, the request identifier, the `waitUntil`, the e-mails and what the hooks
  * remember are read at each call from the request scope (`runWithRequestScope`), so nothing of a request or of a
  * user stays here. It is built again when the environment changes, or after a failure.
@@ -675,7 +687,13 @@ function sharedAuthFor(
   ) {
     return sharedAuth;
   }
-  const { baseURL, googleClientId, googleClientSecret, secret } = configuration;
+  const {
+    baseURL,
+    googleClientId,
+    googleClientSecret,
+    passwordPepper,
+    secret,
+  } = configuration;
   sharedAuth = {
     auth: createBetterAuth({
       baseURL,
@@ -697,6 +715,7 @@ function sharedAuthFor(
             },
           }
         : {}),
+      passwordPepper,
       requestId: currentRequestId,
       requestState: currentAuthRequestState,
       runInBackground: runInRequestBackground,
@@ -738,11 +757,17 @@ async function withAuthRuntime(
   }
 
   const emailPasswordEnabled = isEmailPasswordAuthEnabled(bindings);
+  if (passwordPepperMissing(bindings)) {
+    logger.error("auth_password_pepper_missing", { requestId });
+  }
   const entry = sharedAuthFor({
     baseURL,
     emailPasswordEnabled,
     googleClientId: bindings.GOOGLE_CLIENT_ID?.trim(),
     googleClientSecret: bindings.GOOGLE_CLIENT_SECRET?.trim(),
+    passwordPepper: emailPasswordEnabled
+      ? usablePasswordPepper(bindings.AUTH_PASSWORD_PEPPER)
+      : undefined,
     secret,
   });
   const { auth } = entry;
@@ -814,8 +839,10 @@ async function withAuthRuntime(
     );
   } catch (error) {
     // a failed start of the instance would otherwise be kept for the whole life of the isolate; any other failure (the
-    // database, a route) keeps it, so an outage does not cost a new instance per request
-    if (sharedAuth === entry && (await startFailed(entry.auth))) {
+    // database, a route) keeps it, so an outage does not cost a new instance per request. The identity is read after
+    // the wait: another request of the isolate may have replaced the instance meanwhile, and that one must stay
+    const failedToStart = await startFailed(entry.auth);
+    if (failedToStart && sharedAuth === entry) {
       sharedAuth = undefined;
     }
     throw error;

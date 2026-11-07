@@ -1,6 +1,8 @@
 /// <reference lib="dom" />
 import { expect, test } from "@playwright/test";
 
+const RECOVERY_WAIT = { timeout: 15_000 };
+
 const sharedEditButtonName = /Editar registro compartilhado pela aba/;
 
 async function openLab(
@@ -131,14 +133,17 @@ test("serializa o recovery de reset interrompido entre duas abas", async ({
   await Promise.all([page.reload(), secondPage.reload()]);
   await Promise.all(
     [page, secondPage].map((tab) =>
-      expect(tab.getByTestId("offline-enabled")).toBeVisible()
+      expect(tab.getByTestId("offline-enabled")).toBeVisible(RECOVERY_WAIT)
     )
   );
   await Promise.all(
     [page, secondPage].flatMap((tab) => [
-      expect(tab.getByTestId("v1-count")).toHaveText("0"),
-      expect(tab.getByTestId("outbox-count")).toHaveText("0"),
-      expect(tab.getByTestId("mock-server-receipts")).toHaveText("0"),
+      expect(tab.getByTestId("v1-count")).toHaveText("0", RECOVERY_WAIT),
+      expect(tab.getByTestId("outbox-count")).toHaveText("0", RECOVERY_WAIT),
+      expect(tab.getByTestId("mock-server-receipts")).toHaveText(
+        "0",
+        RECOVERY_WAIT
+      ),
     ])
   );
   await secondPage.close();

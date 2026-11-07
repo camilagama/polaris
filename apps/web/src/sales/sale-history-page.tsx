@@ -1,16 +1,24 @@
+import type { SaleListEntryReadModel } from "@polaris/contracts";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
-import type { ReactNode } from "react";
+import { useCallback } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
+import { ListTotalFooter } from "../catalog/screen-parts";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { SavedSalesCard } from "./offline-sale-panels";
+import { HistoryEmptyCard } from "./sale-history-empty";
 import { HistoryFiltersBar } from "./sale-history-filters";
 import { SaleHistoryList } from "./sale-history-list";
-import { historyView, loadMoreView } from "./sale-history-model";
+import {
+  emptyHistoryFilters,
+  historyTotal,
+  historyView,
+  loadMoreView,
+} from "./sale-history-model";
 import { useSaleHistory } from "./use-sale-history";
 
 function OfflineHistoryNotice() {
@@ -29,15 +37,6 @@ function OfflineHistoryNotice() {
 
 const LOADING_ROWS = [0, 1, 2];
 
-/** A line of text in a card, for empty: the same card the products and the stock use. */
-function StateCard({ children }: { children: ReactNode }) {
-  return (
-    <Card className="items-center px-(--card-spacing) text-center">
-      <p className="text-muted-foreground">{children}</p>
-    </Card>
-  );
-}
-
 /** Loading: three rows of skeleton in the card, and the line that says it for the screen reader. */
 function LoadingCard({ message }: { message: string }) {
   return (
@@ -50,6 +49,33 @@ function LoadingCard({ message }: { message: string }) {
         </div>
       ))}
     </Card>
+  );
+}
+
+/** With the chevron on the rows (14 px and a gap of 8, 16 and 12 from 760 px), the total ends where their figures end. */
+const TOTAL_UNDER_VALUES =
+  "border-t pr-[calc(0.625rem+1.375rem)] md:pr-[calc(1rem+1.75rem)]";
+
+/** The total of the sales on the screen; while the first page loads it is a dash, in a box of the same height. */
+function HistoryTotalFooter({
+  className,
+  hasMore,
+  loading,
+  sales,
+}: {
+  className?: string | undefined;
+  loading: boolean;
+  hasMore: boolean;
+  sales: readonly SaleListEntryReadModel[];
+}) {
+  const total = historyTotal(sales, hasMore);
+  return (
+    <ListTotalFooter
+      className={className}
+      count={loading ? "" : total.countText}
+      note={loading ? "" : total.noteText}
+      value={loading ? "…" : (total.totalText ?? "—")}
+    />
   );
 }
 
@@ -67,17 +93,15 @@ export function SaleHistoryPage() {
     offlineWorkspace
   );
   const view = historyView(state, filters);
+  const handleClearFilters = useCallback(
+    () => setFilters(emptyHistoryFilters),
+    [setFilters]
+  );
   const more = loadMoreView(state);
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <header className="grid gap-1">
-        <h1 className="text-title">Histórico de vendas</h1>
-        <p className="text-muted-foreground text-support">
-          Da mais recente para a mais antiga. Abra uma venda para ver o
-          registro, devolver, cancelar ou ajustar o cliente.
-        </p>
-      </header>
+      <h1 className="text-title">Histórico de vendas</h1>
       {offline ? <OfflineHistoryNotice /> : null}
       <SavedSalesCard workspace={workspace} />
       <HistoryFiltersBar
@@ -85,7 +109,14 @@ export function SaleHistoryPage() {
         offline={offline}
         onChange={setFilters}
       />
-      {view.kind === "loading" ? <LoadingCard message={view.message} /> : null}
+      {view.kind === "loading" ? (
+        <>
+          <LoadingCard message={view.message} />
+          <Card className="gap-0 overflow-hidden py-0">
+            <HistoryTotalFooter hasMore={false} loading sales={state.sales} />
+          </Card>
+        </>
+      ) : null}
       {view.kind === "error" ? (
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -98,23 +129,30 @@ export function SaleHistoryPage() {
         </Alert>
       ) : null}
       {view.kind === "empty" ? (
-        <StateCard>
-          {view.message}
-          {view.href ? (
-            <>
-              {" "}
-              <a
-                className="touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
-                href={view.href}
-              >
-                Registrar uma venda
-              </a>
-            </>
-          ) : null}
-        </StateCard>
+        <>
+          <HistoryEmptyCard onClearFilters={handleClearFilters} view={view} />
+          <Card className="gap-0 overflow-hidden py-0">
+            <HistoryTotalFooter
+              hasMore={false}
+              loading={false}
+              sales={state.sales}
+            />
+          </Card>
+        </>
       ) : null}
       {view.kind === "ready" ? (
-        <SaleHistoryList offline={offline} rows={view.rows} />
+        <SaleHistoryList
+          footer={
+            <HistoryTotalFooter
+              className={offline ? "border-t" : TOTAL_UNDER_VALUES}
+              hasMore={state.hasMore}
+              loading={false}
+              sales={state.sales}
+            />
+          }
+          offline={offline}
+          rows={view.rows}
+        />
       ) : null}
       <div aria-live="polite" role="status">
         {more.busy ? (

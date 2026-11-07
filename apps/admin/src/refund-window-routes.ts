@@ -1,3 +1,4 @@
+import { refundsEnabledFor } from "@polaris/billing/provider-ports";
 import type { PlatformCapability } from "@polaris/domain/admin/platform-capabilities";
 import {
   buildRefundWindowView,
@@ -11,11 +12,14 @@ import { readBody, sameOrigin, UUID } from "./support-routes";
 
 /**
  * The window of the right of withdrawal of one store, for the support that answers a refund asked by e-mail (ADR 0104,
- * decisions 8 and 10; the Pix roteiro of R-1). One JSON route and no screen. The read writes an audit row, so it is a
+ * decisions 8 and 10; the Pix roteiro of R-1). One JSON route, read by the Admin page's Reembolso area on an explicit
+ * click (ui/views/refund-window.ts), which refunds nothing. The read writes an audit row, so it is a
  * POST with a small JSON body and a same-origin check (ADR 0072), and it asks for `billing:operate`. The operator
  * comes from the verified login, never from the body. The checks (active operator, open case of the same store) and
  * the audit belong to the database function, in one transaction; the window is computed here with the product's
- * `refundWindowOf`, on the database clock. A refusal is one answer for a closed case, a case of another store and an
+ * `refundWindowOf`, on the database clock. The answer also says where the renewal stands and whether the provider
+ * refunds through the Admin (`refundsEnabledFor`, the rule of the command itself, from the Worker's settings and
+ * never from the provider: the read calls nothing outside the database); the provider is not named. A refusal is one answer for a closed case, a case of another store and an
  * inactive operator. Nothing of the answer is logged here.
  */
 
@@ -29,6 +33,12 @@ export interface RefundWindowDependencies {
 }
 
 const MAX_ID_LENGTH = 128;
+
+/** The provider behind a method, for the one rule that says whether it refunds here; the answer never names it. */
+const PROVIDER_OF_METHOD = {
+  card: "asaas",
+  pix_automatic: "woovi",
+} as const;
 
 function plainText(text: string): boolean {
   for (const character of text) {
@@ -88,7 +98,14 @@ export function refundWindowRoutes(
         organizationId,
         context.env
       );
-      return context.json(buildRefundWindowView(raw));
+      return context.json(
+        buildRefundWindowView(raw, {
+          refundsHere: refundsEnabledFor(
+            context.env,
+            raw.method === null ? null : PROVIDER_OF_METHOD[raw.method]
+          ),
+        })
+      );
     }
   );
 

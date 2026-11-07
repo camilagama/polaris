@@ -8,8 +8,8 @@ import { addDays } from "./result-period";
 import { resultSeries } from "./result-series";
 
 /**
- * The markup of "Vendas × custos por dia" (AC-9 and AC-11 with the emenda de 25/10): the five sentences of support of
- * the Petković (26/10 00:41), the summary a screen reader gets (`role="img"`) and the table "Ver os números", where a
+ * The markup of "Vendas × custos por dia" (AC-9 and AC-11): the five sentences of support, the
+ * summary a screen reader gets (`role="img"`) and the table "Ver os números", where a
  * day of unknown cost says "sem custo informado", never R$ 0,00. The drawing itself is measured in the browser.
  */
 
@@ -123,6 +123,8 @@ function text(markup: string) {
   return out.replaceAll("&quot;", '"');
 }
 
+const CUTS_TEXT = /max-h-|line-clamp/;
+const CONTENT_START_CLASS = /class="(?:[^"]* )?content-start(?: [^"]*)?"/;
 const DESCRIPTION = /<div[^>]*data-slot="card-description"[^>]*>(.*?)<\/div>/s;
 const support = (markup: string) =>
   text(markup.match(DESCRIPTION)?.[1] ?? "").replace("1 a 31 de outubro. ", "");
@@ -183,6 +185,51 @@ describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
 
   it("no longer says that the cost line is not drawn", () => {
     expect(chart(october([3]))).not.toContain("A linha de custos não aparece");
+  });
+});
+
+describe("the room the card keeps for its lines (lugar reservado)", () => {
+  const NOT_NET_PROFIT = "Não é lucro líquido nem dinheiro já recebido.";
+
+  it("keeps the line 'Não é lucro líquido' in the box, empty when every day is known", () => {
+    const complete = chart(october([]));
+    const incomplete = chart(october([3]));
+    expect(complete).not.toContain(NOT_NET_PROFIT);
+    expect(incomplete).toContain(NOT_NET_PROFIT);
+    const lines = (markup: string) =>
+      markup.match(/<p class="[^"]*min-h-\[1\.125rem\][^"]*"[^>]*>/g) ?? [];
+    expect(lines(complete)).toHaveLength(lines(incomplete).length);
+    expect(lines(complete).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("holds the same lines in the box that stands in for the drawing while its chunk loads", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain("data-chart-loading");
+    expect(markup).toContain("min-h-[calc(5*1.125rem)]");
+    expect(markup).toContain("min-h-[3.5rem]");
+  });
+
+  it("puts the room reserved for the reading and the legend below their text, not between the fragments", () => {
+    const markup = chart(october([3]));
+    const reserved = (floor: string) =>
+      (
+        markup.match(/<div aria-hidden="true" class="[^"]*"[^>]*>/g) ?? []
+      ).filter((tag) => tag.includes(floor));
+    const reading = reserved("min-h-[calc(5*1.125rem)]");
+    const legend = reserved("min-h-[3.5rem]");
+    expect(reading).toHaveLength(1);
+    expect(legend).toHaveLength(1);
+    expect(reading[0]).toMatch(CONTENT_START_CLASS);
+    expect(legend[0]).toMatch(CONTENT_START_CLASS);
+    expect('<div class="place-content-start min-h-[3.5rem]">').not.toMatch(
+      CONTENT_START_CLASS
+    );
+  });
+
+  it("reserves with min-h only: nothing is cut with max-h or a line clamp", () => {
+    const markup = chart(october([3]));
+    expect(markup).toContain("min-h-[calc(");
+    expect(markup).not.toMatch(CUTS_TEXT);
   });
 });
 
@@ -259,5 +306,71 @@ describe("the cost line by run of known days (AC-9)", () => {
     expect(mixed).toContain('data-chart-lone-day="1"');
     expect(mixed).toContain('data-chart-run="3-5"');
     expect(mixed.match(/data-chart-run="/g)).toHaveLength(1);
+  });
+});
+
+describe("the unit of the texts follows the grouping (day for a month, month for a year)", () => {
+  /** January to October read on the 25th, as the server sends it above 62 days: one bucket per month, the last one cut at today. */
+  const year = (): StoredPeriodSummary => {
+    const base = october([]);
+    const lastDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 25];
+    const daily = lastDays.map((days, index) => {
+      const date = `2026-${String(index + 1).padStart(2, "0")}-01`;
+      return {
+        costs: `${days * 10}.00`,
+        date,
+        days,
+        netSales: `${days * 50}.00`,
+        operatingExpenses: "0.00",
+        operatingResult: `${days * 40}.00`,
+        salesCount: days,
+        to: addDays(date, days - 1),
+        unknownDays: 0,
+      };
+    });
+    return {
+      ...base,
+      daily,
+      granularity: "month",
+      period: { from: "2026-01-01", to: "2026-10-25" },
+    } as StoredPeriodSummary;
+  };
+  it("says month in the title, the sentence and the result column when the rows are months", () => {
+    const markup = chart(year());
+    const said = text(markup);
+    expect(said).toContain("Vendas × custos por mês");
+    expect(said).not.toContain("Vendas × custos por dia");
+    expect(said).toContain("é o resultado estimado do mês");
+
+    const table = text(
+      renderToStaticMarkup(
+        <NumbersTable
+          hasCosts
+          series={resultSeries(year().daily ?? [], "2026-10-25", {
+            granularity: "month",
+          })}
+        />
+      )
+    );
+    expect(table).toContain("Resultado do mês");
+    expect(table).not.toContain("Resultado do dia");
+  });
+
+  it("keeps day for a single month", () => {
+    const markup = chart(october([]));
+    const said = text(markup);
+    expect(said).toContain("Vendas × custos por dia");
+    expect(said).toContain("é o resultado estimado do dia");
+
+    const table = text(
+      renderToStaticMarkup(
+        <NumbersTable
+          hasCosts
+          series={resultSeries(october([]).daily ?? [], "2026-10-25")}
+        />
+      )
+    );
+    expect(table).toContain("Resultado do dia");
+    expect(table).not.toContain("Resultado do mês");
   });
 });

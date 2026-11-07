@@ -1,10 +1,16 @@
+import { formatBrlAmount, formatShortInstant } from "../lib/format";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { LocalWriter } from "./bootstrap";
 import { discardPendingCustomer } from "./customer-create";
 import { discardPendingCustomerUpdate } from "./customer-update";
 import type { OutboxCommand } from "./outbox/command";
 import type { Outbox, OutboxSnapshot } from "./outbox/outbox";
 import { discardPendingProduct } from "./product-create";
-import { discardPendingSale, resubmitRejectedSale } from "./sale-confirm";
+import {
+  discardPendingSale,
+  refusedSaleFacts,
+  resubmitRejectedSale,
+} from "./sale-confirm";
 import { discardPendingStock } from "./stock-commands";
 
 /**
@@ -35,10 +41,12 @@ type AttentionCause =
 
 export type AttentionAction =
   | "discard"
+  | "redo_sale"
   | "resubmit"
   | "resubmit_without_profile"
   | "retry"
-  | "review_account";
+  | "open_subscription"
+  | "sign_in_again";
 
 export interface AttentionItem {
   actions: AttentionAction[];
@@ -50,6 +58,8 @@ export interface AttentionItem {
   /** What the person can do about it, in plain words. */
   detail: string;
   kind: "customer" | "customer_update" | "product" | "sale" | "stock";
+  /** True when the sale was redone: a new sale was confirmed or kept, and this refused one can go. */
+  redone: boolean;
   title: string;
 }
 
@@ -127,6 +137,19 @@ const STOCK_LABELS: Readonly<Record<string, string>> = {
   "stock.write_off": "Baixa de estoque",
 };
 
+/** "Venda de R$ 89,90 · 01/11 14:20": the value and the moment tell two refused sales apart; the count of items when the payload has no total. */
+function saleTitle(command: OutboxCommand): string {
+  const sale = refusedSaleFacts(command);
+  const items = field(command, "items");
+  const count = Array.isArray(items) ? items.length : 0;
+  const what = sale?.totalDue
+    ? formatBrlAmount(sale.totalDue)
+    : `${count} ${count === 1 ? "item" : "itens"}`;
+  return sale
+    ? `Venda de ${what} · ${formatShortInstant(sale.occurredAt)}`
+    : `Venda de ${what}`;
+}
+
 function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
   if (kind === "customer") {
     return `Cliente ${String(field(command, "name") ?? "")}`.trim();
@@ -138,9 +161,7 @@ function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
     return `Produto ${String(field(command, "name") ?? "")}`.trim();
   }
   if (kind === "sale") {
-    const items = field(command, "items");
-    const count = Array.isArray(items) ? items.length : 0;
-    return `Venda de ${count} ${count === 1 ? "item" : "itens"}`;
+    return saleTitle(command);
   }
   const quantity =
     field(command, "quantity") ?? field(command, "physicalQuantity");
@@ -148,57 +169,97 @@ function titleOf(command: OutboxCommand, kind: AttentionItem["kind"]): string {
   return typeof quantity === "number" ? `${label}: ${quantity}` : label;
 }
 
-function detailOf(cause: AttentionCause, kind: AttentionItem["kind"]): string {
+const REVOKED_CODE = "authorization_revoked";
+
+function revokedDetail(kind: AttentionItem["kind"]): string {
+  if (kind === "sale") {
+    return "O servidor recusou esta venda porque a permissão deste aparelho mudou. Ela não é enviada sozinha. Se a venda aconteceu, toque em Refazer esta venda e, depois de confirmar a nova, descarte esta. Se o seu acesso mudou, use Sair e entrar de novo.";
+  }
+  return "O servidor recusou este registro: a permissão deste aparelho mudou depois que ele foi feito (por exemplo, a loja foi encerrada e reaberta). Ele não é enviado sozinho. Se ainda valer, anote o que ele tinha, descarte este e faça o registro de novo. Se o seu acesso mudou, use Sair e entrar de novo.";
+}
+
+const REDONE_DETAIL =
+  "Você já refez esta venda: a venda nova foi confirmada ou guardada neste aparelho. Esta, recusada, pode ser descartada sem perder nada.";
+
+const PLAN_DETAIL_WITHOUT_SUBSCRIPTION = `O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano com o suporte (${SUPPORT_EMAIL}) e toque em Tentar novamente.`;
+
+function detailOf(
+  cause: AttentionCause,
+  kind: AttentionItem["kind"],
+  code: string,
+  options: { redone: boolean; subscriptionAvailable: boolean }
+): string {
+  const { redone, subscriptionAvailable } = options;
+  if (redone && kind === "sale" && code === REVOKED_CODE) {
+    return REDONE_DETAIL;
+  }
   switch (cause) {
     case "insufficient_stock":
       return kind === "sale"
-        ? "O estoque do servidor não cobre esta venda: outro aparelho vendeu ou baixou estoque enquanto este estava sem rede. Receba o estoque que falta e reenvie a venda, ou descarte-a se ela não aconteceu."
-        : "O estoque do servidor é menor do que este aparelho mostrava. Descarte a baixa, confira o saldo atual e registre de novo se ainda fizer sentido.";
+        ? "O estoque do servidor não cobre esta venda: o saldo mudou enquanto este aparelho estava sem rede. Receba o que falta e toque em Reenviar venda, ou descarte se a venda não aconteceu."
+        : "O estoque do servidor é menor do que este aparelho mostrava, então a baixa não foi registrada. Confira o saldo atual, registre de novo se ainda fizer sentido e descarte esta.";
     case "version_conflict":
       return kind === "customer_update"
-        ? "Este cliente foi alterado em outro lugar depois que este aparelho o viu, então a sua alteração não foi aplicada e nada foi sobrescrito. Descarte-a, confira o cadastro atual e edite de novo se ainda fizer sentido."
-        : "O saldo mudou depois da sua contagem: outro aparelho moveu o estoque. Descarte esta contagem e conte de novo com o saldo atualizado.";
+        ? "Este cliente foi alterado em outro lugar depois que este aparelho o viu; nada foi sobrescrito. Confira o cadastro atual, edite de novo se ainda fizer sentido e descarte esta alteração."
+        : "O saldo mudou depois da contagem: outro aparelho moveu o estoque. Conte de novo com o saldo atual e descarte esta contagem.";
     case "sku_conflict":
-      return "Outro produto já usa este SKU. Descarte este cadastro e crie o produto de novo com outro SKU.";
+      return "Outro produto já usa este SKU. Crie o produto de novo com outro SKU e descarte este cadastro.";
     case "id_conflict":
-      return "Este registro colidiu com outro que já existe. Descarte-o e cadastre de novo.";
+      return "Este registro colidiu com outro que já existe. Cadastre de novo e descarte este.";
     case "unavailable":
       if (kind === "customer_update") {
-        return "Este cliente não existe mais nesta loja. Descarte a alteração.";
+        return "Este cliente não existe mais nesta loja, então a alteração não vale. Descarte-a.";
       }
       return kind === "sale"
-        ? "Um dos produtos desta venda não está mais disponível (arquivado, removido ou inexistente). Restaure o produto e reenvie a venda, ou descarte-a."
-        : "O produto ou a categoria deste registro não está mais disponível. Restaure-o e refaça o registro.";
+        ? "Um produto desta venda não está mais disponível (arquivado ou removido). Restaure-o e toque em Reenviar venda, ou descarte a venda."
+        : "O produto ou a categoria deste registro não está mais disponível. Restaure-o, refaça o registro e descarte este.";
     case "profile_changed":
-      return "O perfil de pagamento usado nesta venda mudou (taxas ou prazo) depois que este aparelho o viu, então o servidor não a registrou com ele. Reenvie a venda sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte-a e refaça a venda com o perfil atual.";
+      return "O perfil de pagamento desta venda mudou (taxas ou prazo) depois que este aparelho o viu. Toque em Reenviar sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte e refaça a venda com o perfil atual.";
     case "profile_unavailable":
-      return "O perfil de pagamento usado nesta venda foi arquivado ou removido. Reenvie a venda sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte-a e refaça a venda com outro perfil.";
+      return "O perfil de pagamento desta venda foi arquivado ou removido. Toque em Reenviar sem perfil de pagamento (taxas e prazo ficam desconhecidos) ou descarte e refaça a venda com outro perfil.";
     case "command_too_old":
-      return "Este registro foi criado há mais de 90 dias, mais do que o servidor guarda para reconhecer um reenvio. Ele pode já ter sido registrado antes: confira a lista de vendas, estoque ou cadastro antes de refazer e, só então, descarte-o.";
+      return "Este registro tem mais de 90 dias, e o servidor já não reconhece um reenvio. Confira se ele já entrou (vendas, estoque ou cadastro) e só então descarte.";
     case "sale_too_old":
-      return "Esta venda é mais antiga que a janela em que o sistema aceita registros retroativos. Ela não pode ser enviada como está; descarte-a e registre a venda de outra forma.";
+      return "Esta venda é mais antiga que a janela de registros retroativos e não pode ser enviada como está. Registre a venda de outra forma e descarte esta.";
     case "entitlement_changed":
-      return "O plano desta loja não permite mais estes registros. Regularize o plano e use Tentar novamente: o registro é enviado como está. Nada foi perdido.";
+      return subscriptionAvailable
+        ? "O plano desta loja não permite mais este registro; nada foi perdido. Regularize o plano em Ver Assinatura e toque em Tentar novamente."
+        : PLAN_DETAIL_WITHOUT_SUBSCRIPTION;
     case "session_changed":
-      return "Este registro foi feito por outra conta e foi enviado com uma conta diferente, então o servidor não o recebeu. Nada foi perdido: entre com a conta que o criou e use Tentar novamente.";
+      return "Este registro foi feito por outra conta, e o servidor não o recebeu; nada foi perdido. Entre com a conta que o criou e toque em Tentar novamente.";
     case "authorization_revoked":
-      return "O acesso deste aparelho ou desta conta mudou: foi removido, revogado ou expirou. Entre de novo com uma conta autorizada; se o acesso não voltar, este registro não poderá ser enviado.";
+      if (code === REVOKED_CODE) {
+        return revokedDetail(kind);
+      }
+      return "O acesso deste aparelho ou desta conta mudou: foi removido, revogado ou expirou. Use Sair e entrar de novo com uma conta autorizada; se o acesso não voltar, este registro não poderá ser enviado.";
     default:
-      return "O servidor recusou este registro. Descarte-o e refaça a operação com os dados atuais.";
+      return "O servidor recusou este registro. Refaça a operação com os dados atuais e descarte este.";
   }
 }
 
 function actionsFor(
   cause: AttentionCause,
-  kind: AttentionItem["kind"]
+  kind: AttentionItem["kind"],
+  options: { code: string; redone: boolean; subscriptionAvailable: boolean }
 ): AttentionAction[] {
-  if (cause === "entitlement_changed" || cause === "session_changed") {
-    // the refusal is not stored: once the plan allows it (or the account that made
-    // the command signs in), the same command goes through
-    return ["review_account", "retry"];
+  if (cause === "entitlement_changed") {
+    // the refusal is not stored: once the plan allows it, the same command goes through; without the Assinatura tab
+    // there is nowhere to send the person
+    return options.subscriptionAvailable
+      ? ["open_subscription", "retry"]
+      : ["retry"];
+  }
+  if (cause === "session_changed") {
+    // the same command goes through once the account that made it signs in
+    return ["sign_in_again", "retry"];
   }
   if (cause === "authorization_revoked") {
-    return ["review_account", "discard"];
+    if (kind === "sale" && options.code === REVOKED_CODE) {
+      return options.redone
+        ? ["discard"]
+        : ["redo_sale", "sign_in_again", "discard"];
+    }
+    return ["sign_in_again", "discard"];
   }
   if (
     kind === "sale" &&
@@ -211,8 +272,23 @@ function actionsFor(
     : ["discard"];
 }
 
-/** Turns the outbox into what the attention panel shows. */
-export function buildAttention(snapshot: OutboxSnapshot): AttentionSummary {
+export interface AttentionOptions {
+  /**
+   * The "Assinatura" tab of Configurações exists for this person (billing self-service on and a role that manages it,
+   * ADR 0104). Without it, the plan card does not point there.
+   */
+  subscriptionAvailable?: boolean;
+}
+
+/**
+ * Turns the outbox into what the attention panel shows. `redone` holds the refused sales that already have their new
+ * sale (the link Vender keeps), so the card offers to discard the refused one instead of redoing it twice.
+ */
+export function buildAttention(
+  snapshot: OutboxSnapshot,
+  redone: ReadonlySet<string> = new Set(),
+  { subscriptionAvailable = true }: AttentionOptions = {}
+): AttentionSummary {
   const items = snapshot.commands.flatMap((command) => {
     const kind = kindOf(command);
     if (command.status !== "rejected" || kind === null) {
@@ -220,15 +296,24 @@ export function buildAttention(snapshot: OutboxSnapshot): AttentionSummary {
     }
     const code = command.rejection?.code ?? "rejected";
     const cause = causeOf(code);
+    const isRedone = kind === "sale" && redone.has(command.commandId);
     return [
       {
-        actions: actionsFor(cause, kind),
+        actions: actionsFor(cause, kind, {
+          code,
+          redone: isRedone,
+          subscriptionAvailable,
+        }),
         blocksQueue: snapshot.blockedBy?.commandId === command.commandId,
         cause,
         code,
         commandId: command.commandId,
-        detail: detailOf(cause, kind),
+        detail: detailOf(cause, kind, code, {
+          redone: isRedone,
+          subscriptionAvailable,
+        }),
         kind,
+        redone: isRedone,
         title: titleOf(command, kind),
       },
     ];
@@ -251,7 +336,12 @@ export function buildAttention(snapshot: OutboxSnapshot): AttentionSummary {
 export function discardWarning(item: AttentionItem): string {
   switch (item.kind) {
     case "sale":
-      return "A venda será apagada deste aparelho e não será registrada. Confirme só se ela não aconteceu.";
+      if (item.redone) {
+        return "Esta venda recusada será apagada deste aparelho. A venda refeita já está registrada ou guardada e não muda.";
+      }
+      return item.code === REVOKED_CODE
+        ? "A venda será apagada deste aparelho e não será registrada. Se ela aconteceu, use Refazer esta venda antes: depois do descarte os itens não ficam guardados. Confirme só se ela não aconteceu."
+        : "A venda será apagada deste aparelho e não será registrada. Confirme só se ela não aconteceu.";
     case "product":
       return "O produto e o estoque de abertura digitados serão apagados deste aparelho.";
     case "customer":

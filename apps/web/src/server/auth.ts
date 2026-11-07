@@ -25,7 +25,14 @@ import {
   type LoginLockQueryable,
 } from "./auth/login-lock";
 import { loginLockKey } from "./auth/login-lock-key";
-import { hashPasswordNfc, verifyPasswordNfc } from "./auth/password-hash";
+import {
+  createDatabasePasswordHashStore,
+  createPasswordHasher,
+  type PasswordHasher,
+  type PasswordHashQueryable,
+  type PasswordHashStore,
+  usablePasswordPepper,
+} from "./auth/password-hash";
 import {
   type AuthRequestState,
   newAuthRequestState,
@@ -68,7 +75,7 @@ const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * The resend of the verification e-mail works only this long after the sign-up (`created_at`), so the purge of the
- * unverified users cannot be postponed forever by resending (ADR 0100, P10; decision of 21/10/2026).
+ * unverified users cannot be postponed forever by resending (ADR 0100, P10).
  */
 const EMAIL_VERIFICATION_RESEND_CAP_SECONDS = 72 * 60 * 60;
 
@@ -185,6 +192,10 @@ interface CreateBetterAuthOptions {
   legalAcceptanceRecorder?: SignUpLegalAcceptanceRecorder;
   /** Forgets the lock after a password reset; the default goes through `database`, none without one. */
   loginLockClearer?: LoginLockClearer;
+  /** Hash and check of a password; the default is bcrypt in `database` over the HMAC with `passwordPepper`. */
+  passwordHasher?: PasswordHasher;
+  /** `AUTH_PASSWORD_PEPPER`: without it (or without a database) every hash and check of a password fails. */
+  passwordPepper?: string | undefined;
   plugins?: BetterAuthOptions["plugins"];
   /** A function lets one instance serve many requests, each with its own identifier. */
   requestId?: string | (() => string | undefined);
@@ -293,7 +304,7 @@ async function hasValidPasswordResetToken(
   return Boolean(verification && verification.expiresAt > new Date());
 }
 
-async function shouldCheckPasswordAgainstHibp(
+async function shouldValidateNewPassword(
   context: AuthBeforeHookContext
 ): Promise<boolean> {
   if (context.path === "/reset-password") {
@@ -358,12 +369,12 @@ async function normalizeAndValidatePasswordRequest(
     return;
   }
 
-  if (!(await shouldCheckPasswordAgainstHibp(context))) {
+  if (!(await shouldValidateNewPassword(context))) {
     return;
   }
 
   try {
-    requestBody[passwordField] = await validateNewPassword(rawPassword);
+    requestBody[passwordField] = validateNewPassword(rawPassword);
   } catch (error) {
     if (error instanceof PasswordPolicyError) {
       throw passwordPolicyApiError(error);
@@ -465,9 +476,8 @@ async function validateVerifiedAccountLinkingRequest(
 
 function passwordPolicyApiError(error: PasswordPolicyError): APIError {
   const details = passwordPolicyErrorDetails(error);
-  const status = details.status === 503 ? "SERVICE_UNAVAILABLE" : "BAD_REQUEST";
 
-  return APIError.from(status, {
+  return APIError.from("BAD_REQUEST", {
     code: details.code,
     message: details.message,
   });
@@ -766,6 +776,37 @@ function databaseLoginLockClearer(
   };
 }
 
+const noDatabasePasswordHashStore: PasswordHashStore = {
+  crypt: () => Promise.reject(new Error("No database for the password hash.")),
+  hash: () => Promise.reject(new Error("No database for the password hash.")),
+};
+
+function passwordHasherFor(
+  given: PasswordHasher | undefined,
+  pepper: string | undefined,
+  database: PolarisDatabase | undefined
+): PasswordHasher {
+  return (
+    given ??
+    createPasswordHasher({
+      pepper: usablePasswordPepper(pepper),
+      store: databasePasswordHashStore(database),
+    })
+  );
+}
+
+function databasePasswordHashStore(
+  database: PolarisDatabase | undefined
+): PasswordHashStore {
+  if (!database) {
+    return noDatabasePasswordHashStore;
+  }
+  // read at each call, never held: the instance is shared by the requests of the isolate
+  return createDatabasePasswordHashStore(
+    () => database.$client as unknown as PasswordHashQueryable
+  );
+}
+
 /**
  * The UPDATE of the date of the link, by the database clock, only while the user is at most 72 hours old. A user row
  * that is not there (the purge deleted it while the resend waited for its lock) is a failure: the e-mail must not
@@ -890,6 +931,8 @@ export function createBetterAuth({
   googleProvider,
   legalAcceptanceRecorder,
   loginLockClearer,
+  passwordHasher,
+  passwordPepper,
   plugins,
   requestId,
   requestState,
@@ -904,6 +947,7 @@ export function createBetterAuth({
     (database ? databaseAuditEventWriter(database) : undefined);
   const clearLoginLock =
     loginLockClearer ?? databaseLoginLockClearer(database, secret);
+  const hasher = passwordHasherFor(passwordHasher, passwordPepper, database);
 
   // Without a database or a writer (the test adapter) nothing is recorded.
   const accessLogEnabled = Boolean(accessLogWriter ?? database);
@@ -1298,8 +1342,8 @@ export function createBetterAuth({
             }
           },
           password: {
-            hash: hashPasswordNfc,
-            verify: verifyPasswordNfc,
+            hash: (password) => hasher.hash(password),
+            verify: (input) => hasher.verify(input),
           },
           requireEmailVerification: true,
           resetPasswordTokenExpiresIn: 60 * 60,

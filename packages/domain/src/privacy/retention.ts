@@ -12,7 +12,7 @@
  * A legal period (tax, accounting, LGPD, Marco Civil) carries the date of the
  * decision and the norms it rests on (`approvedOn`, `legalSources`).
  *
- * On 19/10/2026 the user approved every period of this registry, the legal ones
+ * The user approved every period of this registry, the legal ones
  * included ("always looking for simplicity"): the `review` of every class is
  * `decidida`. A lawyer's review of the legal periods is still recommended, but
  * it does not block anything: every class whose basis is the law keeps
@@ -36,6 +36,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "billing_events",
   "billing_trial_claims",
   "billing_cancellation_feedback",
+  "billing_notices",
   "sync_commands",
   "sync_change_log",
   "data_exports",
@@ -56,6 +57,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "event_outbox",
   "queue_processing",
   "operational_incident",
+  "client_error_log",
   "provider_backups",
 ] as const);
 
@@ -84,7 +86,7 @@ export type RetentionReview =
   | { at: string; by: string; state: "decidida" };
 
 /**
- * Every period was approved by the user on 19/10/2026, the legal ones included, looking for
+ * Every period was approved by the user, the legal ones included, looking for
  * simplicity. A lawyer's review is recommended (`legalReview`) and blocks nothing; no job or
  * refusal was turned on by this decision.
  */
@@ -209,8 +211,8 @@ const DAY_MS = 24 * HOUR_MS;
 const TO_CONFIRM = "a confirmar pelo responsável";
 
 /**
- * The periods of the tenant's audit (ADR 0081, amended 19/10/2026; `security` lowered from 60 to 12 months by the
- * user's decision of 19/10/2026; a lawyer's review is recommended). The classes stay `proposta`, so no code reads them as
+ * The periods of the tenant's audit (ADR 0081, amended; `security` lowered from 60 to 12 months by the
+ * user's decision; a lawyer's review is recommended). The classes stay `proposta`, so no code reads them as
  * an approved period: the database function `tenant_audit_event_expired` (migration 0081) holds the same numbers, and
  * the audit gate proves its behavior at their edges.
  */
@@ -389,6 +391,25 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     rule: "O motivo que o dono escreve ao cancelar a renovação fica 12 meses contados do dia em que foi gravado (`recorded_on`, só o dia, no horário de São Paulo, para não casar com o fato do razão) e sai na manutenção de privacidade, pela função `expire_billing_cancellation_feedback`. Não tem loja nem pessoa: fica fora do purge da organização, da exportação e do atendimento ao titular, porque é texto livre sem vínculo. Nunca vai para o razão de cobrança, log, Sentry nem auditoria (prazo aprovado pelo usuário no desenho t268 de 23/10/2026, ADR 0104).",
     sources: ["ADR 0104", "docs/business-rules/privacy.md"],
     status: "aprovada",
+  },
+  {
+    basis: "decisao",
+    class: "billing_notices",
+    data: [
+      "billing_notices (os avisos do ciclo de cobrança e as boas-vindas: organização, tipo, chave de deduplicação, datas de registro, de vencimento, da primeira e da última tentativa, de envio ou de falha, o código curto da falha ou do motivo de não envio e, só nas boas-vindas, o ID do usuário; sem e-mail, sem nome da loja, sem valor e sem texto)",
+    ],
+    period: { kind: "undecided" },
+    proposed:
+      "Dentro do purge da organização a linha sai com a loja, e a das boas-vindas sai também com a conta do usuário, pela chave estrangeira em cascata (já implementado, ADR 0081 e ADR 0104). Fora do purge, para a loja viva, o prazo proposto é de 12 meses contados de `recorded_at`, só para o aviso já encerrado (`sent_at`, `failed_at` ou `skipped_reason` preenchido), classe operacional e não fiscal, a mesma para todos os tipos, boas-vindas incluídas (decisão do Arrascaeta de 28/10/2026, com o parecer do Rodrigo). O prazo não está aplicado e nenhum job existe: a classe só vira aprovada com o job, que decide o responsável (Arrascaeta), e o job só pode existir depois de pular a loja sob legal hold e de conferir que nenhuma chave de deduplicação reaparece depois dos 12 meses. Efeito aceito: quem abrir uma loja nova mais de 12 meses depois da primeira, sem outra loja anterior como dono ativo, recebe as boas-vindas de novo.",
+    review: { state: "pendente_juridica" },
+    rule: "Cada aviso do ciclo de cobrança (10 tipos, incluídas as boas-vindas) vira uma linha, com ou sem e-mail enviado, um por loja, tipo e chave. A linha guarda só identificadores, datas e códigos: o endereço é lido da conta na hora do envio, por uma função do papel de autenticação, e nunca fica no aviso, no evento nem no log. A referência opaca do provedor, quando é a chave, ainda localiza o pagador no provedor, como nos eventos de cobrança. Fica fora da exportação do tenant e nenhum papel de runtime do tenant a lê; o purge da organização a apaga.",
+    sources: [
+      "ADR 0079",
+      "ADR 0104",
+      "docs/business-rules/privacy.md",
+      "docs/runbooks/email-auth.md",
+    ],
+    status: "proposta",
   },
   {
     approvedOn: "2026-10-18",
@@ -689,6 +710,25 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
     review: USER_APPROVED_REVIEW,
     rule: "O incidente guarda só código, contagem, datas e uma referência opaca; o item guarda só o ID do evento e da organização. Fora do purge nenhum papel apaga; o expurgo é do job agendado (PR112). O purge da organização apaga os itens dela explicitamente (política e DELETE do papel do purge, ADR 0081): a cascata da chave estrangeira não dispara, porque o purge mantém a linha da organização. O incidente não tem organização e não entra no purge.",
     sources: ["ADR 0085"],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "client_error_log",
+    data: [
+      "linhas client_error, client_error_count, client_error_refused, client_error_pii_suspected e client_error_dropped no Workers Logs da Cloudflare (o relatório de erro do app no navegador: o tipo do evento, a classe do erro de uma lista fechada, o código e o status do oRPC, a versão do app, o boundary, o id da tela e até três posições de código; sem loja, pessoa, IP, user agent, endereço da página nem texto do erro)",
+    ],
+    period: { kind: "undecided" },
+    proposed:
+      "O prazo da plataforma: o Workers Logs guarda as linhas pelo prazo dele (7 dias, ADR 0094; 3 no plano Free, a conferir na mudança de preço de 1/12/2026) e as apaga sozinho, sem job do Polaris e sem prazo aplicado por nós (decisão do Arrascaeta de 28/10/2026, com o parecer do Rodrigo). Se o relatório ganhar um campo de loja ou de pessoa, deixa de ser anônimo e a classe volta à revisão de privacidade (exportação, purge e prazo).",
+    review: { state: "pendente_juridica" },
+    rule: "O relatório é anônimo por construção: lista fechada de campos, validada de novo pelo servidor com schema estrito, e descartado inteiro se algo sair dela ou se a política de redação dos logs mudar qualquer valor. Não está ligado a loja nem a pessoa, então fica fora da exportação do tenant, do atendimento ao titular e do purge. Fica só no Workers Logs, do operador de hospedagem que já existe: não há operador novo.",
+    sources: [
+      "ADR 0079",
+      "ADR 0094",
+      "ADR 0098",
+      "docs/business-rules/privacy.md",
+    ],
     status: "proposta",
   },
   {

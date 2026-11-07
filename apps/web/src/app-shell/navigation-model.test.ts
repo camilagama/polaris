@@ -1,3 +1,7 @@
+import {
+  CLIENT_ERROR_OTHER_ROUTE_IDS,
+  CLIENT_ERROR_ROUTE_IDS,
+} from "@polaris/contracts/client-error-fields";
 import { describe, expect, it } from "vitest";
 import {
   ATTENTION_NAV_ITEM,
@@ -6,7 +10,11 @@ import {
   bottomBarMark,
   documentTitle,
   entryPageFor,
+  HELP_HREF,
+  HELP_LABEL,
+  inBottomBar,
   legacyAddress,
+  listedTabs,
   menuItemsOf,
   NAV_ITEMS,
   navGroups,
@@ -14,6 +22,8 @@ import {
   requestedTab,
   resolveRoute,
   SCREEN_TABS,
+  screenKeyOf,
+  screenKeys,
   tabHref,
 } from "./navigation-model";
 
@@ -33,16 +43,43 @@ describe("main menu", () => {
     expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(8);
   });
 
-  it("groups the sidebar: Catálogo, Resultado and Configurações", () => {
+  it("groups the sidebar: Início alone, Vendas, Gestão and Configurações alone", () => {
     const groups = navGroups(NAV_ITEMS).map((group) => [
       group.label,
       group.items.map((item) => item.label),
     ]);
     expect(groups).toEqual([
-      [null, ["Início", "Vender", "Histórico"]],
-      ["Catálogo", ["Estoque", "Produtos", "Clientes"]],
-      ["Resultado", ["Resultado"]],
-      ["Configurações", ["Configurações"]],
+      [null, ["Início"]],
+      ["Vendas", ["Vender", "Histórico"]],
+      ["Gestão", ["Estoque", "Produtos", "Clientes", "Resultado"]],
+      [null, ["Configurações"]],
+    ]);
+  });
+
+  it("keeps Pendências in Vendas, after Histórico", () => {
+    const groups = navGroups(menuItemsOf({ attention: true })).map((group) => [
+      group.label,
+      group.items.map((item) => item.label),
+    ]);
+    expect(groups[1]).toEqual([
+      "Vendas",
+      ["Vender", "Histórico", "Pendências"],
+    ]);
+  });
+
+  it("on the phone, without the destinations of the bottom bar, keeps the labels of what is left", () => {
+    const rest = menuItemsOf({ attention: true }).filter(
+      (item) => !inBottomBar(item.id)
+    );
+    expect(
+      navGroups(rest).map((group) => [
+        group.label,
+        group.items.map((item) => item.label),
+      ])
+    ).toEqual([
+      ["Vendas", ["Pendências"]],
+      ["Gestão", ["Produtos", "Clientes", "Resultado"]],
+      [null, ["Configurações"]],
     ]);
   });
 
@@ -134,6 +171,7 @@ describe("tabs", () => {
         "Aparelhos",
         "Assinatura",
         "Senha",
+        "Seus dados",
       ],
     });
   });
@@ -208,6 +246,37 @@ describe("tabs", () => {
     expect(tabHref("settings", "senha")).toBe("/configuracoes?aba=senha");
     expect(tabHref("settings", "formas-de-receber")).toBe("/configuracoes");
     expect(tabHref("products", "categorias")).toBe("/products?aba=categorias");
+  });
+});
+
+describe("listedTabs", () => {
+  const values = (list: ReturnType<typeof listedTabs>) =>
+    list.map((tab) => [tab.value, tab.reserved]);
+
+  it("lists the tabs this person has, in the order of the screen", () => {
+    expect(
+      values(listedTabs("settings", ["seus-dados", "formas-de-receber"]))
+    ).toEqual([
+      ["formas-de-receber", false],
+      ["seus-dados", false],
+    ]);
+  });
+
+  it("holds the place of a reserved tab between its neighbours, and drops it once it is a tab of the person", () => {
+    const waiting = ["formas-de-receber", "catalogo-publico", "seus-dados"];
+    expect(values(listedTabs("settings", waiting, ["senha"]))).toEqual([
+      ["formas-de-receber", false],
+      ["catalogo-publico", false],
+      ["senha", true],
+      ["seus-dados", false],
+    ]);
+    expect(
+      values(listedTabs("settings", [...waiting, "senha"], ["senha"]))
+    ).toContainEqual(["senha", false]);
+    expect(values(listedTabs("settings", waiting))).not.toContainEqual([
+      "senha",
+      true,
+    ]);
   });
 });
 
@@ -383,6 +452,27 @@ describe("resolveRoute", () => {
     }
   });
 
+  it("opens Ajuda e contato inside the shell, working offline, and not as a destination of the menu", () => {
+    expect(HELP_HREF).toBe("/ajuda");
+    expect(resolveRoute("/ajuda")).toEqual({
+      connectionForm: true,
+      id: "help",
+      kind: "page",
+      navId: "help",
+      onlineOnly: false,
+      screen: "help",
+      title: "Ajuda e contato",
+    });
+    expect(resolveRoute("/ajuda/").kind).toBe("page");
+    expect(HELP_LABEL).toBe("Ajuda e contato");
+    expect(NAV_ITEMS.map((item) => item.href)).not.toContain(HELP_HREF);
+    expect(
+      menuItemsOf({ attention: true }).map((item) => item.href)
+    ).not.toContain(HELP_HREF);
+    // "Mais" carries the mark on this page, as on every page that is no destination of the bar
+    expect(bottomBarMark("help")).toBe("more");
+  });
+
   it("ignores trailing slashes", () => {
     expect(resolveRoute("/inventory/")).toMatchObject({ id: "inventory" });
     expect(resolveRoute("/sales/history//")).toMatchObject({
@@ -436,5 +526,70 @@ describe("the sign-in route", () => {
 
   it("is not a page of the shell: it has no menu and no organization", () => {
     expect(resolveRoute("/entrar").kind).toBe("not-found");
+  });
+});
+
+describe("the screen key of an error report", () => {
+  const others: readonly string[] = CLIENT_ERROR_OTHER_ROUTE_IDS;
+  const shellRouteIds: string[] = CLIENT_ERROR_ROUTE_IDS.filter(
+    (id) => !others.includes(id)
+  );
+  const shellPaths = [
+    ...NAV_ITEMS.map((item) => item.href),
+    ATTENTION_NAV_ITEM.href,
+    HELP_HREF,
+    "/sales/detail",
+  ];
+  const tabAddresses = (
+    Object.entries(SCREEN_TABS) as [
+      keyof typeof SCREEN_TABS,
+      (typeof SCREEN_TABS)[keyof typeof SCREEN_TABS],
+    ][]
+  ).flatMap(([screen, tabs]) =>
+    tabs.map((tab) => ({
+      expected: `${screen}:${tab.value}`,
+      href: tabHref(screen, tab.value),
+    }))
+  );
+
+  function keyOfHref(href: string): string | null {
+    const [pathname = "", query] = href.split("?");
+    return screenKeyOf(pathname, query === undefined ? "" : `?${query}`);
+  }
+
+  it("is the list of the contract without the ids that are no screen of the shell, same length", () => {
+    expect(screenKeys()).toEqual([...shellRouteIds].sort());
+    expect(screenKeys()).toHaveLength(shellRouteIds.length);
+  });
+
+  it("gives a key of the list for every path of the shell", () => {
+    for (const path of shellPaths) {
+      expect(shellRouteIds, path).toContain(screenKeyOf(path));
+    }
+  });
+
+  it("gives the key of its own tab, from the list, for every tab of every screen with tabs", () => {
+    expect(tabAddresses.length).toBeGreaterThan(0);
+    for (const { expected, href } of tabAddresses) {
+      expect(keyOfHref(href), href).toBe(expected);
+      expect(shellRouteIds, href).toContain(expected);
+    }
+  });
+
+  it("reaches every key of the list from some address of the shell", () => {
+    const reached = new Set<string | null>([
+      ...shellPaths.map((path) => screenKeyOf(path)),
+      ...tabAddresses.map(({ href }) => keyOfHref(href)),
+    ]);
+    expect([...reached].sort()).toEqual([...shellRouteIds].sort());
+  });
+
+  it("is the first tab for an address with no or an unknown tab, and null outside the shell", () => {
+    expect(screenKeyOf("/products")).toBe("products:produtos");
+    expect(screenKeyOf("/products", "?aba=xyz")).toBe("products:produtos");
+    expect(screenKeyOf("/dashboard", "?meta=nova")).toBe("dashboard:metas");
+    expect(screenKeyOf("/products/")).toBe("products:produtos");
+    expect(screenKeyOf("/vendas/123")).toBeNull();
+    expect(screenKeyOf("/entrar")).toBeNull();
   });
 });

@@ -1,14 +1,14 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * How much the interface moves (ADR 0103, "Níveis de movimento"; decision of 25/10/2026). One definition, read by the
+ * How much the interface moves (ADR 0103, "Níveis de movimento"). One definition, read by the
  * CSS through `<html data-motion>` (the `motion-full:` variant of theme.css) and by the code that animates in
  * JavaScript (the filter bar, the charts and the panel of the phone) through `useMotionLevel()` or `readMotionLevel()`.
  * No component reads the width or the pointer on its own.
  *
  * - `none`: `prefers-reduced-motion: reduce`. It wins over everything: not even the essential motion runs (theme.css).
- * - `essential`: a phone, a coarse pointer on a narrow screen (under 760 px, the line of the sidebar and of
- *   `useIsMobile`) or a short one (500 px or less: the phone on its side). Only the motion of `ESSENTIAL_MOTION`
+ * - `essential`: a phone, a coarse pointer on a narrow screen (under 760 px; in px, unlike the line of the
+ *   sidebar and of `useIsMobile`, which is in rem) or a short one (500 px or less: the phone on its side). Only the motion of `ESSENTIAL_MOTION`
  *   (scripts/ui-source-rules.test.ts) runs: the press of a button, the pulse of the skeleton, the drag of a toast,
  *   the tooltip of a chart following the finger and the row of pills scrolling to a pill.
  * - `full`: the rest, the tablet and the narrow desktop window included.

@@ -4,6 +4,8 @@ import {
   isConnectionFailure,
   isDefiniteRpcRejection,
   isLegalAcceptanceRefusal,
+  isOrganizationClosedRefusal,
+  isPlatformCut,
   isTransientReadFailure,
   rpcErrorCode,
 } from "../../lib/rpc-error";
@@ -17,7 +19,8 @@ import {
 } from "../bootstrap";
 import { restorePendingCustomers } from "../customer-create";
 import type { LogoutWorkspace } from "../logout-guard";
-import type { LocalNamespace } from "../namespace";
+import type { LocalNamespace, NamespaceKey } from "../namespace";
+import type { OutboxCommand } from "../outbox/command";
 import type { Outbox } from "../outbox/outbox";
 import { restorePendingProducts } from "../product-create";
 import type { LocalVariantReader } from "../sale-confirm";
@@ -44,7 +47,7 @@ import { leaseStanding, leaseTimerDelay } from "./lease-standing";
  * 5. the figures the screens show (online, queued, refused, last sync).
  *
  * It never decides WHEN to sync: the host calls syncNow (on start, on reconnect,
- * on a timer, after queueing) and reads the outcome (offline, or `sync_failed`
+ * on a timer, after queueing) and reads the outcome (offline, `server_busy` or `sync_failed`
  * to try again later). It is framework-free and takes every outside thing as a
  * dependency, so it is tested without a browser.
  */
@@ -102,6 +105,14 @@ export class SessionUnreachableError extends Error {
   }
 }
 
+/** Nobody could be named as signed in, so nothing of the closed store's queue was touched. */
+export class NoSessionForDiscardError extends Error {
+  constructor() {
+    super("no_session_for_discard");
+    this.name = "NoSessionForDiscardError";
+  }
+}
+
 export interface OpenedStores {
   close: () => Promise<void> | void;
   outbox: Outbox;
@@ -149,6 +160,11 @@ export interface RuntimeDependencies {
     namespace: LocalNamespace,
     deviceId: string
   ) => Promise<OpenedStores>;
+  /**
+   * Whether any queue database exists on this browser, whoever's store it is: what tells an empty registry of
+   * namespaces from one that lost the index of a queue still on the disk.
+   */
+  outboxOnDisk: () => Promise<boolean>;
   purge: (
     namespace: LocalNamespace,
     options: { discardPending: boolean }
@@ -166,6 +182,11 @@ export interface RuntimeDependencies {
  * offered to any screen and nothing new is queued (emenda do ADR 0047).
  */
 type RuntimePhase = "expired" | "off" | "ready" | "starting" | "unavailable";
+
+export interface LogoutInspection {
+  readable: boolean;
+  workspaces: LogoutWorkspace[];
+}
 
 export interface RuntimeSnapshot {
   /** Whether the local collections hold a complete snapshot of the organization. */
@@ -191,8 +212,19 @@ export interface RuntimeSnapshot {
    */
   legalAcceptanceRequired: boolean;
   online: boolean;
+  /**
+   * The server refused a call because the organization was closed (ADR 0081): the local copy and the lease were
+   * dropped as for a refused session, the queue stays, and the session itself is fine (nothing reads the
+   * organizations again for it). It holds until the runtime stops.
+   */
+  organizationClosed: boolean;
   phase: RuntimePhase;
-  /** Why the runtime is unavailable or the last sync failed; null when fine. */
+  /**
+   * Why the runtime is unavailable or the last sync failed; null when fine. A failed sync is `server_busy` when the
+   * server got the call and died on it (`isPlatformCut`: the regime of the Free plan, past the 60 s of quiet), and
+   * `sync_failed` for any other failure (`syncFailed`). When the start was refused because the plan has no offline
+   * writes it is `PLAN_REFUSED_REASON`.
+   */
   reason: string | null;
   /**
    * While `expired`: the server answered the renewal with a refusal that is not about the
@@ -231,10 +263,37 @@ function isSessionRefusal(error: unknown): boolean {
 }
 
 /**
+ * The runtime already knows the store was closed (a call of this page was refused for it): no lease is asked for it
+ * again, and whatever was on its way ends as the server's own refusal would.
+ */
+class KnownClosedError extends Error {
+  constructor() {
+    super("organization_closed");
+    this.name = "KnownClosedError";
+  }
+}
+
+function isClosedRefusal(error: unknown): boolean {
+  return (
+    error instanceof KnownClosedError || isOrganizationClosedRefusal(error)
+  );
+}
+
+/**
  * How long a sync that keeps failing in a transient way (a Worker killed for CPU, 1102; a 503 "try again") stays quiet:
- * no "Envio falhou" before 60 s in a row without a good sync (paliativo dos 1102). Nothing kept is lost meanwhile.
+ * nothing said before 60 s in a row without a good sync (paliativo dos 1102), then `server_busy`. Nothing kept is lost
+ * meanwhile.
  */
 const QUIET_FAILURE_MS = 60_000;
+
+/** The last sync failed and said so (`server_busy` or `sync_failed`): the queue was not sent. */
+function syncFailed(snapshot: Pick<RuntimeSnapshot, "reason">): boolean {
+  return snapshot.reason === "sync_failed" || snapshot.reason === "server_busy";
+}
+
+function failureReason(error: unknown): "server_busy" | "sync_failed" {
+  return isPlatformCut(error) ? "server_busy" : "sync_failed";
+}
 
 /** Why the pull of a run is aborted: "Sair" or an update needs the queue out and must not wait for the read gate. */
 const PULL_CUT = new DOMException("pull_cut", "AbortError");
@@ -324,6 +383,20 @@ function isPlanRefusal(error: unknown): boolean {
   );
 }
 
+/** The `unavailable` reason when the plan of the store does not include offline writes (the device is fine). */
+export const PLAN_REFUSED_REASON = "entitlement_denied";
+
+function startFailureReason(
+  error: unknown,
+  legal: boolean,
+  failure: string
+): string {
+  if (legal) {
+    return "legal_acceptance_required";
+  }
+  return isPlanRefusal(error) ? PLAN_REFUSED_REASON : failure;
+}
+
 export class OfflineRuntime {
   private readonly dependencies: RuntimeDependencies;
   private readonly listeners = new Set<() => void>();
@@ -336,6 +409,7 @@ export class OfflineRuntime {
     leaseExpiresAt: null,
     legalAcceptanceRequired: false,
     online: true,
+    organizationClosed: false,
     phase: "off",
     reason: null,
     renewalRefused: false,
@@ -350,7 +424,15 @@ export class OfflineRuntime {
   private userId: string | null = null;
   private deviceId: string | null = null;
   private lease: string | null = null;
+  /** Per command refused for an older lease, the lease the server then issued for this device: not asked again while it stands. */
+  private readonly provenAfterRefusal = new Map<string, string>();
   private inFlight: Promise<void> | null = null;
+  /** The start in progress, so a drop asked meanwhile acts on what it opens and is not undone by it. */
+  private startRun: Promise<void> | null = null;
+  /** The stores a call of this page was refused for as closed: never opened again by this runtime. */
+  private readonly closedOrganizations = new Set<string>();
+  /** A drop for a closed store is on its way: a run that meets the same refusal meanwhile leaves it to finish. */
+  private closedDrop: Promise<void> | null = null;
   /** Ends the reads (the pull) of the run in flight; a send that needs the queue out does not wait for them. */
   private pullAbort: AbortController | null = null;
   /** `trySend` is waiting for the run in flight: its pull is cut even if it has not got that far yet. */
@@ -383,6 +465,17 @@ export class OfflineRuntime {
     };
   };
 
+  /**
+   * The key of the open namespace (the hash of user and organization that names the queue), or null while none is
+   * open for `organizationId`. State kept in the browser about the queue of this user (not about the organization)
+   * is keyed by it.
+   */
+  namespaceKey(organizationId: string): NamespaceKey | null {
+    return this.namespace?.organizationId === organizationId
+      ? (this.namespace.key as NamespaceKey)
+      : null;
+  }
+
   /** What a screen needs to queue a command, or null when the runtime is not ready. */
   context(): RuntimeContext | null {
     if (
@@ -413,16 +506,25 @@ export class OfflineRuntime {
     };
   }
 
-  /** Where the update cycle reads the queue and sends it (ADR 0041). */
+  /** Where the update cycle reads the queue (ADR 0041): a swap of the build waits while it holds work. */
   workSource(): PendingWorkSource {
     return {
+      // no store open (stopped, or not open yet) or another organization meanwhile: the queue was not read, and
+      // the counts in the snapshot are not its figures; the swap takes an unread queue for one that holds work
       read: async () => {
+        const { generation, stores } = this;
+        if (!stores) {
+          throw new Error("queue_unread");
+        }
         await this.refreshCounts();
+        if (generation !== this.generation || this.stores !== stores) {
+          throw new Error("queue_unread");
+        }
         return this.snapshot.counts;
       },
       sync: async () => {
         await this.trySend();
-        if (this.snapshot.reason === "sync_failed") {
+        if (syncFailed(this.snapshot)) {
           throw new Error("sync_failed");
         }
         // the queue was not sent: an update must not take it for done
@@ -434,7 +536,7 @@ export class OfflineRuntime {
   }
 
   /**
-   * The real try of "Sair" and of the update cycle: it sends whatever the connection state says, and only
+   * The real try of "Sair" (and of the `sync` of the work source): it sends whatever the connection state says, and only
    * then a send that got no answer counts as offline (ADR 0039). Rejects with `offline` in that case.
    *
    * It sends the queue and nothing else: the pull does not protect work, and it goes through the tab's read gate
@@ -489,6 +591,71 @@ export class OfflineRuntime {
     );
   }
 
+  /**
+   * A screen's own call was refused because the organization was closed: the same drop as a refused session (the
+   * collections and the lease go, the queue stays), but the remembered user stays, since the session is fine. The
+   * store is remembered as closed for the life of this runtime: a start that comes after the refusal (the screen's read
+   * may answer first) drops the copy instead of opening it.
+   */
+  async dropClosedCopy(organizationId: string): Promise<void> {
+    this.closedOrganizations.add(organizationId);
+    await this.startRun?.catch(() => undefined);
+    await this.inFlight?.catch(() => undefined);
+    if (this.organizationId !== organizationId) {
+      // not the store this runtime has open: its lease goes now, its copy at the start that finds it closed
+      const user =
+        this.userId ?? this.dependencies.keyValues.read(SESSION_USER_KEY);
+      if (user) {
+        this.dependencies.keyValues.remove(leaseKey(user, organizationId));
+      }
+      return;
+    }
+    if (this.snapshot.organizationClosed) {
+      return;
+    }
+    const { namespace, stores, userId } = this;
+    if (namespace && stores && userId) {
+      await this.dropLocalCopy(
+        { generation: this.generation, namespace, stores, userId },
+        { forgetDevice: false, organizationClosed: true }
+      );
+      return;
+    }
+    await this.closeStores();
+    await this.dropClosedAtStart(organizationId, this.generation);
+  }
+
+  /**
+   * Throws away what this device still holds for one closed organization: its queue (emptied with the idempotency marks;
+   * the empty database stays) and its collections, for the signed-in user only. Other organizations' queues, the lease of
+   * anything else, the device and the remembered user stay. Nothing here sends: a closed store never takes a command
+   * again. The caller reads the queue afterwards: only the disk says what is left.
+   */
+  async discardClosedQueue(organizationId: string): Promise<void> {
+    const open = this.namespace;
+    const userId =
+      open && open.organizationId === organizationId
+        ? open.userId
+        : await this.signedInUserForLogout();
+    if (!userId) {
+      throw new NoSessionForDiscardError();
+    }
+    const namespace = await this.dependencies.namespaceFor(
+      userId,
+      organizationId
+    );
+    const wasOpen = open?.key === namespace.key;
+    if (wasOpen) {
+      await this.closeStores();
+    }
+    await this.dependencies.purge(namespace, { discardPending: true });
+    this.forgetNamespace(namespace);
+    this.dependencies.keyValues.remove(leaseKey(userId, organizationId));
+    if (wasOpen) {
+      this.set({ ...this.snapshot, counts: EMPTY_COUNTS, phase: "off" });
+    }
+  }
+
   /** This organization's part of a logout (ADR 0039). */
   logoutWorkspace(): LogoutWorkspace | null {
     const { namespace, organizationId, stores } = this;
@@ -519,9 +686,18 @@ export class OfflineRuntime {
    * person switches to it. Each workspace releases what it opened.
    */
   async logoutWorkspaces(): Promise<LogoutWorkspace[]> {
+    return (await this.inspectLogout()).workspaces;
+  }
+
+  /**
+   * `logoutWorkspaces` with the one thing an empty list cannot say: whether the runtime could look. `readable` is
+   * false when it could not tell who is signed in (offline, the server unreachable, the start still running), where an
+   * empty list may hide a queue; true with an empty list means the signed-in user has nothing on this browser.
+   */
+  async inspectLogout(): Promise<LogoutInspection> {
     const current = this.logoutWorkspace();
     if (!current) {
-      return await this.closedLogoutWorkspaces();
+      return await this.closedLogoutInspection();
     }
     const others: LogoutWorkspace[] = [];
     for (const item of this.namespaces()) {
@@ -541,7 +717,7 @@ export class OfflineRuntime {
       });
       others.push(workspace);
     }
-    return [current, ...others];
+    return { readable: true, workspaces: [current, ...others] };
   }
 
   /**
@@ -554,16 +730,18 @@ export class OfflineRuntime {
    * (patient-level data) and the lease go anyway, the same rule as a revocation:
    * the queue stays until the person sends or discards it (ADR 0038).
    */
-  private async closedLogoutWorkspaces(): Promise<LogoutWorkspace[]> {
+  private async closedLogoutInspection(): Promise<LogoutInspection> {
     if (this.snapshot.phase === "starting") {
-      return []; // the start is still opening stores: not a moment to open them again
+      // the start is still opening stores: not a moment to open them again
+      return { readable: false, workspaces: [] };
     }
     const userId = await this.signedInUserForLogout();
-    if (!userId) {
-      return [];
+    if (!(userId && this.namespaceRegistryReadable())) {
+      return { readable: false, workspaces: [] };
     }
     const workspaces: LogoutWorkspace[] = [];
-    for (const item of this.namespaces()) {
+    const registered = this.namespaces();
+    for (const item of registered) {
       if (item.userId === userId) {
         // biome-ignore lint/performance/noAwaitInLoops: each namespace is opened and inspected in turn
         const workspace = await this.inspectedWorkspace(item, {
@@ -572,7 +750,27 @@ export class OfflineRuntime {
         workspaces.push(workspace);
       }
     }
-    return workspaces;
+    if (
+      workspaces.length === 0 &&
+      registered.length === 0 &&
+      (await this.queueOnDiskUnseen())
+    ) {
+      return { readable: false, workspaces: [] };
+    }
+    return { readable: true, workspaces };
+  }
+
+  /**
+   * Only asked when the registry is empty: with namespaces of other people listed, the queue databases on the disk are
+   * presumed theirs, and an orphan queue beside theirs goes undetected (no worse than before this
+   * check existed). A failed look at the disk is no proof that it holds no queue.
+   */
+  private async queueOnDiskUnseen(): Promise<boolean> {
+    try {
+      return await this.dependencies.outboxOnDisk();
+    } catch {
+      return true;
+    }
   }
 
   /**
@@ -650,6 +848,18 @@ export class OfflineRuntime {
 
   // ------------------------------------------------------------ lifecycle
   async start(organizationId: string): Promise<void> {
+    const run = this.startNow(organizationId);
+    this.startRun = run;
+    try {
+      await run;
+    } finally {
+      if (this.startRun === run) {
+        this.startRun = null;
+      }
+    }
+  }
+
+  private async startNow(organizationId: string): Promise<void> {
     if (
       this.organizationId === organizationId &&
       (this.snapshot.phase === "starting" ||
@@ -662,11 +872,20 @@ export class OfflineRuntime {
     const { generation } = this;
     this.organizationId = organizationId;
     this.set({ ...this.snapshot, phase: "starting", reason: null });
+    if (this.closedOrganizations.has(organizationId)) {
+      await this.dropClosedBeforeBoot(organizationId, generation);
+      return;
+    }
     try {
       await this.boot(organizationId, generation);
     } catch (error) {
       if (generation === this.generation) {
         await this.closeStores();
+        if (isClosedRefusal(error)) {
+          this.closedOrganizations.add(organizationId);
+          await this.dropClosedAtStart(organizationId, generation);
+          return;
+        }
         // without the legal acceptance nothing is forgotten: the device, the lease and the namespace stay
         const legal = isLegalAcceptanceRefusal(error);
         const failure = error instanceof Error ? error.message : "start_failed";
@@ -674,7 +893,7 @@ export class OfflineRuntime {
           ...this.snapshot,
           legalAcceptanceRequired: legal,
           phase: "unavailable",
-          reason: legal ? "legal_acceptance_required" : failure,
+          reason: startFailureReason(error, legal, failure),
         });
       }
     }
@@ -699,6 +918,7 @@ export class OfflineRuntime {
       lastSyncAt: null,
       leaseExpiresAt: null,
       legalAcceptanceRequired: false,
+      organizationClosed: false,
       phase: "off",
       reason: null,
       renewalRefused: false,
@@ -845,6 +1065,7 @@ export class OfflineRuntime {
   }
 
   private forgetLease() {
+    this.provenAfterRefusal.clear();
     if (this.userId && this.organizationId) {
       this.dependencies.keyValues.remove(
         leaseKey(this.userId, this.organizationId)
@@ -1012,6 +1233,28 @@ export class OfflineRuntime {
     return { confirmed: false, userId: remembered };
   }
 
+  /**
+   * The registry of namespaces is the only index of the queues on this browser: absent is an empty browser, but one
+   * that does not parse or has an entry of another shape hides what it lists, and an empty list from it proves nothing.
+   */
+  private namespaceRegistryReadable(): boolean {
+    try {
+      const parsed: unknown = JSON.parse(
+        this.dependencies.keyValues.read(NAMESPACES_KEY) ?? "[]"
+      );
+      return (
+        Array.isArray(parsed) &&
+        parsed.every(
+          (item) =>
+            typeof item?.organizationId === "string" &&
+            typeof item?.userId === "string"
+        )
+      );
+    } catch {
+      return false;
+    }
+  }
+
   private namespaces(): { organizationId: string; userId: string }[] {
     try {
       const parsed: unknown = JSON.parse(
@@ -1071,6 +1314,9 @@ export class OfflineRuntime {
     organizationId: string,
     deviceId: string
   ): Promise<string> {
+    if (this.closedOrganizations.has(organizationId)) {
+      throw new KnownClosedError();
+    }
     const cached = this.cachedLease(userId, organizationId);
     const usable =
       cached &&
@@ -1107,6 +1353,9 @@ export class OfflineRuntime {
     try {
       issued = await this.dependencies.api.issueLease(deviceId, organizationId);
     } catch (error) {
+      if (isClosedRefusal(error)) {
+        throw error; // the lease left is no use for a closed store: the copy and the lease go
+      }
       if (usable) {
         return usable.lease; // renewing failed but the cached lease still works: keep going on it
       }
@@ -1157,8 +1406,9 @@ export class OfflineRuntime {
         isConnectionFailure(error) ||
         (error instanceof Error && error.message === "no_lease_offline") ||
         isPlanRefusal(error) ||
-        // the device is not somebody else's: the server only waits for the acceptance
-        isLegalAcceptanceRefusal(error)
+        // the device is not somebody else's: the server only waits for the acceptance, or the store was closed
+        isLegalAcceptanceRefusal(error) ||
+        isClosedRefusal(error)
       ) {
         throw error;
       }
@@ -1372,6 +1622,12 @@ export class OfflineRuntime {
             syncing: false,
           });
         }
+      } else if (isClosedRefusal(error)) {
+        // before the session refusal (it is a FORBIDDEN too): the session is fine, the store is not
+        await this.dropLocalCopy(run, {
+          forgetDevice: false,
+          organizationClosed: true,
+        });
       } else if (isSessionRefusal(error)) {
         this.dependencies.keyValues.remove(SESSION_USER_KEY);
         await this.dropLocalCopy(run, { forgetDevice: false });
@@ -1448,21 +1704,51 @@ export class OfflineRuntime {
    */
   private async dropLocalCopy(
     run: RunScope,
-    options: { forgetDevice: boolean }
+    options: { forgetDevice: boolean; organizationClosed?: boolean }
   ) {
-    const { generation, namespace, stores } = run;
-    if (generation !== this.generation) {
+    if (run.generation !== this.generation) {
       return; // another organization or user took over while the answer was on its way
     }
+    const closed = options.organizationClosed === true;
+    if (!closed) {
+      await this.dropCopyNow(run, options.forgetDevice, false);
+      return;
+    }
+    // a sync that met the refusal while another drop was on its way waits for that one
+    if (this.closedDrop) {
+      await this.closedDrop;
+      return;
+    }
+    if (this.snapshot.organizationClosed) {
+      return;
+    }
+    if (this.organizationId) {
+      this.closedOrganizations.add(this.organizationId);
+    }
+    const drop = this.dropCopyNow(run, options.forgetDevice, true);
+    this.closedDrop = drop;
+    try {
+      await drop;
+    } finally {
+      this.closedDrop = null;
+    }
+  }
+
+  private async dropCopyNow(
+    run: RunScope,
+    forgetDevice: boolean,
+    closed: boolean
+  ) {
+    const { generation, namespace, stores } = run;
     const queued = (await stores.outbox.snapshot()).commands.length > 0;
     await this.closeStores();
     this.forgetLease();
     this.lease = null;
-    if (options.forgetDevice) {
+    if (forgetDevice) {
       this.dependencies.keyValues.remove(DEVICE_KEY);
       this.deviceId = null;
     }
-    let reason = "session_refused";
+    let reason = closed ? "organization_closed" : "session_refused";
     try {
       if (queued) {
         await this.dependencies.wipeCollections(namespace);
@@ -1482,9 +1768,62 @@ export class OfflineRuntime {
       counts: EMPTY_COUNTS,
       dataVersion: this.snapshot.dataVersion + 1,
       leaseExpiresAt: null,
+      organizationClosed: closed,
       phase: "unavailable",
       reason,
-      sessionRefused: true,
+      sessionRefused: !closed,
+      syncing: false,
+    });
+  }
+
+  /** A store already known as closed: only who is signed in is asked, to find the copy to drop. */
+  private async dropClosedBeforeBoot(
+    organizationId: string,
+    generation: number
+  ) {
+    try {
+      const { userId } = await this.sessionUser();
+      if (generation === this.generation) {
+        this.userId = userId;
+      }
+    } catch {
+      // without knowing who is signed in nothing is opened, and nothing can be dropped: `purge_failed` says so
+    }
+    await this.dropClosedAtStart(organizationId, generation);
+  }
+
+  /**
+   * The lease was refused at start because the organization was closed: no store is open, so the collections of its
+   * namespace are wiped from the disk (the queue stays) and its lease is forgotten. The device and the remembered user
+   * stay: the person may own another store, or reopen this one.
+   */
+  private async dropClosedAtStart(organizationId: string, generation: number) {
+    const { userId } = this;
+    let reason = userId ? "organization_closed" : "purge_failed";
+    if (userId) {
+      this.dependencies.keyValues.remove(leaseKey(userId, organizationId));
+      try {
+        await this.dependencies.wipeCollections(
+          await this.dependencies.namespaceFor(userId, organizationId)
+        );
+      } catch {
+        reason = "purge_failed";
+      }
+    }
+    this.lease = null;
+    if (generation !== this.generation) {
+      return;
+    }
+    this.set({
+      ...this.snapshot,
+      bootstrapped: false,
+      counts: EMPTY_COUNTS,
+      dataVersion: this.snapshot.dataVersion + 1,
+      leaseExpiresAt: null,
+      organizationClosed: true,
+      phase: "unavailable",
+      reason,
+      sessionRefused: false,
       syncing: false,
     });
   }
@@ -1682,12 +2021,7 @@ export class OfflineRuntime {
         outbox: stores.outbox,
         push: this.dependencies.api.push(organizationId),
       });
-      if (
-        summary.rejected > 0 &&
-        summary.blockedBy?.rejection?.code === AUTHORIZATION_REVOKED
-      ) {
-        this.lastOutcome = "answered";
-        await this.dropLocalCopy(run, { forgetDevice: true });
+      if (await this.refusalEndsSync(run, summary, lease)) {
         return;
       }
       this.mark("sync:phase:contagens");
@@ -1732,6 +2066,75 @@ export class OfflineRuntime {
   /** Read at the time of the question: `trySend` may ask while the run is awaiting something else. */
   private isPullCutRequested(): boolean {
     return this.pullCutRequested;
+  }
+
+  /** A command the push got refused as `authorization_revoked` may end the sync (and the copy): see `refusalStanding`. */
+  private async refusalEndsSync(
+    run: RunScope,
+    summary: SyncOutboxSummary,
+    current: string
+  ): Promise<boolean> {
+    const blocked = summary.blockedBy;
+    if (
+      !(
+        summary.rejected > 0 &&
+        blocked?.rejection?.code === AUTHORIZATION_REVOKED
+      )
+    ) {
+      return false;
+    }
+    const standing = await this.refusalStanding(run, blocked, current);
+    if (standing === "revoked") {
+      this.lastOutcome = "answered";
+      await this.dropLocalCopy(run, { forgetDevice: true });
+    }
+    return standing !== "kept";
+  }
+
+  /**
+   * A command refused as `authorization_revoked` carries the lease it was made under, and the server says the same
+   * for any lease that ended (the store was closed and reopened, the device was revoked). Only the lease of this very
+   * sync dying proves the device is no longer valid. For an older one, a lease the server issues right now (never the
+   * cached one standing in) proves it: the store is active, the epoch is current and the device is alive.
+   * `kept`: the refusal was only the command's old lease and the copy stays; `revoked`: the copy and the device go;
+   * `stale`: another organization or user took over meanwhile and this run has nothing left to do. A device the
+   * server refuses (revoked or unknown) is `revoked`; any other refusal or failure goes to the sync's own failure
+   * handling, which keeps everything unless the session itself ended. Asked once per command and lease: the grant
+   * that was issued is not repeated on every refusal.
+   */
+  private async refusalStanding(
+    run: RunScope,
+    blocked: OutboxCommand,
+    current: string
+  ): Promise<"kept" | "revoked" | "stale"> {
+    if (blocked.lease === current) {
+      return "revoked";
+    }
+    const { deviceId, organizationId } = this;
+    if (run.generation !== this.generation || !(deviceId && organizationId)) {
+      return "stale";
+    }
+    if (this.provenAfterRefusal.get(blocked.commandId) === current) {
+      return "kept";
+    }
+    let issued: string;
+    try {
+      issued = await this.issueLease(
+        { deviceId, organizationId, userId: run.userId },
+        { expired: false, usable: null }
+      );
+    } catch (error) {
+      const code = rpcErrorCode(error);
+      if (code === "CONFLICT" || code === "NOT_FOUND") {
+        return "revoked";
+      }
+      throw error;
+    }
+    if (!this.adoptLease(run, issued)) {
+      return "stale";
+    }
+    this.provenAfterRefusal.set(blocked.commandId, issued);
+    return "kept";
   }
 
   /** The pull (or the first bootstrap) after the push: accepted or dropped commands, then the others' changes. */
@@ -1834,6 +2237,15 @@ export class OfflineRuntime {
       await this.refreshCounts();
       return;
     }
+    // before the session refusal too: the store was closed, the session is fine and the queue stays
+    if (isClosedRefusal(error)) {
+      this.lastOutcome = "answered";
+      await this.dropLocalCopy(run, {
+        forgetDevice: false,
+        organizationClosed: true,
+      });
+      return;
+    }
     if (isSessionRefusal(error)) {
       this.lastOutcome = "answered";
       this.dependencies.keyValues.remove(SESSION_USER_KEY);
@@ -1852,7 +2264,7 @@ export class OfflineRuntime {
       ...this.snapshot,
       dataVersion: this.snapshot.dataVersion + 1,
       online: this.dependencies.isOnline(),
-      reason: noAnswer || quiet ? null : "sync_failed",
+      reason: noAnswer || quiet ? null : failureReason(error),
       sessionRefused: false,
       syncing: false,
     });

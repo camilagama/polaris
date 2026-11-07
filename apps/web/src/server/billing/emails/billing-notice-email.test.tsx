@@ -565,7 +565,7 @@ describe("the links", () => {
     const html = htmlText(over?.out.html ?? "");
     const text = flat(over?.out.text ?? "");
     for (const part of [html, text]) {
-      // the screen of the choice does not exist yet: no button to it (Petković, 24/10)
+      // the screen of the choice does not exist yet: no button to it
       expect(part).not.toContain("Escolher as variantes");
       expect(part).toContain(
         "A loja tem 73 variantes e o plano Free permite 50."

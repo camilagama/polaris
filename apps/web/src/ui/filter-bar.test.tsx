@@ -17,7 +17,7 @@ import {
 } from "@/ui/filter-bar-model";
 
 /**
- * The rules of the filter bar (t383) and its first paint. The rules (what a filter is, what its pill says, what adding,
+ * The rules of the filter bar and its first paint. The rules (what a filter is, what its pill says, what adding,
  * editing, removing and "Limpar tudo" do, when motion is off) are pure functions in `filter-bar-model.ts`, tested here
  * without a browser; the markup of the bar is rendered to a string for the names, the `<search>` and the field that
  * cannot be used. That a touch opens the menu or the editor, where the focus goes and what the sizes are needs a
@@ -267,11 +267,11 @@ describe("a barra, na primeira pintura", () => {
     }
   });
 
-  it("a pílula tem 44 px de altura no toque (36 px no mouse) e o X 48 px de largura no toque, para a área dele não entrar na do botão ao lado", () => {
+  it("a pílula tem 44 px de altura no toque (36 px no mouse) e o X 44 px de largura no toque, para a área dele não entrar na do botão ao lado", () => {
     const markup = html([PERIOD]);
     expect(markup).toContain("h-9");
     expect(markup).toContain("touch:h-11");
-    expect(markup).toContain("touch:w-12");
+    expect(markup).toContain("touch:w-11");
   });
 
   it("Limpar tudo só com duas ou mais pílulas", () => {

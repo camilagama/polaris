@@ -10,7 +10,7 @@ export interface MediaUploadFingerprintInput {
   crop: NormalizedMediaCropRect;
   organizationId: string;
   productId: string;
-  sourceBytes: Uint8Array;
+  sourceBytes: Uint8Array<ArrayBuffer>;
   variantIds: readonly string[];
 }
 
@@ -21,6 +21,10 @@ export class InvalidMediaUploadCommandIdError extends Error {
   }
 }
 
+/**
+ * SHA-256 of the target and crop followed by the SHA-256 of the bytes: the file is hashed where it is, without a
+ * second copy of it next to the metadata, and the same prepared file of the same command always gives the same value.
+ */
 export async function mediaUploadFingerprint(
   input: MediaUploadFingerprintInput
 ): Promise<string> {
@@ -38,12 +42,15 @@ export async function mediaUploadFingerprint(
       variantIds: [...input.variantIds].sort(),
     })
   );
+  const sourceDigest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", input.sourceBytes)
+  );
   const payload = new Uint8Array(
-    metadata.byteLength + 1 + input.sourceBytes.byteLength
+    metadata.byteLength + 1 + sourceDigest.byteLength
   );
   payload.set(metadata);
   payload[metadata.byteLength] = 0;
-  payload.set(input.sourceBytes, metadata.byteLength + 1);
+  payload.set(sourceDigest, metadata.byteLength + 1);
 
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", payload));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");

@@ -11,7 +11,9 @@ import {
   handleSetPasswordRequest,
 } from "../auth/handler";
 import type { WorkerBindings } from "../environment";
+import { googleTestProfile } from "./google-profile-test-support";
 import { SIGN_UP_LEGAL_ACCEPTANCE } from "./legal-acceptance-test-support";
+import { createTestPasswordHasher } from "./password-hash-test-support";
 import {
   hostileRedirectTargets,
   validReturnCallbackURL,
@@ -64,11 +66,14 @@ function createGoogleProvider({
     getUserInfo: () => {
       googleUserEmails.push(googleProfile.email);
       return Promise.resolve({
-        data: { sub: "google-subject-1" },
+        data: googleTestProfile(
+          "google-subject-1",
+          googleProfile.email,
+          googleProfile.emailVerified
+        ),
         user: {
           email: googleProfile.email,
           emailVerified: googleProfile.emailVerified,
-          id: "google-subject-1",
           name: "Google Test User",
         },
       });
@@ -120,6 +125,7 @@ function createAccountLinkingTestApp(
     databaseAdapter,
     emailDelivery,
     googleProvider: provider,
+    passwordHasher: createTestPasswordHasher(),
     plugins: [testUtils() as unknown as BetterAuthPlugin],
     requestId: "pr17-account-linking-test-request",
     secret: testSecret,
@@ -168,7 +174,6 @@ function cookieHeader(headers: Headers): string {
 }
 
 function stubExternalAuthServices() {
-  let hibpCalls = 0;
   let googleTokenCalls = 0;
   vi.stubGlobal("fetch", (input: RequestInfo | URL): Promise<Response> => {
     let target: string;
@@ -178,11 +183,6 @@ function stubExternalAuthServices() {
       target = input.url;
     } else {
       target = input.href;
-    }
-
-    if (target.startsWith("https://api.pwnedpasswords.com/range/")) {
-      hibpCalls += 1;
-      return Promise.resolve(new Response(`${"0".repeat(35)}:0\r\n`));
     }
 
     if (target === "https://oauth2.googleapis.com/token") {
@@ -203,10 +203,7 @@ function stubExternalAuthServices() {
     );
   });
 
-  return {
-    googleTokenCalls: () => googleTokenCalls,
-    hibpCalls: () => hibpCalls,
-  };
+  return { googleTokenCalls: () => googleTokenCalls };
 }
 
 async function createVerifiedPasswordSession(
@@ -329,10 +326,10 @@ async function findGoogleAccount(
 ) {
   const authContext = (await auth.$context) as unknown as {
     internalAdapter: {
-      findAccountByProviderId: (
-        accountId: string,
-        providerId: string
-      ) => Promise<{
+      findAccountByKey: (key: {
+        accountId: string;
+        providerId: string;
+      }) => Promise<{
         accessToken?: string | null;
         id: string;
         idToken?: string | null;
@@ -340,10 +337,10 @@ async function findGoogleAccount(
       } | null>;
     };
   };
-  return authContext.internalAdapter.findAccountByProviderId(
-    "google-subject-1",
-    "google"
-  );
+  return authContext.internalAdapter.findAccountByKey({
+    accountId: "google-subject-1",
+    providerId: "google",
+  });
 }
 
 describe("Google and password account linking", () => {
@@ -672,7 +669,7 @@ describe("Google and password account linking", () => {
     const { app } = createAccountLinkingTestApp({
       googleEmail: "google-password@example.invalid",
     });
-    const externalRequests = stubExternalAuthServices();
+    stubExternalAuthServices();
     const loginStart = await beginGoogleLogin(app);
     const callback = await completeGoogleLink(
       app,
@@ -731,12 +728,11 @@ describe("Google and password account linking", () => {
     expect(setPassword.status).toBe(200);
     expect(passwordLogin.status).toBe(200);
     expect(passwordSessionBody.user?.id).toBe(sessionBody.user?.id);
-    expect(externalRequests.hibpCalls()).toBe(1);
   });
 
-  it("rejects setting a password on an unverified account before HIBP", async () => {
+  it("rejects setting a password on an unverified account before hashing it", async () => {
     const { app, auth } = createAccountLinkingTestApp();
-    const externalRequests = stubExternalAuthServices();
+    stubExternalAuthServices();
     const authContext = (await auth.$context) as unknown as {
       test: TestAuthHelpers;
     };
@@ -767,7 +763,6 @@ describe("Google and password account linking", () => {
     expect(await response.json()).toMatchObject({
       error: { code: "email_not_verified" },
     });
-    expect(externalRequests.hibpCalls()).toBe(0);
   });
 
   it("keeps set-password disabled with the email/password feature off", async () => {

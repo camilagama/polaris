@@ -46,6 +46,8 @@ export interface MediaBucketBinding {
   /** One key, or up to 1000 keys in one call (R2 `delete` accepts both). */
   delete: (keys: string | string[]) => Promise<void>;
   get: (key: string) => Promise<MediaBucketObject | null>;
+  /** Metadata only (R2 `head`): sizes an object without opening its body. */
+  head: (key: string) => Promise<{ size: number } | null>;
   list: (options: {
     cursor?: string;
     limit: number;
@@ -62,6 +64,8 @@ export interface MediaBucketBinding {
 }
 
 export interface WorkerBindings {
+  /** `staging` or `production` (per environment in `wrangler.jsonc`); labels the `environment` of every log event. */
+  POLARIS_ENVIRONMENT?: string;
   /** The static assets of the build (`assets.binding`): the Worker answers `/assets/*` through it, 404 for a file that is not there. */
   ASSETS?: AssetsBinding;
   /** Asaas API key (secret): `$aact_hmlg_...` in staging, the production one only in production (ADR 0101). */
@@ -93,6 +97,13 @@ export interface WorkerBindings {
    */
   BILLING_SELF_SERVICE_ENABLED?: string;
   /**
+   * `true` opens `GET /api/media/thumbs` and tells the client (`organization.listMine`) to show the capa of a product
+   * in Produtos and in the sale. Anything else (and absent) leaves both off: the route answers 404 before it opens a
+   * transaction or reaches the bucket, and the screens ask for nothing. Off in production until the CPU of the batch
+   * is measured.
+   */
+  MEDIA_THUMBS_ENABLED?: string;
+  /**
    * The support box of the billing e-mails and the welcome (ADR 0104, decision 7): the footer names it and it is the
    * reply-to. Required: without it (or without `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `BETTER_AUTH_BASE_URL` and
    * `AUTH_HYPERDRIVE`) those e-mails stay off and their notices are skipped `email_not_configured`. Not a secret.
@@ -100,6 +111,13 @@ export interface WorkerBindings {
   BILLING_SUPPORT_EMAIL?: string;
   /** The origin the public catalog is served from (used only to show the organization its link). */
   CATALOG_ORIGIN?: string;
+  /** The limit of `POST /api/client-errors` per address (10 per minute): the reports of errors of the browser. */
+  CLIENT_ERROR_RATE_LIMIT?: RateLimitBinding;
+  /**
+   * `"1"` turns on `POST /api/client-errors` (the report of an error of the app in the browser, ADR 0098 amended);
+   * anything else (and absent) answers 204 and logs nothing. Off in production until the go-live checklist.
+   */
+  CLIENT_ERRORS_ENABLED?: string;
   /**
    * `true` turns on the automatic schedule of the purge of a closed organization (ADR 0102); anything else
    * leaves it off. Off in every environment until the go-live.
@@ -111,6 +129,12 @@ export interface WorkerBindings {
    * leaves every notice owed, neither sent nor failed. Off in every environment until the responsible turns it on.
    */
   CLOSURE_NOTICE_EMAIL_ENABLED?: string;
+  /**
+   * The pepper of the password hash (ADR 0100, amended): a Worker secret of each environment, 32 random bytes in
+   * base64, never a var. Without it (or shorter than 32 characters) the password is off, as if
+   * `EMAIL_PASSWORD_AUTH_ENABLED` were not `true`, and the authentication routes log `auth_password_pepper_missing`.
+   */
+  AUTH_PASSWORD_PEPPER?: string;
   BETTER_AUTH_SECRET?: string;
   EMAIL_PASSWORD_AUTH_ENABLED?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -151,6 +175,12 @@ export interface WorkerBindings {
   /** The dead-letter queue (ADR 0085). */
   QUEUE_DLQ?: QueueProducerBinding;
   QUEUE_MEDIA?: QueueProducerBinding;
+  /**
+   * Exactly `true` makes `/health` declare the commit the Worker was built from (`X-Polaris-Release`, ADR 0098 amended);
+   * absent or any other value sends no release. Set to `true` only in `env.staging`; the isolation check refuses it in
+   * production.
+   */
+  RELEASE_HEADER_ENABLED?: string;
   RESEND_API_KEY?: string;
   /**
    * `true` makes `http_request_timed` (with `isolate.id`/`seq`) cover every matched `/rpc` procedure and named `/api` route, not
@@ -158,6 +188,8 @@ export interface WorkerBindings {
    * staging isolation check enforces.
    */
   ROUTE_TIMING_ALL?: string;
+  /** The calls of the import over `/rpc` (`kind: "bulk"`, one row each), per session and per address: its own bucket. */
+  RPC_BULK_RATE_LIMIT?: RateLimitBinding;
   /** Writes over `/rpc`, per session and per address (one binding, the same limit for both). */
   RPC_MUTATION_RATE_LIMIT?: RateLimitBinding;
   /** Reads over `/rpc`, per address: wider than the session one, a whole store shares an address. */

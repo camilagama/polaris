@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { expect } from "@playwright/test";
 
 /**
- * What the Tabs of a list screen promise to the keyboard and to the screen reader (t300): a `tablist` with a name,
+ * What the Tabs of a list screen promise to the keyboard and to the screen reader: a `tablist` with a name,
  * `tab`s with the chosen one `aria-selected`, Tab stops only on the chosen one, the arrows move to the neighbour
  * and choose it, and Tab leaves the group. `first` is the tab the screen opens on, `second` the one next to it.
  */

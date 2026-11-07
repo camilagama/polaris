@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { CardContent } from "@/ui/card";
@@ -45,9 +46,10 @@ import {
   unsafeOverdueRefusal,
 } from "./subscription-commands-model";
 import type { Refusal } from "./subscription-model";
+import { WRAPS } from "./subscription-parts";
 
 /**
- * The owner's commands on the Assinatura (corte assinatura-e-cancelar, C and D, AC-42 to AC-44; design t268 v2, § 11):
+ * The owner's commands on the Assinatura (corte assinatura-e-cancelar, C and D, AC-42 to AC-44):
  * cancel the renewal, the refund of the right of withdrawal (by the app with the card, by support with Pix) and
  * paying the charge that failed. Each gesture has its request ID, kept while it is repeated and new for a new gesture
  * (ADR 0104, decision 3); the button waits off while the command is on its way.
@@ -430,7 +432,7 @@ function OverduePayment({
       <p className="m-0 text-muted-foreground">{overdueText(plan)}</p>
       <Button
         aria-disabled={pending || undefined}
-        className={OFF}
+        className={cn(OFF, WRAPS)}
         onClick={pending ? undefined : open}
         type="button"
       >
@@ -558,22 +560,30 @@ export function PlanActions({
       ) : null}
       {cancel ? (
         <ActionRow hint={cancelHint(plan)}>
-          <Button onClick={askCancel} type="button" variant="outline">
+          <Button
+            className={WRAPS}
+            onClick={askCancel}
+            type="button"
+            variant="outline"
+          >
             Cancelar a renovação
           </Button>
         </ActionRow>
       ) : null}
       {showRefundButton ? (
         <ActionRow hint={refundHint(refund)}>
-          <Button onClick={askRefund} type="button" variant="destructive">
+          <Button
+            className={WRAPS}
+            onClick={askRefund}
+            type="button"
+            variant="destructive"
+          >
             Desistir e receber o reembolso
           </Button>
         </ActionRow>
       ) : null}
       {support ? (
-        <p className="m-0 text-muted-foreground">
-          {supportRefundText(refund, null)}
-        </p>
+        <p className="m-0 text-muted-foreground">{supportRefundText(refund)}</p>
       ) : null}
       <CancelRenewalDialog
         onOpenChange={close}

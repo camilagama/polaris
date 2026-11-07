@@ -363,7 +363,7 @@ describe("sweepNoticesFor: the hourly marks, on their local day, from 08:00 to 2
   const SAO_PAULO = "America/Sao_Paulo";
 
   it("E-B: the eve of the first charge set at the provider, only while the trial runs and is not cancelled", () => {
-    // 2026-10-24 10:00 in São Paulo; the first charge is on the 25th
+    // `2026-10-24` 10:00 in São Paulo; the first charge is on the 25th
     const now = new Date("2026-10-24T13:00:00.000Z");
     const trial = pro("trialing", new Date("2026-10-31T13:00:00.000Z"));
     const sweep = (overrides: Partial<Parameters<typeof sweepNoticesFor>[0]>) =>

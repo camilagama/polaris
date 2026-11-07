@@ -23,8 +23,8 @@ import {
    The month in the middle opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months and, in the footer,
    "Este mês" (the store's current month, like the "Hoje" of the DatePicker); a touch or a click on a month chooses it
    and closes. The month is written by the screen, never by the browser's locale, so there is no native month field
-   and no fallback for the browsers that lack one. The phone uses the same Popover; the full-screen Dialog comes with
-   t331. The grid goes back to January 2000 (the same floor as the Data de competência) and forward to any year: the
+   and no fallback for the browsers that lack one. The phone uses the same Popover; the full-screen Dialog comes
+   later. The grid goes back to January 2000 (the same floor as the Data de competência) and forward to any year: the
    list of the expenses reads any month, future ones included. The arrows beside the month keep reaching every month
    from 0000-01 to 9999-12, as before. */
 
@@ -96,7 +96,7 @@ interface MonthGridProps {
 function MonthGrid({ currentMonth, month, onChoose }: MonthGridProps) {
   const [cursor, setCursor] = useState(month);
   const grid = useRef<HTMLFieldSetElement>(null);
-  // the grid is only mounted while the popover is open: the focus goes to the month on screen as it opens
+  // the grid is mounted for each opening (the key of the picker): the focus goes to the month on screen as it opens
   const focusCursor = useRef<boolean>(true);
   const { year } = parts(cursor);
 
@@ -138,8 +138,8 @@ function MonthGrid({ currentMonth, month, onChoose }: MonthGridProps) {
     [currentMonth, onChoose]
   );
 
-  // gap-2.5: the 48 px touch area of an arrow (32 px + 8 above and below) and the one of a month (44 px + 2) end at the
-  // same line, not one over the other
+  // gap-2.5: the 44 px touch area of an arrow (32 px + 6 above and below) and the one of a month (its own 44 px)
+  // stay apart, not one over the other
   return (
     <div className="grid gap-2.5">
       <div className="flex items-center justify-between gap-2">
@@ -226,6 +226,7 @@ export function MonthPicker({
   onChange,
 }: MonthPickerProps) {
   const [open, setOpen] = useState(false);
+  const [openings, setOpenings] = useState(0);
   const previous = shiftMonth(month, -1);
   const next = shiftMonth(month, 1);
   const labelId = `${id}-label`;
@@ -241,6 +242,13 @@ export function MonthPicker({
       onChange(next);
     }
   }, [next, onChange]);
+  // a popup reopened while it is still leaving keeps its grid mounted: a new key gives each opening a fresh cursor
+  const handleOpenChange = useCallback((opening: boolean) => {
+    if (opening) {
+      setOpenings((count) => count + 1);
+    }
+    setOpen(opening);
+  }, []);
   const choose = useCallback(
     (chosen: string) => {
       setOpen(false);
@@ -265,13 +273,13 @@ export function MonthPicker({
         >
           <ChevronLeftIcon aria-hidden="true" />
         </Button>
-        <Popover onOpenChange={setOpen} open={open}>
+        <Popover onOpenChange={handleOpenChange} open={open}>
           {/* the accessible name holds the text the button shows (WCAG 2.5.3): "Mês de competência, Outubro de 2026" */}
           <PopoverTrigger
             render={
               <Button
                 aria-label={`${label}, ${text}`}
-                className="min-w-40 flex-1 bg-card shadow-xs dark:bg-secondary/60"
+                className="min-w-32 flex-1 bg-card shadow-xs min-[30rem]:min-w-40 dark:bg-secondary/60"
                 id={id}
                 type="button"
                 variant="outline"
@@ -288,6 +296,7 @@ export function MonthPicker({
           >
             <MonthGrid
               currentMonth={currentMonth}
+              key={openings}
               month={month}
               onChoose={choose}
             />

@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { documentTitle } from "../app-shell/navigation-model";
+import { browserStorage } from "../lib/current-organization-model";
 import { parseSignInSearch } from "../lib/sign-in-path";
+import { clearClosedStores } from "../organization/closed-stores-memory";
 import { ConfirmEmailPanel } from "./confirm-email-page";
 import { EmailSignInForm } from "./email-sign-in-form";
 import {
@@ -241,7 +243,7 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
     phase !== "entering" && (phase === "ready" || slowCheck || googleOff);
 
   return (
-    <EntryScreen title={SIGN_IN_TITLE}>
+    <EntryScreen help settling={!showButton} title={SIGN_IN_TITLE}>
       {reason ? <p className="text-sm">{reason}</p> : null}
 
       {alertText ? (
@@ -307,6 +309,10 @@ function SignInScreen({ onUnverified }: { onUnverified: Unverified }) {
  * stays in memory only (AC-50), never in the URL or in storage.
  */
 export function SignInPage() {
+  // whoever signs in here may not be who read the closed stores last: their names are not kept for the next person
+  useEffect(() => {
+    clearClosedStores(browserStorage());
+  }, []);
   const [unverified, setUnverified] = useState<{
     email: string;
     siteKey: string | null;

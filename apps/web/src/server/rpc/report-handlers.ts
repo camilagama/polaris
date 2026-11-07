@@ -11,6 +11,7 @@ import {
 import { logger, opaqueId } from "@polaris/observability/logger";
 import type { WorkerBindings } from "../environment";
 import type { withTenantRequestContext } from "../tenant-request-context";
+import { jsonByteLength } from "./json-bytes";
 
 interface ReportRpcContext {
   bindings: WorkerBindings;
@@ -25,16 +26,16 @@ interface ReportRpcDependencies {
   withTenantRequestContext: typeof withTenantRequestContext;
 }
 
-const encoder = new TextEncoder();
-
 /**
- * The period summary of the dashboard: the economics engine over the
- * organization's confirmed records, read in one repeatable-read snapshot, with
- * the cards, the daily series, the most sold products when asked and the
- * account of how complete the estimate is.
+ * The period summary of the dashboard: the organization's confirmed records
+ * aggregated by the database in one statement, with the rules of the economics
+ * engine (ADR 0054), giving the cards, the daily series, the most sold products
+ * when asked and the account of how complete the estimate is.
  *
- * Each read leaves one record with counts only (rows read by table, days, the
- * size of the answer and the time it took) and the organization's opaque ID:
+ * Each read leaves one record with counts only (the rows the database sent,
+ * one per entry of the series, the dates after today apart, and one per ranked
+ * product; `days`, the entries of the series, which are months above 62 days;
+ * the size of the answer and the time it took) and the organization's opaque ID:
  * never an amount or a name. The CPU time is the invocation's own, in the
  * Workers Logs of the same `requestId`.
  */
@@ -58,7 +59,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               transaction,
               identity,
               { from: input.from, to: input.to },
-              { topProducts: input.topProducts }
+              { asOf: generatedAt, topProducts: input.topProducts }
             );
             const { result } = summary;
             const output = {
@@ -79,6 +80,10 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
                 returns: result.returns,
               },
               daily: summary.daily,
+              ...(summary.afterToday ? { afterToday: summary.afterToday } : {}),
+              ...(summary.granularity
+                ? { granularity: summary.granularity }
+                : {}),
               generatedAt,
               period: { from: input.from, to: input.to },
               quality: resultQuality(result),
@@ -101,7 +106,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               organizationId: opaqueId(identity.organizationId),
               reads: { ...summary.reads },
               requestId: context.requestId,
-              responseBytes: encoder.encode(JSON.stringify(output)).byteLength,
+              responseBytes: jsonByteLength(output),
               topProducts: input.topProducts ?? 0,
             });
             return output;
@@ -138,7 +143,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               durationMs: Date.now() - started,
               organizationId: opaqueId(identity.organizationId),
               requestId: context.requestId,
-              responseBytes: encoder.encode(JSON.stringify(output)).byteLength,
+              responseBytes: jsonByteLength(output),
             });
             return output;
           },

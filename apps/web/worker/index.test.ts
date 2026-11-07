@@ -1,5 +1,11 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+  OUTBOX_EVENT_TYPES,
+  outboxIdempotencyKey,
+} from "@polaris/domain/events/outbox";
+import { queueForEventType } from "@polaris/domain/events/queue-envelope";
 import { SCHEDULER_LANES } from "@polaris/domain/scheduling/scheduled-jobs";
+import { logger } from "@polaris/observability/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -237,6 +243,18 @@ describe("the scheduled maintenance", () => {
     expect(mocks.runBillingMaintenance).toHaveBeenCalledTimes(1);
     expect(mocks.mediaClose).toHaveBeenCalledTimes(1);
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the events with the environment the Worker variable names", async () => {
+    mocks.reconcileStagedMedia.mockResolvedValue({ removed: 1 });
+
+    await runScheduled({ ...configured, POLARIS_ENVIRONMENT: "staging" });
+
+    const event = vi
+      .mocked(console.info)
+      .mock.calls.map(([entry]) => entry as Record<string, unknown>)
+      .find((entry) => entry.event === "media_staging_reconciliation_complete");
+    expect(event).toMatchObject({ environment: "staging" });
   });
 
   it("masks personal data and secrets in a job report that grew a field, through the real logger", async () => {
@@ -717,6 +735,39 @@ describe("the scheduled maintenance", () => {
           purgesHeldBack: 2,
         })
       );
+    });
+
+    it("warns purge-parado, with no store named, when a purge was claimed over and over with no step done", async () => {
+      const report = (stalledPurges: number) => ({
+        closedOrganizations: 0,
+        closureNoticesOverdue: 0,
+        overduePurges: 0,
+        purgeSchedulingEnabled: false,
+        purgesHeldBack: 0,
+        scheduledPurges: 0,
+        scheduledPurgesLastDay: 0,
+        stalledPurges,
+      });
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(0));
+      await runScheduled({ ...configured, ...privacy });
+      expect(console.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: "organization_purge_stalled" })
+      );
+      mocks.runPrivacyMaintenance.mockResolvedValueOnce(report(2));
+      await runScheduled({ ...configured, ...privacy });
+      const emitted = vi
+        .mocked(console.warn)
+        .mock.calls.map((call) =>
+          typeof call[0] === "string" ? JSON.parse(call[0]) : call[0]
+        )
+        .filter((entry) => entry.event === "organization_purge_stalled");
+      expect(emitted).toHaveLength(1);
+      expect(
+        Object.keys(emitted[0]).filter((key) =>
+          key.toLowerCase().includes("organization")
+        )
+      ).toEqual([]);
+      expect(emitted[0]).toMatchObject({ source: "no_log", stalledPurges: 2 });
     });
 
     it("is skipped, without failing, where the privacy role is not provisioned", async () => {
@@ -1239,6 +1290,70 @@ describe("the queue consumer", () => {
 
     expect(mocks.runDataExports).not.toHaveBeenCalled();
     expect(sent.ack).toHaveBeenCalledTimes(1);
+  });
+
+  describe("a handler for every type of the outbox", () => {
+    const noticeId = "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a40";
+    const requestedAt = 1_792_457_258_261;
+    const bodies: Record<
+      (typeof OUTBOX_EVENT_TYPES)[number],
+      { entity: string; event: Record<string, string | number> }
+    > = {
+      "billing.notice": { entity: noticeId, event: { noticeId } },
+      "billing.renewal_cancel_requested": {
+        entity: String(requestedAt),
+        event: { requestedAt },
+      },
+      "data_export.requested": {
+        entity: noticeId,
+        event: { exportId: noticeId },
+      },
+      "organization.closure_notice": { entity: noticeId, event: { noticeId } },
+    };
+
+    it("is described here for each type the domain has: a new type fails until its body is", () => {
+      expect(Object.keys(bodies).sort()).toEqual(
+        [...OUTBOX_EVENT_TYPES].sort()
+      );
+    });
+
+    it.each(OUTBOX_EVENT_TYPES)(
+      "binds one for %s: it does not spin on queue_handler_missing until the dead-letter queue",
+      async (type) => {
+        const { entity, event } = bodies[type];
+        const sent = message({
+          attempt: 1,
+          correlationId: "req-all",
+          event,
+          eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a41",
+          idempotencyKey: outboxIdempotencyKey(type, entity),
+          organizationId: "org_1",
+          type,
+          version: 1,
+        });
+        // on the queue of its type, with nothing provisioned: the handler runs, finds nothing to do and acks
+        await worker.queue(
+          {
+            messages: [sent],
+            queue: `polaris-${queueForEventType(type)}`,
+          } as never,
+          {} as never
+        );
+
+        for (const refusal of [
+          "queue_handler_missing",
+          "queue_message_invalid",
+          "queue_message_misrouted",
+        ]) {
+          expect(console.warn).not.toHaveBeenCalledWith(
+            expect.objectContaining({ event: refusal })
+          );
+        }
+        // a message with no handler is retried; one that reached its handler is acked
+        expect(sent.retry).not.toHaveBeenCalled();
+        expect(sent.ack).toHaveBeenCalledTimes(1);
+      }
+    );
   });
 
   describe("the notice of a closure milestone", () => {
@@ -2071,5 +2186,39 @@ describe("the scheduler tick", () => {
         lane: "maintenance",
       })
     );
+  });
+});
+
+describe("the log environment on every entry of the Worker", () => {
+  function labelled(): unknown {
+    logger.info("probe");
+    const [event] = vi.mocked(console.info).mock.calls.at(-1) ?? [];
+    return (event as Record<string, unknown>).environment;
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+  });
+
+  it("takes it from the bindings of a request", async () => {
+    vi.mocked(app.fetch).mockResolvedValueOnce(new Response("ok"));
+
+    await worker.fetch(
+      new Request("https://app.example/") as never,
+      { POLARIS_ENVIRONMENT: "staging" } as never,
+      {} as ExecutionContext
+    );
+
+    expect(labelled()).toBe("staging");
+  });
+
+  it("takes it from the bindings of a queue batch", async () => {
+    await worker.queue(
+      { messages: [], queue: "polaris-default" } as never,
+      { POLARIS_ENVIRONMENT: "production" } as never
+    );
+
+    expect(labelled()).toBe("production");
   });
 });

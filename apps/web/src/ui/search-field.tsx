@@ -5,9 +5,14 @@ import XIcon from "lucide-react/dist/esm/icons/x";
 import {
   type ChangeEvent,
   type ComponentProps,
+  type RefObject,
   useCallback,
+  useLayoutEffect,
+  useId,
   useRef,
+  useState,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 
@@ -15,7 +20,12 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
    "Limpar busca" button at the end that empties the field and gives the focus back to it. The name comes from the
    required `label` (there is no visible label above a search box). `type="search"` with the native cancel mark
    hidden, so there is one "X" and it is ours; the mobile keyboard shows "Buscar" (`enterKeyHint`). With touch the
-   button has the 48 px area of every control (`touch-hit`) and the group the one of a field. */
+   button has the 44 px area of every control (`touch-hit`) and the group the one of a field. Under `narrowBelowRem`
+   (14 rem unless the screen asks for more; measured on the group, so it follows the text size) the placeholder is
+   only "Buscar" and the screen's `placeholder` becomes a line under the field (`aria-describedby`): cut mid-word, a hint teaches nothing. */
+const NARROW_FIELD_REM = 14;
+const NARROW_PLACEHOLDER = "Buscar";
+
 interface SearchFieldProps
   extends Omit<
     ComponentProps<"input">,
@@ -28,20 +38,56 @@ interface SearchFieldProps
     | "enterKeyHint"
   > {
   className?: string;
+  hintClassName?: string;
   /** The accessible name of the field: required, there is no visible label. */
   label: string;
+  /** The width of the group, in rem, under which the hint goes under the field; a longer hint needs a larger number. */
+  narrowBelowRem?: number;
   onValueChange: (value: string) => void;
   value: string;
 }
 
+function useNarrow(
+  input: RefObject<HTMLInputElement | null>,
+  belowRem: number
+) {
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    const group = input.current?.parentElement;
+    if (!group) {
+      return;
+    }
+    const measure = () => {
+      const root = Number.parseFloat(
+        getComputedStyle(document.documentElement).fontSize
+      );
+      setNarrow(group.getBoundingClientRect().width < belowRem * root);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(group);
+    return () => observer.disconnect();
+  }, [input, belowRem]);
+  return narrow;
+}
+
 function SearchField({
   className,
+  hintClassName,
   label,
+  narrowBelowRem = NARROW_FIELD_REM,
   onValueChange,
+  placeholder,
   value,
   ...props
 }: SearchFieldProps) {
   const ref = useRef<HTMLInputElement>(null);
+  const hintId = useId();
+  const narrow = useNarrow(ref, narrowBelowRem);
+  const hinted = narrow && placeholder !== undefined && placeholder !== "";
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => onValueChange(event.target.value),
     [onValueChange]
@@ -51,35 +97,54 @@ function SearchField({
     ref.current?.focus();
   }, [onValueChange]);
 
+  const describedBy =
+    [props["aria-describedby"], hinted ? hintId : undefined]
+      .filter(Boolean)
+      .join(" ") || undefined;
+
   return (
-    <InputGroup className={className}>
-      <InputGroupAddon>
-        <SearchIcon aria-hidden="true" />
-      </InputGroupAddon>
-      <InputGroupInput
-        autoComplete="off"
-        {...props}
-        aria-label={label}
-        className="[&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
-        enterKeyHint="search"
-        onChange={handleChange}
-        ref={ref}
-        type="search"
-        value={value}
-      />
-      {value === "" ? null : (
-        <Button
-          aria-label="Limpar busca"
-          className="mr-1"
-          onClick={handleClear}
-          size="icon-sm"
-          type="button"
-          variant="ghost"
+    <>
+      <InputGroup className={className}>
+        <InputGroupAddon>
+          <SearchIcon aria-hidden="true" />
+        </InputGroupAddon>
+        <InputGroupInput
+          autoComplete="off"
+          {...props}
+          aria-describedby={describedBy}
+          aria-label={label}
+          className="[&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
+          // a search is cheap to type again: it does not hold the swap of the build (pwa/swap-guard.ts)
+          data-swap-ignore=""
+          enterKeyHint="search"
+          onChange={handleChange}
+          placeholder={hinted ? NARROW_PLACEHOLDER : placeholder}
+          ref={ref}
+          type="search"
+          value={value}
+        />
+        {value === "" ? null : (
+          <Button
+            aria-label="Limpar busca"
+            className="mr-1"
+            onClick={handleClear}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            <XIcon aria-hidden="true" />
+          </Button>
+        )}
+      </InputGroup>
+      {hinted ? (
+        <p
+          className={cn("text-muted-foreground text-support", hintClassName)}
+          id={hintId}
         >
-          <XIcon aria-hidden="true" />
-        </Button>
-      )}
-    </InputGroup>
+          {placeholder}
+        </p>
+      ) : null}
+    </>
   );
 }
 

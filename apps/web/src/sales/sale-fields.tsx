@@ -50,16 +50,19 @@ interface FieldTextsProps {
   error: string | undefined;
   hint: ReactNode;
   id: string;
+  live?: "assertive" | "polite" | undefined;
 }
 
 /** The help and the error under a control. */
-export function FieldTexts({ error, hint, id }: FieldTextsProps) {
+export function FieldTexts({ error, hint, id, live }: FieldTextsProps) {
   return (
     <>
       {hint ? (
         <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
       ) : null}
-      <FieldError id={`${id}-error`}>{error}</FieldError>
+      <FieldError id={`${id}-error`} live={live}>
+        {error}
+      </FieldError>
     </>
   );
 }
@@ -270,12 +273,14 @@ interface QuantityStepperProps {
   /** The same for +. */
   more: string | null;
   onChange: (value: string) => void;
+  /** What is counted ("Camiseta · Preta"), in the names of − and + when several steppers share a screen. */
+  subject?: string | undefined;
   value: string;
 }
 
 /**
- * − field +. The field is 64 px wide (Petković C-1): with touch each button has a 48 px area, 6 px past each
- * side, and 52 px of the field stay free between the two areas, so a thumb on the number never hits − or +.
+ * − field +. The field is 64 px wide: with touch each button has a 44 px area, 4 px past each
+ * side, and 56 px of the field stay free between the two areas, so a thumb on the number never hits − or +.
  * The buttons are named without the word "quantidade", so the label of the field names the field only.
  */
 export function QuantityStepper({
@@ -286,8 +291,10 @@ export function QuantityStepper({
   less,
   more,
   onChange,
+  subject,
   value,
 }: QuantityStepperProps) {
+  const of = subject ? ` de ${subject}` : "";
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
     [onChange]
@@ -308,7 +315,8 @@ export function QuantityStepper({
       {/* the field has its own label: the group is only layout (role="none"), no nameless "group" to announce */}
       <ButtonGroup role="none">
         <Button
-          aria-label="Menos uma unidade"
+          aria-label={`Menos uma unidade${of}`}
+          className="touch:size-11"
           disabled={less === null}
           onClick={handleLess}
           size="icon"
@@ -331,7 +339,8 @@ export function QuantityStepper({
           />
         </InputGroup>
         <Button
-          aria-label="Mais uma unidade"
+          aria-label={`Mais uma unidade${of}`}
+          className="touch:size-11"
           disabled={more === null}
           onClick={handleMore}
           size="icon"

@@ -16,7 +16,7 @@ import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The stock screen on the components of src/ui (ADR 0103, t194), in the lab of the offline screens:
+ * The stock screen on the components of src/ui (ADR 0103), in the lab of the offline screens:
  * - condition 2 of the ADR repeated on the screen itself: every control of the screen opens and changes state
  *   under the production Content-Security-Policy with zero violations, in the light and in the dark theme;
  * - the focus: the first field when a command opens, the first invalid one after "Revisar", the status after the
@@ -27,7 +27,9 @@ const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const RECEIVE_JEANS = "Receber estoque de Calça jeans, 42";
 const WRITE_OFF_JEANS = "Baixar estoque de Calça jeans, 42";
-const COUNT_SHIRT = "Contar estoque de Camiseta do teste, Azul";
+const INFORM_SHIRT = "Informar custo de Camiseta do teste · Azul";
+
+const VARIANT_IDS = /"variantIds":\["([^"]+)"\]/;
 
 const THEMES = [
   { dark: false, name: "claro", stored: "claro" },
@@ -78,26 +80,65 @@ const MUG = {
 interface OpenOptions {
   /** What the screen shows when it is ready (the count line). */
   count?: string;
+  /** The read of one variant (the link from the sale) is refused. */
+  entryReadFails?: boolean;
   /** Appended to the address of the lab: `&filtro=sem-custo`. */
   search?: string;
 }
 
-/** The bodies of the reads the screen sent, in order (what each filter asked the server for). */
+/** The bodies of the reads of the list the screen sent, in order (what each filter asked the server for). */
 let listRequests: string[] = [];
+/** The two reads of "Precisa de ação", a page of 100 each: the store's counts, whatever the filters. */
+let attentionRequests: string[] = [];
 
 async function openStockLab(
   page: Page,
   stored: string,
-  { count = "2 variantes", search = "" }: OpenOptions = {}
+  {
+    count = "2 variantes",
+    entryReadFails = false,
+    search = "",
+  }: OpenOptions = {}
 ) {
   listRequests = [];
+  attentionRequests = [];
   await page.addInitScript((theme) => {
     window.localStorage.setItem("polaris-tema", theme);
   }, stored);
   // the lab has no server: the list comes from here, and it answers by the filters the screen sent
   await page.route("**/rpc/inventory/listBalances", (route) => {
     const body = route.request().postData() ?? "";
-    listRequests.push(body);
+    (body.includes('"limit":100') ? attentionRequests : listRequests).push(
+      body
+    );
+    const wanted = VARIANT_IDS.exec(body)?.[1];
+    if (wanted !== undefined && entryReadFails) {
+      return route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code: "FORBIDDEN",
+            data: null,
+            defined: false,
+            message: "FORBIDDEN",
+            status: 403,
+          },
+          meta: [],
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 403,
+      });
+    }
+    if (wanted !== undefined) {
+      return route.fulfill(
+        rpc({
+          entries: [SHIRT, JEANS, MUG].filter(
+            (entry) => entry.variantId === wanted
+          ),
+          nextCursor: null,
+        })
+      );
+    }
     if (body.includes('"cost":"unknown"')) {
       return route.fulfill(rpc({ entries: [SHIRT], nextCursor: null }));
     }
@@ -108,20 +149,6 @@ async function openStockLab(
     const entries = all ? [SHIRT, JEANS, MUG] : [SHIRT, JEANS];
     return route.fulfill(rpc({ entries, nextCursor: null }));
   });
-  await page.route("**/rpc/inventory/receiveStock", (route) =>
-    route.fulfill(
-      rpc({
-        balance: {
-          movingAverageCost: "12.500000",
-          quantity: 15,
-          variantId: JEANS.variantId,
-          version: 2,
-        },
-        movement: { createdAt: "2026-10-15T15:00:01.000Z" },
-        replayed: false,
-      })
-    )
-  );
   await serveLabWorker(page);
   await page.goto(`/offline-screens-lab?screen=stock${search}`);
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
@@ -133,11 +160,31 @@ async function openStockLab(
   await expect(
     page.getByRole("heading", { exact: true, name: "Estoque" })
   ).toBeVisible();
-  await expect(page.getByText(count)).toBeVisible();
+  await expect(page.getByText(count, { exact: true })).toBeVisible();
+}
+
+const RECEIVE_REPLY = {
+  balance: {
+    movingAverageCost: "12.500000",
+    quantity: 15,
+    variantId: JEANS.variantId,
+    version: 2,
+  },
+  movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+  replayed: false,
+};
+
+/** Only a test that confirms a receipt arms this: any other test that reaches receiveStock gets no success answer. */
+async function answerReceiveStock(page: Page) {
+  await page.route("**/rpc/inventory/receiveStock", (route) =>
+    route.fulfill(rpc(RECEIVE_REPLY))
+  );
 }
 
 async function useEveryControl(page: Page) {
+  await answerReceiveStock(page);
   // the filters: the balance, the archived products (the mug has no balance and is archived) and the search
+  await openFilters(page);
   const filter = page.getByRole("tablist", { name: "Filtrar por saldo" });
   await filter.getByRole("tab", { name: "Sem saldo" }).click();
   await expect(filter.getByRole("tab", { name: "Sem saldo" })).toHaveAttribute(
@@ -145,9 +192,7 @@ async function useEveryControl(page: Page) {
     "true"
   );
   await filter.getByRole("tab", { name: "Todas" }).click();
-  await page
-    .getByRole("checkbox", { name: "Incluir produtos arquivados" })
-    .click();
+  await page.getByRole("checkbox", { name: "Incluir arquivados" }).click();
   await expect(page.getByText("3 variantes")).toBeVisible();
   await expect(page.getByText("Arquivado", { exact: true })).toBeVisible();
   await expect(
@@ -164,8 +209,9 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: RECEIVE_JEANS }).click();
   const quantity = page.getByLabel("Quantidade recebida");
   await expect(quantity).toBeFocused();
-  await page.getByRole("button", { name: "Mais uma unidade" }).click();
   await expect(quantity).toHaveValue("1");
+  await page.getByRole("button", { name: "Mais uma unidade" }).click();
+  await expect(quantity).toHaveValue("2");
   await quantity.fill("10");
   await page.getByLabel("Custo unitário (R$)").fill("12,50");
   await page.getByRole("button", { exact: true, name: "Revisar" }).click();
@@ -182,11 +228,9 @@ async function useEveryControl(page: Page) {
   await page.getByRole("button", { name: "Fechar" }).click();
   await expect(page.getByRole("button", { name: RECEIVE_JEANS })).toBeFocused();
 
-  // a count (the valuation field, as the cost is unknown) and a write-off (the choice list and the note)
-  await page.getByRole("button", { name: COUNT_SHIRT }).click();
-  await expect(
-    page.getByLabel("Custo unitário para valoração (R$)")
-  ).toBeVisible();
+  // the cost of units with none (where counting was) and a write-off (the choice list and the note)
+  await page.getByRole("button", { name: INFORM_SHIRT }).click();
+  await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
   await page.getByRole("button", { name: "Fechar" }).click();
   await page.getByRole("button", { name: WRITE_OFF_JEANS }).click();
   await page
@@ -222,12 +266,24 @@ for (const theme of THEMES) {
   });
 }
 
+const FILTERS_BUTTON = /^Filtros/;
 const stockFilter = (page: Page, name: string) =>
   page
     .getByRole("tablist", { name: "Filtrar por saldo" })
     .getByRole("tab", { name });
 const unknownCostFilter = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Sem custo" });
+  page.getByRole("checkbox", { name: "Sem custo" });
+
+/** The balance tabs, "Sem custo" and "Incluir arquivados" are inside the "Filtros" button: its popup opens unless it already is. */
+async function openFilters(page: Page) {
+  const button = page.getByRole("button", { name: FILTERS_BUTTON });
+  if ((await button.getAttribute("aria-expanded")) !== "true") {
+    await button.click();
+  }
+  await expect(
+    page.getByRole("tablist", { name: "Filtrar por saldo" })
+  ).toBeVisible();
+}
 
 test("as abas de saldo: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
   page,
@@ -237,6 +293,7 @@ test("as abas de saldo: setas trocam de aba, Tab sai do grupo e o leitor de tela
     "o teclado é o do desktop"
   );
   await openStockLab(page, "claro");
+  await openFilters(page);
   await expectTabsKeyboard(page, "Filtrar por saldo", ["Todas", "Com saldo"]);
   // the arrows chose the tab: the list was asked again with the filter, and back to the plain one
   await expect.poll(() => listRequests.at(-1) ?? "").toContain('"stock":"all"');
@@ -262,7 +319,11 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
     count: "1 variante",
     search: "&filtro=sem-custo",
   });
-  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Filtros, 1 ativo" })
+  ).toBeVisible();
+  await openFilters(page);
+  await expect(unknownCostFilter(page)).toBeChecked();
   await expect(stockFilter(page, "Todas")).toHaveAttribute(
     "aria-selected",
     "true"
@@ -274,12 +335,33 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
   expect(listRequests[0]).toContain('"stock":"all"');
   // turning it off goes back to the plain list
   await unknownCostFilter(page).click();
-  await expect(unknownCostFilter(page)).toHaveAttribute(
-    "aria-pressed",
-    "false"
-  );
+  await expect(unknownCostFilter(page)).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Filtros" })).toBeVisible();
   await expect(page.getByText("2 variantes")).toBeVisible();
   expect(listRequests.at(-1)).not.toContain('"cost"');
+});
+
+test("a faixa Precisa de ação conta a loja em duas leituras de 100 e não muda com o filtro da lista", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  const strip = page.locator('[data-slot="action-strip"]');
+  await expect(strip).toContainText("1 variante sem custo");
+  await expect.poll(() => attentionRequests.length).toBe(2);
+  expect(
+    attentionRequests.some((body) => body.includes('"cost":"unknown"'))
+  ).toBe(true);
+  expect(
+    attentionRequests.every((body) => body.includes('"productStatus":"active"'))
+  ).toBe(true);
+  await openFilters(page);
+  await stockFilter(page, "Sem saldo").click();
+  await expect(page.getByText("0 variantes", { exact: true })).toBeVisible();
+  await expect(strip).toContainText("1 variante sem custo");
+  await strip.getByRole("link", { name: "1 variante sem custo" }).click();
+  await openFilters(page);
+  await expect(unknownCostFilter(page)).toBeChecked();
+  expect(attentionRequests).toHaveLength(2);
 });
 
 test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
@@ -289,18 +371,21 @@ test("'Sem custo' combina com o filtro de saldo na mesma leitura", async ({
     count: "1 variante",
     search: "&filtro=sem-custo",
   });
+  await openFilters(page);
   await stockFilter(page, "Sem saldo").click();
   await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
     "aria-selected",
     "true"
   );
-  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(unknownCostFilter(page)).toBeChecked();
   await expect
     .poll(() => listRequests.at(-1) ?? "")
     .toContain('"stock":"without_stock"');
   expect(listRequests.at(-1)).toContain('"cost":"unknown"');
 });
 
+const MUG_PANEL =
+  /Caneca esmaltada · Sem opções\. Saldo atual: 0 · custo médio desconhecido$/;
 const COUNT_LINE = /^\d+ variantes?/;
 
 test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só carrega com conexão", async ({
@@ -313,7 +398,8 @@ test("sem internet com 'Sem custo' marcado: sem contagem e a lista diz que só c
   // the lab's own checkbox takes the network away; the screen then works from the device
   await page.getByLabel("Rede disponível").uncheck();
   await expect(page.getByText("Sem conexão.")).toBeVisible();
-  await expect(unknownCostFilter(page)).toHaveAttribute("aria-pressed", "true");
+  await openFilters(page);
+  await expect(unknownCostFilter(page)).toBeChecked();
   await expect(
     page.getByText(
       "Sem internet. A lista de variantes sem custo só carrega com conexão."
@@ -334,17 +420,94 @@ test("?filtro=sem-saldo abre a lista sem saldo, e a lista vazia diz que todas t�
     count: "0 variantes",
     search: "&filtro=sem-saldo",
   });
+  await openFilters(page);
   await expect(stockFilter(page, "Sem saldo")).toHaveAttribute(
     "aria-selected",
     "true"
   );
-  await expect(unknownCostFilter(page)).toHaveAttribute(
-    "aria-pressed",
-    "false"
-  );
+  await expect(unknownCostFilter(page)).not.toBeChecked();
   expect(listRequests[0]).toContain('"stock":"without_stock"');
   expect(listRequests[0]).not.toContain('"cost"');
   await expect(page.getByText("Todas as variantes têm saldo.")).toBeVisible();
+});
+
+test("?entrada= abre o painel de entrada da variante, mesmo arquivada e fora da lista, e tira o parâmetro do endereço", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    search: `&entrada=${MUG.variantId}&de=venda`,
+  });
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(page.getByText(MUG_PANEL)).toBeVisible();
+  await expect(page.getByLabel("Quantidade recebida")).toBeFocused();
+  expect(new URL(page.url()).search).toBe("?screen=stock");
+  expect(listRequests.some((body) => body.includes(MUG.variantId))).toBe(true);
+  await expect(
+    page.getByRole("button", { name: RECEIVE_JEANS })
+  ).toHaveAttribute("aria-disabled", "true");
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+});
+
+test("?entrada= de uma variante que não existe diz isso em uma linha, sem erro, e a lista continua", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    search: "&entrada=0199c2d0-0000-7000-8000-00000000dead",
+  });
+  await expect(
+    page.getByText(
+      "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  expect(new URL(page.url()).search).toBe("?screen=stock");
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+});
+
+test("?entrada= com a leitura recusada não afirma que a variante não existe", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    entryReadFails: true,
+    search: `&entrada=${MUG.variantId}`,
+  });
+  await expect(
+    page.getByText(
+      "Não conseguimos abrir essa variante agora. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  await expect(page.getByText("Não achamos essa variante")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+});
+
+test("?entrada= que não é um id não lê nada e abre a tela como sempre", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", { search: "&entrada=../../x" });
+  await expect(
+    page.getByText(
+      "Não achamos essa variante no estoque. Procure o produto na lista e use Receber."
+    )
+  ).toBeVisible();
+  expect(listRequests.some((body) => body.includes("variantIds"))).toBe(false);
+  expect(new URL(page.url()).search).toBe("?screen=stock");
 });
 
 for (const value of [
@@ -360,14 +523,12 @@ for (const value of [
     await openStockLab(page, "claro", {
       search: `&filtro=${encodeURIComponent(value)}`,
     });
+    await openFilters(page);
     await expect(stockFilter(page, "Todas")).toHaveAttribute(
       "aria-selected",
       "true"
     );
-    await expect(unknownCostFilter(page)).toHaveAttribute(
-      "aria-pressed",
-      "false"
-    );
+    await expect(unknownCostFilter(page)).not.toBeChecked();
     expect(listRequests[0]).not.toContain('"cost"');
     expect(listRequests[0]).toContain('"stock":"all"');
     if (value !== "") {
@@ -379,7 +540,7 @@ for (const value of [
 }
 
 for (const width of [360, 320]) {
-  test(`as abas do saldo e o botão 'Sem custo' têm a mesma altura e cabem em ${width} px, com a lista e com o painel aberto`, async ({
+  test(`a busca e o botão 'Filtros' cabem em ${width} px na mesma linha, o popup dos filtros não passa da janela, e o painel aberto também`, async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width });
@@ -387,33 +548,37 @@ for (const width of [360, 320]) {
       count: "1 variante",
       search: "&filtro=sem-custo",
     });
-    const measured = await page.evaluate(() => {
+    const search = await page.getByLabel("Buscar no estoque").boundingBox();
+    const button = await page
+      .getByRole("button", { name: FILTERS_BUTTON })
+      .boundingBox();
+    expect(search).not.toBeNull();
+    expect(button).not.toBeNull();
+    expect(Math.abs((search?.y ?? 0) - (button?.y ?? 99))).toBeLessThan(8);
+    expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(width);
+    await openFilters(page);
+    const popup = await page.evaluate(() => {
       const group = document.querySelector('[aria-label="Filtrar por saldo"]');
-      const own = [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "Sem custo"
-      );
-      const tabs = group?.querySelectorAll('[role="tab"]') ?? [];
-      const boxes = [group, own].map((item) => item?.getBoundingClientRect());
+      const tabs = [...(group?.querySelectorAll('[role="tab"]') ?? [])];
+      const popupBox = group
+        ?.closest('[data-slot="popover-content"]')
+        ?.getBoundingClientRect();
       return {
-        heights: boxes.map((box) => Math.round(box?.height ?? 0)),
-        past: [
-          ...boxes,
-          ...[...tabs].map((tab) => tab.getBoundingClientRect()),
-        ].filter(
-          (box) => (box?.right ?? Number.POSITIVE_INFINITY) > window.innerWidth
-        ).length,
+        past: [group, ...tabs]
+          .map((item) => item?.getBoundingClientRect().right ?? 0)
+          .filter((right) => right > window.innerWidth + 0.5).length,
+        popupRight: popupBox?.right ?? Number.POSITIVE_INFINITY,
         tabs: tabs.length,
       };
     });
-    expect(measured.tabs).toBe(3);
-    expect(measured.past).toBe(0);
-    expect(new Set(measured.heights).size).toBe(1);
+    expect(popup.tabs).toBe(3);
+    expect(popup.past).toBe(0);
+    expect(popup.popupRight).toBeLessThanOrEqual(width);
+    await page.keyboard.press("Escape");
     // the state that opens from the filtered list: a panel on the row, nothing goes past the window
-    // from a variant without cost the way forward is a count with the unit cost
-    await page.getByRole("button", { name: COUNT_SHIRT }).click();
-    await expect(
-      page.getByLabel("Custo unitário para valoração (R$)")
-    ).toBeVisible();
+    // from a variant with units and no cost the way forward is to inform the cost
+    await page.getByRole("button", { name: INFORM_SHIRT }).click();
+    await expect(page.getByLabel("Custo de cada unidade (R$)")).toBeVisible();
     const past = await page.evaluate(() => {
       const limit = window.innerWidth + 0.5;
       const heading = [...document.querySelectorAll("h1")].find(
@@ -450,6 +615,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await page.setViewportSize(viewport);
     await page.clock.setFixedTime(FIXED_NOW);
     await openStockLab(page, "claro");
+    await answerReceiveStock(page);
     const sent: string[] = [];
     await page.route("**/rpc/inventory/receiveStock", (route) => {
       sent.push(route.request().postData() ?? "");
@@ -482,17 +648,276 @@ for (const viewport of FORM_VIEWPORTS) {
   });
 }
 
+const TURN_EVE = new Date("2026-11-01T02:50:00.000Z");
+
+/**
+ * Waits until what the page had already started has reached the network: one turn of the page's task queue (where
+ * React's scheduler posts its work), then a request that only this test answers, twice, so a read that starts one
+ * asynchronous hop after the first barrier still goes out before the second. A read slower than two hops would
+ * escape it; the rendered state is what the test asserts around it.
+ */
+async function settledRound(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(null);
+      })
+  );
+  await page.evaluate(() => fetch("/__settled").then(() => undefined));
+}
+
+async function settled(page: Page) {
+  await settledRound(page);
+  await settledRound(page);
+}
+
+const TURN_ROUTES = [
+  "receiveStock",
+  "inventoryCount",
+  "writeOffStock",
+] as const;
+
+const TURN_CASES = [
+  {
+    confirm: "Confirmar recebimento",
+    fill: async (page: Page, quantity: string) => {
+      await page.getByLabel("Quantidade recebida").fill(quantity);
+      await page.getByLabel("Custo unitário (R$)").fill("12,50");
+    },
+    quantities: ["7", "4"],
+    quantityLabel: "Quantidade recebida",
+    reply: RECEIVE_REPLY,
+    route: "receiveStock",
+    saldo: "Saldo: 15 unidades",
+    trigger: RECEIVE_JEANS,
+  },
+  {
+    confirm: "Confirmar contagem",
+    fill: async (page: Page, quantity: string) => {
+      await page.getByLabel("Quantidade contada").fill(quantity);
+    },
+    quantities: ["7", "4"],
+    quantityLabel: "Quantidade contada",
+    reply: {
+      balance: {
+        movingAverageCost: "62.400000",
+        quantity: 9,
+        variantId: JEANS.variantId,
+        version: 2,
+      },
+      movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+      replayed: false,
+    },
+    route: "inventoryCount",
+    saldo: "Saldo: 9 unidades",
+    trigger: "Contar estoque de Calça jeans, 42",
+  },
+  {
+    confirm: "Confirmar baixa",
+    fill: async (page: Page, quantity: string) => {
+      await page.getByLabel("Quantidade a baixar").fill(quantity);
+      await page
+        .getByRole("combobox", { exact: true, name: "Motivo da baixa" })
+        .click();
+      await page.getByRole("option", { exact: true, name: "Avariado" }).click();
+    },
+    quantities: ["1", "1"],
+    quantityLabel: "Quantidade a baixar",
+    reply: {
+      balance: {
+        movingAverageCost: "62.400000",
+        quantity: 2,
+        variantId: JEANS.variantId,
+        version: 2,
+      },
+      movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+      replayed: false,
+    },
+    route: "writeOffStock",
+    saldo: "Saldo: 2 unidades",
+    trigger: WRITE_OFF_JEANS,
+  },
+] as const;
+
+/**
+ * 02:50Z is 23:50 of the day before in São Paulo and already the new day on a device in UTC: with the browser zone pinned to UTC,
+ * only the store's zone can produce the day the screen shows before the turn. On a machine in São Paulo the two
+ * would agree and the test could not tell which of them the screen followed.
+ */
+test.describe("virada do dia da loja", () => {
+  test.use({ timezoneId: "UTC" });
+
+  for (const turn of TURN_CASES) {
+    test(`${turn.trigger.split(" ")[0]}: o painel já aberto fica como está, o próximo abre com o dia novo e o servidor recebe esse dia sem nova leitura`, async ({
+      page,
+    }) => {
+      await page.clock.install({ time: TURN_EVE });
+      await openStockLab(page, "claro");
+      await page.route(`**/rpc/inventory/${turn.route}`, (route) =>
+        route.fulfill(rpc(turn.reply))
+      );
+      const unexpected: string[] = [];
+      await Promise.all(
+        TURN_ROUTES.filter((other) => other !== turn.route).map((other) =>
+          page.route(`**/rpc/inventory/${other}`, (route) => {
+            unexpected.push(other);
+            return route.abort();
+          })
+        )
+      );
+      const sent: string[] = [];
+      await page.route(`**/rpc/inventory/${turn.route}`, (route) => {
+        sent.push(route.request().postData() ?? "");
+        return route.fallback();
+      });
+      await expect.poll(() => attentionRequests.length).toBe(2);
+      await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+      await page.route("**/__settled", (route) =>
+        route.fulfill({ body: "", status: 204 })
+      );
+      await settled(page);
+      const reads = listRequests.length + attentionRequests.length;
+
+      await page.getByRole("button", { name: turn.trigger }).click();
+      await turn.fill(page, turn.quantities[0]);
+      await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+        "Data, 31/10/2026"
+      );
+
+      await page.clock.fastForward("11:00");
+      await page.clock.fastForward("30:00");
+      await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+        "Data, 31/10/2026"
+      );
+      await expect(page.getByLabel(turn.quantityLabel)).toHaveValue(
+        turn.quantities[0]
+      );
+      await settled(page);
+      expect(listRequests.length + attentionRequests.length).toBe(reads);
+
+      await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+      await page.getByRole("button", { name: turn.confirm }).click();
+      await expect(page.getByText(turn.saldo)).toBeVisible();
+      await page.getByRole("button", { exact: true, name: "Fechar" }).click();
+
+      await page.getByRole("button", { name: turn.trigger }).click();
+      await expect(datePickerButton(page, "Data")).toHaveAccessibleName(
+        "Data, 01/11/2026"
+      );
+      await turn.fill(page, turn.quantities[1]);
+      await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+      await expect(page.getByText("não pode ser futura")).toHaveCount(0);
+      await page.getByRole("button", { name: turn.confirm }).click();
+      await expect(page.getByText(turn.saldo)).toBeVisible();
+
+      // settled bounds the wait (two hops); a poll on [] passes at the first sample, so reading it right away is the same check
+      await settled(page);
+      expect(unexpected).toEqual([]);
+      expect(sent).toHaveLength(2);
+      expect(sent.map((body) => JSON.parse(body).json.occurredOn)).toEqual([
+        "2026-10-31",
+        "2026-11-01",
+      ]);
+    });
+  }
+
+  const COST_TURNS = [
+    {
+      day: "2026-10-31",
+      name: "o painel aberto antes da virada mantém o dia em que abriu",
+      openAfterTurn: false,
+    },
+    {
+      day: "2026-11-01",
+      name: "o painel aberto depois da virada nasce com o dia novo",
+      openAfterTurn: true,
+    },
+  ] as const;
+
+  for (const turn of COST_TURNS) {
+    test(`Informar custo: ${turn.name}, e o servidor recebe ${turn.day} sem nova leitura`, async ({
+      page,
+    }) => {
+      await page.clock.install({ time: TURN_EVE });
+      await openStockLab(page, "claro");
+      await page.route("**/rpc/inventory/inventoryCount", (route) =>
+        route.fulfill(
+          rpc({
+            balance: {
+              movingAverageCost: "12.500000",
+              quantity: SHIRT.quantity,
+              variantId: SHIRT.variantId,
+              version: 2,
+            },
+            movement: { createdAt: "2026-10-15T15:00:01.000Z" },
+            replayed: false,
+          })
+        )
+      );
+      const sent: string[] = [];
+      await page.route("**/rpc/inventory/inventoryCount", (route) => {
+        sent.push(route.request().postData() ?? "");
+        return route.fallback();
+      });
+      await expect.poll(() => attentionRequests.length).toBe(2);
+      await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+      await page.route("**/__settled", (route) =>
+        route.fulfill({ body: "", status: 204 })
+      );
+      await settled(page);
+      const reads = listRequests.length + attentionRequests.length;
+      const cost = page.getByLabel("Custo de cada unidade (R$)");
+
+      if (!turn.openAfterTurn) {
+        await page.getByRole("button", { name: INFORM_SHIRT }).click();
+        await cost.fill("12,50");
+      }
+      await page.clock.fastForward("11:00");
+      await page.clock.fastForward("30:00");
+      if (turn.openAfterTurn) {
+        await page.getByRole("button", { name: INFORM_SHIRT }).click();
+        await cost.fill("12,50");
+      }
+      await expect(cost).toHaveValue("12,50");
+      await settled(page);
+      expect(listRequests.length + attentionRequests.length).toBe(reads);
+
+      await page.getByRole("button", { exact: true, name: "Revisar" }).click();
+      await page.getByRole("button", { name: "Confirmar custo" }).click();
+      await expect(page.getByText("Saldo: 5 unidades")).toBeVisible();
+
+      expect(sent).toHaveLength(1);
+      expect(JSON.parse(sent[0] ?? "{}").json.occurredOn).toBe(turn.day);
+    });
+  }
+});
+
+test("a quantidade que abre em 1 vem selecionada: digitar troca o valor em vez de somar", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  const quantity = page.getByLabel("Quantidade recebida");
+  await expect(quantity).toBeFocused();
+  await page.keyboard.type("5");
+  await expect(quantity).toHaveValue("5");
+});
+
 test("a revisão vazia leva o foco ao primeiro campo inválido, e o campo diz o erro", async ({
   page,
 }) => {
   await openStockLab(page, "claro");
   await page.getByRole("button", { name: RECEIVE_JEANS }).click();
-  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   const quantity = page.getByLabel("Quantidade recebida");
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("");
+  await page.getByRole("button", { exact: true, name: "Revisar" }).click();
   await expect(quantity).toBeFocused();
   await expect(quantity).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByText("Informe a quantidade recebida.")).toBeVisible();
-  // the − is off while the field is empty, and the + starts at 1
+  // the − is off while the field is empty
   await expect(
     page.getByRole("button", { name: "Menos uma unidade" })
   ).toBeDisabled();

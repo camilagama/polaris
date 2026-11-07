@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * The states of Categorias, Clientes and the public catalog of the ERP the interface guardrails measure (t235, lot
+ * The states of Categorias, Clientes and the public catalog of the ERP the interface guardrails measure (lot
  * 2): each screen in the lab of the screens (`/offline-screens-lab?screen=…`) over the real offline runtime, with the
  * server answered by the test (`page.route`; Clientes uses the lab's own simulated server) and synthetic data only.
  * The lab's own controls are hidden at the end of each state, so what is measured is the screen alone. Three states

@@ -1,9 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { type Ref, useCallback, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { OperationFailureNotice } from "./operation-failure-notice";
 import {
   backToCancelEditing,
@@ -43,6 +43,34 @@ interface CancelPanelProps {
   saleId: string;
 }
 
+interface CancelReviewNoticeProps {
+  noticeRef: Ref<HTMLDivElement>;
+  reasonCode: string;
+}
+
+/** The effect of confirming, in a block set back into the card: muted fill, no border. */
+export function CancelReviewNotice({
+  noticeRef,
+  reasonCode,
+}: CancelReviewNoticeProps) {
+  return (
+    <Alert
+      className="focus-ring border-0 bg-muted p-4"
+      ref={noticeRef}
+      tabIndex={-1}
+    >
+      <AlertTitle>Confirme o cancelamento</AlertTitle>
+      <AlertDescription>
+        A venda será marcada como cancelada
+        {reasonCode === ""
+          ? " sem motivo informado"
+          : ` (motivo: ${cancellationReasonLabel(reasonCode)})`}
+        , o estoque voltará item a item e isso não poderá ser desfeito.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 /**
  * Whole-sale cancellation in two steps. The sale is preserved; stock comes
  * back item by item and the cancellation cannot be undone.
@@ -53,7 +81,7 @@ export function SaleCancelPanel({
   saleId,
 }: CancelPanelProps) {
   const [state, setState] = useState(initialCancelState);
-  useReportUnsentWork(isCancelDraftChanged(state));
+  useHoldSwap(isCancelDraftChanged(state));
   const inFlight = useRef<boolean>(false);
   const sectionRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
@@ -190,16 +218,10 @@ export function SaleCancelPanel({
           />
           {confirming ? (
             // the effect, in a neutral notice (auditoria v5.1, rule 2)
-            <Alert className="focus-ring" ref={noticeRef} tabIndex={-1}>
-              <AlertTitle>Confirme o cancelamento</AlertTitle>
-              <AlertDescription>
-                A venda será marcada como cancelada
-                {draft.reasonCode === ""
-                  ? " sem motivo informado"
-                  : ` (motivo: ${cancellationReasonLabel(draft.reasonCode)})`}
-                , o estoque voltará item a item e isso não poderá ser desfeito.
-              </AlertDescription>
-            </Alert>
+            <CancelReviewNotice
+              noticeRef={noticeRef}
+              reasonCode={draft.reasonCode}
+            />
           ) : null}
           <OperationFailureNotice
             onDiscardCancel={handleDiscardCancel}

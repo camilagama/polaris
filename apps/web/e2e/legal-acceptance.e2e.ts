@@ -3,6 +3,9 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { WORKER_MARK } from "./worker-mark";
 
+/** The button of the menu of the store in the header: what the menu holds, then the store. */
+const STORE_MENU_NAME = /^Loja, conta e ajuda: /;
+
 /**
  * O aceite dos Termos de Uso e da Política de Privacidade (ADR 0100; AC-67 a AC-70 e L5): a tela
  * `/aceite`, fora do shell, e a ida até ela no primeiro acesso. O servidor é simulado pelas rotas.
@@ -106,7 +109,7 @@ const LINK_PATTERNS = {
 
 const checkbox = (page: Page) => page.getByRole("checkbox");
 const continueButton = (page: Page) =>
-  page.getByRole("button", { name: "Continuar" });
+  page.getByRole("button", { name: "Aceitar e continuar" });
 
 test("o aceite pendente mostra os dois documentos com link em outra aba, a caixa desmarcada, e sem menu do app", async ({
   page,
@@ -142,7 +145,7 @@ test("o aceite pendente mostra os dois documentos com link em outra aba, a caixa
   );
 });
 
-test("'Continuar' sem marcar a caixa diz o que falta e não grava nada; marcada, grava e volta ao destino", async ({
+test("'Aceitar e continuar' sem marcar a caixa diz o que falta e não grava nada; marcada, grava e volta ao destino", async ({
   page,
 }) => {
   const server = await serve(page);
@@ -315,38 +318,40 @@ async function openCategories(page: Page, width: number) {
   await page.goto("/products?aba=categorias");
 }
 
-test("na lateral (a partir de 760 px), os links das duas páginas legais ficam no pé, uma vez, em outra aba (AC-70, P-23)", async ({
+test("a partir de 760 px, os links das duas páginas legais ficam no menu da loja do cabeçalho, em outra aba, e não na lateral (AC-70, P-23)", async ({
   page,
 }) => {
   await openCategories(page, 1280);
-  const sidebarFoot = page.locator("[data-sidebar=footer]");
-  const terms = page.getByRole("link", { name: "Termos de Uso" });
-  const privacy = page.getByRole("link", { name: "Política de Privacidade" });
+  // the sidebar and the foot of the page have none; the menu, closed, is not in the page
+  await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("contentinfo")).toHaveCount(0);
+  await page.getByRole("button", { name: STORE_MENU_NAME }).click();
+  const menu = page.getByRole("menu");
   await expectNewTabLink(
-    sidebarFoot.getByRole("link", { name: "Termos de Uso" }),
+    menu.getByRole("menuitem", { name: "Termos de Uso" }),
     "/termos"
   );
   await expectNewTabLink(
-    sidebarFoot.getByRole("link", { name: "Política de Privacidade" }),
+    menu.getByRole("menuitem", { name: "Política de Privacidade" }),
     "/privacidade"
   );
-  // once each, and nothing under the content
-  await expect(terms).toHaveCount(1);
-  await expect(privacy).toHaveCount(1);
-  await expect(page.getByRole("contentinfo")).toHaveCount(0);
 });
 
-test("no celular, os links das duas páginas legais ficam sob o conteúdo, em outra aba (AC-70, P-23)", async ({
+test("no celular, os links das duas páginas legais ficam no pé de Mais e no menu da loja, em outra aba, e não sob o conteúdo (AC-70, P-23)", async ({
   page,
 }) => {
   await openCategories(page, 360);
-  const footer = page.getByRole("contentinfo");
+  await expect(page.getByRole("contentinfo")).toHaveCount(0);
+  await page.getByRole("button", { exact: true, name: "Mais" }).click();
+  const sheet = page.getByRole("dialog", { name: "Mais" });
   await expectNewTabLink(
-    footer.getByRole("link", { name: "Termos de Uso" }),
+    sheet.getByRole("link", { name: "Termos de Uso" }),
     "/termos"
   );
   await expectNewTabLink(
-    footer.getByRole("link", { name: "Política de Privacidade" }),
+    sheet.getByRole("link", { name: "Política de Privacidade" }),
     "/privacidade"
   );
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(

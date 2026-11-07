@@ -2,7 +2,9 @@ import type { ProductMediaAssetReadModel } from "@polaris/contracts";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ProductMediaList } from "./product-media-list";
+import { MediaThumbsFlagProvider } from "../lib/media-thumbs-flag";
+import { COVER_NOTICE } from "./media-commands-model";
+import { CoverNotice, ProductMediaList } from "./product-media-list";
 
 /**
  * The list of images of the products screen, drawn without a browser: what each row says and which actions are on.
@@ -129,5 +131,62 @@ describe("the list of images of a product", () => {
         running: { assetId, kind: "replace" },
       })
     ).toContain("Substituindo…");
+  });
+});
+
+describe("o selo de capa", () => {
+  const COVER_BADGE = /<[^>]*data-cover=""[^>]*>Capa</g;
+  const renderOn = () =>
+    renderToStaticMarkup(
+      <MediaThumbsFlagProvider value>
+        <ProductMediaList {...base} />
+      </MediaThumbsFlagProvider>
+    );
+
+  it("sem a flag, nenhuma imagem tem o selo", () => {
+    const html = render();
+    expect(html).not.toContain("data-cover");
+    expect(html).not.toContain("Capa");
+  });
+
+  it("com a flag, só a imagem da posição 1 tem o selo, dentro da linha do título", () => {
+    const html = renderOn();
+    expect(html.match(COVER_BADGE)).toHaveLength(1);
+    const [first, second] = html.split("Imagem 2 de 3");
+    expect(first).toContain("Imagem 1 de 3");
+    expect(first).toContain('data-cover=""');
+    expect(second).not.toContain('data-cover=""');
+  });
+
+  it("com a flag e uma imagem só, ela é a capa", () => {
+    const html = renderToStaticMarkup(
+      <MediaThumbsFlagProvider value>
+        <ProductMediaList {...base} assets={[asset(0)]} />
+      </MediaThumbsFlagProvider>
+    );
+    expect(html.match(COVER_BADGE)).toHaveLength(1);
+  });
+
+  it("o selo não muda os nomes das ações nem o texto da posição", () => {
+    const html = renderOn();
+    expect(html).toContain("Imagem 1 de 3");
+    expect(button(html, "Mover imagem 1 para depois")).not.toContain(OFF);
+  });
+});
+
+describe("o aviso da capa atrás da flag", () => {
+  it("sem a flag, o aviso não aparece", () => {
+    expect(renderToStaticMarkup(<CoverNotice />)).toBe("");
+  });
+
+  it("com a flag, o aviso diz onde a capa aparece, inclusive no Estoque", () => {
+    const html = renderToStaticMarkup(
+      <MediaThumbsFlagProvider value>
+        <CoverNotice />
+      </MediaThumbsFlagProvider>
+    );
+    expect(html).toContain("data-cover-notice");
+    expect(html).toContain(COVER_NOTICE);
+    expect(html).toContain("Produtos, na Venda e no Estoque");
   });
 });

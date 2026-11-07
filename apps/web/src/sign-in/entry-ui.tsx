@@ -18,8 +18,9 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
+import { Field, FieldError, FieldLabel } from "@/ui/field";
 import { InputGroup, InputGroupInput } from "@/ui/input-group";
+import { mailtoHref, SUPPORT_EMAIL } from "../lib/support-contact";
 import { useChallengeRetry } from "./challenge-retry";
 import { useEntryMethods } from "./entry-methods";
 import {
@@ -52,7 +53,7 @@ import {
 import type { Challenge } from "./turnstile";
 
 /*
- * The pieces of the entry pages in the interface v5.2 (ADR 0103; design v5.2 of 20/10: Google first, the password
+ * The pieces of the entry pages in the interface v5.2 (ADR 0103; design v5.2: Google first, the password
  * after the e-mail): `/entrar`, `/criar-conta`, "Confirme seu e-mail", `/confirmar-email`, `/esqueci-a-senha`,
  * `/redefinir-senha` and `/desbloquear`. "Trocar senha" inside the app uses the same fields and notices.
  */
@@ -122,6 +123,23 @@ function LegalLinks() {
   );
 }
 
+/** "Precisa de ajuda? Escreva para {endereço}." under the card; no promise of when it is answered. */
+function HelpLine() {
+  return (
+    <p className="mt-5 text-center text-muted-foreground text-support">
+      Precisa de ajuda? Escreva para{" "}
+      <a
+        aria-label={`Escrever para o suporte: ${SUPPORT_EMAIL}`}
+        className="focus-ring select-text break-words rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
+        href={mailtoHref(SUPPORT_EMAIL)}
+      >
+        {SUPPORT_EMAIL}
+      </a>
+      .
+    </p>
+  );
+}
+
 /** The width of the card: the entry (380 px), the wide one (420 px, the acceptance) and the reading column of a legal text. */
 export type EntryWidth = "narrow" | "reading" | "wide";
 
@@ -134,14 +152,16 @@ const ENTRY_WIDTH: Record<EntryWidth, string> = {
 
 /**
  * The page of `/entrar` and `/criar-conta`, and of the screens that stand outside the app shell like them (the
- * first access, the acceptance, the legal texts): one card in the middle, the brand and the title; under the card,
+ * first access, the acceptance, the legal texts): one card at the top, the brand and the title; under the card,
  * the two legal links. Its columns are flex and not grid: an empty part that stays in the tree (a live region,
  * the closed password) gives back the gap with `-mb-4`, which a grid track ignores.
  */
 export function EntryScreen({
   brandHref,
   children,
+  help = false,
   legalLinks = true,
+  settling = false,
   support,
   title,
   width = "narrow",
@@ -149,8 +169,15 @@ export function EntryScreen({
   /** A page that is public to every visitor, signed in or not, takes the brand back to the start. */
   brandHref?: string;
   children: ReactNode;
+  /** The line "Precisa de ajuda?" with the address of the support: the sign-in and the first access. */
+  help?: boolean;
   /** Without them (the legal texts, which are the pages they point to). */
   legalLinks?: boolean;
+  /**
+   * The card does not have its final content yet (the check of the session): the lines under it wait, so they appear
+   * once in their place instead of being pushed down when the card grows.
+   */
+  settling?: boolean;
   /** The one line under the title, when the screen has one. */
   support?: string | undefined;
   title: string;
@@ -165,10 +192,12 @@ export function EntryScreen({
   );
   return (
     <div className="min-h-dvh bg-background font-sans text-foreground text-sm antialiased">
+      {/* at the top, at a fixed distance, and never centered: a card that grows while it reads (the check of the
+          session, the text of the terms) grows down only, and what is in it stays where it was */}
       <main
         className={cn(
-          "grid min-h-dvh px-(--gutter) py-8",
-          reading ? "place-items-start" : "place-items-center"
+          "grid min-h-dvh place-items-start px-(--gutter) py-8",
+          !reading && "md:pt-24"
         )}
         id="conteudo"
       >
@@ -207,7 +236,8 @@ export function EntryScreen({
               {children}
             </CardContent>
           </Card>
-          {legalLinks ? <LegalLinks /> : null}
+          {help && !settling ? <HelpLine /> : null}
+          {legalLinks && !settling ? <LegalLinks /> : null}
         </div>
       </main>
     </div>
@@ -300,7 +330,7 @@ export function EntryLinkButton({
 }) {
   return (
     <a
-      className={cn(buttonVariants({ size: "lg", variant }), "w-full")}
+      className={cn(buttonVariants({ size: "xl", variant }), "w-full")}
       data-slot="button"
       href={href}
     >
@@ -397,7 +427,7 @@ export function GoogleButton({
       className={cn("w-full", pending && "disabled:opacity-70")}
       disabled={disabled || pending}
       onClick={onClick}
-      size="lg"
+      size="xl"
       type="button"
     >
       <GoogleMark />
@@ -492,14 +522,13 @@ export function EmailInput({
 /**
  * A password field with "Mostrar" / "Ocultar" (AC-72): a short button whose name says what it will do ("Mostrar
  * senha", "Ocultar senha"); pasting is never blocked. `visible` is owned by the form, which hides the password
- * again on every submit. The rule, when there is one, is said before typing.
+ * again on every submit. A new password has its own field, with the rules (`new-password-field.tsx`).
  */
 export function PasswordInput({
   autoComplete,
   describedById,
   error,
   fieldRef,
-  hint,
   id,
   label,
   name,
@@ -508,7 +537,6 @@ export function PasswordInput({
   value,
   visible,
 }: FieldProps & {
-  hint?: string;
   onToggle: () => void;
   visible: boolean;
 }) {
@@ -519,13 +547,9 @@ export function PasswordInput({
   return (
     <Field data-invalid={error !== null || undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      {hint ? (
-        <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>
-      ) : null}
       <InputGroup>
         <InputGroupInput
           aria-describedby={describedBy(
-            hint !== undefined && `${id}-hint`,
             error !== null && `${id}-error`,
             describedById
           )}
@@ -700,6 +724,7 @@ export function SubmitButton({
   children,
   className,
   disabled = false,
+  heldBy,
   offBy,
   pending,
   pendingText,
@@ -714,6 +739,11 @@ export function SubmitButton({
   disabled?: boolean;
   /** The id of the alert that says why the button is off for now (a pause): same `aria-disabled` as a blocked challenge. */
   offBy?: string | undefined;
+  /**
+   * The id of what is still missing in the form (the rules of a new password): off for the pointer, like `offBy`,
+   * but Enter (in a field or on the button) still reaches the submit handler, which refuses and flags the field.
+   */
+  heldBy?: string | undefined;
   pending: boolean;
   pendingText: string;
   /** "outline" where the action is not the point of the screen ("Reenviar e-mail"). */
@@ -725,14 +755,15 @@ export function SubmitButton({
     <Button
       aria-busy={pending || undefined}
       aria-describedby={
-        [blocked ? alertId : undefined, offBy].filter(Boolean).join(" ") ||
-        undefined
+        [blocked ? alertId : undefined, offBy, heldBy]
+          .filter(Boolean)
+          .join(" ") || undefined
       }
-      aria-disabled={off || undefined}
+      aria-disabled={off || heldBy !== undefined || undefined}
       className={cn("w-full", className)}
       disabled={disabled || pending}
       onClick={off ? (event) => event.preventDefault() : undefined}
-      size="lg"
+      size="xl"
       type="submit"
       variant={variant}
     >

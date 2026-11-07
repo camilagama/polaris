@@ -14,7 +14,7 @@ vi.mock("../lib/hidden-values", async (importOriginal) => ({
 
 const { RhythmBlock } = await import("./home-rhythm");
 
-// Friday 23/10/2026: the 26 weeks go from Sunday 26/04 to today, the 181st day shown (index 180)
+// Friday `23/10/2026`: the 26 weeks go from Sunday `26/04` to today, the 181st day shown (index 180)
 const TODAY = "2026-10-23";
 const BEST_DAY = "2026-06-27";
 const TODAY_INDEX = 180;

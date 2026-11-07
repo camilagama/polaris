@@ -4,6 +4,8 @@ import { SCREEN_TABS, type ScreenTab } from "../app-shell/navigation-model";
 export interface SettingsTabConditions {
   /** `billing:manage` with the self-service on (AS-19). */
   billing: boolean;
+  /** `organization:export`: asking for and downloading the copy of the store's data (ADR 0078). */
+  dataExport: boolean;
   /** The offline runtime is built in. */
   offline: boolean;
   /** The server said the password is on; false while it has not said, or when it is off. */
@@ -20,6 +22,7 @@ export function settingsTabsShown(
     "catalogo-publico": true,
     "formas-de-receber": true,
     senha: conditions.passwordOn,
+    "seus-dados": conditions.dataExport,
   };
 }
 

@@ -10,15 +10,14 @@
 
 ## Senhas
 
-- Para o fluxo de senha como fator único, aceitar de 15 a 128 pontos de código Unicode após normalização NFC. Espaços e caracteres Unicode são permitidos; a aplicação não trunca nem remove espaços.
-- Não exigir combinações arbitrárias de maiúsculas, minúsculas, números ou símbolos; não exigir troca periódica. Uma senha comprometida deve ser substituída.
-- Antes de armazenar ou alterar uma senha, verificar o valor inteiro contra o corpus de senhas comprometidas do HIBP Pwned Passwords. Calcular SHA-1 somente no Worker, enviar apenas o prefixo de cinco dígitos hexadecimais pelo endpoint k-anonymity com `Add-Padding: true`, comparar os sufixos localmente e nunca enviar a senha ou o hash completo.
-- Se a consulta HIBP não puder ser concluída, rejeitar a criação/alteração da senha com erro temporário genérico. Não armazenar a senha sem a verificação.
-- Não executar a consulta HIBP durante login: ela é necessária quando a senha é criada ou alterada, não em cada autenticação.
+- Para o fluxo de senha como fator único, a senha nova tem de 8 a 128 pontos de código Unicode após normalização NFC, com pelo menos 1 número, 1 letra maiúscula e 1 letra minúscula (letras acentuadas contam pela sua caixa). Caractere especial é recomendado, nunca exigido. Espaços e caracteres Unicode são permitidos; a aplicação não trunca nem remove espaços. A regra é uma só, conferida no servidor e repetida na tela antes do envio; a recusa diz qual regra faltou.
+- Não exigir troca periódica. Uma senha comprometida deve ser substituída.
+- Não há consulta a corpus de senhas vazadas (decisão do usuário, 4/11/2026): o risco de uma senha conhecida passar a regra fica aceito, com o bloqueio de 5 tentativas em 15 minutos, o limite por IP e o desafio contra robôs como freio.
+- A senha nunca é guardada nem enviada ao banco. O servidor da aplicação calcula `k`, o HMAC-SHA-256 da senha em NFC com um segredo próprio de cada ambiente (pepper), e o banco guarda só o bcrypt de `k` com custo 11, com o prefixo da versão do pepper (`pgbf1$`). Sem o pepper, a senha fica desligada. Um hash de outro formato nunca confere: a pessoa redefine a senha pelo e-mail.
 - Reset de senha revoga todas as sessões Better Auth do usuário.
 - **Definir** (`set-password`) ou **trocar** (`change-password`) a senha exige uma sessão com login nos últimos 15 minutos e e-mail verificado. A troca e a definição revogam as outras sessões do usuário e troca a época de autorização, o que revoga as concessões de acesso offline vivas; a sessão de quem trocou continua (com token novo) e o token não é devolvido ao JavaScript. As duas operações geram auditoria de segurança (`password_set`, `password_changed`) e um e-mail de aviso à pessoa. O reset de senha grava `password_reset_completed` e limpa o contador de bloqueio.
 
-A política de tamanho, Unicode, composição e expiração segue as recomendações de senhas do [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html). A consulta de senhas comprometidas segue a [API oficial Pwned Passwords](https://haveibeenpwned.com/API/v3). O limite máximo de 128 pontos de código é a escolha do produto e supera o mínimo de capacidade recomendado pelo NIST. O NIST também recomenda bloquear valores comuns, esperados ou específicos do serviço; o plano exige a consulta HIBP, e a necessidade de uma lista adicional fica para revisão antes do go-live.
+A política de Unicode e expiração segue as recomendações de senhas do [NIST SP 800-63B-4](https://pages.nist.gov/800-63-4/sp800-63b.html). O mínimo de 8, a composição e o fim da consulta de senhas vazadas são escolha do usuário (padrão de mercado) e ficam abaixo do que o NIST recomenda para senha como fator único (15 pontos de código, sem composição, com a lista de valores comprometidos): o risco está aceito no [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md) (emenda de 4/11/2026) e volta à revisão antes do go-live. O limite máximo de 128 pontos de código é a escolha do produto.
 
 ## Cadastro por senha nunca verificado
 
@@ -30,7 +29,7 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 
 ## Bloqueio de conta por tentativas
 
-> As regras desta seção e da troca de senha valem a partir dos PRs P2 e P8 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). O servidor da entrada por senha as aplica só com `EMAIL_PASSWORD_AUTH_ENABLED` ligada, que segue desligada; as regras de aceite ficam para os PRs P4 e P7 (estado em [status-implementacao](../../doc/status-implementacao.md)).
+> As regras desta seção e da troca de senha valem a partir dos PRs P2 e P8 do [ADR 0100](../adr/0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md). O servidor da entrada por senha as aplica só com `EMAIL_PASSWORD_AUTH_ENABLED` ligada. Essa variável fica desligada por padrão e na produção e ligada no staging (`apps/web/wrangler.jsonc`); as regras de aceite ficam para os PRs P4 e P7 (estado em [status-implementacao](../../doc/status-implementacao.md)).
 
 - "Bloqueio de conta" é o termo das regras e do código; a pessoa vê "entrada pausada", porque só a entrada por senha daquele e-mail fica parada, e não a conta.
 - Cinco falhas de login por senha na mesma janela de 15 minutos travam a entrada por senha daquele e-mail por 15 minutos. O contador é por e-mail digitado, exista a conta ou não, e guarda só um HMAC do e-mail normalizado (a chave funde tudo o que o Better Auth funde para achar o usuário; o formato é validado antes), sem e-mail em claro, ID de usuário nem IP.
@@ -50,7 +49,7 @@ A política de tamanho, Unicode, composição e expiração segue as recomendaç
 - Login, falha de login, saída e renovação de sessão são registrados no registro de acesso de autenticação, com as regras de guarda e sigilo de [privacidade](privacy.md). O registro nunca impede o login.
 - Uma sessão fica ligada a um aparelho quando o usa: registro do aparelho, autorização offline, sincronização e verificação ao iniciar. Uma sessão ligada a um aparelho revogado é encerrada na revogação; as sessões que não usaram esse aparelho continuam.
 - Encerrar as outras sessões do usuário é uma opção separada, desmarcada por padrão. Quando marcada, encerra todas as sessões do usuário, exceto a atual, inclusive as que nunca usaram um aparelho.
-- Revogar outro aparelho ou encerrar as outras sessões exige login nos últimos 15 minutos. Revogar o próprio aparelho não exige esse login recente. Próprio é o aparelho que a sessão registrou ou, quando a sessão ainda não tem aparelho próprio, o primeiro que ela confirmou enquanto tinha menos de 15 minutos; usar um aparelho de outro modo não o torna próprio, e o que já foi só usado nunca vira próprio.
+- Revogar outro aparelho ou encerrar as outras sessões exige login nos últimos 15 minutos. Revogar o próprio aparelho não exige esse login recente. Próprio é o aparelho que a sessão registrou ou, quando a sessão ainda não tem aparelho próprio, o primeiro que ela confirmou enquanto tinha menos de 15 minutos; usar um aparelho de outro modo não o torna próprio, e o que já foi só usado nunca vira próprio. Pedir a cópia dos dados, encerrar a loja e desfazer o encerramento exigem o mesmo login recente ([organization-and-access.md](organization-and-access.md)).
 - Quando o usuário sai, com conexão e depois de a fila local estar protegida, a saída revoga o aparelho próprio da sessão, sem login recente; encerra só as sessões ligadas a esse aparelho (a atual entre elas), nunca as que não o usaram. Só aceita o aparelho próprio: outro aparelho do usuário é recusado com motivo próprio e nada muda. Uma falha da revogação nunca impede sair; o aparelho fica registrado até ser revogado de outro aparelho.
 - Todo aparelho que passa de vivo a revogado gera um registro `device_revoked` na auditoria de autenticação, com a sessão e o aparelho de quem revogou, mesmo sem nenhuma sessão ligada a ele. A repetição de uma revogação só é registrada quando encerra alguma sessão.
 
@@ -68,7 +67,7 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 - A CSP que libera o Turnstile acrescenta apenas o arquivo `https://challenges.cloudflare.com/turnstile/v0/api.js` a `script-src` e a origem `https://challenges.cloudflare.com` a `frame-src`, e vale só nas rotas que usam o desafio (e nas mesmas rotas com barra final); o resto do app não a recebe. A site key é pública e vem do Worker. O hostname e a ação continuam conferidos no servidor.
 - Aplicar um limite geral por IP nas rotas protegidas e limite menor nas rotas que podem enviar email. As chaves usam HMAC e não incluem o IP em claro.
 - Os bindings nativos Workers Rate Limiting mantêm contadores aproximados por localidade Cloudflare, não um contador global. Eles são uma camada de contenção; não tratar o resultado como quota global ou como única defesa contra abuso distribuído.
-- A autenticação por email/senha permanece desligada até Turnstile, bindings, site key do cliente, Resend e domínio de envio estarem configurados. A interface de entrada deve obter um token novo para cada envio e transmiti-lo no header definido.
+- A autenticação por email/senha fica desligada por padrão e na produção e ligada no staging (`apps/web/wrangler.jsonc`); na produção só liga com Turnstile, bindings, site key do cliente, Resend e domínio de envio configurados. A interface de entrada deve obter um token novo para cada envio e transmiti-lo no header definido.
 
 ## Retorno após a entrada
 
@@ -89,7 +88,7 @@ A configuração segue a [documentação Better Auth de gerenciamento de sessõe
 - Não associar contas automaticamente durante um login social. O vínculo Google exige uma sessão existente e verificada, iniciada por ação explícita do usuário no fluxo OAuth com redirect/PKCE.
 - O email da conta Polaris e o email retornado pelo Google precisam estar verificados e ser iguais sem distinção de caixa. Rejeitar email ausente, não verificado ou diferente.
 - Não aceitar `idToken` enviado diretamente pelo cliente para criar vínculo. `trustedProviders` permanece vazio, emails diferentes não são permitidos e o perfil local não é sobrescrito ao vincular.
-- Uma sessão Google só pode adicionar senha se o email local estiver verificado; o Worker chama a API server-only do Better Auth, aplica a mesma normalização NFC, tamanho e consulta HIBP da criação de senha e mantém a sessão associada ao mesmo user ID.
+- Uma sessão Google só pode adicionar senha se o email local estiver verificado; o Worker chama a API server-only do Better Auth, aplica a mesma normalização NFC e as mesmas regras da criação de senha e mantém a sessão associada ao mesmo user ID.
 - O callback OAuth de vínculo gera evento de segurança com o ID interno do usuário quando a sessão está presente; nunca registrar token, payload ou dados sensíveis do provider.
 
 O fluxo explícito e a API server-side `setPassword` seguem a [documentação Better Auth de usuários e contas](https://www.better-auth.com/docs/concepts/users-accounts).

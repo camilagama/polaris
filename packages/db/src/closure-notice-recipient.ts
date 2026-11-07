@@ -2,7 +2,7 @@ import { Pool } from "pg";
 import { guardPoolErrors } from "./pool-errors";
 
 /**
- * Where a closure notice goes (ADR 0102 amended, condition of the security review of 20/10/2026): the one function
+ * Where a closure notice goes (ADR 0102 amended): the one function
  * of the authentication role that answers an address, `closure_notice_recipient`. It answers only for a notice still
  * owed, by its ID and organization, the e-mail of the user the notice is for (joined with the notice, never a free
  * read of the users), and only when that e-mail is verified. The name is never read. The address goes straight to the

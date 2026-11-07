@@ -5,6 +5,7 @@ import { Money } from "@polaris/domain/money/money";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
   isConnectionFailure,
+  isPlatformCut,
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
@@ -19,8 +20,8 @@ import {
 } from "./plan-notice";
 
 /**
- * What the Assinatura says (corte assinatura-e-cancelar, AC-9 to AC-17; design t268 v2, § 11; the wireframes of
- * the Petković). Everything comes from `billing.readPlan`: the days are São Paulo's, as the server's, and nothing is
+ * What the Assinatura says (corte assinatura-e-cancelar, AC-9 to AC-17).
+ * Everything comes from `billing.readPlan`: the days are São Paulo's, as the server's, and nothing is
  * counted on the client but the day the trial's first charge would fall on, before any checkout (the same rule the
  * server sets at the provider).
  */
@@ -102,7 +103,7 @@ export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
   const charge = plan.nextCharge;
   if (plan.state === "trialing") {
     return {
-      // the Pix trial counts from the bank's approval: no number of days (AC-12, amendment t268)
+      // the Pix trial counts from the bank's approval: no number of days (AC-12)
       badge: {
         text:
           plan.method === "pix_automatic" ? "teste grátis" : "7 dias grátis",
@@ -117,12 +118,40 @@ export function planHeadline(plan: BillingPlanView, now: Date): PlanHeadline {
   }
   return {
     badge: { text: "Ativo", tone: "ink" },
-    support:
-      charge === null
-        ? null
-        : `Próxima cobrança em ${formatCalendarDate(charge.on)}, ${formatBrlAmount(charge.amount)}.`,
+    support: charge === null ? null : nextChargeSupport(plan, charge),
     title: "Plano Pro",
   };
+}
+
+type NextChargeView = NonNullable<BillingPlanView["nextCharge"]>;
+
+/**
+ * The next charge is of another cycle than the current one (a change waiting for the renewal). A Worker older than
+ * the cycle in the answer sends none: the charge reads as of the current cycle, as before.
+ */
+function otherCycle(plan: BillingPlanView, charge: NextChargeView): boolean {
+  return (
+    plan.cycleMonths !== null &&
+    charge.cycleMonths !== undefined &&
+    charge.cycleMonths !== plan.cycleMonths
+  );
+}
+
+/**
+ * The card's line of a paid store: the day and the amount; with a change of cycle and no amount yet (the provider
+ * names it at the renewal), the day and the new cycle, never the old cycle's amount.
+ */
+function nextChargeSupport(
+  plan: BillingPlanView,
+  charge: NextChargeView
+): string {
+  const on = formatCalendarDate(charge.on);
+  if (charge.amount === null) {
+    return otherCycle(plan, charge)
+      ? `Próxima cobrança em ${on}, já no ciclo ${cycleName(charge.cycleMonths)}; o valor aparece na renovação.`
+      : `Próxima cobrança em ${on}.`;
+  }
+  return `Próxima cobrança em ${on}, ${formatBrlAmount(charge.amount)}.`;
 }
 
 /** The line of the payment that comes next, in the "Pagamento" block. */
@@ -171,13 +200,15 @@ export function paymentLines(plan: BillingPlanView): ChargeLine[] | null {
   const lines: ChargeLine[] = [
     { label: "Como paga", value: METHOD_NAMES[plan.method] },
   ];
+  const charge = plan.nextCharge;
   if (plan.cycleMonths !== null) {
+    // the amount sits beside the cycle only when the next charge is of this cycle
     lines.push({
       label: "Ciclo",
       value:
-        plan.nextCharge === null
+        charge === null || charge.amount === null || otherCycle(plan, charge)
           ? cycleName(plan.cycleMonths)
-          : `${cycleName(plan.cycleMonths)} · ${formatBrlAmount(plan.nextCharge.amount)}`,
+          : `${cycleName(plan.cycleMonths)} · ${formatBrlAmount(charge.amount)}`,
     });
   }
   if (plan.state === "grace") {
@@ -187,13 +218,29 @@ export function paymentLines(plan: BillingPlanView): ChargeLine[] | null {
     plan.state === "trialing" ? "Primeira cobrança" : "Próxima cobrança";
   if (plan.renewalCancelled) {
     lines.push({ label: "Próxima cobrança", value: "Nenhuma" });
-  } else if (plan.nextCharge !== null) {
-    lines.push({
-      label,
-      value: `${formatCalendarDate(plan.nextCharge.on)} · ${formatBrlAmount(plan.nextCharge.amount)}`,
-    });
+  } else if (charge !== null) {
+    lines.push({ label, value: nextChargeValue(plan, charge) });
   }
   return lines;
+}
+
+/** "{dia} · {valor}", with the cycle after it when the charge is of another cycle ("valor na renovação" without one). */
+function nextChargeValue(
+  plan: BillingPlanView,
+  charge: NextChargeView
+): string {
+  const on = formatCalendarDate(charge.on);
+  const other = otherCycle(plan, charge);
+  if (charge.amount === null) {
+    return other
+      ? `${on} · ${cycleName(charge.cycleMonths)} · valor na renovação`
+      : on;
+  }
+  const amount = formatBrlAmount(charge.amount);
+  // with a different cycle and an amount, only once a cycle-change command exists: a pending change carries no amount today
+  return other
+    ? `${on} · ${amount} · ${cycleName(charge.cycleMonths)}`
+    : `${on} · ${amount}`;
 }
 
 export interface UsageRow {
@@ -390,7 +437,7 @@ export interface OfferTerms {
 }
 
 /**
- * The box above the button (AC-12, amendment t268): with the trial, "Começar os 7 dias grátis" on the card and
+ * The box above the button (AC-12): with the trial, "Começar os 7 dias grátis" on the card and
  * "Começar o teste grátis" on Pix, which counts from the bank's approval; without it, "Assinar o Pro" and that the
  * trial was used. Never "sem cartão".
  */
@@ -510,7 +557,7 @@ export function checkoutReturnOf(search: string): CheckoutReturn | null {
     : null;
 }
 
-/** Every 5 s for up to 2 min, then "Atualizar" (design t268 v2, § 3, T-1). */
+/** Every 5 s for up to 2 min, then "Atualizar". */
 export const REREAD_EVERY_MS = 5000;
 export const REREAD_FOR_MS = 120_000;
 
@@ -570,6 +617,32 @@ export interface Refusal {
 
 const CONNECTION_TEXT =
   "A conexão falhou antes da resposta. Nada foi cobrado. Confira a conexão e tente de novo.";
+
+/**
+ * `billing_provider_unavailable`, the Worker's 503 with no reason and the cut of the platform may come after the
+ * provider created the checkout, and the screen cannot tell. Creating it never charges (the card is typed on the
+ * provider's page; the Pix is authorized in the bank), so "Nada foi cobrado" is true; what is unknown is whether
+ * the page exists, and trying again discards the one left.
+ */
+const CHECKOUT_UNCONFIRMED_TEXT =
+  "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.";
+
+/**
+ * `previous_checkout_unverified`: the provider did not answer whether the checkout the store had before was paid.
+ * That one may have been approved with its webhook late, so unlike `CHECKOUT_UNCONFIRMED_TEXT` this text never says
+ * nothing was charged; "Atualizar" reads the plan, where the subscription shows up if it was approved.
+ */
+const PREVIOUS_CHECKOUT_UNVERIFIED_TEXT =
+  "Não deu para confirmar se o pagamento que você começou antes foi aprovado. Toque em Atualizar: se foi, a assinatura aparece aqui. Se não, tente de novo.";
+
+/**
+ * `previous_renewal_cancel_unverified`: the provider did not confirm the cancellation of the renewal of the old
+ * subscription. It may have been made with the answer lost, so the text never says nothing changed; "Atualizar"
+ * reads the plan before trying again. The new subscription is never created before this step, so saying it did not
+ * start is safe; the old renewal may still be alive, so the text avoids "Nada foi cobrado" and a direct retry.
+ */
+const PREVIOUS_RENEWAL_CANCEL_UNVERIFIED_TEXT =
+  "A assinatura nova não começou. Não deu para confirmar o encerramento da anterior: toque em Atualizar para ver o plano antes de tentar de novo.";
 
 /** The text of each refusal of the checkout (AS-17) and of the read; the server's message where it has one. */
 export function checkoutRefusal(error: unknown): Refusal {
@@ -641,9 +714,21 @@ export function checkoutRefusal(error: unknown): Refusal {
       };
     case "billing_provider_unavailable":
       return {
-        reread: false,
+        reread: true,
         retry: true,
-        text: "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
+        text: CHECKOUT_UNCONFIRMED_TEXT,
+      };
+    case "previous_checkout_unverified":
+      return {
+        reread: true,
+        retry: true,
+        text: PREVIOUS_CHECKOUT_UNVERIFIED_TEXT,
+      };
+    case "previous_renewal_cancel_unverified":
+      return {
+        reread: true,
+        retry: false,
+        text: PREVIOUS_RENEWAL_CANCEL_UNVERIFIED_TEXT,
       };
     case "billing_not_configured":
     case "billing_self_service_off":
@@ -673,12 +758,8 @@ export function checkoutRefusal(error: unknown): Refusal {
     default:
       break;
   }
-  if (code === "SERVICE_UNAVAILABLE") {
-    return {
-      reread: false,
-      retry: true,
-      text: "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
-    };
+  if (code === "SERVICE_UNAVAILABLE" || isPlatformCut(error)) {
+    return { reread: true, retry: true, text: CHECKOUT_UNCONFIRMED_TEXT };
   }
   return {
     reread: true,

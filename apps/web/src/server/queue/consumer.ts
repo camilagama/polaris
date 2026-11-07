@@ -46,6 +46,12 @@ export interface QueueBatch {
 
 export type QueueHandler = (envelope: QueueEnvelope) => Promise<void>;
 
+/**
+ * Every type of the outbox has its handler: what the Worker binds (a type with none spins on `queue_handler_missing`
+ * until the dead-letter queue). The consumer itself takes a partial map, so a test can bind only the type it exercises.
+ */
+export type QueueHandlers = Record<OutboxEventType, QueueHandler>;
+
 /** A failure that a retry cannot fix: the message is acknowledged instead of retried. */
 export class PermanentHandlerError extends Error {
   readonly code: string;

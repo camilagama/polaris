@@ -179,9 +179,15 @@ describe("review state", () => {
   });
 
   it("has every class decided by the user on 19/10/2026, but the one created after it", () => {
-    // the trial per person (ADR 0101) and the notices of a closure (ADR 0102, amended) came later: their period waits
-    // for the responsible person
-    const undecided = ["billing_trial_claims", "closure_notice"];
+    // the trial per person (ADR 0101), the notices of a closure (ADR 0102, amended), the notices of billing (ADR 0104)
+    // and the reports of errors of the browser (ADR 0098, amended) came later: their period waits for the responsible
+    // person
+    const undecided = [
+      "billing_notices",
+      "billing_trial_claims",
+      "client_error_log",
+      "closure_notice",
+    ];
     for (const policy of RETENTION_POLICIES) {
       if (undecided.includes(policy.class)) {
         expect(policy.review, policy.class).toEqual({
@@ -358,7 +364,7 @@ describe("approved periods", () => {
   it("count calendar months, moving a day that does not exist to the next month", () => {
     const expiry = (from: string) =>
       retentionExpiry("auth_security_audit", new Date(from)).toISOString();
-    // 29/02 of a leap year + 12 months: the next February has no 29th, so it ends in March
+    // `29/02` of a leap year + 12 months: the next February has no 29th, so it ends in March
     expect(expiry("2028-02-29T10:00:00.000Z")).toBe("2029-03-01T10:00:00.000Z");
     // an ordinary day keeps its day and its time
     expect(expiry("2026-10-18T23:59:59.000Z")).toBe("2027-10-18T23:59:59.000Z");
@@ -375,7 +381,7 @@ describe("approved periods", () => {
     expect(() => approvedRetention("auth_security_audit")).toThrow(
       RetentionNotApprovedError
     );
-    // 29/02 of a leap year plus 12 months: 2027 has no 29th of February, so it ends in March
+    // `29/02` of a leap year plus 12 months: 2027 has no 29th of February, so it ends in March
     expect(
       retentionExpiry(
         "auth_security_audit",
@@ -409,7 +415,7 @@ describe("approved periods", () => {
     expect(() => approvedRetention("auth_access_log")).toThrow(
       RetentionNotApprovedError
     );
-    // 31/08 + 6 months is 03/03 (February has no 31st), and the margin of 30 days comes after it
+    // `31/08` + 6 months is `03/03` (February has no 31st), and the margin of 30 days comes after it
     expect(
       retentionExpiry(
         "auth_access_log",
@@ -454,7 +460,7 @@ describe("approved periods", () => {
         new Date("2026-10-19T10:00:00.000Z")
       ).toISOString()
     ).toBe("2031-10-19T10:00:00.000Z");
-    // the amendment of 21/10/2026 (10 years became 5) rests on the right to defend a claim, and the rule says the risk it accepts
+    // the amendment (10 years became 5) rests on the right to defend a claim, and the rule says the risk it accepts
     expect(policy.legalSources).toContain(
       "LGPD (Lei 13.709/2018), art. 7º, VI"
     );
@@ -515,7 +521,7 @@ describe("approved periods", () => {
   });
 
   it("keep the tenant's operational data until the purge, which no job expires", () => {
-    // decision of 18/10/2026 (ADR 0081): Polaris is the processor, the purge removes them after the 90 days of the closure
+    // ADR 0081: Polaris is the processor, the purge removes them after the 90 days of the closure
     for (const retentionClass of [
       "sales_records",
       "inventory_ledger",
@@ -534,7 +540,7 @@ describe("approved periods", () => {
   });
 
   it("keep the tenant's audit past the purge, proposed by class, with the legal review pending", () => {
-    // decision of 19/10/2026 (ADR 0081 amended): no row of the audit leaves in the purge; only a period removes it
+    // ADR 0081 amended: no row of the audit leaves in the purge; only a period removes it
     expect(TENANT_AUDIT_RETENTION.security).toEqual({
       from: "event",
       months: 12,
@@ -585,6 +591,47 @@ describe("approved periods", () => {
     expect(() => approvedRetention("billing_events")).toThrow(
       RetentionNotApprovedError
     );
+  });
+});
+
+describe("the notices of billing", () => {
+  it("are a proposed class, with no job and no period applied", () => {
+    const policy = retentionPolicy("billing_notices");
+    expect(policy.class).toBe("billing_notices");
+    expect(policy.basis).toBe("decisao");
+    expect(policy.status).toBe("proposta");
+    expect(policy.period).toEqual({ kind: "undecided" });
+    expect(policy.review).toEqual({ state: "pendente_juridica" });
+    expect("job" in policy).toBe(false);
+    expect(policy.legalReview).toBeUndefined();
+    expect(RETENTION_PURGE_JOBS.map((job) => job.class)).not.toContain(
+      "billing_notices"
+    );
+    // nothing reads a period of a proposed class as approved
+    expect(() => approvedRetention("billing_notices")).toThrow(
+      RetentionNotApprovedError
+    );
+    expect(() => retentionExpiry("billing_notices", new Date())).toThrow(
+      RetentionNotApprovedError
+    );
+  });
+
+  it("say what they keep, where the rule comes from and the proposed period, 12 months from recorded_at", () => {
+    const policy = retentionPolicy("billing_notices");
+    expect(policy.data.join(" ")).toContain("billing_notices");
+    expect(policy.sources).toEqual([
+      "ADR 0079",
+      "ADR 0104",
+      "docs/business-rules/privacy.md",
+      "docs/runbooks/email-auth.md",
+    ]);
+    if (policy.status !== "proposta") {
+      throw new Error("billing_notices must stay proposed");
+    }
+    expect(policy.proposed).toContain("12 meses contados de `recorded_at`");
+    expect(policy.proposed).toContain("legal hold");
+    expect(policy.proposed).toContain("operacional e não fiscal");
+    expect(policy.proposed).toContain("nenhum job existe");
   });
 });
 

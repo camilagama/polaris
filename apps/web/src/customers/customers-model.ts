@@ -1,5 +1,11 @@
 import type { CustomerReadModel } from "@polaris/contracts";
-import { legalAcceptanceMessage, rpcErrorCode } from "../lib/rpc-error";
+import { searchKey } from "../catalog/product-search-model";
+import {
+  CHANGE_FAULT_UNKNOWN,
+  commonFailureMessage,
+  legalAcceptanceMessage,
+  rpcErrorCode,
+} from "../lib/rpc-error";
 import type { PendingCustomer } from "../offline/customer-create";
 import type { PendingCustomerUpdate } from "../offline/customer-update";
 import type { CustomerDraft } from "./customer-draft";
@@ -31,6 +37,51 @@ const MOBILE_OR_LANDLINE = /^(\d\d)(\d{4,5})(\d{4})$/;
  */
 export function formatCustomerPhone(phone: string): string {
   return phone.replace(MOBILE_OR_LANDLINE, "($1) $2-$3");
+}
+
+const NOT_DIGIT = /\D/g;
+const PHONE_TYPED = /^[\d\s().+-]+$/;
+/** "55" before a DDD and 8 or 9 digits: a phone pasted with the country code, kept here without it. */
+const BRAZIL_PREFIXED = /^55(\d{10,11})$/;
+
+const TYPED_COUNTRY_CODE = /^\+55/;
+
+/**
+ * A typed "+55" is the country code whatever follows it, so a partial "+55 11" looks for "11". Without the "+", 55 is
+ * a real area code (RS) and only a full phone of 12 or 13 digits loses it.
+ */
+function withoutCountryCode(typed: string): string {
+  const digits = typed.replace(NOT_DIGIT, "");
+  if (TYPED_COUNTRY_CODE.test(typed.trim())) {
+    return digits.slice(2);
+  }
+  return BRAZIL_PREFIXED.exec(digits)?.[1] ?? digits;
+}
+
+/**
+ * The customers whose name, phone or e-mail has the typed text (an empty text keeps them all), in the order they
+ * came. The name and the e-mail ignore accents and case; a query made of digits and phone marks compares digits only,
+ * so "(11) 9000", "119000" and "11 9000" find the same customer.
+ */
+export function filterCustomers<
+  T extends Pick<CustomerReadModel, "email" | "name" | "phone">,
+>(customers: readonly T[], query: string): T[] {
+  const key = searchKey(query);
+  if (key === "") {
+    return [...customers];
+  }
+  // only a query typed as a phone compares digits: "Loja 2" is a name, not the phone digit 2
+  const digits = PHONE_TYPED.test(query.trim())
+    ? withoutCountryCode(query)
+    : "";
+  return customers.filter(
+    (customer) =>
+      searchKey(customer.name).includes(key) ||
+      (customer.email !== null && searchKey(customer.email).includes(key)) ||
+      (digits !== "" &&
+        customer.phone !== null &&
+        customer.phone.replace(NOT_DIGIT, "").includes(digits))
+  );
 }
 
 export function hasCustomerContact(draft: CustomerDraft): boolean {
@@ -71,12 +122,17 @@ export function customerErrorMessage(
   ) {
     return "Este cliente já tem uma alteração ou um cadastro aguardando envio. Espere o envio ou resolva em Pendências.";
   }
-  const unaccepted = legalAcceptanceMessage(
-    error,
-    action === "load" ? "os clientes" : undefined
-  );
-  if (unaccepted !== undefined) {
-    return unaccepted;
+  // the duplicate check is a read: a cut of it is no write that may have been saved
+  const common =
+    action === "duplicate-check"
+      ? legalAcceptanceMessage(error)
+      : commonFailureMessage(
+          error,
+          action === "load" ? "os clientes" : undefined,
+          { directWrite: action !== "load" }
+        );
+  if (common !== undefined) {
+    return common;
   }
   const code = rpcErrorCode(error);
   if (code === "UNAUTHORIZED") {
@@ -101,7 +157,9 @@ export function customerErrorMessage(
     return "Não foi possível verificar possíveis clientes repetidos. Tente novamente antes de salvar.";
   }
   if (code === "SERVICE_UNAVAILABLE") {
-    return "A lista de clientes está temporariamente indisponível. Tente novamente.";
+    return action === "load"
+      ? "A lista de clientes está temporariamente indisponível. Tente novamente."
+      : CHANGE_FAULT_UNKNOWN;
   }
   if (action === "load") {
     return "Não foi possível carregar os clientes. Tente novamente.";

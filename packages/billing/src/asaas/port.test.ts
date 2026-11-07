@@ -1,5 +1,5 @@
 import { paidPeriodEndsAt } from "@polaris/domain/billing/provider-period";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FetchInit, FetchLike } from "../http";
 import type { PrepareSubscriptionInput } from "../provider-port";
 import {
@@ -544,6 +544,68 @@ describe("refundCurrentPeriod", () => {
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
 
+  it.each(["REFUND_REQUESTED", "REFUND_IN_PROGRESS", "REFUNDED"])(
+    "never refunds again a charge of the period in force already in %s, nor runs the hook",
+    async (status) => {
+      const { calls, fetch } = fakeAsaas(
+        ...withCharges(payment({ due: "2026-10-19", id: "pay_new001", status }))
+      );
+      const beforeRefund = vi.fn(() => Promise.resolve());
+      await expect(
+        portWith(fetch).refundCurrentPeriod(
+          CHECKOUT_ID,
+          NOW,
+          null,
+          "any_paid",
+          {
+            beforeRefund,
+          }
+        )
+      ).resolves.toBe("nothing_to_refund");
+      expect(beforeRefund).not.toHaveBeenCalled();
+      expect(calls.some((call) => call.method === "POST")).toBe(false);
+    }
+  );
+
+  it("runs the hook with the amount of the charge it found, and refunds that charge only after it", async () => {
+    const { calls, fetch } = fakeAsaas(
+      ...withCharges(
+        payment({ due: "2026-10-19", id: "pay_new001", status: "CONFIRMED" })
+      )
+    );
+    const seen: { amount: string; requestsBefore: number }[] = [];
+    await expect(
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid", {
+        beforeRefund: (charge) => {
+          seen.push({
+            amount: charge.amount,
+            requestsBefore: calls.filter((call) => call.method === "POST")
+              .length,
+          });
+          return Promise.resolve();
+        },
+      })
+    ).resolves.toBe("refund_requested");
+    expect(seen).toEqual([{ amount: "24.90", requestsBefore: 0 }]);
+    expect(
+      calls.filter((call) => call.method === "POST").map((call) => call.url)
+    ).toEqual(["/payments/pay_new001/refund"]);
+  });
+
+  it("asks for no refund when the hook throws", async () => {
+    const { calls, fetch } = fakeAsaas(
+      ...withCharges(
+        payment({ due: "2026-10-19", id: "pay_new001", status: "CONFIRMED" })
+      )
+    );
+    await expect(
+      portWith(fetch).refundCurrentPeriod(CHECKOUT_ID, NOW, null, "any_paid", {
+        beforeRefund: () => Promise.reject(new Error("amount_changed")),
+      })
+    ).rejects.toThrow("amount_changed");
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
   it("does not refund a charge whose period is over", async () => {
     const { calls, fetch } = fakeAsaas(
       ...withCharges(
@@ -576,7 +638,7 @@ describe("refundCurrentPeriod", () => {
 });
 
 describe("discardCheckout", () => {
-  // the shape of the sandbox answers (19/10/2026): 200 with CANCELED, then a 400 for the same checkout
+  // the shape of the sandbox answers: 200 with CANCELED, then a 400 for the same checkout
   const cancelled = `{"id":"${CHECKOUT_ID}","status":"CANCELED"}`;
   const alreadyCancelled =
     '{"errors":[{"code":"invalid_action","description":"Checkout já cancelado."}]}';

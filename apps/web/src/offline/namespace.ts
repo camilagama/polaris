@@ -18,6 +18,12 @@ export interface LocalNamespace {
   userId: string;
 }
 
+/**
+ * `LocalNamespace.key` as the browser state that follows one user's queue is keyed by it: a different type from a bare
+ * string, so a store or user id cannot be passed in its place.
+ */
+export type NamespaceKey = string & { readonly __namespaceKey: unique symbol };
+
 const NAMESPACE_VERSION = "v1";
 
 function hex(bytes: Uint8Array): string {

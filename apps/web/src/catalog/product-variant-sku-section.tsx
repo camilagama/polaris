@@ -12,7 +12,7 @@ import {
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { rpcErrorCode } from "../lib/rpc-error";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { ProductTextField } from "./product-fields";
 import {
   VariantFieldRow,
@@ -24,6 +24,7 @@ import {
   duplicateSkuMessage,
   isDuplicateSkuError,
   type ProductVariantReadModel,
+  skuLengthError,
   variantLabel,
   variantSkuErrorMessage,
 } from "./product-variants-model";
@@ -64,7 +65,10 @@ function SkuRow({
     setSku(variant.sku ?? "");
   }
   const inputRef = useRef<HTMLInputElement>(null);
-  useReportUnsentWork(sku !== (variant.sku ?? ""));
+  useHoldSwap(sku !== (variant.sku ?? ""));
+  // no native maxLength: it would cut a pasted code in silence; the whole text stays and the field says the count
+  const lengthError = skuLengthError(sku);
+  const shownError = error ?? lengthError ?? undefined;
   // the refused SKU is said at this field, and the focus goes to it (the row is disabled while the save is in flight)
   useEffect(() => {
     if (error) {
@@ -75,12 +79,15 @@ function SkuRow({
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      if (lengthError) {
+        return;
+      }
       const answered = await onSave(variant.id, sku);
       if (answered !== undefined) {
         setSku(answered ?? "");
       }
     },
-    [onSave, sku, variant.id]
+    [lengthError, onSave, sku, variant.id]
   );
   const handleChange = useCallback(
     (value: string) => {
@@ -92,18 +99,23 @@ function SkuRow({
 
   return (
     <VariantFieldRow
+      blocked={lengthError !== null}
       buttonLabel="Salvar SKU"
       disabled={disabled}
       error={
-        error
-          ? { id: `product-variant-sku-${variant.id}-error`, text: error }
+        shownError
+          ? {
+              id: `product-variant-sku-${variant.id}-error`,
+              live: error ? "assertive" : "polite",
+              text: shownError,
+            }
           : undefined
       }
       onSubmit={handleSubmit}
     >
       <ProductTextField
         disabled={disabled}
-        error={error}
+        error={shownError}
         errorOutside
         id={`product-variant-sku-${variant.id}`}
         inputRef={inputRef}

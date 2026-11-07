@@ -26,7 +26,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The owner's read of the plan (`billing.readPlan`, ADR 0104 decision 2, PR C of design t268 v2) on a real
+ * The owner's read of the plan (`billing.readPlan`, ADR 0104 decision 2) on a real
  * PostgreSQL 18:
  *   1. the tenant's part, as the tenant role with `billing:manage`: the usage counted as the writes count it (an
  *      archived product's variants and images count, a deleted one's do not), what the store keeps, the active prices
@@ -292,7 +292,7 @@ async function run() {
     // the turn of the year
     await setSaleDays("2025-12-31", "2025-12-31");
     assert.equal(await monthsAt("2026-01-01T15:00:00Z"), 2);
-    // the store's midnight, not UTC's: 22:30 of 31/10 in São Paulo is still October, 00:30 of 01/11 is November
+    // the store's midnight, not UTC's: 22:30 of `31/10` in São Paulo is still October, 00:30 of `01/11` is November
     await setSaleDays("2026-10-31", "2026-10-31");
     assert.equal(await monthsAt("2026-11-01T01:30:00Z"), 1);
     assert.equal(await monthsAt("2026-11-01T03:30:00Z"), 2);
@@ -376,10 +376,12 @@ async function run() {
     assert.deepEqual(empty, {
       accessEndsAt: null,
       cancelAtPeriodEnd: false,
+      currentChargeAmount: null,
       cycleMonths: null,
       firstChargeAmount: null,
       firstChargeAt: null,
       firstChargeOn: null,
+      pendingCycleMonths: null,
       priceAmount: null,
       provider: null,
       refundRequestedAt: null,
@@ -439,13 +441,27 @@ async function run() {
       {
         expect: {
           cancelAtPeriodEnd: false,
+          currentChargeAmount: null,
           firstChargeAmount: "24.90",
           firstChargeAt,
+          pendingCycleMonths: null,
           provider: "asaas",
           state: "active",
         },
         label: "active",
         set: "state = 'active', access_ends_at = now() + interval '28 days', cycle_months = 1, provider = 'asaas', provider_ref = $2, price_amount = 24.90, price_id = 'pro-1', first_charge_on = '2026-10-10', first_charge_at = $3, first_charge_amount = 24.90",
+      },
+      {
+        expect: {
+          currentChargeAmount: "29.90",
+          cycleMonths: 1,
+          firstChargeAmount: "24.90",
+          pendingCycleMonths: 12,
+          priceAmount: "24.90",
+          state: "active",
+        },
+        label: "active, renewed at another amount, a change of cycle waiting",
+        set: "state = 'active', access_ends_at = now() + interval '28 days', cycle_months = 1, pending_cycle_months = 12, provider = 'asaas', provider_ref = $2, price_amount = 24.90, price_id = 'pro-1', first_charge_on = '2026-10-10', first_charge_at = $3, first_charge_amount = 24.90, current_charge_amount = 29.90, current_charge_period_ends_at = now() + interval '28 days'",
       },
       {
         expect: {
@@ -513,7 +529,7 @@ async function run() {
       );
     }
     tests.push(
-      "the billing role reads each state with the columns of 0100: the price and the first charge as text with two decimals, the moments as dates, the refund memory"
+      "the billing role reads each state with the columns of 0100 and 0118: the price, the first charge and the charge in force as text with two decimals, the pending cycle, the moments as dates, the refund memory"
     );
 
     console.log(

@@ -8,6 +8,7 @@ import {
 } from "@polaris/domain/catalog/media";
 import {
   ORGANIZATION_PURGE_LEASE_SECONDS,
+  ORGANIZATION_PURGE_STALLED_ATTEMPTS,
   type ORGANIZATION_PURGE_STEPS,
   organizationExportPrefix,
   organizationMediaPrefix,
@@ -130,6 +131,44 @@ function failureCode(step: PurgeStep, error: unknown): string {
 }
 
 /**
+ * What a failed step writes. The organization's ID is opaque; nothing of the error (which may quote a key) is logged,
+ * only the code written for it. A refusal the database names (a legal hold, the closure period) is a purge held on
+ * purpose (`rejected`, a warning that says why); any other failure is an error, and from the third attempt on it is
+ * also `organization_purge_stalled`, the event the alert reads (docs/runbooks/alertas.md).
+ */
+function logStepFailure(
+  claimed: ClaimedOrganizationPurge,
+  step: PurgeStep,
+  code: string
+): void {
+  const event = {
+    attempt: claimed.attempt,
+    job: JOB,
+    operation: `${JOB}.${step}`,
+    organizationId: opaqueId(claimed.organizationId),
+    reason: code,
+  } as const;
+  if (NAMED_REFUSALS.has(code)) {
+    logger.warn("organization_purge_step_failed", {
+      ...event,
+      outcome: "rejected",
+    });
+    return;
+  }
+  logger.error("organization_purge_step_failed", {
+    ...event,
+    outcome: "failure",
+  });
+  if (claimed.attempt >= ORGANIZATION_PURGE_STALLED_ATTEMPTS) {
+    logger.error("organization_purge_stalled", {
+      ...event,
+      outcome: "failure",
+      phase: claimed.phase,
+    });
+  }
+}
+
+/**
  * One purge, step by step (ADR 0081). The storage goes first, and a failure there stops before the
  * database: once the rows are gone only the organization's ID (kept by the deletion ledger) finds what
  * is left. Then the rows, in one transaction that writes the tombstone first, and a second sweep of the
@@ -173,27 +212,7 @@ async function purgeOne(
   } catch (error: unknown) {
     report.failed += 1;
     const code = failureCode(step, error);
-    // the organization's ID is opaque; nothing of the error (which may quote a key) is logged, only the code
-    // written for it. A refusal the database names (a legal hold, the closure period) is a purge held on
-    // purpose (`rejected`, a warning that says why); any other failure is an error
-    const event = {
-      attempt: claimed.attempt,
-      job: JOB,
-      organizationId: opaqueId(organizationId),
-      reason: code,
-      step,
-    } as const;
-    if (NAMED_REFUSALS.has(code)) {
-      logger.warn("organization_purge_step_failed", {
-        ...event,
-        outcome: "rejected",
-      });
-    } else {
-      logger.error("organization_purge_step_failed", {
-        ...event,
-        outcome: "failure",
-      });
-    }
+    logStepFailure(claimed, step, code);
     // the purge stays held until its lease ends, so this run does not take it again; recording can fail too
     await client
       .recordOrganizationPurgeFailure(organizationId, code)

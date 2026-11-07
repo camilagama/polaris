@@ -36,7 +36,7 @@ import {
 } from "./gate-hosts";
 
 /**
- * Operator script (t277, item 3 of the desenho-t269 round): fills a QA store
+ * Operator script: fills a QA store
  * of staging with the data the Início needs to be measured and checked. It
  * runs ONLY on an organization whose name starts with `qa-`, ONLY on the
  * staging branch (marker `polaris.environment=staging`, ADR 0097, on a direct
@@ -50,7 +50,7 @@ import {
  * - `--variants-without-stock` products with no stock (120 by default; use
  *   99, 100 and 101 on three stores for the borders of AC-13);
  * - `--sales-per-day` sales (20 or 50) on each of the last `--days` days (at
- *   most 60), one to three items each; every 25th sale has one unit returned
+ *   most 366), one to three items each; every 25th sale has one unit returned
  *   and every 40th is cancelled;
  * - one rent expense per month of the period;
  * - with `--goals`: a goal already reached, one whose period ended without
@@ -66,26 +66,31 @@ import {
  * and running the seed again on that store marks it again.
  *
  * The owner may date a sale at most 30 days back (ADR 0021). A sale of an
- * older day is confirmed 30 days later and then moved back by 30 days with
- * an UPDATE of `sales.occurred_at` and `sales.occurred_on` only (the stock
- * ledger is append-only and keeps the date of the confirmation). That is a
- * QA fixture of a `qa-` store, never something to do with real data.
+ * older day (up to 365 days back, so 366 days with today) is confirmed inside
+ * that window, `back mod 30` days ago, and then moved back by exactly the
+ * days that are missing (a multiple of 30) with an UPDATE of
+ * `sales.occurred_at` and `sales.occurred_on` only, one UPDATE per number of
+ * days (the stock ledger is append-only and keeps the date of the
+ * confirmation, and a return or a cancellation keeps the day it was made, the
+ * day of the run). That is a QA fixture of a `qa-` store, never something to
+ * do with real data.
  *
  * Usage (from packages/db):
  *   POLARIS_SEED_DATABASE_URL=<direct URL of the staging branch, owner role> \
  *   bun scripts/seed-qa-store.ts --organization <id> --user <owner user id> \
- *     [--sales-per-day 20] [--days 60] [--variants-without-stock 120] \
+ *     [--sales-per-day 20] [--days 60 up to 366] [--variants-without-stock 120] \
  *     [--goals] [--apply] [--local]
  *
  * Running it twice adds a second set (the names carry a run tag). A run
  * interrupted before the end leaves what it confirmed so far, and the older
- * sales it had not moved back yet stay dated 30 days later: start again on a
- * new `qa-` store rather than on the same one.
+ * sales it had not moved back yet stay dated inside the owner's window: start
+ * again on a new `qa-` store rather than on the same one.
  */
 
 const QA_PREFIX = "qa-";
 const OWNER_WINDOW_DAYS = 30;
-export const MAX_SEED_DAYS = 60;
+const DEFAULT_SEED_DAYS = 60;
+export const MAX_SEED_DAYS = 366;
 /** Upper bounds that only catch a typo (the measure uses 330 sales a day for a long history). */
 const MAX_SALES_PER_DAY = 400;
 const MAX_VARIANTS_WITHOUT_STOCK = 500;
@@ -221,15 +226,43 @@ function addDays(date: string, days: number): string {
 
 /**
  * The instant of the `index`-th sale of a day: 15:00 UTC plus `index` seconds
- * (10:00 to 12:00 in the Brazilian time zones), or a few minutes ago for today.
+ * (10:00 to 12:00 in the Brazilian time zones). For today it is a few seconds
+ * ago, but never later than that slot: a long run that crosses the store's
+ * midnight keeps today's sales on the day it planned.
  */
-function saleInstant(date: string, today: string, index: number): string {
+export function saleInstant(
+  date: string,
+  today: string,
+  index: number
+): string {
   if (date === today) {
-    return new Date(Date.now() - (index + 1) * 1000).toISOString();
+    return new Date(
+      Math.min(
+        Date.parse(`${date}T15:00:00.000Z`) + index * 1000,
+        Date.now() - (index + 1) * 1000
+      )
+    ).toISOString();
   }
   return new Date(
     Date.parse(`${date}T15:00:00.000Z`) + index * 1000
   ).toISOString();
+}
+
+/**
+ * Where a sale of the day `back` days ago is confirmed and how far it is moved
+ * back afterwards. The confirmation is always inside the owner's window
+ * (0 to 29 days ago); the move is what is missing to reach the day, so
+ * `confirmOn - moveBack` is always the day of the sale.
+ */
+export function salePlacement(
+  today: string,
+  back: number
+): { confirmOn: string; moveBack: number } {
+  const confirmBack = back % OWNER_WINDOW_DAYS;
+  return {
+    confirmOn: addDays(today, -confirmBack),
+    moveBack: back - confirmBack,
+  };
 }
 
 interface Sellable {
@@ -428,14 +461,11 @@ async function seedSales(
     returnedSales: 0,
     sales: 0,
   };
-  const toMoveBack: string[] = [];
+  const toMoveBack = new Map<number, string[]>();
   const archivedDay = options.days - 1;
   const deletedDay = Math.min(10, options.days - 1);
   for (let back = options.days - 1; back >= 0; back -= 1) {
-    const date = addDays(today, -back);
-    // an older day than the owner's window is confirmed 30 days later and moved back
-    const moved = back >= OWNER_WINDOW_DAYS;
-    const confirmOn = moved ? addDays(date, OWNER_WINDOW_DAYS) : date;
+    const { confirmOn, moveBack } = salePlacement(today, back);
     for (let index = 0; index < options.salesPerDay; index += 1) {
       const items = saleItems(catalog.sellable, random);
       // the archived product sells on the first day; the deleted one sells out in three sales
@@ -470,26 +500,32 @@ async function seedSales(
           requestId: null,
         })
       );
-      if (moved) {
-        toMoveBack.push(confirmed.sale.id);
+      if (moveBack > 0) {
+        toMoveBack.set(moveBack, [
+          ...(toMoveBack.get(moveBack) ?? []),
+          confirmed.sale.id,
+        ]);
       }
       await compensate(as, confirmed.sale.id, counter, counts);
     }
   }
-  if (toMoveBack.length > 0) {
+  let expected = 0;
+  for (const [days, ids] of toMoveBack) {
+    expected += ids.length;
+    // biome-ignore lint/performance/noAwaitInLoops: one UPDATE per number of days, at most 13
     const result = await pool.query(
       `UPDATE public.sales
           SET occurred_at = occurred_at - make_interval(days => $3),
               occurred_on = occurred_on - $3::int
         WHERE organization_id = $1 AND id = ANY($2::uuid[])`,
-      [options.organizationId, toMoveBack, OWNER_WINDOW_DAYS]
+      [options.organizationId, ids, days]
     );
-    counts.movedBack = result.rowCount ?? 0;
-    if (counts.movedBack !== toMoveBack.length) {
-      throw new Error(
-        `seed failed: ${counts.movedBack} of ${toMoveBack.length} older sales were moved back`
-      );
-    }
+    counts.movedBack += result.rowCount ?? 0;
+  }
+  if (counts.movedBack !== expected) {
+    throw new Error(
+      `seed failed: ${counts.movedBack} of ${expected} older sales were moved back`
+    );
   }
   return counts;
 }
@@ -636,7 +672,7 @@ async function main() {
     throw new Error("seed refused: a plain postgres URL is required");
   }
   const options: SeedOptions = {
-    days: Number(flag("days") ?? MAX_SEED_DAYS),
+    days: Number(flag("days") ?? DEFAULT_SEED_DAYS),
     goals: process.argv.includes("--goals"),
     organizationId: flag("organization") ?? "",
     salesPerDay: Number(flag("sales-per-day") ?? 20),

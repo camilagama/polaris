@@ -12,13 +12,16 @@ import {
   type LogoutFlowResult,
   startLogout,
 } from "./logout-flow";
+import type { OfflineRuntime } from "./offline-runtime";
+import {
+  endsOnlySession,
+  logoutDependencies,
+  plainLogoutDependencies,
+  signOutFailedMessage,
+} from "./logout-dependencies";
 import { useOfflineRuntime } from "./runtime-context";
 
-/**
- * "Sair" (ADR 0039): protects the queue, then ends the session. It only exists
- * while the offline runtime is on, because that is when a device holds work no
- * one else has.
- */
+/** Ends the session on the server: it is the sign-out that clears the cookie. */
 async function signOutOnServer(): Promise<void> {
   // through the connection: a portal's 200 (no Worker mark) never passes for a cleared cookie
   const response = await browserConnection.fetch("/api/auth/sign-out", {
@@ -32,7 +35,7 @@ async function signOutOnServer(): Promise<void> {
   }
 }
 
-/** Revokes this installation on the server (ADR 0048, emenda de 22/10); the flow decides what a failure means. */
+/** Revokes this installation on the server (ADR 0048, emenda); the flow decides what a failure means. */
 async function revokeCurrentDevice(
   deviceId: string
 ): Promise<{ endedCurrentSession: boolean }> {
@@ -42,42 +45,60 @@ async function revokeCurrentDevice(
   return { endedCurrentSession };
 }
 
+function dependenciesFor(
+  runtime: OfflineRuntime | null,
+  destination: LeavePath,
+  endsWithoutRuntime: boolean
+) {
+  const effects = {
+    leave: () => leaveAfterSignOut(destination),
+    revoke: revokeCurrentDevice,
+    signOut: signOutOnServer,
+  };
+  return endsOnlySession(runtime, endsWithoutRuntime)
+    ? Promise.resolve(plainLogoutDependencies(effects))
+    : logoutDependencies(runtime, effects);
+}
+
+interface LogoutOptions {
+  /**
+   * Without the offline runtime the control hides (there is no work of the device to protect). A screen that
+   * must always offer a way out (the first access) sets this: the session then just ends.
+   */
+  endsWithoutRuntime?: boolean | undefined;
+}
+
 /**
  * The protected logout as a hook: "Sair" uses it to go home, the devices screen
  * to go to the sign-in screen (its "Entrar de novo" while the session is still
  * alive). Same guard, same dialog, only the destination changes.
  */
-export function useLogout(destination: LeavePath) {
+export function useLogout(
+  destination: LeavePath,
+  { endsWithoutRuntime = false }: LogoutOptions = {}
+) {
   const runtime = useOfflineRuntime();
   const [blocked, setBlocked] = useState<BlockedWorkspace[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const dependencies =
-    useCallback(async (): Promise<LogoutFlowDependencies | null> => {
-      // before anything else: protecting the queue purges the workspaces, and the device is revoked after that
-      const deviceId = runtime?.currentDeviceId() ?? null;
-      const workspaces = (await runtime?.logoutWorkspaces()) ?? [];
-      return runtime && workspaces.length > 0
-        ? {
-            device: {
-              forget: () => runtime.forgetDevice(),
-              id: deviceId,
-              isOnline: () => navigator.onLine,
-              revoke: revokeCurrentDevice,
-            },
-            leave: () => leaveAfterSignOut(destination),
-            signOut: signOutOnServer,
-            workspaces,
-          }
-        : null;
-    }, [destination, runtime]);
+  const dependencies = useCallback(
+    () => dependenciesFor(runtime, destination, endsWithoutRuntime),
+    [destination, endsWithoutRuntime, runtime]
+  );
 
   const run = useCallback(
     async (
       action: (deps: LogoutFlowDependencies) => Promise<LogoutFlowResult>
     ) => {
-      const deps = await dependencies();
+      // cleared first so that the same message again is a new one, and is brought to view again
+      setMessage(null);
+      let deps: LogoutFlowDependencies | null = null;
+      try {
+        deps = await dependencies();
+      } catch {
+        // a namespace that could not be opened to look at: same as one that could not be read
+      }
       if (!deps) {
         setMessage(
           "Não foi possível verificar o trabalho guardado neste aparelho agora. Tente de novo com conexão, depois que o app terminar de abrir."
@@ -93,7 +114,7 @@ export function useLogout(destination: LeavePath) {
         } else if (result.status === "sign_out_failed") {
           setBlocked(null);
           setMessage(
-            "Os dados deste aparelho foram apagados, mas não foi possível encerrar a sessão. Recarregue a página."
+            signOutFailedMessage(endsOnlySession(runtime, endsWithoutRuntime))
           );
         }
       } catch {
@@ -102,7 +123,7 @@ export function useLogout(destination: LeavePath) {
         setBusy(false);
       }
     },
-    [dependencies]
+    [dependencies, endsWithoutRuntime, runtime]
   );
 
   const handleLogout = useCallback(() => {
@@ -133,34 +154,30 @@ export type Logout = ReturnType<typeof useLogout>;
 
 interface LogoutNoticesProps {
   logout: Logout;
-  /**
-   * Called when the warning of the pending queue or a message appears, so a closed "Mais" sheet of the phone opens
-   * again: the answer may arrive after the person closed it.
-   */
-  onAttention?: (() => void) | undefined;
+  /** On the page of attention, where "Ver Pendências" would go nowhere. */
+  inAttentionPage?: boolean | undefined;
 }
 
 /**
  * What a logout has to say after "Sair": the message of a failure and the dialog of the work this device would lose.
- * It lives with the hook, never inside a menu that closes on the click (Rodrigo, 25/10, vale corrigir 1): the answer
+ * It lives with the hook, never inside a menu that closes on the click: the answer
  * may come after the menu has closed, and a logout that failed must never be silent.
  */
-export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
+export function LogoutNotices({
+  logout,
+  inAttentionPage = false,
+}: LogoutNoticesProps) {
   const { blocked, busy, message } = logout;
   const blockedRef = useRef<HTMLDivElement>(null);
-  const needsAttention = blocked !== null || message !== null;
+  const messageRef = useRef<HTMLParagraphElement>(null);
+  // the warning may open in a part of the page that scrolls: bring it to view, with focus
   useEffect(() => {
-    if (needsAttention) {
-      onAttention?.();
+    const shown = blocked ? blockedRef.current : messageRef.current;
+    if (shown) {
+      shown.scrollIntoView({ block: "nearest" });
+      shown.focus();
     }
-  }, [needsAttention, onAttention]);
-  // in the sidebar the warning opens below "Sair", in a narrow column that may scroll: bring it to view, with focus
-  useEffect(() => {
-    if (blocked) {
-      blockedRef.current?.scrollIntoView({ block: "nearest" });
-      blockedRef.current?.focus();
-    }
-  }, [blocked]);
+  }, [blocked, message]);
   return (
     <>
       {/* the menu that held "Sair" is closed by now: the state is said here, not only by a disabled item */}
@@ -170,12 +187,17 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
         </p>
       ) : null}
       {message ? (
-        <p className="m-0 text-destructive text-support" role="alert">
+        <p
+          className="focus-ring m-0 text-destructive text-support"
+          ref={messageRef}
+          role="alert"
+          tabIndex={-1}
+        >
           {message}
         </p>
       ) : null}
       {blocked ? (
-        <div className="outline-none" ref={blockedRef} tabIndex={-1}>
+        <div className="focus-ring" ref={blockedRef} tabIndex={-1}>
           <LogoutDialog
             blocked={blocked}
             busy={busy}
@@ -183,7 +205,7 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
             onCancel={logout.cancel}
             onDiscard={logout.discard}
             onRetry={logout.start}
-            onShowAttention={logout.showAttention}
+            onShowAttention={inAttentionPage ? undefined : logout.showAttention}
           />
         </div>
       ) : null}
@@ -192,55 +214,25 @@ export function LogoutNotices({ logout, onAttention }: LogoutNoticesProps) {
 }
 
 interface LogoutControlProps {
-  /**
-   * The logout of the one that holds the state, when the control may be unmounted and mounted again with it kept (the
-   * sidebar, when the width crosses 760 px in the middle of the flow). Without it the control has its own.
-   */
-  logout?: Logout | undefined;
-  /** See `LogoutNotices`. */
-  onAttention?: (() => void) | undefined;
   /** Why the person is signing out, when the next stop is the sign-in screen (AC-43). */
   reason?: SignInReason | undefined;
   /** Where to come back to after signing in again. Not valid, or no reason: "Sair" goes to the start. */
   returnTo?: string | undefined;
 }
 
-/** "Sair" as a button with its notices under it: the "Mais" sheet of the phone, the acceptance and Aparelhos. */
-export function LogoutControl({
-  logout,
-  onAttention,
-  reason,
-  returnTo,
-}: LogoutControlProps = {}) {
-  return logout ? (
-    <LogoutButton logout={logout} onAttention={onAttention} />
-  ) : (
-    <OwnLogoutControl
-      onAttention={onAttention}
-      reason={reason}
-      returnTo={returnTo}
-    />
-  );
-}
-
-function OwnLogoutControl({
-  onAttention,
-  reason,
-  returnTo,
-}: Omit<LogoutControlProps, "logout">) {
+/** "Sair" as a button with its notices under it, with a logout of its own: the acceptance and the closed store. */
+export function LogoutControl({ reason, returnTo }: LogoutControlProps = {}) {
   const logout = useLogout(
     reason ? logoutDestination({ reason, returnTo }) : "/"
   );
-  return <LogoutButton logout={logout} onAttention={onAttention} />;
+  return <LogoutButton logout={logout} />;
 }
 
-function LogoutButton({
-  logout,
-  onAttention,
-}: {
-  logout: Logout;
-  onAttention?: (() => void) | undefined;
-}) {
+/**
+ * "Sair" (ADR 0039) protects the queue, then ends the session. The button only exists while the offline runtime is on,
+ * because that is when a device holds work no one else has; the first access offers its own (`endsWithoutRuntime`).
+ */
+function LogoutButton({ logout }: { logout: Logout }) {
   const runtime = useOfflineRuntime();
   if (!runtime) {
     return null;
@@ -256,7 +248,7 @@ function LogoutButton({
         <LogOutIcon aria-hidden="true" />
         Sair
       </button>
-      <LogoutNotices logout={logout} onAttention={onAttention} />
+      <LogoutNotices logout={logout} />
     </div>
   );
 }

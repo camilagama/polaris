@@ -13,7 +13,7 @@ import { Button } from "./button";
 /**
  * "Esconder valores" (revisão de UI v7, § 6): the toggle (`aria-pressed`) and the text whose amounts it hides. The
  * name of the button stays "Esconder valores" in both states, as a toggle's name does, and the pressed state says
- * whether they are hidden; the eye changes with it. Below 760 px it is an icon button (36 px, or the small size beside small buttons) with a 48 px touch area.
+ * whether they are hidden; the eye changes with it. Below 760 px it is an icon button (36 px, or the small size beside small buttons) with a 44 px touch area.
  */
 export function HideValuesButton({
   className,
@@ -48,10 +48,34 @@ export function HideValuesButton({
 export function MaskedMoney() {
   return (
     <>
-      <span aria-hidden="true" data-masked-money="">
+      <span
+        aria-hidden="true"
+        className="whitespace-nowrap"
+        data-masked-money=""
+      >
         {MASKED_MONEY}
       </span>
       <span className="sr-only">{MASKED_SPOKEN}</span>
+    </>
+  );
+}
+
+/**
+ * A text with its amounts kept in one piece: "R$" and the number never fall on two lines, however large the font is.
+ * The text is the same, only each amount sits in a box that does not break.
+ */
+export function NoBreakMoney({ text }: { text: string }) {
+  return (
+    <>
+      {moneyParts(text).map((part, index) =>
+        part.money ? (
+          <span className="whitespace-nowrap" key={index}>
+            {part.text}
+          </span>
+        ) : (
+          part.text
+        )
+      )}
     </>
   );
 }
@@ -63,7 +87,7 @@ export function MaskedMoney() {
 export function MoneyText({ text }: { text: string }) {
   const [hidden] = useHiddenValues();
   if (!hidden) {
-    return <>{text}</>;
+    return <NoBreakMoney text={text} />;
   }
   return (
     <>

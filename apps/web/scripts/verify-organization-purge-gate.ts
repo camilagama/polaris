@@ -19,14 +19,14 @@ import {
   scheduleOrganizationPurge,
 } from "@polaris/db/admin-support-repository";
 import { createDatabase } from "@polaris/db/client";
-import { createCustomer } from "@polaris/db/customer-repository";
-import { requestDataExport } from "@polaris/db/data-export-repository";
-import { requestOrganizationClosure } from "@polaris/db/organization-closure-repository";
-import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import {
   type ClosureNoticeRecipientClient,
   createClosureNoticeRecipientClient,
 } from "@polaris/db/closure-notice-recipient";
+import { createCustomer } from "@polaris/db/customer-repository";
+import { requestDataExport } from "@polaris/db/data-export-repository";
+import { requestOrganizationClosure } from "@polaris/db/organization-closure-repository";
+import { createPrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
 import {
   PURGE_BILLING_FACT_KEYS,
   PURGE_CASCADED_TABLES,
@@ -36,13 +36,14 @@ import {
   PURGE_TABLES_WITHOUT_TENANT_DATA,
 } from "@polaris/db/purge-datasets";
 import { TenantAuthorizationError } from "@polaris/db/tenant-transaction";
-import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
-import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
 import { PRIVACY_DATA_CATEGORIES } from "@polaris/domain/admin/privacy-case";
+import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
+import { mediaDerivativeKey } from "@polaris/domain/catalog/media";
 import {
   ORGANIZATION_PURGE_REQUIRED_SCOPE,
   OrganizationPurgeRefusedError,
 } from "@polaris/domain/privacy/organization-purge";
+import { withGateRole } from "../../../packages/db/scripts/gate-roles";
 import {
   confirmPlainSale,
   createProductFixture,
@@ -61,15 +62,15 @@ import {
   withTenantAs,
 } from "../../../packages/db/scripts/sales-gate-support";
 import type { MediaBucketBinding } from "../src/server/environment";
-import { verifyClosureNoticeEmail } from "./closure-notice-email-checks";
+import { runDataExports } from "../src/server/privacy/data-export-job";
+import { createRequesterReader } from "../src/server/privacy/data-export-reader";
+import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 import { verifyClosureNotices } from "./closure-notice-checks";
+import { verifyClosureNoticeEmail } from "./closure-notice-email-checks";
 import {
   deliverClosureNotice,
   verifyAutomaticPurge,
 } from "./organization-purge-automatic-checks";
-import { runDataExports } from "../src/server/privacy/data-export-job";
-import { createRequesterReader } from "../src/server/privacy/data-export-reader";
-import { runOrganizationPurges } from "../src/server/privacy/organization-purge-job";
 
 /**
  * The full purge of a closed organization on a real PostgreSQL 18 (plan PR107, ADR 0081 and 0102), with the
@@ -78,7 +79,7 @@ import { runOrganizationPurges } from "../src/server/privacy/organization-purge-
  * organization's prefixes; every row of the tenant goes in one transaction that writes the deletion
  * ledger tombstone first; the cases, the audit, the billing and the ledger survive; running it again
  * changes nothing; and an export cannot leave a copy of an organization that is no longer active. The
- * decisions of 18/10/2026: the purge refuses a closure younger than 90 days and a legal hold, with nothing
+ * decisions taken: the purge refuses a closure younger than 90 days and a legal hold, with nothing
  * removed; the billing events stay pseudonymized (the payer's data out of the fact, the provider's references
  * kept); the cases and the entitlement grants stay without their free text.
  */
@@ -114,6 +115,9 @@ const CASE_TEXT = `Dono ligou de 81 ${CASE_PHONE} (Joana)`;
 
 /** The reason an operator typed when giving an entitlement grant: free text, with someone's contact in it. */
 const GRANT_REASON = `Compensação combinada com Rita (81 ${GRANT_PHONE})`;
+
+/** The reason an operator typed for a refund from the Admin (ADR 0105): it goes to the billing ledger, with a contact. */
+const OPERATOR_REASON = `Joana pediu o reembolso por telefone (81 ${CASE_PHONE})`;
 
 /** The call is refused with this code (SQLSTATE 55000), and nothing else. */
 async function expectBlocked(
@@ -368,8 +372,9 @@ async function queryAs(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`SET LOCAL ROLE ${role}`);
-    return await client.query(statement, values);
+    return await withGateRole(client, role, () =>
+      client.query(statement, values)
+    );
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
@@ -430,11 +435,12 @@ async function expectCancellationsAppendOnly(pool: {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("SET LOCAL ROLE polaris_admin_owner");
-      await expectSqlState(
-        () => client.query(statement),
-        "42501",
-        `the history is append-only: ${statement}`
+      await withGateRole(client, "polaris_admin_owner", () =>
+        expectSqlState(
+          () => client.query(statement),
+          "42501",
+          `the history is append-only: ${statement}`
+        )
       );
     } finally {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -463,9 +469,12 @@ async function raceCancellationAgainstMark(
   let outcome: Promise<unknown>;
   try {
     await marker.query("BEGIN");
-    await marker.query(
-      "SELECT public.mark_organization_purge_storage_touched($1)",
-      [organizationId]
+    // as the privacy runtime, the only role the function grants EXECUTE, inside the transaction the race holds open
+    await withGateRole(marker, "polaris_privacy_runtime", () =>
+      marker.query(
+        "SELECT public.mark_organization_purge_storage_touched($1)",
+        [organizationId]
+      )
     );
     await new Promise((resolve) => setTimeout(resolve, 2500));
     outcome = cancel().then(
@@ -492,6 +501,116 @@ async function raceCancellationAgainstMark(
     marker.release();
   }
   return await outcome;
+}
+
+/**
+ * The other order of the race: a cancellation commits first (its transaction is still open and holds the
+ * organization's row, with the lease made valid again inside it so only the cancellation can refuse the mark) while the
+ * run asks to mark the storage. The mark waits for the row, finds the organization closed and is refused; it has
+ * not ended before the cancellation committed. Returns how the mark ended.
+ */
+async function raceMarkAgainstCancellation(
+  pool: {
+    connect: () => Promise<{
+      query: (statement: string, values?: unknown[]) => Promise<unknown>;
+      release: () => void;
+    }>;
+  },
+  cancellation: {
+    caseId: string;
+    organizationId: string;
+    principalId: string;
+    reason: string;
+  },
+  mark: () => Promise<unknown>
+): Promise<unknown> {
+  const canceller = await pool.connect();
+  let settled = false;
+  let outcome: Promise<unknown>;
+  try {
+    await canceller.query("BEGIN");
+    // as the Admin runtime, the only role the function grants EXECUTE; the lease below is the owner's fixture
+    await withGateRole(canceller, "polaris_admin_runtime", () =>
+      canceller.query(
+        "SELECT public.admin_cancel_organization_purge($1, $2, $3, $4)",
+        [
+          cancellation.principalId,
+          cancellation.caseId,
+          cancellation.organizationId,
+          cancellation.reason,
+        ]
+      )
+    );
+    await canceller.query(
+      "UPDATE public.organization_purges SET locked_until = now() + interval '15 minutes' WHERE organization_id = $1",
+      [cancellation.organizationId]
+    );
+    outcome = mark().then(
+      () => {
+        settled = true;
+        return "marked";
+      },
+      (error: unknown) => {
+        settled = true;
+        return error;
+      }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.equal(
+      settled,
+      false,
+      "the mark waits for the organization the cancellation holds"
+    );
+    await canceller.query("COMMIT");
+  } catch (error) {
+    await canceller.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    canceller.release();
+  }
+  return await outcome;
+}
+
+async function expectCancellationBeatsMark(context: {
+  auditCount: (eventType: string) => Promise<string | undefined>;
+  cancellation: Parameters<typeof raceMarkAgainstCancellation>[1];
+  mark: () => Promise<unknown>;
+  pool: Parameters<typeof raceMarkAgainstCancellation>[0];
+  purgeState: () => Promise<unknown>;
+}): Promise<void> {
+  const outcome = await raceMarkAgainstCancellation(
+    context.pool,
+    context.cancellation,
+    context.mark
+  );
+  assert.ok(
+    outcome instanceof Error,
+    "the mark that waited for the cancellation is refused"
+  );
+  assert.equal((outcome as { code?: string }).code, "55000");
+  assert.equal(outcome.message, "purge_not_claimed");
+  assert.deepEqual(await context.purgeState(), {
+    attempts: 1,
+    status: "closed",
+    storage_touched: false,
+  });
+  assert.equal(await context.auditCount("organization.purge_cancelled"), "3");
+}
+
+function expectHoldNamesOrganizationById(hold: object | undefined): void {
+  assert.deepEqual(
+    Object.keys(hold ?? {}).sort(),
+    [
+      "id",
+      "organizationId",
+      "placedAt",
+      "placedBy",
+      "reviewAt",
+      "reviewDue",
+      "supportCaseId",
+    ],
+    "a hold names its organization by ID only, never by name"
+  );
 }
 
 /** The audit rows of the organization to purge cover both classes, so the purge is proved to keep each. */
@@ -701,7 +820,7 @@ async function run() {
       "SELECT has_table_privilege('polaris_purge_owner', 'public.deletion_ledger', 'SELECT') OR has_table_privilege('polaris_purge_owner', 'public.deletion_ledger', 'DELETE') AS allowed"
     );
     assert.equal(ledgerRead.rows[0]?.allowed, false);
-    // in what survives, the purge owner reaches only the columns of the decisions of 18/10/2026: the billing fact,
+    // in what survives, the purge owner reaches only the columns of those decisions: the billing fact,
     // the free text of the cases and of the cancellations, whether a legal hold is in force, the purge tombstones
     const survivorColumns = await owner.pool.query<{ grant: string }>(
       `SELECT table_name || '.' || column_name || ':' || privilege_type AS grant
@@ -920,13 +1039,13 @@ async function run() {
       // a charge whose fact carries the payer (a provider adapter that let it through), and a command without
       const billingFact = {
         ...PAYER_FACT,
-        // a kept key whose value is not a plain value goes too (a nested payer)
-        transition: { payer: PAYER_FACT.customerName },
         amount: "24.90",
         currency: "BRL",
         cycleMonths: 1,
         occurredAt: "2026-09-01T12:00:00.000Z",
         periodEndsAt: "2026-10-01T12:00:00.000Z",
+        // a kept key whose value is not a plain value goes too (a nested payer)
+        transition: { payer: PAYER_FACT.customerName },
         type: "charge_succeeded",
       };
       await owner.pool.query(
@@ -939,6 +1058,21 @@ async function run() {
           tenant.organizationId,
           JSON.stringify(billingFact),
           `gate-command-${randomUUID()}`,
+        ]
+      );
+      // the operator's decision to refund from the Admin (ADR 0105): the actor stays, the reason typed does not
+      await owner.pool.query(
+        `INSERT INTO public.billing_events (provider, provider_event_id, organization_id, fact, fact_type, occurred_at, status, processed_at)
+         VALUES ('polaris', $1, $2, $3::jsonb, 'command', '2026-09-02T12:00:00Z', 'applied', now())`,
+        [
+          `command:operator_refund:${randomUUID()}`,
+          tenant.organizationId,
+          JSON.stringify({
+            actor: "admin:gate",
+            occurredAt: "2026-09-02T12:00:00.000Z",
+            reason: `${OPERATOR_REASON} ${suffix}`,
+            type: "operator_refund_requested",
+          }),
         ]
       );
       // a temporary grant with the reason the operator typed (the grant stays, its reason does not)
@@ -1090,7 +1224,7 @@ async function run() {
       } else if (steps.decision) {
         await recordPrivacyDecision(admin, principal, caseId, {
           decision: steps.decision,
-          note: null,
+          note: identity === "failed" ? null : "CTN art. 195",
           reason:
             identity === "failed" ? "identity_not_verified" : "legal_retention",
         });
@@ -1268,7 +1402,7 @@ async function run() {
       InvalidSupportRequestError,
       "an unknown case"
     );
-    // the closure period (decision of 19/10/2026, 90 days): a window that ended early does not shorten it, and the
+    // the closure period (90 days): a window that ended early does not shorten it, and the
     // old period of 30 days is no longer enough; the day before the 90th is still refused
     await owner.pool.query(
       "UPDATE public.organization_closures SET requested_at = now() - interval '31 days' WHERE organization_id = $1",
@@ -1404,6 +1538,7 @@ async function run() {
     });
     assert.equal(firstPage.holds.length, 1);
     assert.equal(firstPage.dueForReview, overdue.dueForReview);
+    expectHoldNamesOrganizationById(firstPage.holds[0]);
     await expectRefusal(
       privacyCase.id,
       "legal_hold_active",
@@ -1455,7 +1590,7 @@ async function run() {
       );
     }
     tests.push(
-      "the schedule refuses an active or closing organization, an open window, a closure younger than 90 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record"
+      "the schedule refuses an active or closing organization, an open window, a closure younger than 90 days, a legal hold in force, paid access running, a live temporary access and an unknown case; a hold is placed and released under a case, audited without text, and stays on record; the list names the organization by ID only"
     );
 
     // the operator names the organization of the case, or nothing happens
@@ -1670,7 +1805,7 @@ async function run() {
       "the rows are never deleted without a claim, and an export holding its lease delays the purge"
     );
 
-    // the run refuses too (decisions of 18/10/2026): a legal hold placed after the schedule, or a closure younger
+    // the run refuses too: a legal hold placed after the schedule, or a closure younger
     // than 90 days, keeps the claim away; a run that already holds the purge touches neither storage nor rows
     const holdLease = () =>
       owner.pool.query(
@@ -1778,7 +1913,7 @@ async function run() {
       }
       return result;
     };
-    // the audit of the tenant is not in the purge (ADR 0081, amended 19/10/2026): its rows are read by ID, before and after
+    // the audit of the tenant is not in the purge (ADR 0081, amended): its rows are read by ID, before and after
     const auditRows = async (tenant: TenantFixture) =>
       (
         await owner.pool.query<{ event_class: string; id: string }>(
@@ -2015,6 +2150,40 @@ async function run() {
     assert.equal(await auditCount("organization.purge_cancelled"), "2");
     // nobody rewrites the history: the owner of the Admin functions only reads and appends
     await expectCancellationsAppendOnly(owner.pool);
+    await purgeRowSettled();
+    const lateRun = await maintenance.claimOrganizationPurge(900);
+    assert.equal(lateRun?.organizationId, target.organizationId);
+    await owner.pool.query(
+      "UPDATE public.organization_purges SET locked_until = now() - interval '1 second' WHERE organization_id = $1",
+      [target.organizationId]
+    );
+    const racingPrivacy = concurrentPrivacy;
+    await expectCancellationBeatsMark({
+      auditCount,
+      cancellation: {
+        caseId: privacyCase.id,
+        organizationId: target.organizationId,
+        principalId: principal,
+        reason: "Corrida com o cancelamento",
+      },
+      mark: () =>
+        racingPrivacy.markOrganizationPurgeStorageTouched(
+          target.organizationId
+        ),
+      pool: owner.pool,
+      purgeState,
+    });
+    assert.deepEqual(
+      { changed: (await schedule(privacyCase.id))?.changed },
+      { changed: true }
+    );
+    assert.deepEqual(await purgeState(), {
+      attempts: 0,
+      status: "purge_pending",
+      storage_touched: false,
+    });
+    assert.equal(await auditCount("organization.purge_scheduled"), "4");
+    await expectCancellationsAppendOnly(owner.pool);
     // a run reaches the storage: written down before the first object goes, and from then on no cancellation
     await purgeRowSettled();
     const reached = await maintenance.claimOrganizationPurge(900);
@@ -2086,10 +2255,10 @@ async function run() {
       status: "purge_pending",
       storage_touched: true,
     });
-    assert.equal(await auditCount("organization.purge_cancelled"), "2");
-    assert.equal((await cancellations()).length, 2);
+    assert.equal(await auditCount("organization.purge_cancelled"), "3");
+    assert.equal((await cancellations()).length, 3);
     tests.push(
-      "a scheduled purge is cancelled only with a reason, while no run holds it and before the first object left the storage (an attempt that never reached it does not stop it): the organization goes back to closed, the audit records it without the reason, the reason goes to an append-only history that scheduling again does not erase, nothing is deleted, and it can be scheduled again"
+      "a scheduled purge is cancelled only with a reason, while no run holds it and before the first object left the storage (an attempt that never reached it does not stop it): the organization goes back to closed, the audit records it without the reason, the reason goes to an append-only history that scheduling again does not erase, nothing is deleted, and it can be scheduled again; the race between the mark of the storage and a cancellation is proved in both orders (the mark wins the row and the cancellation is refused with purge_storage_touched; the cancellation commits first and the mark is refused with purge_not_claimed, with the storage untouched)"
     );
 
     // the purge owner deletes tenant data: it is never a login, bypasses nothing and has no member that could become it
@@ -2115,8 +2284,9 @@ async function run() {
       const client = await owner.pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query("SET LOCAL ROLE polaris_purge_owner");
-        return await client.query(statement, values);
+        return await withGateRole(client, "polaris_purge_owner", () =>
+          client.query(statement, values)
+        );
       } finally {
         await client.query("ROLLBACK").catch(() => undefined);
         client.release();
@@ -2164,8 +2334,9 @@ async function run() {
       const client = await owner.pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query("SET LOCAL ROLE polaris_purge_owner");
-        await client.query(statement, values);
+        await withGateRole(client, "polaris_purge_owner", () =>
+          client.query(statement, values)
+        );
       } finally {
         await client.query("ROLLBACK").catch(() => undefined);
         client.release();
@@ -2372,7 +2543,7 @@ async function run() {
     assert.equal(survivor?.privacy, "1");
     assert.ok(Number(survivor?.audit) >= 4);
     assert.equal(survivor?.billing, "1");
-    assert.equal(survivor?.cancellations, "2");
+    assert.equal(survivor?.cancellations, "3");
     tests.push(
       "the support and privacy cases, the Admin audit, the billing record and the history of cancellations survive the organization"
     );
@@ -2386,6 +2557,18 @@ async function run() {
     expectBillingPseudonymized(billingBefore.rows, billingAfter.rows);
     const charge = billingAfter.rows.find(
       (row) => row.fact_type === "charge_succeeded"
+    );
+    // the operator's decision keeps who and when, never the reason typed
+    assert.deepEqual(
+      billingAfter.rows.find((row) =>
+        row.provider_event_id.startsWith("command:operator_refund:")
+      )?.fact,
+      {
+        actor: "admin:gate",
+        occurredAt: "2026-09-02T12:00:00.000Z",
+        type: "operator_refund_requested",
+      },
+      "the purge takes the operator's reason out of the ledger"
     );
     // the amount and its currency stay: they are the fiscal record (migration 0084)
     assert.deepEqual(charge?.fact, {
@@ -2439,7 +2622,7 @@ async function run() {
       "the owner's trial claim survives the purge of the organization, as it was (the trial is once per person)"
     );
     tests.push(
-      "the billing events of the purged organization stay, every one, pseudonymized: values (the amount and its currency included), dates, types and opaque references in the fact, without the payer's name, document, e-mail, phone, address or ID there, and with provider_ref and provider_event_id still in their columns; another organization's are untouched"
+      "the billing events of the purged organization stay, every one, pseudonymized: values (the amount and its currency included), dates, types and opaque references in the fact, without the payer's name, document, e-mail, phone, address or ID there, nor the reason an operator typed for a refund, and with provider_ref and provider_event_id still in their columns; another organization's are untouched"
     );
 
     // the entitlement grants stay (key, value, dates, who gave it) and lose the reason the operator typed
@@ -2668,8 +2851,8 @@ async function run() {
       await maintenance.purgeOrganizationData(target.organizationId),
       {
         alreadyPurged: true,
-        pseudonymizedBillingEvents: 0,
         deletedRows: 0,
+        pseudonymizedBillingEvents: 0,
         scrubbedTexts: 0,
       }
     );

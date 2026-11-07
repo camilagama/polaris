@@ -36,14 +36,14 @@ export const LEGAL_DOCUMENTS: Readonly<
     changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "6cacabe7b38741df5a1fe7a1c6b3bdadf6b8e239c7a8295c6161be2751f14051",
+    sha256: "06902d14b829096f80a6eeff742a51222f4f72296db0affb1ae94c363e48e0b7",
     version: 1,
   }),
   terms: Object.freeze({
     changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "1378554075d3d682f1ccebd17f20a4f0229796f55dad144e25eb85162c5bc09b",
+    sha256: "0d0dbd92bc703a2253b3b2049566ac19aa20fd607a2a40ec22c98995783167fc",
     version: 1,
   }),
 });
@@ -78,6 +78,51 @@ export function findPendingMarkers(text: string): string[] {
 export function formatEffectiveFrom(effectiveFrom: string): string {
   const [year, month, day] = effectiveFrom.split("-");
   return `${day}/${month}/${year}`;
+}
+
+const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Whether a value is a real calendar day written as YYYY-MM-DD (so `2026-02-30` is not). */
+export function isCalendarDay(value: string): boolean {
+  const match = CALENDAR_DAY.exec(value);
+  if (match === null) {
+    return false;
+  }
+  const [year, month, day] = [match[1], match[2], match[3]].map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+/**
+ * The documents with `fallbackDay` where the constant still has no day: a build that is given the day
+ * (the `VITE_LEGAL_VIGENCIA` variable) shows it while the constant is a draft, and a day already in
+ * the constant is never overridden. A value that is not a calendar day changes nothing.
+ */
+export function withEffectiveFromFallback(
+  documents: Readonly<Record<LegalDocumentId, LegalDocumentVersion>>,
+  fallbackDay: string | null | undefined
+): Readonly<Record<LegalDocumentId, LegalDocumentVersion>> {
+  const day = (fallbackDay ?? "").trim();
+  if (!isCalendarDay(day)) {
+    return documents;
+  }
+  const filled = (document: LegalDocumentId) =>
+    Object.freeze({
+      ...documents[document],
+      effectiveFrom: documents[document].effectiveFrom ?? day,
+    });
+  return Object.freeze({
+    privacy: filled("privacy"),
+    terms: filled("terms"),
+  });
 }
 
 /** "Versão 1. Em vigor desde: 19/10/2026." (or the marker, while it is a draft). */

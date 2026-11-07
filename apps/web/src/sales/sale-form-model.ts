@@ -6,7 +6,11 @@ import type {
   ProductReadModel,
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
-import { Money } from "@polaris/domain/money/money";
+import {
+  MAX_RATE_PERCENTAGE_POINTS,
+  Money,
+  Percentage,
+} from "@polaris/domain/money/money";
 import {
   CONFIRM_SALE_COMMAND_VERSION,
   MAX_FUTURE_CLOCK_SKEW_MS,
@@ -29,6 +33,7 @@ import {
   formatBrlAmount,
   formatCalendarDate,
   formatInstant,
+  formatQuantity,
 } from "../lib/format";
 import {
   isLegalAcceptanceRefusal,
@@ -64,6 +69,16 @@ export const SALE_METHODS: ReadonlyArray<readonly [SaleMethod, string]> = [
   ["credit_card", "Cartão de crédito"],
   ["debit_card", "Cartão de débito"],
   ["bank_transfer", "Transferência bancária"],
+  ["other", "Outro"],
+];
+
+/** The short names of the choice cards of the sale and of the line of the history; the summary and the receipt keep the full ones of SALE_METHODS. */
+export const SALE_METHOD_CARDS: ReadonlyArray<readonly [SaleMethod, string]> = [
+  ["pix", "Pix"],
+  ["cash", "Dinheiro"],
+  ["credit_card", "Crédito"],
+  ["debit_card", "Débito"],
+  ["bank_transfer", "Transferência"],
   ["other", "Outro"],
 ];
 
@@ -283,11 +298,97 @@ export function createBlankSaleForm(createId: () => string): SaleFormState {
 }
 
 /**
- * Whether the person put anything on the sale: a chosen variant, a changed quantity or price, an
- * adjustment, a payment or profile choice, or a date. A blank form, and the offline mode's own
- * "dated now", are not work. The cart counts even when it was built only by taps and selections.
+ * What the screen fills in on a new sale for the person: the method and profile of the last sale on this device, or
+ * "Sem perfil" in a store without an active profile, and a remembered "Sem perfil" holds only there
+ * (last-payment-model.ts). Empty fields are no preset.
  */
-export function isSaleFormDirty(form: SaleFormState): boolean {
+export interface SalePreset {
+  method: SaleMethod | "";
+  profileChoice: string;
+  /** The version the remembered profile was used with; null with no profile or "Sem perfil". */
+  profileVersion: number | null;
+}
+
+export const NO_SALE_PRESET: SalePreset = {
+  method: "",
+  profileChoice: "",
+  profileVersion: null,
+};
+
+/**
+ * Fills in the preset only where the person has not chosen: a method or a profile already on the form, or a profile
+ * cleared with a notice to read, stay as they are.
+ */
+export function applySalePreset(
+  form: SaleFormState,
+  preset: SalePreset
+): SaleFormState {
+  const fillMethod = form.payment.method === "" && preset.method !== "";
+  const fillProfile =
+    form.profile.choice === "" &&
+    form.profile.reviewNotice === null &&
+    preset.profileChoice !== "";
+  if (!(fillMethod || fillProfile)) {
+    return form;
+  }
+  return {
+    ...form,
+    payment: fillMethod
+      ? selectPaymentMethod(form, preset.method).payment
+      : form.payment,
+    profile: fillProfile
+      ? {
+          choice: preset.profileChoice,
+          reviewNotice: null,
+          seenVersion: preset.profileVersion,
+        }
+      : form.profile,
+  };
+}
+
+/**
+ * Takes back what the previous preset filled in when the new one no longer offers it (a remembered "Sem perfil" in a
+ * store that just got an active profile), only while the form is still what that preset made it: anything else the
+ * person did stays, and a choice that differs from the preset is theirs.
+ */
+export function withdrawSalePreset(
+  form: SaleFormState,
+  previous: SalePreset,
+  next: SalePreset
+): SaleFormState {
+  if (isSaleFormDirty(form, previous)) {
+    return form;
+  }
+  const dropMethod =
+    previous.method !== "" &&
+    next.method === "" &&
+    form.payment.method === previous.method;
+  const dropProfile =
+    previous.profileChoice !== "" &&
+    next.profileChoice === "" &&
+    form.profile.choice === previous.profileChoice;
+  if (!(dropMethod || dropProfile)) {
+    return form;
+  }
+  return {
+    ...form,
+    payment: dropMethod ? selectPaymentMethod(form, "").payment : form.payment,
+    profile: dropProfile
+      ? { choice: "", reviewNotice: null, seenVersion: null }
+      : form.profile,
+  };
+}
+
+/**
+ * Whether the person put anything on the sale: a chosen variant, a changed quantity or price, an
+ * adjustment, a payment or profile choice, or a date. A blank form, what the screen chose for the person (the
+ * preset), and the offline mode's own "dated now", are not work. The cart counts even when it was built only by taps
+ * and selections.
+ */
+export function isSaleFormDirty(
+  form: SaleFormState,
+  preset: SalePreset = NO_SALE_PRESET
+): boolean {
   const blank = createItemDraft("");
   const itemChanged = (item: ItemDraft) =>
     item.variantId !== "" ||
@@ -299,11 +400,11 @@ export function isSaleFormDirty(form: SaleFormState): boolean {
     form.items.some(itemChanged) ||
     form.adjustments.length > 0 ||
     form.occurredAtLocal !== "" ||
-    form.payment.method !== "" ||
+    (form.payment.method !== preset.method && form.payment.method !== "") ||
     form.payment.installmentPlan !== "" ||
     form.payment.installments !== "" ||
     form.payment.anticipationRequested ||
-    form.profile.choice !== ""
+    (form.profile.choice !== preset.profileChoice && form.profile.choice !== "")
   );
 }
 
@@ -459,11 +560,14 @@ export function selectProfileChoice(
 /**
  * Reconciles the chosen profile with a fresh list of active profiles. A profile
  * that changed (or disappeared) forces the operator to review the fee preview
- * again before the sale can be confirmed.
+ * again before the sale can be confirmed. With an attempt whose outcome is unknown, a profile that left the list does
+ * not clear the choice: the evaluation already refuses it, and clearing it would let the next choice send another body
+ * under a new command ID, for a sale the server may have recorded.
  */
 export function reconcileProfileReload(
   form: SaleFormState,
-  profiles: readonly PaymentProfileReadModel[]
+  profiles: readonly PaymentProfileReadModel[],
+  outcomeUnknown = false
 ): SaleFormState {
   const { choice, seenVersion } = form.profile;
   if (choice === "" || choice === NO_PROFILE_CHOICE) {
@@ -471,6 +575,9 @@ export function reconcileProfileReload(
   }
   const profile = profiles.find((candidate) => candidate.id === choice);
   if (!profile) {
+    if (outcomeUnknown) {
+      return form;
+    }
     return {
       ...form,
       profile: {
@@ -712,14 +819,18 @@ export function autoSelectOnlyVariants(
 
 export interface StockView {
   costText: string | null;
+  needsEntry: boolean;
   quantity: number | null;
   text: string;
   tone: "neutral" | "ok" | "warning";
 }
 
+const askForEntryText = "Peça a quem cuida do estoque para dar entrada.";
+
 /** Current balance and moving average cost for a chosen variant. */
 export function stockView(
-  load: Loadable<InventoryBalanceReadModel> | undefined
+  load: Loadable<InventoryBalanceReadModel> | undefined,
+  canAdjustStock: boolean
 ): StockView | null {
   if (load === undefined) {
     return null;
@@ -727,6 +838,7 @@ export function stockView(
   if (load.status === "loading") {
     return {
       costText: null,
+      needsEntry: false,
       quantity: null,
       text: "Consultando estoque…",
       tone: "neutral",
@@ -735,30 +847,43 @@ export function stockView(
   if (load.status === "error") {
     return {
       costText: null,
+      needsEntry: false,
       quantity: null,
-      text: `${load.message} Você ainda pode vender; o servidor confirma o saldo.`,
+      text: `${load.message} Você ainda pode vender: o saldo é conferido ao confirmar.`,
       tone: "warning",
     };
   }
   const { movingAverageCost, quantity } = load.value;
+  if (quantity === 0) {
+    return {
+      costText: null,
+      needsEntry: true,
+      quantity,
+      text: `Sem estoque: saldo 0. ${canAdjustStock ? "Para vender, dê entrada no estoque." : askForEntryText}`,
+      tone: "warning",
+    };
+  }
   const costText =
     movingAverageCost === null
       ? "Custo desconhecido. Margem indeterminada."
       : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
-  if (quantity === 0) {
-    return {
-      costText,
-      quantity,
-      text: "Sem estoque: saldo 0. O servidor recusa a venda se o saldo continuar insuficiente.",
-      tone: "warning",
-    };
-  }
   return {
     costText,
+    needsEntry: false,
     quantity,
     text: `Saldo atual: ${quantity} ${quantity === 1 ? "unidade" : "unidades"}.`,
     tone: "ok",
   };
+}
+
+/**
+ * The balance on the line of the chosen variant, short ("Saldo 6") when it is just a number; a zero balance, a
+ * failed read or a read under way keep the whole sentence, which says what to do.
+ */
+export function stockLineText(view: StockView): string {
+  return view.tone === "ok" && view.quantity !== null
+    ? `Saldo ${formatQuantity(view.quantity)}`
+    : view.text;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -908,8 +1033,80 @@ export const adjustmentFieldKey = (draftId: string) =>
 export const SALE_DATE_HINT =
   "Vazio é agora. Aceita até 30 dias atrás; nada no futuro.";
 
-const localDateTimePattern =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+/** Said where the date would be, without a connection: the device records the sale at the moment it is kept. */
+export const OFFLINE_SALE_DATE_NOTE =
+  "Sem internet, a venda fica com a data e a hora de agora: uma data digitada não fica guardada.";
+
+/**
+ * The date of the sale is typed in two fields (the day on the DatePicker, the time as text) and kept in the form as
+ * one `AAAA-MM-DDTHH:MM` text; a half-typed one keeps the half that exists, which the evaluation refuses.
+ */
+export function splitSaleDate(local: string): { day: string; time: string } {
+  const at = local.indexOf("T");
+  return at < 0
+    ? { day: local, time: "" }
+    : { day: local.slice(0, at), time: local.slice(at + 1) };
+}
+
+export function joinSaleDate(day: string, time: string): string {
+  const cleanDay = day.trim();
+  const cleanTime = time.trim();
+  return cleanDay === "" && cleanTime === "" ? "" : `${cleanDay}T${cleanTime}`;
+}
+
+/** The time a day starts with when the person picks it before typing one: the device's hour and minute now. */
+export function timeOfDay(now: Date): string {
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${two(now.getHours())}:${two(now.getMinutes())}`;
+}
+
+/**
+ * The closed line of the date and adjustments: "Agora · Sem ajuste", "02/11/2026 14:30 · 1 ajuste". Without a
+ * connection the date is always now (a typed one is not kept).
+ */
+export function saleExtrasSummary(
+  form: SaleFormState,
+  offline: boolean
+): string {
+  const { day, time } = splitSaleDate(form.occurredAtLocal);
+  const [year, month, date] = day.split("-");
+  const dateText =
+    offline || form.occurredAtLocal === ""
+      ? "Agora"
+      : [
+          year && month && date ? `${date}/${month}/${year}` : day,
+          saleTimeText(time),
+        ]
+          .filter((part) => part !== "")
+          .join(" ");
+  const count = form.adjustments.length;
+  const adjustmentsText =
+    count === 0
+      ? "Sem ajuste"
+      : `${count} ${count === 1 ? "ajuste" : "ajustes"}`;
+  return `${dateText} · ${adjustmentsText}`;
+}
+
+/* The hour may come without the leading zero or the ":" ("9:30", "930", "14h30"): the numeric keypad of the iPhone has
+   no ":" key, so the hours and minutes typed as digits are read as such. */
+const SALE_TIME_SOURCE = String.raw`(\d{1,2})[:h.]?(\d{2})`;
+const localDateTimePattern = new RegExp(
+  String.raw`^(\d{4})-(\d{2})-(\d{2})T${SALE_TIME_SOURCE}(?::(\d{2}))?$`
+);
+const saleTimePattern = new RegExp(`^${SALE_TIME_SOURCE}$`);
+
+/** The typed time as "HH:MM" when it has that shape ("930" is "09:30"); otherwise as typed. */
+function saleTimeText(time: string): string {
+  const match = saleTimePattern.exec(time.trim());
+  return match
+    ? `${(match[1] ?? "").padStart(2, "0")}:${match[2] ?? ""}`
+    : time;
+}
+
+/** Whether the typed time has the shape of an hour and minutes (whether they exist is checked with the date). */
+export function saleTimeIsWellFormed(time: string): boolean {
+  return saleTimePattern.test(time.trim());
+}
 
 type LocalDateTimeParse =
   | { kind: "empty" }
@@ -917,8 +1114,8 @@ type LocalDateTimeParse =
   | { date: Date; kind: "ok" };
 
 /**
- * Reads a `datetime-local` value as a moment in the device time zone. A date
- * that does not exist (31/02) is invalid rather than rolled over.
+ * Reads the joined day and time (`AAAA-MM-DDTHH:MM`) as a moment in the device time zone. A date
+ * that does not exist (`31/02`) is invalid rather than rolled over.
  */
 export function parseLocalDateTime(text: string): LocalDateTimeParse {
   const trimmed = text.trim();
@@ -1071,6 +1268,10 @@ function parseItem(item: ItemDraft, issues: Issue[]): ParsedItem | null {
       "Escolha a variante.",
       true
     );
+  }
+  if (item.variantId === "") {
+    // quantity and prices are only on screen once the variant is chosen: an error there could not be reached
+    return null;
   }
   const quantity = parseQuantityField(item, issues);
   const listed = parsePriceField(
@@ -1260,7 +1461,43 @@ function resolveProfile(
   return { kind: "profile", profile };
 }
 
-function calculationIssue(error: unknown): Issue {
+const invalidAdjustmentMessage =
+  "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.";
+const percentageCapMessage = `O percentual vai até ${MAX_RATE_PERCENTAGE_POINTS}%.`;
+
+function isAboveRateCap(text: string): boolean {
+  try {
+    Percentage.fromRate(text);
+    return false;
+  } catch {
+    return isWellFormedPercentage(text);
+  }
+}
+
+function isWellFormedPercentage(text: string): boolean {
+  try {
+    Percentage.from(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when a percentage adjustment is well formed but above the domain cap on rates. */
+function hasPercentageAboveCap(
+  adjustments: SaleCommandBody["adjustments"]
+): boolean {
+  return adjustments.some(
+    (adjustment) =>
+      adjustment.value.type === "percentage" &&
+      isAboveRateCap(adjustment.value.percentage)
+  );
+}
+
+function calculationIssue(
+  error: unknown,
+  adjustments: SaleCommandBody["adjustments"]
+): Issue {
   if (error instanceof SaleDiscountExceedsSubtotalError) {
     return {
       empty: false,
@@ -1280,8 +1517,9 @@ function calculationIssue(error: unknown): Issue {
     return {
       empty: false,
       key: formFieldKeys.adjustments,
-      message:
-        "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.",
+      message: hasPercentageAboveCap(adjustments)
+        ? percentageCapMessage
+        : invalidAdjustmentMessage,
     };
   }
   return {
@@ -1305,7 +1543,7 @@ function calculateTotals(
       })),
     });
   } catch (error) {
-    issues.push(calculationIssue(error));
+    issues.push(calculationIssue(error, adjustments));
     return null;
   }
 }
@@ -1419,9 +1657,13 @@ function stockWarnings(
   for (const item of items) {
     const balance = stock[item.variantId];
     const total = requested.get(item.variantId) ?? 0;
-    if (balance?.status === "ready" && total > balance.value.quantity) {
+    if (
+      balance?.status === "ready" &&
+      balance.value.quantity !== 0 &&
+      total > balance.value.quantity
+    ) {
       warnings[item.draftId] =
-        `Quantidade acima do saldo exibido (${balance.value.quantity}). Você pode continuar; o servidor confirma o estoque e recusa a venda se for insuficiente.`;
+        `Acima do saldo (${balance.value.quantity}): a venda é recusada se ele não bastar.`;
     }
   }
   return warnings;
@@ -1442,9 +1684,13 @@ export interface SaleEvaluation {
   feePreview: FeePreview | null;
   /** Every problem, including fields that are just not filled in yet. */
   issueCount: number;
+  /** Whether a method is chosen: the summary shows only what is. */
+  methodChosen: boolean;
   methodText: string;
   /** ISO instant chosen by the operator; null means now at attempt creation. */
   occurredAtOverride: string | null;
+  /** Whether a profile (or "Sem perfil") is chosen. */
+  profileChosen: boolean;
   profileText: string;
   stockWarnings: Record<string, string>;
   summary: SaleSummary | null;
@@ -1567,8 +1813,10 @@ export function evaluateSaleForm(
     errors: visibleErrors(issues, options.showRequired),
     feePreview,
     issueCount: issues.length,
+    methodChosen: form.payment.method !== "",
     methodText: methodSummary(form.payment),
     occurredAtOverride: date.occurredAt,
+    profileChosen: form.profile.choice !== "",
     profileText: profileSummary(form.profile, resolution),
     stockWarnings: items ? stockWarnings(items, context.stock) : {},
     summary,
@@ -1582,6 +1830,8 @@ export function evaluateSaleForm(
 export interface SaleAttempt {
   commandId: string;
   occurredAt: string;
+  /** The profile and version the body was sent with, for a resend whose first answer was lost. Absent in older attempts. */
+  paymentProfile?: SaleCommandBody["paymentProfile"] | undefined;
   /** Device clock when the attempt started; local evidence only. */
   recordedAt: string;
   signature: string;
@@ -1598,7 +1848,8 @@ function bodySignature(
 /**
  * The server replays a repeated command ID only for an identical payload, so
  * an identical retry keeps the previous command ID and commercial instant. Any
- * change to the payload (including a new profile version) starts a new attempt.
+ * change to the payload (including a new profile version) starts a new attempt,
+ * but for the version kept by `bodyOfUnsettledAttempt`.
  */
 export function resolveSaleAttempt(
   previous: SaleAttempt | null,
@@ -1615,9 +1866,44 @@ export function resolveSaleAttempt(
   return {
     commandId: createId(),
     occurredAt: occurredAtOverride ?? now.toISOString(),
+    paymentProfile: body.paymentProfile,
     recordedAt: now.toISOString(),
     signature,
   };
+}
+
+/**
+ * An attempt sent with no answer may already be a sale on the server, which replays it before it looks at the profile
+ * version. When the only change to the body is the version of the same profile, edited in the meantime, the body goes
+ * again with the version it was sent with: the live one would be another payload, a new command ID and the sale twice.
+ * If the sale never reached the server, that version is refused as a version conflict, a definite answer.
+ */
+function bodyOfUnsettledAttempt(
+  previous: SaleAttempt | null,
+  body: SaleCommandBody,
+  organizationId: string,
+  occurredAtOverride: string | null
+): SaleCommandBody {
+  const sent = previous?.paymentProfile;
+  if (
+    previous === null ||
+    !sent ||
+    body.paymentProfile?.id !== sent.id ||
+    body.paymentProfile.expectedVersion === sent.expectedVersion
+  ) {
+    return body;
+  }
+  const sentBody = {
+    ...body,
+    paymentProfile: {
+      ...body.paymentProfile,
+      expectedVersion: sent.expectedVersion,
+    },
+  };
+  return bodySignature(sentBody, organizationId, occurredAtOverride) ===
+    previous.signature
+    ? sentBody
+    : body;
 }
 
 export type PreparedConfirmation =
@@ -1630,6 +1916,8 @@ export type PreparedConfirmation =
  * shape or arithmetic reasons.
  */
 export function prepareConfirmation(input: {
+  /** The previous attempt was sent with no answer: see `bodyOfUnsettledAttempt`. */
+  attemptUnsettled?: boolean;
   body: SaleCommandBody;
   createId: () => string;
   now: Date;
@@ -1649,16 +1937,24 @@ export function prepareConfirmation(input: {
       ok: false,
     };
   }
+  const body = input.attemptUnsettled
+    ? bodyOfUnsettledAttempt(
+        input.previousAttempt,
+        input.body,
+        input.organizationId,
+        override
+      )
+    : input.body;
   const attempt = resolveSaleAttempt(
     input.previousAttempt,
-    input.body,
+    body,
     input.organizationId,
     input.createId,
     input.now,
     override
   );
   const command = {
-    ...input.body,
+    ...body,
     commandId: attempt.commandId,
     occurredAt: attempt.occurredAt,
     recordedAt: attempt.recordedAt,
@@ -1696,6 +1992,7 @@ type SaleFailureKind =
 export interface SaleSubmitFailure {
   /** The attempt cannot be resent as is: the next confirm gets a fresh attempt. */
   discardAttempt: boolean;
+  entry: { label: string; variantId: string } | null;
   kind: SaleFailureKind;
   message: string;
   /** Stable domain code from `error.data.reason`, when the server sent one. */
@@ -1715,12 +2012,15 @@ interface ReasonOutcome {
 const variantGoneMessage =
   "Uma das variantes não existe mais nesta loja. Remova a linha, atualize os dados e revise a venda.";
 
+const stockRefusalFallbackMessage =
+  "A venda não foi registrada: falta estoque em um ou mais itens. Confira o saldo de cada um.";
+
 const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
     "insufficient_stock",
     {
-      message:
-        "Estoque insuficiente para uma ou mais linhas. Atualize o saldo e ajuste as quantidades.",
+      discardAttempt: true,
+      message: stockRefusalFallbackMessage,
       refreshData: true,
     },
   ],
@@ -1820,8 +2120,7 @@ const reasonOutcomes = new Map<string, ReasonOutcome>([
   [
     "invalid_sale_adjustment",
     {
-      message:
-        "Revise os ajustes: os valores devem ser positivos e percentual só vale para desconto e acréscimo.",
+      message: invalidAdjustmentMessage,
     },
   ],
   [
@@ -1862,6 +2161,7 @@ function failure(
 ): SaleSubmitFailure {
   return {
     discardAttempt: options.discardAttempt ?? false,
+    entry: null,
     kind,
     message,
     reason: options.reason ?? null,
@@ -1895,7 +2195,7 @@ function definiteFailure(code: string | undefined): SaleSubmitFailure | null {
     case "CONFLICT":
       return failure(
         "conflict",
-        "Estoque insuficiente, produto indisponível ou o perfil de pagamento foi alterado. Atualize os dados e revise a venda.",
+        "A venda não foi registrada: algo mudou (estoque, produto ou perfil de pagamento). Atualize os dados e revise a venda.",
         { refreshData: true }
       );
     default:
@@ -1908,11 +2208,26 @@ export function isDefiniteRejection(error: unknown): boolean {
   return definiteFailure(rpcErrorCode(error)) !== null;
 }
 
+/** The server does not say why it refused an adjustment: the cap is known from what was sent. */
+function refusalMessage(
+  reason: string | null,
+  message: string,
+  sentAdjustments: SaleCommandBody["adjustments"]
+): string {
+  return reason === "invalid_sale_adjustment" &&
+    hasPercentageAboveCap(sentAdjustments)
+    ? percentageCapMessage
+    : message;
+}
+
 /**
  * Maps an oRPC error to a message and to what the page should do next. A known
  * `data.reason` on a 400/404/409 refines the generic per-code message.
  */
-export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
+export function mapSaleSubmitError(
+  error: unknown,
+  sentAdjustments: SaleCommandBody["adjustments"]
+): SaleSubmitFailure {
   // a definite refusal like any FORBIDDEN, so the items stay on the screen; the shell offers `/aceite`
   if (isLegalAcceptanceRefusal(error)) {
     return failure(
@@ -1932,7 +2247,8 @@ export function mapSaleSubmitError(error: unknown): SaleSubmitFailure {
     if (!(outcome && refinable)) {
       return { ...byCode, reason: refinable ? reason : null };
     }
-    return failure(byCode.kind, outcome.message, {
+    const message = refusalMessage(reason, outcome.message, sentAdjustments);
+    return failure(byCode.kind, message, {
       discardAttempt: outcome.discardAttempt ?? false,
       reason,
       refreshData: outcome.refreshData ?? false,
@@ -2223,10 +2539,14 @@ export function queuedSubmission(sale: QueuedSaleView): SubmissionState {
 /**
  * The form while the sale will be queued on the device: the sale is dated now, so
  * a typed date is dropped. The payment profile stays the person's choice (the
- * profiles of the last connection are offered, ADR 0049).
+ * profiles of the last connection are offered, ADR 0049). The typed date is part of the body the command ID was made
+ * for, so it stays while the outcome of an attempt is unknown.
  */
-export function formForOfflineSale(form: SaleFormState): SaleFormState {
-  return { ...form, occurredAtLocal: "" };
+export function formForOfflineSale(
+  form: SaleFormState,
+  outcomeUnknown = false
+): SaleFormState {
+  return outcomeUnknown ? form : { ...form, occurredAtLocal: "" };
 }
 
 export const idleSubmission: SubmissionState = { phase: "idle" };
@@ -2265,11 +2585,128 @@ export function startSubmission(state: SubmissionState): SubmissionState {
 }
 
 /** Definite failures unlock editing; an unknown outcome locks the sale. */
-export function failSubmission(error: unknown): SubmissionState {
-  const mapped = mapSaleSubmitError(error);
+export function failSubmission(
+  error: unknown,
+  sentAdjustments: SaleCommandBody["adjustments"]
+): SubmissionState {
+  const mapped = mapSaleSubmitError(error, sentAdjustments);
   return mapped.unknownOutcome
     ? { confirmingDiscard: false, failure: mapped, phase: "locked" }
     : { failure: mapped, phase: "failed" };
+}
+
+const MAX_LISTED_SHORTAGES = 3;
+
+interface StockShortage {
+  balance: number;
+  label: string;
+  requested: number;
+  variantId: string;
+}
+
+function stockShortages(
+  items: readonly { quantity: number; variantId: string }[],
+  labels: ReadonlyMap<string, string>,
+  stock: EvaluationContext["stock"]
+): StockShortage[] {
+  const requested = new Map<string, number>();
+  for (const item of items) {
+    requested.set(
+      item.variantId,
+      (requested.get(item.variantId) ?? 0) + item.quantity
+    );
+  }
+  const shortages: StockShortage[] = [];
+  for (const [variantId, total] of requested) {
+    const balance = stock[variantId];
+    if (balance?.status !== "ready") {
+      // a line whose balance the screen never read may be the one refused: no line is named then
+      return [];
+    }
+    if (total > balance.value.quantity) {
+      shortages.push({
+        balance: balance.value.quantity,
+        label: labels.get(variantId) ?? "item sem nome",
+        requested: total,
+        variantId,
+      });
+    }
+  }
+  return shortages;
+}
+
+function listWithAnd(parts: readonly string[]): string {
+  if (parts.length <= 1) {
+    return parts.join("");
+  }
+  return `${parts.slice(0, -1).join(", ")} e ${parts.at(-1)}`;
+}
+
+function listShortages(parts: readonly string[]): string {
+  return parts.length > MAX_LISTED_SHORTAGES
+    ? `${parts.slice(0, MAX_LISTED_SHORTAGES).join(", ")} e mais ${parts.length - MAX_LISTED_SHORTAGES}`
+    : listWithAnd(parts);
+}
+
+function stockRefusalNotice(
+  shortages: readonly StockShortage[],
+  canAdjustStock: boolean
+): Pick<SaleSubmitFailure, "entry" | "message"> {
+  const [first] = shortages;
+  if (first === undefined) {
+    return { entry: null, message: stockRefusalFallbackMessage };
+  }
+  const prefix = "A venda não foi registrada:";
+  const detailed = shortages.map(
+    (shortage) =>
+      `${shortage.label} (pediu ${shortage.requested}, saldo ${shortage.balance})`
+  );
+  const names = shortages.map((shortage) => shortage.label);
+  const only = shortages.length === 1;
+  let message: string;
+  if (canAdjustStock) {
+    message = only
+      ? `${prefix} falta estoque de ${detailed[0]}.`
+      : `${prefix} faltam ${shortages.length} itens no estoque. ${listShortages(detailed)}.`;
+  } else {
+    message = only
+      ? `${prefix} falta estoque de ${first.label}. ${askForEntryText}`
+      : `${prefix} faltam ${shortages.length} itens no estoque. ${listShortages(names)}. ${askForEntryText}`;
+  }
+  return {
+    entry: canAdjustStock
+      ? { label: first.label, variantId: first.variantId }
+      : null,
+    message,
+  };
+}
+
+interface SentStock {
+  canAdjustStock: boolean;
+  items: readonly { quantity: number; variantId: string }[];
+  labels: ReadonlyMap<string, string>;
+  stock: EvaluationContext["stock"];
+}
+
+/**
+ * The server does not say which line lacks stock: the refusal names the lines whose request is above the balance the
+ * screen holds, and says so plainly when none can be pointed at.
+ */
+export function describeStockRefusal(
+  state: SubmissionState,
+  sent: SentStock
+): SubmissionState {
+  if (
+    state.phase !== "failed" ||
+    state.failure.reason !== "insufficient_stock"
+  ) {
+    return state;
+  }
+  const notice = stockRefusalNotice(
+    stockShortages(sent.items, sent.labels, sent.stock),
+    sent.canAdjustStock
+  );
+  return { ...state, failure: { ...state.failure, ...notice } };
 }
 
 /** The final domain validation rejected the form before any request. */
@@ -2277,6 +2714,7 @@ export function rejectSubmission(message: string): SubmissionState {
   return {
     failure: {
       discardAttempt: false,
+      entry: null,
       kind: "bad_request",
       message,
       reason: null,

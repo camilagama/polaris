@@ -1,11 +1,13 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   balanceOfEntry,
   chunkIds,
-  clearedItemChanges,
+  coversOfStock,
   itemChangesForEntry,
   lineBalancesRequest,
+  linesToReadForCover,
+  rereadLinesForCover,
   PICKER_RESULT_LIMIT,
   pickerErrorMessage,
   pickerOptions,
@@ -75,23 +77,22 @@ describe("lineBalancesRequest and chunkIds", () => {
 });
 
 describe("pickerOptions", () => {
-  it("shows product, variant, SKU, balance and average cost", () => {
+  it("shows product, variant, SKU and balance, never the average cost", () => {
     const [option] = pickerOptions([entry(1)]);
     expect(option).toMatchObject({
-      detail: "Saldo 3 · SKU CAM-AZ-M · custo médio R$ 12,34",
+      detail: "Saldo 3 · SKU CAM-AZ-M",
       label: "Camiseta Polaris · Azul / M",
       tone: "ok",
     });
   });
 
-  it("flags a variant without balance and never shows an unknown cost as zero", () => {
+  it("flags a variant without balance", () => {
     const [empty, unknown] = pickerOptions([
       entry(1, { quantity: 0 }),
       entry(2, { movingAverageCost: null, sku: null }),
     ]);
     expect(empty).toMatchObject({ tone: "warning" });
-    expect(empty?.detail).toContain("Sem saldo");
-    expect(empty?.detail).not.toContain("custo");
+    expect(empty?.detail).toBe("Sem saldo · SKU CAM-AZ-M");
     expect(unknown?.detail).toBe("Saldo 3");
   });
 
@@ -166,11 +167,6 @@ describe("choosing a variant", () => {
       productId: chosen.productId,
       variantId: chosen.variantId,
     });
-    expect(clearedItemChanges).toEqual({
-      label: "",
-      productId: "",
-      variantId: "",
-    });
   });
 
   it("seeds the line balance from the same read, so no extra call is needed", () => {
@@ -208,5 +204,201 @@ describe("stockAfterRefresh", () => {
       status: "error",
     });
     expect(next.other).toBe(previous.other);
+  });
+});
+
+const COVER = "0199c2d0-0000-7000-8000-0000000000c1";
+
+describe("a capa nos pedidos de saldo", () => {
+  it("sem pedir a capa, os pedidos são exatamente os de antes, sem a chave", () => {
+    expect(variantSearchRequest(organizationId, "  azul ")).toEqual({
+      limit: PICKER_RESULT_LIMIT,
+      organizationId,
+      productStatus: "active",
+      query: "azul",
+      stock: "all",
+    });
+    expect(
+      variantSearchRequest(organizationId, "azul", false)
+    ).not.toHaveProperty("withCover");
+    expect(lineBalancesRequest(organizationId, ["a"])).toEqual({
+      limit: 100,
+      organizationId,
+      productStatus: "all",
+      stock: "all",
+      variantIds: ["a"],
+    });
+    expect(
+      lineBalancesRequest(organizationId, ["a"], false)
+    ).not.toHaveProperty("withCover");
+  });
+
+  it("pedindo a capa, acrescenta withCover true e mantém o resto", () => {
+    expect(variantSearchRequest(organizationId, "azul", true)).toEqual({
+      ...variantSearchRequest(organizationId, "azul"),
+      withCover: true,
+    });
+    expect(lineBalancesRequest(organizationId, ["a", "b"], true)).toEqual({
+      ...lineBalancesRequest(organizationId, ["a", "b"]),
+      withCover: true,
+    });
+    expect(variantSearchRequest(organizationId, "  ", true)).not.toHaveProperty(
+      "query"
+    );
+  });
+});
+
+describe("a capa no saldo da venda", () => {
+  it("balanceOfEntry só leva a capa quando a leitura a trouxe, inclusive o null de produto sem imagem", () => {
+    expect(balanceOfEntry(entry(1))).toEqual({
+      movingAverageCost: "12.340000",
+      quantity: 3,
+      variantId: entry(1).variantId,
+      version: 2,
+    });
+    expect(balanceOfEntry(entry(1))).not.toHaveProperty("coverAssetId");
+    expect(balanceOfEntry(entry(1, { coverAssetId: COVER }))).toMatchObject({
+      coverAssetId: COVER,
+    });
+    expect(balanceOfEntry(entry(1, { coverAssetId: null }))).toHaveProperty(
+      "coverAssetId",
+      null
+    );
+  });
+
+  it("coversOfStock devolve variante para capa só das linhas prontas que a trazem", () => {
+    const withCover = entry(1, { coverAssetId: COVER });
+    const noImage = entry(2, { coverAssetId: null });
+    const unknown = entry(3);
+    const covers = coversOfStock({
+      [withCover.variantId]: {
+        status: "ready",
+        value: balanceOfEntry(withCover),
+      },
+      [noImage.variantId]: { status: "ready", value: balanceOfEntry(noImage) },
+      [unknown.variantId]: { status: "ready", value: balanceOfEntry(unknown) },
+      loading: { status: "loading" },
+    });
+    expect(covers).toEqual({
+      [withCover.variantId]: COVER,
+      [noImage.variantId]: null,
+    });
+    expect(coversOfStock({})).toEqual({});
+  });
+
+  it("duas variantes do mesmo produto ficam com a mesma capa, a do produto", () => {
+    const small = entry(1, { coverAssetId: COVER });
+    const large = entry(2, { coverAssetId: COVER });
+    const covers = coversOfStock({
+      [small.variantId]: { status: "ready", value: balanceOfEntry(small) },
+      [large.variantId]: { status: "ready", value: balanceOfEntry(large) },
+    });
+    expect(covers[small.variantId]).toBe(COVER);
+    expect(covers[large.variantId]).toBe(COVER);
+  });
+
+  it("stockAfterRefresh leva a capa da nova leitura e, sem ela, não inventa uma nem apaga a que a linha já tinha em outra variante", () => {
+    const kept = entry(1, { coverAssetId: COVER });
+    const other = entry(2, { coverAssetId: COVER });
+    const previous = {
+      [kept.variantId]: {
+        status: "ready" as const,
+        value: balanceOfEntry(kept),
+      },
+      [other.variantId]: {
+        status: "ready" as const,
+        value: balanceOfEntry(other),
+      },
+    };
+    const next = stockAfterRefresh(
+      previous,
+      [kept.variantId],
+      [entry(1, { coverAssetId: null, quantity: 9 })]
+    );
+    expect(coversOfStock(next)).toEqual({
+      [kept.variantId]: null,
+      [other.variantId]: COVER,
+    });
+    const without = stockAfterRefresh(previous, [kept.variantId], [entry(1)]);
+    expect(without[kept.variantId]).toMatchObject({ status: "ready" });
+    expect(coversOfStock(without)[other.variantId]).toBe(COVER);
+    expect(coversOfStock(without)).not.toHaveProperty(kept.variantId);
+  });
+});
+
+describe("a capa das linhas abertas quando a chave muda", () => {
+  const lines = [entry(1).variantId, entry(2).variantId];
+
+  it("a chave que vira true com linhas abertas pede a releitura delas, e a capa aparece sem reabrir a Venda", () => {
+    const before = stockAfterRefresh({}, lines, [entry(1), entry(2)]);
+    expect(coversOfStock(before)).toEqual({});
+
+    const ids = linesToReadForCover(false, true, lines);
+    expect(ids).toEqual(lines);
+
+    const after = stockAfterRefresh(before, ids, [
+      entry(1, { coverAssetId: COVER }),
+      entry(2, { coverAssetId: null }),
+    ]);
+    expect(coversOfStock(after)).toEqual({
+      [lines[0] as string]: COVER,
+      [lines[1] as string]: null,
+    });
+  });
+
+  it("a chave igual, a primeira leitura da chave e a Venda sem linhas não pedem leitura", () => {
+    expect(linesToReadForCover(true, true, lines)).toEqual([]);
+    expect(linesToReadForCover(false, false, lines)).toEqual([]);
+    expect(linesToReadForCover(null, true, lines)).toEqual([]);
+    expect(linesToReadForCover(null, false, lines)).toEqual([]);
+    expect(linesToReadForCover(false, true, [])).toEqual([]);
+  });
+
+  it("a chave que desliga também pede a leitura, para as linhas voltarem ao que a leitura sem capa dá", () => {
+    expect(linesToReadForCover(true, false, lines)).toEqual(lines);
+  });
+});
+
+describe("a releitura das linhas pela chave da capa", () => {
+  const lines = [entry(1).variantId, entry(2).variantId];
+  const base = { local: false, openVariantIds: lines };
+
+  it("false → true lê as linhas abertas uma vez e guarda a chave nova; a mesma chave de novo não lê", () => {
+    const read = vi.fn(() => Promise.resolve(null));
+    const kept = rereadLinesForCover({
+      ...base,
+      read,
+      seen: false,
+      withCover: true,
+    });
+    expect(kept).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(lines);
+
+    expect(
+      rereadLinesForCover({ ...base, read, seen: kept, withCover: true })
+    ).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("na montagem, com a chave desligada estável e no aparelho sem conexão, não lê", () => {
+    const read = vi.fn(() => Promise.resolve(null));
+    rereadLinesForCover({ ...base, read, seen: null, withCover: true });
+    rereadLinesForCover({ ...base, read, seen: false, withCover: false });
+    rereadLinesForCover({
+      ...base,
+      local: true,
+      read,
+      seen: false,
+      withCover: true,
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("uma leitura que falha não vira rejeição solta", async () => {
+    const read = vi.fn(() => Promise.reject(new Error("offline")));
+    rereadLinesForCover({ ...base, read, seen: false, withCover: true });
+    await Promise.resolve();
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });

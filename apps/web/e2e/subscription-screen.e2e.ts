@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * The Assinatura (corte assinatura-e-cancelar, AC-8 to AC-19 and AC-35; design t268 v2, § 11) in the real route,
+ * The Assinatura (corte assinatura-e-cancelar, AC-8 to AC-19 and AC-35; design da Assinatura v2, § 11) in the real route,
  * with the API answered by the test: each state of `billing.readPlan`, the offer with the catalog's prices and the
  * server's methods, the card's checkout (one call for a double click), the return of the card's page read again
  * every 5 s, Pix Automático with its code and its page and no "7 dias", each refusal of the checkout with its own
@@ -36,7 +36,7 @@ const PHONE = /telefone/i;
 const FREE_WORD = /grátis/;
 const SUBSCRIBE_ACTION = /Assinar|Começar/;
 const REFUND_WORD = /reembolso/i;
-/** 23/10/2026 at noon in São Paulo: the first charge of a trial started now is on 30/10/2026. */
+/** `23/10/2026` at noon in São Paulo: the first charge of a trial started now is on `30/10/2026`. */
 const NOW = new Date("2026-10-23T15:00:00.000Z");
 
 const rpc = (json: unknown, status = 200) => ({
@@ -82,7 +82,7 @@ const ACTIVE = plan({
   // the Pro's limits, as the catalog gives them (not the Free's, which would put 2 of 1 on a Pro store)
   limits: { goals: 3, images: 5000, variants: 2000 },
   method: "card",
-  nextCharge: { amount: "24.90", on: "2026-11-23" },
+  nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
   state: "active",
   usage: { goals: 2, images: 12, variants: 38 },
 });
@@ -225,11 +225,30 @@ test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em des
     "Você pode desistir em até 7 dias depois da primeira cobrança e receber o valor de volta.",
     "Polaris, um produto de Agência Summit, CNPJ 35.584.467/0001-00.",
   ]);
-  // the Terms and the Privacy Policy are the shell's, once on the screen
+  // the Terms and the Privacy Policy are the shell's (the menu of the store, in the header), not the screen's
   await expect(page.locator("main footer").getByRole("link")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
-    1
+    0
   );
+});
+
+test("o CPF digitado para o Pix continua lá depois de olhar outra aba de Configurações", async ({
+  page,
+}) => {
+  await openScreen(page);
+  await page
+    .getByRole("radiogroup", { name: "Como pagar" })
+    .getByRole("radio", { name: PIX })
+    .click();
+  await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
+
+  await page
+    .getByRole("tab", { exact: true, name: "Formas de receber" })
+    .click();
+  await expect(page.getByLabel("CPF ou CNPJ")).toBeHidden();
+  await page.getByRole("tab", { exact: true, name: "Assinatura" }).click();
+
+  await expect(page.getByLabel("CPF ou CNPJ")).toHaveValue("529.982.247-25");
 });
 
 test("Pix Automático: 'Começar o teste grátis' sem número de dias, nome e e-mail da conta, CPF com teclado numérico e sem telefone (AS-12 emenda, AS-13)", async ({
@@ -298,7 +317,7 @@ test("cada estado tem título e linha de apoio próprios (AS-9)", async ({
         accessEndsAt: "2026-10-31T03:00:00.000Z",
         cycleMonths: 1,
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       }),
       "Pro, em teste",
@@ -500,13 +519,13 @@ for (const [label, value, text] of [
         "Você pode desistir"
       );
     }
-    // the Terms and the Privacy Policy stay the shell's in every state
+    // the Terms and the Privacy Policy stay the shell's (the menu of the store) in every state: none on the screen
     await expect(page.getByRole("link", { name: "Termos de Uso" })).toHaveCount(
-      1
+      0
     );
     await expect(
       page.getByRole("link", { name: "Política de Privacidade" })
-    ).toHaveCount(1);
+    ).toHaveCount(0);
   });
 }
 
@@ -553,7 +572,7 @@ test("volta do cartão: 'Confirmando o pagamento…', relê a cada 5 s e mostra 
         accessEndsAt: "2026-10-31T03:00:00.000Z",
         cycleMonths: 1,
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       }),
     ],
@@ -714,7 +733,7 @@ test("Pix: documento inválido não sai; válido manda só os dígitos, mostra o
         accessEndsAt: "2026-10-31T03:00:00.000Z",
         cycleMonths: 1,
         method: "pix_automatic",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       }),
     ],
@@ -767,6 +786,48 @@ test("Pix: documento inválido não sai; válido manda só os dígitos, mostra o
     timeout: 20_000,
   });
   await expect(page.getByLabel("Código Pix (copia e cola)")).toHaveCount(0);
+});
+
+test("Pix: 'Copiar' copia o código inteiro, e o campo mostra o mesmo valor", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "only Chromium lets a test read the clipboard"
+  );
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const waiting = plan({ method: "pix_automatic", state: "trial_setup" });
+  await openScreen(page, {
+    checkouts: [
+      (route) =>
+        route.fulfill(
+          rpc({
+            handoff: {
+              emv: PIX_CODE,
+              kind: "pix_authorization",
+              url: PIX_PAGE,
+            },
+          })
+        ),
+    ],
+    plans: [plan(), waiting],
+  });
+  await page
+    .getByRole("radiogroup", { name: "Como pagar" })
+    .getByRole("radio", { name: PIX })
+    .click();
+  await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
+  await page.getByRole("button", { name: "Começar o teste grátis" }).click();
+  await expect(page.getByLabel("Código Pix (copia e cola)")).toHaveValue(
+    PIX_CODE
+  );
+  await page.getByRole("button", { name: "Copiar", exact: true }).click();
+  await expect(page.getByText("Código copiado.")).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    PIX_CODE
+  );
 });
 
 test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano pode ter mudado (AS-17)", async ({
@@ -825,7 +886,19 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
       "SERVICE_UNAVAILABLE",
       503,
       { reason: "billing_provider_unavailable" },
-      "O serviço de pagamento não respondeu. Nada foi cobrado.",
+      "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.",
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
+      503,
+      { reason: "previous_checkout_unverified" },
+      "Não deu para confirmar se o pagamento que você começou antes foi aprovado. Toque em Atualizar: se foi, a assinatura aparece aqui. Se não, tente de novo.",
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
+      503,
+      { reason: "previous_renewal_cancel_unverified" },
+      "A assinatura nova não começou. Não deu para confirmar o encerramento da anterior: toque em Atualizar para ver o plano antes de tentar de novo.",
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -867,8 +940,11 @@ test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano p
     seen.add((await alert.textContent()) ?? "");
     const reread = [
       "already_subscribed",
+      "billing_provider_unavailable",
       "checkout_pending_confirmation",
       "cycle_not_offered",
+      "previous_checkout_unverified",
+      "previous_renewal_cancel_unverified",
       "renewal_cancelled_until",
       "trial_already_used",
       "trial_in_progress",

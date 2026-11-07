@@ -11,7 +11,7 @@ import {
   InvalidExportRequestError,
 } from "@polaris/domain/privacy/data-export";
 import { sql } from "drizzle-orm";
-import { Client } from "pg";
+import { Client, Pool } from "pg";
 import { createDatabase } from "../src/client";
 import {
   CLOSED_EXPORT_READER_ROLE,
@@ -36,7 +36,22 @@ import {
   TenantAuthorizationError,
   type TenantRequestTransaction,
 } from "../src/tenant-transaction";
+import {
+  CLOSED_EXPORT_POLICIES_SQL,
+  type ClosedExportPolicyRow,
+  isClosedExportPolicyQual,
+  readClosedExportPolicies,
+} from "./closed-export-policy-qual";
 import { runClock, storeDay } from "./gate-clock";
+import {
+  replaceFunctionAsOwner,
+  setLoginRole,
+  withGateRole,
+} from "./gate-roles";
+import {
+  foldRoleMemberships,
+  type RoleMembershipRow,
+} from "./role-memberships";
 import {
   createProductFixture,
   createTenantFixture,
@@ -55,8 +70,7 @@ import {
 } from "./sales-gate-support";
 
 /**
- * The closed organization, read-only until the purge, on a real PostgreSQL 18 (ADR 0081 and 0078, amended; design of
- * 19/10/2026 and its consolidation): the dates the database computes are the domain's, to the second and across a
+ * The closed organization, read-only until the purge, on a real PostgreSQL 18 (ADR 0081 and 0078, amended): the dates the database computes are the domain's, to the second and across a
  * change of daylight saving time; the owner (and only the owner) reads the state of a closed organization, the same
  * with or without a legal hold, a scheduled purge or any billing state, and asks for a copy until D; the tenant still
  * opens for no capability (a member is told `organization_closed`); the copy is read by a role that holds SELECT on
@@ -109,8 +123,6 @@ const PRIVACY_OWNER_FUNCTIONS = [
 const LEASE_TOKEN = /^[0-9a-f-]{36}$/;
 const INIT_PLAN = /InitPlan/;
 const SUB_PLAN = /SubPlan/;
-const SCOPE_SUBQUERY =
-  /\(\s*SELECT closed_export_organization\(\) AS closed_export_organization\)/;
 
 type Row = Record<string, unknown>;
 
@@ -804,8 +816,8 @@ async function run() {
 
     // the limit to the second: D is a local midnight, so the real clock never lands one second from it. The function is
     // the live definition (read from the catalog, nothing retyped) with its clock fixed at the instant under test, in a
-    // transaction that is rolled back: nothing it writes stays. The gate's owner connection is a superuser, so the
-    // replacement keeps the function's owner (the privacy owner) and the call runs as it does in production.
+    // transaction that is rolled back: nothing it writes stays. The replacement runs as the function's owner (the privacy
+    // owner), so it keeps its owner and grants, and the call runs as the tenant runtime group, as it does in production.
     const requestFunctionName = "public.request_closed_data_export";
     const requestFunction = `${requestFunctionName}(text,text[],uuid)`;
     const askWithClockAt = async (tenant: TenantFixture, clock: Date) => {
@@ -825,13 +837,15 @@ async function run() {
         );
         assert.notEqual(fixed, live.definition, "the clock of the function");
         assert.ok(!fixed.includes("pg_catalog.now()"));
-        await client.query(fixed);
+        await replaceFunctionAsOwner(client, requestFunction, fixed);
         await client.query("SELECT set_config('app.user_id', $1, true)", [
           tenant.userId,
         ]);
-        await client.query(
-          `SELECT ${requestFunctionName}($1, ARRAY['json']::text[], NULL)`,
-          [tenant.organizationId]
+        await withGateRole(client, runtimeRole, () =>
+          client.query(
+            `SELECT ${requestFunctionName}($1, ARRAY['json']::text[], NULL)`,
+            [tenant.organizationId]
+          )
         );
         return "accepted";
       } catch (error: unknown) {
@@ -1001,7 +1015,7 @@ async function run() {
           [settings.exportId ?? "", settings.lease ?? ""]
         );
         if (settings.role !== false) {
-          await client.query(`SET LOCAL ROLE ${CLOSED_EXPORT_READER_ROLE}`);
+          await setLoginRole(client, CLOSED_EXPORT_READER_ROLE);
         }
         return await operation(client);
       } finally {
@@ -1088,7 +1102,7 @@ async function run() {
       "the scope answers nothing with another lease token, another export, a malformed setting, no export named, outside a READ ONLY transaction or after the lease ran out; the privacy runtime itself reads no table and the tenant runtime cannot become the reader; on every exported table the plan has the scope as an InitPlan and no SubPlan"
     );
 
-    // ------------------------------------------------- 6. the two barriers, each on its own (Diego V3, (a) to (g))
+    // ------------------------------------------------- 6. the two barriers, each on its own ((a) to (g))
     const countAll = async () => {
       const counts: Record<string, number> = {};
       for (const table of DATASET_TABLES) {
@@ -1156,13 +1170,15 @@ async function run() {
         await client.query(
           `CREATE POLICY gate_probe_write ON public.${table} AS PERMISSIVE FOR ALL TO ${CLOSED_EXPORT_READER_ROLE} USING (true) WITH CHECK (true)`
         );
-        if (readOnly) {
-          await client.query("SET LOCAL transaction_read_only = on");
-        }
-        await client.query(`SET LOCAL ROLE ${CLOSED_EXPORT_READER_ROLE}`);
-        const [, update, remove] = writes(table);
-        await client.query(update[1]);
-        await client.query(`${remove[1]} AND false`);
+        await withGateRole(client, CLOSED_EXPORT_READER_ROLE, async () => {
+          // after the GRANT of withGateRole, which a read-only transaction refuses
+          if (readOnly) {
+            await client.query("SET LOCAL transaction_read_only = on");
+          }
+          const [, update, remove] = writes(table);
+          await client.query(update[1]);
+          await client.query(`${remove[1]} AND false`);
+        });
       } finally {
         await client.query("ROLLBACK").catch(() => undefined);
         await client.end();
@@ -1306,15 +1322,19 @@ async function run() {
       rolsuper: false,
       temporary: false,
     });
-    const memberships = await ownerQuery<Row>(
+    const membershipGrants = await owner.pool.query<RoleMembershipRow>(
       `SELECT member.rolname AS member, granted.rolname AS granted, m.inherit_option, m.set_option, m.admin_option
          FROM pg_auth_members m
          JOIN pg_roles member ON member.oid = m.member
          JOIN pg_roles granted ON granted.oid = m.roleid
         WHERE (granted.rolname = $1 OR member.rolname = $1)
+          -- the database owner's ADMIN-only edge, which PostgreSQL 16+ gives a creator without SUPERUSER (definer-hardening-checks.ts)
+          AND NOT (m.member = (SELECT datdba FROM pg_database WHERE datname = current_database())
+                   AND m.admin_option AND NOT m.inherit_option AND NOT m.set_option)
         ORDER BY 1, 2`,
       [CLOSED_EXPORT_READER_ROLE]
     );
+    const memberships = foldRoleMemberships(membershipGrants.rows);
     assert.deepEqual(
       memberships,
       [
@@ -1326,11 +1346,11 @@ async function run() {
           set_option: true,
         },
       ],
-      "only the privacy runtime may become the reader (SET, never INHERIT), and the reader is a member of nothing"
+      "only the privacy runtime may become the reader (SET, never INHERIT, without ADMIN, however many roles granted it), and the reader is a member of nothing"
     );
-    const policies = await ownerQuery<{ qual: string; tablename: string }>(
-      "SELECT tablename, qual, cmd FROM pg_policies WHERE $1 = ANY (roles) ORDER BY tablename",
-      [CLOSED_EXPORT_READER_ROLE]
+    const policies = await readClosedExportPolicies(
+      owner.pool,
+      CLOSED_EXPORT_READER_ROLE
     );
     assert.deepEqual(
       policies.map((policy) => policy.tablename),
@@ -1338,15 +1358,73 @@ async function run() {
       "one policy per exported table, and only there"
     );
     for (const policy of policies) {
-      assert.match(
-        policy.qual,
-        SCOPE_SUBQUERY,
-        `${policy.tablename}: by the scope`
+      assert.ok(
+        isClosedExportPolicyQual(policy.tablename, policy.qual),
+        `${policy.tablename}: by the scope and nothing else, got ${policy.qual}`
       );
-      assert.equal((policy as unknown as { cmd: string }).cmd, "SELECT");
+      assert.equal(policy.cmd, "SELECT");
+    }
+    const hostileSchema = `polaris_cro_hostile_${suffix}`;
+    await owner.pool.query(`CREATE SCHEMA "${hostileSchema}"`);
+    try {
+      const hostilePool = new Pool({
+        connectionString: adminUrl,
+        max: 1,
+        options: `-c search_path=${hostileSchema},pg_catalog,public`,
+      });
+      hostilePool.on("error", () => undefined);
+      try {
+        const unpinnedRead = async () =>
+          (
+            await hostilePool.query<ClosedExportPolicyRow>(
+              CLOSED_EXPORT_POLICIES_SQL,
+              [CLOSED_EXPORT_READER_ROLE]
+            )
+          ).rows;
+        const [hostilePath] = (
+          await hostilePool.query<{ search_path: string }>(
+            "SELECT current_setting('search_path') AS search_path"
+          )
+        ).rows;
+        assert.equal(
+          hostilePath?.search_path.replaceAll(" ", ""),
+          `${hostileSchema},pg_catalog,public`
+        );
+        const control = await unpinnedRead();
+        assert.equal(control.length, DATASET_TABLES.length);
+        for (const policy of control) {
+          assert.ok(
+            isClosedExportPolicyQual(policy.tablename, policy.qual),
+            `${policy.tablename}: with public on the path and no look-alike, the text is the scope's, got ${policy.qual}`
+          );
+        }
+        await owner.pool.query(
+          `CREATE FUNCTION "${hostileSchema}".closed_export_organization() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid'`
+        );
+        const unpinned = await unpinnedRead();
+        assert.equal(unpinned.length, DATASET_TABLES.length);
+        for (const policy of unpinned) {
+          assert.ok(
+            !isClosedExportPolicyQual(policy.tablename, policy.qual),
+            `${policy.tablename}: a look-alike ahead of public must change what pg_policies prints, got ${policy.qual}`
+          );
+        }
+        assert.deepEqual(
+          await readClosedExportPolicies(
+            hostilePool,
+            CLOSED_EXPORT_READER_ROLE
+          ),
+          policies,
+          "the pinned read gives the same rows under a hostile session search_path"
+        );
+      } finally {
+        await hostilePool.end();
+      }
+    } finally {
+      await owner.pool.query(`DROP SCHEMA "${hostileSchema}" CASCADE`);
     }
     tests.push(
-      "the reader holds SELECT on exactly the columns of EXPORT_DATASETS minus omit (has_column_privilege on every column of every table), no INSERT, UPDATE, REFERENCES, DELETE, TRUNCATE, TRIGGER or MAINTAIN and no sequence anywhere; authentication, billing, memberships, sessions, offline grants, devices, sync, the exports themselves, the closure, the purge and the audits are out of reach; it executes only its scope; it is NOLOGIN, NOINHERIT, NOBYPASSRLS, without TEMPORARY or CREATE; only the privacy runtime may become it (SET, not INHERIT) and it is a member of nothing; its policies are one SELECT per exported table, each by the scope as a subquery"
+      "the reader holds SELECT on exactly the columns of EXPORT_DATASETS minus omit (has_column_privilege on every column of every table), no INSERT, UPDATE, REFERENCES, DELETE, TRUNCATE, TRIGGER or MAINTAIN and no sequence anywhere; authentication, billing, memberships, sessions, offline grants, devices, sync, the exports themselves, the closure, the purge and the audits are out of reach; it executes only its scope; it is NOLOGIN, NOINHERIT, NOBYPASSRLS, without TEMPORARY or CREATE; only the privacy runtime may become it (SET, not INHERIT) and it is a member of nothing; its policies are one SELECT per exported table, each with the whole qual equal to the scope as a subquery and nothing else (no OR, AND or other column), read the same under a hostile session search_path that holds a look-alike scope function (unpinned the text changes, pinned it does not)"
     );
 
     // ------------------------------------------------- 8. who records the file of a copy (the trigger, both sides)

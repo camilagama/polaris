@@ -14,8 +14,17 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import {
+  assertNoEllipsis,
+  assertNoPageScroll,
+  assertNothingClipped,
+  expectReflowFont,
+  openReflowViewport,
+  reflowTest,
+  skipOutsideChromium,
+} from "./reflow";
 import { expectTabsKeyboard } from "./tabs-keyboard";
-import { WORKER_MARK, serveLabWorker } from "./worker-mark";
+import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The real expenses screen in a real browser, over a small in-memory stand-in
@@ -29,6 +38,7 @@ const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
 const TODAY_BR = "14/10/2026";
 const rpcPrefix = /^\/rpc\//;
+const TABULAR_NUMS = /tabular-nums/;
 
 interface FakeCategory {
   archivedAt: string | null;
@@ -408,8 +418,8 @@ async function installServer(page: Page, server: FakeExpenseServer) {
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
-      headers: { ...WORKER_MARK },
       contentType: "application/json",
+      headers: { ...WORKER_MARK },
       status: answer.status,
     });
   });
@@ -490,6 +500,54 @@ test("registra uma despesa com valor em formato brasileiro e a soma do período 
   await expect(page.getByText("Total do período").locator("..")).toContainText(
     "1.500,50"
   );
+});
+
+test("registrar com o 503 server_busy diz que pode ter sido salva, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  let created = 0;
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/create", (route) => {
+      created += 1;
+      return route.fulfill({
+        body: JSON.stringify({
+          json: {
+            code: "SERVICE_UNAVAILABLE",
+            data: { reason: "server_busy" },
+            defined: false,
+            message: "Unavailable",
+            status: 503,
+          },
+        }),
+        contentType: "application/json",
+        headers: { ...WORKER_MARK },
+        status: 503,
+      });
+    })
+  );
+
+  await fillExpense(page, {
+    amount: "80",
+    category: "Aluguel",
+    description: "Conta de luz",
+  });
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await expect(page.getByText("salva neste aparelho")).toHaveCount(0);
+  // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  expect(server.expenses).toHaveLength(0);
+  await expect(page.getByLabel("Descrição")).toHaveValue("Conta de luz");
 });
 
 for (const viewport of FORM_VIEWPORTS) {
@@ -694,6 +752,36 @@ test("anular tira a despesa do período, aparece em Anuladas e pode ser reativad
   await expect(row(page, "Panfletos")).toBeVisible();
 });
 
+test("anular avisa com o nome da despesa e Desfazer a devolve ao período", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  await fillExpense(page, {
+    amount: "80",
+    category: "Marketing",
+    description: "Cartazes",
+  });
+  await page.getByRole("button", { name: "Registrar despesa" }).click();
+  await expect(row(page, "Cartazes")).toBeVisible();
+
+  await page.getByRole("button", { name: "Anular despesa Cartazes" }).click();
+  await expect(row(page, "Cartazes")).toHaveCount(0);
+  const notice = page
+    .getByRole("status")
+    .filter({ hasText: "Despesa “Cartazes” anulada." });
+  await expect(notice).toBeVisible();
+  // the pressed button left with its row: the focus is on the notice, not on the page
+  await expect(notice).toBeFocused();
+
+  await notice.getByRole("button", { name: "Desfazer" }).click();
+  await expect(row(page, "Cartazes")).toBeVisible();
+  await expect(page.getByText("Despesa reativada.")).toBeVisible();
+  // the notice of the restore has nothing left to undo
+  await expect(page.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
+  expect(server.expenses.map((stored) => stored.status)).toEqual(["active"]);
+});
+
 test("editar sobre uma versão antiga mostra o conflito e recarrega", async ({
   page,
 }) => {
@@ -799,7 +887,7 @@ test("uma despesa recorrente criada no passado lança a ocorrência do mês e mo
   const occurrence = listedExpense(page, "Assinatura do sistema");
   await expect(occurrence).toHaveCount(1);
   await expect(occurrence).toContainText("R$ 1.200,00");
-  await expect(occurrence).toContainText("Competência 14/10/2026");
+  await expect(occurrence).toContainText("Aluguel · 14/10/2026");
   await expect(
     occurrence.getByText("Recorrente", { exact: true })
   ).toBeVisible();
@@ -1061,6 +1149,144 @@ test("o seletor de mês mostra o mês por extenso, anda com as setas e escolhe n
   await expect(trigger).toHaveText("Outubro de 2026");
   await expect.poll(() => months.at(-1)).toBe("2026-10");
   await expect(trigger).toBeFocused();
+});
+
+test("reabrir a grade de meses no meio da saída dela mostra o ano do mês na tela, não o da abertura anterior", async ({
+  page,
+}) => {
+  await openExpensesWatchingMonths(page);
+  const trigger = page.locator("#expense-month");
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+
+  await trigger.click();
+  await popup.getByRole("button", { name: "Próximo ano" }).click();
+  await popup
+    .getByRole("group", { name: "Meses de 2027" })
+    .getByRole("button", { name: "dezembro de 2027" })
+    .click();
+
+  // the same turn as the choice: the popup is still leaving, the month moves ahead and the trigger opens it again
+  await page.evaluate(() => {
+    const click = (selector: string) =>
+      document.querySelector<HTMLElement>(selector)?.click();
+    click('[aria-label="Próximo mês"]');
+    click("#expense-month");
+  });
+  await expect(trigger).toHaveText("Janeiro de 2028");
+  await expect(popup.getByText("2028", { exact: true })).toBeVisible();
+  await expect(
+    popup.getByRole("group", { name: "Meses de 2028" })
+  ).toBeVisible();
+});
+
+const TURN_EVE = "2026-11-01T02:50:00.000Z";
+
+const BARRIER_MONTH = "barrier";
+
+/**
+ * Opens Despesas on the eve of the turn, counting the reads of the list. `settle` replaces a fixed wait: the page
+ * runs a few turns of its message queue (where React schedules its work), then sends a marker read through the same
+ * route; reads go out in order, so every read already sent, or sent by those turns, is counted when the marker
+ * answers. The marker itself is not counted and does not reach the server.
+ */
+async function openExpensesOnTheEveOfTheTurn(page: Page) {
+  await page.clock.install({ time: new Date(TURN_EVE) });
+  const server = new FakeExpenseServer();
+  const months: string[] = [];
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", async (route) => {
+      const body = route.request().postDataJSON() as {
+        json?: { from?: string };
+      };
+      const from = String(body.json?.from ?? "");
+      if (from === BARRIER_MONTH) {
+        await route.fulfill({ body: "{}", contentType: "application/json" });
+        return;
+      }
+      months.push(from.slice(0, 7));
+      await route.fallback();
+    })
+  );
+  const settle = () =>
+    page.evaluate(async (barrier) => {
+      const channel = new MessageChannel();
+      for (let turn = 0; turn < 3; turn += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: each turn of the message queue runs after the one before
+        await new Promise<void>((resolve) => {
+          channel.port1.onmessage = () => resolve();
+          channel.port2.postMessage(0);
+        });
+      }
+      await fetch("/rpc/expense/list", {
+        body: JSON.stringify({ json: { from: barrier } }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+    }, BARRIER_MONTH);
+  return { months, settle };
+}
+
+test("na virada do dia da loja, o filtro intocado passa para o mês novo com uma única leitura da lista", async ({
+  page,
+}) => {
+  const { months, settle } = await openExpensesOnTheEveOfTheTurn(page);
+  const trigger = page.locator("#expense-month");
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await settle();
+  const reads = months.length;
+
+  await page.clock.fastForward("11:00");
+  await expect(trigger).toHaveText("Novembro de 2026");
+  await expect.poll(() => months.length).toBe(reads + 1);
+  expect(months.at(-1)).toBe("2026-11");
+
+  await page.clock.fastForward("30:00");
+  await page.clock.fastForward("30:00");
+  await settle();
+  await expect(trigger).toHaveText("Novembro de 2026");
+  expect(months).toHaveLength(reads + 1);
+});
+
+test("na virada do dia da loja, o mês que a pessoa escolheu fica onde está e a lista não é lida", async ({
+  page,
+}) => {
+  const { months, settle } = await openExpensesOnTheEveOfTheTurn(page);
+  const trigger = page.locator("#expense-month");
+  const popup = page.getByRole("dialog", { name: "Mês de competência" });
+  await page.getByRole("button", { name: "Mês anterior" }).click();
+  await expect(trigger).toHaveText("Setembro de 2026");
+  await page.getByRole("button", { name: "Próximo mês" }).click();
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await settle();
+  const reads = months.length;
+
+  await page.clock.fastForward("11:00");
+  await expect(trigger).toHaveText("Outubro de 2026");
+  await page.clock.fastForward("30:00");
+  await page.clock.fastForward("30:00");
+  await settle();
+  await expect(trigger).toHaveText("Outubro de 2026");
+  expect(months).toHaveLength(reads);
+
+  await trigger.click();
+  await popup.getByRole("button", { name: "Este mês" }).click();
+  await expect(trigger).toHaveText("Novembro de 2026");
+  await expect.poll(() => months.at(-1)).toBe("2026-11");
+});
+
+test("fora da virada, o tempo andando não lê a lista de novo", async ({
+  page,
+}) => {
+  const { months, settle } = await openExpensesOnTheEveOfTheTurn(page);
+  await expect.poll(() => months.at(-1)).toBe("2026-10");
+  await settle();
+  const reads = months.length;
+  await page.clock.fastForward("05:00");
+  await settle();
+  await expect(page.locator("#expense-month")).toHaveText("Outubro de 2026");
+  expect(months).toHaveLength(reads);
 });
 
 test("a grade de meses não volta de janeiro de 2000, pelos botões nem pelo teclado, e o futuro continua livre", async ({
@@ -1404,15 +1630,215 @@ test("categoria no diálogo: Nova categoria cria no grupo, Renomear muda o nome 
   }
   await rename.click();
   await renameForm.getByLabel("Nome da categoria").fill("Frete e entregas");
-  await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await renameForm
+    .getByRole("button", { exact: true, name: "Salvar alterações" })
+    .click();
   await expect(renameForm.getByRole("alert")).toBeVisible();
   await expect(renameForm.getByLabel("Nome da categoria")).toHaveValue(
     "Frete e entregas"
   );
-  await renameForm.getByRole("button", { exact: true, name: "Salvar" }).click();
+  await renameForm
+    .getByRole("button", { exact: true, name: "Salvar alterações" })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(panel.getByText("Categoria renomeada.")).toBeVisible();
   await expect(
     panel.getByRole("button", { name: "Renomear categoria Frete e entregas" })
   ).toBeFocused();
+});
+
+function seedExpense(
+  server: FakeExpenseServer,
+  n: number,
+  amount: string,
+  categoryIndex = 1
+) {
+  const cat = server.categories[categoryIndex];
+  if (cat === undefined) {
+    throw new Error("categoria do teste");
+  }
+  server.expenses.push({
+    amount,
+    categoryGroup: cat.groupKey,
+    categoryId: cat.id,
+    categoryName: cat.name,
+    competenceOn: TODAY,
+    createdAt: NOW,
+    description: `Despesa ${n}`,
+    id: uuid(500 + n),
+    organizationId: ORGANIZATION,
+    payee: null,
+    recurringRuleId: null,
+    saleId: null,
+    status: "active",
+    updatedAt: NOW,
+    version: 1,
+    voidedAt: null,
+  });
+}
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`o rodapé Total na tela, a ${viewport.name} px: soma o que está carregado e tem a mesma altura com e sem despesas`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "0.10");
+    seedExpense(server, 2, "0.20");
+    seedExpense(server, 3, "1500.50");
+    await openExpenses(page, server);
+
+    const footer = page.locator("[data-list-total]");
+    await expect(footer).toContainText("Total na tela");
+    await expect(footer).toContainText("R$ 1.500,80");
+    await expect(footer).toContainText("3 despesas");
+    const value = footer.locator(".tabular-nums");
+    await expect(value).toHaveCSS("text-align", "right");
+    await expect(value).toHaveCSS("font-variant-numeric", TABULAR_NUMS);
+    const filled = await footer.boundingBox();
+
+    // a category with nothing in it empties the list: the foot stays, at zero, as tall as before
+    await choose(page, page, "Categoria", "Marketing");
+    await expect(page.getByText("Nenhuma despesa neste período")).toBeVisible();
+    await expect(footer).toContainText("R$ 0,00");
+    await expect(footer).toContainText("0 despesas");
+    const empty = await footer.boundingBox();
+    expect(filled).not.toBeNull();
+    expect(empty).not.toBeNull();
+    expect(
+      Math.abs((empty?.height ?? 0) - (filled?.height ?? 0))
+    ).toBeLessThanOrEqual(1);
+  });
+}
+
+for (const viewport of [
+  { height: 740, name: "320", width: 320 },
+  ...FORM_VIEWPORTS,
+]) {
+  test(`o rodapé Total na tela, a ${viewport.name} px: com página pendente a contagem diz "há mais" sem quebrar a linha`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    for (let n = 1; n <= 51; n += 1) {
+      seedExpense(server, n, "1500.50");
+    }
+    await openExpenses(page, server);
+    const footer = page.locator("[data-list-total]");
+    await expect(footer).toContainText("50 despesas · há mais");
+    const count = footer.getByText("50 despesas · há mais");
+    const countBox = await count.boundingBox();
+    const valueBox = await footer.locator(".tabular-nums").boundingBox();
+    expect(countBox?.height ?? 99).toBeLessThanOrEqual(24);
+    expect(valueBox).not.toBeNull();
+    if (viewport.width === 320) {
+      // 15 rem inside the box: the count and the total do not fit side by side, so the total goes under the count
+      expect(valueBox?.y ?? 0).toBeGreaterThanOrEqual(
+        (countBox?.y ?? 0) + (countBox?.height ?? 0) - 1
+      );
+    } else {
+      expect(
+        Math.abs(
+          (valueBox?.y ?? 0) +
+            (valueBox?.height ?? 0) -
+            ((countBox?.y ?? 0) + (countBox?.height ?? 0))
+        )
+      ).toBeLessThanOrEqual(8);
+    }
+    const overflow = await footer.evaluate(
+      (node) => node.scrollWidth - node.clientWidth
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+}
+
+for (const width of [480, 1280]) {
+  test(`o rodapé Total na tela, a ${width} px: o total termina onde terminam os valores das linhas, Ativas e Anuladas`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width });
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "0.10");
+    seedExpense(server, 2, "1500.50");
+    seedExpense(server, 3, "20.00");
+    seedExpense(server, 4, "7.00");
+    for (const voided of server.expenses.slice(2)) {
+      voided.status = "voided";
+      voided.voidedAt = NOW;
+    }
+    await openExpenses(page, server);
+
+    const rightEdge = async (locator: Locator) => {
+      const box = await locator.boundingBox();
+      expect(box).not.toBeNull();
+      return (box?.x ?? 0) + (box?.width ?? 0);
+    };
+    const footerValue = page.locator("[data-list-total] .tabular-nums");
+    const rowValues = page.locator("[data-expense-id] p.tabular-nums");
+    const expectColumn = async (tab: string) => {
+      await page.getByRole("tab", { name: tab }).click();
+      await expect(rowValues).toHaveCount(2);
+      await expect(footerValue).not.toHaveText("…");
+      const total = await rightEdge(footerValue);
+      const first = await rightEdge(rowValues.nth(0));
+      const second = await rightEdge(rowValues.nth(1));
+      expect(Math.abs(total - first)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(total - second)).toBeLessThanOrEqual(0.5);
+    };
+    await expectColumn("Ativas");
+    await expectColumn("Anuladas");
+  });
+}
+
+test.describe("a 320 px com letra de 20 px", () => {
+  skipOutsideChromium();
+
+  reflowTest(
+    "o rodapé Total na tela empilha a contagem e o valor, com as duas casas, dentro da janela, e tem a mesma altura com e sem despesas",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await page.clock.setFixedTime(new Date(NOW));
+      const server = new FakeExpenseServer();
+      for (let n = 1; n <= 51; n += 1) {
+        seedExpense(server, n, "1500.50");
+      }
+      await openExpenses(page, server);
+      await expectReflowFont(page);
+
+      const footer = page.locator("[data-list-total]");
+      await expect(footer).toContainText("50 despesas · há mais");
+      const value = footer.locator(".tabular-nums");
+      await expect(value).toHaveText("R$ 75.025,00");
+      const [footerBox, valueBox, countBox] = await Promise.all([
+        footer.boundingBox(),
+        value.boundingBox(),
+        footer.getByText("50 despesas · há mais").boundingBox(),
+      ]);
+      expect(footerBox).not.toBeNull();
+      expect(valueBox).not.toBeNull();
+      expect(countBox).not.toBeNull();
+      expect((valueBox?.x ?? 0) + (valueBox?.width ?? 0)).toBeLessThanOrEqual(
+        (footerBox?.x ?? 0) + (footerBox?.width ?? 0)
+      );
+      expect(valueBox?.y ?? 0).toBeGreaterThanOrEqual(
+        (countBox?.y ?? 0) + (countBox?.height ?? 0) - 1
+      );
+      await assertNothingClipped(footer);
+      await assertNoEllipsis(footer);
+      await assertNoPageScroll(page);
+      const filled = footerBox?.height ?? 0;
+
+      await choose(page, page, "Categoria", "Marketing");
+      await expect(
+        page.getByText("Nenhuma despesa neste período")
+      ).toBeVisible();
+      await expect(footer).toContainText("0 despesas");
+      await expect(value).toHaveText("R$ 0,00");
+      const empty = await footer.boundingBox();
+      expect(Math.abs((empty?.height ?? 0) - filled)).toBeLessThanOrEqual(1);
+    }
+  );
 });

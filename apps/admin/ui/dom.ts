@@ -1,0 +1,274 @@
+/**
+ * The one way the Admin page builds its DOM: elements made by name, attributes set one by one and text written as
+ * text. Nothing here takes HTML, so a store name with `<script>` in it is shown as those characters (AC-4, AC-11);
+ * the page's policy (Trusted Types `'none'`) refuses an HTML string even if one slipped in. Only the elements and the
+ * attributes the page uses are made (`checkTag`, `checkAttribute`): no handler, style or source from a string, and
+ * an `href` only to a path of the Admin's page.
+ */
+
+type Child = Node | string | null | undefined | false;
+
+export interface Dom {
+  document: Document;
+  el: <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    attributes?: Readonly<Record<string, string>>,
+    ...children: Child[]
+  ) => HTMLElementTagNameMap[K];
+  /** Replaces what an element holds with the given children. */
+  fill: (parent: Element, ...children: Child[]) => void;
+}
+
+/**
+ * The elements the page is made of: text, forms and tables. Anything else (a `meta` that navigates, a `link`, a frame,
+ * an object, a script or a style element) is refused by name, whatever the attributes.
+ */
+const TAGS = new Set([
+  "a",
+  "bdi",
+  "button",
+  "caption",
+  "code",
+  "dd",
+  "details",
+  "div",
+  "dl",
+  "dt",
+  "fieldset",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "header",
+  "input",
+  "label",
+  "legend",
+  "li",
+  "main",
+  "ol",
+  "option",
+  "p",
+  "section",
+  "select",
+  "span",
+  "summary",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+]);
+/**
+ * The attributes the page sets, and nothing else: no handler (`on*`), no style, no source of a frame or an image, no
+ * URL but `href`. `aria-*` is the accessibility of the page; `data-label` is the header a stacked cell shows.
+ */
+const ATTRIBUTES = new Set([
+  "autocomplete",
+  "class",
+  "data-label",
+  "for",
+  "hidden",
+  "href",
+  "id",
+  "maxlength",
+  "name",
+  "novalidate",
+  "required",
+  "role",
+  "scope",
+  "selected",
+  "spellcheck",
+  "tabindex",
+  "title",
+  "type",
+  "value",
+]);
+const ARIA = /^aria-[a-z]+$/;
+/**
+ * A path of this origin: one slash, then no second slash or backslash (`//host` and `/\host` are another origin to
+ * the browser), no space and no control character. No scheme is allowed: the page links nowhere else. Not a path of
+ * the API either, in any case so as not to depend on how the edge or the router compares them: following a link is
+ * a GET, and a GET of the funnel is an audited read.
+ */
+/** A `.` or `..` segment or a %-escape: the browser resolves them, so `/x/../api` would reach the API after all. */
+const DOT_OR_ESCAPE = /%|\/\.\.?(?:[/?#]|$)/;
+const ADMIN_PATH = /^\/(?![/\\])(?!api(?:[/?#]|$))[^\s\\]*$/i;
+
+/** Throws on an element the page does not build. */
+export function checkTag(tag: string): void {
+  if (!TAGS.has(tag.toLowerCase())) {
+    throw new Error(`the page does not make the element ${tag}`);
+  }
+}
+
+/** Throws on an attribute the page does not set, and on an `href` that is not a path of the Admin's page. */
+export function checkAttribute(name: string, value: string): void {
+  const lower = name.toLowerCase();
+  if (!(ATTRIBUTES.has(lower) || ARIA.test(lower))) {
+    throw new Error(`the page does not set the attribute ${lower}`);
+  }
+  if (
+    lower === "href" &&
+    !(
+      ADMIN_PATH.test(value) &&
+      !hasControlCharacter(value) &&
+      !DOT_OR_ESCAPE.test(value)
+    )
+  ) {
+    throw new Error("an href takes only a path of the Admin's page");
+  }
+}
+
+export function createDom(document: Document): Dom {
+  const append = (parent: Element, children: readonly Child[]) => {
+    for (const child of children) {
+      if (child === null || child === undefined || child === false) {
+        continue;
+      }
+      parent.append(
+        typeof child === "string" ? document.createTextNode(child) : child
+      );
+    }
+  };
+  return {
+    document,
+    el: (tag, attributes = {}, ...children) => {
+      checkTag(tag);
+      const element = document.createElement(tag);
+      for (const [name, value] of Object.entries(attributes)) {
+        checkAttribute(name, value);
+        element.setAttribute(name, value);
+      }
+      append(element, children);
+      return element;
+    },
+    fill: (parent, ...children) => {
+      parent.replaceChildren();
+      append(parent, children);
+    },
+  };
+}
+
+/** The longest store name shown; the whole name stays in the tooltip, cut at `TITLE_LIMIT`. */
+export const NAME_LIMIT = 80;
+const TITLE_LIMIT = 300;
+
+/** C0 controls, DEL and C1 controls: never typed by a person, and invisible when shown. */
+function isControl(code: number): boolean {
+  return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+}
+
+export function hasControlCharacter(text: string): boolean {
+  for (const character of text) {
+    if (isControl(character.codePointAt(0) ?? 0)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** A control character becomes the replacement character, so the operator sees that something is there. */
+function visible(text: string): string {
+  let shown = "";
+  for (const character of text) {
+    shown += isControl(character.codePointAt(0) ?? 0) ? "�" : character;
+  }
+  return shown;
+}
+
+function cut(text: string, limit: number): string {
+  const characters = [...text];
+  return characters.length > limit
+    ? `${characters.slice(0, limit).join("")}…`
+    : text;
+}
+
+/** Bidi controls and invisible characters: harmless inside `<bdi>`, but a tooltip or an accessible name has no isolation. */
+function isInvisible(code: number): boolean {
+  return (
+    code === 0xad ||
+    code === 0x06_1c ||
+    (code >= 0x20_0b && code <= 0x20_0f) ||
+    (code >= 0x20_60 && code <= 0x20_64) ||
+    (code >= 0x20_28 && code <= 0x20_2e) ||
+    (code >= 0x20_66 && code <= 0x20_69) ||
+    code === 0xfe_ff
+  );
+}
+
+/** The longest revealed value shown: a customer's notes are at most 2000 characters, so this never cuts one. */
+const REVEALED_LIMIT = 4000;
+
+/**
+ * A revealed value as text the operator can trust: a line break stays, any other control or invisible character
+ * becomes the replacement character so that nothing hides in it.
+ */
+export function revealedText(value: string): string {
+  let shown = "";
+  for (const character of value.replaceAll("\r\n", "\n")) {
+    const code = character.codePointAt(0) ?? 0;
+    shown +=
+      code === 0x0a || !(isControl(code) || isInvisible(code))
+        ? character
+        : "\uFFFD";
+  }
+  return cut(shown, REVEALED_LIMIT);
+}
+
+/** A store's name for an attribute (tooltip, accessible name): controls and invisible characters made visible, cut. */
+export function labelName(name: string, limit = NAME_LIMIT): string {
+  let shown = "";
+  for (const character of visible(name)) {
+    shown += isInvisible(character.codePointAt(0) ?? 0) ? "\uFFFD" : character;
+  }
+  return cut(shown, limit);
+}
+
+/** A name a store owner typed, for the line where it is shown: visible controls, cut to `NAME_LIMIT`. */
+function shownName(name: string): string {
+  return cut(visible(name), NAME_LIMIT);
+}
+
+/**
+ * The store's name in `<bdi>` (a right-to-left override inside it cannot reorder what follows), cut, with the store's
+ * ID next to it: names are not unique, the ID is (AC-4).
+ */
+export function storeName(dom: Dom, name: string, id: string): HTMLElement {
+  return dom.el(
+    "span",
+    { class: "store" },
+    dom.el(
+      "bdi",
+      { class: "store-name", title: labelName(name, TITLE_LIMIT) },
+      shownName(name)
+    ),
+    " ",
+    dom.el("code", { class: "store-id" }, id)
+  );
+}
+
+/**
+ * The store's name for a list: the ID is a thing to look up, not to read, so it rides in the tooltip of the name and is
+ * not a text of the row. The store's own screen, its header and the reviews show it whole.
+ */
+export function storeNameInList(
+  dom: Dom,
+  name: string,
+  id: string
+): HTMLElement {
+  return dom.el(
+    "span",
+    { class: "store" },
+    dom.el(
+      "bdi",
+      {
+        class: "store-name",
+        title: `${labelName(name, TITLE_LIMIT)} (${id})`,
+      },
+      shownName(name)
+    )
+  );
+}

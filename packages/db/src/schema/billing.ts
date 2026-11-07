@@ -142,6 +142,17 @@ export const organizationBilling = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    /**
+     * The charge of the period in force (ADR 0104, §7, migration 0118): the amount of the applied `charge_succeeded`
+     * with the latest end of period on the current link, that end and its ledger row. Written by `processEvent`, only
+     * forward (`currentChargeAfter`); cleared by `attachProvider` with a new link. Null amount: the fact carried none.
+     * What the screens show; never what a refund trusts (the server reads the charge again at the provider).
+     */
+    currentChargeAmount: numeric("current_charge_amount"),
+    currentChargeEventId: uuid("current_charge_event_id"),
+    currentChargePeriodEndsAt: timestamp("current_charge_period_ends_at", {
+      withTimezone: true,
+    }),
     /** The cycle being paid, in months (1, 6 or 12), while Pro. */
     cycleMonths: integer("cycle_months"),
     /**
@@ -302,6 +313,11 @@ export const organizationBilling = pgTable(
       "organization_billing_first_charge_coherent",
       sql`(${table.firstChargeAt} IS NOT NULL OR (${table.firstChargeAmount} IS NULL AND ${table.firstChargeEventId} IS NULL))
         AND (${table.firstChargeAmount} IS NULL OR (${table.firstChargeAmount} > 0 AND scale(${table.firstChargeAmount}) = 2))`
+    ),
+    check(
+      "organization_billing_current_charge_coherent",
+      sql`(${table.currentChargePeriodEndsAt} IS NOT NULL OR (${table.currentChargeAmount} IS NULL AND ${table.currentChargeEventId} IS NULL))
+        AND (${table.currentChargeAmount} IS NULL OR (${table.currentChargeAmount} > 0 AND scale(${table.currentChargeAmount}) = 2))`
     ),
     check(
       "organization_billing_refund_request_coherent",
@@ -608,7 +624,7 @@ const privacyOwnerRole = "polaris_privacy_owner";
 const adminOwnerRole = "polaris_admin_owner";
 
 /**
- * The optional reason the owner gives when cancelling the renewal (ADR 0104, decision 3, item 10 of design t268):
+ * The optional reason the owner gives when cancelling the renewal (ADR 0104, decision 3):
  * free text with no organization and no person, only the day (São Paulo; never the moment, so it does not match the
  * ledger's fact), the state and the cycle. Only the billing role writes it, only the Admin owner reads it, and the
  * privacy maintenance deletes it 12 months after `recorded_on` (`billing_cancellation_feedback` in `retention.ts`).

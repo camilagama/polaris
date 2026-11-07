@@ -9,6 +9,9 @@ import type { ConfirmedSaleView } from "./sale-form-model";
 import { saleDetailHref } from "./sale-history-model";
 import { LeaderRow, Perforation } from "./sale-summary-panel";
 
+const TEXT_LINK =
+  "touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground";
+
 /** The confirmed sale exactly as stored: items, totals, payment and fees (the detail page has its own, in `Receipt`). */
 function ConfirmedReceipt({ sale }: { sale: ConfirmedSaleView }) {
   return (
@@ -93,19 +96,43 @@ function CustomerDisclosure({
   );
 }
 
+const FIRST_SALE_LINE_ID = "sale-first-sale-line";
+
+/** Only for the first sale of the store the server confirmed in this tab: where the day and the estimated result are. */
+function FirstSaleLine() {
+  return (
+    <CardContent>
+      <p className="text-muted-foreground text-support" id={FIRST_SALE_LINE_ID}>
+        1ª venda registrada. Veja o Hoje no{" "}
+        <a aria-label="Ver o Início" className={TEXT_LINK} href="/">
+          Início
+        </a>{" "}
+        e o resultado estimado em{" "}
+        <a aria-label="Ver o Resultado" className={TEXT_LINK} href="/dashboard">
+          Resultado
+        </a>
+        .
+      </p>
+    </CardContent>
+  );
+}
+
 interface ConfirmedPanelProps {
+  firstSale: boolean;
   organizationId: string;
   panelRef: RefObject<HTMLElement | null>;
   sale: ConfirmedSaleView;
 }
 
 export function ConfirmedSalePanel({
+  firstSale,
   organizationId,
   panelRef,
   sale,
 }: ConfirmedPanelProps) {
   return (
     <section
+      aria-describedby={firstSale ? FIRST_SALE_LINE_ID : undefined}
       aria-labelledby="sale-confirmed-title"
       className="focus-ring rounded-xl"
       ref={panelRef}
@@ -126,10 +153,7 @@ export function ConfirmedSalePanel({
         <ConfirmedReceipt sale={sale} />
         <Separator />
         <CardContent className="grid justify-items-start gap-3">
-          <a
-            className="touch-hit focus-ring rounded-sm underline decoration-input underline-offset-4 hover:decoration-foreground"
-            href={saleDetailHref(sale.saleId)}
-          >
+          <a className={TEXT_LINK} href={saleDetailHref(sale.saleId)}>
             Ver detalhes e histórico da venda
           </a>
           <p className="text-muted-foreground text-support">
@@ -141,6 +165,7 @@ export function ConfirmedSalePanel({
             saleId={sale.saleId}
           />
         </CardContent>
+        {firstSale ? <FirstSaleLine /> : null}
       </Card>
     </section>
   );

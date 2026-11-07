@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AreaChart } from "./area-chart";
+import { OnDemandAreaChart } from "./on-demand";
 import { Sparkline } from "./sparkline";
 
 /**
- * The markup of what Polaris adds around the blocks of Bklit UI (ADR 0103, amendment "Gráficos", t336): the name and
+ * The markup of what Polaris adds around the blocks of Bklit UI (ADR 0103, amendment "Gráficos"): the name and
  * the summary a screen reader gets, the reading line, the legend, the keyboard control and the empty state. The blocks
  * measure their box with a ResizeObserver, so the plot itself has no width on the server and is not in this markup:
  * what the browser draws (the reveal, the tooltip with the value in pt-BR, the arrows moving the point in focus, the
@@ -182,6 +183,44 @@ describe("AreaChart: a second series (the costs of the Resultado)", () => {
   });
 });
 
+describe("AreaChart: a quiet chart (Vendas por dia do Início)", () => {
+  const before = WEEK.map((day) => ({ ...day, value: day.value / 2 }));
+  const quiet = html(
+    <AreaChart
+      data={WEEK}
+      formatValue={money}
+      label="Vendas líquidas por dia"
+      name="Vendas"
+      readingAtRest={false}
+      secondary={{
+        data: before,
+        legend: "7 dias antes",
+        name: "7 dias antes",
+        subtle: true,
+      }}
+      valueLabels="peak"
+    />
+  );
+
+  it("shows no reading line at rest: nothing sits above the drawing", () => {
+    expect(quiet).not.toContain("data-chart-reading");
+    // the keyboard control still speaks both values of the day in focus
+    expect(quiet.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="23/10: Vendas R$ 520,00, 7 dias antes R$ 260,00"'
+    );
+  });
+
+  it("names the faint line by no legend: the help of the block and the reading of a day say it", () => {
+    expect(quiet).not.toContain("data-chart-legend");
+  });
+
+  it("keeps the reading line by default, as the Resultado has it", () => {
+    expect(
+      html(<AreaChart data={WEEK} formatValue={money} label="x" />)
+    ).toContain("data-chart-reading");
+  });
+});
+
 describe("AreaChart: a second series with unknown days (AC-9 of the Resultado, emenda de 25/10)", () => {
   const UNKNOWN = {
     legend: "dia sem custo informado",
@@ -281,4 +320,125 @@ describe("Sparkline", () => {
       html(<Sparkline color="var(--chart-3)" values={[1, 2, 3]} />)
     ).not.toMatch(OKLCH_OR_HEX);
   });
+});
+
+const BOX_HEIGHT = /style="height:(\d+)px"/;
+const heightOf = (markup: string) => Number(BOX_HEIGHT.exec(markup)?.[1]);
+const UNSEEN_READING =
+  /<div aria-hidden="true" class="invisible"><p[^>]*data-chart-reading/;
+const UNSEEN_LEGEND =
+  /<div aria-hidden="true" class="invisible"><ul[^>]*data-chart-legend/;
+const SENTENCE = "Sem vendas no período.";
+
+describe("an area chart of a period with nothing to draw", () => {
+  const secondary = {
+    data: WEEK,
+    legend: "Custos (CMV, taxas e despesas)",
+    name: "Custos",
+  };
+
+  it("keeps its reading line and its legend, unseen, and has no drawing, no image and no keyboard control", () => {
+    const empty = html(
+      <AreaChart
+        data={WEEK}
+        empty={SENTENCE}
+        formatValue={money}
+        label="Vendas"
+        secondary={secondary}
+      />
+    );
+    expect(empty).toContain("data-chart-empty");
+    expect(empty).toContain(SENTENCE);
+    expect(empty).toContain("data-chart-floor");
+    expect(empty).not.toContain("<input");
+    expect(empty).not.toContain('role="img"');
+    expect(empty).not.toContain("data-chart-area");
+    // both are in the layout and out of the accessibility tree and of the eyes
+    expect(empty).toMatch(UNSEEN_READING);
+    expect(empty).toMatch(UNSEEN_LEGEND);
+  });
+
+  it("the plot has the height of the drawn one: the plot and the margins of the blocks", () => {
+    const drawn = (props: Partial<Parameters<typeof AreaChart>[0]>) =>
+      html(
+        <AreaChart data={WEEK} formatValue={money} label="Vendas" {...props} />
+      );
+    expect(heightOf(drawn({ empty: SENTENCE, height: 200 }))).toBe(240);
+    expect(heightOf(drawn({ height: 200 }))).toBe(240);
+  });
+
+  it("the sentence is the only thing a screen reader finds in place of the drawing", () => {
+    const empty = html(
+      <AreaChart
+        data={WEEK}
+        empty={SENTENCE}
+        formatValue={money}
+        label="Vendas"
+        readingAtRest={false}
+      />
+    );
+    expect(empty).not.toContain("data-chart-reading");
+    expect(empty.match(/>Sem vendas no período\.</g)).toHaveLength(1);
+  });
+});
+
+describe("the box that holds the place of an area chart before its chunk comes", () => {
+  const cases = [
+    {
+      name: "the chart of the Início: no reading line, a context line",
+      props: {
+        height: 200,
+        readingAtRest: false,
+        secondary: {
+          color: "var(--chart-3)",
+          data: WEEK,
+          legend: "x",
+          name: "x",
+          subtle: true,
+        },
+      },
+      height: 240,
+    },
+    {
+      name: "a chart with the reading line at rest",
+      props: { height: 180 },
+      height: 246,
+    },
+    {
+      name: "two series with a legend",
+      props: {
+        height: 220,
+        secondary: { data: WEEK, legend: "Custos", name: "Custos" },
+      },
+      height: 330,
+    },
+  ] as const;
+
+  for (const { height, name, props } of cases) {
+    it(`${name}: ${height} px, the same with a sentence to say`, () => {
+      const loading = html(
+        <OnDemandAreaChart
+          data={WEEK}
+          formatValue={money}
+          label="Vendas"
+          {...props}
+        />
+      );
+      const empty = html(
+        <OnDemandAreaChart
+          data={WEEK}
+          empty={SENTENCE}
+          formatValue={money}
+          label="Vendas"
+          {...props}
+        />
+      );
+      expect(loading).toContain("data-chart-loading");
+      expect(empty).toContain("data-chart-empty");
+      expect(empty).not.toContain("data-chart-loading");
+      expect(empty).toContain(SENTENCE);
+      expect(heightOf(loading)).toBe(height);
+      expect(heightOf(empty)).toBe(height);
+    });
+  }
 });

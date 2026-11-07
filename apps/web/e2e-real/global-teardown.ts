@@ -32,6 +32,8 @@ export default async function globalTeardown(): Promise<void> {
         rmSync(new URL(`${project.name}/polaris_web_local/.dev.vars`, builds), {
           force: true,
         });
+        // the copy of the preview's output (serve.ts): a log of the run, never kept past it
+        rmSync(new URL(`${project.name}/worker.log`, builds), { force: true });
       }
     }
     rmSync(new URL("../.wrangler/deploy", import.meta.url), {

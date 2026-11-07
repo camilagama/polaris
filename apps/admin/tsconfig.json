@@ -4,5 +4,11 @@
     "lib": ["ES2022", "WebWorker"],
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/page.workerd-db.test.ts",
+    "src/page-e2e-env.d.ts",
+    "src/purge-hold-review-date.test.ts",
+    "src/ui/waiting-item.test.ts"
+  ]
 }

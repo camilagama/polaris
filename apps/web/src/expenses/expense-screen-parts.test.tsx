@@ -1,7 +1,7 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ExpenseList } from "./expense-list";
+import { ExpenseList, ExpenseSummary } from "./expense-list";
 import { MonthPicker } from "./month-picker";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
 
@@ -125,6 +125,28 @@ describe("ExpenseList", () => {
     );
   });
 
+  it("says category, date and payee on one line, with no group and no word Competência", () => {
+    const html = list(
+      state({
+        count: 1,
+        expenses: [expense({ payee: "Imobiliária Sol" })],
+      })
+    );
+    expect(html).toContain("Aluguel · 01/10/2026 · Imobiliária Sol");
+    expect(html).not.toContain("Competência");
+    expect(html).not.toContain("Operacional");
+  });
+
+  it("Anular does not look like Editar, so the two are not the same press", () => {
+    const html = list(state({ count: 1, expenses: [expense({})] }));
+    const buttons = html.match(/<button[^>]*>/g) ?? [];
+    const edit = buttons.find((tag) => tag.includes("Editar despesa")) ?? "";
+    const cancel = buttons.find((tag) => tag.includes("Anular despesa")) ?? "";
+    expect(edit).toContain("border-input");
+    expect(cancel).not.toContain("border-input");
+    expect(cancel).toContain("text-destructive");
+  });
+
   it("a voided expense is read only, with Reativar; an active one has Editar and Anular", () => {
     const active = list(state({ count: 1, expenses: [expense({})] }));
     expect(active).toContain('aria-label="Editar despesa Aluguel de outubro"');
@@ -147,5 +169,65 @@ describe("ExpenseList", () => {
       state({ count: 1, expenses: [expense({ recurringRuleId: "r1" })] })
     );
     expect(html).toContain("Recorrente");
+  });
+});
+
+describe("ExpenseSummary", () => {
+  it("is the total with the count; the month is in the picker above and only said to a screen reader", () => {
+    const html = renderToStaticMarkup(
+      <ExpenseSummary
+        filters={filters}
+        state={state({ count: 3, total: "4562.00" })}
+      />
+    );
+    expect(html).toContain("Total do período");
+    expect(html).toContain("3 despesas");
+    expect(html).toContain('<span class="sr-only"> em outubro de 2026</span>');
+  });
+});
+
+describe("the total of the rows on the screen", () => {
+  const foot = (html: string) => html.slice(html.indexOf("data-list-total"));
+
+  it("sums the rows loaded in exact centavos, in tabular numerals, apart from the server total", () => {
+    const html = list(
+      state({
+        count: 40,
+        expenses: [
+          expense({ amount: "0.10", id: "e1" }),
+          expense({ amount: "0.20", id: "e2" }),
+          expense({ amount: "1500.50", id: "e3" }),
+        ],
+        total: "99999.00",
+      })
+    );
+    expect(foot(html)).toContain("Total na tela");
+    expect(foot(html)).toContain("R$ 1.500,80");
+    expect(foot(html)).toContain("3 despesas");
+    expect(foot(html)).toContain("tabular-nums");
+    expect(foot(html)).not.toContain("99.999");
+  });
+
+  it("says there is more while another page is pending, and stops saying it after the last page", () => {
+    const rows = [expense({ id: "e1" }), expense({ id: "e2" })];
+    const pending = foot(list(state({ expenses: rows, nextCursor: "c1" })));
+    expect(pending).toContain("2 despesas · há mais");
+    const last = foot(list(state({ expenses: rows, nextCursor: null })));
+    expect(last).toContain("2 despesas");
+    expect(last).not.toContain("há mais");
+  });
+
+  it("is in the DOM with no rows, with the same lines (zero and no count text lost)", () => {
+    const empty = list(state({}));
+    expect(foot(empty)).toContain("R$ 0,00");
+    expect(foot(empty)).toContain("0 despesas");
+    expect(foot(empty)).toContain("min-h-5");
+  });
+
+  it("while the first page loads it is a dash, and after a failed read it is not a zero", () => {
+    expect(foot(list(state({ isLoading: true })))).toContain("…");
+    const failed = foot(list(state({ error: "Falhou." })));
+    expect(failed).toContain("—");
+    expect(failed).not.toContain("R$ 0,00");
   });
 });

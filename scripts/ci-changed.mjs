@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { gitEnvironment } from "./exact-count-list.mjs";
 
 /**
  * Which expensive CI jobs a change can affect. The browser gate costs about
@@ -25,6 +26,8 @@ export const OPERATIONS_FILES = [
   "scripts/smoke-staging.test.mjs",
   "scripts/verify-staging-isolation.mjs",
   "scripts/verify-staging-isolation.test.mjs",
+  "scripts/verify-no-lab-in-build.mjs",
+  "scripts/verify-no-lab-in-build.test.mjs",
   "scripts/verify-migration-compat.mjs",
   "scripts/verify-migration-compat.test.mjs",
   "scripts/admin-production-guard.test.mjs",
@@ -119,6 +122,7 @@ function changedFiles() {
     ["diff", "--name-only", "--no-renames", "HEAD^1", "HEAD"],
     {
       encoding: "utf8",
+      env: gitEnvironment(),
     }
   );
   if (result.status !== 0) {

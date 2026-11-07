@@ -1,10 +1,11 @@
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import type { ReactNode } from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 
 /**
@@ -19,6 +20,8 @@ interface BlockProps {
   children: ReactNode;
   className?: string;
   id: string;
+  /** The (i) beside the heading, for a block with a term or an estimate to explain (never a warning). */
+  help?: { about: string; text: string };
   /** The heading of the block, a `h2`: also the name of the region. */
   title: ReactNode;
 }
@@ -27,6 +30,7 @@ export function HomeBlock({
   action,
   children,
   className,
+  help,
   id,
   title,
 }: BlockProps) {
@@ -37,13 +41,53 @@ export function HomeBlock({
       role="region"
     >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h2 className="text-section" id={id}>
-          {title}
-        </h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 className="text-section" id={id}>
+            {title}
+          </h2>
+          {help ? (
+            <HelpTip about={help.about} className="-my-1">
+              {help.text}
+            </HelpTip>
+          ) : null}
+        </div>
         {action}
       </div>
       {children}
     </Card>
+  );
+}
+
+/**
+ * A block that keeps, while `keep`, at least the height it had the last time it was drawn without it: the cards
+ * without a connection stay as tall as the cards with figures were, whatever the foot of each one said.
+ */
+export function KeptHeight({
+  children,
+  keep,
+  measure,
+}: {
+  children: ReactNode;
+  keep: boolean;
+  /** The block shows what the kept height is of (the cards with figures): only then its height is taken. */
+  measure: boolean;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const last = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (measure && !keep && box.current) {
+      last.current = box.current.offsetHeight;
+    }
+  });
+  const height = keep ? last.current : null;
+  return (
+    <div
+      className="grid"
+      ref={box}
+      style={height ? { minHeight: height } : undefined}
+    >
+      {children}
+    </div>
   );
 }
 

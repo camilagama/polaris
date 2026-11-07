@@ -7,13 +7,14 @@ import {
   HANDLED_BILLING_PROVIDERS,
   renewalAlive,
 } from "@polaris/domain/billing/renewal-cancellation";
-import { PURGE_BILLING_FACT_KEYS } from "../src/purge-datasets";
 import { createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import {
   recoverOrganizationClosure,
   requestOrganizationClosure,
 } from "../src/organization-closure-repository";
+import { PURGE_BILLING_FACT_KEYS } from "../src/purge-datasets";
+import { withGateRole } from "./gate-roles";
 import {
   createTenantFixture,
   disposableHostPattern,
@@ -263,11 +264,9 @@ async function run() {
       const client = await owner.pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query(
-          "GRANT polaris_privacy_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE"
+        await withGateRole(client, "polaris_privacy_owner", () =>
+          client.query(statement, values)
         );
-        await client.query("SET LOCAL ROLE polaris_privacy_owner");
-        await client.query(statement, values);
       } finally {
         await client.query("ROLLBACK");
         client.release();
@@ -346,13 +345,11 @@ async function run() {
       const client = await owner.pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query(
-          "GRANT polaris_privacy_owner TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE"
-        );
-        await client.query("SET LOCAL ROLE polaris_privacy_owner");
-        const result = await client.query(
-          "SELECT organization_id, state, provider, provider_ref, cancel_at_period_end FROM public.organization_billing WHERE organization_id = $1",
-          [organizationId]
+        const result = await withGateRole(client, "polaris_privacy_owner", () =>
+          client.query(
+            "SELECT organization_id, state, provider, provider_ref, cancel_at_period_end FROM public.organization_billing WHERE organization_id = $1",
+            [organizationId]
+          )
         );
         return result.rowCount;
       } finally {

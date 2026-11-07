@@ -16,6 +16,7 @@
  * page visibility injected, so it is tested without a browser.
  */
 
+import { COMMON_ORPC_ERROR_DEFS } from "@orpc/client";
 import { callKind, createReadGate, isRpcCall } from "./read-gate";
 
 type ConnectionState = "offline" | "online";
@@ -23,7 +24,8 @@ type ConnectionState = "offline" | "online";
 /**
  * - `worker`: the Worker answered (any status): the connection is proven.
  * - `server_failed`: a 5xx without the mark but with `cf-ray`: Cloudflare answered for a Worker that
- *   failed. Online; the call failed on the server and is tried again later.
+ *   failed. Online; the call failed on the server and is tried again later. An RPC call gets it as the oRPC
+ *   error with `PLATFORM_CUT_REASON`.
  * - `intercepted`: a 401 or 403 without the mark (a WAF, a proxy, a portal). No answer, never a refusal.
  * - `unproven`: anything else without the mark (the HTML 200 of a portal, a redirect elsewhere).
  */
@@ -49,6 +51,38 @@ export function classifyResponse(response: Response): ResponseVerdict {
     return "intercepted";
   }
   return "unproven";
+}
+
+/**
+ * The `data.reason` of an RPC call the platform killed (`server_failed`): set here, never by the Worker, so the
+ * cut of the platform (the regime of the Free plan, `isPlatformCut`) is never taken for a fault the Worker answered
+ * itself, like its 503 `server_busy`.
+ */
+export const PLATFORM_CUT_REASON = "platform_cut";
+
+/**
+ * The platform's page for a Worker it killed, as the oRPC error it means: the same status and the code oRPC gives
+ * that status, with `PLATFORM_CUT_REASON`.
+ */
+function platformCutResponse(response: Response): Response {
+  const { status } = response;
+  response.body?.cancel().catch(() => undefined);
+  const code =
+    Object.entries(COMMON_ORPC_ERROR_DEFS).find(
+      ([, definition]) => definition.status === status
+    )?.[0] ?? "INTERNAL_SERVER_ERROR";
+  return new Response(
+    JSON.stringify({
+      json: {
+        code,
+        data: { reason: PLATFORM_CUT_REASON },
+        defined: false,
+        message: "platform_cut",
+        status,
+      },
+    }),
+    { headers: { "content-type": "application/json" }, status }
+  );
 }
 
 /** A response that did not come from the Worker: the same as no response at all. */
@@ -206,6 +240,8 @@ export interface Connection {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   getSnapshot: () => ConnectionSnapshot;
   isOnline: () => boolean;
+  /** The breaker of the reads is open (`read-gate.ts`): the platform is killing the calls of this tab. */
+  isServerFailing: () => boolean;
   /**
    * Whether a read that failed in a transient way may be tried again now (the brakes of `read-gate.ts`): true spends
    * one retry of the tab's budget.
@@ -438,8 +474,14 @@ export function createConnection(
     } finally {
       cancelSlow();
     }
+    return answerOf(input, response);
+  };
+
+  /** A response that came: the Worker's or the platform's goes back (online); any other is no answer. */
+  const answerOf = (input: RequestInfo | URL, response: Response): Response => {
     const verdict = classifyResponse(response);
-    if (isRpcCall(input)) {
+    const rpc = isRpcCall(input);
+    if (rpc) {
       noteRpcAnswer(response, verdict);
     }
     if (verdict === "worker" || verdict === "server_failed") {
@@ -447,7 +489,9 @@ export function createConnection(
         retryAfterMs = retryAfterOf(response);
       }
       goOnline();
-      return response;
+      return verdict === "server_failed" && rpc
+        ? platformCutResponse(response)
+        : response;
     }
     doubt();
     throw new NoWorkerAnswerError(verdict);
@@ -520,6 +564,7 @@ export function createConnection(
     },
     getSnapshot: () => snapshot,
     isOnline: () => snapshot.state === "online",
+    isServerFailing: reads.breakerOpen,
     mayRetryRead: reads.mayRetry,
     sessionFirst: reads.session,
     async probeNow() {

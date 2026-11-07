@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { COLLAPSIBLE_QUERY } from "@/lib/breakpoints";
 import { readMotionLevel } from "@/lib/motion-level";
 import { useIsMobile, useMediaQuery } from "@/lib/use-mobile";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
@@ -28,13 +29,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
    in a modal panel (the "Mais" of the bottom bar). From 1024 px it folds to its icons as the shadcn `collapsible="icon"`
    does (map of navigation, § 5): `Ctrl+B` (or `⌘B`), the rail on its edge and the button at its top, the name of each
    item in a tooltip, and the choice kept on the device (`localStorage`, as the cookie of the shadcn would be: the app
-   has no server render to read it). From 760 to 1023 px it never folds. Focus is the 3 px outline (`focus-ring`);
-   items are 32 px with a mouse and 48 px with touch; the group label has no transparency. */
+   has no server render to read it). From 760 to 1023 px it never folds. The column has no border of its own: with the
+   header of the shell in the same color it is a frame, and the panel of the content draws the edge. Focus is the 3 px outline (`focus-ring`);
+   items are 32 px with a mouse and 44 px with touch; the group label has no transparency. */
 const SIDEBAR_WIDTH = "16rem";
-/** The folded column: 32 px items in 8 px of room on each side, and the 48 px of an item with touch. */
+/** The folded column: 32 px items in 8 px of room on each side, and the 44 px of an item with touch. */
 const SIDEBAR_WIDTH_ICON = "3rem";
-/** The width from which the column folds (map of navigation, § 5). */
-const COLLAPSIBLE_QUERY = "(min-width: 1024px)";
 const SIDEBAR_STORAGE_KEY = "sidebar_state";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
@@ -356,7 +356,7 @@ function Sidebar({
       />
       <div
         className={cx(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) border-sidebar-border motion-full:transition-[left,right,width] motion-full:duration-200 ease-linear data-[side=right]:right-0 data-[side=left]:left-0 data-[side=left]:border-r data-[side=right]:border-l group-data-[collapsible=icon]:w-(--sidebar-width-icon) md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) motion-full:transition-[left,right,width] motion-full:duration-200 ease-linear data-[side=right]:right-0 data-[side=left]:left-0 group-data-[collapsible=icon]:w-(--sidebar-width-icon) md:flex",
           className
         )}
         data-side={side}
@@ -385,7 +385,7 @@ function SidebarTrigger({ className, ...props }: ComponentProps<"button">) {
     <button
       aria-expanded={state === "expanded"}
       className={cx(
-        "focus-ring inline-flex size-ctl-sm touch:size-12 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-4",
+        "focus-ring inline-flex size-ctl-sm touch:size-11 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-4",
         className
       )}
       data-sidebar="trigger"
@@ -415,7 +415,7 @@ function SidebarRail() {
   return (
     <button
       aria-hidden="true"
-      className="absolute inset-y-0 -right-2 z-20 flex w-4 cursor-w-resize border-0 bg-transparent p-0 motion-full:transition-all motion-full:ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[collapsible=icon]:cursor-e-resize"
+      className="absolute inset-y-0 -right-2 z-20 flex w-4 cursor-w-resize border-0 bg-transparent p-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] motion-full:after:transition-colors motion-full:after:ease-linear hover:after:bg-sidebar-border group-data-[collapsible=icon]:cursor-e-resize"
       data-sidebar="rail"
       data-slot="sidebar-rail"
       onClick={toggleSidebar}
@@ -429,10 +429,7 @@ function SidebarRail() {
 function SidebarInset({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      className={cx(
-        "relative flex w-full min-w-0 flex-1 flex-col bg-background",
-        className
-      )}
+      className={cx("relative flex w-full min-w-0 flex-1 flex-col", className)}
       data-slot="sidebar-inset"
       {...props}
     />
@@ -453,7 +450,10 @@ function SidebarHeader({ className, ...props }: ComponentProps<"div">) {
 function SidebarFooter({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      className={cx("flex flex-col gap-2 p-2", className)}
+      className={cx(
+        "flex flex-col gap-2 p-2 touch:group-data-[collapsible=icon]:px-0",
+        className
+      )}
       data-sidebar="footer"
       data-slot="sidebar-footer"
       {...props}
@@ -475,11 +475,12 @@ function SidebarContent({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
+/** In the sheet of the phone the groups are closer, so the whole menu fits a 640 px screen without scrolling. */
 function SidebarGroup({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cx(
-        "relative flex w-full min-w-0 flex-col p-2 touch:group-data-[collapsible=icon]:px-0",
+        "relative flex w-full min-w-0 flex-col p-2 in-data-[mobile=true]:py-1 touch:group-data-[collapsible=icon]:px-0",
         className
       )}
       data-sidebar="group"
@@ -489,11 +490,12 @@ function SidebarGroup({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
+/** Folded, the label fades out of its place with no text width left, so the 3 rem column has nothing wider than it. */
 function SidebarGroupLabel({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cx(
-        "flex h-8 shrink-0 items-center rounded-md px-2 font-medium text-sidebar-foreground text-xs motion-full:transition-[margin,opacity] motion-full:duration-200 ease-linear group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
+        "flex h-8 shrink-0 items-center rounded-md px-2 font-medium text-sidebar-foreground text-xs motion-full:transition-[margin,opacity] motion-full:duration-200 ease-linear group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:text-[0px] group-data-[collapsible=icon]:opacity-0",
         className
       )}
       data-sidebar="group-label"
@@ -536,6 +538,12 @@ function SidebarMenuItem({ className, ...props }: ComponentProps<"li">) {
   );
 }
 
+/** The height of an item: one line of 32 px (44 with touch), or "lg", two lines as tall as they need from there. */
+const MENU_BUTTON_SIZES = {
+  default: "h-8 touch:h-11 items-center",
+  lg: "min-h-8 touch:min-h-11 items-start group-data-[collapsible=icon]:items-center",
+} as const;
+
 /**
  * A destination of the menu: a link (the shell has no other kind of item), marked with `data-active`. Folded, it is its
  * icon, with the name in a tooltip to the right (the name stays the name of the link, for a screen reader).
@@ -543,15 +551,20 @@ function SidebarMenuItem({ className, ...props }: ComponentProps<"li">) {
 function SidebarMenuButton({
   className,
   isActive = false,
+  size = "default",
   tooltip,
   ...props
-}: ComponentProps<"a"> & { isActive?: boolean; tooltip?: string }) {
+}: ComponentProps<"a"> & {
+  isActive?: boolean;
+  size?: keyof typeof MENU_BUTTON_SIZES;
+  tooltip?: string;
+}) {
   // outside a provider (the parts shown alone in the gallery) the column is never folded
   const state = useContext(SidebarContext)?.state;
   const button = (
     <a
       className={cx(
-        "peer/menu-button focus-ring relative flex h-8 touch:h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-12 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0",
+        `peer/menu-button focus-ring relative flex ${MENU_BUTTON_SIZES[size]} w-full gap-2 overflow-hidden rounded-md p-2 text-left text-sm no-underline motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 touch:group-data-[collapsible=icon]:size-11 group-data-[collapsible=icon]:justify-center [&>span:first-of-type]:truncate [&_svg]:size-4 [&_svg]:shrink-0`,
         className
       )}
       data-active={isActive ? "" : undefined}

@@ -126,6 +126,50 @@ export function qualityMessages(quality: PeriodQuality): string[] {
   return quality.missing.map((code) => missingMessage(code, quality));
 }
 
+/**
+ * The warning in one line: what is missing, with the numbers, and nothing of the "why" (that is the list behind
+ * "Ver o que falta"). Null when the estimate is complete or has nothing countable to say.
+ */
+export function qualitySummary(quality: PeriodQuality): string | null {
+  const parts: string[] = [];
+  for (const code of quality.missing) {
+    const part = summaryPart(code, quality);
+    if (part) {
+      parts.push(part);
+    }
+  }
+  if (parts.length === 0) {
+    return null;
+  }
+  const last = parts.pop();
+  const joined = parts.length > 0 ? `${parts.join(", ")} e ${last}` : last;
+  return `Estimativa incompleta: ${joined}.`;
+}
+
+function summaryPart(
+  code: PeriodQuality["missing"][number],
+  quality: PeriodQuality
+): string | null {
+  switch (code) {
+    case "unknown_cost": {
+      const count = quality.itemLinesWithUnknownCost;
+      return `${formatQuantity(count)} ${plural(count, "item sem custo", "itens sem custo")}`;
+    }
+    case "unknown_processing_fee": {
+      const count = quality.processingFeesUnknown;
+      return `${formatQuantity(count)} ${plural(count, "venda sem taxa", "vendas sem taxa")}`;
+    }
+    case "unknown_anticipation_fee": {
+      const count = quality.anticipationFeesUnknown;
+      return `${formatQuantity(count)} ${plural(count, "venda com antecipação sem taxa", "vendas com antecipação sem taxa")}`;
+    }
+    case "no_expenses":
+      return "nenhuma despesa registrada";
+    default:
+      return null;
+  }
+}
+
 type QualityTone = "complete" | "partial";
 
 export interface QualityView {
@@ -175,11 +219,10 @@ export interface ChainRow {
 }
 
 /** What the subtotals from the CMV on say when no cost of the period is known: the dash, and why. */
-export const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
+const NO_KNOWN_COST_NOTE = "Sem custo conhecido no período.";
 
 /** What a card of the estimated result says when no cost of the goods is known (the Resultado and the Início). */
-export const NO_KNOWN_COST_RESULT =
-  "Sem custo conhecido: o resultado não dá para estimar.";
+export const NO_KNOWN_COST_RESULT = "Sem custo informado: não dá para estimar.";
 
 /** The subtotals that follow from the cost of goods: with no cost known they are the sales, not an estimate. */
 const COST_SUBTOTALS: ReadonlySet<keyof PeriodChain> = new Set([

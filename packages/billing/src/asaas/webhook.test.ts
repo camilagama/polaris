@@ -124,7 +124,7 @@ async function factsOf(
 const occurredAt = new Date("2026-10-26T12:15:00.000Z");
 /** The clock of the tests: after the fixtures' event time. */
 const clock = new Date("2026-10-26T13:00:00.000Z");
-/** 26/10 + 1 month, through the end of 26/11 in São Paulo. */
+/** `26/10` + 1 month, through the end of `26/11` in São Paulo. */
 const monthlyEnd = new Date("2026-11-27T03:00:00.000Z");
 /** The exact text of the charge value in the resource read back (never the body's). */
 const chargeAmount = { currency: "BRL", value: "24.90" } as const;
@@ -303,7 +303,7 @@ describe("the time of the body is never trusted and never a reason to refuse (AD
   });
 
   it("a confirmation takes its day from the charge read back, not from the body", async () => {
-    // the body claims 26/10, the charge was confirmed on 25/10
+    // the body claims `26/10`, the charge was confirmed on `25/10`
     const api = fakeApi({
       payments: [paymentJson({ confirmedDate: "2026-10-25" })],
     });
@@ -314,7 +314,7 @@ describe("the time of the body is never trusted and never a reason to refuse (AD
   });
 
   it("holds a webhook of just after midnight inside the day the charge was confirmed, not at its start", () => {
-    // confirmed 23:59:50 on 25/10, webhook at 00:00:05 on 26/10 (Brasília)
+    // confirmed 23:59:50 on `25/10`, webhook at 00:00:05 on `26/10` (Brasília)
     const claimed = new Date("2026-10-26T03:00:05.000Z");
     expect(confirmationTime(claimed, "2026-10-25", clock).toISOString()).toBe(
       "2026-10-26T02:59:59.999Z"
@@ -755,7 +755,7 @@ describe("AC-1c: the fact comes from the resource read back, never from the body
         id: PAYMENT_ID,
       },
     });
-    // the charge is really confirmed, due 26/10: its period is the one that counts
+    // the charge is really confirmed, due `26/10`: its period is the one that counts
     const [fact] = await factsOf(forged);
     expect(fact?.fact).toEqual({
       amount: chargeAmount,

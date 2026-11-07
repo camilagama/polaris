@@ -20,6 +20,9 @@ import {
   usageRows,
 } from "./subscription-model";
 
+/* A label longer than the card at a large browser font breaks into lines instead of widening the card. */
+export const WRAPS = "h-auto min-h-ctl-md whitespace-normal py-1.5";
+
 /** The heading of a card that names a section of the screen (the card title is a div, as in the registry). */
 export function SectionTitle({
   children,

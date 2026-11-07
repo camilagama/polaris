@@ -15,7 +15,7 @@ import {
   platformCapabilitiesForRole,
 } from "@polaris/domain/admin/platform-capabilities";
 import { defaultCacheControl, securityHeaders } from "@polaris/http-security";
-import { Hono, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { type AccessClaims, AccessJwtError } from "./access-jwt";
 import {
   type ActivationFunnelDependencies,
@@ -28,10 +28,22 @@ import {
 import { type IncidentDependencies, incidentRoutes } from "./incident-routes";
 import { type PrivacyDependencies, privacyRoutes } from "./privacy-routes";
 import {
+  type ProviderCommandDependencies,
+  providerCommandRoutes,
+} from "./provider-command-routes";
+import {
   type RefundWindowDependencies,
   refundWindowRoutes,
 } from "./refund-window-routes";
 import { type SupportDependencies, supportRoutes } from "./support-routes";
+import {
+  type AdminPage,
+  type AdminPageAssets,
+  createAdminPage,
+  isUuid,
+  SCREENS,
+  screenOfPath,
+} from "./ui/page";
 
 /**
  * The Admin app's HTTP surface (plan PR92 to PR94, ADR 0070). Cloudflare Access
@@ -42,11 +54,23 @@ import { type SupportDependencies, supportRoutes } from "./support-routes";
  */
 
 export interface AdminBindings {
+  /** `staging` or `production` (per environment in `wrangler.jsonc`); labels the `environment` of every log event. */
+  POLARIS_ENVIRONMENT?: string;
   ACCESS_AUDIENCE?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ADMIN_HYPERDRIVE?: { connectionString: string };
   /** The billing role's login: the only writer of billing, used only for the billing commands (ADR 0073). */
   ADMIN_BILLING_HYPERDRIVE?: { connectionString: string };
+  /**
+   * The providers, read only inside the operator's two provider commands (ADR 0105). `ASAAS_API_KEY` and
+   * `WOOVI_APP_ID` are secrets of the Worker; the base URLs and the refund switch are variables of each environment
+   * (the sandboxes in staging). The webhook secrets never come here.
+   */
+  ASAAS_API_KEY?: string;
+  ASAAS_BASE_URL?: string;
+  WOOVI_APP_ID?: string;
+  WOOVI_BASE_URL?: string;
+  WOOVI_REFUND_ENABLED?: string;
 }
 
 export interface AdminDependencies {
@@ -79,6 +103,8 @@ export interface AdminDependencies {
   incidents: IncidentDependencies;
   /** The workflow of a privacy request (ADR 0077). */
   privacy: PrivacyDependencies;
+  /** The operator's provider commands: cancel the renewal and refund the period in force (ADR 0105). */
+  providerCommands: ProviderCommandDependencies;
   /** The window of the right of withdrawal of one store, read under an open case and audited (ADR 0104, decisions 8 and 10). */
   refundWindow: RefundWindowDependencies;
   /** Support cases, temporary tenant access, the masked read and the reveal (ADR 0072). */
@@ -93,24 +119,56 @@ export interface AdminEnv {
 }
 
 const ACCESS_HEADER = "cf-access-jwt-assertion";
+/** The routes of the screens (corte admin-v2, Parte 1); the handler takes only the paths `screenOfPath` names. */
+export const SCREEN_ROUTES = [
+  "/",
+  "/lojas",
+  "/lojas/:organizationId",
+  "/casos",
+  "/casos/:caseId",
+  "/configuracoes",
+  "/funil",
+  "/incidentes",
+  "/incidentes/:incidentId",
+  "/registro",
+  "/privacidade",
+  "/privacidade/:caseId",
+  "/retencoes",
+] as const;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
 const MAX_QUERY_LENGTH = 100;
 const MAX_ID_LENGTH = 128;
 
-const ADMIN_HEADERS = Object.entries(securityHeaders("admin"));
-const ADMIN_CACHE_CONTROL = defaultCacheControl("admin");
+const PROFILE_HEADERS = {
+  admin: Object.entries(securityHeaders("admin")),
+  "admin-document": Object.entries(securityHeaders("admin-document")),
+} as const;
 
-/** The headers of every answer of the Admin come from the shared module (ADR 0090); nothing here is cacheable. */
-const securityHeadersMiddleware: MiddlewareHandler = async (context, next) => {
-  await next();
-  for (const [name, value] of ADMIN_HEADERS) {
-    context.header(name, value);
-  }
-  if (ADMIN_CACHE_CONTROL !== null) {
-    context.header("Cache-Control", ADMIN_CACHE_CONTROL);
-  }
-};
+/**
+ * The headers of every answer of the Admin come from the shared module (ADR 0090), and nothing here is cacheable.
+ * The screens (the GET paths `screenOfPath` names), their script and their sheet get the document profile; everything
+ * else, the API, `/health` and any 404 included, keeps the inert `admin` one.
+ */
+function securityHeadersMiddleware(
+  page: (() => Promise<AdminPage>) | null
+): MiddlewareHandler {
+  return async (context, next) => {
+    await next();
+    const document =
+      page !== null &&
+      context.req.method === "GET" &&
+      (await page()).isDocumentPath(context.req.path);
+    const profile = document ? "admin-document" : "admin";
+    for (const [name, value] of PROFILE_HEADERS[profile]) {
+      context.header(name, value);
+    }
+    const cacheControl = defaultCacheControl(profile);
+    if (cacheControl !== null) {
+      context.header("Cache-Control", cacheControl);
+    }
+  };
+}
 
 interface Refusal {
   body: { error: string };
@@ -224,12 +282,63 @@ function requireCapability(
   };
 }
 
-export function createAdminApp(dependencies: AdminDependencies) {
+/**
+ * The app. `pageAssets` are the operator's page files (built from apps/admin/ui); without them, as in the route tests,
+ * there is no page and every path but the API and `/health` is a 404.
+ */
+export function createAdminApp(
+  dependencies: AdminDependencies,
+  pageAssets: AdminPageAssets | null = null
+) {
   const app = new Hono<AdminEnv>();
-  app.use("*", securityHeadersMiddleware);
+  const page = pageAssets === null ? null : createAdminPage(pageAssets);
+  app.use("*", securityHeadersMiddleware(page));
 
   // answers without a login so a deployment can be checked; says nothing about the platform
   app.get("/health", (context) => context.json({ status: "ok" }));
+
+  if (page !== null) {
+    // the pages and their files pass the same verification as the API: without an operator's token, a 401 and no HTML
+    const screen = async (context: Context<AdminEnv>) => {
+      const found = screenOfPath(context.req.path);
+      if (found === null) {
+        return context.json({ error: "not_found" }, 404);
+      }
+      const { role } = context.get("principal");
+      const forbidden = !hasPlatformCapability(
+        role,
+        SCREENS[found.screen].capability
+      );
+      const store = context.req.query("loja") ?? "";
+      const body = (await page()).render({
+        ...(context.req.query("acao") === "purge"
+          ? { action: "purge" as const }
+          : {}),
+        capabilities: platformCapabilitiesForRole(role),
+        environment: context.env.POLARIS_ENVIRONMENT,
+        forbidden,
+        id: found.id,
+        listState:
+          context.req.query("estado") === "fechados" ? "fechados" : "abertos",
+        screen: found.screen,
+        store:
+          isUuid(store) && found.screen !== "registro"
+            ? store.toLowerCase()
+            : null,
+      });
+      return context.html(body, forbidden ? 403 : 200);
+    };
+    for (const path of SCREEN_ROUTES) {
+      app.get(path, authentication(dependencies), screen);
+    }
+    app.get("/ui/:file", authentication(dependencies), async (context) => {
+      const file = (await page()).file(context.req.path);
+      if (file === null) {
+        return context.json({ error: "not_found" }, 404);
+      }
+      return context.body(file.body, 200, { "Content-Type": file.type });
+    });
+  }
 
   const api = new Hono<AdminEnv>();
   api.use("*", authentication(dependencies));
@@ -316,6 +425,14 @@ export function createAdminApp(dependencies: AdminDependencies) {
     "/",
     refundWindowRoutes(
       dependencies.refundWindow,
+      requireCapability,
+      dependencies.report
+    )
+  );
+  api.route(
+    "/",
+    providerCommandRoutes(
+      dependencies.providerCommands,
       requireCapability,
       dependencies.report
     )

@@ -4,7 +4,7 @@ import { test } from "./support";
 import { serveHome } from "./ui-home-states";
 
 /**
- * "Tentar novamente" of a screen whose chunk did not download (t344). The worker is blocked so the page's own routes
+ * "Tentar novamente" of a screen whose chunk did not download. The worker is blocked so the page's own routes
  * see the chunk requests. The Início is the screen: its chunk fails on the way in, and the way out is the button.
  */
 test.use({ serviceWorkers: "block" });

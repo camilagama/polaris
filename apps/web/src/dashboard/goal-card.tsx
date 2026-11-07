@@ -56,8 +56,8 @@ interface GoalCardProps {
 const MUTED = "text-muted-foreground text-support";
 
 /**
- * The text actions of a card: 32 px with a 48 px area, bled out to the card's padding so the words align with the
- * title. Between two lines of them the gap is 16 px, so the areas of 48 px do not meet.
+ * The text actions of a card: 32 px with a 44 px area, bled out to the card's padding so the words align with the
+ * title. Between two lines of them the gap is 16 px, so the areas of 44 px do not meet.
  */
 const ACTIONS = "-mx-2 -mb-1 flex flex-wrap gap-x-1 gap-y-4";
 
@@ -218,7 +218,7 @@ export function SettledGoalCard({
 
 type Mode = "cancel" | "edit" | "idle";
 
-/** A button that is off for a reason keeps its place in the focus order (decision of 21/10). */
+/** A button that is off for a reason keeps its place in the focus order. */
 const OFF = "aria-disabled:pointer-events-none aria-disabled:opacity-50";
 
 interface CancelDialogProps {

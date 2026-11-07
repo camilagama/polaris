@@ -14,7 +14,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * - two staging roles share a Hyperdrive configuration (the billing role of the Admin is the one exception);
  * - the deployed name does not end in `-staging`, previews are on, or the sender or reply-to of e-mail is outside araute.app (whatever the flags), or an e-mail flag is neither "true" nor "false";
  * - the web of staging is not at exactly https://dash.araute.app and the catalog not at exactly https://catalogo.araute.app, each with workers_dev off, or production names or reaches a host of staging (a variable, a route, a wildcard route);
- * - the Admin is reachable in staging (it is not exposed: no workers.dev, no route, no Access, no database).
+ * - the Admin of staging is reachable other than through its Access application: workers_dev or previews on, any
+ *   route (its Custom Domain at admin.araute.app is created outside the config), an Access team or audience missing, malformed
+ *   or equal to production's, or an ADMIN_HYPERDRIVE missing or shared with another binding of staging;
+ * - the billing base URLs of staging are not exactly the sandboxes of Asaas and Woovi, a staging variable names the
+ *   production API of either, billing is on without the support box on araute.app or the Woovi key, or production has
+ *   other than the production base URLs or names a sandbox host; the same for the Admin, which calls the providers for
+ *   the operator's commands, and which never carries a setting of the webhooks; in any Worker, a secret of a provider
+ *   written as a variable;
+ * - any block (top level, staging, production or the build) still declares a switch of the database proof routes
+ *   (`DB_POC_ENABLED`, `DB_RLS_POC_ENABLED`): those routes and tables left the app (ADR 0027).
  * With `--remote`, it also reads each staging Hyperdrive configuration (`wrangler hyperdrive get`, with
  * the staging token) and checks host, user and caching. Nothing is printed but names and ids.
  */
@@ -36,6 +45,12 @@ const LOCAL_QUEUE = /^polaris-(critical|default|media|dlq)-local$/;
 // follows the same design at its own host (amendment to ADR 0097).
 export const STAGING_WEB_ORIGIN = "https://dash.araute.app";
 export const STAGING_CATALOG_ORIGIN = "https://catalogo.araute.app";
+// The Admin of staging is published at this host as a Custom Domain created outside the config, like the web and
+// the catalog, behind the Access application of the staging team (amendments to ADR 0097 and ADR 0070).
+export const STAGING_ADMIN_HOST = "admin.araute.app";
+const ACCESS_TEAM_DOMAIN =
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/;
+const ACCESS_AUDIENCE = /^[0-9a-f]{64}$/;
 const STAGING_FIXED_ORIGIN = {
   BETTER_AUTH_BASE_URL: STAGING_WEB_ORIGIN,
   CATALOG_ORIGIN: STAGING_CATALOG_ORIGIN,
@@ -235,17 +250,10 @@ function checkTopLevel(app, config, problems) {
   }
 }
 
-function checkParity(
-  app,
-  top,
-  environment,
-  envName,
-  problems,
-  { allowMissing = [] } = {}
-) {
+function checkParity(app, top, environment, envName, problems) {
   const present = new Set(bindingNames(environment));
   for (const name of bindingNames(top)) {
-    if (!(present.has(name) || allowMissing.includes(name))) {
+    if (!present.has(name)) {
       problems.push(
         `${app}: env.${envName} lacks ${name} (bindings are not inherited)`
       );
@@ -254,7 +262,7 @@ function checkParity(
 }
 
 /** The checks that hold for the staging block in the source and for the built wrangler.json alike. */
-function checkStagingBlock(app, where, staging, problems) {
+function checkStagingBlock(app, where, staging, production, problems) {
   if (!STAGING_SUFFIX.test(staging.name ?? "")) {
     problems.push(
       `${where}: name "${staging.name}" must end in -staging, or the deploy would publish another Worker`
@@ -287,6 +295,201 @@ function checkStagingBlock(app, where, staging, problems) {
   if (app === "web") {
     checkStagingEmail(where, staging, problems);
     checkStagingAbuseProtection(where, staging, problems);
+    checkStagingBilling(where, staging, problems);
+  }
+  if (app === "admin") {
+    checkAdminBilling(where, staging, "staging", problems);
+  }
+  checkBillingSecretsNotVars(where, staging, problems);
+  checkStagingExposure(app, where, staging, production, problems);
+}
+
+// The secrets of the providers are Worker secrets, per environment, never variables: a variable is in the repository
+// and in every build (ADR 0105, condition 1 of the review of security).
+const PROVIDER_SECRETS = [
+  "ASAAS_API_KEY",
+  "ASAAS_WEBHOOK_TOKEN",
+  "ASAAS_WEBHOOK_TOKEN_NEXT",
+  "BILLING_PAYER_KEY",
+  "WOOVI_APP_ID",
+];
+// What only receives the providers' calls never reaches the Admin, which only calls them (ADR 0105, condition 2).
+const WEBHOOK_SETTINGS = [
+  "ASAAS_WEBHOOK_TOKEN",
+  "ASAAS_WEBHOOK_TOKEN_NEXT",
+  "WOOVI_WEBHOOK_PUBLIC_KEYS",
+];
+
+function checkBillingSecretsNotVars(where, block, problems) {
+  for (const name of PROVIDER_SECRETS) {
+    if (Object.hasOwn(block.vars ?? {}, name)) {
+      problems.push(
+        `${where}: vars.${name} is a secret of the Worker (wrangler secret put, per environment), never a variable`
+      );
+    }
+  }
+}
+
+/**
+ * The Admin calls the providers only for the operator's two commands (ADR 0105): staging reaches only the sandboxes and
+ * production only the production hosts, exactly as the web of the same environment; the switch of the Pix refund is
+ * "true" or "false"; no setting of the webhooks is there.
+ */
+function checkAdminBilling(where, block, environment, problems) {
+  const vars = block.vars ?? {};
+  checkBillingBaseUrls(where, vars, environment, problems);
+  if (
+    vars.WOOVI_REFUND_ENABLED !== "true" &&
+    vars.WOOVI_REFUND_ENABLED !== "false"
+  ) {
+    problems.push(
+      `${where}: vars.WOOVI_REFUND_ENABLED must be "true" or "false"`
+    );
+  }
+  const forbiddenHost =
+    environment === "staging" ? PRODUCTION_BILLING_HOST : SANDBOX_BILLING_HOST;
+  for (const [variable, value] of Object.entries(vars)) {
+    if (stringsOf(value).some(([, text]) => namesHost(forbiddenHost, text))) {
+      problems.push(
+        `${where}: vars.${variable} must not name ${environment === "staging" ? "the production API" : "a sandbox host"} of Asaas or Woovi`
+      );
+    }
+  }
+  for (const name of WEBHOOK_SETTINGS) {
+    if (Object.hasOwn(vars, name)) {
+      problems.push(
+        `${where}: vars.${name} belongs to the webhooks of the web; the Admin never receives a provider's call`
+      );
+    }
+  }
+}
+
+// Billing runs in staging against the providers' sandboxes only (ADR 0097, amended): the base URLs are compared as
+// exact strings, and the API host of production of either provider written in any variable of staging is refused,
+// whatever the variable's name. Production is the mirror: its base URLs are the production ones, exactly, and no
+// variable of production names a sandbox host. The secrets are out of reach of this check; the Asaas client refuses
+// a key of the other environment, and a Woovi AppID of production is refused by the sandbox.
+export const BILLING_BASE_URLS = {
+  production: {
+    ASAAS_BASE_URL: "https://api.asaas.com/v3",
+    WOOVI_BASE_URL: "https://api.woovi.com",
+  },
+  staging: {
+    ASAAS_BASE_URL: "https://api-sandbox.asaas.com/v3",
+    WOOVI_BASE_URL: "https://api.woovi-sandbox.com",
+  },
+};
+// bounded on both sides like the hosts of staging: `api-sandbox.asaas.com` does not contain `api.asaas.com`
+const hostInText = (hosts) =>
+  new RegExp(
+    String.raw`(?<![a-z0-9.-])(${hosts.join("|")})(?![a-z0-9-]|\.[a-z0-9])`,
+    "i"
+  );
+// with the legacy API hosts: Asaas's old base on www and Woovi's old OpenPix name
+const PRODUCTION_BILLING_HOST = hostInText([
+  String.raw`api\.asaas\.com`,
+  String.raw`www\.asaas\.com`,
+  String.raw`api\.woovi\.com`,
+  String.raw`api\.openpix\.com\.br`,
+]);
+const SANDBOX_BILLING_HOST = hostInText([
+  String.raw`(?:[a-z0-9-]+\.)*sandbox\.asaas\.com`,
+  String.raw`api-sandbox\.asaas\.com`,
+  String.raw`(?:[a-z0-9-]+\.)*woovi-sandbox\.com`,
+]);
+// the support box is the reply-to of the billing e-mails: one bare address, on the staging domain like the sender
+const STAGING_SUPPORT_ADDRESS = /^[A-Za-z0-9._+-]+@araute\.app$/i;
+
+/** The text as written and percent-decoded, so `https%3A%2F%2Fapi.asaas.com` is read as the host it names. */
+function namesHost(expression, text) {
+  let decoded = text;
+  try {
+    decoded = decodeURIComponent(text);
+  } catch {
+    // a lone `%` is no encoding: the text as written is enough
+  }
+  return expression.test(text) || expression.test(decoded);
+}
+
+function checkBillingBaseUrls(where, vars, environment, problems) {
+  for (const [variable, expected] of Object.entries(
+    BILLING_BASE_URLS[environment]
+  )) {
+    if (vars[variable] !== expected) {
+      problems.push(
+        `${where}: vars.${variable} must be exactly ${expected} (the ${environment === "staging" ? "sandbox" : "production host"} of the provider)`
+      );
+    }
+  }
+}
+
+function checkStagingBilling(where, staging, problems) {
+  const vars = staging.vars ?? {};
+  for (const flag of [
+    "BILLING_SELF_SERVICE_ENABLED",
+    "WOOVI_REFUND_ENABLED",
+    "MEDIA_THUMBS_ENABLED",
+  ]) {
+    if (vars[flag] !== "true" && vars[flag] !== "false") {
+      problems.push(`${where}: vars.${flag} must be "true" or "false"`);
+    }
+  }
+  checkBillingBaseUrls(where, vars, "staging", problems);
+  for (const [variable, value] of Object.entries(vars)) {
+    if (
+      stringsOf(value).some(([, text]) =>
+        namesHost(PRODUCTION_BILLING_HOST, text)
+      )
+    ) {
+      problems.push(
+        `${where}: vars.${variable} must not name the production API of Asaas or Woovi (staging bills against the sandbox only)`
+      );
+    }
+  }
+  const support = (vars.BILLING_SUPPORT_EMAIL ?? "").trim();
+  if (support === "" && vars.BILLING_SELF_SERVICE_ENABLED === "true") {
+    problems.push(
+      `${where}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.BILLING_SUPPORT_EMAIL (without it the billing e-mails are skipped)`
+    );
+  } else if (support !== "" && !STAGING_SUPPORT_ADDRESS.test(support)) {
+    problems.push(
+      `${where}: vars.BILLING_SUPPORT_EMAIL must be one bare address on @araute.app (it is the reply-to of the billing e-mails)`
+    );
+  }
+  if (
+    vars.BILLING_SELF_SERVICE_ENABLED === "true" &&
+    (vars.WOOVI_WEBHOOK_PUBLIC_KEYS ?? "").trim() === ""
+  ) {
+    problems.push(
+      `${where}: vars.BILLING_SELF_SERVICE_ENABLED "true" needs vars.WOOVI_WEBHOOK_PUBLIC_KEYS (without it every Woovi webhook answers 503)`
+    );
+  }
+}
+
+function checkProductionBilling(app, production, problems) {
+  const where = `${app}: env.production`;
+  const vars = production.vars ?? {};
+  checkBillingBaseUrls(where, vars, "production", problems);
+  for (const [variable, value] of Object.entries(vars)) {
+    if (
+      stringsOf(value).some(([, text]) => namesHost(SANDBOX_BILLING_HOST, text))
+    ) {
+      problems.push(
+        `${where}: vars.${variable} must not name a sandbox host of Asaas or Woovi`
+      );
+    }
+  }
+}
+
+/** Where each Worker of staging answers: the web, the catalog and the Admin at Custom Domains managed outside the config, the Admin also behind Access. */
+function checkStagingExposure(app, where, staging, production, problems) {
+  if (app === "admin") {
+    checkAdminBehindAccess(where, staging, production, problems);
+  }
+  if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
+    problems.push(
+      `${where}: staging has no routes (the Custom Domains of the web, the catalog and the Admin are managed outside the config)`
+    );
   }
   if (app === "web" && staging.workers_dev !== false) {
     problems.push(
@@ -298,12 +501,9 @@ function checkStagingBlock(app, where, staging, problems) {
       `${where}: workers_dev must be false (the catalog is served only at ${STAGING_CATALOG_ORIGIN})`
     );
   }
-  if (app === "admin") {
-    checkAdminNotExposed(where, staging, problems);
-  }
 }
 
-// Password sign-in is on in staging by decision of the user (22/10, ADR 0100), open to anyone because the
+// Password sign-in is on in staging by decision of the user (ADR 0100), open to anyone because the
 // data is synthetic. The sender and the reply-to are shared by every e-mail the Worker sends (the password
 // ones and the closure notices, with the one RESEND_API_KEY), so they are checked whatever the flags say: a
 // sender of another domain would send from a verified domain of production or of a third party the day any
@@ -403,11 +603,6 @@ function checkStagingResources(where, staging, problems) {
       problems.push(`${where}: ${kind} is not used by staging`);
     }
   }
-  if ((staging.routes ?? []).length > 0 || staging.route !== undefined) {
-    problems.push(
-      `${where}: staging has no routes (the Custom Domains of the web and the catalog are managed outside the config)`
-    );
-  }
   for (const [name, rule] of Object.entries(STAGING_URLS)) {
     const value = staging.vars?.[name];
     if (
@@ -437,18 +632,38 @@ function isEmptyBinding(value) {
   return false;
 }
 
-/** Not exposed: no public hostname, no Access (every API request is refused) and no database. */
-function checkAdminNotExposed(where, staging, problems) {
+/**
+ * Exposed only behind Access: its hostname is attached by hand (no route in the config) and is the one of the Access application, nothing else reaches
+ * the Worker, and the Worker verifies tokens of the staging team and application, never production's.
+ */
+function checkAdminBehindAccess(where, staging, production, problems) {
   if (staging.workers_dev !== false) {
     problems.push(
-      `${where}: the Admin is not exposed in staging (workers_dev must be false)`
+      `${where}: workers_dev must be false (the Admin is reached only through Access at ${STAGING_ADMIN_HOST})`
     );
   }
-  if (staging.vars?.ACCESS_TEAM_DOMAIN || staging.vars?.ACCESS_AUDIENCE) {
-    problems.push(`${where}: the Admin has no Access application in staging`);
+  const team = staging.vars?.ACCESS_TEAM_DOMAIN;
+  if (typeof team !== "string" || !ACCESS_TEAM_DOMAIN.test(team)) {
+    problems.push(
+      `${where}: vars.ACCESS_TEAM_DOMAIN must be the <team>.cloudflareaccess.com of the staging Access team`
+    );
+  } else if (team === production?.vars?.ACCESS_TEAM_DOMAIN) {
+    problems.push(
+      `${where}: vars.ACCESS_TEAM_DOMAIN must not be the Access team of production`
+    );
   }
-  if ((staging.hyperdrive ?? []).length > 0) {
-    problems.push(`${where}: the Admin has no database binding in staging`);
+  const audience = staging.vars?.ACCESS_AUDIENCE;
+  if (typeof audience !== "string" || !ACCESS_AUDIENCE.test(audience)) {
+    problems.push(
+      `${where}: vars.ACCESS_AUDIENCE must be the 64-hex audience tag of the staging Access application`
+    );
+  } else if (audience === production?.vars?.ACCESS_AUDIENCE) {
+    problems.push(
+      `${where}: vars.ACCESS_AUDIENCE must not be the audience of production`
+    );
+  }
+  if (!bindingsOf(staging).hyperdrive.has("ADMIN_HYPERDRIVE")) {
+    problems.push(`${where}: the Admin needs ADMIN_HYPERDRIVE in staging`);
   }
 }
 
@@ -519,6 +734,53 @@ function checkCrossEnvironment(entries, problems) {
   }
 }
 
+const PROOF_SWITCHES = ["DB_POC_ENABLED", "DB_RLS_POC_ENABLED"];
+
+function checkNoProofSwitches(app, config, built, problems) {
+  const blocks = [
+    ["top level", config],
+    ["env.staging", config.env?.staging],
+    ["env.production", config.env?.production],
+    ["built wrangler.json", built ?? undefined],
+  ];
+  for (const [where, block] of blocks) {
+    for (const name of PROOF_SWITCHES) {
+      if (block?.vars && Object.hasOwn(block.vars, name)) {
+        problems.push(
+          `${app}: ${where}: vars.${name} is a switch of a proof route that left the app; remove it`
+        );
+      }
+    }
+  }
+}
+
+// Values that exist only as Worker secrets, one per environment (`wrangler secret put <NAME> --env <env>`, runbook
+// staging.md): a var with the name would put the value in the repository and in the built wrangler.json, and the
+// var would shadow nothing, because a secret and a var of one name cannot both exist. The pepper of the password
+// hash (ADR 0100, amended) is the first; without it the password is off and the routes log
+// `auth_password_pepper_missing`, which no file can prove, so this check only keeps it out of the files.
+const SECRET_ONLY = ["AUTH_PASSWORD_PEPPER"];
+
+function checkSecretsNotVars(app, config, built, problems) {
+  const blocks = [
+    ["top level", config],
+    ...Object.entries(config.env ?? {}).map(([name, block]) => [
+      `env.${name}`,
+      block,
+    ]),
+    ["built wrangler.json", built ?? undefined],
+  ];
+  for (const [where, block] of blocks) {
+    for (const name of SECRET_ONLY) {
+      if (block?.vars && Object.hasOwn(block.vars, name)) {
+        problems.push(
+          `${app}: ${where}: vars.${name} must not exist: it is a Worker secret of each environment (wrangler secret put ${name})`
+        );
+      }
+    }
+  }
+}
+
 /**
  * `entries`: one `{ app, config, built }` per Worker, `config` the parsed wrangler.jsonc and `built`
  * the parsed wrangler.json of the staging build (or undefined when not checked). Returns the problems.
@@ -527,6 +789,17 @@ export function findIsolationProblems(entries) {
   const problems = [];
   for (const { app, config, built } of entries) {
     checkTopLevel(app, config, problems);
+    checkBillingSecretsNotVars(`${app}: top level`, config, problems);
+    if (app === "web") {
+      checkWorkerFirst(`${app}: top level`, config.assets, problems);
+      for (const [name, environment] of Object.entries(config.env ?? {})) {
+        if (environment.assets !== undefined) {
+          checkWorkerFirst(`${app}: env.${name}`, environment.assets, problems);
+        }
+      }
+    }
+    checkNoProofSwitches(app, config, built, problems);
+    checkSecretsNotVars(app, config, built, problems);
     const staging = config.env?.staging;
     const production = config.env?.production;
     if (!(staging && production)) {
@@ -536,19 +809,17 @@ export function findIsolationProblems(entries) {
       continue;
     }
     checkProductionBlock(app, production, staging, problems);
-    checkParity(app, config, staging, "staging", problems, {
-      // the Admin is not exposed in staging: it keeps no database binding
-      allowMissing:
-        app === "admin"
-          ? bindingNames(config).filter((name) =>
-              name.startsWith("hyperdrive:")
-            )
-          : [],
-    });
+    checkParity(app, config, staging, "staging", problems);
     checkParity(app, config, production, "production", problems);
-    checkStagingBlock(app, `${app}: env.staging`, staging, problems);
+    checkStagingBlock(
+      app,
+      `${app}: env.staging`,
+      staging,
+      production,
+      problems
+    );
     if (built !== undefined) {
-      checkBuilt(app, staging, built, problems);
+      checkBuilt(app, staging, production, built, problems);
     }
   }
   checkCrossEnvironment(entries, problems);
@@ -560,9 +831,12 @@ export function findIsolationProblems(entries) {
 // that merely contains it (`foo.dash.araute.app`, `dash.araute.app.example.com`) is not the host of staging; a
 // trailing dot is the same name, and the case does not matter.
 const HOSTS_OF_STAGING = [
-  ...Object.values(STAGING_FIXED_ORIGIN).map((origin) =>
-    new URL(origin).hostname.replaceAll(".", String.raw`\.`)
-  ),
+  ...[
+    ...Object.values(STAGING_FIXED_ORIGIN).map(
+      (origin) => new URL(origin).hostname
+    ),
+    STAGING_ADMIN_HOST,
+  ].map((host) => host.replaceAll(".", String.raw`\.`)),
   String.raw`polaris-[a-z]+-staging\.[a-z0-9-]+\.workers\.dev`,
 ];
 const STAGING_HOST_IN_TEXT = new RegExp(
@@ -589,9 +863,12 @@ function productionRoutes(production) {
 // The hosts a route pattern must not reach: the fixed hosts of staging and the workers.dev of each staging Worker.
 // The account's subdomain is not in the config: the sample takes the one the pattern names (a `*` stands for any),
 // so `*.<account>.workers.dev/*` is caught whatever the account is.
-const STAGING_FIXED_HOSTS = Object.values(STAGING_FIXED_ORIGIN).map(
-  (origin) => new URL(origin).hostname
-);
+const STAGING_FIXED_HOSTS = [
+  ...Object.values(STAGING_FIXED_ORIGIN).map(
+    (origin) => new URL(origin).hostname
+  ),
+  STAGING_ADMIN_HOST,
+];
 const TRAILING_DOT = /\.$/;
 const PORT = /:[0-9*]*$/;
 const REGEX_SPECIAL = /[.+?^${}()|[\]\\-]/g;
@@ -682,7 +959,29 @@ function checkProductionBlock(app, production, staging, problems) {
       `${app}: env.production vars.ROUTE_TIMING_ALL must not be "true" (the timing of every route is a staging measure, ADR 0094)`
     );
   }
+  if (production.vars?.CLIENT_ERRORS_ENABLED === "1") {
+    problems.push(
+      `${app}: env.production vars.CLIENT_ERRORS_ENABLED must not be "1" (the reports of errors of the browser stay off in production until the item of the release checklist, ADR 0098)`
+    );
+  }
+  if (production.vars?.RELEASE_HEADER_ENABLED === "true") {
+    problems.push(
+      `${app}: env.production vars.RELEASE_HEADER_ENABLED must not be "true" (the release header is on in staging only until the item 8 of the release checklist, ADR 0098)`
+    );
+  }
   checkProductionHosts(app, production, problems);
+  if (app === "web") {
+    checkProductionBilling(app, production, problems);
+  }
+  if (app === "admin") {
+    checkAdminBilling(
+      `${app}: env.production`,
+      production,
+      "production",
+      problems
+    );
+  }
+  checkBillingSecretsNotVars(`${app}: env.production`, production, problems);
   checkTurnstileTestKey(`${app}: env.production`, production, problems);
   const stagingSiteKey = (staging.vars?.TURNSTILE_SITE_KEY ?? "").trim();
   if (
@@ -701,15 +1000,35 @@ function checkProductionBlock(app, production, staging, problems) {
   }
 }
 
+/** The paths the Worker answers that the assets handler would otherwise take (a POST to a webhook gets its 405). */
+const WORKER_FIRST_REQUIRED = ["/webhooks/*"];
+
+function checkWorkerFirst(where, assets, problems) {
+  const list = assets?.run_worker_first;
+  for (const pattern of WORKER_FIRST_REQUIRED) {
+    if (!(Array.isArray(list) && list.includes(pattern))) {
+      problems.push(
+        `${where}: assets.run_worker_first must list "${pattern}" (the assets handler would answer it and the Worker would never see the delivery)`
+      );
+    }
+  }
+}
+
 /** The wrangler.json the staging build generated: the file the deploy follows. */
-function checkBuilt(app, staging, built, problems) {
+function checkBuilt(app, staging, production, built, problems) {
   if (built === null) {
     problems.push(
       `${app}: no staging build found (run the build with CLOUDFLARE_ENV=staging first)`
     );
     return;
   }
-  checkStagingBlock(app, `${app}: built wrangler.json`, built, problems);
+  checkStagingBlock(
+    app,
+    `${app}: built wrangler.json`,
+    built,
+    production,
+    problems
+  );
   if (
     built.targetEnvironment !== undefined &&
     built.targetEnvironment !== "staging"
@@ -717,6 +1036,9 @@ function checkBuilt(app, staging, built, problems) {
     problems.push(
       `${app}: built wrangler.json targets "${built.targetEnvironment}", not staging`
     );
+  }
+  if (app === "web") {
+    checkWorkerFirst(`${app}: built wrangler.json`, built.assets, problems);
   }
   const expected = JSON.stringify(bindingsSnapshot(staging));
   if (JSON.stringify(bindingsSnapshot(built)) !== expected) {
@@ -829,7 +1151,7 @@ function main() {
     const config = parseJsonc(
       readFileSync(resolve(appDir, "wrangler.jsonc"), "utf8")
     );
-    // the Admin is not deployed to staging and is not built by Vite: its source block is what counts
+    // the Admin is not built by Vite: `wrangler deploy --env staging` reads its source block, which is what counts
     const built =
       args.has("--built") && app !== "admin" ? readBuilt(appDir) : undefined;
     return { app, appDir, built, config };

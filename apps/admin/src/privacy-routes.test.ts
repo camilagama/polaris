@@ -1,5 +1,5 @@
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type AdminBindings,
   type AdminDependencies,
@@ -62,6 +62,7 @@ function setup(
     ),
     accessLog: { read: vi.fn() },
     activationFunnel: { read: vi.fn() },
+    providerCommands: { cancelRenewal: vi.fn(), refund: vi.fn() },
     refundWindow: { read: vi.fn() },
     incidents: { detail: vi.fn(), list: vi.fn(), retry: vi.fn() },
     organizations: {
@@ -100,6 +101,8 @@ function setup(
         headers: {
           "cf-access-jwt-assertion": "token",
           "content-type": "application/json",
+          // a write must name the Admin's own origin, as the browser does
+          origin: "https://admin.example.invalid",
           ...headers,
         },
         method,
@@ -119,6 +122,10 @@ const openBody = {
 };
 
 describe("opening a privacy case", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("opens it for the verified operator with the response time the domain sets, never one the body names", async () => {
     const { privacy: calls, send } = setup();
     const response = await send("POST", "/api/privacy-cases", {
@@ -142,6 +149,11 @@ describe("opening a privacy case", () => {
   });
 
   it("accepts the moment it arrived, in the past only", async () => {
+    // the domain refuses a receivedAt older than a year, so the fixed instant needs a fixed "now" close to it
+    vi.useFakeTimers({
+      now: new Date("2026-10-11T12:00:00.000Z"),
+      toFake: ["Date"],
+    });
     const { privacy: calls, send } = setup();
     const ok = await send("POST", "/api/privacy-cases", {
       ...openBody,
@@ -320,6 +332,42 @@ describe("the steps", () => {
     }
   });
 
+  it("refuses a legal retention without the obligation named, and takes it with the note", async () => {
+    const { privacy: calls, send } = setup();
+    const url = `/api/privacy-cases/${caseId}/decision`;
+    const responses = await Promise.all(
+      [undefined, null, "   ", "123456789"].map((note) =>
+        send("POST", url, {
+          decision: "reject",
+          note,
+          reason: "legal_retention",
+        })
+      )
+    );
+    expect(responses.map((response) => response.status)).toEqual([
+      400, 400, 400, 400,
+    ]);
+    const bodies = await Promise.all(
+      responses.map((response) => response.json())
+    );
+    for (const body of bodies) {
+      expect(body).toMatchObject({ error: "invalid_privacy_step" });
+    }
+    expect(calls.decision).not.toHaveBeenCalled();
+    const accepted = await send("POST", url, {
+      decision: "reject",
+      note: "CTN art195",
+      reason: "legal_retention",
+    });
+    expect(accepted.status).toBe(200);
+    expect(calls.decision).toHaveBeenCalledTimes(1);
+    const other = await send("POST", url, {
+      decision: "reject",
+      reason: "no_authority",
+    });
+    expect(other.status).toBe(200);
+  });
+
   it("says a step out of order is a conflict, a decision not allowed is a refusal and an unknown case is not found", async () => {
     const outOfOrder = setup({
       role: () =>
@@ -408,6 +456,43 @@ describe("reading", () => {
     expect((await send("GET", "/api/privacy-cases/not-a-uuid")).status).toBe(
       404
     );
+  });
+
+  it("answers each listed case with the days to its due day exactly as the database counted them, whatever the Worker's clock says", async () => {
+    vi.useFakeTimers({
+      now: new Date("2031-03-01T12:00:00.000Z"),
+      toFake: ["Date"],
+    });
+    const summary = (dueAt: string, dueInDays: number | null) => ({
+      dueAt,
+      dueInDays,
+      id: caseId,
+      openedAt: "2026-10-22T15:00:00.000Z",
+      organizationId: entityId,
+      organizationName: "Loja da Ana",
+      overdue: false,
+      requesterKind: "holder",
+      requestType: "access",
+      stage: "opened",
+      status: "open",
+    });
+    const { send } = setup({
+      list: () =>
+        Promise.resolve({
+          cases: [
+            summary("2026-11-05T14:00:00.000Z", -1),
+            summary("2026-11-06T02:59:00.000Z", 0),
+            summary("2026-11-09T14:00:00.000Z", 4),
+            summary("2026-11-09T14:00:00.000Z", null),
+          ],
+          next: null,
+        }),
+    });
+    const answer = await send("GET", "/api/privacy-cases?filter=open");
+    const body = (await answer.json()) as {
+      cases: { dueInDays: number | null }[];
+    };
+    expect(body.cases.map((item) => item.dueInDays)).toEqual([-1, 0, 4, null]);
   });
 
   it("answers not found for a case that does not exist", async () => {

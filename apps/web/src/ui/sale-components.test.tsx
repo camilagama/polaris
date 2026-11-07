@@ -84,6 +84,14 @@ describe("Field", () => {
     expect(markup).toContain("Informe um preço.");
   });
 
+  it("says an error rewritten at each key as a polite status, with the same icon", () => {
+    const markup = html(<FieldError live="polite">Use até 64.</FieldError>);
+    expect(markup).toContain('role="status"');
+    expect(markup).not.toContain('role="alert"');
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).toContain("Use até 64.");
+  });
+
   it("renders no error without a message", () => {
     expect(html(<FieldError />)).toBe("");
   });

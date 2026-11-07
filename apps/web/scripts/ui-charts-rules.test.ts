@@ -10,8 +10,8 @@ import {
 } from "../pwa/precache-budget";
 
 /**
- * What the review of the charts and of the Tabs would otherwise have to remember (ADR 0103, amendment "Gráficos",
- * t285), read from the source: the files of the contract, the attribution of what was adapted from Bklit UI, the
+ * What the review of the charts and of the Tabs would otherwise have to remember (ADR 0103, amendment "Gráficos"),
+ * read from the source: the files of the contract, the attribution of what was adapted from Bklit UI, the
  * loader that keeps d3 out of the shell, the colors as tokens and the chunk the build puts the charts in. The
  * markup tests are beside the components (src/ui/charts/charts.test.tsx, src/ui/tabs.test.tsx); the measured
  * ones are in e2e-pwa/ui-charts.e2e.ts.
@@ -157,7 +157,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
   });
 
   it("the variables of the blocks are mapped once, to the tokens, in the sheet of the theme", () => {
-    const theme = read("src/styles/theme.css");
+    const theme = read("../../packages/ui/src/theme.css");
     for (const [variable, token] of [
       ["--chart-line-primary", "var(--chart-5)"],
       ["--chart-line-secondary", "var(--chart-3)"],
@@ -187,7 +187,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     expect(read("src/ui/charts/chart-bridge.tsx")).toContain(
       "r={mark.index === best ? 5.5 : 3.5}"
     );
-    const theme = read("src/styles/theme.css");
+    const theme = read("../../packages/ui/src/theme.css");
     for (const token of [
       "--chart-sales",
       "--chart-result",
@@ -226,7 +226,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     expect(sparkline).toContain(
       '<MotionConfig reducedMotion={still ? "always" : "user"}>'
     );
-    // the ring of the goal (t398): drawn finished, with no entrance, below the full level
+    // the ring of the goal: drawn finished, with no entrance, below the full level
     const ring = read("src/ui/charts/ring-chart.tsx");
     expect(ring).toContain('useMotionLevel() !== "full"');
     expect(ring).toContain("animate={!still}");
@@ -242,7 +242,7 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
     for (const file of bklitSources) {
       expect(read(`src/ui/bklit/${file}`), file).not.toContain("number-flow");
     }
-    // the ring draws its `<g>` itself; the map of the Início (t394) uses the `Group` of the package, now in the list
+    // the ring draws its `<g>` itself; the map of the Início uses the `Group` of the package, now in the list
     for (const file of ["ring-chart.tsx", "ring.tsx", "ring-context.tsx"]) {
       expect(read(`src/ui/bklit/charts/${file}`), file).not.toContain(
         "@visx/group"

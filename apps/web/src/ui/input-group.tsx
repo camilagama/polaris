@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { type ComponentProps, type MouseEvent, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
-/* The Polaris text field. With touch the 48 px area comes from the group itself (touch-hit-field): a touch on the
+/* The Polaris text field. With touch the 44 px area comes from the group itself (touch-hit-field): a touch on the
    band above or below the field focuses the text. No role: one field (with or without the "R$" beside it) is no
    group of controls, and a nameless group would only add "group" to what the screen reader says. */
 function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
@@ -28,7 +28,7 @@ function InputGroup({ className, onClick, ...props }: ComponentProps<"div">) {
     // biome-ignore lint/a11y/useKeyWithClickEvents: see above
     <div
       className={cn(
-        "group/input-group touch-hit-field relative flex h-ctl-md w-full min-w-0 items-center rounded-md border border-input outline-none motion-full:transition-[border-color,box-shadow] has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot][aria-invalid=true]]:border-destructive has-disabled:bg-muted has-disabled:opacity-60 has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/30 has-[[data-slot][aria-invalid=true]]:focus-within:ring-[3px] has-[[data-slot][aria-invalid=true]]:focus-within:ring-destructive/25 dark:bg-input/30 dark:has-disabled:bg-muted has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
+        "group/input-group touch-hit-field relative flex h-ctl-md touch:h-11 w-full min-w-0 items-center rounded-md border border-input outline-none motion-full:transition-[border-color,box-shadow] has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot][aria-invalid=true]]:border-destructive has-disabled:bg-muted has-disabled:opacity-60 has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/30 has-[[data-slot][aria-invalid=true]]:focus-within:ring-[3px] has-[[data-slot][aria-invalid=true]]:focus-within:ring-destructive/25 dark:bg-input/30 dark:has-disabled:bg-muted has-[>[data-align=inline-end]]:[&>input]:pr-1.5 has-[>[data-align=inline-start]]:[&>input]:pl-1.5",
         className
       )}
       data-slot="input-group"

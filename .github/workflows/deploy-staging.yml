@@ -1,8 +1,8 @@
 name: Deploy staging
 
 # The fixed staging (ADR 0097, runbook docs/runbooks/staging.md): after the CI of a push to main is green,
-# migrate the staging database, then publish polaris-web-staging and polaris-catalog-staging, then smoke.
-# The Admin is not exposed in staging and is never deployed here.
+# migrate the staging database, then publish polaris-web-staging and polaris-catalog-staging, then
+# polaris-admin-staging (only behind the Cloudflare Access of the staging team, at admin.araute.app), then smoke.
 #
 # The repository is public. workflow_run runs the file of the default branch, never the one of a pull
 # request, and the restriction of branches of the `staging` Environment does not protect a workflow_run:
@@ -36,6 +36,7 @@ jobs:
       contents: read
     outputs:
       deploy: ${{ steps.tip.outputs.deploy }}
+      urgent: ${{ steps.urgent.outputs.urgent }}
     env:
       GH_TOKEN: ${{ github.token }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -63,6 +64,56 @@ jobs:
           else
             echo "::notice::main moved on; the run of the newer tip deploys it"
             echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A revert or a security fix goes in at the first safe moment, without settling (ADR 0041). The marker
+      # is a whole line "Swap-Urgent: yes" in the message of ANY commit since the last successful deploy:
+      # only the tip of main is deployed, so a marked revert followed by another merge minutes later must
+      # still ship urgent. Never a substring, never the text of a pull request: the squash of this
+      # repository keeps the title and the commit messages, not the PR body. Messages are read here, in a
+      # job that runs no repository code, and only the literals 1 or 0 leave it.
+      - id: urgent
+        name: Urgent swap marker since the last deploy
+        if: steps.tip.outputs.deploy == 'true'
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          workflow=$(basename "${WORKFLOW_REF%@*}")
+          # a failed listing must not read as "no deploy yet": fail loud instead of shipping without the marker
+          if ! runs=$(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=30" --jq '.workflow_runs[].id'); then
+            echo "::error::could not list the deploy runs to find the last deploy; the urgent marker cannot be computed"
+            exit 1
+          fi
+          base=""
+          for run in $runs; do
+            [ "$run" = "$GITHUB_RUN_ID" ] && continue
+            # a deploy happened only when the step "Smoke" succeeded: the job also succeeds when every step was
+            # skipped because main moved on (keep the step name "Smoke" in sync with the job below)
+            if ! smoke=$(gh api "repos/$REPOSITORY/actions/runs/$run/jobs" --jq '.jobs[] | select(.name == "Migrate, deploy and smoke") | .steps[] | select(.name == "Smoke") | .conclusion'); then
+              echo "::error::could not read the jobs of run $run; the urgent marker cannot be computed"
+              exit 1
+            fi
+            if printf '%s\n' "$smoke" | grep -cx success >/dev/null; then
+              base=$(gh api "repos/$REPOSITORY/actions/runs/$run" --jq .head_sha)
+              break
+            fi
+          done
+          if [ -n "$base" ]; then
+            if ! messages=$(gh api --paginate "repos/$REPOSITORY/compare/$base...$HEAD_SHA" --jq '.commits[].commit.message'); then
+              echo "::error::could not compare the last deploy $base with $HEAD_SHA; the urgent marker cannot be computed"
+              exit 1
+            fi
+          else
+            echo "::warning::no successful deploy among the last 30 runs: the urgent marker is read from the tip commit only"
+            messages=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.message)
+          fi
+          if printf '%s\n' "$messages" | tr -d '\r' | sed 's/[[:space:]]*$//' | grep -cx 'Swap-Urgent: yes' >/dev/null; then
+            echo "urgent=1" >> "$GITHUB_OUTPUT"
+            echo "::notice::urgent swap: this build skips the settling of ADR 0041 (marker since ${base:-the tip only})"
+            echo "**Urgent swap:** this staging build skips the 2 h settling (ADR 0041)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "urgent=0" >> "$GITHUB_OUTPUT"
           fi
 
   # The build runs the repository's code and dependencies: no Environment and no secret here.
@@ -95,14 +146,32 @@ jobs:
       - name: Build the staging Workers
         env:
           CLOUDFLARE_ENV: staging
+          # the company data of the legal texts (ADR 0100): public repository variables; an absent or empty one shows
+          # the example of the field in staging, never a token, and never stops this build
+          VITE_LEGAL_RAZAO_SOCIAL: ${{ vars.LEGAL_RAZAO_SOCIAL }}
+          VITE_LEGAL_ENDERECO: ${{ vars.LEGAL_ENDERECO }}
+          VITE_LEGAL_CONTATO_EMAIL: ${{ vars.LEGAL_CONTATO_EMAIL }}
+          VITE_LEGAL_DPO_EMAIL: ${{ vars.LEGAL_DPO_EMAIL }}
           # the offline runtime is on in staging only, for the manual Gate 5 (ADR 0043)
           VITE_OFFLINE_RUNTIME_ENABLED: "true"
+          # the reports of errors of the browser (ADR 0098, amended): on in the client, with the commit of the build as
+          # the release (GITHUB_SHA of a workflow_run is the default branch's, not the built one)
+          VITE_CLIENT_ERRORS_ENABLED: "true"
+          VITE_RELEASE: ${{ github.event.workflow_run.head_sha }}
+          # "1" only when a commit since the last deploy carries the marker (job decide, ADR 0041)
+          POLARIS_SWAP_URGENT: ${{ needs.decide.outputs.urgent }}
         run: |
           bun run --filter @polaris/web build
           bun run --filter @polaris/catalog build
+          # the Admin is bundled by `wrangler deploy --env staging` from its source; only its page script and sheet
+          # are built here (embedded as text, no Assets binding)
+          bun run --filter @polaris/admin build:ui
       # what the deploy follows: refuses placeholders, shared resources and a name without -staging
       - name: Staging isolation (generated config)
         run: node scripts/verify-staging-isolation.mjs --built
+      # what is published must not carry the offline labs or the UI gallery (same build mode as production)
+      - name: No offline lab in the build
+        run: node scripts/verify-no-lab-in-build.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staging-build
@@ -115,6 +184,8 @@ jobs:
             apps/web/.wrangler/deploy/config.json
             apps/catalog/dist
             apps/catalog/.wrangler/deploy/config.json
+            apps/admin/src/ui/generated/admin.js.txt
+            apps/admin/src/ui/generated/admin.css.txt
 
   deploy:
     name: Migrate, deploy and smoke
@@ -127,7 +198,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: staging
     permissions:
       contents: read
@@ -191,10 +262,20 @@ jobs:
           for entry in "$ARTIFACT"/* "$ARTIFACT"/.[!.]*; do
             [ -e "$entry" ] || continue
             case "$(basename "$entry")" in
-              web | catalog) ;;
+              web | catalog | admin) ;;
               *) echo "::error::unexpected entry in the build artifact"; exit 1 ;;
             esac
           done
+          # the Admin brings exactly its two generated files, regular, and nothing else
+          generated="$ARTIFACT/admin/src/ui/generated"
+          admin_files=$(cd "$ARTIFACT/admin" 2>/dev/null && find . -mindepth 1 -not -type d | sort || true)
+          if [ "$admin_files" != $'./src/ui/generated/admin.css.txt\n./src/ui/generated/admin.js.txt' ]; then
+            echo "::error::unexpected Admin files in the build artifact"
+            exit 1
+          fi
+          rm -rf apps/admin/src/ui/generated
+          mkdir -p apps/admin/src/ui/generated
+          cp "$generated/admin.js.txt" "$generated/admin.css.txt" apps/admin/src/ui/generated/
           for app in web catalog; do
             redirect="$ARTIFACT/$app/.wrangler/deploy/config.json"
             config_path=$(jq -r .configPath "$redirect")
@@ -237,9 +318,19 @@ jobs:
           # --no-install: only the wrangler of the lockfile, never a download
           (cd apps/web && bunx --no-install wrangler deploy --message "$HEAD_SHA")
           (cd apps/catalog && bunx --no-install wrangler deploy --message "$HEAD_SHA")
+          node scripts/verify-deployed-sha.mjs
+          # the Admin last, from its source block (the isolation check proved env.staging: one Custom Domain behind
+          # Access, workers.dev and previews off, its own Hyperdrive); a failure here leaves the web and the catalog
+          # already published and confirmed
+          (cd apps/admin && bunx --no-install wrangler deploy --env staging --message "$HEAD_SHA")
+      # the job decide looks for this step name to find the last real deploy (urgent swap marker, ADR 0041)
       - if: steps.tip.outputs.deploy == 'true'
         name: Smoke
+        # 17 checks; worst case 15 x (3 tries of 10 s + 2 pauses of 5 s) + 2 x 10 s, about 11 min
+        timeout-minutes: 13
         env:
           STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL }}
           STAGING_CATALOG_URL: ${{ vars.STAGING_CATALOG_URL }}
+          # the Admin's host is fixed by its config (Custom Domain behind Access); anonymous requests must be redirected to Access
+          STAGING_ADMIN_URL: https://admin.araute.app
         run: node scripts/smoke-staging.mjs

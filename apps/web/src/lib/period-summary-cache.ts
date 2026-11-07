@@ -15,7 +15,7 @@ import type { PreferenceStorage } from "./current-organization-model";
  */
 const KEY_PREFIX = "polaris.offline.periodSummary.";
 
-/** The Início's own copy (`home/home-copy.ts`): the days before the month, the goal shown and whether the store sold. */
+/** The Início's own copy (`home/home-copy.ts`): the days before the month and the goal shown. */
 export const HOME_COPY_KEY_PREFIX = "polaris.offline.home.";
 
 /** The copy of the Início's map (`home/rhythm-copy.ts`): the light daily series before the month, ~3 KB. */
@@ -27,6 +27,13 @@ export const DAILY_SALES_COPY_KEY_PREFIX = "polaris.offline.dailySales.";
  * with the copies below; leaving the page (Sair) takes it anyway.
  */
 export const dailySalesMemory = new Map<string, unknown>();
+
+/**
+ * The Início's "janela anterior" as the server last said it, by organization (`home/previous-window-copy.ts`): the page's
+ * memory that works with the offline runtime off too, so the second opening of the day does not read it again. It goes
+ * with the copies below, like the map's series.
+ */
+export const previousWindowMemory = new Map<string, unknown>();
 
 type SummaryDay = PeriodSummaryReadModel["daily"][number];
 
@@ -203,29 +210,101 @@ function isOptionalMoney(value: unknown): boolean {
   return value === undefined || value === null || isMoney(value);
 }
 
+/** The fields of an entry of the series that every entry has, by date or by month. */
+function isEntry(day: unknown): day is Dictionary {
+  return (
+    isDictionary(day) &&
+    isDate(day.date) &&
+    isMoney(day.netSales) &&
+    isCount(day.salesCount) &&
+    isOptionalMoney(day.costs) &&
+    (day.operatingExpenses === undefined || isMoney(day.operatingExpenses)) &&
+    isOptionalMoney(day.operatingResult)
+  );
+}
+
 /** Absent (an older copy), or one entry per date of the period, in order. */
-function isDaily(value: unknown, period: unknown): boolean {
-  if (value === undefined) {
-    return true;
-  }
-  if (!(Array.isArray(value) && isDictionary(period) && isDate(period.from))) {
+function isDailyByDate(value: unknown, period: Dictionary): boolean {
+  if (!(Array.isArray(value) && isDate(period.from))) {
     return false;
   }
   const { from } = period;
   return (
     value.length > 0 &&
     value.every(
-      (day, index) =>
-        isDictionary(day) &&
-        day.date === dateAfter(from, index) &&
-        isMoney(day.netSales) &&
-        isCount(day.salesCount) &&
-        isOptionalMoney(day.costs) &&
-        (day.operatingExpenses === undefined ||
-          isMoney(day.operatingExpenses)) &&
-        isOptionalMoney(day.operatingResult)
+      (day, index) => isEntry(day) && day.date === dateAfter(from, index)
     ) &&
     (value.at(-1) as Dictionary).date === period.to
+  );
+}
+
+/** Some consecutive dates added up: the first and the last, how many, and how many of them with an unknown cost. */
+function isBucket(value: unknown, from: string): value is Dictionary {
+  return (
+    isEntry(value) &&
+    value.date === from &&
+    isDate(value.to) &&
+    value.to >= from &&
+    value.days ===
+      Math.round(
+        (Date.parse(`${value.to}T00:00:00.000Z`) -
+          Date.parse(`${from}T00:00:00.000Z`)) /
+          DAY_MS
+      ) +
+        1 &&
+    isCount(value.unknownDays) &&
+    (value.unknownDays as number) <= (value.days as number)
+  );
+}
+
+/**
+ * A monthly series (`granularity` "month"): months that follow each other from the first date of the period, each
+ * within one calendar month, then the dates after today (`afterToday`) up to the last date, when the period has them.
+ */
+function isDailyByMonth(
+  value: unknown,
+  period: Dictionary,
+  afterToday: unknown
+): boolean {
+  if (!(Array.isArray(value) && isDate(period.from) && isDate(period.to))) {
+    return false;
+  }
+  let next = period.from;
+  for (const month of value) {
+    if (
+      !isBucket(month, next) ||
+      (month.to as string).slice(0, 7) !== next.slice(0, 7)
+    ) {
+      return false;
+    }
+    next = dateAfter(month.to as string, 1);
+  }
+  if (afterToday === undefined) {
+    return value.length > 0 && next === dateAfter(period.to, 1);
+  }
+  return isBucket(afterToday, next) && afterToday.to === period.to;
+}
+
+/** Absent (an older copy), or the series of the period: by date, or by month (`granularity`). */
+function isDaily(
+  value: unknown,
+  period: unknown,
+  granularity: unknown,
+  afterToday: unknown
+): boolean {
+  if (value === undefined) {
+    return granularity === undefined && afterToday === undefined;
+  }
+  if (!isDictionary(period)) {
+    return false;
+  }
+  if (granularity === "month") {
+    return isDailyByMonth(value, period, afterToday);
+  }
+  return (
+    (granularity === undefined || granularity === "day") &&
+    afterToday === undefined &&
+    isDailyByDate(value, period)
   );
 }
 
@@ -257,7 +336,7 @@ export function isPeriodSummary(value: unknown): value is StoredPeriodSummary {
     isDictionary(value.chain) &&
     hasAll(value.chain, CHAIN_TEXTS, isMoney) &&
     isPeriod(value.period) &&
-    isDaily(value.daily, value.period) &&
+    isDaily(value.daily, value.period, value.granularity, value.afterToday) &&
     isTopProducts(value.topProducts) &&
     isQuality(value.quality)
   );
@@ -400,6 +479,7 @@ export function clearOrganizationResultCopies(
   organizationId: string
 ): void {
   dailySalesMemory.delete(organizationId);
+  previousWindowMemory.delete(organizationId);
   try {
     for (const key of [
       ...keysWithPrefix(preference, organizationPrefix(organizationId)),
@@ -421,6 +501,7 @@ export function clearPeriodSummaryCaches(
   preference: PreferenceStorage | null
 ): void {
   dailySalesMemory.clear();
+  previousWindowMemory.clear();
   try {
     for (const key of [
       ...keysWithPrefix(preference, KEY_PREFIX),

@@ -1,4 +1,8 @@
 import type { PrivacyMaintenanceClient } from "@polaris/db/privacy-maintenance";
+import {
+  ORGANIZATION_PURGE_STALLED_ATTEMPTS,
+  ORGANIZATION_PURGE_STALLED_WINDOW_HOURS,
+} from "@polaris/domain/privacy/organization-purge";
 
 /** Organizations marked closed per call, and how many calls one run makes at most. */
 export const CLOSURE_SWEEP_BATCH = 100;
@@ -14,29 +18,34 @@ export interface PrivacyMaintenanceReport {
   /** Reasons of a cancelled renewal deleted 12 months after they were recorded (ADR 0104). */
   cancellationFeedbackExpired: number;
   closedOrganizations: number;
+  /** Notices still owed 3 days after their date, for a store still in closure (`closure_purge_overdue`). */
+  closureNoticesOverdue: number;
   /** Notices of a closure milestone written to go out by this run, each with its outbox event (ADR 0102, amended). */
   closureNoticesRecorded: number;
   /** Earlier milestones written skipped, because a later one was due with them (no e-mail). */
   closureNoticesSkipped: number;
-  /** Notices still owed 3 days after their date, for a store still in closure (`closure_purge_overdue`). */
-  closureNoticesOverdue: number;
   /**
    * Closed organizations still waiting 30 days after D with no legal hold (0 with the switch off): a store left
    * behind by a cancellation of the Admin, a renewal still alive, a temporary access or a notice not delivered
    * (`closure_purge_overdue`).
    */
   overduePurges: number;
+  /** Whether the automatic schedule ran: `CLOSURE_AUTO_PURGE_ENABLED` is on (ADR 0102). */
+  purgeSchedulingEnabled: boolean;
   /**
    * Scheduled purges (the closure period's or the Admin's) held back past their time by a live temporary access, a
    * renewal still alive or a notice not delivered, whatever the switch (`closure_purge_overdue`).
    */
   purgesHeldBack: number;
-  /** Whether the automatic schedule ran: `CLOSURE_AUTO_PURGE_ENABLED` is on (ADR 0102). */
-  purgeSchedulingEnabled: boolean;
   /** Organizations this run put into the purge (0 with the switch off). */
   scheduledPurges: number;
   /** Organizations the closure period put into the purge in the last 24 hours (0 with the switch off). */
   scheduledPurgesLastDay: number;
+  /**
+   * Purges claimed 3 times or more that did not finish and recorded no step in 24 hours, whether or not a run logged
+   * them: the count that catches a run killed before its log (`organization_purge_stalled`, `source = "no_log"`).
+   */
+  stalledPurges: number;
 }
 
 export interface PrivacyMaintenanceOptions {
@@ -70,6 +79,7 @@ export async function runPrivacyMaintenance(
   client: Pick<
     PrivacyMaintenanceClient,
     | "countPurgesHeldBack"
+    | "countStalledOrganizationPurges"
     | "expireCancellationFeedback"
     | "finalizeExpiredClosures"
     | "recordClosureNotices"
@@ -116,6 +126,10 @@ export async function runPrivacyMaintenance(
     }
   }
   const purgesHeldBack = await client.countPurgesHeldBack();
+  const stalledPurges = await client.countStalledOrganizationPurges(
+    ORGANIZATION_PURGE_STALLED_ATTEMPTS,
+    ORGANIZATION_PURGE_STALLED_WINDOW_HOURS
+  );
   // the reasons of a cancelled renewal leave 12 months after the day they were recorded (retention class
   // `billing_cancellation_feedback`); a backlog is worked off over several runs
   let cancellationFeedbackExpired = 0;
@@ -141,5 +155,6 @@ export async function runPrivacyMaintenance(
     purgesHeldBack,
     scheduledPurges,
     scheduledPurgesLastDay,
+    stalledPurges,
   };
 }

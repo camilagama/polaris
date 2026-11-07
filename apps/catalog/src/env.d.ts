@@ -6,6 +6,8 @@
 // biome-ignore lint/style/noNamespace: the Workers types are extended by merging into the global Cloudflare namespace
 declare namespace Cloudflare {
   interface Env {
+    /** `staging` or `production` (per environment in `wrangler.jsonc`); labels the `environment` of every log event. */
+    POLARIS_ENVIRONMENT?: string;
     CATALOG_HYPERDRIVE: Hyperdrive;
     /** The origin public pages are addressed by (canonical links), e.g. https://catalogo.example. */
     CATALOG_ORIGIN: string;
@@ -16,5 +18,15 @@ declare namespace Cloudflare {
      * means the footer is only text. Declared in every environment of wrangler.jsonc.
      */
     POLARIS_SITE_URL?: string;
+    /**
+     * Exactly `true` makes `/robots.txt` declare the commit the Worker was built from (`X-Polaris-Release`, ADR 0098
+     * amended); absent or any other value sends no release. `true` only in `env.staging`.
+     */
+    RELEASE_HEADER_ENABLED?: string;
   }
+}
+
+interface ImportMetaEnv {
+  /** The short SHA the Worker was built from, defined by `packages/http-security/src/server-release.ts` outside the client. */
+  readonly POLARIS_SERVER_RELEASE?: string;
 }

@@ -7,7 +7,7 @@ type Database = ReturnType<typeof createDatabase>["db"];
 
 /**
  * What the Better Auth hooks remember between the steps of one request. It lives in the request scope, never in the
- * instance: the instance serves every request of the isolate (ADR 0017, emendas de 24/10/2026 e 25/10/2026).
+ * instance: the instance serves every request of the isolate (ADR 0017).
  */
 export interface AuthRequestState {
   /** Who was signed in when `/sign-out` began: the after hook audits the logout with it, after the session is gone. */
@@ -40,7 +40,7 @@ interface RunningScope extends RequestScope {
 }
 
 /**
- * The Better Auth instances are built once per isolate (ADR 0017, emendas de 24/10/2026 e 25/10/2026), so they cannot
+ * The Better Auth instances are built once per isolate (ADR 0017), so they cannot
  * hold anything of a request: a `Pool` is an I/O object of the request that opened it, and the runtime refuses to
  * reuse it from another one; a user remembered by the instance would reach the next request. What the instances hold
  * are functions that read the running request from this storage at each call. Outside `runWithRequestScope` there is

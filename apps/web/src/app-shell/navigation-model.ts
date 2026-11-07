@@ -1,8 +1,9 @@
-/** The destinations of the menu (the map of navigation of 26/10, § 1): eight, and Pendências while it has something. */
+/** The destinations of the menu (the navigation map, § 1): eight, and Pendências while it has something. */
 export type NavId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "help"
   | "history"
   | "home"
   | "inventory"
@@ -15,6 +16,7 @@ export type ScreenId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "help"
   | "home"
   | "inventory"
   | "products"
@@ -30,8 +32,10 @@ export type RouteId =
   | "categories"
   | "customers"
   | "dashboard"
+  | "data-export"
   | "devices"
   | "expenses"
+  | "help"
   | "home"
   | "inventory"
   | "payment-profiles"
@@ -42,8 +46,8 @@ export type RouteId =
   | "sale-history"
   | "subscription";
 
-/** The group of the sidebar an item is in; the first one has no label. */
-export type NavGroup = "Catálogo" | "Configurações" | "Resultado" | null;
+/** The group of the sidebar an item is in: Início and Configurações stand alone, with no label. */
+export type NavGroup = "Gestão" | "Vendas" | null;
 
 export interface NavItem {
   group: NavGroup;
@@ -52,31 +56,42 @@ export interface NavItem {
   label: string;
 }
 
-/** The eight destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1). */
+/**
+ * The eight destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
+ * for what is sold, Gestão for what the store has and earns. Clientes is a register, like Produtos, as the bottom bar
+ * of the phone already treats it (`BOTTOM_BAR_AREA`).
+ */
 export const NAV_ITEMS: readonly NavItem[] = [
   { group: null, href: "/", id: "home", label: "Início" },
-  { group: null, href: "/sales", id: "sale", label: "Vender" },
-  { group: null, href: "/sales/history", id: "history", label: "Histórico" },
-  { group: "Catálogo", href: "/inventory", id: "inventory", label: "Estoque" },
-  { group: "Catálogo", href: "/products", id: "products", label: "Produtos" },
-  { group: "Catálogo", href: "/customers", id: "customers", label: "Clientes" },
+  { group: "Vendas", href: "/sales", id: "sale", label: "Vender" },
   {
-    group: "Resultado",
-    href: "/dashboard",
-    id: "dashboard",
-    label: "Resultado",
+    group: "Vendas",
+    href: "/sales/history",
+    id: "history",
+    label: "Histórico",
   },
+  { group: "Gestão", href: "/inventory", id: "inventory", label: "Estoque" },
+  { group: "Gestão", href: "/products", id: "products", label: "Produtos" },
+  { group: "Gestão", href: "/customers", id: "customers", label: "Clientes" },
+  { group: "Gestão", href: "/dashboard", id: "dashboard", label: "Resultado" },
   {
-    group: "Configurações",
+    group: null,
     href: "/configuracoes",
     id: "settings",
     label: "Configurações",
   },
 ];
 
-/** The ninth destination, only while this device has a refused record: after Histórico, with the count. */
+/**
+ * "Ajuda e contato" is no destination of the menu: the phone puts it in "Mais" after the destinations, and the desktop
+ * beside the legal links at the foot of the column. It is a page of the shell, so the offline copy opens it.
+ */
+export const HELP_HREF = "/ajuda";
+export const HELP_LABEL = "Ajuda e contato";
+
+/** The ninth destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
 export const ATTENTION_NAV_ITEM: NavItem = {
-  group: null,
+  group: "Vendas",
   href: "/attention",
   id: "attention",
   label: "Pendências",
@@ -115,7 +130,7 @@ export function inBottomBar(id: NavId): id is BottomBarId {
 /**
  * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose area it
  * is in (Estoque for Produtos and Clientes, map § 2). "more" for the items of no destination of the bar, which "Mais"
- * marks: Pendências, Resultado and Configurações.
+ * marks: Pendências, Resultado, Configurações and Ajuda e contato.
  */
 const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
   customers: "inventory",
@@ -187,6 +202,7 @@ export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
       { label: "Aparelhos", route: "devices", value: "aparelhos" },
       { label: "Assinatura", route: "subscription", value: "assinatura" },
       { label: "Senha", route: "account-security", value: "senha" },
+      { label: "Seus dados", route: "data-export", value: "seus-dados" },
     ],
   };
 
@@ -227,6 +243,25 @@ export function openedTab(
   return { rewrite: value !== asked || unknown, value };
 }
 
+export type ListedTab = ScreenTab & { reserved: boolean };
+
+/**
+ * The tabs to list, in the order of the screen: the ones this person has (`available`) and the `reserved` ones, whose
+ * condition the server has not answered yet, held in their place so the tabs beside them do not move when it does.
+ */
+export function listedTabs(
+  screen: TabScreenId,
+  available: readonly string[],
+  reserved: readonly string[] = []
+): ListedTab[] {
+  return SCREEN_TABS[screen].flatMap((tab): ListedTab[] => {
+    if (available.includes(tab.value)) {
+      return [{ ...tab, reserved: false }];
+    }
+    return reserved.includes(tab.value) ? [{ ...tab, reserved: true }] : [];
+  });
+}
+
 /** The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all. */
 export function addressWithTab(
   href: string,
@@ -256,6 +291,7 @@ interface RouteDefinition {
 /** The sale detail is reached from the history, not from the menu, so the history stays the current item there. */
 const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   "/": { navId: "home", screen: "home", title: "Início" },
+  "/ajuda": { navId: "help", screen: "help", title: HELP_LABEL },
   "/attention": {
     navId: "attention",
     screen: "attention",
@@ -352,6 +388,7 @@ export function tabHref(screen: TabScreenId, value: string): string {
 const ONLINE_ONLY_ROUTES: readonly RouteId[] = [
   "account-security",
   "categories",
+  "data-export",
   "expenses",
   "payment-profiles",
   "public-catalog",
@@ -419,6 +456,34 @@ export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
     screen: route.screen,
     title,
   };
+}
+
+/**
+ * The screen on display as the report of an error names it (`routeId` of `@polaris/contracts/client-error`): the
+ * screen of `ROUTES`, and for a screen with tabs `screen:tab`, by the tab the address asks. Null outside the shell.
+ */
+export function screenKeyOf(pathname: string, search = ""): string | null {
+  const normalized = pathname.replace(trailingSlashes, "") || "/";
+  const route = Object.hasOwn(ROUTES, normalized)
+    ? ROUTES[normalized]
+    : undefined;
+  if (!route) {
+    return null;
+  }
+  return isTabScreen(route.screen)
+    ? `${route.screen}:${requestedTab(route.screen, search).value}`
+    : route.screen;
+}
+
+/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, and each tab of a screen with tabs. */
+export function screenKeys(): string[] {
+  return Object.values(ROUTES)
+    .flatMap(({ screen }) =>
+      isTabScreen(screen)
+        ? SCREEN_TABS[screen].map((tab) => `${screen}:${tab.value}`)
+        : [screen]
+    )
+    .sort();
 }
 
 /**

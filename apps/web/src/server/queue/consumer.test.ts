@@ -1,4 +1,7 @@
-import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
+import {
+  OUTBOX_EVENT_TYPES,
+  outboxIdempotencyKey,
+} from "@polaris/domain/events/outbox";
 import { queueEnvelope } from "@polaris/domain/events/queue-envelope";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -7,6 +10,7 @@ import {
   DeferredHandlerError,
   PermanentHandlerError,
   type QueueHandler,
+  type QueueHandlers,
   type QueueMessage,
   retryDelaySeconds,
 } from "./consumer";
@@ -536,5 +540,28 @@ describe("retryDelaySeconds", () => {
     expect(retryDelaySeconds(3)).toBe(120);
     expect(retryDelaySeconds(50)).toBe(3600);
     expect(retryDelaySeconds(0)).toBe(30);
+  });
+});
+
+describe("QueueHandlers, what the Worker binds", () => {
+  const handler: QueueHandler = () => Promise.resolve();
+
+  it("asks for a handler of every type of the outbox", () => {
+    const all = {
+      "billing.notice": handler,
+      "billing.renewal_cancel_requested": handler,
+      "data_export.requested": handler,
+      "organization.closure_notice": handler,
+    } satisfies QueueHandlers;
+    expect(Object.keys(all).sort()).toEqual([...OUTBOX_EVENT_TYPES].sort());
+
+    // a map without `billing.notice` does not compile (the consumer's own dependency stays partial)
+    // @ts-expect-error missing "billing.notice"
+    const missing: QueueHandlers = {
+      "billing.renewal_cancel_requested": handler,
+      "data_export.requested": handler,
+      "organization.closure_notice": handler,
+    };
+    expect(Object.keys(missing)).toHaveLength(3);
   });
 });

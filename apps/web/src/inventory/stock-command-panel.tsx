@@ -13,19 +13,21 @@ import { Button } from "@/ui/button";
 import { FieldLegend, FieldSet } from "@/ui/field";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { queueOfflineStock } from "./queue-offline-stock";
 import {
   backToStockEditing,
   canCloseStock,
   cancelDiscardStock,
+  costRefusedOffline,
   discardLockedStock,
   editStockField,
   firstInvalidStockField,
   isStockDraftChanged,
   mapStockError,
   prepareStockSubmission,
+  receiveNeedsCost,
   requestDiscardStock,
   retargetStock,
   reviewStock,
@@ -33,11 +35,13 @@ import {
   STOCK_FIELD_ORDER,
   type StockAction,
   type StockCall,
+  type StockCommandState,
   type StockFailure,
   type StockFieldName,
   type StockResult,
   startStockCommand,
   stockActionBlock,
+  stockConfirmRoute,
   stockFailed,
   stockFieldRefusal,
   stockQueueFailed,
@@ -56,7 +60,7 @@ import {
 import {
   costText,
   type StockTarget,
-  targetCostText,
+  targetBalanceText,
   unitsText,
 } from "./stock-target";
 
@@ -76,6 +80,10 @@ interface StockCommandPanelProps {
   ) => void;
   /** The variant or its product changed under the screen. */
   onReloadList: () => void;
+  /** The receive panel is blocked by the unknown cost of the units on hand: open the cost panel in its place. */
+  onInformCost?: ((target: StockTarget) => void) | undefined;
+  /** Opened above the list (the link from the sale): no row above says the variant or its balance, so the line under the title does. Inside a row the row already says both and the line is left out. */
+  standalone?: boolean | undefined;
   target: StockTarget;
   today: string;
 }
@@ -154,6 +162,23 @@ function Actions({
 }
 
 /**
+ * After the commit that shows the refusal: while the request was in flight the fieldset was off, and a field cannot
+ * take focus until it is on again.
+ */
+function useFocusRefusedField(
+  submission: StockCommandState["submission"],
+  focus: (field: StockFieldName | null) => void
+) {
+  const refusedField =
+    submission.phase === "failed" ? submission.failure.field : null;
+  useEffect(() => {
+    if (refusedField !== null) {
+      focus(refusedField);
+    }
+  }, [focus, refusedField]);
+}
+
+/**
  * One stock command on one variant, in two steps: fill in and review, then
  * confirm. An unknown outcome locks the attempt and a retry resends the same
  * command ID, so the server never records the movement twice.
@@ -163,23 +188,34 @@ export function StockCommandPanel({
   local,
   onBalance,
   onClose,
+  onInformCost,
   onReloadList,
   organizationId,
+  standalone = false,
   target,
   today,
 }: StockCommandPanelProps) {
   const [state, setState] = useState(() =>
     startStockCommand(action, target, today)
   );
-  useReportUnsentWork(isStockDraftChanged(state));
+  useHoldSwap(isStockDraftChanged(state));
   const inFlight = useRef<boolean>(false);
   const statusRef: RefObject<HTMLDivElement | null> = useRef(null);
   const panelRef: RefObject<HTMLElement | null> = useRef(null);
   const prefix = `stock-${target.variantId}-${action}`;
   const focus = useCallback(
     (field: StockFieldName | null) => {
-      if (field !== null) {
-        document.getElementById(stockFieldId(prefix, field))?.focus();
+      if (field === null) {
+        return;
+      }
+      const element = document.getElementById(stockFieldId(prefix, field));
+      element?.focus();
+      // a quantity that opens as 1 is replaced by typing, not appended to
+      if (
+        element instanceof HTMLInputElement &&
+        element.inputMode === "numeric"
+      ) {
+        element.select();
       }
     },
     [prefix]
@@ -221,6 +257,10 @@ export function StockCommandPanel({
   const handleBack = useCallback(
     () => setState((current) => backToStockEditing(current)),
     []
+  );
+  const handleInformCost = useCallback(
+    () => onInformCost?.(state.target),
+    [onInformCost, state.target]
   );
   const handleDiscardRequest = useCallback(
     () => setState((current) => requestDiscardStock(current)),
@@ -266,23 +306,13 @@ export function StockCommandPanel({
         local.runtime.syncNow().catch(() => undefined);
       } catch (error) {
         setState((current) => stockQueueFailed(current, error));
-        if (
-          error instanceof Error &&
-          error.name === "InsufficientLocalStockError"
-        ) {
-          focusLater(() => focus("quantity"));
-        }
       }
     },
-    [focus, local]
+    [local]
   );
 
   const afterFailure = useCallback(
     (failure: StockFailure) => {
-      if (failure.field !== null) {
-        const { field } = failure;
-        focusLater(() => focus(field));
-      }
       if (failure.refreshBalance) {
         refreshBalance().catch(() => undefined);
       }
@@ -290,11 +320,16 @@ export function StockCommandPanel({
         onReloadList();
       }
     },
-    [focus, onReloadList, refreshBalance]
+    [onReloadList, refreshBalance]
   );
 
   const handleConfirm = useCallback(async () => {
     if (inFlight.current) {
+      return;
+    }
+    const route = stockConfirmRoute(state, local !== undefined);
+    if (route === "refuse") {
+      setState(costRefusedOffline(state));
       return;
     }
     const prepared = prepareStockSubmission({
@@ -309,10 +344,7 @@ export function StockCommandPanel({
     inFlight.current = true;
     try {
       const { call } = prepared;
-      // An attempt locked on the server (outcome unknown) is retried there, as it
-      // was sent: sending it to the device with another payload could record the
-      // movement twice.
-      if (local && state.submission.phase !== "locked") {
+      if (route === "device") {
         await confirmOnDevice(call);
         return;
       }
@@ -352,6 +384,9 @@ export function StockCommandPanel({
   );
 
   const block = stockActionBlock(action, state.target);
+  const balanceText = targetBalanceText(state.target);
+  const informCost =
+    onInformCost && !local && receiveNeedsCost(action, state.target);
   const issues = visibleStockIssues(state);
   const errors: Partial<Record<StockFieldName, string>> = {};
   // one message per field: a refusal that belongs to a field replaces the local check there
@@ -367,6 +402,7 @@ export function StockCommandPanel({
   const confirming = state.step === "confirming" || locked;
   const submitting = submission.phase === "submitting";
   const blocked = block !== null;
+  useFocusRefusedField(submission, focus);
   useEffect(() => {
     // The balance read after a refusal can leave nothing to act on: the field turns off, so focus moves to the panel.
     if (blocked) {
@@ -421,11 +457,11 @@ export function StockCommandPanel({
         <h3 className="text-section" id={`${prefix}-title`}>
           {labels.title}
         </h3>
-        <p className="text-muted-foreground text-support">
-          {state.target.productName} · {state.target.variantText}. Saldo atual:{" "}
-          {unitsText(state.target.quantity)} · custo médio:{" "}
-          {targetCostText(state.target)}.
-        </p>
+        {standalone ? (
+          <p className="text-muted-foreground text-support">
+            {`${state.target.productName} · ${state.target.variantText}. ${balanceText}`}
+          </p>
+        ) : null}
       </div>
       {state.target.archived ? (
         <Alert role="note" variant="warning">
@@ -437,7 +473,20 @@ export function StockCommandPanel({
       ) : null}
       {block ? (
         <Alert id={`${prefix}-block`} role="note" variant="warning">
-          <AlertDescription>{block}</AlertDescription>
+          <AlertDescription className="grid justify-items-start">
+            <p>{block}</p>
+            {informCost ? (
+              <Button
+                aria-label={`Informar custo de ${state.target.productName} · ${state.target.variantText}`}
+                onClick={handleInformCost}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Informar custo
+              </Button>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
       <form className="grid gap-4" noValidate onSubmit={handleSubmitForm}>

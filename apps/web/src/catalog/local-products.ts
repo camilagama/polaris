@@ -37,6 +37,9 @@ export function toProductReadModel(
     status: lifecycle(row),
     updatedAt: row.updatedAt,
     version: row.version,
+    ...(row.coverAssetId === undefined
+      ? {}
+      : { coverAssetId: row.coverAssetId }),
   };
 }
 
@@ -52,6 +55,9 @@ export function toLocalProductRow(
     name: product.name,
     updatedAt: product.updatedAt,
     version: product.version,
+    ...(product.coverAssetId === undefined
+      ? {}
+      : { coverAssetId: product.coverAssetId }),
   };
 }
 

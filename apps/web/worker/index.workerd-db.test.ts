@@ -203,6 +203,32 @@ describe("the fetch of the web worker", () => {
     expect(response.status).toBe(403);
   });
 
+  it("takes the report of an error of the browser in workerd: 204 for a valid event, 413 for a body over 2 KiB", async () => {
+    const report = (body: string) =>
+      exports.default.fetch("https://web.test/api/client-errors", {
+        body,
+        headers: {
+          "cf-connecting-ip": "203.0.113.71",
+          "content-type": "application/json",
+          origin: "https://web.test",
+        },
+        method: "POST",
+      });
+    const valid = await report(
+      JSON.stringify({
+        errorName: "TypeError",
+        frames: ["sale-form-model-BX3k9a1Z.js:12:34"],
+        kind: "error",
+        routeId: "sale",
+        v: 1,
+      })
+    );
+    expect(valid.status).toBe(204);
+    expect(await valid.text()).toBe("");
+    const oversized = await report("x".repeat(2 * 1024 + 1));
+    expect(oversized.status).toBe(413);
+  });
+
   it("answers a visitor without a cookie that there is no session, through the authentication role", async () => {
     const response = await exports.default.fetch(
       "https://web.test/api/auth/get-session",
@@ -547,6 +573,7 @@ describe("the e-mail and password flows of the web worker", () => {
   const AUTH_BINDINGS = {
     AUTH_ABUSE_PROTECTION_ENABLED: "true",
     AUTH_EMAIL_FROM: "Polaris <no-reply@web.test>",
+    AUTH_PASSWORD_PEPPER: "harness-password-pepper-of-32-characters-or-more",
     EMAIL_PASSWORD_AUTH_ENABLED: "true",
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: "harness-google-secret",
@@ -598,7 +625,7 @@ describe("the e-mail and password flows of the web worker", () => {
 
   /**
    * The network of the Worker, answered here: Resend (the e-mails are kept, the links are read from them), the Turnstile
-   * check, the HIBP range of the password policy and the token endpoint of Google. Any other call is kept in `strangers`
+   * check and the token endpoint of Google. Any other call is kept in `strangers`
    * and answered 502, and a test ends by asserting there is none.
    */
   function fakeNetwork(googleClaims?: Record<string, unknown>) {
@@ -612,9 +639,6 @@ describe("the e-mail and password flows of the web worker", () => {
           input instanceof Request ? input.url : String(input)
         );
         const body = await bodyOf(input, init);
-        if (url.href.startsWith("https://api.pwnedpasswords.com/range/")) {
-          return new Response(`${"0".repeat(35)}:0\r\n`);
-        }
         if (url.href === "https://api.resend.com/emails") {
           emails.push(JSON.parse(body) as SentEmail);
           return Response.json({ id: crypto.randomUUID() });
@@ -652,15 +676,24 @@ describe("the e-mail and password flows of the web worker", () => {
   /** The Worker's own `fetch`, with the bindings of the flows, and the background tasks (the e-mails) waited for. */
   async function call(
     path: string,
-    options: { body?: unknown; cookie?: string; ip: string; method?: string }
+    options: {
+      body?: unknown;
+      cookie?: string;
+      ip: string;
+      method?: string;
+      stream?: ReadableStream<Uint8Array>;
+    }
   ) {
     const method =
-      options.method ?? (options.body === undefined ? "GET" : "POST");
+      options.method ??
+      (options.body === undefined && options.stream === undefined
+        ? "GET"
+        : "POST");
     const headers = new Headers({
       "cf-connecting-ip": options.ip,
       origin: ORIGIN,
     });
-    if (options.body !== undefined) {
+    if (options.body !== undefined || options.stream !== undefined) {
       headers.set("content-type", "application/json");
     }
     if (options.cookie) {
@@ -676,9 +709,12 @@ describe("the e-mail and password flows of the web worker", () => {
         ...(options.body === undefined
           ? {}
           : { body: JSON.stringify(options.body) }),
+        ...(options.stream === undefined
+          ? {}
+          : { body: options.stream, duplex: "half" }),
         headers,
         method,
-      }),
+      } as RequestInit),
       bindingsWith(AUTH_BINDINGS),
       context
     );
@@ -856,6 +892,83 @@ describe("the e-mail and password flows of the web worker", () => {
         seq: expect.any(Number),
       });
     }
+    expect(network.strangers).toEqual([]);
+  });
+
+  it("cuts a signed-in call that grows past the ceiling while it is read: 413, and the valid call at its start does not run", async () => {
+    const network = fakeNetwork();
+    const address = email("body-cut");
+    const ip = "198.51.100.18";
+    await verifiedUser(network, address, ip);
+    const cookie = await signedInCookie(address, PASSWORD, ip);
+    const created = await call("/rpc/organization/createInitial", {
+      body: {
+        json: { name: "Loja do corte", timezone: "America/Sao_Paulo" },
+      },
+      cookie,
+      ip,
+    });
+    expect(created.status).toBe(200);
+    const organizationId = (
+      (await created.json()) as { json: { organization: { id: string } } }
+    ).json.organization.id;
+    const categoriesOf = async () => {
+      const listed = await call("/rpc/category/list", {
+        body: { json: { organizationId, status: "all" } },
+        cookie,
+        ip,
+      });
+      expect(listed.status).toBe(200);
+      return (
+        (await listed.json()) as { json: { categories: { name: string }[] } }
+      ).json.categories.map((category) => category.name);
+    };
+    const createCategory = (name: string) =>
+      JSON.stringify({ json: { name, organizationId } });
+    // the same call, whole and within the ceiling, is accepted: the setup (session, organization, capability) is valid
+    const control = await call("/rpc/category/create", {
+      body: { json: { name: "Controle", organizationId } },
+      cookie,
+      ip,
+    });
+    expect(control.status).toBe(200);
+    expect(await categoriesOf()).toEqual(["Controle"]);
+
+    // a valid call, then blanks up to past the ceiling, in chunks of 64 KiB and with no Content-Length: what is read
+    // up to the ceiling is still valid JSON, so only the error of the stream keeps the procedure from running
+    const KIB = 1024;
+    const bytes = new Uint8Array(513 * KIB).fill(32);
+    const valid = new TextEncoder().encode(createCategory("Cortada"));
+    bytes.set(valid);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= bytes.length) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(bytes.slice(sent, sent + 64 * KIB));
+        sent += 64 * KIB;
+      },
+    });
+    const events = loggedEvents();
+
+    const response = await call("/rpc/category/create", {
+      cookie,
+      ip,
+      stream,
+    });
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({
+      error: { code: "payload_too_large" },
+    });
+    expect(
+      events().filter((entry) => entry.event === "rpc_payload_too_large")
+    ).toEqual([expect.objectContaining({ cut: "stream", declared: "absent" })]);
+    // the procedure did not run: the category of the cut call does not exist
+    expect(await categoriesOf()).toEqual(["Controle"]);
     expect(network.strangers).toEqual([]);
   });
 

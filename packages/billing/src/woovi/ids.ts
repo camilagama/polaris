@@ -5,7 +5,7 @@
  * installment path. An ID named in a webhook body goes into a request path, so
  * it is checked first and then encoded (`encodeURIComponent`): a forged `../`
  * or `?` never reaches the URL. `+`, `/` and `=` of base64 are encoded too
- * (sandbox, 20/10/2026: the API reads the encoded ID).
+ * (sandbox: the API reads the encoded ID).
  */
 
 export type WooviGlobalIdKind = "installment" | "subscription";

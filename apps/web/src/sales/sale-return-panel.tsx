@@ -1,9 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { type Ref, useCallback, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { OperationFailureNotice } from "./operation-failure-notice";
 import type { SaleNotice } from "./sale-cancellation-model";
 import { OperationActions } from "./sale-operation-actions";
@@ -25,6 +25,7 @@ import {
   prepareReturnSubmission,
   RETURN_EXPLANATION,
   RETURN_REASONS,
+  type ReturnReview,
   type ReturnTableRow,
   requestDiscardReturn,
   returnFailed,
@@ -39,6 +40,40 @@ import { ReturnTable } from "./sale-return-table";
 import { useStepFocus } from "./use-step-focus";
 
 const newId = () => crypto.randomUUID();
+
+interface ReturnReviewNoticeProps {
+  noticeRef: Ref<HTMLDivElement>;
+  review: ReturnReview;
+}
+
+export function ReturnReviewNotice({
+  noticeRef,
+  review,
+}: ReturnReviewNoticeProps) {
+  return (
+    <Alert
+      className="focus-ring border-0 bg-muted p-4"
+      ref={noticeRef}
+      tabIndex={-1}
+    >
+      <AlertTitle>Confirme a devolução</AlertTitle>
+      <AlertDescription className="grid gap-2 [&_p:not(:last-child)]:mb-0">
+        <p>Motivo: {review.reasonText}.</p>
+        <ul className="grid list-disc gap-0.5 pl-5">
+          {review.lines.map((line) => (
+            <li key={line.key}>{line.text}</li>
+          ))}
+        </ul>
+        <p>{review.totalsText}</p>
+        <p>
+          O estoque volta apenas nas quantidades de “Volta ao estoque”, pelo
+          custo de cada item. A venda é preservada. Isso não poderá ser
+          desfeito.
+        </p>
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 interface ReturnPanelProps {
   onSaleChanged: (notice: SaleNotice) => void;
@@ -58,7 +93,7 @@ export function SaleReturnPanel({
   saleId,
 }: ReturnPanelProps) {
   const [state, setState] = useState(initialReturnState);
-  useReportUnsentWork(isReturnDraftChanged(state));
+  useHoldSwap(isReturnDraftChanged(state));
   const inFlight = useRef<boolean>(false);
   const sectionRef = useRef<HTMLElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
@@ -212,22 +247,7 @@ export function SaleReturnPanel({
           />
           {review ? (
             // the effect, in a neutral notice (auditoria v5.1, rule 2)
-            <Alert className="focus-ring" ref={noticeRef} tabIndex={-1}>
-              <AlertTitle>Confirme a devolução</AlertTitle>
-              <AlertDescription className="grid gap-2 [&_p:not(:last-child)]:mb-0">
-                <p>Motivo: {review.reasonText}.</p>
-                <ul className="grid list-disc gap-0.5 pl-5">
-                  {review.lines.map((line) => (
-                    <li key={line.key}>{line.text}</li>
-                  ))}
-                </ul>
-                <p>{review.totalsText}</p>
-                <p>
-                  O estoque volta apenas nas quantidades de “Volta ao estoque”,
-                  pelo custo de cada item. A venda é preservada.
-                </p>
-              </AlertDescription>
-            </Alert>
+            <ReturnReviewNotice noticeRef={noticeRef} review={review} />
           ) : null}
           <OperationFailureNotice
             onDiscardCancel={handleDiscardCancel}

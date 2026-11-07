@@ -1,6 +1,10 @@
 import type { ContractRouterClient } from "@orpc/contract";
 import { oc } from "@orpc/contract";
 import {
+  MAX_PRODUCT_OPTION_VALUE_LENGTH,
+  MAX_PRODUCT_VARIANT_SKU_LENGTH,
+} from "@polaris/domain/catalog/product";
+import {
   MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS,
   WRITE_OFF_REASON_CODES,
 } from "@polaris/domain/inventory/write-off-stock";
@@ -22,13 +26,29 @@ import { z } from "zod";
 // never allowed it either (the probe returns false there), so nothing is lost.
 z.config({ jitless: true });
 
+/**
+ * The organization a tenant call asks for. It is context, never proof: the server checks membership and capability and
+ * uses the organization it set itself inside the transaction. The real id is a UUID the server made (36 characters).
+ */
+const organizationIdInput = z.string().trim().min(1).max(255);
+
 export function categoryNameCodePointLength(name: string): number {
   return [...name.trim()].length;
 }
 
-export const categoryNameSchema = z
-  .string()
-  .trim()
+/**
+ * A text limited in code points, like the domain and the CHECK of the database. `.max` counts UTF-16 units and N code
+ * points take at most 2N of them, so this ceiling refuses nothing the limit accepts. It aborts because zod still runs
+ * the refines after a check that fails without aborting, and the refine walks the whole text (`[...text]`).
+ */
+function codePointText(maxCodePoints: number) {
+  return z
+    .string()
+    .trim()
+    .max(2 * maxCodePoints, { abort: true });
+}
+
+export const categoryNameSchema = codePointText(100)
   .min(1)
   .refine((name) => categoryNameCodePointLength(name) <= 100, {
     message: "invalid_category_name",
@@ -49,9 +69,17 @@ const category = z.object({
 
 export type CategoryReadModel = z.infer<typeof category>;
 
+/**
+ * The image of lowest position of a product (its cover), null without one. Optional while a device or a Worker of
+ * the previous version may still be on the other side (ADR 0096): an answer without it means "not known yet", never
+ * "no image". Only the list and the device's collection carry it; a command's answer leaves it out.
+ */
+const coverAssetId = z.string().uuid().nullable().optional();
+
 const product = z.object({
   archivedAt: z.string().nullable(),
   categoryId: z.string().uuid().nullable(),
+  coverAssetId,
   createdAt: z.string(),
   deletedAt: z.string().nullable(),
   description: z.string().nullable(),
@@ -64,6 +92,128 @@ const product = z.object({
 });
 
 export type ProductReadModel = z.infer<typeof product>;
+
+/**
+ * The import of a spreadsheet (corte 2.5): the browser reads the file and sends only the rows it accepted, a slice at
+ * a time; the file never reaches the server. One call carries at most `PRODUCT_IMPORT_BATCH_MAX_ROWS` rows (a call
+ * with more is refused whole, never cut; one row keeps each call inside the CPU of the Free plan and makes the bulk
+ * bucket count rows, not slices), each row is created in its own transaction by the same use case as
+ * `product.create`, and the answer says what happened to each row.
+ */
+export const PRODUCT_IMPORT_BATCH_MAX_ROWS = 1;
+/** The names one `product.namesExisting` asks about: the rows of one file. */
+export const PRODUCT_IMPORT_MAX_NAMES = 500;
+
+const productImportRowNumber = z.number().int().positive().max(1_000_000);
+
+const productImportRow = z
+  .object({
+    categoryId: z.string().uuid().nullable(),
+    description: z.string().max(5000).nullable(),
+    // the IDs are born once per import, so sending the slice again repeats it instead of duplicating it
+    initialStock: z
+      .object({
+        commandId: z.string().uuid(),
+        quantity: z.number().int().positive().max(2_147_483_647),
+        unitCost: z.string().trim().min(1).max(64).nullable(),
+      })
+      .strict()
+      .nullable(),
+    listPrice: z.string().trim().min(1).max(64).nullable(),
+    name: productNameSchema,
+    productId: z.string().uuid(),
+    // the row of the file, as the person sees it in the spreadsheet: the answer names it back
+    rowNumber: productImportRowNumber,
+    variantId: z.string().uuid(),
+  })
+  .strict();
+
+export type ProductImportRowInput = z.infer<typeof productImportRow>;
+
+/** The fields a row of the import can be refused by: the columns of the spreadsheet. */
+export const PRODUCT_IMPORT_FIELDS = [
+  "name",
+  "listPrice",
+  "quantity",
+  "unitCost",
+  "category",
+  "description",
+] as const;
+
+/** A refusal said as a code, never an echo of the value (AC-7). */
+const productImportReason = z
+  .string()
+  .regex(/^[a-z][a-z0-9_]*$/)
+  .max(64);
+
+const productImportRowResult = z.discriminatedUnion("status", [
+  // created now, or already created by an earlier send of the same row: both are rows that entered
+  z.object({
+    productId: z.string().uuid(),
+    rowNumber: productImportRowNumber,
+    status: z.literal("created"),
+  }),
+  z.object({
+    productId: z.string().uuid(),
+    rowNumber: productImportRowNumber,
+    status: z.literal("repeated"),
+  }),
+  // a product of the same name exists in the store (an archived one too, or an earlier row of the file): skipped
+  z.object({
+    rowNumber: productImportRowNumber,
+    status: z.literal("exists_by_name"),
+  }),
+  // the plan has no room: this row and the rest of the slice were not tried
+  z.object({
+    rowNumber: productImportRowNumber,
+    status: z.literal("limit_reached"),
+  }),
+  z.object({
+    field: z.enum(PRODUCT_IMPORT_FIELDS),
+    reason: productImportReason,
+    rowNumber: productImportRowNumber,
+    status: z.literal("invalid"),
+  }),
+  // the IDs of the row were already used with other data: the send is not a repeat
+  z.object({
+    reason: productImportReason,
+    rowNumber: productImportRowNumber,
+    status: z.literal("conflict"),
+  }),
+]);
+
+export type ProductImportRowResult = z.infer<typeof productImportRowResult>;
+export type ProductImportRowStatus = ProductImportRowResult["status"];
+
+/** No two rows of a slice share a row number or an ID: a repeat inside one call would be a conflict with itself. */
+function distinctImportRows(
+  rows: readonly ProductImportRowInput[],
+  context: z.RefinementCtx
+): void {
+  const rowNumbers = new Set<number>();
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const rowIds = [row.productId, row.variantId];
+    if (row.initialStock) {
+      rowIds.push(row.initialStock.commandId);
+    }
+    if (
+      rowNumbers.has(row.rowNumber) ||
+      rowIds.some((id) => ids.has(id.toLowerCase())) ||
+      new Set(rowIds.map((id) => id.toLowerCase())).size !== rowIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "duplicate_import_row",
+      });
+      return;
+    }
+    rowNumbers.add(row.rowNumber);
+    for (const id of rowIds) {
+      ids.add(id.toLowerCase());
+    }
+  }
+}
 
 const publicCatalogProfile = z.object({
   description: z.string().nullable(),
@@ -96,7 +246,11 @@ export type PublicCatalogSetupReadModel = z.infer<typeof publicCatalogSetup>;
 
 const customerProfileFields = z.object({
   email: z
-    .union([z.string().trim().email().max(254), z.string().trim().length(0)])
+    .union([
+      // the ceiling first: the e-mail pattern has a lookahead that walks the whole text
+      z.string().trim().max(254, { abort: true }).email(),
+      z.string().trim().length(0),
+    ])
     .nullable(),
   name: z.string().trim().min(1).max(200),
   notes: z.string().trim().max(2000).nullable(),
@@ -154,7 +308,10 @@ export type CustomerDuplicateMatchReadModel = z.infer<
 >;
 
 const expenseGroupKey = z.enum(EXPENSE_GROUP_KEYS);
-const expenseCalendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const expenseCalendarDate = z
+  .string()
+  .length(10)
+  .regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const expenseCategory = z.object({
   archivedAt: z.string().datetime().nullable(),
@@ -224,17 +381,13 @@ export type ExpenseRuleReadModel = z.infer<typeof expenseRule>;
 const expenseRuleFields = z.object({
   amount: z.string().trim().min(1).max(64),
   categoryId: z.string().uuid(),
-  description: z
-    .string()
-    .trim()
+  description: codePointText(MAX_EXPENSE_DESCRIPTION_LENGTH)
     .min(1)
     .refine((text) => [...text].length <= MAX_EXPENSE_DESCRIPTION_LENGTH, {
       message: "invalid_expense_rule",
     }),
   endsOn: expenseCalendarDate.nullish(),
-  payee: z
-    .string()
-    .trim()
+  payee: codePointText(MAX_EXPENSE_PAYEE_LENGTH)
     .refine((text) => [...text].length <= MAX_EXPENSE_PAYEE_LENGTH, {
       message: "invalid_expense_rule",
     })
@@ -246,16 +399,12 @@ const expenseFields = z.object({
   categoryId: z.string().uuid(),
   competenceOn: expenseCalendarDate,
   // limits in code points, like the domain and the database
-  description: z
-    .string()
-    .trim()
+  description: codePointText(MAX_EXPENSE_DESCRIPTION_LENGTH)
     .min(1)
     .refine((text) => [...text].length <= MAX_EXPENSE_DESCRIPTION_LENGTH, {
       message: "invalid_expense",
     }),
-  payee: z
-    .string()
-    .trim()
+  payee: codePointText(MAX_EXPENSE_PAYEE_LENGTH)
     .refine((text) => [...text].length <= MAX_EXPENSE_PAYEE_LENGTH, {
       message: "invalid_expense",
     })
@@ -266,12 +415,10 @@ const expenseFields = z.object({
 const expenseVersionTarget = z.object({
   expectedVersion: z.number().int().positive(),
   id: z.string().uuid(),
-  organizationId: z.string().trim().min(1),
+  organizationId: organizationIdInput,
 });
 
-const expenseCategoryName = z
-  .string()
-  .trim()
+const expenseCategoryName = codePointText(MAX_EXPENSE_CATEGORY_NAME_LENGTH)
   .min(1)
   .refine((name) => [...name].length <= MAX_EXPENSE_CATEGORY_NAME_LENGTH, {
     message: "invalid_expense_category",
@@ -345,6 +492,22 @@ function periodSummaryDays(from: string, to: string): number {
   );
 }
 
+/** A date of the summary's series, or some dates of it added up (`granularity` "month"). */
+const periodSummaryEntry = z.object({
+  costs: z.string().nullable(),
+  date: z.string(),
+  netSales: z.string(),
+  operatingExpenses: z.string(),
+  operatingResult: z.string().nullable(),
+  salesCount: z.number().int().nonnegative(),
+  /** Monthly only: how many dates the entry adds up. */
+  days: z.number().int().positive().optional(),
+  /** Monthly only: the last date the entry adds up. */
+  to: z.string().optional(),
+  /** Monthly only: how many of its dates have an unknown cost. */
+  unknownDays: z.number().int().nonnegative().optional(),
+});
+
 const periodSummary = z.object({
   /** The server clock when this retrieval of the confirmed records was made ("updated until"). */
   generatedAt: z.string().datetime(),
@@ -390,16 +553,23 @@ const periodSummary = z.object({
    * costs add up to the chain's cogs, fees and expenses and the results to
    * `chain.estimatedOperatingResult`.
    */
-  daily: z.array(
-    z.object({
-      costs: z.string().nullable(),
-      date: z.string(),
-      netSales: z.string(),
-      operatingExpenses: z.string(),
-      operatingResult: z.string().nullable(),
-      salesCount: z.number().int().nonnegative(),
-    })
-  ),
+  daily: z.array(periodSummaryEntry),
+  /**
+   * Only with `granularity` "month", and only when the period goes past the
+   * store's today: the dates after today added up, apart from `daily` (which
+   * ends at today), so that what is still to come is never drawn in a month.
+   * `daily` plus this add up to the cards.
+   */
+  afterToday: periodSummaryEntry.optional(),
+  /**
+   * "month" when the period has more than 62 days: each entry of `daily` is
+   * then a calendar month up to the store's today (the date of `generatedAt`
+   * in its time zone), the months at the ends cut by the period and by today,
+   * with `to`, `days` and `unknownDays`; `date` is its first date and the
+   * amounts are the sums of its dates, `costs` and `operatingResult` null when
+   * any of its dates is. Absent (one entry per date) for 62 days or fewer.
+   */
+  granularity: z.enum(["day", "month"]).optional(),
   period: z.object({ from: z.string(), to: z.string() }),
   /**
    * The most sold products of the period, by units net of returns, only when
@@ -607,6 +777,18 @@ export type ProductMediaRemoveResponse = z.infer<
 
 const productVariantOptionName = z.enum(["model", "color", "size"]);
 
+const productOptionValueInput = codePointText(MAX_PRODUCT_OPTION_VALUE_LENGTH)
+  .min(1)
+  .refine((value) => [...value].length <= MAX_PRODUCT_OPTION_VALUE_LENGTH, {
+    message: "invalid_product_variant_configuration",
+  });
+
+const productVariantSkuInput = codePointText(
+  MAX_PRODUCT_VARIANT_SKU_LENGTH
+).refine((sku) => [...sku].length <= MAX_PRODUCT_VARIANT_SKU_LENGTH, {
+  message: "invalid_product_variant_sku",
+});
+
 const productVariantOptionValue = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -651,9 +833,7 @@ export type ProductVariantConfigurationReadModel = z.infer<
 >;
 
 const normalizedBrlCost = z.string().regex(/^\d{1,18}\.\d{6}$/);
-const writeOffReasonNote = z
-  .string()
-  .trim()
+const writeOffReasonNote = codePointText(MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS)
   .min(1)
   .refine((note) => [...note].length <= MAX_WRITE_OFF_REASON_NOTE_CODE_POINTS, {
     message: "invalid_write_off_reason_note",
@@ -728,6 +908,8 @@ export type InventoryCountMovementReadModel = z.infer<
 >;
 
 const inventoryBalanceEntry = z.object({
+  // only when the list was asked `withCover`; same meaning as on the product (the image of lowest position)
+  coverAssetId,
   isDefaultVariant: z.boolean(),
   listPrice: listPriceText.nullable(),
   movingAverageCost: normalizedBrlCost.nullable(),
@@ -753,6 +935,7 @@ export type InventoryBalanceEntryReadModel = z.infer<
 
 const calendarDateText = z
   .string()
+  .length(10, { abort: true })
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine(
     (value) => {
@@ -807,6 +990,12 @@ const salePaymentInput = z.object({
   method: z.enum(SALE_PAYMENT_METHODS),
 });
 
+/** A device writes `toISOString()` (24 characters); the fraction of a second of an ISO instant takes any number of digits. */
+const offlineSaleInstant = z
+  .string()
+  .max(64, { abort: true })
+  .datetime({ offset: true });
+
 /**
  * The payload of the offline `sale.confirm` command (plan PR57): what a device
  * can state about a sale without the server. The command ID, the organization
@@ -820,10 +1009,10 @@ export const offlineSalePayloadSchema = z
   .object({
     adjustments: z.array(saleAdjustmentInput).max(20),
     items: z.array(saleItemInput).min(1).max(200),
-    occurredAt: z.string().datetime({ offset: true }),
+    occurredAt: offlineSaleInstant,
     payment: salePaymentInput,
     paymentProfile: salePaymentProfileSelection.nullable().optional(),
-    recordedAt: z.string().datetime({ offset: true }),
+    recordedAt: offlineSaleInstant,
   })
   .strict();
 export type OfflineSalePayload = z.infer<typeof offlineSalePayloadSchema>;
@@ -1016,7 +1205,7 @@ export type SaleCustomerLinkReadModel = z.infer<typeof saleCustomerLink>;
 
 const saleCustomerLinkTarget = z.object({
   expectedVersion: z.number().int().nonnegative().max(2_147_483_647),
-  organizationId: z.string().trim().min(1),
+  organizationId: organizationIdInput,
   saleId: z.string().uuid(),
 });
 
@@ -1114,11 +1303,17 @@ const deviceReadModel = z.object({
 
 export type DeviceReadModel = z.infer<typeof deviceReadModel>;
 
+/**
+ * An instant a client sends. The format alone has no ceiling (any number of digits after the second); the app writes
+ * `toISOString()` (24 characters), so 64 refuses nothing it sends.
+ */
+const instantInput = z.string().max(64).datetime({ offset: true });
+
 /** One queued offline command as the outbox sends it (plan PR52/PR53). */
 const pushCommand = z.object({
   baseVersion: z.number().int().nonnegative().nullable(),
   commandId: z.string().uuid(),
-  createdAt: z.string().datetime(),
+  createdAt: z.string().max(64).datetime(),
   deviceId: z.string().uuid(),
   lease: z.string().min(1).max(4096),
   payload: z.json(),
@@ -1140,7 +1335,10 @@ export type PushCommandReadModel = z.infer<typeof pushCommand>;
 export type PushResultReadModel = z.infer<typeof pushResult>;
 
 /** A change-log sequence, as decimal text so it survives JSON unchanged. */
-const syncCursorText = z.string().regex(/^\d{1,16}$/);
+const syncCursorText = z
+  .string()
+  .max(16)
+  .regex(/^\d{1,16}$/);
 
 const syncChange = z.object({
   entityId: z.string().uuid(),
@@ -1181,6 +1379,7 @@ const localCustomer = z.object({
 const localProduct = z.object({
   archivedAt: z.string().datetime().nullable(),
   categoryId: z.string().uuid().nullable(),
+  coverAssetId,
   deletedAt: z.string().datetime().nullable(),
   description: z.string().nullable(),
   id: z.string().uuid(),
@@ -1289,7 +1488,7 @@ const billingMethod = z.enum(["card", "pix_automatic"]);
 const planCount = z.number().int().nonnegative();
 
 /**
- * The owner's read of the plan (ADR 0104, decision 2; design t268 v2, §3). Every object is strict, so a key the
+ * The owner's read of the plan (ADR 0104, decision 2). Every object is strict, so a key the
  * server adds by mistake (a provider reference, a payer, a payload) fails the answer instead of reaching the client
  * (AS-2). The amounts are text with two decimals (money.md); the days are São Paulo's.
  */
@@ -1313,9 +1512,11 @@ export const billingPlanView = z
       })
       .strict(),
     method: billingMethod.nullable(),
+    // `amount` is null only for a change of cycle waiting for the renewal, whose amount the record does not hold
     nextCharge: z
       .object({
-        amount: billingAmount,
+        amount: billingAmount.nullable(),
+        cycleMonths: billingCheckoutCycle,
         on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       })
       .strict()
@@ -1376,13 +1577,14 @@ export type BillingPlanView = z.infer<typeof billingPlanView>;
  */
 const billingRequestId = z
   .string()
+  .length(36)
   .regex(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
   );
 
 const billingCancelRenewalInput = z
   .object({
-    organizationId: z.string().trim().min(1),
+    organizationId: organizationIdInput,
     // optional; kept with no store and no person, never logged (the screen asks for no personal data); no control,
     // format (bidirectional, zero-width) or unassigned characters but line breaks and tabs
     reason: z
@@ -1404,7 +1606,7 @@ const billingCancelRenewalOutput = z
 
 const billingRequestRefundInput = z
   .object({
-    organizationId: z.string().trim().min(1),
+    organizationId: organizationIdInput,
     requestId: billingRequestId,
   })
   .strict();
@@ -1442,7 +1644,7 @@ export const billingStartCheckoutInput = z.discriminatedUnion("method", [
     .object({
       cycleMonths: billingCheckoutCycle,
       method: z.literal("card"),
-      organizationId: z.string().trim().min(1),
+      organizationId: organizationIdInput,
       trial: z.boolean(),
     })
     .strict(),
@@ -1450,10 +1652,10 @@ export const billingStartCheckoutInput = z.discriminatedUnion("method", [
     .object({
       cycleMonths: billingCheckoutCycle,
       method: z.literal("pix_automatic"),
-      organizationId: z.string().trim().min(1),
+      organizationId: organizationIdInput,
       payer: z
         .object({
-          email: z.string().trim().email().max(254),
+          email: z.string().trim().max(254, { abort: true }).email(),
           name: z
             .string()
             .trim()
@@ -1463,6 +1665,7 @@ export const billingStartCheckoutInput = z.discriminatedUnion("method", [
             .regex(payerNamePattern),
           taxId: z
             .string()
+            .max(14, { abort: true })
             .regex(/^(?:\d{11}|\d{14})$/)
             .refine(hasTaxIdCheckDigits),
         })
@@ -1491,9 +1694,11 @@ const legalAcceptanceStatus = z.object({
  * write, and so is `device.check`: it promotes the session's link to the device (ADR 0048), and once per
  * page load fits the write bucket. `read` = no effect asked for by the user; it may do idempotent, bounded
  * maintenance, proven by a gate (today only `goal.list`, which settles the goals whose period ended;
- * `verify-home-writes-gate`).
+ * `verify-home-writes-gate`). `bulk` = the import of a spreadsheet, one row per call (today only `product.importBatch`): it
+ * counts in a bucket of its own, so a long import neither spends the write quota the sales share nor is held to it;
+ * the rows per minute are the bucket's calls times the cap of rows per call.
  */
-export type ProcedureKind = "read" | "write";
+export type ProcedureKind = "bulk" | "read" | "write";
 
 export interface ProcedureMeta {
   kind?: ProcedureKind;
@@ -1502,6 +1707,7 @@ export interface ProcedureMeta {
 const procedure = oc.$meta<ProcedureMeta>({});
 const readProcedure = procedure.meta({ kind: "read" });
 const writeProcedure = procedure.meta({ kind: "write" });
+const bulkProcedure = procedure.meta({ kind: "bulk" });
 
 export const polarisContract = {
   // The acceptance of the Terms of Use and of the Privacy Policy (ADR 0100). Per user, never per
@@ -1545,7 +1751,7 @@ export const polarisContract = {
       .input(
         z.object({
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
@@ -1553,7 +1759,7 @@ export const polarisContract = {
       .input(
         z.object({
           name: categoryNameSchema,
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(category),
@@ -1561,14 +1767,14 @@ export const polarisContract = {
       .input(
         z.object({
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
     list: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z
             .enum(["active", "archived", "deleted", "all"])
             .default("active"),
@@ -1580,7 +1786,7 @@ export const polarisContract = {
         z.object({
           id: z.string().uuid(),
           name: categoryNameSchema,
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
@@ -1588,7 +1794,7 @@ export const polarisContract = {
       .input(
         z.object({
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ category, changed: z.boolean() })),
@@ -1600,7 +1806,7 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), customer })),
@@ -1609,28 +1815,28 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), customer })),
     create: writeProcedure
       .input(
         customerProfileFields
-          .extend({ organizationId: z.string().trim().min(1) })
+          .extend({ organizationId: organizationIdInput })
           .superRefine(requireCustomerContact)
       )
       .output(customer),
     findPossibleDuplicates: readProcedure
       .input(
         customerDuplicateSearchFields.extend({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ matches: z.array(customerDuplicateMatch) })),
     list: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z.enum(["active", "archived", "all"]).default("active"),
         })
       )
@@ -1640,7 +1846,7 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), customer })),
@@ -1650,7 +1856,7 @@ export const polarisContract = {
           .extend({
             expectedVersion: z.number().int().positive(),
             id: z.string().uuid(),
-            organizationId: z.string().trim().min(1),
+            organizationId: organizationIdInput,
           })
           .superRefine(requireCustomerContact)
       )
@@ -1661,14 +1867,14 @@ export const polarisContract = {
       .input(expenseVersionTarget)
       .output(z.object({ category: expenseCategory, changed: z.boolean() })),
     create: writeProcedure
-      .input(expenseFields.extend({ organizationId: z.string().trim().min(1) }))
+      .input(expenseFields.extend({ organizationId: organizationIdInput }))
       .output(expense),
     createCategory: writeProcedure
       .input(
         z.object({
           group: expenseGroupKey,
           name: expenseCategoryName,
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(expenseCategory),
@@ -1679,7 +1885,7 @@ export const polarisContract = {
       .input(
         expenseRuleFields.extend({
           frequency: z.enum(RECURRENCE_FREQUENCIES),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           startsOn: expenseCalendarDate,
         })
       )
@@ -1689,17 +1895,11 @@ export const polarisContract = {
         z.object({
           categoryId: z.string().uuid().nullish(),
           cursor: z.string().max(64).nullish(),
-          from: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/)
-            .nullish(),
+          from: expenseCalendarDate.nullish(),
           limit: z.number().int().min(1).max(200).default(100),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z.enum(["active", "voided", "all"]).default("active"),
-          to: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/)
-            .nullish(),
+          to: expenseCalendarDate.nullish(),
         })
       )
       .output(
@@ -1714,7 +1914,7 @@ export const polarisContract = {
     listCategories: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z.enum(["active", "archived", "all"]).default("active"),
         })
       )
@@ -1722,7 +1922,7 @@ export const polarisContract = {
     listRules: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z.enum(["active", "archived", "all"]).default("active"),
         })
       )
@@ -1755,7 +1955,7 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), goal })),
@@ -1765,7 +1965,7 @@ export const polarisContract = {
           endsOn: expenseCalendarDate,
           kind: goalKind,
           name: z.string().trim().max(100).nullish(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           startsOn: expenseCalendarDate,
           target: z.string().trim().min(1).max(64),
         })
@@ -1776,7 +1976,7 @@ export const polarisContract = {
     list: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z
             .enum(["active", "all", "cancelled", "completed", "missed"])
             .default("all"),
@@ -1787,7 +1987,7 @@ export const polarisContract = {
       .input(
         z.object({
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(
@@ -1807,7 +2007,7 @@ export const polarisContract = {
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
           name: z.string().trim().max(100).nullish(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           target: z.string().trim().min(1).max(64).optional(),
         })
       )
@@ -1818,7 +2018,7 @@ export const polarisContract = {
     publishProducts: writeProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           productIds: z.array(z.string().uuid()).min(1).max(200),
         })
       )
@@ -1831,7 +2031,7 @@ export const polarisContract = {
           description: z.string().max(2000).nullable().optional(),
           expectedVersion: z.number().int().positive().optional(),
           instagram: z.string().max(100).nullable().optional(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           publicName: z.string().max(500),
           slug: z.string().max(200),
           whatsapp: z.string().max(100).nullable().optional(),
@@ -1843,7 +2043,7 @@ export const polarisContract = {
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           published: z.boolean(),
         })
       )
@@ -1851,13 +2051,13 @@ export const polarisContract = {
     // Only reads the profile, the plan's entitlement and the published products: a read, which the public
     // catalog screen repeats once on a transient failure (`readWithRetry`, which the contract's kind guards).
     setup: readProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(publicCatalogSetup),
     // Taking products out is always allowed.
     unpublishProducts: writeProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           productIds: z.array(z.string().uuid()).min(1).max(200),
         })
       )
@@ -1878,7 +2078,7 @@ export const polarisContract = {
     // The plan as its owner reads it (ADR 0104, decision 2): only with `billing:manage`, behind
     // BILLING_SELF_SERVICE_ENABLED. The output is strict and closed: nothing personal and nothing of the provider.
     readPlan: readProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(billingPlanView),
     // The refund of the right of withdrawal: the renewal is cancelled first, then the first charge is refunded.
     requestRefund: writeProcedure
@@ -1914,14 +2114,14 @@ export const polarisContract = {
     // Where the organization stands against the Free variant limit and which
     // variants it keeps operational (Free Over Limit, ADR 0064).
     operationalSelection: readProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(operationalSelection),
     // The complete choice. While the adaptation window is open it replaces the
     // previous one; after it, it must keep what is held and may only grow.
     selectOperationalVariants: writeProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           variantIds: z.array(z.string().uuid()).max(5000),
         })
       )
@@ -1935,7 +2135,7 @@ export const polarisContract = {
         z
           .object({
             from: expenseCalendarDate,
-            organizationId: z.string().trim().min(1),
+            organizationId: organizationIdInput,
             to: expenseCalendarDate,
             /** Also rank this many most sold products (the same read of the period). */
             topProducts: z.number().int().min(1).max(10).optional(),
@@ -1955,7 +2155,7 @@ export const polarisContract = {
         z
           .object({
             from: expenseCalendarDate,
-            organizationId: z.string().trim().min(1),
+            organizationId: organizationIdInput,
             to: expenseCalendarDate,
           })
           .refine(
@@ -1975,7 +2175,7 @@ export const polarisContract = {
     // tenant (which no longer opens), until the day its data may be deleted, with a session signed in within 15
     // minutes. Downloaded from /api/closed-exports/{id}/files/{ordinal}.
     listClosed: readProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(z.object({ exports: z.array(closedDataExport) })),
     requestClosed: writeProcedure
       .input(
@@ -1984,12 +2184,12 @@ export const polarisContract = {
             .array(z.enum(["json", "csv", "images"]))
             .min(1)
             .max(3),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ id: z.string().uuid() })),
     list: readProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(
         z.object({
           exports: z.array(
@@ -2026,7 +2226,7 @@ export const polarisContract = {
             .array(z.enum(["json", "csv", "images"]))
             .min(1)
             .max(3),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ id: z.string().uuid() })),
@@ -2067,7 +2267,7 @@ export const polarisContract = {
           revokedGrantIds: z.array(z.string().uuid()),
         })
       ),
-    // "Sair" revokes this installation (ADR 0048, emenda de 22/10): only the
+    // "Sair" revokes this installation (ADR 0048): only the
     // device this session owns (it registered it, or confirmed it first while
     // signed in within 15 minutes), only the sessions linked to it, and without
     // a fresh session. Another device of the user is FORBIDDEN with reason
@@ -2087,7 +2287,7 @@ export const polarisContract = {
     getBalance: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           variantId: z.string().uuid(),
         })
       )
@@ -2099,8 +2299,8 @@ export const polarisContract = {
             commandId: z.string().uuid(),
             commandVersion: z.literal(1),
             expectedVersion: z.number().int().nonnegative().max(2_147_483_647),
-            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-            organizationId: z.string().trim().min(1),
+            occurredOn: expenseCalendarDate,
+            organizationId: organizationIdInput,
             physicalQuantity: z.number().int().nonnegative().max(2_147_483_647),
             valuationUnitCost: z.string().trim().min(1).max(64).optional(),
             variantId: z.string().uuid(),
@@ -2136,13 +2336,15 @@ export const polarisContract = {
           cost: z.enum(["all", "unknown"]).default("all"),
           cursor: z.string().min(1).max(512).optional(),
           limit: z.number().int().min(1).max(100).default(50),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           productStatus: z.enum(["active", "all"]).default("active"),
           query: z.string().trim().max(100).optional(),
           stock: z.enum(["all", "with_stock", "without_stock"]).default("all"),
           // Re-reads exactly these variants (e.g. the lines of a sale in
           // progress) in one call, regardless of the other filters.
           variantIds: z.array(z.string().uuid()).min(1).max(100).optional(),
+          // Adds the cover of each product to the entries (one more read for the page); the sale search asks.
+          withCover: z.boolean().optional(),
         })
       )
       .output(
@@ -2156,8 +2358,8 @@ export const polarisContract = {
         z.object({
           commandId: z.string().uuid(),
           commandVersion: z.literal(1),
-          occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-          organizationId: z.string().trim().min(1),
+          occurredOn: expenseCalendarDate,
+          organizationId: organizationIdInput,
           quantity: z.number().int().positive().max(2_147_483_647),
           unitCost: z.string().trim().min(1).max(64),
           variantId: z.string().uuid(),
@@ -2176,8 +2378,8 @@ export const polarisContract = {
           .object({
             commandId: z.string().uuid(),
             commandVersion: z.literal(1),
-            occurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-            organizationId: z.string().trim().min(1),
+            occurredOn: expenseCalendarDate,
+            organizationId: organizationIdInput,
             quantity: z.number().int().positive().max(2_147_483_647),
             reasonCode: z.enum(WRITE_OFF_REASON_CODES),
             reasonNote: writeOffReasonNote.nullable().optional(),
@@ -2208,7 +2410,7 @@ export const polarisContract = {
       .input(
         z.object({
           deviceId: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(
@@ -2233,9 +2435,11 @@ export const polarisContract = {
     // user's active memberships, so the client learns its organizations here
     // instead of remembering an ID.
     // `billingSelfService`: BILLING_SELF_SERVICE_ENABLED is on (ADR 0104), so the owner's "Assinatura" may show.
+    // `mediaThumbs`: MEDIA_THUMBS_ENABLED is on, so the lists may show the capa of a product (ADR 0018).
     listMine: readProcedure.output(
       z.object({
         billingSelfService: z.boolean(),
+        mediaThumbs: z.boolean(),
         organizations: z.array(organizationMembership),
       })
     ),
@@ -2259,18 +2463,18 @@ export const polarisContract = {
     ),
     // One of them; null for an organization that is not the user's or does not exist, alike.
     closedStatus: readProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(z.object({ organization: closedOrganization.nullable() })),
     // Undo a closure while its recovery window is open. The leases revoked at the request stay revoked.
     recoverClosure: writeProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(z.object({ recovered: z.literal(true) })),
     // Closing revokes access at once. The owner types the organization's name to confirm.
     requestClosure: writeProcedure
       .input(
         z.object({
           confirmation: z.string().min(1).max(256),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(
@@ -2286,21 +2490,21 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
     create: writeProcedure
       .input(
         paymentProfileFields.extend({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(paymentProfile),
     list: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z.enum(["active", "archived", "all"]).default("active"),
         })
       )
@@ -2310,7 +2514,7 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
@@ -2319,7 +2523,7 @@ export const polarisContract = {
         paymentProfileFields.extend({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), profile: paymentProfile })),
@@ -2330,7 +2534,7 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
@@ -2344,20 +2548,20 @@ export const polarisContract = {
               z.object({
                 name: productVariantOptionName,
                 // a product has at most 50 variants, so more values than that for one option cannot be used
-                values: z.array(z.string().trim().min(1)).min(1).max(50),
+                values: z.array(productOptionValueInput).min(1).max(50),
               })
             )
             .min(1)
             .max(3),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           variants: z
             .array(
               z.object({
                 values: z
                   .object({
-                    color: z.string().trim().min(1).optional(),
-                    model: z.string().trim().min(1).optional(),
-                    size: z.string().trim().min(1).optional(),
+                    color: productOptionValueInput.optional(),
+                    model: productOptionValueInput.optional(),
+                    size: productOptionValueInput.optional(),
                   })
                   .strict(),
               })
@@ -2391,7 +2595,7 @@ export const polarisContract = {
           // The BRL list price of the default variant, with at most two decimals.
           listPrice: z.string().trim().min(1).max(64).nullable().optional(),
           name: productNameSchema,
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           productId: z.string().uuid().optional(),
           variantId: z.string().uuid().optional(),
         })
@@ -2402,7 +2606,7 @@ export const polarisContract = {
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
@@ -2410,26 +2614,55 @@ export const polarisContract = {
       .input(
         z.object({
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(productVariantConfiguration),
+    // One row of a spreadsheet import: its own rate-limit bucket (`bulk`), never the one of the writes, so a
+    // sale made during the import keeps the whole write quota.
+    importBatch: bulkProcedure
+      .input(
+        z
+          .object({
+            importId: z.string().uuid(),
+            organizationId: organizationIdInput,
+            rows: z
+              .array(productImportRow)
+              .min(1)
+              .max(PRODUCT_IMPORT_BATCH_MAX_ROWS)
+              .superRefine(distinctImportRows),
+          })
+          .strict()
+      )
+      .output(z.object({ results: z.array(productImportRowResult) })),
     list: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           status: z
             .enum(["active", "archived", "deleted", "all"])
             .default("active"),
         })
       )
       .output(z.object({ products: z.array(product) })),
+    // The names of a file that a product of the store already has (an archived one too), for the preview of an
+    // import: only information, the transaction of each row decides. Compared without case and repeated spaces.
+    namesExisting: readProcedure
+      .input(
+        z
+          .object({
+            names: z.array(z.string().max(200)).max(PRODUCT_IMPORT_MAX_NAMES),
+            organizationId: organizationIdInput,
+          })
+          .strict()
+      )
+      .output(z.object({ names: z.array(z.string()) })),
     restore: writeProcedure
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
@@ -2439,7 +2672,7 @@ export const polarisContract = {
           expectedVersion: z.number().int().positive(),
           // A BRL amount with at most two decimals, or null to clear it.
           listPrice: z.string().max(64).nullable(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           productId: z.string().uuid(),
           variantId: z.string().uuid(),
         })
@@ -2455,9 +2688,9 @@ export const polarisContract = {
       .input(
         z.object({
           expectedVersion: z.number().int().positive(),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           productId: z.string().uuid(),
-          sku: z.string().nullable(),
+          sku: productVariantSkuInput.nullable(),
           variantId: z.string().uuid(),
         })
       )
@@ -2472,11 +2705,11 @@ export const polarisContract = {
       .input(
         z.object({
           categoryId: z.string().uuid().nullable(),
-          description: z.string().nullable(),
+          description: z.string().max(5000).nullable(),
           expectedVersion: z.number().int().positive(),
           id: z.string().uuid(),
           name: productNameSchema,
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ changed: z.boolean(), product })),
@@ -2492,7 +2725,7 @@ export const polarisContract = {
         z.object({
           commandId: z.string().uuid(),
           commandVersion: z.literal(1),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           reasonCode: z.enum(cancellationReasonCodes).nullable().optional(),
           reasonNote: z.string().max(2000).nullable().optional(),
           saleId: z.string().uuid(),
@@ -2508,18 +2741,18 @@ export const polarisContract = {
           commandId: z.string().uuid(),
           commandVersion: z.literal(1),
           items: z.array(saleItemInput).min(1).max(200),
-          occurredAt: z.string().datetime({ offset: true }),
-          organizationId: z.string().trim().min(1),
+          occurredAt: instantInput,
+          organizationId: organizationIdInput,
           payment: salePaymentInput,
           paymentProfile: salePaymentProfileSelection.nullable(),
-          recordedAt: z.string().datetime({ offset: true }).optional(),
+          recordedAt: instantInput.optional(),
         })
       )
       .output(confirmedSale),
     get: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           saleId: z.string().uuid(),
         })
       )
@@ -2527,7 +2760,7 @@ export const polarisContract = {
     getCustomerLink: readProcedure
       .input(
         z.object({
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           saleId: z.string().uuid(),
         })
       )
@@ -2543,7 +2776,7 @@ export const polarisContract = {
           occurredFrom: calendarDateText.optional(),
           occurredTo: calendarDateText.optional(),
           offset: z.number().int().min(0).max(1_000_000).default(0),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           query: z.string().trim().max(100).optional(),
           status: z.enum(["confirmed", "cancelled", "with_returns"]).optional(),
         })
@@ -2563,7 +2796,7 @@ export const polarisContract = {
           commandId: z.string().uuid(),
           commandVersion: z.literal(1),
           items: z.array(saleReturnLine).min(1).max(200),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
           reasonCode: z.enum(returnReasonCodes).nullable().optional(),
           reasonNote: z.string().max(2000).nullable().optional(),
           saleId: z.string().uuid(),
@@ -2591,14 +2824,14 @@ export const polarisContract = {
           ]),
           ids: z.array(z.string().uuid()).max(200).nullish(),
           limit: z.number().int().min(1).max(500).default(200),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(bootstrapPageOutput),
     // The latest committed change sequence of the organization. A device records
     // it before reading a snapshot and pulls from it afterwards.
     getCursor: readProcedure
-      .input(z.object({ organizationId: z.string().trim().min(1) }))
+      .input(z.object({ organizationId: organizationIdInput }))
       .output(z.object({ cursor: syncCursorText })),
     // The changes after a cursor, in commit order. Entities changed several
     // times in the page appear once, at their latest sequence.
@@ -2607,7 +2840,7 @@ export const polarisContract = {
         z.object({
           cursor: syncCursorText.nullish(),
           limit: z.number().int().min(1).max(500).default(200),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(
@@ -2626,7 +2859,7 @@ export const polarisContract = {
       .input(
         z.object({
           commands: z.array(pushCommand).min(1).max(50),
-          organizationId: z.string().trim().min(1),
+          organizationId: organizationIdInput,
         })
       )
       .output(z.object({ results: z.array(pushResult) })),

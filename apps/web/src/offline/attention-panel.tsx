@@ -9,14 +9,24 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { ActionStrip } from "../app-shell/action-strip";
+import { tabHref } from "../app-shell/navigation-model";
 import {
   type AttentionAction,
   type AttentionItem,
   type AttentionSummary,
   discardWarning,
 } from "./attention";
+import { type RedoLineProblem, redoProblemText } from "./sale-redo";
+
+export interface RedoProblem {
+  commandId: string;
+  /** The lines that stopped the form from being filled; empty when the message says it all. */
+  lines: readonly RedoLineProblem[];
+  message: string;
+}
 
 /**
  * The panel of operations that need attention (plan PR58). It lists what the
@@ -31,21 +41,37 @@ import {
 export interface AttentionPanelProps {
   /** The command being resolved right now, if any (its buttons are disabled). */
   busyCommandId?: string | null;
-  /** Shown when the last attempt to resolve an item failed. */
-  errorMessage?: string | null;
+  /** What the last attempt to resolve an item said, drawn inside the card of that item. */
+  error?: AttentionError | null;
   onDiscard: (item: AttentionItem) => void;
+  onRedo?: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
-  onReviewAccount: (item: AttentionItem) => void;
+  /** What the sign-out has to say (its failure, the work it would lose), under the list. */
+  notices?: ReactNode;
+  onSignInAgain: (item: AttentionItem) => void;
+  /** Why "Refazer esta venda" did not open Vender, shown in the card of that sale. */
+  redoProblem?: RedoProblem | null;
+  /** A sign-out is under way: "Sair e entrar de novo" is off in every card. */
+  signingOut?: boolean;
   summary: AttentionSummary;
+}
+
+export interface AttentionError {
+  commandId: string;
+  message: string;
 }
 
 const ACTION_LABEL: Record<AttentionAction, string> = {
   discard: "Descartar…",
+  redo_sale: "Refazer esta venda",
   resubmit: "Reenviar venda",
   resubmit_without_profile: "Reenviar sem perfil de pagamento",
   retry: "Tentar novamente",
-  review_account: "Revisar acesso e plano",
+  open_subscription: "Ver Assinatura",
+  sign_in_again: "Sair e entrar de novo",
 };
+
+const SUBSCRIPTION_HREF = tabHref("settings", "assinatura");
 
 /** The causes about the account or the plan, not about the data: they are said in the error tone. */
 const ACCOUNT_CAUSES: ReadonlySet<AttentionItem["cause"]> = new Set([
@@ -53,6 +79,11 @@ const ACCOUNT_CAUSES: ReadonlySet<AttentionItem["cause"]> = new Set([
   "entitlement_changed",
   "session_changed",
 ]);
+
+const actionLabel = (action: AttentionAction, item: AttentionItem) =>
+  action === "discard" && item.redone
+    ? "Descartar a venda recusada…"
+    : ACTION_LABEL[action];
 
 const isResubmission = (action: AttentionAction) =>
   action === "resubmit" ||
@@ -62,6 +93,24 @@ const isResubmission = (action: AttentionAction) =>
 const discardButtonId = (item: AttentionItem) =>
   `attention-discard-${item.commandId}`;
 
+/** The button that starts a sign-out: the focus comes back to it when the sign-out is not done. */
+export const signInAgainButtonId = (commandId: string) =>
+  `attention-sign-in-${commandId}`;
+
+function buttonIdOf(
+  action: AttentionAction,
+  item: AttentionItem
+): string | undefined {
+  if (action === "discard") {
+    return discardButtonId(item);
+  }
+  return action === "sign_in_again"
+    ? signInAgainButtonId(item.commandId)
+    : undefined;
+}
+
+const ATTENTION_SUBTITLE = "O que o servidor recusou e precisa da sua decisão.";
+
 /** The frame of the page of attention: the title, then what the page has to say. */
 export function AttentionFrame({ children }: { children: ReactNode }) {
   return (
@@ -70,6 +119,9 @@ export function AttentionFrame({ children }: { children: ReactNode }) {
         <h1 className="text-title" id="attention-title">
           Pendências
         </h1>
+        <p className="text-muted-foreground" id="attention-subtitle">
+          {ATTENTION_SUBTITLE}
+        </p>
       </header>
       {children}
     </div>
@@ -100,8 +152,18 @@ interface ActionButtonProps {
 
 function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
   const act = useCallback(() => onAct(action), [action, onAct]);
+  if (action === "open_subscription") {
+    return (
+      <a
+        className={buttonVariants({ variant: "outline" })}
+        href={SUBSCRIPTION_HREF}
+      >
+        {ACTION_LABEL[action]}
+      </a>
+    );
+  }
   let variant: "default" | "destructive" | "outline" = "outline";
-  if (isResubmission(action)) {
+  if (isResubmission(action) || action === "redo_sale") {
     variant = "default";
   } else if (action === "discard") {
     variant = "destructive";
@@ -109,30 +171,38 @@ function ActionButton({ action, busy, item, onAct }: ActionButtonProps) {
   return (
     <Button
       disabled={busy}
-      id={action === "discard" ? discardButtonId(item) : undefined}
+      id={buttonIdOf(action, item)}
       onClick={act}
       type="button"
       variant={variant}
     >
-      {ACTION_LABEL[action]}
+      {actionLabel(action, item)}
     </Button>
   );
 }
 
 interface ItemCardProps {
   busy: boolean;
+  errorMessage: string | null;
   item: AttentionItem;
   onDiscard: (item: AttentionItem) => void;
+  onRedo: (item: AttentionItem) => void;
   onResubmit: (item: AttentionItem) => void;
-  onReviewAccount: (item: AttentionItem) => void;
+  onSignInAgain: (item: AttentionItem) => void;
+  redoProblem: RedoProblem | null;
+  signingOut: boolean;
 }
 
 function ItemCard({
   busy,
+  errorMessage,
   item,
   onDiscard,
+  onRedo,
   onResubmit,
-  onReviewAccount,
+  onSignInAgain,
+  redoProblem,
+  signingOut,
 }: ItemCardProps) {
   const [confirming, setConfirming] = useState(false);
   const confirmRef = useRef<HTMLDivElement>(null);
@@ -152,13 +222,15 @@ function ItemCard({
     (action: AttentionAction) => {
       if (action === "discard") {
         setConfirming(true);
+      } else if (action === "redo_sale") {
+        onRedo(item);
       } else if (isResubmission(action)) {
         onResubmit(item);
       } else {
-        onReviewAccount(item);
+        onSignInAgain(item);
       }
     },
-    [item, onResubmit, onReviewAccount]
+    [item, onRedo, onResubmit, onSignInAgain]
   );
   const keep = useCallback(() => {
     focusDiscardAgain.current = true;
@@ -220,7 +292,7 @@ function ItemCard({
             {item.actions.map((action) => (
               <ActionButton
                 action={action}
-                busy={busy}
+                busy={busy || (action === "sign_in_again" && signingOut)}
                 item={item}
                 key={action}
                 onAct={act}
@@ -228,58 +300,95 @@ function ItemCard({
             ))}
           </div>
         )}
+        {errorMessage ? (
+          <Alert variant="destructive">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        ) : null}
+        {redoProblem ? (
+          <Alert variant="destructive">
+            <CircleAlertIcon aria-hidden="true" />
+            <AlertDescription className="grid gap-2">
+              <p>{redoProblem.message}</p>
+              {redoProblem.lines.length > 0 ? (
+                <ul className="grid list-disc gap-1 pl-5">
+                  {redoProblem.lines.map((line) => (
+                    <li
+                      className="[overflow-wrap:anywhere]"
+                      key={`${line.kind}:${line.label}`}
+                    >
+                      {redoProblemText(line)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
       </Card>
     </li>
   );
 }
 
+/** "2 registros recusados · 1 na fila atrás deles": the refused, then the ones waiting behind them. */
+export function refusedText(summary: AttentionSummary): string {
+  const refused = summary.items.length;
+  const text = `${refused} ${refused === 1 ? "registro recusado" : "registros recusados"}`;
+  return summary.waitingBehind > 0
+    ? `${text} · ${summary.waitingBehind} na fila atrás ${refused === 1 ? "dele" : "deles"}`
+    : text;
+}
+
+const noRedo = () => undefined;
+
 export function AttentionPanel({
   busyCommandId = null,
-  errorMessage = null,
+  error = null,
+  notices = null,
   onDiscard,
+  onRedo = noRedo,
   onResubmit,
-  onReviewAccount,
+  onSignInAgain,
+  redoProblem = null,
+  signingOut = false,
   summary,
 }: AttentionPanelProps) {
   if (summary.items.length === 0) {
     return (
       <AttentionFrame>
         <AttentionStateCard>
-          Nada precisa de atenção. Tudo o que foi feito offline foi aceito.
+          Nenhuma pendência de envio. Tudo o que foi feito sem internet foi
+          aceito.
         </AttentionStateCard>
+        {notices}
       </AttentionFrame>
     );
   }
   return (
     <AttentionFrame>
-      <p className="text-muted-foreground text-support">
-        O servidor recusou{" "}
-        {summary.items.length === 1
-          ? "1 registro"
-          : `${summary.items.length} registros`}{" "}
-        feito{summary.items.length === 1 ? "" : "s"} offline.
-        {summary.waitingBehind > 0
-          ? ` ${summary.waitingBehind} ${summary.waitingBehind === 1 ? "registro espera" : "registros esperam"} na fila atrás ${summary.waitingBehind === 1 ? "dele" : "deles"}.`
-          : ""}
-      </p>
-      {errorMessage ? (
-        <Alert variant="destructive">
-          <CircleAlertIcon aria-hidden="true" />
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
-      ) : null}
+      <ActionStrip>{refusedText(summary)}</ActionStrip>
       <ul className="grid gap-3">
         {summary.items.map((item) => (
           <ItemCard
             busy={busyCommandId === item.commandId}
+            errorMessage={
+              error?.commandId === item.commandId ? error.message : null
+            }
             item={item}
             key={item.commandId}
             onDiscard={onDiscard}
+            onRedo={onRedo}
             onResubmit={onResubmit}
-            onReviewAccount={onReviewAccount}
+            onSignInAgain={onSignInAgain}
+            redoProblem={
+              redoProblem?.commandId === item.commandId ? redoProblem : null
+            }
+            signingOut={signingOut}
           />
         ))}
       </ul>
+      {notices}
     </AttentionFrame>
   );
 }

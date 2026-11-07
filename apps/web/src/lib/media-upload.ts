@@ -9,17 +9,26 @@ import {
 } from "@polaris/contracts";
 import type { NormalizedMediaCropRect } from "@polaris/domain/catalog/media";
 import {
+  cropRectToPixels,
+  InvalidMediaCropError,
   MAX_MEDIA_INPUT_BYTES,
+  MAX_MEDIA_OUTPUT_EDGE,
   MediaImageTooLargeError,
   UnsupportedMediaImageError,
   validateMediaImageSource,
 } from "@polaris/domain/catalog/media";
 import { browserConnection } from "./browser-connection";
+import { trackWrite } from "./writes-in-flight";
 
 /** The Worker's calls go through the connection: an answer without the Worker's mark is no answer (emenda do ADR 0043). */
 type Fetcher = (input: URL, init: RequestInit) => Promise<Response>;
 export interface PrepareMediaUploadFileDependencies {
   rasterizeHeic?: (file: File) => Promise<Blob>;
+}
+export interface PrepareMediaUploadMasterDependencies
+  extends PrepareMediaUploadFileDependencies {
+  /** Draws the crop of the image at no more than `MAX_MEDIA_OUTPUT_EDGE` on its longer side, as JPEG. */
+  renderMaster?: (file: File, crop: NormalizedMediaCropRect) => Promise<Blob>;
 }
 
 export class MediaUploadHttpError extends Error {
@@ -70,12 +79,17 @@ export interface UploadProductMediaInput {
 
 export async function uploadProductMedia(
   input: UploadProductMediaInput,
-  fetcher: Fetcher = browserConnection.fetch
+  fetcher: Fetcher = browserConnection.fetch,
+  dependencies: PrepareMediaUploadMasterDependencies = {}
 ): Promise<ProductMediaUploadResponse> {
-  const file = await prepareMediaUploadFile(input.file);
+  const file = await prepareMediaUploadMaster(
+    input.file,
+    input.crop,
+    dependencies
+  );
   const headers = new Headers({
     "Content-Type": file.type,
-    "X-Media-Crop": JSON.stringify(input.crop),
+    "X-Media-Crop": JSON.stringify(fullImageCrop),
     "X-Organization-Id": input.organizationId,
     "X-Upload-Id": input.uploadCommandId,
   });
@@ -87,12 +101,15 @@ export async function uploadProductMedia(
     `/api/products/${encodeURIComponent(input.productId)}/media`,
     input.origin || globalThis.location?.origin || "http://localhost"
   );
-  const response = await fetcher(url, {
-    body: file,
-    credentials: "same-origin",
-    headers,
-    method: "POST",
-  });
+  // the media goes outside the oRPC link: it counts as a write on its way by itself (it holds the swap of the build)
+  const response = await trackWrite(["media", "upload"], () =>
+    fetcher(url, {
+      body: file,
+      credentials: "same-origin",
+      headers,
+      method: "POST",
+    })
+  );
 
   let payload: unknown;
   try {
@@ -195,12 +212,14 @@ async function sendMediaCommand<T>(
   if (init.body !== undefined) {
     headers.set("Content-Type", "application/json");
   }
-  const response = await fetcher(url, {
-    ...(init.body === undefined ? {} : { body: init.body }),
-    credentials: "same-origin",
-    headers,
-    method: init.method,
-  });
+  const response = await trackWrite(["media", init.method], () =>
+    fetcher(url, {
+      ...(init.body === undefined ? {} : { body: init.body }),
+      credentials: "same-origin",
+      headers,
+      method: init.method,
+    })
+  );
   let payload: unknown;
   try {
     payload = await response.json();
@@ -304,6 +323,7 @@ const heicContentTypes = new Set([
   "image/heif-sequence",
 ]);
 const heicExtensionPattern = /\.(heic|heif)$/i;
+const fileExtensionPattern = /\.[^.]*$/;
 
 function extensionContentType(name: string): string | undefined {
   const extension = name.split(".").at(-1)?.toLowerCase();
@@ -331,97 +351,233 @@ function sourceContentType(file: File): string {
   );
 }
 
-async function rasterizeHeicInBrowser(file: File): Promise<Blob> {
+interface DecodedImage {
+  height: number;
+  release: () => void;
+  source: CanvasImageSource;
+  width: number;
+}
+
+function loadImageElement(image: HTMLImageElement, url: string) {
+  return new Promise<void>((resolve, reject) => {
+    image.addEventListener("load", () => resolve(), { once: true });
+    image.addEventListener("error", () => reject(new Error("decode_failed")), {
+      once: true,
+    });
+    image.src = url;
+    if (image.complete) {
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        resolve();
+      } else {
+        reject(new Error("decode_failed"));
+      }
+    }
+  });
+}
+
+/** The image upright (its EXIF orientation applied), as the preview and the crop see it. */
+async function decodeImageInBrowser(file: File): Promise<DecodedImage> {
   if (typeof document === "undefined" || typeof Image === "undefined") {
     throw new UnsupportedMediaImageError();
   }
-
-  let bitmap: ImageBitmap | undefined;
-  let image: HTMLImageElement | undefined;
-  let imageUrl: string | undefined;
-  try {
-    if (typeof createImageBitmap === "function") {
-      try {
-        bitmap = await createImageBitmap(file, {
-          imageOrientation: "from-image",
-        });
-      } catch {
-        // Safari can display HEIC in an image element even if ImageBitmap
-        // cannot decode that particular file.
-      }
-    }
-
-    if (!bitmap) {
-      const fallbackImage = new Image();
-      const fallbackUrl = URL.createObjectURL(file);
-      image = fallbackImage;
-      imageUrl = fallbackUrl;
-      await new Promise<void>((resolve, reject) => {
-        fallbackImage.addEventListener("load", () => resolve(), {
-          once: true,
-        });
-        fallbackImage.addEventListener(
-          "error",
-          () => reject(new Error("decode_failed")),
-          { once: true }
-        );
-        fallbackImage.src = fallbackUrl;
-        if (fallbackImage.complete) {
-          if (
-            fallbackImage.naturalWidth > 0 &&
-            fallbackImage.naturalHeight > 0
-          ) {
-            resolve();
-          } else {
-            reject(new Error("decode_failed"));
-          }
-        }
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(file, {
+        imageOrientation: "from-image",
       });
-      if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
-        throw new UnsupportedMediaImageError();
-      }
+      return {
+        height: bitmap.height,
+        release: () => bitmap.close(),
+        source: bitmap,
+        width: bitmap.width,
+      };
+    } catch {
+      // Safari can display HEIC in an image element even if ImageBitmap
+      // cannot decode that particular file.
     }
+  }
+  const image = new Image();
+  const url = URL.createObjectURL(file);
+  try {
+    await loadImageElement(image, url);
+  } catch (cause: unknown) {
+    URL.revokeObjectURL(url);
+    throw cause;
+  }
+  if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+    URL.revokeObjectURL(url);
+    throw new UnsupportedMediaImageError();
+  }
+  return {
+    height: image.naturalHeight,
+    release: () => URL.revokeObjectURL(url),
+    source: image,
+    width: image.naturalWidth,
+  };
+}
 
-    const imageSource: CanvasImageSource | undefined = bitmap ?? image;
-    const width = bitmap?.width ?? image?.naturalWidth;
-    const height = bitmap?.height ?? image?.naturalHeight;
-    if (!(imageSource && width && height)) {
-      throw new UnsupportedMediaImageError();
-    }
+function canvasJpeg(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob?.type !== "image/jpeg" || blob.size === 0) {
+          reject(new UnsupportedMediaImageError());
+          return;
+        }
+        resolve(blob);
+      },
+      "image/jpeg",
+      quality
+    );
+  });
+}
+
+async function rasterizeHeicInBrowser(file: File): Promise<Blob> {
+  let decoded: DecodedImage | undefined;
+  try {
+    decoded = await decodeImageInBrowser(file);
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-
+    canvas.width = decoded.width;
+    canvas.height = decoded.height;
     const context = canvas.getContext("2d");
     if (!context) {
       throw new UnsupportedMediaImageError();
     }
-    context.drawImage(imageSource, 0, 0);
-
-    const jpeg = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => {
-          if (blob?.type !== "image/jpeg" || blob.size === 0) {
-            reject(new UnsupportedMediaImageError());
-            return;
-          }
-          resolve(blob);
-        },
-        "image/jpeg",
-        0.92
-      );
-    });
-
-    return jpeg;
+    context.drawImage(decoded.source, 0, 0);
+    return await canvasJpeg(canvas, 0.92);
   } catch (cause: unknown) {
     // biome-ignore lint/style/useErrorCause: This wrapper preserves decoder details as Error.cause without exposing them in the UI.
     throw new UnsupportedMediaImageError({ cause });
   } finally {
-    bitmap?.close();
-    if (imageUrl) {
-      URL.revokeObjectURL(imageUrl);
-    }
+    decoded?.release();
   }
+}
+
+const MASTER_JPEG_QUALITY = 0.9;
+const fullImageCrop: NormalizedMediaCropRect = {
+  height: 1,
+  width: 1,
+  x: 0,
+  y: 0,
+};
+
+/** The size of the master: the crop scaled down, never up, to `MAX_MEDIA_OUTPUT_EDGE` on its longer side. */
+export function mediaUploadMasterSize(crop: {
+  height: number;
+  width: number;
+}): { height: number; width: number } {
+  const scale = Math.min(
+    1,
+    MAX_MEDIA_OUTPUT_EDGE / Math.max(crop.width, crop.height)
+  );
+  return {
+    height: Math.max(1, Math.round(crop.height * scale)),
+    width: Math.max(1, Math.round(crop.width * scale)),
+  };
+}
+
+async function renderMediaUploadMasterInBrowser(
+  file: File,
+  crop: NormalizedMediaCropRect
+): Promise<Blob> {
+  let decoded: DecodedImage | undefined;
+  try {
+    decoded = await decodeImageInBrowser(file);
+    const pixels = cropRectToPixels(crop, decoded);
+    const size = mediaUploadMasterSize(pixels);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new UnsupportedMediaImageError();
+    }
+    // JPEG has no alpha: a transparent PNG would turn black without a background under it
+    context.fillStyle = "white";
+    context.fillRect(0, 0, size.width, size.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(
+      decoded.source,
+      pixels.left,
+      pixels.top,
+      pixels.width,
+      pixels.height,
+      0,
+      0,
+      size.width,
+      size.height
+    );
+    return await canvasJpeg(canvas, MASTER_JPEG_QUALITY);
+  } catch (cause: unknown) {
+    if (cause instanceof InvalidMediaCropError) {
+      throw cause;
+    }
+    // biome-ignore lint/style/useErrorCause: This wrapper preserves decoder details as Error.cause without exposing them in the UI.
+    throw new UnsupportedMediaImageError({ cause });
+  } finally {
+    decoded?.release();
+  }
+}
+
+/**
+ * One master per picked file and crop: a retry sends the very same bytes (a new encoding could differ by a byte and
+ * the server would answer 409 for the same command), and a failed preparation is tried again.
+ */
+const preparedMasters = new WeakMap<File, Map<string, Promise<File>>>();
+
+function cropKey(crop: NormalizedMediaCropRect): string {
+  return JSON.stringify([crop.x, crop.y, crop.width, crop.height]);
+}
+
+/**
+ * The file the server receives: the crop applied and scaled down to `MAX_MEDIA_OUTPUT_EDGE` px, in JPEG, sent with
+ * the whole-image crop. The server still makes the master through Images (ADR 0018); it only receives less.
+ */
+export function prepareMediaUploadMaster(
+  file: File,
+  crop: NormalizedMediaCropRect,
+  dependencies: PrepareMediaUploadMasterDependencies = {}
+): Promise<File> {
+  const key = cropKey(crop);
+  let byCrop = preparedMasters.get(file);
+  if (!byCrop) {
+    byCrop = new Map();
+    preparedMasters.set(file, byCrop);
+  }
+  const cached = byCrop.get(key);
+  if (cached) {
+    return cached;
+  }
+  const prepared = renderMediaUploadMaster(file, crop, dependencies);
+  byCrop.set(key, prepared);
+  prepared.catch(() => {
+    if (byCrop.get(key) === prepared) {
+      byCrop.delete(key);
+    }
+  });
+  return prepared;
+}
+
+async function renderMediaUploadMaster(
+  file: File,
+  crop: NormalizedMediaCropRect,
+  dependencies: PrepareMediaUploadMasterDependencies
+): Promise<File> {
+  const source = await prepareMediaUploadFile(file, dependencies);
+  const render = dependencies.renderMaster ?? renderMediaUploadMasterInBrowser;
+  const jpeg = await render(source, crop);
+  if (jpeg.type !== "image/jpeg" || jpeg.size === 0) {
+    throw new UnsupportedMediaImageError();
+  }
+  if (jpeg.size > MAX_MEDIA_INPUT_BYTES) {
+    throw new MediaImageTooLargeError();
+  }
+  const name = source.name.replace(fileExtensionPattern, "") || "media";
+  return new File([jpeg], `${name}.jpg`, {
+    lastModified: source.lastModified,
+    type: "image/jpeg",
+  });
 }
 
 export async function prepareMediaUploadFile(

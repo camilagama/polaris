@@ -9,13 +9,14 @@ import {
   formatInstant,
 } from "../lib/format";
 import { rpcErrorReason } from "../lib/rpc-error";
+import { sumBrlAmounts } from "../lib/sum-brl";
 import { cancellationReasonLabel } from "./sale-cancellation-model";
 import {
   type ConfirmedSaleView,
   confirmedSaleView,
   loadErrorMessage,
   localDay,
-  SALE_METHODS,
+  SALE_METHOD_CARDS,
 } from "./sale-form-model";
 import {
   type ReturnTableRow,
@@ -27,7 +28,7 @@ import {
 
 export const SALES_PAGE_SIZE = 50;
 
-const methodLabels = new Map<string, string>(SALE_METHODS);
+const methodLabels = new Map<string, string>(SALE_METHOD_CARDS);
 
 /** Shown beside Confirmada/Cancelada when the sale has at least one return. */
 const RETURNS_BADGE = "Com devoluções";
@@ -279,10 +280,44 @@ export function historyRows(state: HistoryState): HistoryRow[] {
   }));
 }
 
+export interface HistoryTotal {
+  countText: string;
+  noteText: string;
+  /** "R$ 1.454,41", or null when an amount cannot be read. */
+  totalText: string | null;
+}
+
+/**
+ * The total of the sales on the screen: the confirmed ones only (a cancelled sale is not money), at the amount
+ * each row shows (the total due, returns not taken off). The note says how many cancelled ones stayed out, and the
+ * count says "há mais" while another page is pending, so the sum is not read as the total of the period.
+ */
+export function historyTotal(
+  sales: readonly SaleListEntryReadModel[],
+  hasMore = false
+): HistoryTotal {
+  const counted = sales.filter((sale) => sale.status !== "cancelled");
+  const left = sales.length - counted.length;
+  const sum = sumBrlAmounts(counted.map((sale) => sale.totalDue));
+  return {
+    countText: `${counted.length} ${counted.length === 1 ? "venda" : "vendas"}${hasMore ? " · há mais" : ""}`,
+    noteText:
+      left === 0
+        ? ""
+        : `${left} ${left === 1 ? "cancelada fica fora" : "canceladas ficam fora"} da soma.`,
+    totalText: sum === null ? null : formatBrlAmount(sum),
+  };
+}
+
 export type HistoryView =
   | { kind: "loading"; message: string }
   | { kind: "error"; message: string }
-  | { href: string | null; kind: "empty"; message: string }
+  | {
+      clearFilters: boolean;
+      href: string | null;
+      kind: "empty";
+      message: string;
+    }
   | { kind: "ready"; rows: HistoryRow[] };
 
 export function historyView(
@@ -301,12 +336,13 @@ export function historyView(
   if (state.sales.length === 0) {
     return activeFilterCount(filters) > 0
       ? {
+          clearFilters: true,
           href: null,
           kind: "empty",
-          message:
-            "Nenhuma venda encontrada com estes filtros. Tire ou ajuste os filtros.",
+          message: "Nenhuma venda encontrada com estes filtros.",
         }
       : {
+          clearFilters: false,
           href: "/sales",
           kind: "empty",
           message:
@@ -457,6 +493,121 @@ export function saleDetailView(detail: SaleDetailReadModel): SaleDetailView {
     statusLabel: cancelled ? "Cancelada" : "Confirmada",
     statusTone: cancelled ? "cancelled" : "confirmed",
   };
+}
+
+type SaleTimelineKind = "cancelled" | "registered" | "return" | "sale";
+
+export interface SaleTimelineEvent {
+  /** The instant, for the `datetime` of the line. */
+  at: string;
+  key: string;
+  kind: SaleTimelineKind;
+  label: string;
+  /** Where the sale stands: the only dot with a color of its own. */
+  tone: "cancelled" | "muted" | "sale";
+  /** The device's local time, with the year only when it differs from the sale's. */
+  timeText: string;
+}
+
+/** A confirmation less than this long after the sale says the same as "Venda feita", so it is not a line. */
+const REGISTERED_GAP_MS = 60_000;
+
+/** Newest first, a tie goes to the later step of the story. */
+const TIMELINE_TIE_ORDER: Record<SaleTimelineKind, number> = {
+  cancelled: 0,
+  return: 1,
+  registered: 2,
+  sale: 3,
+};
+
+const timelineFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "numeric",
+  hour: "2-digit",
+  hourCycle: "h23",
+  minute: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+function timelineParts(instant: string): Map<string, string> | null {
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return new Map(
+    timelineFormatter.formatToParts(date).map((part) => [part.type, part.value])
+  );
+}
+
+function timelineText(instant: string, saleInstant: string): string {
+  const parts = timelineParts(instant);
+  if (parts === null) {
+    return instant;
+  }
+  const month = (parts.get("month") ?? "").replace(".", "");
+  const year = parts.get("year") ?? "";
+  const sameYear = timelineParts(saleInstant)?.get("year") === year;
+  const date = `${parts.get("day")} ${month}${sameYear ? "" : ` ${year}`}`;
+  return `${date} ${parts.get("hour")}:${parts.get("minute")}`;
+}
+
+/**
+ * What happened to a sale and when, newest first: made, registered (only when the server took it 60 s or more after
+ * it happened), each return, cancelled. Two instants that are the same moment keep the order of the story, and the
+ * comparison is by instant, not by day. The caller shows the list only with two events or more.
+ */
+export function saleTimelineEvents(
+  detail: SaleDetailReadModel
+): SaleTimelineEvent[] {
+  const { confirmedAt, occurredAt } = detail.sale.sale;
+  const cancelled = detail.cancellation !== null;
+  const at = (instant: string) => timelineText(instant, occurredAt);
+  const events: SaleTimelineEvent[] = [
+    {
+      at: occurredAt,
+      key: "sale",
+      kind: "sale",
+      label: "Venda feita",
+      timeText: at(occurredAt),
+      tone: cancelled ? "muted" : "sale",
+    },
+  ];
+  if (Date.parse(confirmedAt) - Date.parse(occurredAt) >= REGISTERED_GAP_MS) {
+    events.push({
+      at: confirmedAt,
+      key: "registered",
+      kind: "registered",
+      label: "Confirmada no servidor",
+      timeText: at(confirmedAt),
+      tone: "muted",
+    });
+  }
+  for (const entry of detail.returns) {
+    events.push({
+      at: entry.returnedAt,
+      key: `return-${entry.id}`,
+      kind: "return",
+      label: "Devolução",
+      timeText: at(entry.returnedAt),
+      tone: "muted",
+    });
+  }
+  if (detail.cancellation) {
+    events.push({
+      at: detail.cancellation.cancelledAt,
+      key: "cancelled",
+      kind: "cancelled",
+      label: "Cancelada",
+      timeText: at(detail.cancellation.cancelledAt),
+      tone: "cancelled",
+    });
+  }
+  return events.sort(
+    (left, right) =>
+      Date.parse(right.at) - Date.parse(left.at) ||
+      TIMELINE_TIE_ORDER[left.kind] - TIMELINE_TIE_ORDER[right.kind] ||
+      left.key.localeCompare(right.key)
+  );
 }
 
 /** Message for a sale that failed to load. */

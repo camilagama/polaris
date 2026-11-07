@@ -6,7 +6,7 @@ import {
 } from "@/ui/charts/on-demand";
 
 /**
- * The two charts of src/ui/charts/ in the states the browser checks measure (t285): empty, one point, all zero,
+ * The two charts of src/ui/charts/ in the states the browser checks measure: empty, one point, all zero,
  * constant and a series of thirty days, plus the week with a best day. They come through the on-demand loader, as
  * a screen draws them, so the gallery opens the charts chunk like the app will. Synthetic data only.
  */

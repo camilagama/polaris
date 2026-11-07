@@ -5,6 +5,7 @@ import {
   changeOutcome,
   emailProblem,
   errorCode,
+  isRequirementProblem,
   linkOutcome,
   lockMinutes,
   newPasswordProblem,
@@ -125,14 +126,31 @@ describe("the fields", () => {
     expect(emailProblem(" nome@exemplo.com ")).toBeNull();
   });
 
-  it("applies the size rule after NFC, counting characters, with spaces allowed (AC-47)", () => {
-    expect(newPasswordProblem("a".repeat(14))).toBe("too_short");
-    expect(newPasswordProblem("frase com espaços")).toBeNull();
-    // 15 characters of two code units each
-    expect(newPasswordProblem("😀".repeat(15))).toBeNull();
+  it("applies the rules of the server after NFC, counting characters, the first missing in the order of the list (AC-47)", () => {
+    expect(newPasswordProblem("Abc1")).toBe("too_short");
+    expect(newPasswordProblem("Abcdefgh")).toBe("missing_number");
+    expect(newPasswordProblem("abcdefg1")).toBe("missing_uppercase");
+    expect(newPasswordProblem("ABCDEFG1")).toBe("missing_lowercase");
+    expect(newPasswordProblem("Abcdefg1")).toBeNull();
+    expect(newPasswordProblem("Frase com espaços 1")).toBeNull();
+    // 8 characters of two code units each still need a number and both cases
+    expect(newPasswordProblem("\u{1F600}".repeat(8))).toBe("missing_number");
     // "e" + combining accent is one character after NFC
-    expect(newPasswordProblem("é".repeat(14))).toBe("too_short");
-    expect(newPasswordProblem("a".repeat(129))).toBe("too_long");
+    expect(newPasswordProblem("Abcde1e\u0301")).toBe("too_short");
+    expect(newPasswordProblem(`Aa1${"a".repeat(126)}`)).toBe("too_long");
+  });
+
+  it("tells the rules of the list from the problems that are a line of their own", () => {
+    for (const problem of [
+      "too_short",
+      "missing_number",
+      "missing_uppercase",
+      "missing_lowercase",
+    ] as const) {
+      expect(isRequirementProblem(problem)).toBe(true);
+    }
+    expect(isRequirementProblem("too_long")).toBe(false);
+    expect(isRequirementProblem("invalid_characters")).toBe(false);
   });
 });
 
@@ -186,12 +204,20 @@ describe("what each answer means on the screen", () => {
     expect(signUpOutcome(answer(400, "legal_acceptance_required"))).toEqual({
       kind: "acceptance",
     });
-    expect(signUpOutcome(answer(400, "password_compromised"))).toEqual({
+    expect(signUpOutcome(answer(400, "password_missing_number"))).toEqual({
       kind: "password",
-      problem: "compromised",
+      problem: "missing_number",
     });
-    expect(signUpOutcome(answer(503, "password_hibp_unavailable"))).toEqual({
-      failure: "hibp_unavailable",
+    expect(signUpOutcome(answer(400, "password_missing_uppercase"))).toEqual({
+      kind: "password",
+      problem: "missing_uppercase",
+    });
+    expect(signUpOutcome(answer(400, "password_missing_lowercase"))).toEqual({
+      kind: "password",
+      problem: "missing_lowercase",
+    });
+    expect(signUpOutcome(answer(503, "server_busy"))).toEqual({
+      failure: "unavailable",
       kind: "failure",
     });
   });

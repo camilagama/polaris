@@ -1,7 +1,7 @@
 import type { CategoryReadModel, ProductReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
 import PackageIcon from "lucide-react/dist/esm/icons/package";
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -12,16 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import type { PendingProduct } from "../offline/product-create";
+import { ProductThumbnail, useThumbnailSequence } from "./product-thumbnail";
 import { productInitials } from "./product-search-model";
+import { OFFLINE_NOTICE_ID } from "./products-page-parts";
+import { OPENABLE_ROW_CLASS, RowOpenButton } from "./screen-parts";
 
 export type ProductListStatus = "active" | "archived";
-
-const dateFormatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" });
-
-function formatDate(value: string): string {
-  return dateFormatter.format(new Date(value));
-}
 
 /** Everything but creating needs the server to know the product and to be reachable. */
 export function lockedReasonFor(
@@ -49,24 +47,25 @@ interface RowActions {
   onRestore: (product: ProductReadModel) => void;
 }
 
-interface ProductMenuProps extends RowActions {
+interface ProductMenuProps extends Omit<RowActions, "onEdit"> {
   locked: boolean;
   pending: boolean;
   product: ProductReadModel;
 }
 
-/** The actions of one product. A locked product (not confirmed yet, or no connection) keeps the menu and shows why in its row. */
+/**
+ * The actions of one product besides opening it (the row itself opens it). A locked product (not confirmed yet, or
+ * no connection) keeps the menu and shows why in its row.
+ */
 function ProductMenu({
   locked,
   onArchive,
-  onEdit,
   onManageMedia,
   onManageVariants,
   onRestore,
   pending,
   product,
 }: ProductMenuProps) {
-  const handleEdit = useCallback(() => onEdit(product), [onEdit, product]);
   const handleVariants = useCallback(
     () => onManageVariants(product),
     [onManageVariants, product]
@@ -99,9 +98,6 @@ function ProductMenu({
         <MoreHorizontalIcon aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuItem disabled={disabled} onClick={handleEdit}>
-          Editar
-        </DropdownMenuItem>
         <DropdownMenuItem disabled={disabled} onClick={handleVariants}>
           Variantes
         </DropdownMenuItem>
@@ -148,76 +144,149 @@ function pendingLabelFor(
   return pendingAction === `restore:${productId}` ? "Restaurando…" : null;
 }
 
+/** The reason is in the row for a product not confirmed yet, and in the notice at the top without a connection. */
+function reasonRef(
+  lockedReason: string | null,
+  syncState: PendingProduct | undefined,
+  reasonId: string
+): string | undefined {
+  if (lockedReason === null) {
+    return undefined;
+  }
+  return syncState ? reasonId : OFFLINE_NOTICE_ID;
+}
+
+function supportLine(
+  categoryName: string | null,
+  description: string | null
+): string {
+  const text = description?.replace(/\s+/g, " ").trim();
+  return [categoryName ?? "Sem categoria", text].filter(Boolean).join(" · ");
+}
+
+function RowMark({
+  product,
+  thumbs,
+}: {
+  product: ProductReadModel;
+  thumbs: boolean;
+}) {
+  if (thumbs) {
+    return (
+      <ProductThumbnail
+        assetId={product.coverAssetId}
+        name={product.name}
+        size={40}
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
+    >
+      {productInitials(product.name)}
+    </span>
+  );
+}
+
 function ProductRow({
   categoryName,
   lockedReason,
   pendingAction,
   product,
   syncState,
+  onEdit,
   ...actions
 }: ProductRowProps) {
   const pending = pendingAction?.endsWith(product.id) ?? false;
   const pendingLabel = pendingLabelFor(pendingAction, product.id);
+  const handleOpen = useCallback(() => onEdit(product), [onEdit, product]);
+  const reasonId = `product-locked-${product.id}`;
+  const supportId = `product-support-${product.id}`;
+  const pendingId = `product-pending-${product.id}`;
+  const describedBy = [
+    supportId,
+    reasonRef(lockedReason, syncState, reasonId),
+    pendingLabel ? pendingId : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const hasExtras = Boolean(syncState || pendingLabel);
+  const thumbs = useMediaThumbsEnabled();
   return (
     <li
-      className="flex items-center gap-3 px-3 py-2.5 md:px-4"
+      className={`grid px-3 md:px-4 ${OPENABLE_ROW_CLASS}`}
       data-product-id={product.id}
     >
-      <span
-        aria-hidden="true"
-        className="grid size-9 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs"
-      >
-        {productInitials(product.name)}
-      </span>
-      <div className="grid min-w-0 flex-1 gap-0.5">
-        <p className="font-medium [overflow-wrap:anywhere]">{product.name}</p>
-        <p className="text-muted-foreground text-support">
-          {categoryName ?? "Sem categoria"}
-        </p>
-        {product.description ? (
-          <p className="line-clamp-2 whitespace-pre-line text-muted-foreground text-support [overflow-wrap:anywhere]">
-            {product.description}
-          </p>
-        ) : null}
-        {syncState ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
-            <Badge
-              data-sync-state={syncState.state}
-              role="status"
-              variant={
-                syncState.state === "rejected" ? "destructive" : "outline"
-              }
+      <div className="flex items-center gap-3">
+        <RowOpenButton
+          describedBy={describedBy}
+          locked={lockedReason !== null || pending}
+          onOpen={handleOpen}
+        >
+          <RowMark product={product} thumbs={thumbs} />
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <span className="font-medium [overflow-wrap:anywhere]">
+              <span className="sr-only">Editar </span>
+              {product.name}
+            </span>
+            <span
+              aria-hidden="true"
+              className="line-clamp-1 text-muted-foreground text-support [overflow-wrap:anywhere]"
+              id={supportId}
             >
-              {syncStateLabel(syncState)}
-            </Badge>
-            {syncState.state === "rejected" ? (
-              <a
-                className="focus-ring touch-hit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
-                href="/attention"
-              >
-                Resolver em Pendências
-              </a>
-            ) : null}
-          </div>
-        ) : null}
-        {syncState && lockedReason ? (
-          <p className="text-muted-foreground text-support">{lockedReason}</p>
-        ) : null}
-        {pendingLabel ? (
-          <p className="text-muted-foreground text-support" role="status">
-            {pendingLabel}
-          </p>
-        ) : null}
+              {supportLine(categoryName, product.description)}
+            </span>
+          </span>
+        </RowOpenButton>
+        <ProductMenu
+          {...actions}
+          locked={lockedReason !== null}
+          pending={pending}
+          product={product}
+        />
       </div>
-      <span className="hidden shrink-0 text-muted-foreground text-support md:block">
-        Atualizado em {formatDate(product.updatedAt)}
-      </span>
-      <ProductMenu
-        {...actions}
-        locked={lockedReason !== null}
-        pending={pending}
-        product={product}
-      />
+      {hasExtras ? (
+        // under the text of the row, out of its button: a status and a link are their own parts
+        <div className={`grid gap-0.5 pb-2.5 ${thumbs ? "pl-13" : "pl-12"}`}>
+          {syncState ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Badge
+                data-sync-state={syncState.state}
+                role="status"
+                variant={
+                  syncState.state === "rejected" ? "destructive" : "outline"
+                }
+              >
+                {syncStateLabel(syncState)}
+              </Badge>
+              {syncState.state === "rejected" ? (
+                <a
+                  className="focus-ring touch-hit rounded-sm text-support underline decoration-input underline-offset-4 hover:decoration-foreground"
+                  href="/attention"
+                >
+                  Resolver em Pendências
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+          {syncState && lockedReason ? (
+            <p className="text-muted-foreground text-support" id={reasonId}>
+              {lockedReason}
+            </p>
+          ) : null}
+          {pendingLabel ? (
+            <p
+              className="text-muted-foreground text-support"
+              id={pendingId}
+              role="status"
+            >
+              {pendingLabel}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -263,6 +332,11 @@ export function ProductList({
   total,
   ...actions
 }: ProductListProps) {
+  const coverIds = useMemo(
+    () => products.map((product) => product.coverAssetId),
+    [products]
+  );
+  useThumbnailSequence(coverIds);
   if (isLoading) {
     return (
       <ListNotice>
@@ -282,12 +356,7 @@ export function ProductList({
               aria-hidden="true"
               className="size-6 text-muted-foreground"
             />
-            <div className="grid gap-0.5">
-              <p className="font-medium">Nenhum produto ainda</p>
-              <p className="text-muted-foreground text-support">
-                Cadastre o primeiro para vender.
-              </p>
-            </div>
+            <p className="font-medium">Nenhum produto ainda</p>
             <Button onClick={onNew} type="button">
               Novo produto
             </Button>

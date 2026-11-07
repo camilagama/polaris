@@ -1,4 +1,4 @@
-import { implement } from "@orpc/server";
+import { implement, ORPCError } from "@orpc/server";
 import { polarisContract } from "@polaris/contracts";
 import {
   DeviceNotOwnedError,
@@ -52,6 +52,43 @@ interface OfflineRpcDependencies {
   touchDevice: typeof touchDevice | undefined;
   withAuthenticatedRequestContext: typeof withAuthenticatedRequestContext;
   withTenantRequestContext: typeof withTenantRequestContext;
+}
+
+export const issueLeaseRefusalCodes = [
+  "entitlement_denied",
+  "device_revoked",
+  "offline_lease_not_available",
+] as const;
+
+type IssueLeaseRefusalCode = (typeof issueLeaseRefusalCodes)[number];
+
+const issueLeaseRefusalCodeSet: ReadonlySet<string> = new Set(
+  issueLeaseRefusalCodes
+);
+
+export const unknownIssueLeaseRefusalCode = "other";
+
+/**
+ * The closed code of a domain refusal of `issueLease`: its `code`, or the message of the errors that carry no
+ * `code` (`device_revoked`, `offline_lease_not_available`). A 4xx never reaches the fault log, so this is what tells
+ * the refusals apart; only the listed codes are logged, because a text outside the list could carry client data.
+ */
+function refusalCode(
+  error: unknown
+): IssueLeaseRefusalCode | typeof unknownIssueLeaseRefusalCode {
+  const { code, message } = (error ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  for (const candidate of [code, message]) {
+    if (
+      typeof candidate === "string" &&
+      issueLeaseRefusalCodeSet.has(candidate)
+    ) {
+      return candidate as IssueLeaseRefusalCode;
+    }
+  }
+  return unknownIssueLeaseRefusalCode;
 }
 
 function deviceReadModel(device: DeviceRecord) {
@@ -247,7 +284,18 @@ export function createOfflineRpcHandlers(dependencies: OfflineRpcDependencies) {
           request: context.request,
           requestedOrganizationId: input.organizationId,
         })
-        .catch(dependencies.toRpcError)
+        .catch((error: unknown) => {
+          try {
+            return dependencies.toRpcError(error);
+          } catch (rpcError) {
+            if (rpcError instanceof ORPCError && rpcError.status === 409) {
+              logger.warn("offline_lease_refused", {
+                reason: refusalCode(error),
+              });
+            }
+            throw rpcError;
+          }
+        })
   );
 
   return {

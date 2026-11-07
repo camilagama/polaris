@@ -19,31 +19,17 @@ export type PeriodPreset =
   | "this-month"
   | "year";
 
-/**
- * "Este ano" and any range above 62 days wait for the CPU measure of the `periodSummary` of 366 days in staging
- * (AC-23, Emenda de 24/10). The grouping by month (`groupByMonth`) is ready and tested; turning this on is the one
- * change that opens the long periods. Until the measure is registered it stays off.
- */
-export const LONG_PERIODS_ENABLED = false;
-
 /** The longest range the contract accepts (AC-2). */
 export const MAX_PERIOD_DAYS = 366;
-/** The longest range while the long periods are off. */
-const SHORT_PERIOD_DAYS = 62;
 
-/** The longest range a person can ask for. */
-export function maxPeriodDays(longPeriods: boolean = LONG_PERIODS_ENABLED) {
-  return longPeriods ? MAX_PERIOD_DAYS : SHORT_PERIOD_DAYS;
-}
-
-/** The presets on offer, in the order they are shown ("Este ano" only with the long periods on). */
-export function availablePresets(
-  longPeriods: boolean = LONG_PERIODS_ENABLED
-): PeriodPreset[] {
-  return longPeriods
-    ? ["this-month", "last-month", "last-30", "year", "custom"]
-    : ["this-month", "last-month", "last-30", "custom"];
-}
+/** The presets on offer, in the order they are shown. */
+export const PRESETS: readonly PeriodPreset[] = [
+  "this-month",
+  "last-month",
+  "last-30",
+  "year",
+  "custom",
+];
 
 export const PRESET_LABELS: Readonly<Record<PeriodPreset, string>> = {
   custom: "Período",
@@ -62,6 +48,11 @@ function utcTime(day: string): number {
 /** The calendar day `days` away from `day`. */
 export function addDays(day: string, days: number): string {
   return new Date(utcTime(day) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The last day of the month of `day`. */
+export function lastOfMonth(day: string): string {
+  return addDays(`${addDays(`${day.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1);
 }
 
 /** How many calendar days a period has, both ends counted. */
@@ -109,34 +100,25 @@ export function copyMonthOf(
 export type RangeProblem = "missing" | "order" | "too_long";
 
 /** What is wrong with a range typed by the person, before anything is asked of the server (AC-2); null when it is fine. */
-export function rangeProblem(
-  from: string,
-  to: string,
-  maxDays: number = maxPeriodDays()
-): RangeProblem | null {
+export function rangeProblem(from: string, to: string): RangeProblem | null {
   if (!(isCalendarDate(from) && isCalendarDate(to))) {
     return "missing";
   }
   if (from > to) {
     return "order";
   }
-  return dayCount({ from, to }) > maxDays ? "too_long" : null;
+  return dayCount({ from, to }) > MAX_PERIOD_DAYS ? "too_long" : null;
 }
 
 /** The sentence under the field for each problem. */
-export function rangeMessage(
-  problem: RangeProblem,
-  maxDays: number = maxPeriodDays()
-): string {
+export function rangeMessage(problem: RangeProblem): string {
   switch (problem) {
     case "missing":
       return "Escolha a data inicial e a final.";
     case "order":
       return "A data inicial vem depois da final.";
     default:
-      return maxDays >= MAX_PERIOD_DAYS
-        ? "Escolha até 1 ano."
-        : `Escolha até ${maxDays} dias.`;
+      return "Escolha até 1 ano.";
   }
 }
 

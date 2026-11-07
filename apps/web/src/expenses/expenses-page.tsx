@@ -1,20 +1,29 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Tabs, TabsContent, TabsTrigger } from "@/ui/tabs";
 import { ScreenTitle } from "../app-shell/screen-title";
 import { ScreenTabList } from "../app-shell/screen-tabs";
+import { connectionControlProps } from "../app-shell/connection-required-notice";
+import { useConnectionOnline } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
-import { calendarDayInTimezone } from "../lib/dates";
+import { invalidatePreviousWindow } from "../home/previous-window-copy";
+import { browserStorage } from "../lib/current-organization-model";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
+import { markPeriodSummaryStale } from "../lib/period-summary-stale";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
 import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
-import { ExpenseFiltersBar, ExpenseList, ExpenseSummary } from "./expense-list";
+import {
+  ExpenseCategoryFilter,
+  ExpenseList,
+  ExpenseStatusTabs,
+  ExpenseSummary,
+} from "./expense-list";
 import {
   type ExpenseDraft,
   type ExpenseInput,
@@ -28,8 +37,26 @@ import { useCommandRunner } from "./use-command-runner";
 import { useExpenseCategories } from "./use-expense-categories";
 import { type ExpenseFilters, useExpenseList } from "./use-expense-list";
 import { useFormDialog } from "./use-form-dialog";
+import { useStoreToday } from "../lib/use-store-today";
 
 type StatusChange = "restore" | "void";
+
+/**
+ * What the person chose. While `chosenMonth` is null the month follows the store's day, so it moves to the new month
+ * at the turn (one read of the list); a month picked by hand stays, and the turn reads nothing.
+ */
+interface ExpenseChoices {
+  categoryId: string;
+  chosenMonth: string | null;
+  status: ExpenseFilters["status"];
+}
+
+function restoredMessage(competenceOn: string, shownMonth: string): string {
+  const month = monthOfDay(competenceOn);
+  return month === shownMonth
+    ? "Despesa reativada."
+    : `Despesa reativada. Ela pertence a ${formatMonthLabel(month)}, que não é o mês exibido.`;
+}
 
 function savedMessage(
   editing: boolean,
@@ -41,6 +68,13 @@ function savedMessage(
   return month === shownMonth
     ? base
     : `${base} Ela pertence a ${formatMonthLabel(month)}, que não é o mês exibido.`;
+}
+
+/** The home's copy of the days before the month no longer holds once an expense of a past competence changed here. */
+function dropPreviousWindow(organizationId: string, competences: string[]) {
+  for (const competenceOn of competences) {
+    invalidatePreviousWindow(browserStorage(), organizationId, competenceOn);
+  }
 }
 
 function Heading() {
@@ -80,17 +114,24 @@ function focusNewWhenLost() {
  */
 export function ExpensesPage() {
   const { organization, organizationId } = useCurrentOrganization();
-  const today = useMemo(
-    () => calendarDayInTimezone(new Date(), organization.timezone),
-    [organization.timezone]
-  );
+  const today = useStoreToday(organization.timezone);
   const [view, selectView] = useExpenseView();
-  const [filters, setFilters] = useState<ExpenseFilters>(() => ({
+  const [choices, setChoices] = useState<ExpenseChoices>({
     categoryId: "",
-    month: monthOfDay(today),
+    chosenMonth: null,
     status: "active",
-  }));
+  });
+  const filters = useMemo<ExpenseFilters>(
+    () => ({
+      categoryId: choices.categoryId,
+      month: choices.chosenMonth ?? monthOfDay(today),
+      status: choices.status,
+    }),
+    [choices, today]
+  );
   const { busy, clearFeedback, feedback, run } = useCommandRunner();
+  const online = useConnectionOnline();
+  const noticeRef = useRef<HTMLDivElement>(null);
   const categories = useExpenseCategories(organizationId);
   const { loadMore, refresh, state } = useExpenseList(organizationId, filters);
   const reloadCategories = categories.reload;
@@ -129,6 +170,15 @@ export function ExpensesPage() {
       if (outcome === "failed") {
         return false;
       }
+      if (outcome === "ok") {
+        markPeriodSummaryStale();
+        dropPreviousWindow(
+          organizationId,
+          target
+            ? [input.competenceOn, target.competenceOn]
+            : [input.competenceOn]
+        );
+      }
       closeForm();
       await refresh();
       // the dialog may have finished closing before the list was read again: the focus went back to the "Editar" of a
@@ -151,30 +201,54 @@ export function ExpensesPage() {
   );
 
   const handleStatusChange = useCallback(
-    async (expense: ExpenseReadModel, change: StatusChange) => {
+    async (
+      expense: ExpenseReadModel,
+      change: StatusChange,
+      fromUndo = false
+    ) => {
       const input = {
         expectedVersion: expense.version,
         id: expense.id,
         organizationId,
       };
-      const outcome = await run(`${change}:${expense.id}`, change, async () => {
-        if (change === "void") {
-          await orpcClient.expense.void(input);
-          return "Despesa anulada. Ela deixa de somar no período e pode ser reativada.";
-        }
-        await orpcClient.expense.restore(input);
-        return "Despesa reativada.";
-      });
+      const outcome = await run(
+        `${change}:${expense.id}`,
+        change,
+        async () => {
+          if (change === "void") {
+            const result = await orpcClient.expense.void(input);
+            const text = `Despesa “${expense.description}” anulada.`;
+            return result.changed ? { text, undo: result.expense } : text;
+          }
+          await orpcClient.expense.restore(input);
+          return restoredMessage(expense.competenceOn, filters.month);
+        },
+        fromUndo ? expense : undefined
+      );
+      if (outcome === "ok") {
+        markPeriodSummaryStale();
+        dropPreviousWindow(organizationId, [expense.competenceOn]);
+      }
       if (outcome !== "failed") {
         if (editing?.id === expense.id) {
           closeForm();
         }
         await refresh();
       }
+      if (outcome === "ok" || fromUndo) {
+        // the button that was pressed left the list with the row, or "Desfazer" was drawn again: the notice takes the focus
+        focusLater(() => noticeRef.current?.focus());
+      }
     },
-    [closeForm, editing?.id, organizationId, refresh, run]
+    [closeForm, editing?.id, filters.month, organizationId, refresh, run]
   );
 
+  const undo = feedback?.undo;
+  const handleUndo = useCallback(() => {
+    if (undo) {
+      handleStatusChange(undo, "restore", true);
+    }
+  }, [handleStatusChange, undo]);
   const handleVoid = useCallback(
     (expense: ExpenseReadModel) => handleStatusChange(expense, "void"),
     [handleStatusChange]
@@ -185,7 +259,17 @@ export function ExpensesPage() {
   );
   const handleNew = useCallback(() => openForm("new"), [openForm]);
   const handleMonth = useCallback(
-    (month: string) => setFilters((current) => ({ ...current, month })),
+    (month: string) =>
+      setChoices((current) => ({ ...current, chosenMonth: month })),
+    []
+  );
+  const handleFilters = useCallback(
+    (next: ExpenseFilters) =>
+      setChoices((current) => ({
+        ...current,
+        categoryId: next.categoryId,
+        status: next.status,
+      })),
     []
   );
 
@@ -193,6 +277,8 @@ export function ExpensesPage() {
   // so a changed rule means the list (and the month total) must be read again.
   const handleRulesChanged = useCallback(async () => {
     await Promise.all([refresh(), reloadCategories()]);
+    // after the list: the occurrences are generated by that read, and the result adds them up
+    markPeriodSummaryStale();
   }, [refresh, reloadCategories]);
 
   const handleRetry = useCallback(() => {
@@ -233,8 +319,8 @@ export function ExpensesPage() {
         </ScreenTabList>
 
         <TabsContent className="grid gap-4" keepMounted value="lancamentos">
-          {/* the month at the top of the part, beside the way to a new expense */}
-          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+          {/* the month and the category on one line: the list and its first expense come in the first screen */}
+          <div className="grid grid-cols-1 items-start gap-x-3 gap-y-3 min-[30rem]:flex min-[22.5rem]:grid-cols-[auto_minmax(0,1fr)] min-[30rem]:flex-wrap">
             <MonthPicker
               currentMonth={monthOfDay(today)}
               id="expense-month"
@@ -242,18 +328,21 @@ export function ExpensesPage() {
               month={filters.month}
               onChange={handleMonth}
             />
-            <Button
-              data-expense-new=""
-              disabled={busy !== null}
-              onClick={handleNew}
-              type="button"
-            >
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              Nova despesa
-            </Button>
+            <ExpenseCategoryFilter
+              categories={categories.state.categories}
+              filters={filters}
+              onChange={handleFilters}
+            />
           </div>
           {/* while the form is open it covers the screen: what the commands say is said inside it */}
-          <ActionNotice feedback={form.open ? null : feedback} />
+          <ActionNotice
+            errorRef={noticeRef}
+            feedback={form.open ? null : feedback}
+            noticeRef={noticeRef}
+            onUndo={undo ? handleUndo : undefined}
+            undoDisabled={busy !== null || !online}
+            undoReasonId={connectionControlProps(online)["aria-describedby"]}
+          />
           <Dialog disablePointerDismissal {...form.dialog}>
             <DialogContent finalFocus={form.finalFocus} layout="form">
               <ExpenseForm
@@ -272,18 +361,25 @@ export function ExpensesPage() {
             </DialogContent>
           </Dialog>
           <Card aria-labelledby={LIST_TITLE_ID} role="region">
-            <CardHeader>
-              <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
-                Despesas do período
-              </CardTitle>
+            <CardHeader className="gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
+                  Despesas do período
+                </CardTitle>
+                <Button
+                  data-expense-new=""
+                  disabled={busy !== null}
+                  onClick={handleNew}
+                  type="button"
+                >
+                  <PlusIcon aria-hidden="true" data-icon="inline-start" />
+                  Nova despesa
+                </Button>
+              </div>
+              <ExpenseSummary filters={filters} state={state} />
             </CardHeader>
             <CardContent className="grid gap-4">
-              <ExpenseFiltersBar
-                categories={categories.state.categories}
-                filters={filters}
-                onChange={setFilters}
-              />
-              <ExpenseSummary filters={filters} state={state} />
+              <ExpenseStatusTabs filters={filters} onChange={handleFilters} />
               <ExpenseList
                 busyKey={busy}
                 filters={filters}

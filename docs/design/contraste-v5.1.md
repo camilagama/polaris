@@ -1,6 +1,6 @@
 # Contraste dos tokens da v5.1
 
-Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o repositório pelo PR de base do [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Os valores dos tokens estão em `apps/web/src/styles/theme.css` (`:root` e `.dark`), e o [DESIGN.md](../../DESIGN.md) é a fonte das diretrizes.
+Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o repositório pelo PR de base do [ADR 0103](../adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md). Os valores dos tokens estão em `packages/ui/src/theme.css` (`:root` e `.dark`), e o [DESIGN.md](../../DESIGN.md) é a fonte das diretrizes.
 
 **Como se mede.** WCAG 2.x: razão entre as luminâncias relativas, com cada token convertido de OKLCH para sRGB. Um par escrito `x/NN sobre y` é o token `x` com opacidade NN% (como a utilidade `bg-x/NN` do Tailwind) composto sobre `y`. Meta: 7:1 para texto e valores, 4,5:1 para texto menor em estado, 3:1 para borda de controle, foco e ícone; bordas decorativas ficam abaixo disso de propósito.
 
@@ -21,8 +21,12 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.85** | 4.5 | ✓ |
 | `accent-foreground` / `accent` | item em foco de menu e de select | DropdownMenu, Select | **15.37** | 7 | ✓ |
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **16.19** | 7 | ✓ |
+| `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **16.19** | 7 | ✓ |
+| `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.22** | 4.5 | ✓ |
+| `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **6.78** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.81** | 7 | ✓ |
-| `sidebar-accent-foreground` / `sidebar-accent` | item atual e item em hover do menu lateral | SidebarMenuButton | **14.78** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.78** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | item em hover do menu lateral | SidebarMenuButton | **15.41** | 7 | ✓ |
 | `destructive` / `card` | texto de erro (FieldError, Alert destructive) | Field, Alert | **7.46** | 7 | ✓ |
 | `destructive` / `destructive/10 sobre card` | texto de erro em Badge e Button destructive (claro: /10) | Badge, Button destructive | **6.3** | 4.5 | ✓ |
 | `primary-foreground` / `destructive` | texto sobre vermelho sólido (se usado) | extensão | **7.46** | 4.5 | ✓ |
@@ -34,7 +38,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **3.15** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **8.05** | 7 | ✓ |
 | `mark-foreground` / `mark/10 sobre card` | texto esmeralda sobre bg-mark/10 | composição | **7.16** | 4.5 | ✓ |
-| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.36** | 3 | ✓ |
+| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado e botão de contorno (cartão) | border-input | **3.36** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **3.22** | 3 | ✓ |
 | `input` / `muted` | borda de campo sobre faixa neutra | border-input | **3.01** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.36** | 3 | ✓ |
@@ -42,7 +46,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **3.79** | 3 | ✓ |
 | `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.36** | 3 | ✓ |
 | `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **3.57** | 3 | ✓ |
-| `border` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão) | border-border | **1.28** | 1.0 | ✓ |
+| `border` / `card` | divisória (decorativa) | border-border | **1.28** | 1.0 | ✓ |
 | `border` / `background` | divisória sobre o fundo | border-border | **1.23** | 1.0 | ✓ |
 | `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **3.71** | 3 | ✓ |
 | `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **3.70** | 3 | ✓ |
@@ -77,6 +81,15 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `warning` / `popover` | ícone de aviso do toast | Toast | **7.6** | 3 | ✓ |
 | `ring` / `popover` | foco do teclado no toast | Toast | **3.95** | 3 | ✓ |
 | `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.36** | 3 | ✓ |
+| `foreground` / `sidebar` | marca do cabeçalho do celular e item atual da barra de destinos (moldura) | ShellHeader, BottomBar | **16.36** | 7 | ✓ |
+| `sidebar-foreground` / `sidebar` | "?" e seta do menu da loja, no cabeçalho | ShellHeader, StoreMenu | **9.81** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar` | nome da loja no botão do menu do cabeçalho | StoreMenu | **16.36** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | "?" e botão da loja do cabeçalho em hover | ShellHeader, StoreMenu | **15.41** | 7 | ✓ |
+| `muted-foreground` / `sidebar` | rótulos da barra de destinos; Termos e Política no pé de Mais (12 px) | BottomBar, AppSidebar | **7.33** | 4.5 | ✓ |
+| `warning` / `warning/10 sobre sidebar` | chip sem conexão e de envio pausado, no cabeçalho | SyncStatus | **5.89** | 4.5 | ✓ |
+| `destructive` / `destructive/10 sobre sidebar` | chip "Atenção", no cabeçalho | SyncStatus | **5.70** | 4.5 | ✓ |
+| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **3.58** | 3 | ✓ |
+| `background` / `foreground` | iniciais da loja no círculo do cabeçalho | StoreMenu | **17.34** | 7 | ✓ |
 
 ## Tema escuro
 
@@ -93,8 +106,12 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `accent` | texto de apoio sobre item em foco de menu | menu | **6.33** | 4.5 | ✓ |
 | `accent-foreground` / `accent` | item em foco de menu e de select | DropdownMenu, Select | **10.46** | 7 | ✓ |
 | `foreground` / `muted` | texto em linha com hover e em faixa neutra | Table, Button ghost | **11.58** | 7 | ✓ |
+| `foreground` / `muted` | valor no bloco rebaixado do cartão (14 px) | ConfirmedDetails | **11.58** | 7 | ✓ |
+| `muted-foreground` / `muted` | rótulo no bloco rebaixado do cartão (12 px) | ConfirmedDetails | **7.01** | 4.5 | ✓ |
+| `warning` / `muted` | valor desconhecido no bloco rebaixado do cartão | ConfirmedDetails | **7.48** | 4.5 | ✓ |
 | `sidebar-foreground` / `sidebar` | item do menu lateral | Sidebar | **9.48** | 7 | ✓ |
-| `sidebar-accent-foreground` / `sidebar-accent` | item atual e item em hover do menu lateral | SidebarMenuButton | **12.41** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-accent` | item atual do menu lateral | SidebarMenuButton | **14.19** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | item em hover do menu lateral | SidebarMenuButton | **15.08** | 7 | ✓ |
 | `destructive` / `card` | texto de erro (FieldError, Alert destructive) | Field, Alert | **7.63** | 7 | ✓ |
 | `destructive` / `destructive/20 sobre card` | texto de erro em Badge e Button destructive (escuro: /20) | Badge, Button destructive | **5.19** | 4.5 | ✓ |
 | `primary-foreground` / `destructive` | texto sobre vermelho sólido (se usado) | extensão | **8.28** | 4.5 | ✓ |
@@ -106,15 +123,20 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **5.64** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **10.07** | 7 | ✓ |
 | `mark-foreground` / `mark/15 sobre card` | texto esmeralda sobre bg-mark/15 (escuro) | composição | **7.66** | 4.5 | ✓ |
-| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado (cartão) | border-input | **3.42** | 3 | ✓ |
+| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado e botão de contorno (cartão) | border-input | **3.42** | 3 | ✓ |
 | `input` / `background` | borda de campo sobre o fundo | border-input | **3.71** | 3 | ✓ |
 | `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.18** | 3 | ✓ |
 | `ring` / `card` | anel de foco (borda) sobre cartão | focus-visible:border-ring | **5.28** | 3 | ✓ |
 | `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **5.73** | 3 | ✓ |
 | `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.88** | 3 | ✓ |
 | `sidebar-ring` / `sidebar` | anel de foco do menu lateral | ring-sidebar-ring | **6.03** | 3 | ✓ |
-| `border` / `card` | divisória e borda do botão outline (decorativa; o rótulo identifica o botão) | border-border | **1.32** | 1.0 | ✓ |
-| `border` / `background` | divisória sobre o fundo | border-border | **1.43** | 1.0 | ✓ |
+| `border sobre card` / `card` | divisória (decorativa); `border` é `branco a 6%` | border-border | **1.19** | 1.0 | ✓ |
+| `border sobre popover` / `popover` | borda de diálogo, menu e painel aberto dentro do cartão (decorativa) | border-border | **1.20** | 1.0 | ✓ |
+| `card-ring sobre card` / `card` | anel de 1 px do cartão do catálogo público (decorativo) | card-ring | **1.19** | 1.0 | ✓ |
+| `border sobre background` / `background` | divisória sobre o fundo | border-border | **1.17** | 1.0 | ✓ |
+| `sidebar-border sobre sidebar` / `sidebar` | traço do trilho da lateral em hover (decorativo) | border-sidebar-border | **1.15** | 1.0 | ✓ |
+| `sidebar-accent` / `sidebar` | fundo do item atual contra a lateral (decorativo: o ponto esmeralda, o peso 500 e o aria-current dizem onde se está) | SidebarMenuButton | **1.14** | 1.0 | ✓ |
+| `sidebar-hover` / `sidebar` | fundo do item em hover contra a lateral (decorativo) | SidebarMenuButton | **1.07** | 1.0 | ✓ |
 | `chart-1` / `card` | escala do gráfico (desde a v7 não marca mais o melhor dia) | Chart | **7.67** | 3 | ✓ |
 | `chart-sales` / `card` | série de vendas, anel do dia (v7) | Chart | **5.72** | 3 | ✓ |
 | `chart-result` / `card` | série do resultado (v7) | Chart | **4.38** | 3 | ✓ |
@@ -135,6 +157,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `muted/60 sobre card` | texto de apoio em linha de tabela em hover | TableRow | **7.61** | 4.5 | ✓ |
 | `muted-foreground` / `accent` | texto de apoio em item de lista em hover/foco | Item, Select, menu | **6.33** | 4.5 | ✓ |
 | `foreground` / `secondary/60 sobre card` | rótulo do botão de contorno no escuro (dark:bg-secondary/60) | Button outline | **12.57** | 7 | ✓ |
+| `input` / `secondary/60 sobre card` | borda do botão de contorno contra o próprio fundo no escuro (dark:bg-secondary/60) | Button outline | **3.06** | 3 | ✓ |
 | `input` / `input/30 sobre card` | borda do campo contra o próprio fundo (dark:bg-input/30) | Input, Select | **2.44** | 1.5 | ✓ |
 | `foreground` / `input/30 sobre card` | texto digitado no campo (dark:bg-input/30) | Input, Select | **10.15** | 7 | ✓ |
 | `muted-foreground` / `input/30 sobre card` | texto de apoio (placeholder) no campo (dark:bg-input/30) | Input, Select | **6.15** | 4.5 | ✓ |
@@ -152,10 +175,20 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `warning` / `popover` | ícone de aviso do toast | Toast | **8.5** | 3 | ✓ |
 | `ring` / `popover` | foco do teclado no toast | Toast | **4.92** | 3 | ✓ |
 | `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.42** | 3 | ✓ |
+| `foreground` / `sidebar` | marca do cabeçalho do celular e item atual da barra de destinos (moldura) | ShellHeader, BottomBar | **16.15** | 7 | ✓ |
+| `sidebar-foreground` / `sidebar` | "?" e seta do menu da loja, no cabeçalho | ShellHeader, StoreMenu | **9.48** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar` | nome da loja no botão do menu do cabeçalho | StoreMenu | **16.15** | 7 | ✓ |
+| `sidebar-accent-foreground` / `sidebar-hover` | "?" e botão da loja do cabeçalho em hover | ShellHeader, StoreMenu | **15.08** | 7 | ✓ |
+| `muted-foreground` / `sidebar` | rótulos da barra de destinos; Termos e Política no pé de Mais (12 px) | BottomBar, AppSidebar | **9.81** | 4.5 | ✓ |
+| `warning` / `warning/10 sobre sidebar` | chip sem conexão e de envio pausado, no cabeçalho | SyncStatus | **8.75** | 4.5 | ✓ |
+| `destructive` / `destructive/15 sobre sidebar` | chip "Atenção", no cabeçalho | SyncStatus | **6.77** | 4.5 | ✓ |
+| `ring` / `sidebar` | foco do teclado no cabeçalho ("?", menu da loja, chip de atenção) | focus-ring | **6.01** | 3 | ✓ |
+| `background` / `foreground` | iniciais da loja no círculo do cabeçalho | StoreMenu | **15.41** | 7 | ✓ |
 
 Notas:
 
-- `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor e escolha usam `--input` (≥ 3:1) ou `--foreground`.
+- `--border` (1,28:1 sobre o cartão e 1,23:1 sobre o fundo, no claro) é **decorativo**; nenhum controle depende dele. Campo, seletor, escolha e botão de contorno usam `--input` (≥ 3:1) ou `--foreground`.
 - O foco do teclado é `--ring` cheio (3,36 a 5,73:1 contra fundo, cartão, menu e hover): é o que conta, o halo dos campos é só reforço.
 - Estados com transparência estão na lista; nenhum cai abaixo da meta.
+- A moldura (lateral e cabeçalho em `--sidebar`) e o painel do conteúdo (`--background`) são superfícies decorativas: a diferença de cor entre as duas não é a marca do limite, que é o anel de 1 px (`--card-ring`) nas bordas esquerda e superior do painel. O chip do cabeçalho sincronizado ou enviando tem fundo próprio (`--card`), medido em `foreground` / `card`.
 - Rampa do mapa de calor (`--chart-heat-1` a `-4`, v7, ainda sem tela): monótona, um matiz, passos de 1,42 / 1,55 / 1,86 (claro) e 1,69 / 1,74 / 1,76 (escuro) entre níveis vizinhos. O nível 1 tem 1,39:1 sobre o cartão no claro: a escala é sequencial e o tom mais claro recua para o fundo de propósito; o dia sem venda não depende dele, porque é outra forma (quadrado vazio com contorno). Fica fora da tabela testada por isso.

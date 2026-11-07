@@ -14,6 +14,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { PHONE_QUERY } from "@/lib/breakpoints";
 import { type MotionLevel, useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -29,7 +30,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/ui/dialog";
-import { PHONE_QUERY } from "@/ui/dialog-history";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -228,7 +228,8 @@ function TextEditor({
   );
   const clear = useCallback(() => onCommit(null), [onCommit]);
   return (
-    <form className="grid gap-2" onSubmit={submit}>
+    // a filter goes in the address once applied: it does not hold the swap of the build (pwa/swap-guard.ts)
+    <form className="grid gap-2" data-swap-ignore="" onSubmit={submit}>
       <Input
         aria-label={field.label}
         autoComplete="off"
@@ -441,6 +442,7 @@ function PhoneEditorContent({
         <Button
           aria-describedby={half ? statusId : undefined}
           aria-disabled={half || undefined}
+          size="xl"
           type="submit"
         >
           Aplicar
@@ -484,6 +486,16 @@ function PillEditor({
   phone,
   value,
 }: PillEditorProps) {
+  const [openings, setOpenings] = useState(0);
+  const [wasEditing, setWasEditing] = useState(isEditing);
+  // an editor reopened while its popup is still leaving stays mounted with the month and the draft of the last opening:
+  // a new key at each opening (by the menu too, which opens it without the popup's own change) gives it the first ones
+  if (wasEditing !== isEditing) {
+    setWasEditing(isEditing);
+    if (isEditing) {
+      setOpenings((count) => count + 1);
+    }
+  }
   const popoverChange = useCallback(
     (open: boolean, details: { reason: string }) =>
       onEditingChange(field, open, details.reason),
@@ -506,7 +518,12 @@ function PillEditor({
       >
         <DialogTrigger render={button}>{content}</DialogTrigger>
         <DialogContent layout="form">
-          <PhoneEditorContent field={field} onApply={commit} value={value} />
+          <PhoneEditorContent
+            field={field}
+            key={openings}
+            onApply={commit}
+            value={value}
+          />
         </DialogContent>
       </Dialog>
     );
@@ -520,7 +537,12 @@ function PillEditor({
         className={POPUP_CLASS[field.type]}
         initialFocus={field.type === "date-range" ? false : undefined}
       >
-        <EditorContent field={field} onCommit={commit} value={value} />
+        <EditorContent
+          field={field}
+          key={openings}
+          onCommit={commit}
+          value={value}
+        />
       </PopoverContent>
     </Popover>
   );
@@ -629,7 +651,7 @@ function FilterPill({
       )}
       <button
         aria-label={removeLabel(field)}
-        className="touch-hit focus-ring grid touch:w-12 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
+        className="touch-hit focus-ring grid touch:w-11 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
         onClick={remove}
         type="button"
       >

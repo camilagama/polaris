@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
+import { replaceFunctionAsOwner, withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -725,16 +726,21 @@ async function run() {
         "newly_locked := false;",
       ],
     ];
+    // `shifter` moves the clock of a row: the owner role, which alone reaches the table
     const probes = [
-      (calls: ReturnType<typeof lockCalls>, key: string) =>
+      (calls: ReturnType<typeof lockCalls>, _shifter: Client, key: string) =>
         probeFifthFailureLocks(calls, key),
-      async (calls: ReturnType<typeof lockCalls>, key: string) => {
+      async (
+        calls: ReturnType<typeof lockCalls>,
+        shifter: Client,
+        key: string
+      ) => {
         await probeFifthFailureLocks(calls, key);
-        await probeReleaseAfterFifteenMinutes(calls, mutationClient, key);
+        await probeReleaseAfterFifteenMinutes(calls, shifter, key);
       },
-      (calls: ReturnType<typeof lockCalls>, key: string) =>
-        probeWindowEnds(calls, mutationClient, key),
-      (calls: ReturnType<typeof lockCalls>, key: string) =>
+      (calls: ReturnType<typeof lockCalls>, shifter: Client, key: string) =>
+        probeWindowEnds(calls, shifter, key),
+      (calls: ReturnType<typeof lockCalls>, _shifter: Client, key: string) =>
         probeLockOfBeginIsReported(calls, key),
     ];
     const mutationClient = await owner.pool.connect();
@@ -749,15 +755,23 @@ async function run() {
         assert.notEqual(mutated, original);
         await mutationClient.query("BEGIN");
         try {
-          await mutationClient.query(mutated);
+          // the mutant is written by the functions' owner role and probed as it, the role that alone reaches the table
+          await replaceFunctionAsOwner(mutationClient, signature, mutated);
           const probe = probes[index];
           assert.ok(probe);
-          await assert.rejects(
-            () => probe(lockCalls(mutationClient), freshKey(`mutant-${index}`)),
-            // an assertion of the probe failed, not a database error of its own
-            (error: unknown) => error instanceof assert.AssertionError,
-            `the probes catch the mutation: ${label}`
-          );
+          await withGateRole(mutationClient, OWNER_ROLE, async () => {
+            await assert.rejects(
+              () =>
+                probe(
+                  lockCalls(mutationClient),
+                  mutationClient,
+                  freshKey(`mutant-${index}`)
+                ),
+              // an assertion of the probe failed, not a database error of its own
+              (error: unknown) => error instanceof assert.AssertionError,
+              `the probes catch the mutation: ${label}`
+            );
+          });
         } finally {
           await mutationClient.query("ROLLBACK");
         }
@@ -767,7 +781,7 @@ async function run() {
           `${label}: the function is back to what the migration made`
         );
         // and the real function still passes the same probe, on a fresh e-mail
-        await probes[index]?.(auth, freshKey(`real-${index}`));
+        await probes[index]?.(auth, ownerClient, freshKey(`real-${index}`));
       }
     } finally {
       mutationClient.release();

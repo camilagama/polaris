@@ -43,9 +43,32 @@ export class WebhookMalformedError extends Error {
  */
 const PROVIDER_RETRY_WINDOW_MS = 30 * 60_000;
 
+/**
+ * How far ahead of the server clock an event may be dated and still count as
+ * recent: ordinary clock drift. Further ahead it is a wrong clock or a
+ * misread date, and holding it as "recent" would refuse every delivery with a
+ * 503 until the clock caught up, long enough for the provider to pause the
+ * webhook before the reconciliation had a chance.
+ */
+const PROVIDER_FUTURE_SKEW_MS = 5 * 60_000;
+
+/** Why an event is outside the retry window: `stale` (too old or unreadable date) or `future`. */
+export type RetryRefusalReason = "future" | "stale";
+
 /** True while an event is recent enough to be refused for a retry. */
 export function withinRetryWindow(occurredAt: Date, now = new Date()): boolean {
-  return now.getTime() - occurredAt.getTime() <= PROVIDER_RETRY_WINDOW_MS;
+  const age = now.getTime() - occurredAt.getTime();
+  return age <= PROVIDER_RETRY_WINDOW_MS && age >= -PROVIDER_FUTURE_SKEW_MS;
+}
+
+/** The closed reason an event is outside the window; an unreadable date counts as `stale`. */
+export function retryRefusalReason(
+  occurredAt: Date,
+  now = new Date()
+): RetryRefusalReason {
+  return occurredAt.getTime() - now.getTime() > PROVIDER_FUTURE_SKEW_MS
+    ? "future"
+    : "stale";
 }
 
 /** A fact with the provider's event ID and the subscription reference it is about. */

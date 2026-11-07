@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { generateKeyPairSync } from "node:crypto";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineProject } from "vitest/config";
@@ -25,6 +27,12 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", {
 });
 const privateJwk = privateKey.export({ format: "jwk" });
 const publicJwk = { ...publicKey.export({ format: "jwk" }), kid: KEY_ID };
+
+// The Worker imports the page's script and sheet, which `build:ui` makes and git does not keep: build them first.
+execFileSync("bun", ["run", "build:ui"], {
+  cwd: fileURLToPath(new URL(".", import.meta.url)),
+  stdio: "inherit",
+});
 
 export default defineProject({
   plugins: [

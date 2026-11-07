@@ -28,6 +28,7 @@ const root = path.resolve(
 );
 
 const sourceRoots = [
+  "apps/admin/src",
   "apps/catalog/src",
   "apps/web/src/server",
   "apps/web/worker",
@@ -239,6 +240,7 @@ describe("alert signals", () => {
     for (const event of [
       "billing_refund_rearm_exhausted",
       "billing_refund_pending_incident_failed",
+      "billing_amount_mismatch_incident_failed",
     ]) {
       const signals = alertSignals.filter((candidate) =>
         (candidate.source.events as readonly string[]).includes(event)
@@ -247,6 +249,25 @@ describe("alert signals", () => {
       expect(signals[0]?.threshold).toEqual({ atLeast: 1, kind: "count" });
       expect(signals[0]?.notify).toBe("wake");
     }
+  });
+
+  it("count the two billing 503s of an unconfirmed provider apart, with the threshold of the reconcile signal", () => {
+    const reconcile = alertSignals.find(
+      (candidate) => candidate.id === "cobranca-reconcile"
+    );
+    const signal = alertSignals.find(
+      (candidate) => candidate.id === "cobranca-provedor-nao-confirmou"
+    );
+
+    expect(signal?.source.events).toEqual(["billing_unavailable_refused"]);
+    expect(signal?.source.where).toContain("previous_checkout_unverified");
+    expect(signal?.source.where).toContain(
+      "previous_renewal_cancel_unverified"
+    );
+    expect(signal?.source.where).not.toContain("billing_provider_unavailable");
+    expect(signal?.threshold).toEqual(reconcile?.threshold);
+    expect(signal?.windowMinutes).toBe(reconcile?.windowMinutes);
+    expect(signal?.notify).toBe("report");
   });
 
   it("have a positive window and a threshold that can fire", () => {

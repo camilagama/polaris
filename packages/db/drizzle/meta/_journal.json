@@ -736,6 +736,118 @@
       "when": 1793109138032,
       "tag": "0105_funil_de_ativacao",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1793135781408,
+      "tag": "0106_chave_unica_da_conta",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1793253478758,
+      "tag": "0107_limite_de_sku_e_valor_de_opcao",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1793378600123,
+      "tag": "0108_tirar_superficies_poc",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1793465700000,
+      "tag": "0109_purge_menores",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1793480000000,
+      "tag": "0110_purge_parado_sem_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1793800693679,
+      "tag": "0111_comandos_de_provedor_do_operador",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1793814632902,
+      "tag": "0112_hash_de_senha_no_postgres",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1793827508047,
+      "tag": "0113_capa_do_produto_no_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1793848300000,
+      "tag": "0114_id_da_concessao_no_diagnostico",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1793869000000,
+      "tag": "0115_admin_list_support_cases_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1793880000000,
+      "tag": "0116_nota_da_guarda_legal",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1793894547470,
+      "tag": "0117_janela_com_renovacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1793905418836,
+      "tag": "0118_valor_da_cobranca_em_vigor",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1793915000000,
+      "tag": "0119_tirar_admin_list_support_cases_4_argumentos",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1793932928034,
+      "tag": "0120_limite_de_revelacoes_por_hora",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1793964218365,
+      "tag": "0121_prazo_dos_pedidos_de_dados_no_banco",
+      "breakpoints": true
     }
   ]
 }

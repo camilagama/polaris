@@ -10,8 +10,8 @@ import { createWooviAdapter } from "./woovi-adapter";
 
 /**
  * The Woovi adapter behind the real webhook route, with the Woovi API and the
- * billing store faked. The payloads follow the shape the sandbox returned
- * (20/10/2026); every value is made up, and the RSA pair is made by the test.
+ * billing store faked. The payloads follow the shape the sandbox returned;
+ * every value is made up, and the RSA pair is made by the test.
  */
 
 const APP_ID = "fake-app-id";

@@ -15,7 +15,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Anonimização de cliente (customer anonymization):** a pessoa sai do cadastro (nome fixo, sem telefone, email nem observações) e o registro fica, para que as vendas ligadas a ele mantenham seus fatos econômicos. Irreversível; distinta de arquivar.<br>
 
-**Caso de privacidade (privacy case):** o fluxo interno de um pedido sobre dado pessoal, do pedido à resolução, com o papel do Polaris (controlador ou operador) determinado antes da decisão. Guarda só códigos, uma referência opaca e uma nota curta; nunca o dado pessoal. É um caso de suporte de um tipo próprio.<br>
+**Caso de privacidade (privacy case):** (no Admin, "atendimento de privacidade") o fluxo interno de um pedido sobre dado pessoal, do pedido à resolução, com o papel do Polaris (controlador ou operador) determinado antes da decisão. Guarda só códigos, uma referência opaca e uma nota curta; nunca o dado pessoal. É um caso de suporte de um tipo próprio.<br>
 
 **Exportação de dados (data export):** a cópia, a pedido do dono, do que a organização cadastrou (JSON, CSV e imagens), montada em segundo plano com a autorização de quem pediu, privada e válida por 24 horas. Nunca é oferecida nem feita pelo encerramento. Distinta do pedido sobre dados da conta (caso de privacidade).<br>
 **Evitar:** backup, para esta cópia (não é restauração do sistema).
@@ -125,7 +125,7 @@ Este glossário é a fonte de verdade para os termos do produto e do domínio. E
 
 **Principal de plataforma:** a pessoa que opera o Polaris, identificada pelo emissor e subject do Cloudflare Access (nunca pelo e-mail). Só entra no Admin se o dono do banco a cadastrou e ela está ativa.
 
-**Caso de suporte:** o motivo registrado pelo qual um operador olha uma organização (suporte ou privacidade); dele pendem os acessos temporários.
+**Caso de suporte:** (no Admin, "atendimento") o motivo registrado pelo qual um operador olha uma organização (suporte ou privacidade); dele pendem os acessos temporários.
 
 **Acesso temporário:** permissão de somente leitura de um operador a uma organização, ligada a um caso aberto, com prazo curto (60 minutos por padrão, de 5 a 240); dar outro acesso é uma nova decisão registrada; é a única porta do Admin para registros do tenant.
 

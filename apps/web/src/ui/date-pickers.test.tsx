@@ -12,7 +12,7 @@ import { DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
 
 /**
- * The markup of the date pickers (t363): the accessible names and the error of the buttons, and the month grid of
+ * The markup of the date pickers: the accessible names and the error of the buttons, and the month grid of
  * the calendar (Portuguese caption and arrows, the chosen day, the disabled days with their reason, the sizes and
  * the focus in the classes). The browser checks (e2e-pwa/ui-date-pickers.e2e.ts) click, type and measure them in
  * the gallery.
@@ -79,6 +79,41 @@ describe("DatePicker", () => {
   });
 });
 
+describe("DatePicker, o erro e a ajuda da tela", () => {
+  it("o erro vem antes da ajuda no aria-describedby; sem erro, só a ajuda", () => {
+    const withError = BUTTON.exec(
+      html(
+        <DatePicker
+          describedBy="ajuda-data"
+          error
+          label="Vencimento"
+          onValueChange={noop}
+          value={null}
+        />
+      )
+    )?.[0];
+    const [errorId, help] = (
+      attribute(withError ?? "", "aria-describedby") ?? ""
+    ).split(" ");
+    expect(errorId).toBeTruthy();
+    expect(help).toBe("ajuda-data");
+    const withoutError = BUTTON.exec(
+      html(
+        <DatePicker
+          describedBy="ajuda-data"
+          label="Vencimento"
+          onValueChange={noop}
+          value={null}
+        />
+      )
+    )?.[0];
+    expect(attribute(withoutError ?? "", "aria-describedby")).toBe(
+      "ajuda-data"
+    );
+    expect(attribute(withoutError ?? "", "aria-invalid")).toBeUndefined();
+  });
+});
+
 describe("DateRangePicker", () => {
   it("vazio: Escolher período", () => {
     const markup = html(
@@ -92,6 +127,40 @@ describe("DateRangePicker", () => {
     expect(attribute(BUTTON.exec(markup)?.[0] ?? "", "aria-label")).toBe(
       "Período, Escolher período"
     );
+  });
+
+  it("erro: ligado ao botão pelo aria-invalid e pelo aria-describedby, antes da ajuda da tela", () => {
+    const markup = html(
+      <DateRangePicker
+        describedBy="ajuda-periodo"
+        error="Escolha o período"
+        label="Período"
+        onValueChange={noop}
+        value={null}
+      />
+    );
+    const button = BUTTON.exec(markup)?.[0] ?? "";
+    expect(attribute(button, "aria-invalid")).toBe("true");
+    const [errorId, help] = (attribute(button, "aria-describedby") ?? "").split(
+      " "
+    );
+    expect(help).toBe("ajuda-periodo");
+    const error = new RegExp(`<div[^>]*\\sid="${errorId}"[^>]*>`).exec(
+      markup
+    )?.[0];
+    expect(error && attribute(error, "role")).toBe("alert");
+    expect(markup).toContain("Escolha o período");
+  });
+
+  it("sem erro: nem aria-invalid nem aria-describedby no botão", () => {
+    const button =
+      BUTTON.exec(
+        html(
+          <DateRangePicker label="Período" onValueChange={noop} value={null} />
+        )
+      )?.[0] ?? "";
+    expect(attribute(button, "aria-invalid")).toBeUndefined();
+    expect(attribute(button, "aria-describedby")).toBeUndefined();
   });
 
   it("um campo só: 01/10 a 24/10, e um dia só com o ano", () => {
@@ -165,6 +234,70 @@ describe("Calendar", () => {
     expect(dayButton(markup, "2026-10-23")).toContain("size-(--cell-size)");
     expect(dayButton(markup, "2026-10-23")).toContain("focus-ring");
     expect(markup).toContain('data-slot="calendar"');
+  });
+});
+
+describe("Calendar, o papel do dia no período", () => {
+  const label = (
+    selected: { from: Date | undefined; to?: Date },
+    iso: string,
+    mode: "range" | "single" = "range"
+  ) => {
+    const markup = html(
+      mode === "range" ? (
+        <Calendar
+          defaultMonth={OCTOBER_24}
+          mode="range"
+          selected={selected}
+          today={OCTOBER_24}
+        />
+      ) : (
+        <Calendar
+          defaultMonth={OCTOBER_24}
+          mode="single"
+          selected={selected.from}
+          today={OCTOBER_24}
+        />
+      )
+    );
+    return attribute(dayButton(markup, iso), "aria-label");
+  };
+  const first = parseIsoDate("2026-10-01") as Date;
+  const tenth = parseIsoDate("2026-10-10") as Date;
+
+  it("as pontas dizem o papel antes de selecionado e o meio não diz nada", () => {
+    const range = { from: first, to: OCTOBER_24 };
+    expect(label(range, "2026-10-01")).toBe(
+      "quinta-feira, 1 de outubro de 2026, início do período, selecionado"
+    );
+    expect(label(range, "2026-10-24")).toBe(
+      "Hoje, sábado, 24 de outubro de 2026, fim do período, selecionado"
+    );
+    expect(label(range, "2026-10-10")).toBe(
+      "sábado, 10 de outubro de 2026, selecionado"
+    );
+    expect(label(range, "2026-10-25")).toBe("domingo, 25 de outubro de 2026");
+  });
+
+  it("início igual ao fim: início e fim do período", () => {
+    expect(label({ from: tenth, to: tenth }, "2026-10-10")).toBe(
+      "sábado, 10 de outubro de 2026, início e fim do período, selecionado"
+    );
+    expect(label({ from: OCTOBER_24, to: OCTOBER_24 }, "2026-10-24")).toBe(
+      "Hoje, sábado, 24 de outubro de 2026, início e fim do período, selecionado"
+    );
+  });
+
+  it("só o início marcado: início do período, nunca fim", () => {
+    expect(label({ from: tenth }, "2026-10-10")).toBe(
+      "sábado, 10 de outubro de 2026, início do período, selecionado"
+    );
+  });
+
+  it("o seletor de um dia não diz papel", () => {
+    expect(label({ from: tenth }, "2026-10-10", "single")).toBe(
+      "sábado, 10 de outubro de 2026, selecionado"
+    );
   });
 });
 

@@ -190,6 +190,7 @@ export async function listSupportCases(
   client: AdminQueryable,
   input: {
     after: string | null;
+    kind?: string | null;
     limit: number;
     organizationId: string | null;
     status: string | null;
@@ -197,8 +198,14 @@ export async function listSupportCases(
 ): Promise<SupportCasePage> {
   const page = await call<SupportCasePage>(
     client,
-    "public.admin_list_support_cases($1, $2, $3, $4)",
-    [input.status, input.organizationId, input.limit, input.after]
+    "public.admin_list_support_cases($1, $2, $3, $4, $5)",
+    [
+      input.status,
+      input.organizationId,
+      input.limit,
+      input.after,
+      input.kind ?? null,
+    ]
   );
   return page ?? { cases: [], next: null };
 }
@@ -377,7 +384,7 @@ export function dismissClosureNotice(
 }
 
 /**
- * Places a legal hold on the case's organization (ADR 0081, decision of 18/10/2026): while it is in force the
+ * Places a legal hold on the case's organization (ADR 0081): while it is in force the
  * purge is neither scheduled nor run. `storageTouched` tells that a scheduled purge already removed objects from
  * the storage (they do not come back). The operator names the organization (a confirmation) and a review date
  * (in the future, at most 366 days away: when it passes the hold stays and is listed as due for review). Placing
@@ -406,7 +413,6 @@ export function placeOrganizationLegalHold(
 export interface LegalHoldSummary {
   id: string;
   organizationId: string;
-  organizationName: string;
   placedAt: string;
   placedBy: string;
   reviewAt: string;
@@ -422,7 +428,10 @@ export interface LegalHoldPage {
   next: string | null;
 }
 
-/** The legal holds in force, newest first, read only: a purge that waits for a hold has one to show. */
+/**
+ * The legal holds in force, newest first, read only: a purge that waits for a hold has one to show. The
+ * organization is named by its ID only, never by its name.
+ */
 export async function listOrganizationLegalHolds(
   client: AdminQueryable,
   input: { after: string | null; limit: number }
@@ -466,13 +475,21 @@ export type BillingAuditEvent =
   | "billing.entitlement_grant_requested"
   | "billing.entitlement_granted"
   | "billing.entitlement_revoke_requested"
-  | "billing.entitlement_revoked";
+  | "billing.entitlement_revoked"
+  | "billing.operator_refund_recorded"
+  | "billing.operator_refund_requested"
+  | "billing.operator_renewal_cancel_recorded"
+  | "billing.operator_renewal_cancel_requested";
 
 /**
  * Records a step of a billing command in the administrative audit and returns
  * the organization of the open case. The command itself is carried out by the
  * billing role (the only writer of billing): the record of the request is made
- * first, so nothing is done that was not first written down.
+ * first, so nothing is done that was not first written down. The operator's
+ * provider commands name their command ID (a UUID) as the entity, and the
+ * request of a refund is refused past 3 distinct commands of the operator in
+ * the last hour (`operator_refund_rate_limited`, nothing recorded); a command
+ * is distinct by case, organization and command ID.
  */
 export function auditBillingCommand(
   client: AdminQueryable,
@@ -496,6 +513,7 @@ export function auditBillingCommand(
  */
 export interface PrivacyCaseSummary {
   dueAt: string;
+  dueInDays: number | null;
   id: string;
   openedAt: string;
   organizationId: string;

@@ -20,7 +20,7 @@ import {
 } from "./sale-history-model";
 
 /**
- * The history on the filter bar (t391). What the shopkeeper does on the bar (apply a filter, take a pill out, clear
+ * The history on the filter bar. What the shopkeeper does on the bar (apply a filter, take a pill out, clear
  * all, pick a shortcut of the period) is the bar's own list of rules (`filter-bar-model.ts`, tested there) turned into
  * the filters the page keeps and the list request; that turn is checked here without a browser. The touches
  * themselves (menu, editors, targets, no `motion` on the phone) are in e2e/history-period.e2e.ts.

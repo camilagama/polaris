@@ -33,7 +33,7 @@ import { ActionNotice, ExpenseTextField } from "../expenses/expense-fields";
 import { formatMonthLabel } from "../expenses/expense-model";
 import type { Feedback } from "../expenses/use-command-runner";
 import { focusLater } from "../lib/focus";
-import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { isDraftChanged, useHoldSwap } from "../lib/unsent-work";
 import { LimitLeaveScope } from "../subscription/limit-help";
 import { DateRangeField, describedBy, FieldTexts } from "../sales/sale-fields";
 import {
@@ -275,7 +275,7 @@ function GoalCreateContent({
     () => onDraftChange(changed ? draft : null),
     [changed, draft, onDraftChange]
   );
-  useReportUnsentWork(changed);
+  useHoldSwap(changed);
 
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.currentTarget;
@@ -426,7 +426,7 @@ export function GoalEditForm({
   const [name, setName] = useState(goal.name ?? "");
   const [target, setTarget] = useState(goalTargetInputText(goal));
   const [errors, setErrors] = useState<GoalEditErrors>({});
-  useReportUnsentWork(
+  useHoldSwap(
     name !== (goal.name ?? "") || target !== goalTargetInputText(goal)
   );
 

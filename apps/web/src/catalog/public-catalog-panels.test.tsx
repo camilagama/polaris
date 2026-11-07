@@ -127,6 +127,25 @@ describe("the product list", () => {
     expect(html).toContain("Mostrar no catálogo");
   });
 
+  it("draws 50 products at a time, with Carregar mais, and counts with a thousands separator", () => {
+    const many = Array.from({ length: 1248 }, (_, i) =>
+      product(`p${i}`, `Peça ${i}`)
+    );
+    const html = render({ products: many, shown: new Set(["p0"]) });
+    expect(html).toContain("1 de 1.248 produtos ativos escolhidos");
+    expect(html.match(/Mostrar no catálogo|Tirar do catálogo/g)).toHaveLength(
+      50
+    );
+    expect(html).toContain("Peça 49<");
+    expect(html).not.toContain("Peça 50<");
+    expect(html).toContain("Carregar mais");
+    expect(html).toContain('aria-label="Buscar produto"');
+  });
+
+  it("does not offer more when every product fits in one page", () => {
+    expect(render()).not.toContain("Carregar mais");
+  });
+
   it("says so when there are no products", () => {
     expect(render({ products: [], shown: new Set() })).toContain(
       "ainda não tem produtos ativos"

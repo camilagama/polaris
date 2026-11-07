@@ -1,18 +1,27 @@
 import type { ProductVariantOptionName } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { planRoom } from "../subscription/limit-help-model";
 import {
+  ALL_COMBINATIONS_PRESENT,
+  addAllCombinations,
+  addAllCombinationsLabel,
   clearDefaultSkuLabel,
+  combinationCap,
   clearedDefaultSkuNotice,
   duplicateSkuMessage,
   emptyConfigurationDraft,
   isConfigurationDraftEmpty,
   isDuplicateSkuError,
   MAX_VARIANTS,
+  missingCombinationCount,
+  missingCombinations,
   optionLabel,
   optionValuesError,
+  overCapMessage,
   parseOptionValues,
   productOptionValues,
   selectedOptionNames,
+  skuLengthError,
   validateVariantDrafts,
   variantErrorMessage,
   variantLabel,
@@ -26,6 +35,7 @@ const refusal = (code: string, reason?: string) =>
   Object.assign(new Error(code), {
     code,
     ...(reason ? { data: { reason } } : {}),
+    ...(code === "SERVICE_UNAVAILABLE" ? { status: 503 } : {}),
   });
 
 describe("valores das opções, um por linha", () => {
@@ -38,22 +48,90 @@ describe("valores das opções, um por linha", () => {
   });
 
   it("pede ao menos um valor", () => {
-    expect(optionValuesError([])).toBe(
+    expect(optionValuesError("")).toBe(
       "Informe ao menos um valor, um por linha."
     );
   });
 
   it("recusa repetidos sem diferenciar maiúsculas, e aceita valores distintos", () => {
-    expect(optionValuesError(["Azul", "azul"])).toBe(
+    expect(optionValuesError("Azul\nazul")).toBe(
       "Remova valores repetidos nesta opção."
     );
-    expect(optionValuesError(["Azul", "Preta"])).toBeNull();
+    expect(optionValuesError("Azul\nPreta")).toBeNull();
+  });
+
+  it("aceita 80 caracteres por valor, contados como o domínio (um emoji é um), e diz quantos tem o mais longo", () => {
+    const emoji = "\u{1F600}";
+    expect(
+      optionValuesError(`${"a".repeat(80)}\n${emoji.repeat(80)}`)
+    ).toBeNull();
+    expect(optionValuesError(`P\n${"a".repeat(91)}`)).toBe(
+      "Use até 80 caracteres por valor. A linha 2 tem 91."
+    );
+    expect(optionValuesError(emoji.repeat(81))).toBe(
+      "Use até 80 caracteres por valor. A linha 1 tem 81."
+    );
+  });
+
+  it("diz o número da linha como a pessoa vê, contando linhas em branco e quebras do Windows", () => {
+    expect(optionValuesError(`Azul\r\n\r\n${"a".repeat(99)}`)).toBe(
+      "Use até 80 caracteres por valor. A linha 3 tem 99."
+    );
+  });
+
+  it("com várias linhas longas, lista quais passam do limite; acima de três, as três primeiras e quantas mais", () => {
+    const long = "a".repeat(81);
+    const lines = (longAt: number[]) =>
+      Array.from({ length: 9 }, (_, index) =>
+        longAt.includes(index + 1) ? long : `v${index}`
+      ).join("\n");
+    expect(optionValuesError(lines([2, 5]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 2 e 5 passam de 80."
+    );
+    expect(optionValuesError(lines([2, 5, 7]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 2, 5 e 7 passam de 80."
+    );
+    expect(optionValuesError(lines([1, 2, 5, 7]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 1, 2, 5 e mais 1 passam de 80."
+    );
+    expect(optionValuesError(lines([1, 2, 3, 4, 5, 6]))).toBe(
+      "Use até 80 caracteres por valor. As linhas 1, 2, 3 e mais 3 passam de 80."
+    );
+  });
+
+  it("um valor longo desliga o salvar e diz em qual opção, sem tirar o que foi digitado", () => {
+    const lines = { color: `Azul\n${"a".repeat(81)}`, model: "", size: "P" };
+    const result = validateVariantDrafts(
+      ["color", "size"],
+      productOptionValues(lines),
+      [{ values: { color: "Azul", size: "P" } }]
+    );
+    expect(result.canSubmit).toBe(false);
+    expect(result.tooLongOptions).toEqual(["color"]);
+    expect(productOptionValues(lines).color).toEqual(["Azul", "a".repeat(81)]);
   });
 
   it("lê as três opções de uma vez", () => {
     expect(
       productOptionValues({ color: "Azul\nPreta", model: "", size: "P" })
     ).toEqual({ color: ["Azul", "Preta"], model: [], size: ["P"] });
+  });
+});
+
+describe("tamanho do SKU", () => {
+  it("aceita 64 caracteres depois de aparar e diz a contagem de agora acima disso", () => {
+    expect(skuLengthError(` ${"A".repeat(64)} `)).toBeNull();
+    expect(skuLengthError("A".repeat(71))).toBe(
+      "Use até 64 caracteres. Agora são 71."
+    );
+  });
+
+  it("conta caracteres como o domínio: 64 emojis cabem, 65 não", () => {
+    const emoji = "\u{1F600}";
+    expect(skuLengthError(emoji.repeat(64))).toBeNull();
+    expect(skuLengthError(emoji.repeat(65))).toBe(
+      "Use até 64 caracteres. Agora são 65."
+    );
   });
 });
 
@@ -250,9 +328,42 @@ describe("mensagens de erro das variantes", () => {
     ).toBe(
       "O produto mudou ou as variantes já foram configuradas. Confira as variantes e tente novamente."
     );
-    expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE"))).toContain(
-      "temporariamente indisponível"
+    // saving, the server's cut may have saved: never "unavailable"
+    expect(
+      variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "platform_cut"))
+    ).toContain("O servidor está ocupado e não confirmou");
+    expect(
+      variantErrorMessage(
+        refusal("SERVICE_UNAVAILABLE", "platform_cut"),
+        "as variantes"
+      )
+    ).toContain("temporariamente indisponível");
+    // the Worker's own 503 may have been saved too: the write says so, the read keeps its text
+    expect(
+      variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "server_busy"))
+    ).toBe(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
     );
+    expect(
+      variantErrorMessage(
+        refusal("SERVICE_UNAVAILABLE", "server_busy"),
+        "as variantes"
+      )
+    ).toContain("temporariamente indisponível");
+    // a 503 of another reason is the same doubt on a write, and the read keeps its text
+    expect(variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "other"))).toBe(
+      "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+    );
+    expect(
+      variantErrorMessage(
+        refusal("SERVICE_UNAVAILABLE", "other"),
+        "as variantes"
+      )
+    ).toContain("temporariamente indisponível");
+    // the Worker's own 503 is no cut of the platform
+    expect(
+      variantErrorMessage(refusal("SERVICE_UNAVAILABLE", "server_busy"))
+    ).not.toContain("ocupado");
     expect(variantErrorMessage(new Error("rede"))).toBe(
       "Não foi possível carregar ou salvar as variantes. Tente novamente."
     );
@@ -317,6 +428,210 @@ describe("the SKU the warning's button erases", () => {
   it("the notice after the action names it too", () => {
     expect(clearedDefaultSkuNotice("ABC-123")).toBe(
       'SKU "ABC-123" apagado da variante padrão.'
+    );
+  });
+});
+
+describe("Adicionar todas as combinações", () => {
+  const colorAndSize: ProductVariantOptionName[] = ["color", "size"];
+  const values = productOptionValues({
+    color: "Preta\nBranca\nAzul",
+    model: "",
+    size: "P\nM\nG\nGG",
+  });
+  const productCap = combinationCap(null);
+
+  it("lists the cartesian product in the order of the options and of the lines", () => {
+    const missing = missingCombinations(colorAndSize, values, []);
+    expect(missing).toHaveLength(12);
+    expect(missing.slice(0, 5).map((variant) => variant.values)).toEqual([
+      { color: "Preta", size: "P" },
+      { color: "Preta", size: "M" },
+      { color: "Preta", size: "G" },
+      { color: "Preta", size: "GG" },
+      { color: "Branca", size: "P" },
+    ]);
+  });
+
+  it("follows the fixed order of the options, not the order they were ticked", () => {
+    const names = selectedOptionNames(["size", "model", "color"]);
+    const missing = missingCombinations(
+      names,
+      productOptionValues({ color: "Azul", model: "Slim\nReta", size: "M" }),
+      []
+    );
+    expect(missing.map((variant) => variant.values)).toEqual([
+      { color: "Azul", model: "Slim", size: "M" },
+      { color: "Azul", model: "Reta", size: "M" },
+    ]);
+  });
+
+  it("skips the combinations the list already has, in any case and with spaces", () => {
+    const existing = [
+      { values: { color: "preta", size: " m " } },
+      { values: { color: "Azul", size: "GG" } },
+    ];
+    const result = addAllCombinations(
+      colorAndSize,
+      values,
+      existing,
+      productCap
+    );
+    expect(result.kind).toBe("added");
+    if (result.kind !== "added") {
+      return;
+    }
+    expect(result.variants).toHaveLength(12);
+    expect(result.variants.slice(0, 2)).toEqual(existing);
+    const keys = result.variants.map((variant) =>
+      `${variant.values.color}|${variant.values.size}`.toLowerCase().trim()
+    );
+    expect(keys).not.toContain("preta|m");
+    expect(
+      validateVariantDrafts(
+        colorAndSize,
+        values,
+        result.variants.map((variant, index) =>
+          index === 0 ? { values: { color: "Preta", size: "M" } } : variant
+        )
+      ).canSubmit
+    ).toBe(true);
+  });
+
+  it("keeps a row still missing a value and adds every combination after it", () => {
+    const result = addAllCombinations(
+      colorAndSize,
+      values,
+      [{ values: { color: "Preta", size: "" } }],
+      productCap
+    );
+    expect(result.kind === "added" && result.variants.length).toBe(13);
+  });
+
+  it("says when every combination is already in the list", () => {
+    const all = missingCombinations(colorAndSize, values, []);
+    expect(addAllCombinations(colorAndSize, values, all, productCap)).toEqual({
+      kind: "nothing_new",
+    });
+    expect(ALL_COMBINATIONS_PRESENT).toBe(
+      "Todas as combinações já estão na lista."
+    );
+  });
+
+  it("adds nothing past the product's limit of 50, not even the ones that fit (AC-1)", () => {
+    const many = productOptionValues({
+      color: Array.from({ length: 6 }, (_, index) => `Cor ${index}`).join("\n"),
+      model: "",
+      size: Array.from({ length: 9 }, (_, index) => `T${index}`).join("\n"),
+    });
+    const existing = [{ values: { color: "Cor 0", size: "T0" } }];
+    const result = addAllCombinations(colorAndSize, many, existing, productCap);
+    expect(result).toEqual({
+      cap: { max: MAX_VARIANTS, source: "product" },
+      kind: "over_cap",
+      total: 54,
+    });
+    expect(overCapMessage(54, productCap)).toBe(
+      "Seriam 54 combinações e o limite é 50 por produto. Nenhuma foi adicionada."
+    );
+  });
+
+  it("fits exactly at the cap", () => {
+    const fifty = productOptionValues({
+      color: Array.from({ length: 5 }, (_, index) => `Cor ${index}`).join("\n"),
+      model: "",
+      size: Array.from({ length: 10 }, (_, index) => `T${index}`).join("\n"),
+    });
+    const result = addAllCombinations(colorAndSize, fifty, [], productCap);
+    expect(result.kind === "added" && result.variants.length).toBe(50);
+  });
+
+  it("caps by the room of the plan, counting the default variant the configuration replaces", () => {
+    const plan = (variants: number | null, used: number) =>
+      combinationCap(
+        planRoom({
+          limits: { goals: 1, images: 50, variants },
+          usage: { goals: 0, images: 0, variants: used },
+        })
+      );
+    expect(plan(50, 40)).toEqual({ max: 11, source: "plan" });
+    expect(plan(50, 50)).toEqual({ max: 1, source: "plan" });
+    expect(plan(50, 70)).toEqual({ max: 1, source: "plan" });
+    expect(plan(2000, 10)).toEqual({ max: MAX_VARIANTS, source: "product" });
+    expect(plan(50, 1)).toEqual({ max: MAX_VARIANTS, source: "product" });
+    expect(plan(50, 2)).toEqual({ max: 49, source: "plan" });
+    expect(plan(null, 900)).toEqual({ max: MAX_VARIANTS, source: "product" });
+    expect(combinationCap(null)).toEqual({
+      max: MAX_VARIANTS,
+      source: "product",
+    });
+
+    const cap = plan(50, 40);
+    const result = addAllCombinations(colorAndSize, values, [], cap);
+    expect(result).toEqual({ cap, kind: "over_cap", total: 12 });
+    expect(overCapMessage(12, cap)).toBe(
+      "Seriam 12 combinações e seu plano deixa este produto com até 11. Nenhuma foi adicionada."
+    );
+  });
+
+  it("only returns a new draft: the list it was given is not changed (nothing is saved before Salvar)", () => {
+    const existing = [{ values: { color: "Preta", size: "P" } }];
+    const frozen = Object.freeze([...existing]);
+    const result = addAllCombinations(
+      colorAndSize,
+      values,
+      frozen as never,
+      productCap
+    );
+    expect(frozen).toEqual(existing);
+    expect(result.kind === "added" && result.variants).not.toBe(frozen);
+  });
+
+  it("counts without listing: a million combinations pasted are counted, refused and never built", () => {
+    const hundred = Array.from({ length: 100 }, (_, n) => `V${n}`).join("\n");
+    const huge = productOptionValues({
+      color: hundred,
+      model: hundred,
+      size: hundred,
+    });
+    const all = selectedOptionNames(["color", "model", "size"]);
+    expect(missingCombinationCount(all, huge, [])).toBe(1_000_000);
+    expect(addAllCombinations(all, huge, [], productCap)).toEqual({
+      cap: productCap,
+      kind: "over_cap",
+      total: 1_000_000,
+    });
+  });
+
+  it("counts a listed row only when its values are among the typed ones, in any case", () => {
+    expect(
+      missingCombinationCount(colorAndSize, values, [
+        { values: { color: "PRETA", size: "gg" } },
+        // a value that left the textarea: the row is not one of the combinations
+        { values: { color: "Verde", size: "P" } },
+        { values: { color: "Azul", size: "" } },
+      ])
+    ).toBe(11);
+  });
+
+  it("names the count it adds on the button", () => {
+    expect(addAllCombinationsLabel(12)).toBe(
+      "Adicionar todas as combinações (12)"
+    );
+    expect(addAllCombinationsLabel(0)).toBe("Adicionar todas as combinações");
+  });
+
+  it("has nothing to list without a ready option", () => {
+    expect(missingCombinations([], values, [])).toEqual([]);
+    expect(
+      validateVariantDrafts(
+        ["color"],
+        productOptionValues({ color: "Azul\nazul", model: "", size: "" }),
+        []
+      ).canGenerate
+    ).toBe(false);
+    expect(validateVariantDrafts(colorAndSize, values, []).canGenerate).toBe(
+      true
     );
   });
 });

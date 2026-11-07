@@ -13,8 +13,8 @@ import {
 } from "../../lib/legal-acceptance";
 import { orpcClient } from "../../lib/orpc";
 import { getUpdateStore } from "../../pwa/runtime";
-import { wipeLocalStore } from "../local-store";
-import { purgeNamespace } from "../logout-purge";
+import { purgeNamespace, wipeNamespaceCollections } from "../logout-purge";
+import { anyOutboxOnDisk } from "../outbox/outbox-on-disk";
 import { localNamespace } from "../namespace";
 import { openBrowserDataChannel } from "./data-channel";
 import { OFFLINE_RUNTIME_ENABLED } from "./enabled";
@@ -75,10 +75,9 @@ function createBrowserRuntime(): OfflineRuntime {
     namespaceFor: localNamespace,
     openDataChannel: openBrowserDataChannel,
     openStores: openRuntimeStores,
+    outboxOnDisk: anyOutboxOnDisk,
     purge: purgeNamespace,
-    wipeCollections: async (namespace) => {
-      await wipeLocalStore(namespace);
-    },
+    wipeCollections: wipeNamespaceCollections,
   });
 }
 

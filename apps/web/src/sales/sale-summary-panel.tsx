@@ -1,10 +1,13 @@
+import PackagePlusIcon from "lucide-react/dist/esm/icons/package-plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type ReactNode, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
-import { Button } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
+import { NoBreakMoney } from "@/ui/hidden-values";
+import { stockEntryHref } from "../inventory/stock-entry-link";
 import { focusLater } from "../lib/focus";
 import {
   type FeeLine,
@@ -81,7 +84,10 @@ export function Money({
   const number = text.replace(CURRENCY_PREFIX, "");
   return (
     <span
-      className={cn("inline-flex items-baseline gap-1 tabular-nums", className)}
+      className={cn(
+        "inline-flex items-baseline gap-1 whitespace-nowrap tabular-nums",
+        className
+      )}
     >
       <span className="font-medium text-muted-foreground text-xs">R$</span>
       <span>{number}</span>
@@ -97,7 +103,7 @@ export function FeeValue({ line }: { line: FeeLine }) {
     <span
       className={cn(line.tone === "not_applicable" && "text-muted-foreground")}
     >
-      {line.text}
+      <NoBreakMoney text={line.text} />
     </span>
   );
 }
@@ -119,13 +125,20 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
  */
 export function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
   return (
-    <section aria-labelledby="sale-preview-title" className="grid gap-2">
-      <h3 className="font-medium" id="sale-preview-title">
-        Prévia de taxas e prazo
-      </h3>
-      <p className="text-muted-foreground text-support">
-        O servidor recalcula ao confirmar.
-      </p>
+    <section
+      aria-labelledby={preview ? "sale-preview-title" : undefined}
+      className="grid gap-2"
+    >
+      {preview ? (
+        <>
+          <h3 className="font-medium" id="sale-preview-title">
+            Prévia de taxas e prazo
+          </h3>
+          <p className="text-muted-foreground text-support">
+            O servidor recalcula ao confirmar.
+          </p>
+        </>
+      ) : null}
       <div aria-atomic="true" aria-live="polite" className="grid">
         {preview ? (
           <dl className="grid gap-2 text-support">
@@ -162,11 +175,7 @@ export function FeePreviewDetails({ preview }: { preview: FeePreview | null }) {
               }
             />
           </dl>
-        ) : (
-          <p className="text-muted-foreground text-support">
-            Complete itens, pagamento e perfil para ver a prévia.
-          </p>
-        )}
+        ) : null}
       </div>
     </section>
   );
@@ -201,6 +210,22 @@ function FailureNotice({
         <TriangleAlertIcon aria-hidden="true" />
         <AlertDescription className="grid min-w-0 justify-items-start gap-2">
           <p className="mb-0!">{submission.failure.message}</p>
+          {submission.failure.entry === null ? null : (
+            <a
+              className={cn(
+                buttonVariants({ size: "sm", variant: "outline" }),
+                "h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
+              )}
+              href={stockEntryHref(submission.failure.entry.variantId)}
+            >
+              <PackagePlusIcon aria-hidden="true" data-icon="inline-start" />
+              Dar entrada no estoque
+              <span className="sr-only">
+                {" "}
+                de {submission.failure.entry.label}
+              </span>
+            </a>
+          )}
           {submission.failure.refreshData ? (
             <Button
               className="h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
@@ -272,7 +297,7 @@ function FailureNotice({
                 </Button>
               </>
             ) : null}
-            {/* the safe button is the submit button below (the bar under 900 px): it comes first, the discard last */}
+            {/* the safe button is the submit button below (the bar in one column): it comes first, the discard last */}
             <p className="text-foreground">
               Para repetir a mesma venda, toque em “Tentar novamente (seguro)”,
               abaixo. Repetir é seguro.
@@ -331,7 +356,7 @@ export function SummaryPanel({
   const failureRef = useRef<HTMLDivElement>(null);
   const failed = submission.phase === "failed" || submission.phase === "locked";
   useEffect(() => {
-    // Below 900 px the notice sits far above the bar that was tapped: bring it to the person, unless something
+    // In one column the notice sits far above the bar that was tapped: bring it to the person, unless something
     // else took the focus meanwhile (the session notice of a 401, a field).
     if (!failed) {
       return;
@@ -351,7 +376,7 @@ export function SummaryPanel({
   return (
     <aside
       aria-labelledby="sale-summary-title"
-      className="min-w-0 min-[900px]:sticky min-[900px]:top-4 min-[900px]:self-start"
+      className="@[44rem]/sale:sticky @[44rem]/sale:top-4 min-w-0 @[44rem]/sale:self-start"
     >
       <Card className="gap-0 py-0">
         <CardContent className="grid gap-3 py-(--card-spacing)">
@@ -368,9 +393,6 @@ export function SummaryPanel({
                   value={row.value}
                 />
               ))}
-              {rows.length === 1 ? (
-                <LeaderRow label="Ajustes" value="nenhum" />
-              ) : null}
             </dl>
           ) : (
             <p className="text-muted-foreground text-support">
@@ -378,14 +400,18 @@ export function SummaryPanel({
             </p>
           )}
           <FieldError>{errors[formFieldKeys.totals]}</FieldError>
-          <dl className="grid gap-2 text-support">
-            <DetailRow
-              label="Data e hora da venda"
-              value={evaluation.dateText}
-            />
-            <DetailRow label="Pagamento" value={evaluation.methodText} />
-            {/* with the preview, the profile is its first line */}
-            {evaluation.feePreview ? null : (
+          {/* only what was chosen: a typed date, the method, the profile (with the preview, its first line) */}
+          <dl className="grid gap-2 text-support empty:hidden">
+            {evaluation.occurredAtOverride === null ? null : (
+              <DetailRow
+                label="Data e hora da venda"
+                value={evaluation.dateText}
+              />
+            )}
+            {evaluation.methodChosen ? (
+              <DetailRow label="Pagamento" value={evaluation.methodText} />
+            ) : null}
+            {evaluation.feePreview || !evaluation.profileChosen ? null : (
               <DetailRow
                 label="Perfil de pagamento"
                 value={evaluation.profileText}
@@ -438,12 +464,12 @@ export function SummaryPanel({
               submission={submission}
             />
           </div>
-          {/* below 900 px the button lives in the bar fixed at the bottom (SubmitBar) */}
+          {/* in one column the button lives in the bar fixed at the bottom (SubmitBar) */}
           <Button
             aria-busy={isSubmitting(submission) || undefined}
-            className="w-full max-[899.98px]:hidden"
+            className="@[44rem]/sale:inline-flex hidden w-full"
             disabled={isSubmitting(submission)}
-            size="lg"
+            size="xl"
             type="submit"
           >
             {submitButtonLabel(submission, offline)}
@@ -464,15 +490,16 @@ interface SubmitBarProps {
 }
 
 /**
- * The total and the button at the bottom of the screen below 900 px. It is sticky inside the form, not fixed to the
- * window: it never covers a field of the form with the keyboard open, and it rests at the end of the form. Its
- * background is opaque (U-19): a translucent one let an error behind it show through and read as noise; the page
- * keeps `scroll-padding-bottom` for it (styles/index.css), so a focused field or error scrolls above it.
+ * The total and the button at the bottom of the screen in one column (the sale container under 44 rem). It is sticky
+ * inside the form, not fixed to the window: it never covers a field of the form with the keyboard open, and it rests at
+ * the end of the form. Its background is opaque (U-19): a translucent one let an error behind it show through and read
+ * as noise; what takes the focus inside the form keeps a `scroll-margin-bottom` for it (styles/index.css), so a
+ * focused field or error scrolls above it.
  */
 export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
   return (
     <div
-      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 flex items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[900px]:hidden"
+      className="sticky bottom-[var(--app-bottom-bar,0rem)] z-10 flex @[44rem]/sale:hidden items-center justify-between gap-3 border-border border-t bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       data-submit-bar=""
     >
       <div className="grid min-w-0 shrink-0">
@@ -488,9 +515,9 @@ export function SubmitBar({ offline, submission, summary }: SubmitBarProps) {
       </div>
       <Button
         aria-busy={isSubmitting(submission) || undefined}
-        className="h-auto min-h-ctl-lg min-w-0 shrink whitespace-normal py-1.5"
+        className="h-auto min-h-ctl-xl min-w-0 shrink whitespace-normal py-1.5"
         disabled={isSubmitting(submission)}
-        size="lg"
+        size="xl"
         type="submit"
       >
         {submitButtonLabel(submission, offline)}

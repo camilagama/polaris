@@ -1,4 +1,4 @@
-// The color tokens of Polaris have ONE source that someone edits: apps/web/src/styles/theme.css (OKLCH, ADR 0103,
+// The color tokens of Polaris have ONE source that someone edits: packages/ui/src/theme.css (OKLCH, ADR 0103,
 // decision 3, DESIGN.md). Two places cannot read it at run time, so this script writes what they need:
 //   - the public catalog (plain CSS, no Tailwind): apps/catalog/src/tokens.generated.css, the same variables, light and
 //     dark;
@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const repo = new URL("../", import.meta.url);
-const THEME = "apps/web/src/styles/theme.css";
+const THEME = "packages/ui/src/theme.css";
 export const CATALOG_OUTPUT = "apps/catalog/src/tokens.generated.css";
 export const EMAIL_OUTPUT = "apps/web/src/server/email-colors.generated.ts";
 export const MANIFEST_OUTPUT = "apps/web/public/manifest.webmanifest";

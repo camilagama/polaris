@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_PRODUCT_OPTION_VALUE_LENGTH,
   MAX_PRODUCT_VARIANTS,
   normalizeProductVariantConfiguration,
   ProductVariantConfigurationError,
@@ -115,6 +116,29 @@ describe("product variant configuration rules", () => {
         variants: [...variants, { values: { model: "Modelo 51" } }],
       })
     ).toThrow(ProductVariantConfigurationError);
+  });
+
+  it("accepts an option value of 80 code points after the trim, emojis included, and refuses 81", () => {
+    const configure = (value: string) =>
+      normalizeProductVariantConfiguration({
+        options: [{ name: "model", values: [value] }],
+        variants: [{ values: { model: value } }],
+      });
+    const emoji = "\u{1F600}";
+
+    expect(MAX_PRODUCT_OPTION_VALUE_LENGTH).toBe(80);
+    expect(configure(` ${"a".repeat(80)} `).options[0]?.values).toEqual([
+      "a".repeat(80),
+    ]);
+    expect(configure(emoji.repeat(80)).options[0]?.values).toEqual([
+      emoji.repeat(80),
+    ]);
+    expect(() => configure("a".repeat(81))).toThrow(
+      ProductVariantConfigurationError
+    );
+    expect(() => configure(emoji.repeat(81))).toThrow(
+      ProductVariantConfigurationError
+    );
   });
 
   it("requires at least one selected option and one explicit combination", () => {

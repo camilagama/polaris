@@ -24,7 +24,7 @@ function emit(): void {
   }
 }
 
-function subscribe(listener: () => void): () => void {
+export function subscribeUnsentWork(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
@@ -71,8 +71,12 @@ export function useUnsentWorkScope(): [UnsentWorkReport, boolean] {
   return useMemo(() => [report, sources.size > 0], [report, sources]);
 }
 
-/** A screen's own sign that its form was changed and not sent. It clears when the screen leaves. */
-export function useReportUnsentWork(dirty: boolean): void {
+/**
+ * A screen's own sign that its form was changed and not sent. It clears when the screen leaves. Every screen that
+ * edits declares it (a test lists them): it holds the swap of the build (`pwa/swap-guard.ts`), and it is the warning
+ * of "Sair" and of the session notice.
+ */
+export function useHoldSwap(dirty: boolean): void {
   const source = useId();
   const scope = useContext(UnsentWorkScopeContext);
   useEffect(() => {
@@ -90,7 +94,7 @@ export function useReportUnsentWork(dirty: boolean): void {
 
 /** Whether any screen on the page holds work that is not sent (the session notice's warning). */
 export function useHasUnsentWork(): boolean {
-  return useSyncExternalStore(subscribe, hasUnsentWork);
+  return useSyncExternalStore(subscribeUnsentWork, hasUnsentWork);
 }
 
 /** Whether a draft differs from the one the form started with (compared field by field, as text or flags). */

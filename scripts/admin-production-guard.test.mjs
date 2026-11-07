@@ -15,6 +15,9 @@ import { parseJsonc } from "./verify-staging-isolation.mjs";
  * the keys they may not: a key nobody thought of fails here and gets a review of this guard. Whether the real Access
  * application stands in front of the real hostname cannot be proved here: that is the go-live checklist
  * (docs/runbooks/README.md, item of the Admin, a blocking item).
+ * The hostname of staging (admin.araute.app) is attached by hand as a Custom Domain, like the web's and the catalog's
+ * (amendment to ADR 0097), so staging has no route either; the rest of the staging rules, the Access team and
+ * audience apart from production's included, are in verify-staging-isolation.mjs.
  */
 const config = parseJsonc(
   readFileSync(
@@ -27,6 +30,7 @@ const config = parseJsonc(
 );
 
 const NOT_BLANK = /\S/;
+const AUDIENCE_TAG = /^[0-9a-f]{64}$/;
 const WORKER_ENTRY = "./src/worker.ts";
 const ENVIRONMENTS = ["production", "staging"];
 const ALLOWED_KEYS = {
@@ -41,6 +45,7 @@ const ALLOWED_KEYS = {
   ],
   staging: [
     "account_id",
+    "hyperdrive",
     "name",
     "observability",
     "preview_urls",
@@ -57,9 +62,28 @@ const ALLOWED_KEYS = {
     "name",
     "observability",
     "preview_urls",
+    "rules",
     "workers_dev",
   ],
 };
+/**
+ * The one module rule (corte admin-tela-v1, D-2): the page's script and sheet built by `build:ui` are embedded as text.
+ * Any other rule could make a file into code the Worker runs, so the rule is checked whole.
+ */
+const PAGE_TEXT_RULES = [
+  { fallthrough: false, globs: ["**/ui/generated/*.txt"], type: "Text" },
+];
+
+/** JSON with the keys of every object sorted, so the order a file writes them in does not matter. */
+function sortedJson(value) {
+  return JSON.stringify(value, (_key, item) =>
+    item !== null && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item).sort(([a], [b]) => a.localeCompare(b))
+        )
+      : item
+  );
+}
 
 /** What is wrong with a block of the wrangler file, as the guard sees it. */
 function problemsOf(label, block, allowedKeys) {
@@ -76,6 +100,14 @@ function problemsOf(label, block, allowedKeys) {
         `${label}: the key ${key} is not one the guard knows (routes, assets, alias, build, triggers, services... need a review of this guard)`
       );
     }
+  }
+  if (
+    block.rules !== undefined &&
+    sortedJson(block.rules) !== sortedJson(PAGE_TEXT_RULES)
+  ) {
+    problems.push(
+      `${label}: the module rules must be only the page's text rule`
+    );
   }
   if (block.main !== undefined && block.main !== WORKER_ENTRY) {
     problems.push(`${label}: main must be ${WORKER_ENTRY}`);
@@ -121,12 +153,23 @@ describe("admin Worker production guard (wrangler file)", () => {
     expect(production.vars.ACCESS_AUDIENCE).toMatch(NOT_BLANK);
   });
 
-  it("does not set the Access variables at the top level or in staging (a Worker without them answers 503, never unverified)", () => {
+  it("does not set the Access variables at the top level (a Worker without them answers 503, never unverified)", () => {
     expect(config.vars ?? {}).not.toHaveProperty("ACCESS_TEAM_DOMAIN");
-    expect(config.env.staging.vars ?? {}).not.toHaveProperty(
-      "ACCESS_TEAM_DOMAIN"
+    expect(config.vars ?? {}).not.toHaveProperty("ACCESS_AUDIENCE");
+  });
+
+  it("sets in staging the Access team and audience of staging, not production's", () => {
+    const { production, staging } = config.env;
+    expect(staging.vars.ACCESS_TEAM_DOMAIN).toBe(
+      "polaris-staging.cloudflareaccess.com"
     );
-    expect(config.env.staging.vars ?? {}).not.toHaveProperty("ACCESS_AUDIENCE");
+    expect(staging.vars.ACCESS_AUDIENCE).toMatch(AUDIENCE_TAG);
+    expect(staging.vars.ACCESS_TEAM_DOMAIN).not.toBe(
+      production.vars.ACCESS_TEAM_DOMAIN
+    );
+    expect(staging.vars.ACCESS_AUDIENCE).not.toBe(
+      production.vars.ACCESS_AUDIENCE
+    );
   });
 
   describe("control: the guard notices each way of opening the Worker", () => {
@@ -176,19 +219,62 @@ describe("admin Worker production guard (wrangler file)", () => {
       expect(allProblems(extra).length).toBeGreaterThan(0);
     });
 
-    it("refuses a route at the top level or in staging", () => {
+    it.each([
+      [
+        "a rule that makes the page files code",
+        [{ globs: ["**/ui/generated/*.txt"], type: "ESModule" }],
+      ],
+      [
+        "a second rule",
+        [...PAGE_TEXT_RULES, { globs: ["**/*.wasm"], type: "CompiledWasm" }],
+      ],
+      [
+        "a wider glob",
+        [{ fallthrough: false, globs: ["**/*.txt"], type: "Text" }],
+      ],
+    ])("refuses %s at the top level", (_name, rules) => {
+      expect(allProblems({ ...config, rules }).length).toBeGreaterThan(0);
+    });
+
+    it("refuses a route at the top level", () => {
       expect(
         allProblems({ ...config, routes: ["x/*"] }).length
       ).toBeGreaterThan(0);
+    });
+
+    it.each([
+      ["a pattern route", ["x/*"]],
+      [
+        "the Custom Domain of its own host",
+        [{ custom_domain: true, pattern: "admin.araute.app" }],
+      ],
+      ["another host", [{ custom_domain: true, pattern: "x.araute.app" }]],
+    ])("refuses %s in staging", (_name, routes) => {
       expect(
         allProblems({
           ...config,
           env: {
             ...config.env,
-            staging: { ...config.env.staging, routes: ["x/*"] },
+            staging: { ...config.env.staging, routes },
           },
-        }).length
-      ).toBeGreaterThan(0);
+        })
+      ).toEqual([
+        "env.staging: the key routes is not one the guard knows (routes, assets, alias, build, triggers, services... need a review of this guard)",
+      ]);
+    });
+
+    it("refuses a single `route` in staging", () => {
+      expect(
+        allProblems({
+          ...config,
+          env: {
+            ...config.env,
+            staging: { ...config.env.staging, route: "admin.araute.app/*" },
+          },
+        })
+      ).toEqual([
+        "env.staging: the key route is not one the guard knows (routes, assets, alias, build, triggers, services... need a review of this guard)",
+      ]);
     });
   });
 });

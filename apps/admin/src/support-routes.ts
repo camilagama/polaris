@@ -21,6 +21,7 @@ import {
   normalizeOpenCase,
   normalizeResolution,
   type RevealableCustomerField,
+  SUPPORT_CASE_KINDS,
   TenantAccessDeniedError,
 } from "@polaris/domain/admin/support-access";
 import {
@@ -162,6 +163,7 @@ export interface SupportDependencies {
   list: (
     input: {
       after: string | null;
+      kind: string | null;
       limit: number;
       organizationId: string | null;
       status: string | null;
@@ -211,6 +213,24 @@ const MAX_PAGE_SIZE = 50;
 const MAX_ID_LENGTH = 128;
 const NOT_FOUND_CODES = new Set(["unknown_case", "unknown_organization"]);
 
+function refusalAnswer(
+  context: Context<AdminEnv>,
+  error: InvalidSupportRequestError,
+  report: (event: string, fields?: Record<string, string>) => void
+) {
+  if (error.code === "operator_reveal_rate_limited") {
+    // the refusal leaves no audit row, so the operator's log is the only trace of a read in bulk; no field, no customer
+    report("admin_reveal_rate_limited", {
+      principal: context.get("principal").id,
+    });
+    return context.json({ error: "rate_limited" }, 429);
+  }
+  return context.json(
+    { error: error.code },
+    NOT_FOUND_CODES.has(error.code) ? 404 : 400
+  );
+}
+
 type Json = Record<string, unknown>;
 
 function controlCharacter(text: string): boolean {
@@ -253,18 +273,30 @@ function optionalString(value: unknown): string | null | undefined {
 }
 
 /**
- * A change that comes from a browser must come from this origin: the login is a
- * cookie, so a page elsewhere could otherwise make the operator's browser act.
+ * What `Sec-Fetch-Site` may say of a request the operator's browser makes: from this origin, or typed in the
+ * address bar (`none`). `same-site` is refused too: another subdomain of the zone (the store's app, the catalog)
+ * is another origin, and a script there must not spend the operator's login. A request without the header (a
+ * tool, an old browser) is judged by the rest.
+ */
+export function fromThisSite(context: Context<AdminEnv>): boolean {
+  const site = context.req.header("sec-fetch-site");
+  return site === undefined || site === "same-origin" || site === "none";
+}
+
+/**
+ * A change must say it comes from this origin: the login is a cookie, so a page
+ * elsewhere could otherwise make the operator's browser act. The `Origin` header
+ * is required (a browser always sends it with a POST, PUT or DELETE; a tool sends
+ * the Admin's own), and `Sec-Fetch-Site` must not name another origin.
  */
 export const sameOrigin: MiddlewareHandler<AdminEnv> = async (
   context,
   next
 ) => {
-  const origin = context.req.header("origin");
   if (
     context.req.method !== "GET" &&
-    origin !== undefined &&
-    origin !== new URL(context.req.url).origin
+    (context.req.header("origin") !== new URL(context.req.url).origin ||
+      !fromThisSite(context))
   ) {
     return context.json({ error: "forbidden" }, 403);
   }
@@ -320,10 +352,7 @@ export function supportRoutes(
       return context.json({ error: "not_found" }, 404);
     }
     if (error instanceof InvalidSupportRequestError) {
-      return context.json(
-        { error: error.code },
-        NOT_FOUND_CODES.has(error.code) ? 404 : 400
-      );
+      return refusalAnswer(context, error, report);
     }
     report("admin_error", describeError(error));
     return context.json({ error: "internal_error" }, 500);
@@ -396,9 +425,12 @@ export function supportRoutes(
       const paging = page(context);
       const status = context.req.query("status") ?? null;
       const organizationId = context.req.query("organizationId") ?? null;
+      const kind = context.req.query("kind") ?? null;
       if (
         !paging ||
         (status !== null && status !== "open" && status !== "closed") ||
+        (kind !== null &&
+          !(SUPPORT_CASE_KINDS as readonly string[]).includes(kind)) ||
         (organizationId !== null &&
           (organizationId.length > MAX_ID_LENGTH ||
             controlCharacter(organizationId)))
@@ -407,7 +439,7 @@ export function supportRoutes(
       }
       return context.json(
         await dependencies.list(
-          { ...paging, organizationId, status },
+          { ...paging, kind, organizationId, status },
           context.env
         )
       );
@@ -737,9 +769,20 @@ export function supportRoutes(
       if (!paging) {
         return invalid(context);
       }
-      return context.json(
-        await dependencies.listLegalHolds(paging, context.env)
-      );
+      const listed = await dependencies.listLegalHolds(paging, context.env);
+      return context.json({
+        dueForReview: listed.dueForReview,
+        holds: listed.holds.map((hold) => ({
+          id: hold.id,
+          organizationId: hold.organizationId,
+          placedAt: hold.placedAt,
+          placedBy: hold.placedBy,
+          reviewAt: hold.reviewAt,
+          reviewDue: hold.reviewDue,
+          supportCaseId: hold.supportCaseId,
+        })),
+        next: listed.next,
+      });
     }
   );
 

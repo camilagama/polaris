@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
+import { withGateRole } from "./gate-roles";
 import {
   disposableHostPattern,
   expectSqlState,
@@ -167,6 +168,7 @@ const FUNCTIONS = {
   bump: "public.bump_user_authorization_epoch(text)",
   onboarding: "public.create_initial_organization(text,text,text,text,uuid)",
   record: "public.record_sync_change()",
+  recordProductMedia: "public.record_product_media_sync_change()",
 } as const;
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one linear gate script, scenario by scenario
@@ -196,10 +198,7 @@ async function run() {
       for (const [name, value] of Object.entries(settings)) {
         await client.query("SELECT set_config($1, $2, true)", [name, value]);
       }
-      if (role) {
-        await client.query(`SET LOCAL ROLE ${role}`);
-      }
-      return await body();
+      return role ? await withGateRole(client, role, body) : await body();
     } finally {
       await client.query("ROLLBACK");
     }
@@ -317,10 +316,16 @@ async function run() {
           owner: SYNC_OWNER,
           secdef: true,
         },
+        {
+          executors: [SYNC_OWNER, migrator].sort(),
+          name: "record_product_media_sync_change()",
+          owner: SYNC_OWNER,
+          secdef: true,
+        },
       ].sort(byName)
     );
     tests.push(
-      `the two sync triggers belong to ${SYNC_OWNER} (EXECUTE: it and the migrator, for a future CREATE TRIGGER), the bump to ${EPOCH_OWNER} (EXECUTE: polaris_auth_runtime) and the onboarding to ${ONBOARDING_OWNER} (EXECUTE: polaris_onboarding_runtime); all four stay SECURITY DEFINER`
+      `the three sync triggers belong to ${SYNC_OWNER} (EXECUTE: it and the migrator, for a future CREATE TRIGGER), the bump to ${EPOCH_OWNER} (EXECUTE: polaris_auth_runtime) and the onboarding to ${ONBOARDING_OWNER} (EXECUTE: polaris_onboarding_runtime); all five stay SECURITY DEFINER`
     );
 
     // -------------------------------------------------- 3. the exact matrix
@@ -877,15 +882,12 @@ async function run() {
     ) => {
       await rolledBack({}, undefined, async () => {
         await client.query(`GRANT CREATE ON SCHEMA public TO ${owner}`);
-        await client.query(
-          `GRANT ${owner} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE, ADMIN FALSE`
-        );
-        await client.query(`SET LOCAL ROLE ${owner}`);
-        await client.query(
-          `CREATE FUNCTION public.${name}(p_scope text) RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
+        await withGateRole(client, owner, () =>
+          client.query(
+            `CREATE FUNCTION public.${name}(p_scope text) RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
              SET search_path = pg_catalog, public, pg_temp AS $body$ ${body} $body$`
+          )
         );
-        await client.query("RESET ROLE");
         await call();
       });
     };
@@ -1000,11 +1002,16 @@ async function run() {
       (async () => {
         await client.query("BEGIN");
         try {
-          await client.query("SET LOCAL ROLE polaris_auth_runtime");
-          await forgeScope();
-          const revoked = await scalar<number>(
-            "SELECT public.bump_user_authorization_epoch($1) AS value",
-            [user]
+          const revoked = await withGateRole(
+            client,
+            "polaris_auth_runtime",
+            async () => {
+              await forgeScope();
+              return await scalar<number>(
+                "SELECT public.bump_user_authorization_epoch($1) AS value",
+                [user]
+              );
+            }
           );
           await client.query("COMMIT");
           return revoked;
@@ -1064,11 +1071,16 @@ async function run() {
     ): Promise<{ created: boolean; id: string }> => {
       await client.query("BEGIN");
       try {
-        await client.query("SET LOCAL ROLE polaris_onboarding_runtime");
-        await forgeScope();
-        const result = await client.query<{ created: boolean; id: string }>(
-          "SELECT created, id FROM public.create_initial_organization($1, $2, 'Loja do gate', $3, $4)",
-          [user, organization, TIMEZONE, randomUUID()]
+        const result = await withGateRole(
+          client,
+          "polaris_onboarding_runtime",
+          async () => {
+            await forgeScope();
+            return await client.query<{ created: boolean; id: string }>(
+              "SELECT created, id FROM public.create_initial_organization($1, $2, 'Loja do gate', $3, $4)",
+              [user, organization, TIMEZONE, randomUUID()]
+            );
+          }
         );
         await client.query("COMMIT");
         assert.ok(result.rows[0]);
@@ -1482,21 +1494,22 @@ async function run() {
            ($1, 'welcome', $2, now(), $2), ($1, 'charge_receipt', $3, now(), NULL)`,
         [stores.fresh, probeUser, `receipt-${suffix}`]
       );
-      await client.query("SET LOCAL ROLE polaris_billing_owner");
-      const seenStores = (
-        await client.query<{ id: string }>(
-          "SELECT id FROM public.organizations WHERE id = ANY ($1) ORDER BY id",
-          [Object.values(stores)]
-        )
-      ).rows.map((row) => row.id);
-      assert.deepEqual(seenStores, [stores.fresh], "only the store of now");
-      const seenNotices = (
-        await client.query<{ kind: string }>(
-          "SELECT kind FROM public.billing_notices WHERE user_id = $1 OR user_id IS NULL ORDER BY kind",
-          [probeUser]
-        )
-      ).rows.map((row) => row.kind);
-      assert.deepEqual(seenNotices, ["welcome"], "only who has a welcome");
+      await withGateRole(client, "polaris_billing_owner", async () => {
+        const seenStores = (
+          await client.query<{ id: string }>(
+            "SELECT id FROM public.organizations WHERE id = ANY ($1) ORDER BY id",
+            [Object.values(stores)]
+          )
+        ).rows.map((row) => row.id);
+        assert.deepEqual(seenStores, [stores.fresh], "only the store of now");
+        const seenNotices = (
+          await client.query<{ kind: string }>(
+            "SELECT kind FROM public.billing_notices WHERE user_id = $1 OR user_id IS NULL ORDER BY kind",
+            [probeUser]
+          )
+        ).rows.map((row) => row.kind);
+        assert.deepEqual(seenNotices, ["welcome"], "only who has a welcome");
+      });
     } finally {
       await client.query("ROLLBACK");
     }

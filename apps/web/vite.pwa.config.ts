@@ -6,6 +6,7 @@ import {
   MOTION_MODULE,
   precacheBudgetPlugin,
 } from "./pwa/precache-budget";
+import { legalBuildGuardPlugin } from "./legal/legal-build-guard-plugin";
 import { serviceWorkerPlugin } from "./pwa/service-worker-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
@@ -15,7 +16,10 @@ import { uiBuild, uiPlugins } from "./vite.ui";
  * `sw.js` plugin, served by `scripts/serve-static.mjs` instead of the Cloudflare runtime.
  *
  * `PWA_E2E_VARIANT` stamps a marker into `index.html`, so a test can build "a new
- * version" of the app without touching the source and see which one is running.
+ * version" of the app without touching the source and see which one is running, and
+ * into every chunk (a legal comment, which the minifier keeps): each version has its
+ * own file names, as a real deploy does, so a tab left on the old one asks for chunks
+ * the new build no longer has.
  */
 const variantMarker: Plugin = {
   name: "polaris:pwa-e2e-variant",
@@ -39,6 +43,11 @@ export default defineConfig({
     // the same chunk for `motion` as the production build (vite.config.ts)
     rolldownOptions: {
       output: {
+        ...(process.env.PWA_E2E_VARIANT
+          ? {
+              postBanner: `/*! build-variant ${process.env.PWA_E2E_VARIANT} */`,
+            }
+          : {}),
         codeSplitting: {
           groups: [
             {
@@ -47,7 +56,7 @@ export default defineConfig({
               priority: 30,
               test: MOTION_MODULE,
             },
-            // the charts and the map of the Início (t394) share the sparkline, d3 and visx: they stay in the charts
+            // the charts and the map of the Início share the sparkline, d3 and visx: they stay in the charts
             // chunk, so the map's chunk has only the map (the guards of `pwa/precache-budget.ts`)
             {
               includeDependenciesRecursively: false,
@@ -66,6 +75,7 @@ export default defineConfig({
     "import.meta.env.VITE_OFFLINE_RUNTIME_ENABLED": JSON.stringify("true"),
   },
   plugins: [
+    legalBuildGuardPlugin({}, { check: false }),
     uiPlugins(),
     react(),
     variantMarker,

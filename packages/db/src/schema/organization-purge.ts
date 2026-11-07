@@ -173,7 +173,7 @@ export const organizationPurgeCancellations = pgTable(
 ).enableRLS();
 
 /**
- * A legal hold on an organization (ADR 0081, decision of 18/10/2026): while one is in force, the purge is
+ * A legal hold on an organization (ADR 0081): while one is in force, the purge is
  * neither scheduled nor run, and nothing of the organization is removed. One row per hold; released holds
  * stay as the record of it. It carries no free text: why the hold exists is the case it hangs from. It has a
  * required review date: when it passes the hold stays in force (nothing releases it but an operator) and the

@@ -26,9 +26,13 @@ import {
   SALES_PAGE_SIZE,
   saleDetailHref,
   saleDetailView,
+  saleTimelineEvents,
 } from "./sale-history-model";
 
 const organizationId = "org_1";
+const OTHER_YEAR_TEXT = /^\d{1,2} [a-z]{3} 2027 \d{2}:\d{2}$/;
+const SAME_YEAR_TEXT = /^\d{1,2} [a-z]{3} \d{2}:\d{2}$/;
+const JUNE_TEXT = /^\d{1,2} jun \d{2}:\d{2}$/;
 const timePattern = /\d{2}:\d{2}/;
 const ana = "a0000000-0000-4000-8000-000000000001";
 const gone = "d0000000-0000-4000-8000-000000000004";
@@ -181,11 +185,33 @@ describe("rows", () => {
     });
     expect(cancelled).toMatchObject({
       itemCountText: "1 item",
-      methodText: "Cartão de crédito",
+      methodText: "Crédito",
       statusLabel: "Cancelada",
       statusTone: "cancelled",
     });
     expect(saleDetailHref(id(1))).toBe(`/sales/detail?saleId=${id(1)}`);
+  });
+
+  it("writes the method of every sale with the short names of the choice cards of Vender", () => {
+    const methods = [
+      "pix",
+      "cash",
+      "credit_card",
+      "debit_card",
+      "bank_transfer",
+      "other",
+    ] as const;
+    const rows = historyRows(
+      loaded(methods.map((paymentMethod, n) => entry(n, { paymentMethod })))
+    );
+    expect(rows.map((row) => row.methodText)).toEqual([
+      "Pix",
+      "Dinheiro",
+      "Crédito",
+      "Débito",
+      "Transferência",
+      "Outro",
+    ]);
   });
 
   it("badges a sale that has returns, keeping its status", () => {
@@ -335,6 +361,7 @@ describe("filters", () => {
 
   it("explains an empty result differently when filters are active", () => {
     expect(historyView(loaded([]), filters)).toMatchObject({
+      clearFilters: false,
       href: "/sales",
       kind: "empty",
     });
@@ -342,7 +369,11 @@ describe("filters", () => {
       ...filters,
       status: "cancelled",
     });
-    expect(filtered).toMatchObject({ href: null, kind: "empty" });
+    expect(filtered).toMatchObject({
+      clearFilters: true,
+      href: null,
+      kind: "empty",
+    });
     expect("message" in filtered && filtered.message).toContain("filtros");
   });
 });
@@ -658,5 +689,171 @@ describe("sale detail", () => {
     expect(detailLoadErrorMessage(new Error("x"))).toContain(
       "Não foi possível carregar"
     );
+  });
+
+  describe("saleTimelineEvents", () => {
+    const at = (
+      occurredAt: string,
+      confirmedAt: string,
+      extra: Partial<Pick<SaleDetailReadModel, "returns">> = {},
+      cancelledAt: string | null = null
+    ): SaleDetailReadModel => {
+      const base = detail(
+        cancelledAt === null
+          ? null
+          : {
+              cancelledAt,
+              cancelledBy: "user_1",
+              commandId: id(80),
+              id: id(81),
+              reasonCode: null,
+              reasonNote: null,
+              saleId: id(70),
+            },
+        extra
+      );
+      return {
+        ...base,
+        sale: {
+          ...base.sale,
+          sale: { ...base.sale.sale, confirmedAt, occurredAt },
+        },
+      };
+    };
+    const returnAt = (n: number, returnedAt: string) => ({
+      commandId: id(n),
+      id: id(n + 1),
+      items: [{ position: 0, restockedQuantity: 0, returnedQuantity: 1 }],
+      reasonCode: null,
+      reasonNote: null,
+      returnedAt,
+      returnedBy: "user_1",
+      saleId: id(70),
+    });
+    const kinds = (view: SaleDetailReadModel) =>
+      saleTimelineEvents(view).map((event) => event.kind);
+
+    it("lists the four kinds newest first", () => {
+      const view = at(
+        "2026-06-10T12:00:00.000Z",
+        "2026-06-10T12:10:00.000Z",
+        { returns: [returnAt(90, "2026-06-12T12:00:00.000Z")] },
+        "2026-06-22T05:14:00.000Z"
+      );
+      expect(saleTimelineEvents(view).map((event) => event.label)).toEqual([
+        "Cancelada",
+        "Devolução",
+        "Confirmada no servidor",
+        "Venda feita",
+      ]);
+    });
+
+    it("breaks a tie of instants as Cancelada, Devolução, Confirmada no servidor, Venda feita", () => {
+      const same = "2026-06-10T12:05:00.000Z";
+      const view = at(
+        "2026-06-10T12:00:00.000Z",
+        same,
+        { returns: [returnAt(90, "2026-06-10T12:05:00Z")] },
+        "2026-06-10T12:05:00.000Z"
+      );
+      expect(kinds(view)).toEqual([
+        "cancelled",
+        "return",
+        "registered",
+        "sale",
+      ]);
+    });
+
+    it("orders returns made at the same instant the same way every time", () => {
+      const instant = "2026-06-11T12:00:00.000Z";
+      const view = at("2026-06-10T12:00:00.000Z", "2026-06-10T12:00:00.000Z", {
+        returns: [returnAt(94, instant), returnAt(90, instant)],
+      });
+      expect(saleTimelineEvents(view).map((event) => event.key)).toEqual([
+        `return-${id(91)}`,
+        `return-${id(95)}`,
+        "sale",
+      ]);
+    });
+
+    it("puts Confirmada no servidor in only when the server took the sale 60 s or more after it happened", () => {
+      const occurred = "2026-06-10T12:00:00.000Z";
+      expect(kinds(at(occurred, "2026-06-10T12:00:59.999Z"))).toEqual(["sale"]);
+      expect(kinds(at(occurred, "2026-06-10T12:00:59.000Z"))).toEqual(["sale"]);
+      expect(kinds(at(occurred, "2026-06-10T12:01:00.000Z"))).toEqual([
+        "registered",
+        "sale",
+      ]);
+      expect(kinds(at(occurred, "2026-06-10T11:59:00.000Z"))).toEqual(["sale"]);
+    });
+
+    it("measures the 60 s by instant, not by calendar day", () => {
+      expect(
+        kinds(at("2026-06-10T23:59:30.000Z", "2026-06-11T00:00:29.000Z"))
+      ).toEqual(["sale"]);
+      expect(
+        kinds(at("2026-06-10T23:59:30.000Z", "2026-06-11T00:00:30.000Z"))
+      ).toEqual(["registered", "sale"]);
+      expect(
+        kinds(at("2026-06-10T12:00:00.000Z", "2026-06-11T12:00:00.000Z"))
+      ).toEqual(["registered", "sale"]);
+    });
+
+    it("gives a plain sale one event and a sale with a return or a cancellation two", () => {
+      const plain = at("2026-06-10T12:00:00.000Z", "2026-06-10T12:00:01.000Z");
+      expect(saleTimelineEvents(plain)).toHaveLength(1);
+      expect(
+        kinds(
+          at("2026-06-10T12:00:00.000Z", "2026-06-10T12:00:01.000Z", {
+            returns: [returnAt(90, "2026-06-11T12:00:00.000Z")],
+          })
+        )
+      ).toEqual(["return", "sale"]);
+      expect(
+        kinds(
+          at(
+            "2026-06-10T12:00:00.000Z",
+            "2026-06-10T12:00:01.000Z",
+            {},
+            "2026-06-11T12:00:00.000Z"
+          )
+        )
+      ).toEqual(["cancelled", "sale"]);
+    });
+
+    it("colors only the state of the sale", () => {
+      const open = at("2026-06-10T12:00:00.000Z", "2026-06-10T12:10:00.000Z", {
+        returns: [returnAt(90, "2026-06-12T12:00:00.000Z")],
+      });
+      expect(saleTimelineEvents(open).map((event) => event.tone)).toEqual([
+        "muted",
+        "muted",
+        "sale",
+      ]);
+      const cancelled = at(
+        "2026-06-10T12:00:00.000Z",
+        "2026-06-10T12:10:00.000Z",
+        {},
+        "2026-06-22T05:14:00.000Z"
+      );
+      expect(saleTimelineEvents(cancelled).map((event) => event.tone)).toEqual([
+        "cancelled",
+        "muted",
+        "muted",
+      ]);
+    });
+
+    it("writes day, short month and time, and the year only when it is not the sale's", () => {
+      const view = at(
+        "2026-06-10T12:00:00.000Z",
+        "2026-06-10T12:10:00.000Z",
+        {},
+        "2027-06-22T12:00:00.000Z"
+      );
+      const [cancelled, registered, sale] = saleTimelineEvents(view);
+      expect(cancelled?.timeText).toMatch(OTHER_YEAR_TEXT);
+      expect(registered?.timeText).toMatch(SAME_YEAR_TEXT);
+      expect(sale?.timeText).toMatch(JUNE_TEXT);
+    });
   });
 });

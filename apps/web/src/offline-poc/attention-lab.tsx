@@ -93,6 +93,9 @@ const productPayload = (n: number) => ({
   variantId: uuid(9100 + n),
 });
 
+const SUBSCRIPTION_OFF =
+  new URLSearchParams(window.location.search).get("assinatura") === "off";
+
 export function AttentionLab() {
   const [userId, setUserId] = useState("user-a");
   const [organizationId, setOrganizationId] = useState("org-1");
@@ -104,7 +107,13 @@ export function AttentionLab() {
 
   const refresh = useCallback(async () => {
     const store = storeRef.current;
-    setSummary(store ? buildAttention(await store.outbox.snapshot()) : EMPTY);
+    setSummary(
+      store
+        ? buildAttention(await store.outbox.snapshot(), new Set(), {
+            subscriptionAvailable: !SUBSCRIPTION_OFF,
+          })
+        : EMPTY
+    );
   }, []);
 
   const ensure = useCallback(async () => {
@@ -195,6 +204,17 @@ export function AttentionLab() {
       ),
     [run, seed]
   );
+  const handleRevoked = useCallback(
+    () =>
+      run("Acesso revogado", () =>
+        seed(
+          "sale.confirm",
+          salePayload(counterRef.current + 1),
+          "authorization_revoked"
+        ).then(() => undefined)
+      ),
+    [run, seed]
+  );
   const handleWaiting = useCallback(
     () =>
       run("Venda na fila", () =>
@@ -238,8 +258,8 @@ export function AttentionLab() {
       }),
     [ensure, organizationId, resolve, userId]
   );
-  const handleReviewAccount = useCallback(
-    () => setMessage("Revisar acesso: abriria a tela de conta e plano."),
+  const handleSignInAgain = useCallback(
+    () => setMessage("Sair e entrar de novo: sairia e voltaria à entrada."),
     []
   );
   const handleUser = useCallback(
@@ -280,6 +300,9 @@ export function AttentionLab() {
         <button onClick={handleEntitlement} type="button">
           Criar venda recusada por direito
         </button>
+        <button onClick={handleRevoked} type="button">
+          Criar venda recusada por acesso
+        </button>
         <button onClick={handleWaiting} type="button">
           Criar venda na fila
         </button>
@@ -288,7 +311,7 @@ export function AttentionLab() {
         busyCommandId={busy}
         onDiscard={handleDiscard}
         onResubmit={handleResubmit}
-        onReviewAccount={handleReviewAccount}
+        onSignInAgain={handleSignInAgain}
         summary={summary}
       />
     </main>

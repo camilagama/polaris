@@ -109,8 +109,10 @@ const reservedKeys: ReadonlySet<string> = new Set<ReservedKey>([
 ]);
 
 let configured = false;
+let current: LoggingConfig = { service: "polaris" };
 
 function applyConfig(config: LoggingConfig): void {
+  current = config;
   initLogger({
     env: {
       ...(config.environment === undefined
@@ -138,6 +140,30 @@ export function configureLogging(config: LoggingConfig): void {
   applyConfig(config);
 }
 
+const deployedEnvironments: ReadonlySet<string> = new Set([
+  "production",
+  "staging",
+]);
+
+/**
+ * Takes the `environment` of the events from the Worker's `POLARIS_ENVIRONMENT`
+ * variable (`staging` or `production`, set per environment in `wrangler.jsonc`).
+ * Without it evlog falls back to the bundle's `NODE_ENV`, or `production`, so a
+ * staging Worker would be labelled by a build default; any other value is
+ * ignored, so a mistyped variable cannot invent an environment. Cheap to call on every
+ * invocation: it only reconfigures when the value changes.
+ */
+export function useLoggingEnvironment(value: unknown): void {
+  if (
+    typeof value !== "string" ||
+    !deployedEnvironments.has(value) ||
+    current.environment === value
+  ) {
+    return;
+  }
+  applyConfig({ ...current, environment: value });
+}
+
 const opaqueIds: ReadonlySet<string> = new Set(opaqueIdFields);
 
 /**
@@ -156,11 +182,9 @@ function applySchema(fields: LogFields | undefined): {
     if (value === undefined) {
       continue;
     }
-    // The type already forbids these; this keeps a cast from forging them.
-    if (reservedKeys.has(key)) {
-      continue;
-    }
+    // The type already forbids these; a cast cannot forge them, and the name is listed like any other dropped field.
     if (
+      reservedKeys.has(key) ||
       canonicalNameFor(key) !== undefined ||
       (opaqueIds.has(key) && !isOpaqueId(value))
     ) {

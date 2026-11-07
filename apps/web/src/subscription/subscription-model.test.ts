@@ -6,12 +6,21 @@ import {
   daysUntil,
   graceNotice,
   legacyCheckoutReturnPath,
+  noPlanReadBackoff,
+  noPlanReadsInFlight,
   PLAN_NOTICE_FOR_MS,
   PLAN_NOTICE_KEY,
   planNoticeIsOld,
   planNoticeRetryDelayMs,
+  planReadBackoffFor,
+  planReadEnded,
+  planReadFailed,
+  planReadInFlight,
+  planReadStarted,
+  planReadSucceeded,
   rememberedPlanNotice,
   rememberPlanNotice,
+  trialChargeDay,
   untilText,
 } from "./plan-notice";
 import {
@@ -107,7 +116,7 @@ describe("planHeadline", () => {
     const headline = planHeadline(
       plan({
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       }),
       NOW
@@ -122,7 +131,7 @@ describe("planHeadline", () => {
     const headline = planHeadline(
       plan({
         method: "pix_automatic",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       }),
       NOW
@@ -136,7 +145,7 @@ describe("planHeadline", () => {
     const headline = planHeadline(
       plan({
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-11-23" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
         state: "active",
       }),
       NOW
@@ -583,7 +592,7 @@ describe("paymentLines", () => {
         plan({
           cycleMonths: 1,
           method: "card",
-          nextCharge: { amount: "24.90", on: "2026-11-23" },
+          nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
           state: "active",
         })
       )
@@ -594,12 +603,69 @@ describe("paymentLines", () => {
     ]);
   });
 
+  describe("the cycle of the next charge (a renewal at another amount, or a change of cycle waiting)", () => {
+    const paid = (nextCharge: BillingPlanView["nextCharge"]) =>
+      plan({ cycleMonths: 1, method: "card", nextCharge, state: "active" });
+
+    it("renewed at another amount in the same cycle: the amount in force beside the cycle and the day", () => {
+      const view = paid({ amount: "29.90", cycleMonths: 1, on: "2026-11-23" });
+      expect(paymentLines(view)).toEqual([
+        { label: "Como paga", value: "Cartão de crédito" },
+        { label: "Ciclo", value: "Mensal · R$ 29,90" },
+        { label: "Próxima cobrança", value: "23/11/2026 · R$ 29,90" },
+      ]);
+      expect(planHeadline(view, NOW).support).toBe(
+        "Próxima cobrança em 23/11/2026, R$ 29,90."
+      );
+    });
+
+    it("of another cycle with its amount: the cycle line has no amount, the next charge names its cycle", () => {
+      const view = paid({
+        amount: "249.00",
+        cycleMonths: 12,
+        on: "2026-12-12",
+      });
+      expect(paymentLines(view)).toEqual([
+        { label: "Como paga", value: "Cartão de crédito" },
+        { label: "Ciclo", value: "Mensal" },
+        { label: "Próxima cobrança", value: "12/12/2026 · R$ 249,00 · Anual" },
+      ]);
+    });
+
+    it("of another cycle without an amount: the day is kept, the value comes at the renewal, and no old amount is shown", () => {
+      const view = paid({ amount: null, cycleMonths: 12, on: "2026-12-12" });
+      expect(paymentLines(view)).toEqual([
+        { label: "Como paga", value: "Cartão de crédito" },
+        { label: "Ciclo", value: "Mensal" },
+        {
+          label: "Próxima cobrança",
+          value: "12/12/2026 · Anual · valor na renovação",
+        },
+      ]);
+      expect(planHeadline(view, NOW).support).toBe(
+        "Próxima cobrança em 12/12/2026, já no ciclo Anual; o valor aparece na renovação."
+      );
+      expect(JSON.stringify(paymentLines(view))).not.toContain("R$");
+    });
+
+    it("a Worker that sends no cycle in the next charge reads as the current cycle, as before", () => {
+      const view = paid({
+        amount: "24.90",
+        on: "2026-11-23",
+      } as BillingPlanView["nextCharge"]);
+      expect(paymentLines(view)?.[1]).toEqual({
+        label: "Ciclo",
+        value: "Mensal · R$ 24,90",
+      });
+    });
+  });
+
   it("calls it Primeira cobrança while trialing", () => {
     const lines = paymentLines(
       plan({
         cycleMonths: 1,
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-10-30" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-10-30" },
         state: "trialing",
       })
     );
@@ -614,7 +680,7 @@ describe("paymentLines", () => {
       plan({
         cycleMonths: 1,
         method: "card",
-        nextCharge: { amount: "24.90", on: "2026-11-23" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
         renewalCancelled: true,
         state: "active",
       })
@@ -627,7 +693,7 @@ describe("paymentLines", () => {
       plan({
         cycleMonths: 1,
         method: "pix_automatic",
-        nextCharge: { amount: "24.90", on: "2026-11-23" },
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-23" },
         state: "grace",
       })
     );
@@ -690,6 +756,9 @@ describe("waitsForProvider and abandonedCheckoutText", () => {
 });
 
 describe("checkoutRefusal", () => {
+  const CHECKOUT_UNCONFIRMED =
+    "Não deu para confirmar se a página de pagamento foi aberta. Nada foi cobrado: toque em Atualizar e tente de novo.";
+
   const cases: [string, string, boolean, boolean, string][] = [
     [
       "CONFLICT",
@@ -736,9 +805,23 @@ describe("checkoutRefusal", () => {
     [
       "SERVICE_UNAVAILABLE",
       "billing_provider_unavailable",
-      false,
       true,
-      "O serviço de pagamento não respondeu. Nada foi cobrado. Tente de novo em alguns minutos.",
+      true,
+      CHECKOUT_UNCONFIRMED,
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
+      "previous_checkout_unverified",
+      true,
+      true,
+      "Não deu para confirmar se o pagamento que você começou antes foi aprovado. Toque em Atualizar: se foi, a assinatura aparece aqui. Se não, tente de novo.",
+    ],
+    [
+      "SERVICE_UNAVAILABLE",
+      "previous_renewal_cancel_unverified",
+      true,
+      false,
+      "A assinatura nova não começou. Não deu para confirmar o encerramento da anterior: toque em Atualizar para ver o plano antes de tentar de novo.",
     ],
     [
       "SERVICE_UNAVAILABLE",
@@ -824,10 +907,74 @@ describe("checkoutRefusal", () => {
     );
   });
 
-  it("allows retry on SERVICE_UNAVAILABLE without a known reason", () => {
-    expect(
-      checkoutRefusal({ code: "SERVICE_UNAVAILABLE", data: {}, message: "" })
-    ).toMatchObject({ reread: false, retry: true });
+  it.each([
+    [
+      "a 503 with no reason",
+      { code: "SERVICE_UNAVAILABLE", data: {}, message: "" },
+    ],
+    ["a 503 with no body", { code: "SERVICE_UNAVAILABLE" }],
+    [
+      "the server_busy of the Worker",
+      rpcError("SERVICE_UNAVAILABLE", "server_busy"),
+    ],
+    [
+      "the cut of the platform (503)",
+      { ...rpcError("SERVICE_UNAVAILABLE", "platform_cut"), status: 503 },
+    ],
+    [
+      "the cut of the platform (500)",
+      { ...rpcError("INTERNAL_SERVER_ERROR", "platform_cut"), status: 500 },
+    ],
+  ])(
+    "does not know whether the page was opened on %s, and says nothing was charged only because creating it never charges",
+    (_, error) => {
+      expect(checkoutRefusal(error)).toEqual({
+        reread: true,
+        retry: true,
+        text: CHECKOUT_UNCONFIRMED,
+      });
+    }
+  );
+
+  it("never says the service did not answer, which blames the provider for what the screen does not know", () => {
+    for (const error of [
+      { code: "SERVICE_UNAVAILABLE", data: {}, message: "" },
+      rpcError("SERVICE_UNAVAILABLE", "billing_provider_unavailable"),
+      { ...rpcError("SERVICE_UNAVAILABLE", "platform_cut"), status: 503 },
+    ]) {
+      expect(checkoutRefusal(error).text).not.toContain("não respondeu");
+    }
+  });
+
+  it("does not say nothing was charged when the old checkout could not be verified", () => {
+    const refusal = checkoutRefusal(
+      rpcError("SERVICE_UNAVAILABLE", "previous_checkout_unverified")
+    );
+    expect(refusal.text).not.toContain("Nada foi cobrado");
+    expect(refusal.text).not.toBe(CHECKOUT_UNCONFIRMED);
+  });
+
+  it("does not say nothing changed when the old renewal's cancellation could not be confirmed", () => {
+    const refusal = checkoutRefusal(
+      rpcError("SERVICE_UNAVAILABLE", "previous_renewal_cancel_unverified")
+    );
+    expect(refusal.text).not.toContain("Nada foi cobrado");
+    expect(refusal.text).not.toBe(CHECKOUT_UNCONFIRMED);
+    expect(refusal.text).not.toContain("o cancelamento");
+    expect(refusal.reread).toBe(true);
+    expect(refusal.retry).toBe(false);
+  });
+
+  it("asks to reread on an unknown reason, with no word about a charge", () => {
+    const refusal = checkoutRefusal(
+      rpcError("INTERNAL_SERVER_ERROR", "something_new")
+    );
+    expect(refusal).toEqual({
+      reread: true,
+      retry: false,
+      text: "Não foi possível começar a assinatura agora. Atualize e tente de novo.",
+    });
+    expect(refusal.text).not.toContain("cobrado");
   });
 
   it("asks to reread on an unknown CONFLICT", () => {
@@ -906,19 +1053,43 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
   };
   const GRACE_FACTS = {
     accessEndsAt: "2026-10-31T03:00:00.000Z",
+    nextCharge: null,
     state: "grace",
   } as const;
 
-  it("keeps only the state, the end of the access, the store and when it was read", () => {
+  it("keeps only the state, the end of the access, the day of the next charge, the store and when it was read", () => {
     const store = fakeStore();
     rememberPlanNotice("loja-a", GRACE_FACTS, 1000, store);
     expect(JSON.parse(store.values.get(PLAN_NOTICE_KEY) ?? "null")).toEqual({
       accessEndsAt: "2026-10-31T03:00:00.000Z",
+      nextChargeOn: null,
       organizationId: "loja-a",
       readAt: 1000,
       state: "grace",
     });
-    expect(rememberedPlanNotice("loja-a", store)).toMatchObject(GRACE_FACTS);
+    expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
+      accessEndsAt: GRACE_FACTS.accessEndsAt,
+      state: "grace",
+    });
+  });
+
+  it("keeps the day of the first charge of a trial, never its amount", () => {
+    const store = fakeStore();
+    rememberPlanNotice(
+      "loja-a",
+      {
+        accessEndsAt: "2026-11-10T03:00:00.000Z",
+        nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-10" },
+        state: "trialing",
+      },
+      1000,
+      store
+    );
+    expect(store.values.get(PLAN_NOTICE_KEY)).not.toContain("24.90");
+    expect(rememberedPlanNotice("loja-a", store)).toMatchObject({
+      nextChargeOn: "2026-11-10",
+      state: "trialing",
+    });
   });
 
   it("never gives one store's plan to another", () => {
@@ -942,9 +1113,31 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
       JSON.stringify({ organizationId: "loja-a", readAt: "x", state: "grace" }),
       JSON.stringify({
         accessEndsAt: 1,
+        nextChargeOn: null,
         organizationId: "loja-a",
         readAt: 1,
         state: "grace",
+      }),
+      // kept before the day of the charge was: read again
+      JSON.stringify({
+        accessEndsAt: null,
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
+      }),
+      JSON.stringify({
+        accessEndsAt: null,
+        nextChargeOn: "10/11",
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
+      }),
+      JSON.stringify({
+        accessEndsAt: null,
+        nextChargeOn: 20_261_110,
+        organizationId: "loja-a",
+        readAt: 1,
+        state: "trialing",
       }),
     ]) {
       store.values.set(PLAN_NOTICE_KEY, value);
@@ -958,6 +1151,44 @@ describe("the memory of the notice of grace (sessionStorage, by store)", () => {
     clearPlanNotice(store);
     expect(store.values.has(PLAN_NOTICE_KEY)).toBe(false);
     expect(rememberedPlanNotice("loja-a", store)).toBeNull();
+  });
+});
+
+const DAY_WORD = /dia/;
+
+describe("trialChargeDay (the trial at the foot of the menu)", () => {
+  const TODAY = "2026-10-29";
+
+  it("is the dd/mm of the first charge, in a trial only", () => {
+    expect(
+      trialChargeDay({ nextChargeOn: "2026-11-10", state: "trialing" }, TODAY)
+    ).toBe("10/11");
+    for (const state of ["active", "grace", "free", "trial_setup"] as const) {
+      expect(
+        trialChargeDay({ nextChargeOn: "2026-11-10", state }, TODAY)
+      ).toBeNull();
+    }
+  });
+
+  it("is nothing without a charge to come (the renewal was cancelled)", () => {
+    expect(
+      trialChargeDay({ nextChargeOn: null, state: "trialing" }, TODAY)
+    ).toBeNull();
+  });
+
+  it("is the day itself on the day of the charge, and nothing once it is past", () => {
+    const trial = { nextChargeOn: "2026-10-29", state: "trialing" } as const;
+    expect(trialChargeDay(trial, "2026-10-29")).toBe("29/10");
+    expect(trialChargeDay(trial, "2026-10-30")).toBeNull();
+  });
+
+  it("never says a count of days (AS-3, AC-12)", () => {
+    const text = trialChargeDay(
+      { nextChargeOn: "2026-11-01", state: "trialing" },
+      TODAY
+    );
+    expect(text).toBe("01/11");
+    expect(text).not.toMatch(DAY_WORD);
   });
 });
 
@@ -1036,5 +1267,88 @@ describe("planNoticeRetryDelayMs", () => {
     expect(
       [1, 2, 3, 4, 5, 6, 20].map((failures) => planNoticeRetryDelayMs(failures))
     ).toEqual([60_000, 120_000, 240_000, 480_000, 600_000, 600_000, 600_000]);
+  });
+});
+
+describe("the wait after failed reads of the notice, by store", () => {
+  const MINUTE = 60_000;
+  const T0 = Date.parse("2026-10-28T15:00:00.000Z");
+
+  it("counts the failures of a store, the wait doubling from its first minute", () => {
+    let backoff = noPlanReadBackoff("store-a");
+    backoff = planReadFailed(backoff, "store-a", T0);
+    expect(backoff).toEqual({
+      failures: 1,
+      organizationId: "store-a",
+      retryAt: T0 + MINUTE,
+    });
+    backoff = planReadFailed(backoff, "store-a", T0 + MINUTE);
+    expect(backoff.retryAt).toBe(T0 + 3 * MINUTE);
+    expect(planReadSucceeded(backoff, "store-a")).toEqual(
+      noPlanReadBackoff("store-a")
+    );
+  });
+
+  it("does not carry the wait of store A to store B: B reads on the next minute", () => {
+    let backoff = noPlanReadBackoff("store-a");
+    backoff = planReadFailed(backoff, "store-a", T0);
+    backoff = planReadFailed(backoff, "store-a", T0 + MINUTE);
+    // A is waiting until T0 + 3 min; the screen switches to B at T0 + 1 min
+    const switchedAt = T0 + MINUTE;
+    expect(backoff.retryAt).toBeGreaterThan(switchedAt + MINUTE);
+    backoff = planReadBackoffFor(backoff, "store-b");
+    expect(backoff).toEqual(noPlanReadBackoff("store-b"));
+    expect(backoff.retryAt).toBeLessThanOrEqual(switchedAt + MINUTE);
+    expect(backoff.failures).toBe(0);
+  });
+
+  it("keeps the wait while the store stays the same", () => {
+    const backoff = planReadFailed(noPlanReadBackoff("store-a"), "store-a", T0);
+    expect(planReadBackoffFor(backoff, "store-a")).toBe(backoff);
+  });
+
+  it("ignores the late answer of a read of store A after the switch to B", () => {
+    const afterSwitch = planReadFailed(
+      noPlanReadBackoff("store-b"),
+      "store-b",
+      T0
+    );
+    // a late success of A does not clear B's wait, and a late failure of A does not add to it
+    expect(planReadSucceeded(afterSwitch, "store-a")).toBe(afterSwitch);
+    expect(planReadFailed(afterSwitch, "store-a", T0 + 5 * MINUTE)).toBe(
+      afterSwitch
+    );
+  });
+});
+
+describe("the reads of the notice in flight, by store", () => {
+  it("does not hold store B back while the read of store A is on its way", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(true);
+    expect(planReadInFlight(reads, "store-b")).toBe(false);
+  });
+
+  it("frees only its own store when a read ends", () => {
+    let reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    reads = planReadStarted(reads, "store-b");
+    reads = planReadEnded(reads, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(false);
+    expect(planReadInFlight(reads, "store-b")).toBe(true);
+  });
+
+  it("keeps the same store from starting two reads at once, until the first ends", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    expect(planReadInFlight(reads, "store-a")).toBe(true);
+    expect(planReadInFlight(planReadEnded(reads, "store-a"), "store-a")).toBe(
+      false
+    );
+  });
+
+  it("leaves the set it was given untouched", () => {
+    const reads = planReadStarted(noPlanReadsInFlight, "store-a");
+    planReadEnded(reads, "store-a");
+    planReadStarted(reads, "store-b");
+    expect([...reads]).toEqual(["store-a"]);
+    expect([...noPlanReadsInFlight]).toEqual([]);
   });
 });

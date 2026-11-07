@@ -1,5 +1,6 @@
 import type { ProductReadModel } from "@polaris/contracts";
 import {
+  type ComponentType,
   type FormEvent,
   useCallback,
   useEffect,
@@ -7,11 +8,12 @@ import {
   useState,
 } from "react";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { browserConnection } from "../lib/browser-connection";
 import { calendarDayInTimezone } from "../lib/dates";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { keepForReturn, takeKept } from "../lib/kept-for-return";
-import { isDraftChanged, useReportUnsentWork } from "../lib/unsent-work";
+import { isDraftChanged, useHoldSwap } from "../lib/unsent-work";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import {
   LimitHelp,
@@ -26,6 +28,7 @@ import {
   newProductIds,
 } from "./product-commands";
 import { ProductDialog, type ProductTab } from "./product-dialog";
+import type { ProductImportDialogProps } from "./product-import/product-import-dialog";
 import {
   isCategoryUnavailable,
   isProductAlreadyCreated,
@@ -44,11 +47,18 @@ import {
   LoadErrorNotice,
   OFFLINE_NOTICE_ID,
   OfflineNotice,
+  importedNotice,
   PRODUCT_STATUS_OPTIONS,
   ProductSearch,
   ProductsHeader,
 } from "./products-page-parts";
-import { StatusNav } from "./screen-parts";
+import { countLineShown, shownListCount } from "./list-page-model";
+import {
+  ListCountLine,
+  LoadMoreButton,
+  StatusNav,
+  useListPage,
+} from "./screen-parts";
 import { useProductsData } from "./use-products-data";
 import { useProductsLink } from "./use-products-link";
 
@@ -123,12 +133,7 @@ async function createFromDraft(
   );
 }
 
-function countTextFor(shown: number, total: number, query: string): string {
-  if (query.trim() !== "") {
-    return `${shown} de ${total}`;
-  }
-  return `${total} ${total === 1 ? "produto" : "produtos"}`;
-}
+const PRODUCT_NOUN = ["produto", "produtos"] as const;
 
 /**
  * An action's error comes first; the failed read of the address's product is said only once the list is shown, so
@@ -204,6 +209,58 @@ function toKeep(state: ProductsReturn): ProductsReturn | null {
   return state.keptKey === null && state.variantsDraft === null ? null : state;
 }
 
+const IMPORT_NEEDS_CONNECTION = "Importar planilha precisa de conexão.";
+
+/** Said when the chunk of the import could not be downloaded (a deploy since the page loaded, or the network). */
+const IMPORT_LOAD_FAILED =
+  "Não foi possível abrir a importação. Recarregue a página e tente de novo.";
+
+/**
+ * The import of a spreadsheet (corte 2.5): its code and the reading of the CSV are a chunk of their own, downloaded the
+ * first time the person opens it and kept out of the precache (there is no import offline, `pwa/service-worker-plugin.ts`).
+ */
+function useImportDialog(onLoadFailed: () => void) {
+  const [open, setOpen] = useState(false);
+  const [Dialog, setDialog] =
+    useState<ComponentType<ProductImportDialogProps> | null>(null);
+  const loading = useRef<boolean>(false);
+  const failedRef = useRef(onLoadFailed);
+  failedRef.current = onLoadFailed;
+  const openImport = useCallback(() => {
+    setOpen(true);
+    if (loading.current) {
+      return;
+    }
+    loading.current = true;
+    import("./product-import/product-import-dialog")
+      .then((module) => setDialog(() => module.ProductImportDialog))
+      .catch(() => {
+        loading.current = false;
+        setOpen(false);
+        failedRef.current();
+      });
+  }, []);
+  const closeImport = useCallback(() => setOpen(false), []);
+  return { closeImport, Dialog, open, openImport };
+}
+
+/**
+ * The dialog of the import once its chunk arrived. "Conhecer o Pro" inside it closes it before the Assinatura opens; the
+ * file read lives in this page only, so it does not come back on "voltar" (a new file is read again).
+ */
+function ImportDialogSlot({
+  Dialog,
+  ...props
+}: ProductImportDialogProps & {
+  Dialog: ComponentType<ProductImportDialogProps> | null;
+}) {
+  return Dialog ? (
+    <LimitLeaveScope value={props.onClose}>
+      <Dialog {...props} />
+    </LimitLeaveScope>
+  ) : null;
+}
+
 /** A new product refused because of its category: the category takes the focus, not the alert. */
 function isCategoryRefusal(
   cause: unknown,
@@ -268,6 +325,7 @@ export function ProductsPage() {
   const newProductNames = useRef<NewProductIds | null>(returned.names);
   const rootRef = useRef<HTMLDivElement>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
+  const importButtonRef = useRef<HTMLButtonElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const noticeRef = useRef<string | null>(null);
   noticeRef.current = notice;
@@ -306,6 +364,51 @@ export function ProductsPage() {
     setUndoProduct(null);
   }, []);
 
+  const handleImportLoadFailed = useCallback(() => {
+    setError(IMPORT_LOAD_FAILED);
+    focusFeedback();
+  }, [focusFeedback]);
+  const {
+    closeImport,
+    Dialog: ImportDialog,
+    open: importOpen,
+    openImport,
+  } = useImportDialog(handleImportLoadFailed);
+  const handleImport = useCallback(() => {
+    clearMessages();
+    // the address (`?importar=1`) opens it too: without a connection it says why instead of a download that fails
+    if (!browserConnection.isOnline()) {
+      setError(IMPORT_NEEDS_CONNECTION);
+      focusFeedback();
+      return;
+    }
+    openImport();
+  }, [clearMessages, focusFeedback, openImport]);
+  // after "Ver os produtos" the focus goes to the notice of what entered, not back to the button
+  const importFinalFocus = useCallback(
+    () => (noticeRef.current ? false : (importButtonRef.current ?? true)),
+    []
+  );
+  const handleShowImported = useCallback(
+    (entered: number) => {
+      clearMessages();
+      setNotice(importedNotice(entered));
+      closeImport();
+    },
+    [clearMessages, closeImport]
+  );
+  // what the import said takes the focus once the dialog is gone, on the notice itself (as `handleDialogClosed`)
+  const handleImportClosed = useCallback(() => {
+    if (noticeRef.current) {
+      focusLater(() => feedbackRef.current?.focus());
+    }
+  }, []);
+  const handleImported = useCallback(() => {
+    // the products live on the server: bring them to this device, then show them
+    workspace?.runtime.syncNow().catch(() => undefined);
+    refresh();
+  }, [refresh, workspace]);
+
   /**
    * Opens the dialog of a product (or of a new one) on a tab. A draft kept by Esc for the same product comes back;
    * any other starts from the product (or empty), and a new product gets new names at its first try.
@@ -322,11 +425,12 @@ export function ProductsPage() {
         current?.productId === product?.id ? current : null
       );
       keptRef.current = null;
-      // back to where the person was: the menu of the product, or the button that opens a new one
+      // back to where the person was: the row (Dados), the row's menu (Variantes, Imagens) or the new button
+      const opener = tab === "dados" ? "[data-row-open]" : "[aria-haspopup]";
       originRef.current = () =>
         product
           ? (rootRef.current?.querySelector<HTMLElement>(
-              `[data-product-id="${product.id}"] [aria-haspopup]`
+              `[data-product-id="${product.id}"] ${opener}`
             ) ?? newButtonRef.current)
           : newButtonRef.current;
       setDialogProductId(product?.id ?? null);
@@ -438,6 +542,7 @@ export function ProductsPage() {
 
   // `?produto=` and `?novo=1`: the dialog the address names opens, on the variants of the product or for a new one
   const { retry: retryLink } = useProductsLink(workspace, organizationId, {
+    onImport: handleImport,
     onNew: () => openDialog(null, "dados"),
     onNotice: (message) => {
       setLinkFailure(null);
@@ -638,7 +743,7 @@ export function ProductsPage() {
     dialogWasShown.current = false;
   }, [dialogOpen, dialogProductId, dialogShown]);
   // typed and not sent: the form against an empty one, or against the product being edited
-  useReportUnsentWork(
+  useHoldSwap(
     isDraftChanged(
       draft,
       dialogProduct ? draftOf(dialogProduct) : emptyDraft
@@ -658,6 +763,7 @@ export function ProductsPage() {
     [organizationId]
   );
   const visibleProducts = filterByName(products, query);
+  const page = useListPage(visibleProducts, `${status}\n${query}`);
   const isOffline = workspace !== null && !workspace.online;
   const listIsShown = !(isLoading || loadError);
   const feedbackError = linkFeedbackError(
@@ -681,6 +787,9 @@ export function ProductsPage() {
       <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
         <ProductsHeader
           buttonRef={newButtonRef}
+          importButtonRef={importButtonRef}
+          isOffline={isOffline}
+          onImport={handleImport}
           onNew={handleNew}
           showNew={status === "active"}
         />
@@ -728,12 +837,33 @@ export function ProductsPage() {
           />
         </LimitLeaveScope>
 
+        <ImportDialogSlot
+          categories={categories}
+          Dialog={ImportDialog}
+          finalFocus={importFinalFocus}
+          onClose={closeImport}
+          onClosed={handleImportClosed}
+          onEntered={handleImported}
+          onShowProducts={handleShowImported}
+          open={importOpen}
+        />
+
         <ProductSearch onChange={setQuery} value={query} />
         <StatusNav
           label="Estado dos produtos"
           onSelect={handleStatus}
           options={PRODUCT_STATUS_OPTIONS}
           value={status}
+        />
+        <ListCountLine
+          shown={countLineShown(isLoading, listIsShown, products.length)}
+          text={shownListCount(
+            listIsShown,
+            visibleProducts.length,
+            products.length,
+            query,
+            PRODUCT_NOUN
+          )}
         />
 
         {loadError ? (
@@ -750,17 +880,19 @@ export function ProductsPage() {
             onNew={handleNew}
             onRestore={handleRestoreProduct}
             pendingAction={pendingAction}
-            products={visibleProducts}
+            products={page.items}
             query={query}
             status={status}
             syncStates={syncStates}
             total={products.length}
           />
         )}
-        {listIsShown && visibleProducts.length > 0 ? (
-          <p aria-live="polite" className="text-muted-foreground text-support">
-            {countTextFor(visibleProducts.length, products.length, query)}
-          </p>
+        {listIsShown && page.hasMore ? (
+          <LoadMoreButton
+            listLabel="Produtos"
+            onClick={page.loadMore}
+            shown={page.items.length}
+          />
         ) : null}
       </div>
     </div>

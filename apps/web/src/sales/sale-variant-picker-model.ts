@@ -4,7 +4,7 @@ import type {
   PolarisRpcClient,
 } from "@polaris/contracts";
 import { variantFullLabel } from "../inventory/stock-target";
-import { formatBrlAmount, formatQuantity } from "../lib/format";
+import { formatQuantity } from "../lib/format";
 import { readErrorMessage } from "../lib/rpc-error";
 import {
   type ItemDraft,
@@ -23,7 +23,8 @@ type ListBalancesInput = Parameters<
 /** One read of sellable variants (active products only), searched by text. */
 export function variantSearchRequest(
   organizationId: string,
-  query: string
+  query: string,
+  withCover = false
 ): ListBalancesInput {
   const text = query.trim();
   return {
@@ -32,13 +33,15 @@ export function variantSearchRequest(
     productStatus: "active",
     stock: "all",
     ...(text === "" ? {} : { query: text }),
+    ...(withCover ? { withCover: true } : {}),
   };
 }
 
 /** Re-reads the balances of the variants already on the sale, one call. */
 export function lineBalancesRequest(
   organizationId: string,
-  variantIds: readonly string[]
+  variantIds: readonly string[],
+  withCover = false
 ): ListBalancesInput {
   return {
     limit: 100,
@@ -46,7 +49,44 @@ export function lineBalancesRequest(
     productStatus: "all",
     stock: "all",
     variantIds: [...variantIds],
+    ...(withCover ? { withCover: true } : {}),
   };
+}
+
+/**
+ * The lines that must be read again for their cover: the flag that asks for it changed since the last time it was
+ * seen (`seen` is null before the first one), so the balances already loaded were read without, or with, a cover the
+ * screen now treats differently. An unchanged flag is no reason for a read.
+ */
+export function linesToReadForCover(
+  seen: boolean | null,
+  withCover: boolean,
+  variantIds: readonly string[]
+): readonly string[] {
+  return seen === null || seen === withCover ? [] : variantIds;
+}
+
+/**
+ * What the sale does when the cover flag may have changed: reads the open lines again if it did, once, and only
+ * against the server (a local workspace already carries the cover of the device's copy). Returns the flag to keep as
+ * the last one seen.
+ */
+export function rereadLinesForCover(args: {
+  local: boolean;
+  openVariantIds: readonly string[];
+  read: (variantIds: readonly string[]) => Promise<unknown>;
+  seen: boolean | null;
+  withCover: boolean;
+}): boolean {
+  const ids = linesToReadForCover(
+    args.seen,
+    args.withCover,
+    args.openVariantIds
+  );
+  if (ids.length > 0 && !args.local) {
+    args.read(ids).catch(() => undefined);
+  }
+  return args.withCover;
 }
 
 export interface PickerOption {
@@ -70,9 +110,6 @@ export function pickerOptions(
     const parts = [stockText(entry)];
     if (entry.sku) {
       parts.push(`SKU ${entry.sku}`);
-    }
-    if (entry.movingAverageCost !== null && entry.quantity > 0) {
-      parts.push(`custo médio ${formatBrlAmount(entry.movingAverageCost)}`);
     }
     return {
       detail: parts.join(" · "),
@@ -130,6 +167,16 @@ export function pickerView(
   };
 }
 
+/**
+ * A store with nothing to sell says so under the field, without waiting for a touch: it is the state of the store,
+ * not a suggestion. A search with no match is said inside the suggestions.
+ */
+export function storeHasNothingToSell(
+  view: PickerView
+): view is Extract<PickerView, { kind: "empty" }> & { href: string } {
+  return view.kind === "empty" && view.href !== null;
+}
+
 export function pickerErrorMessage(error: unknown): string {
   return readErrorMessage(error, "as variantes");
 }
@@ -145,23 +192,28 @@ export function itemChangesForEntry(
   };
 }
 
+/**
+ * A variant's balance as the sale keeps it in memory, with the cover of its product when the read carried it. The
+ * cover is for drawing only: the sale draft, the queue and the snapshot never hold it.
+ */
+export type SaleBalance = InventoryBalanceReadModel & {
+  coverAssetId?: string | null;
+};
+
 /** The line's balance, from the same read that listed the variant. */
 export function balanceOfEntry(
   entry: InventoryBalanceEntryReadModel
-): InventoryBalanceReadModel {
+): SaleBalance {
   return {
+    ...(entry.coverAssetId === undefined
+      ? {}
+      : { coverAssetId: entry.coverAssetId }),
     movingAverageCost: entry.movingAverageCost,
     quantity: entry.quantity,
     variantId: entry.variantId,
     version: entry.version,
   };
 }
-
-/** Clearing the choice brings the search back; the quantity is kept. */
-export const clearedItemChanges: Pick<
-  ItemDraft,
-  "label" | "productId" | "variantId"
-> = { label: "", productId: "", variantId: "" };
 
 const GONE_MESSAGE =
   "Esta variante não aparece mais entre os produtos ativos. Troque a variante ou remova o item.";
@@ -171,10 +223,10 @@ const GONE_MESSAGE =
  * new balance, and one the server no longer lists gets a warning instead.
  */
 export function stockAfterRefresh(
-  previous: Readonly<Record<string, Loadable<InventoryBalanceReadModel>>>,
+  previous: Readonly<Record<string, Loadable<SaleBalance>>>,
   requestedIds: readonly string[],
   entries: readonly InventoryBalanceEntryReadModel[]
-): Record<string, Loadable<InventoryBalanceReadModel>> {
+): Record<string, Loadable<SaleBalance>> {
   const next = { ...previous };
   const found = new Map(entries.map((entry) => [entry.variantId, entry]));
   for (const variantId of requestedIds) {
@@ -193,4 +245,19 @@ export function chunkIds(ids: readonly string[], size = 100): string[][] {
     chunks.push(ids.slice(index, index + size));
   }
   return chunks;
+}
+
+export function coversOfStock(
+  stock: Readonly<Record<string, Loadable<SaleBalance>>>
+): Record<string, string | null> {
+  const covers: Record<string, string | null> = {};
+  for (const [variantId, balance] of Object.entries(stock)) {
+    if (
+      balance.status === "ready" &&
+      balance.value.coverAssetId !== undefined
+    ) {
+      covers[variantId] = balance.value.coverAssetId;
+    }
+  }
+  return covers;
 }

@@ -5,12 +5,13 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../lib/rpc-error";
+import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { accessDateText, untilText } from "./plan-notice";
 import { keptList, type Refusal } from "./subscription-model";
 
 /**
  * What the owner's commands of the Assinatura say (corte assinatura-e-cancelar, AC-21 to AC-34, AC-42 to AC-44;
- * design t268 v2, § 4 and § 11; ADR 0104, decision 3): cancel the renewal, the refund of the right of withdrawal and
+ * ADR 0104, decision 3): cancel the renewal, the refund of the right of withdrawal and
  * paying the charge that failed. Everything comes from `billing.readPlan` and from the commands' answers; the client
  * counts no window and trusts no clock of its own: the screen reads the plan again once the server's `until` passes.
  */
@@ -172,19 +173,13 @@ export function refundDialogText(amount: string): DialogText {
 
 /**
  * The way of Pix while its refund goes to support (AC-30, AC-44, R-1): the last minute of the window, that a request
- * sent until then counts, and only the store's name. The box is the configuration's (`BILLING_SUPPORT_EMAIL`), never
- * the code's: without it the line names the support only.
+ * sent until then counts, and only the store's name. The address is the one of `lib/support-contact`, the same the
+ * Terms carry.
  */
 export function supportRefundText(
-  refund: NonNullable<BillingPlanView["refund"]>,
-  supportEmail: string | null
+  refund: NonNullable<BillingPlanView["refund"]>
 ): string {
-  // the box is at the end of every e-mail of the subscription (`billingEmailFooter`)
-  const to =
-    supportEmail === null
-      ? "o suporte do Polaris (o endereço está no fim dos e-mails da sua assinatura)"
-      : supportEmail;
-  return `Para desistir e receber o reembolso de ${formatBrlAmount(refund.amount)}, escreva para ${to} até ${untilText(refund.until)} com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento.`;
+  return `Para desistir e receber o reembolso de ${formatBrlAmount(refund.amount)}, escreva para o suporte do Polaris (${SUPPORT_EMAIL}) até ${untilText(refund.until)} com o nome da loja. O pedido enviado até essa data vale, mesmo que a resposta chegue depois. Não mande CPF, CNPJ nem dados de pagamento.`;
 }
 
 /**
@@ -259,16 +254,28 @@ export function safeOverduePaymentUrl(value: string): string | null {
 const CONNECTION_TEXT =
   "A conexão falhou antes da resposta. Confira a conexão e tente de novo: o pedido não é feito duas vezes.";
 
-const PROVIDER_TEXT: Readonly<Record<OwnerCommand, string>> = {
-  // AC-26
+const OVERDUE_TEXT =
+  "Não conseguimos abrir a página de pagamento agora. Nada foi cobrado. Tente de novo em alguns minutos.";
+
+const UNCONFIRMED_TEXT = {
   cancel:
-    "Não conseguimos cancelar agora. Nada foi cancelado e nada foi cobrado a mais. Tente de novo.",
-  overdue:
-    "Não conseguimos abrir a página de pagamento agora. Nada foi cobrado. Tente de novo em alguns minutos.",
-  // never "Nada foi cancelado" (AS-42): on a repeat the renewal is already cancelled
+    "Não deu para confirmar o cancelamento. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
   refund:
-    "Não conseguimos pedir o reembolso agora. Nada foi cobrado a mais. Tente de novo.",
-};
+    "Não deu para confirmar o pedido de reembolso. Ele pode ter sido feito: toque em Atualizar para ver o plano antes de tentar de novo.",
+} as const;
+
+/**
+ * `billing_provider_unavailable` is the server saying the provider failed or the time ran out, and it may come after
+ * the provider acted; the Worker's own 503 with no reason may too. Repeating is safe on the server (the plan read
+ * decides what is left to do), so cancelling and refunding read the plan before a new try and never say nothing was done. Opening the page of the
+ * charge only reads: it says nothing was charged and offers the try again.
+ */
+function unavailableRefusal(command: OwnerCommand): Refusal {
+  if (command === "overdue") {
+    return { reread: false, retry: true, text: OVERDUE_TEXT };
+  }
+  return { reread: true, retry: false, text: UNCONFIRMED_TEXT[command] };
+}
 
 /**
  * The text of each refusal of the owner's commands, by its reason (ADR 0104, decision 3): "Tentar de novo" when the
@@ -301,7 +308,7 @@ export function commandRefusal(command: OwnerCommand, error: unknown): Refusal {
         text: "Não conseguimos confirmar o pedido. Tente de novo: ele não é feito duas vezes.",
       };
     case "billing_provider_unavailable":
-      return { reread: false, retry: true, text: PROVIDER_TEXT[command] };
+      return unavailableRefusal(command);
     case "nothing_to_cancel":
       return {
         reread: true,
@@ -357,7 +364,7 @@ export function commandRefusal(command: OwnerCommand, error: unknown): Refusal {
     };
   }
   if (rpcErrorCode(error) === "SERVICE_UNAVAILABLE") {
-    return { reread: false, retry: true, text: PROVIDER_TEXT[command] };
+    return unavailableRefusal(command);
   }
   return {
     reread: true,
@@ -368,5 +375,5 @@ export function commandRefusal(command: OwnerCommand, error: unknown): Refusal {
 
 /** An address of the page of the charge out of Asaas's exact hosts: said as the provider's failure. */
 export function unsafeOverdueRefusal(): Refusal {
-  return { reread: false, retry: true, text: PROVIDER_TEXT.overdue };
+  return { reread: false, retry: true, text: OVERDUE_TEXT };
 }

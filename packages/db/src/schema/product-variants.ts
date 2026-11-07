@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { MAX_PRODUCT_OPTION_VALUE_LENGTH } from "@polaris/domain/catalog/product";
 import { activeTenantScope, productVariants, products } from "./product";
 
 const runtimeRole = "polaris_pr11_runtime";
@@ -100,6 +101,10 @@ export const productOptionValues = pgTable(
     check(
       "product_option_values_name_not_blank",
       sql`char_length(btrim(${table.name})) >= 1`
+    ),
+    check(
+      "product_option_values_name_max_length",
+      sql`char_length(${table.name}) <= ${sql.raw(String(MAX_PRODUCT_OPTION_VALUE_LENGTH))}`
     ),
     check(
       "product_option_values_position_nonnegative",

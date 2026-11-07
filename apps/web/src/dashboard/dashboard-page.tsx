@@ -1,4 +1,6 @@
+import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton } from "@/ui/hidden-values";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type ReactNode,
@@ -12,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import { Skeleton } from "@/ui/skeleton";
 import { Tabs, TabsContent } from "@/ui/tabs";
 import { replaceAddress } from "../app-shell/address";
 import { lazyScreen } from "../app-shell/lazy-screen";
@@ -32,6 +35,7 @@ import { calendarDayInTimezone } from "../lib/dates";
 import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
 import { waitingOperations } from "../offline/runtime/sync-status";
 import { formatLastConfirmed, formatUpdatedUntil } from "./dashboard-model";
+import { EmptyResult } from "./empty-result";
 import { groupGoals } from "./goal-model";
 import { GoalsPanel } from "./goals-panel";
 import { OfflineCopyNotice } from "./offline-copy-notice";
@@ -61,8 +65,40 @@ import {
 
 const RESULT_TABS = ["resultado", "metas", "despesas"] as const;
 
+/**
+ * The expenses while their chunk loads: the shape of the screen of an empty month (the heading, the parts, the month
+ * and the card of the list), so the screen that comes takes the place of the skeleton instead of growing out of a
+ * short "Carregando…".
+ */
+function ExpensesLoading() {
+  return (
+    <div className="grid grid-cols-1 gap-4" role="status">
+      <span className="sr-only">Carregando as despesas…</span>
+      <div aria-hidden="true" className="grid gap-1">
+        <div className="flex h-5 items-center">
+          <Skeleton className="h-4 w-20" />
+        </div>
+        <Skeleton className="h-9 w-full max-w-xl md:h-[1.125rem]" />
+      </div>
+      <Skeleton
+        aria-hidden="true"
+        className="h-ctl-md w-72 max-w-full rounded-lg"
+      />
+      <Skeleton
+        aria-hidden="true"
+        className="h-[6.8125rem] w-full md:h-[3.5625rem]"
+      />
+      <Skeleton
+        aria-hidden="true"
+        className="h-[23.9375rem] w-full rounded-xl md:h-[21.3125rem]"
+      />
+    </div>
+  );
+}
+
 /** The expenses, the third tab (map of navigation, § 1; `/expenses` opens it): their own chunk, as their screen was. */
 const EXPENSES_PANEL: TabPanel = {
+  fallback: <ExpensesLoading />,
   Screen: lazyScreen(() =>
     import("../expenses/expenses-page").then((module) => ({
       default: module.ExpensesPage,
@@ -73,12 +109,12 @@ const EXPENSES_PANEL: TabPanel = {
 
 function Heading() {
   return (
-    <header className="grid gap-1">
+    <header className="flex items-center gap-1">
       <h1 className="text-title">Resultado</h1>
-      <p className="text-muted-foreground text-support">
+      <HelpTip about="Resultado">
         Estimativa com as vendas confirmadas e as despesas do período. Não é
         lucro líquido nem dinheiro recebido.
-      </p>
+      </HelpTip>
     </header>
   );
 }
@@ -90,17 +126,27 @@ interface ToolbarProps {
   period: Period;
   preset: PeriodPreset;
   state: PeriodSummaryState;
+  /** The year of the store's today, for the name of the period ("outubro", not "outubro de 2026"). */
+  thisYear: string;
   timezone: string;
 }
 
-/** Which read the line beside the period talks about: the server's, or the copy the device kept. */
+/**
+ * Which read the line beside the period talks about: the server's, or the copy the device kept. While another period
+ * loads, the figures of the one before stay on the screen, dimmed, and this line says which they are: in its own place,
+ * so nothing is put above the figures and nothing moves (no line comes and goes over them).
+ */
 function updatedText(
   state: PeriodSummaryState,
-  timezone: string
+  timezone: string,
+  period: Period,
+  thisYear: string
 ): string | null {
   const { isLoading, source, summary } = state;
   if (isLoading) {
-    return "Atualizando…";
+    return summary && !samePeriod(summary.period, period)
+      ? `Mostrando ${periodText(summary.period, thisYear)} até o novo período carregar.`
+      : "Atualizando…";
   }
   if (!summary) {
     return null;
@@ -117,6 +163,7 @@ function Toolbar({
   period,
   preset,
   state,
+  thisYear,
   timezone,
 }: ToolbarProps) {
   return (
@@ -140,12 +187,13 @@ function Toolbar({
         </Button>
         {/* v7 § 6: the same choice as on the Início, kept on the device */}
         <HideValuesButton size="sm" />
+        {/* two lines kept on a phone, where "Mostrando … até o novo período carregar." takes two */}
         <p
           aria-live="polite"
-          className="basis-full self-center text-muted-foreground text-support md:basis-auto"
+          className="min-h-9 basis-full self-center text-muted-foreground text-support md:min-h-0 md:basis-auto"
           id="dashboard-updated"
         >
-          {updatedText(state, timezone)}
+          {updatedText(state, timezone, period, thisYear)}
         </p>
       </div>
     </div>
@@ -180,6 +228,8 @@ function CardNote({
 }
 
 interface ContentProps {
+  /** `expense:create`: the empty period offers the way to a new expense only to who can register one. */
+  canCreateExpense: boolean;
   /** The days of the period before the one asked for, for the chips of the cards (null while not read, or when the result's chip cannot exist: `resultChipPeriod`). */
   comparison: ComparisonDays | null;
   /** The same days as `dailySales` read them, for the chips of sales and ticket (null while not read). */
@@ -203,6 +253,7 @@ function onScreen<T extends { period: Period }>(
 }
 
 function Content({
+  canCreateExpense,
   comparison,
   salesComparison,
   period,
@@ -233,11 +284,7 @@ function Content({
   // the store's today on the server's clock of the figures, the same that cuts the chart (AC-6)
   const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   if (summary.quality.level === "no_data") {
-    return (
-      <CardNote description="Escolha outro período ou registre vendas e despesas.">
-        {`Sem vendas nem despesas em ${shown}`}
-      </CardNote>
-    );
+    return <EmptyResult canCreateExpense={canCreateExpense} period={shown} />;
   }
   return (
     <div
@@ -247,19 +294,13 @@ function Content({
       )}
       data-stale={stale ? "" : undefined}
     >
-      {behind ? (
-        <p
-          className="text-muted-foreground text-support"
-          role="status"
-        >{`Mostrando ${shown} até o novo período carregar.`}</p>
-      ) : null}
-      <QualityBanner quality={summary.quality} />
       <ResultCards
         comparison={onScreen(comparison, summary.period, today)}
         salesComparison={onScreen(salesComparison, summary.period, today)}
         summary={summary}
         today={today}
       />
+      <QualityBanner quality={summary.quality} />
       <ResultChart
         source={state.source}
         summary={summary}
@@ -284,6 +325,10 @@ interface Selection {
  */
 export function DashboardPage() {
   const { organization, organizationId } = useCurrentOrganization();
+  const canCreateExpense = hasCapabilityForRole(
+    organization.role,
+    "expense:create"
+  );
   // the first read has only the device's clock to name "hoje"; the server's answer corrects it (below)
   const [today, setToday] = useState(() =>
     calendarDayInTimezone(new Date(), organization.timezone)
@@ -299,10 +344,13 @@ export function DashboardPage() {
     [selection, today]
   );
   const copyMonth = copyMonthOf(selection.preset, period);
+  const [tab, handleTab] = useScreenTab("dashboard", RESULT_TABS);
+  // an expense written in the Despesas tab makes the read old: the Resultado reads it again when it is back in front
   const { refresh, state } = usePeriodSummary(
     organizationId,
     period,
-    copyMonth
+    copyMonth,
+    tab === "resultado"
   );
   // the period before is read only after the server answered for the period asked, with figures to compare
   const answered =
@@ -338,7 +386,6 @@ export function DashboardPage() {
   const [initialTab] = useState(
     () => requestedTab("dashboard", window.location.search).value
   );
-  const [tab, handleTab] = useScreenTab("dashboard", RESULT_TABS);
   // before the effects of the form dialog `?meta=nova` opens: on a phone it pushes its entry over this address
   useLayoutEffect(() => {
     // the links of the Início open the Metas tab: the address keeps it from now on
@@ -363,7 +410,7 @@ export function DashboardPage() {
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <Heading />
-      <Tabs className="gap-5" onValueChange={handleTab} value={tab}>
+      <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
         <ScreenTabList label="Resultado, metas e despesas" value={tab}>
           <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>
           <ScreenTabTrigger value="metas">
@@ -385,6 +432,7 @@ export function DashboardPage() {
             period={period}
             preset={selection.preset}
             state={state}
+            thisYear={today.slice(0, 4)}
             timezone={organization.timezone}
           />
           {state.summary && state.source === "cache" ? (
@@ -406,6 +454,7 @@ export function DashboardPage() {
           ) : null}
           <div aria-busy={state.isLoading} className="grid gap-5">
             <Content
+              canCreateExpense={canCreateExpense}
               comparison={comparison}
               salesComparison={salesComparison}
               period={period}

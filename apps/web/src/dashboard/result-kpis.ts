@@ -1,17 +1,32 @@
 import { Money } from "@polaris/domain/money/money";
 import {
+  type Delta,
   divideHalfUp,
   type KpiReading,
   moneyDelta,
+  NOT_PROFIT_NOR_CASH,
   percentDelta,
+  resultHelp,
+  ticketHelp,
 } from "../home/home-kpis";
-import { salesCountText, shortDate } from "../home/home-model";
+import {
+  fullDate,
+  periodShort,
+  salesCountText,
+  shortDate,
+} from "../home/home-model";
 import {
   cogsCoverageOf,
   type StoredDay,
   type StoredPeriodSummary,
 } from "../lib/period-summary-cache";
-import { addDays, dayCount, monthName, type Period } from "./result-period";
+import {
+  addDays,
+  dayCount,
+  lastOfMonth,
+  monthName,
+  type Period,
+} from "./result-period";
 
 /**
  * The row of KPI cards of the Resultado (revisão de UI v7, § 8), in the mold of the Início's (home-kpis.ts): Resultado
@@ -26,18 +41,18 @@ import { addDays, dayCount, monthName, type Period } from "./result-period";
  * no chip.
  */
 
+/** A day, or a month of a long period (`to`, `days` and `unknownDays`, as the server adds it up). */
 type Day = Pick<StoredDay, "date" | "netSales" | "salesCount"> &
-  Partial<Pick<StoredDay, "operatingResult">>;
+  Partial<Pick<StoredDay, "days" | "operatingResult" | "to" | "unknownDays">>;
+
+/** The last day an entry adds up: its own date, or the last day of a month. */
+const lastDayOf = (day: Day): string => day.to ?? day.date;
 
 const cents = (amount: string): bigint => Money.from(amount).minorUnits;
 const drawing = (amount: bigint): number => Number(amount) / 100;
 
 /** Above this many days a period groups by month (AC-7): its cards compare with nothing. */
 const LONGEST_COMPARED = 62;
-
-function lastOfMonth(day: string): string {
-  return addDays(`${addDays(`${day.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1);
-}
 
 /** True when the period is one whole calendar month ("Este mês", "Mês passado", or a range given as one). */
 function isWholeMonth(period: Period): boolean {
@@ -59,14 +74,40 @@ export function comparisonPeriod(period: Period, today: string): Period | null {
   return { from: addDays(period.from, -dayCount(period)), to: before };
 }
 
-/** "1 a 25/10" within a month, "26/09 a 25/10" across two, "25/10" for one day. */
-export function rangeText(first: string, last: string): string {
-  if (first === last) {
-    return shortDate(last);
+/**
+ * What a reading says it goes up to: "Até 17/10", "Até 31/12/2025" when the day is not in `thisYear`. A month reads to
+ * its last day.
+ */
+export function untilText(
+  point: { date: string; to?: string | undefined } | undefined,
+  today: string
+): string {
+  const day = point?.to ?? point?.date ?? today;
+  return `Até ${day.slice(0, 4) === today.slice(0, 4) ? shortDate(day) : fullDate(day)}`;
+}
+
+/**
+ * The chip with what it compares with: short beside it ("vs. setembro", "vs. 1 a 7/09") and in full in its name. The
+ * cards compare the days up to the day read with the same days of the period before, so the name of a month also says
+ * those days ("setembro (1 a 25/09)").
+ */
+function withAgainst(
+  delta: Delta | null,
+  period: Period,
+  priorRange: string
+): Delta | null {
+  if (!delta) {
+    return null;
   }
-  return first.slice(0, 7) === last.slice(0, 7)
-    ? `${Number(first.slice(8, 10))} a ${shortDate(last)}`
-    : `${shortDate(first)} a ${shortDate(last)}`;
+  if (!isWholeMonth(period)) {
+    return { ...delta, against: `vs. ${priorRange}` };
+  }
+  const month = monthName(addDays(period.from, -1));
+  return {
+    ...delta,
+    against: `vs. ${month}`,
+    basis: `em relação a ${month} (${priorRange})`,
+  };
 }
 
 /** The sums of the days from the first to each day. */
@@ -94,16 +135,21 @@ function cumulate(days: readonly Day[]): Cumulative[] {
   return sums;
 }
 
-/** The days of `period` in order from its first one, while the series has each of them: a gap ends it. */
+/**
+ * The entries of `period` in order from its first day, each starting the day after the one before ends (a day, or a
+ * month that ends on its `to`), while the series has each of them: a gap ends it.
+ */
 function consecutive(days: readonly Day[], period: Period): Day[] {
   const byDate = new Map(days.map((day) => [day.date, day]));
   const out: Day[] = [];
-  for (let date = period.from; date <= period.to; date = addDays(date, 1)) {
+  let date = period.from;
+  while (date <= period.to) {
     const day = byDate.get(date);
     if (!day) {
       break;
     }
     out.push(day);
+    date = addDays(lastDayOf(day), 1);
   }
   return out;
 }
@@ -120,11 +166,27 @@ function daysUpToToday(
   });
 }
 
-/** Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9). */
+/** How many days an entry adds up, and how many of them have an unknown cost (a month says it; a day is one). */
+function dayCounts(day: Day): { total: number; unknown: number } {
+  if (day.days !== undefined && day.unknownDays !== undefined) {
+    return { total: day.days, unknown: day.unknownDays };
+  }
+  return { total: 1, unknown: day.operatingResult === null ? 1 : 0 };
+}
+
+/**
+ * Whether the result of the days has a sparkline and a chip, and if not why (AC-8, AC-9): with a month that has an
+ * unknown day, "N de M dias" counts the days of the months (D1-4).
+ */
 function resultKindOf(days: readonly Day[]): ResultKind {
-  const unknown = days.filter((day) => day.operatingResult === null).length;
-  if (unknown > 0) {
-    return { kind: "incomplete", total: days.length, unknown };
+  const counts = days.map(dayCounts);
+  const unknown = counts.reduce((sum, count) => sum + count.unknown, 0);
+  if (unknown > 0 || days.some((day) => day.operatingResult === null)) {
+    return {
+      kind: "incomplete",
+      total: counts.reduce((sum, count) => sum + count.total, 0),
+      unknown: Math.max(unknown, 1),
+    };
   }
   if (
     days.length === 0 ||
@@ -170,8 +232,13 @@ type ResultKind =
   | { kind: "unsent" };
 
 export interface ResultKpis {
-  /** The days from the first of the period to today: one point of each sparkline, the index the cards read together. */
+  /**
+   * The days (or, above 62 days, the months) from the first of the period to today: one point of each sparkline, the
+   * index the cards read together.
+   */
   days: Day[];
+  /** True when each point is a month (the server's `granularity` "month"): the curve adds up by month (D1-3). */
+  monthly: boolean;
   /** "outubro" for a whole month, null for any other range: the title of the sales card and the words of the counts. */
   month: string | null;
   read: (index: number | null) => {
@@ -190,45 +257,60 @@ interface Prior {
 }
 
 interface ReadContext {
+  /** The period the cards read, to say what its chips compare with. */
+  period: Period;
   /** At rest: the period up to today, with the server's cards as the numbers. */
   atRest: boolean;
   cards: ResultKpiCards;
   date: string;
+  /** Whether the reading is of the period up to today, which has not ended: at rest, with the period reaching today. */
+  open: boolean;
   /** The period before as the `periodSummary` read it (it has the result of each day): what the result chip compares. */
   prior: Prior;
   /** The period before as `dailySales` read it (sales and counts only): what the chips of sales and ticket compare. */
   priorSales: Prior;
   range: string;
   result: ResultKind;
-  /** "no mês" or "no período". */
-  scope: string;
   sum: Cumulative;
   /** The whole period, as the server's cards read it: "outubro inteiro". */
   whole: string;
 }
 
+/** "ainda" only for a period that is still open at its end; a closed one, or a day of it already gone, has none. */
+function noSalesText(open: boolean): string {
+  return open ? "Nenhuma venda ainda" : "Sem vendas no período";
+}
+
 function salesReading({
   atRest,
   cards,
-  date,
+  open,
+  period,
   priorSales,
   range,
-  scope,
   sum,
 }: ReadContext): KpiReading {
   const before = priorSales.sum;
-  const delta = before ? percentDelta(sum.net, before.net) : null;
-  let note: string | null = delta ? `vs. ${priorSales.range}` : null;
-  if (!delta && before && before.count === 0) {
-    note = `Sem vendas de ${priorSales.range} para comparar`;
+  const delta = before
+    ? withAgainst(
+        percentDelta(sum.net, before.net, `em relação a ${priorSales.range}`),
+        period,
+        priorSales.range
+      )
+    : null;
+  let compare = "";
+  if (delta) {
+    compare = ` Compara com ${priorSales.range}.`;
+  } else if (before && before.count === 0) {
+    compare = ` Sem vendas de ${priorSales.range}, não há comparação.`;
   }
+  const count = atRest ? cards.salesCount : sum.count;
   return {
-    count: atRest
-      ? `${salesCountText(cards.salesCount)} ${scope}`
-      : `${salesCountText(sum.count)} até ${shortDate(date)}`,
+    count: count === 0 ? noSalesText(open) : salesCountText(count),
     date: range,
     delta,
-    note,
+    help: `Vendas líquidas de ${range}.${compare}`,
+    note: null,
     value: atRest ? cards.netSales : Money.fromMinorUnits(sum.net).toString(),
   };
 }
@@ -236,6 +318,7 @@ function salesReading({
 function resultReading({
   atRest,
   cards,
+  period,
   prior,
   range,
   result,
@@ -252,7 +335,11 @@ function resultReading({
     atRest && (known === null || known !== cents(cards.operatingResult));
   const delta =
     !card && known !== null && prior.sum && prior.sum.result !== null
-      ? moneyDelta(known, prior.sum.result)
+      ? withAgainst(
+          moneyDelta(known, prior.sum.result, `em relação a ${prior.range}`),
+          period,
+          prior.range
+        )
       : null;
   let value: string | null =
     known === null ? null : Money.fromMinorUnits(known).toString();
@@ -260,10 +347,15 @@ function resultReading({
     value = cards.operatingResult;
   }
   return {
-    count: "Não é lucro líquido nem dinheiro já recebido.",
+    count: NOT_PROFIT_NOR_CASH,
     date: card ? whole : range,
     delta,
-    note: delta ? `vs. ${prior.range}` : null,
+    help: resultHelp(
+      card ? "do período inteiro" : `de ${range}`,
+      delta ? prior.range : null,
+      result.kind === "incomplete" ? result : null
+    ),
+    note: null,
     value,
   };
 }
@@ -274,37 +366,31 @@ const ticketOf = (sum: Cumulative | undefined): bigint | null =>
 function ticketReading({
   atRest,
   cards,
+  period,
   priorSales,
   range,
-  scope,
   sum,
 }: ReadContext): KpiReading {
   const ticket = ticketOf(sum);
   const priorTicket = ticketOf(priorSales.sum);
   const delta =
     ticket !== null && priorTicket !== null
-      ? percentDelta(ticket, priorTicket)
+      ? withAgainst(
+          percentDelta(ticket, priorTicket, `em relação a ${priorSales.range}`),
+          period,
+          priorSales.range
+        )
       : null;
   let value: string | null = cards.ticket;
   if (!atRest) {
     value = ticket === null ? null : Money.fromMinorUnits(ticket).toString();
   }
-  let count: Pick<KpiReading, "count" | "countNarrow"> = {
-    count: `Média por venda de ${range}`,
-  };
-  if (value === null) {
-    count = { count: "Sem vendas no período" };
-  } else if (atRest) {
-    count = {
-      count: `Média por venda ${scope}`,
-      countNarrow: "Média por venda",
-    };
-  }
   return {
-    ...count,
+    count: value === null ? "Sem vendas no período" : "",
     date: range,
     delta,
-    note: delta ? `vs. ${priorSales.range}` : null,
+    help: ticketHelp(range, delta ? priorSales.range : null),
+    note: null,
     value,
   };
 }
@@ -319,16 +405,20 @@ export interface PriorSeries {
  * The period before, as many days of it as from the first to the day read (at most all of it); a series with a gap
  * compares only as far as it goes.
  */
-function priorReader(series: PriorSeries | null): (at: number) => Prior {
+function priorReader(
+  series: PriorSeries | null,
+  thisYear: string
+): (at: number) => Prior {
   const sums = series ? cumulate(consecutive(series.days, series.period)) : [];
   const length = series ? dayCount(series.period) : 0;
   return (at) => {
     const compared = Math.min(at + 1, length);
     return {
       range: series
-        ? rangeText(
+        ? periodShort(
             series.period.from,
-            addDays(series.period.from, compared - 1)
+            addDays(series.period.from, compared - 1),
+            thisYear
           )
         : "",
       sum:
@@ -361,29 +451,34 @@ export function resultKpis({
 }): ResultKpis {
   const days = daysUpToToday(daily, period, today);
   const sums = cumulate(days);
-  const priorResult = priorReader(previous);
-  const priorSales = priorReader(previousSales);
+  const thisYear = today.slice(0, 4);
+  const priorResult = priorReader(previous, thisYear);
+  const priorSales = priorReader(previousSales, thisYear);
   const month = isWholeMonth(period) ? monthName(period.from) : null;
-  const scope = month ? "no mês" : "no período";
 
   // the same day the chart hatches: the contract sends `costs` and `operatingResult` null together (AC-8)
   const result = resultKindOf(days);
-  const whole = month ? `${month} inteiro` : rangeText(period.from, period.to);
+  const whole = month
+    ? `${month} inteiro`
+    : periodShort(period.from, period.to, thisYear);
 
   const read = (index: number | null) => {
     // an index of another series (the period changed under the pointer) reads the last day of this one
     const at = Math.min(index ?? sums.length - 1, sums.length - 1);
-    const date = days[at]?.date ?? today;
+    // a month is read to its last day, which the server cuts at today (D1-2, D1-5)
+    const point = days[at];
+    const date = point ? lastDayOf(point) : today;
     const context: ReadContext = {
       atRest: index === null,
       cards,
       date,
+      open: index === null && period.to >= today,
+      period,
       prior: priorResult(at),
       priorSales: priorSales(at),
       // a period that has not started has no day yet: its dates are the whole period
-      range: days.length > 0 ? rangeText(period.from, date) : whole,
+      range: days.length > 0 ? periodShort(period.from, date, thisYear) : whole,
       result,
-      scope,
       sum: sums[at] ?? { count: 0, net: 0n, result: 0n },
       whole,
     };
@@ -400,6 +495,7 @@ export function resultKpis({
   return {
     days,
     month,
+    monthly: days.some((day) => day.to !== undefined),
     read,
     result,
     series: {

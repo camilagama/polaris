@@ -1,24 +1,31 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import Trash2Icon from "lucide-react/dist/esm/icons/trash-2";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
-import { type ChangeEvent, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { useStoreToday } from "../lib/use-store-today";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+} from "@/ui/collapsible";
+import {
   Field,
   FieldContent,
+  FieldDescription,
   FieldError,
   FieldLabel,
   FieldSet,
   FieldTitle,
 } from "@/ui/field";
-import { Input } from "@/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
 import { Separator } from "@/ui/separator";
 import {
   CatalogNotice,
+  DateField,
   describedBy,
   FieldTexts,
   INSTALLMENT_PLAN_LABEL,
@@ -34,12 +41,27 @@ import {
   type CatalogView,
   type ChoiceOption,
   formFieldKeys,
+  joinSaleDate,
   MAX_SALE_ADJUSTMENTS,
   NO_PROFILE_CHOICE,
+  OFFLINE_SALE_DATE_NOTE,
   SALE_DATE_HINT,
+  SALE_METHOD_CARDS,
   type SaleFormState,
-  type SaleMethod,
+  saleExtrasSummary,
+  saleTimeIsWellFormed,
+  splitSaleDate,
+  timeOfDay,
 } from "./sale-form-model";
+
+/** The errors that live inside the closed line of date and adjustments. */
+function isExtrasErrorKey(key: string): boolean {
+  return (
+    key === formFieldKeys.occurredAt ||
+    key === formFieldKeys.adjustments ||
+    key.startsWith("adjustment:")
+  );
+}
 
 const adjustmentKindOptions: ChoiceOption[] = ADJUSTMENT_KINDS.map(
   ([id, label]) => ({ id, label })
@@ -52,16 +74,6 @@ const noProfileOption: ChoiceOption = {
   id: NO_PROFILE_CHOICE,
   label: "Sem perfil de pagamento",
 };
-
-/** The short names of the choice cards (the summary and the receipt keep the full ones of SALE_METHODS). */
-const METHOD_CARDS: ReadonlyArray<readonly [SaleMethod, string]> = [
-  ["pix", "Pix"],
-  ["cash", "Dinheiro"],
-  ["credit_card", "Crédito"],
-  ["debit_card", "Débito"],
-  ["bank_transfer", "Transferência"],
-  ["other", "Outro"],
-];
 
 /* -------------------------------------------------------------------------- */
 /* Adjustments                                                                */
@@ -132,43 +144,45 @@ function AdjustmentEditor({
           <Trash2Icon aria-hidden="true" />
         </Button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SelectField
-          disabled={disabled}
-          id={`${prefix}-kind`}
-          label="Tipo de ajuste"
-          onChange={handleKind}
-          options={adjustmentKindOptions}
-          placeholder="Escolha o tipo"
-          value={adjustment.kind}
-        />
-        {percentageAllowed ? (
+      <div className="@container">
+        <div className="grid @[26.5rem]:grid-cols-3 gap-3">
           <SelectField
             disabled={disabled}
-            id={`${prefix}-type`}
-            label="Como informar"
-            onChange={handleType}
-            options={adjustmentTypeOptions}
-            placeholder="Escolha"
-            value={adjustment.valueType}
+            id={`${prefix}-kind`}
+            label="Tipo de ajuste"
+            onChange={handleKind}
+            options={adjustmentKindOptions}
+            placeholder="Escolha o tipo"
+            value={adjustment.kind}
           />
-        ) : null}
-        <TextField
-          addon={percentage ? "%" : "R$"}
-          error={error}
-          hint={
-            percentage
-              ? "Em pontos percentuais: 2,5 = 2,5%. Incide sobre o subtotal e não compõe com outros ajustes."
-              : undefined
-          }
-          id={`${prefix}-value`}
-          inputMode="decimal"
-          label={percentage ? "Percentual (%)" : "Valor (R$)"}
-          maxLength={22}
-          onChange={handleValue}
-          placeholder={percentage ? "2,5" : "15,00"}
-          value={adjustment.value}
-        />
+          {percentageAllowed ? (
+            <SelectField
+              disabled={disabled}
+              id={`${prefix}-type`}
+              label="Como informar"
+              onChange={handleType}
+              options={adjustmentTypeOptions}
+              placeholder="Escolha"
+              value={adjustment.valueType}
+            />
+          ) : null}
+          <TextField
+            addon={percentage ? "%" : "R$"}
+            error={error}
+            hint={
+              percentage
+                ? "Em pontos percentuais: 2,5 = 2,5%. Incide sobre o subtotal e não compõe com outros ajustes."
+                : undefined
+            }
+            id={`${prefix}-value`}
+            inputMode="decimal"
+            label={percentage ? "Percentual (%)" : "Valor (R$)"}
+            maxLength={22}
+            onChange={handleValue}
+            placeholder={percentage ? "2,5" : "15,00"}
+            value={adjustment.value}
+          />
+        </div>
       </div>
     </fieldset>
   );
@@ -231,41 +245,147 @@ function Adjustments({
 /* Date                                                                       */
 /* -------------------------------------------------------------------------- */
 
-interface DateFieldProps {
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+interface SaleDateProps {
   error: string | undefined;
+  /** Without a connection the sale is dated when it is kept: no field, the note in its place. */
+  offline: boolean;
   onChange: (value: string) => void;
+  /** The store's zone: the last chosen day is the store's today, not the device's. */
+  timezone: string | null;
   value: string;
 }
 
-/** The optional commercial date and time; empty means now. */
-function DateField({ error, onChange, value }: DateFieldProps) {
-  const id = "sale-occurred-at";
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
-    [onChange]
+/**
+ * The optional commercial date and time: the day on the DatePicker of src/ui (never after today) and the time typed
+ * beside it; empty means now. Picking a day with no time fills in the time of now, which the person can change.
+ */
+function SaleDate({
+  error,
+  offline,
+  onChange,
+  timezone,
+  value,
+}: SaleDateProps) {
+  const { day, time } = splitSaleDate(value);
+  const today = useStoreToday(timezone);
+  const handleDay = useCallback(
+    (next: string) =>
+      onChange(
+        joinSaleDate(
+          next,
+          time === "" && next !== "" ? timeOfDay(new Date()) : time
+        )
+      ),
+    [onChange, time]
   );
-  const handleClear = useCallback(() => onChange(""), [onChange]);
+  const handleTime = useCallback(
+    (next: string) => onChange(joinSaleDate(day, next)),
+    [day, onChange]
+  );
+  const handleNow = useCallback(() => {
+    onChange("");
+    document.getElementById("sale-occurred-day")?.focus();
+  }, [onChange]);
+  const timeAtFault =
+    error !== undefined && ISO_DAY.test(day) && !saleTimeIsWellFormed(time);
+  if (offline) {
+    return (
+      <Field>
+        <FieldTitle>Data e hora da venda</FieldTitle>
+        <p className="text-muted-foreground text-support" role="note">
+          {OFFLINE_SALE_DATE_NOTE}
+        </p>
+      </Field>
+    );
+  }
   return (
-    <Field data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor={id}>Data e hora da venda (opcional)</FieldLabel>
-      <div className="flex items-center gap-2">
-        <Input
-          aria-describedby={describedBy(id, error, SALE_DATE_HINT)}
-          aria-invalid={error ? true : undefined}
-          className="min-w-0 flex-1"
-          id={id}
-          onChange={handleChange}
-          type="datetime-local"
-          value={value}
+    <FieldSet className="gap-3">
+      <legend className="font-medium text-sm">
+        Data e hora da venda (opcional)
+      </legend>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
+        <DateField
+          error={timeAtFault ? undefined : error}
+          id="sale-occurred-day"
+          label="Dia"
+          max={today}
+          onChange={handleDay}
+          today={today}
+          value={day}
+        />
+        <TextField
+          className="w-28"
+          error={timeAtFault ? error : undefined}
+          id="sale-occurred-time"
+          inputMode="numeric"
+          label="Hora"
+          maxLength={5}
+          onChange={handleTime}
+          placeholder="14:30"
+          value={time}
         />
         {value === "" ? null : (
-          <Button onClick={handleClear} type="button" variant="outline">
+          <Button
+            className="self-end"
+            onClick={handleNow}
+            type="button"
+            variant="outline"
+          >
             Usar agora
           </Button>
         )}
       </div>
-      <FieldTexts error={error} hint={SALE_DATE_HINT} id={id} />
-    </Field>
+      <FieldDescription>{SALE_DATE_HINT}</FieldDescription>
+    </FieldSet>
+  );
+}
+
+interface SaleExtrasProps {
+  adjustments: AdjustmentsProps;
+  date: SaleDateProps;
+  /** A date or an adjustment with an error keeps the section open, so the focus can reach it. */
+  hasError: boolean;
+  summary: string;
+}
+
+/** Date and adjustments, closed in one line ("Agora · Sem ajuste · Alterar"): most counter sales use neither. */
+function SaleExtras({ adjustments, date, hasError, summary }: SaleExtrasProps) {
+  // a cart restored on a remount (the draft) shows the date or the adjustments it already has
+  const [open, setOpen] = useState(
+    () => adjustments.adjustments.length > 0 || date.value !== ""
+  );
+  const handleOpenChange = useCallback((next: boolean) => setOpen(next), []);
+  const expanded = open || hasError;
+  return (
+    <Collapsible onOpenChange={handleOpenChange} open={expanded}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 text-muted-foreground" id="sale-extras-summary">
+          {summary}
+        </p>
+        {hasError ? null : (
+          <CollapsibleTrigger
+            aria-describedby="sale-extras-summary"
+            render={
+              <Button
+                className="shrink-0"
+                size="sm"
+                type="button"
+                variant="link"
+              />
+            }
+          >
+            {expanded ? "Fechar" : "Alterar"}
+            <span className="sr-only"> data e ajustes</span>
+          </CollapsibleTrigger>
+        )}
+      </div>
+      <CollapsiblePanel className="grid gap-5 pt-4">
+        <SaleDate {...date} />
+        <Adjustments {...adjustments} />
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -294,6 +414,8 @@ interface PaymentSectionProps {
   profilesView: CatalogView;
   /** "Um pagamento só, no valor total…", said under the methods. */
   singlePaymentText: string;
+  /** The store's zone (null when the store has none), for the day the date field stops at. */
+  timezone: string | null;
 }
 
 export function PaymentSection({
@@ -315,6 +437,7 @@ export function PaymentSection({
   profileOptions,
   profilesView: profilesState,
   singlePaymentText,
+  timezone,
 }: PaymentSectionProps) {
   const card = form.payment.method === "credit_card";
   const options = [noProfileOption, ...profileOptions];
@@ -340,7 +463,7 @@ export function PaymentSection({
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-5">
-          <Field>
+          <Field className="@container">
             <RadioGroup
               aria-describedby={describedBy(
                 "sale-method",
@@ -349,13 +472,13 @@ export function PaymentSection({
               )}
               aria-invalid={methodError ? true : undefined}
               aria-label="Método de pagamento"
-              className="grid-cols-1 md:grid-cols-3 min-[22rem]:grid-cols-2"
+              className="@[18.5rem]:grid-cols-2 @[26.5rem]:grid-cols-3 grid-cols-1"
               disabled={disabled}
               id="sale-method"
               onValueChange={handleMethod}
               value={form.payment.method === "" ? null : form.payment.method}
             >
-              {METHOD_CARDS.map(([method, label]) => (
+              {SALE_METHOD_CARDS.map(([method, label]) => (
                 <FieldLabel
                   className="has-data-disabled:opacity-50"
                   htmlFor={`sale-method-${method}`}
@@ -380,26 +503,28 @@ export function PaymentSection({
             />
           </Field>
           {card ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                error={errors[formFieldKeys.installments]}
-                id="sale-installments"
-                inputMode="numeric"
-                label="Número de parcelas"
-                maxLength={10}
-                onChange={onInstallmentsChange}
-                value={form.payment.installments}
-              />
-              <SelectField
-                disabled={disabled}
-                error={errors[formFieldKeys.installmentPlan]}
-                id="sale-plan"
-                label={INSTALLMENT_PLAN_LABEL}
-                onChange={onInstallmentPlanChange}
-                options={INSTALLMENT_PLAN_OPTIONS}
-                placeholder={INSTALLMENT_PLAN_PLACEHOLDER}
-                value={form.payment.installmentPlan}
-              />
+            <div className="@container">
+              <div className="grid @[24.5rem]:grid-cols-2 gap-4">
+                <TextField
+                  error={errors[formFieldKeys.installments]}
+                  id="sale-installments"
+                  inputMode="numeric"
+                  label="Número de parcelas"
+                  maxLength={10}
+                  onChange={onInstallmentsChange}
+                  value={form.payment.installments}
+                />
+                <SelectField
+                  disabled={disabled}
+                  error={errors[formFieldKeys.installmentPlan]}
+                  id="sale-plan"
+                  label={INSTALLMENT_PLAN_LABEL}
+                  onChange={onInstallmentPlanChange}
+                  options={INSTALLMENT_PLAN_OPTIONS}
+                  placeholder={INSTALLMENT_PLAN_PLACEHOLDER}
+                  value={form.payment.installmentPlan}
+                />
+              </div>
             </div>
           ) : null}
           <Field orientation="horizontal">
@@ -444,7 +569,16 @@ export function PaymentSection({
               você pode reenviá-la sem perfil em Pendências.
             </p>
           ) : null}
-          <CatalogNotice onRetry={onRetry} view={profilesState} />
+          <CatalogNotice
+            onRetry={onRetry}
+            view={
+              // "Sem perfil" already chosen in a store without profiles: the field says it, no paragraph
+              profilesState.kind === "empty" &&
+              form.profile.choice === NO_PROFILE_CHOICE
+                ? null
+                : profilesState
+            }
+          />
           {form.profile.reviewNotice ? (
             <Alert role="alert" variant="warning">
               <TriangleAlertIcon aria-hidden="true" />
@@ -464,20 +598,24 @@ export function PaymentSection({
             </Alert>
           ) : null}
           <Separator />
-          {offline ? null : (
-            <DateField
-              error={errors[formFieldKeys.occurredAt]}
-              onChange={onDateChange}
-              value={form.occurredAtLocal}
-            />
-          )}
-          <Adjustments
-            adjustments={form.adjustments}
-            disabled={disabled}
-            errors={errors}
-            onAdd={onAddAdjustment}
-            onChange={onAdjustmentChange}
-            onRemove={onRemoveAdjustment}
+          <SaleExtras
+            adjustments={{
+              adjustments: form.adjustments,
+              disabled,
+              errors,
+              onAdd: onAddAdjustment,
+              onChange: onAdjustmentChange,
+              onRemove: onRemoveAdjustment,
+            }}
+            date={{
+              error: errors[formFieldKeys.occurredAt],
+              offline,
+              onChange: onDateChange,
+              timezone,
+              value: form.occurredAtLocal,
+            }}
+            hasError={Object.keys(errors).some(isExtrasErrorKey)}
+            summary={saleExtrasSummary(form, offline)}
           />
         </CardContent>
       </fieldset>

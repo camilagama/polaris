@@ -20,6 +20,15 @@
     <!-- the theme before the first paint (ADR 0103); external, the CSP runs no inline script -->
     <!-- biome-ignore lint/performance/noSyncScripts: it must run before the first paint, or the page blinks -->
     <script src="/theme-init.js"></script>
+    <!-- the text font fetched with the page instead of after the CSS, so the swap comes before the first paint
+         (the same file as the @font-face of src/styles/index.css: Vite gives both the one hashed asset) -->
+    <link
+      as="font"
+      crossorigin
+      href="./node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2"
+      rel="preload"
+      type="font/woff2"
+    >
     <link href="/manifest.webmanifest" rel="manifest">
     <link href="/icons/apple-touch-icon.png" rel="apple-touch-icon">
     <meta content="yes" name="mobile-web-app-capable">

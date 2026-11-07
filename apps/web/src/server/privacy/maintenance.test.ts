@@ -20,6 +20,9 @@ const nothingToSchedule = () =>
 
 const noneHeldBack = () => vi.fn(() => Promise.resolve(0));
 
+const noneStalled = () =>
+  vi.fn((_minAttempts: number, _windowHours: number) => Promise.resolve(0));
+
 const noneExpired = () => vi.fn((_limit: number) => Promise.resolve(0));
 
 const nothingToRecord = () =>
@@ -34,6 +37,7 @@ describe("the closure sweep", () => {
       runPrivacyMaintenance(
         {
           countPurgesHeldBack: noneHeldBack(),
+          countStalledOrganizationPurges: noneStalled(),
           expireCancellationFeedback: noneExpired(),
           finalizeExpiredClosures,
           recordClosureNotices: nothingToRecord(),
@@ -52,6 +56,7 @@ describe("the closure sweep", () => {
       purgesHeldBack: 0,
       scheduledPurges: 0,
       scheduledPurgesLastDay: 0,
+      stalledPurges: 0,
     });
     expect(finalizeExpiredClosures).toHaveBeenCalledTimes(1);
     expect(finalizeExpiredClosures).toHaveBeenCalledWith(CLOSURE_SWEEP_BATCH);
@@ -65,6 +70,7 @@ describe("the closure sweep", () => {
     const report = await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback: noneExpired(),
         finalizeExpiredClosures,
         recordClosureNotices: nothingToRecord(),
@@ -83,6 +89,7 @@ describe("the closure sweep", () => {
     await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback: noneExpired(),
         finalizeExpiredClosures,
         recordClosureNotices: nothingToRecord(),
@@ -100,6 +107,7 @@ describe("the closure sweep", () => {
       runPrivacyMaintenance(
         {
           countPurgesHeldBack: noneHeldBack(),
+          countStalledOrganizationPurges: noneStalled(),
           expireCancellationFeedback: noneExpired(),
           finalizeExpiredClosures: () => Promise.reject(new Error("db_down")),
           recordClosureNotices: nothingToRecord(),
@@ -117,6 +125,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     const report = await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback: noneExpired(),
         finalizeExpiredClosures: () => Promise.resolve(0),
         recordClosureNotices: nothingToRecord(),
@@ -162,6 +171,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     const report = await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback: noneExpired(),
         finalizeExpiredClosures,
         recordClosureNotices: nothingToRecord(),
@@ -184,6 +194,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
       purgesHeldBack: 0,
       scheduledPurges: CLOSURE_SWEEP_BATCH + 2,
       scheduledPurgesLastDay: CLOSURE_SWEEP_BATCH + 2,
+      stalledPurges: 0,
     });
   });
 
@@ -198,6 +209,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
     await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback: noneExpired(),
         finalizeExpiredClosures: () => Promise.resolve(0),
         recordClosureNotices: nothingToRecord(),
@@ -221,6 +233,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
       const report = await runPrivacyMaintenance(
         {
           countPurgesHeldBack,
+          countStalledOrganizationPurges: noneStalled(),
           expireCancellationFeedback: noneExpired(),
           finalizeExpiredClosures: () => Promise.resolve(0),
           recordClosureNotices: vi.fn((_limit: number) => {
@@ -239,6 +252,33 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
       expect(report.purgesHeldBack).toBe(3);
       expect(calls).toEqual(["notices", "held back"]);
     }
+  });
+
+  it("counts the stalled purges with the limits of the domain, after the held back ones", async () => {
+    const calls: string[] = [];
+    const countStalledOrganizationPurges = vi.fn(
+      (_minAttempts: number, _windowHours: number) => {
+        calls.push("stalled");
+        return Promise.resolve(2);
+      }
+    );
+    const report = await runPrivacyMaintenance(
+      {
+        countPurgesHeldBack: vi.fn(() => {
+          calls.push("held back");
+          return Promise.resolve(0);
+        }),
+        countStalledOrganizationPurges,
+        expireCancellationFeedback: noneExpired(),
+        finalizeExpiredClosures: () => Promise.resolve(0),
+        recordClosureNotices: nothingToRecord(),
+        scheduleClosedOrganizationPurges: nothingToSchedule(),
+      },
+      off
+    );
+    expect(report.stalledPurges).toBe(2);
+    expect(calls).toEqual(["held back", "stalled"]);
+    expect(countStalledOrganizationPurges).toHaveBeenCalledWith(3, 24);
   });
 
   it("is turned on only by the exact text true", () => {
@@ -261,6 +301,7 @@ describe("the automatic schedule of the purge (ADR 0102, AC-62)", () => {
       purgesHeldBack: 0,
       scheduledPurges: 0,
       scheduledPurgesLastDay,
+      stalledPurges: 0,
     });
     expect(closureAutoPurgeVolumeHigh(report(5))).toBe(false);
     expect(closureAutoPurgeVolumeHigh(report(6))).toBe(true);
@@ -296,6 +337,7 @@ describe("the notices of the closure milestones (ADR 0102, amended)", () => {
       const report = await runPrivacyMaintenance(
         {
           countPurgesHeldBack: noneHeldBack(),
+          countStalledOrganizationPurges: noneStalled(),
           expireCancellationFeedback: noneExpired(),
           finalizeExpiredClosures: () => {
             calls.push("close");
@@ -350,6 +392,7 @@ describe("the notices of the closure milestones (ADR 0102, amended)", () => {
     const report = await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback: noneExpired(),
         finalizeExpiredClosures: () => Promise.resolve(0),
         recordClosureNotices,
@@ -373,6 +416,7 @@ describe("the notices of the closure milestones (ADR 0102, amended)", () => {
     await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback: noneExpired(),
         finalizeExpiredClosures: () => Promise.resolve(0),
         recordClosureNotices: endless,
@@ -393,6 +437,7 @@ describe("the expiry of the reasons of a cancelled renewal (ADR 0104)", () => {
     const report = await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback,
         finalizeExpiredClosures: vi.fn(() => Promise.resolve(0)),
         recordClosureNotices: nothingToRecord(),
@@ -414,6 +459,7 @@ describe("the expiry of the reasons of a cancelled renewal (ADR 0104)", () => {
     await runPrivacyMaintenance(
       {
         countPurgesHeldBack: noneHeldBack(),
+        countStalledOrganizationPurges: noneStalled(),
         expireCancellationFeedback,
         finalizeExpiredClosures: vi.fn(() => Promise.resolve(0)),
         recordClosureNotices: nothingToRecord(),

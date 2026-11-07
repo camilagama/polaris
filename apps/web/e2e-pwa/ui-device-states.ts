@@ -5,7 +5,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The states of Aparelhos and Pendências, as the interface
- * guardrails measure them (t237): each screen in the lab of the screens (`/offline-screens-lab?screen=…`), Aparelhos
+ * guardrails measure them: each screen in the lab of the screens (`/offline-screens-lab?screen=…`), Aparelhos
  * over the real offline runtime with the server answered by the test (`page.route`), Pendências over synthetic data
  * (`src/offline-poc/notice-lab-pages.tsx`). The lab's own controls are hidden at the end of each state, so what is
  * measured is the screen alone. Same shape as `ui-stock-states.ts`.
@@ -169,7 +169,7 @@ export const deviceStates = {
 
   /**
    * The confirmation of a revocation open, with the option ticked and the error of an unsure answer above the buttons:
-   * the dialog stays open, so the checks measure its controls (area of 48 px, contrast, overflow, focus).
+   * the dialog stays open, so the checks measure its controls (area of 44 px, contrast, overflow, focus).
    */
   async revokeConfirming(page: Page) {
     await openDevicesLab(page, {
@@ -222,7 +222,7 @@ export const attentionStates = {
   /** The last attempt to resolve an item failed: the message, and the discard asking for its confirmation. */
   async discarding(page: Page) {
     await startLab(page, "screen=attention&state=error");
-    await page.getByText("Venda de 2 itens").waitFor();
+    await page.getByText("Venda de R$ 20,00 · 14/10 09:30").waitFor();
     await page.getByRole("button", { name: "Descartar…" }).first().click();
     await page.getByRole("button", { name: "Confirmar descarte" }).waitFor();
     await showScreenAlone(page);
@@ -230,14 +230,14 @@ export const attentionStates = {
   /** Nothing was refused. */
   async empty(page: Page) {
     await openNoticeLab(page, "screen=attention&state=empty", () =>
-      page.getByText("Nada precisa de atenção.", { exact: false }).waitFor()
+      page.getByText("Nenhuma pendência de envio.", { exact: false }).waitFor()
     );
   },
 
   /** A refused sale holding the queue, a refused product and an account change. */
   async items(page: Page) {
     await openNoticeLab(page, "screen=attention", () =>
-      page.getByText("Venda de 2 itens").waitFor()
+      page.getByText("Venda de R$ 20,00 · 14/10 09:30").waitFor()
     );
   },
 };

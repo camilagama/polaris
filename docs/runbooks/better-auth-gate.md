@@ -2,7 +2,7 @@
 
 ## Escopo
 
-Esta prova instala Better Auth 1.6.23 no Worker Hono do ERP e persiste identidade e sessões no PostgreSQL por Drizzle. O fluxo fica sob `/api/auth/*`.
+Esta prova instalou o Better Auth 1.6.23 (hoje 1.7.12, desde a t435) no Worker Hono do ERP e persiste identidade e sessões no PostgreSQL por Drizzle. O fluxo fica sob `/api/auth/*`.
 
 O Worker retorna 503 quando `BETTER_AUTH_SECRET` não tem pelo menos 32 caracteres ou `BETTER_AUTH_BASE_URL` está ausente. O PR não habilita cadastro com senha, OAuth ou plugin Organization. `testUtils` aparece somente no fixture de teste, nunca na configuração de produção.
 

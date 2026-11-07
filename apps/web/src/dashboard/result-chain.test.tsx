@@ -5,11 +5,11 @@ import { ResultChain } from "./result-chain";
 import { addDays } from "./result-period";
 
 /**
- * The chain "Como chegamos a este resultado" with no cost of the goods known (Petković 26/10, T399-2; `cogsCoverageOf`
- * "none", from the item lines, t419): the subtotals from the CMV on show a dash and "Sem custo conhecido no período.",
- * as the cards do; the CMV itself is a dash with "Nenhum dos N itens vendidos tem custo conhecido." (T399-3) and the
+ * The chain "Como chegamos a este resultado" with no cost of the goods known (`cogsCoverageOf`
+ * "none", from the item lines): the subtotals from the CMV on show a dash and "Sem custo conhecido no período.",
+ * as the cards do; the CMV itself is a dash with "Nenhum dos N itens vendidos tem custo conhecido." and the
  * bar of the parts is not drawn; the lines of entry keep their values. A partial cost, and every day null with some cost of the
- * goods known or only a fee unknown (cases a/b of t419), stay as they were.
+ * goods known or only a fee unknown (cases a/b), stay as they were.
  */
 
 function summary(

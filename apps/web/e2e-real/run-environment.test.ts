@@ -18,6 +18,7 @@ const LOCAL_ONLY = /must be the local PostgreSQL/;
 const SECRET_NOT_HEX = /E2E_RUN_SECRET must be/;
 const PASSWORD_NOT_HEX = /E2E_LOGIN_PASSWORD_HYPERDRIVE must be/;
 const PREVIEW_VARIABLES_MISSING = /E2E_PREVIEW_VARIABLES is missing/;
+const HEX_64 = /^[a-f0-9]{64}$/;
 
 const OWNER = "postgresql://owner:secret@localhost:5432/postgres";
 
@@ -55,6 +56,24 @@ describe("the environment of an e2e run", () => {
     expect(environment.VITE_OFFLINE_RUNTIME_ENABLED).toBe("true");
     expect(environment.BETTER_AUTH_SECRET).toBe(run.secret);
     expect(JSON.stringify(environment)).not.toContain("owner:secret");
+  });
+
+  it("gives the lease and sync keys to the preview with the runtime on only, 32 bytes or more, and never the run's own secret", () => {
+    const run = ensureRunEnvironment({});
+    const origin = "http://127.0.0.1:4321";
+    const on = previewEnvironment(new URL(OWNER), run, origin, true, {});
+    const off = previewEnvironment(new URL(OWNER), run, origin, false, {});
+    for (const name of ["OFFLINE_LEASE_SECRET", "SYNC_PAYLOAD_HASH_SECRET"]) {
+      expect(on[name], name).toMatch(HEX_64);
+      expect(on[name], name).not.toBe(run.secret);
+      expect(off[name], name).toBeUndefined();
+      expect(on.E2E_PREVIEW_VARIABLES, name).toContain(name);
+      expect(off.E2E_PREVIEW_VARIABLES, name).not.toContain(name);
+    }
+    expect(on.OFFLINE_LEASE_SECRET).not.toBe(on.SYNC_PAYLOAD_HASH_SECRET);
+    const build = closedEnvironment(on, "build");
+    expect(build.OFFLINE_LEASE_SECRET).toBeUndefined();
+    expect(build.SYNC_PAYLOAD_HASH_SECRET).toBeUndefined();
   });
 
   it("refuses a binding missing or left on the wrangler.jsonc fallback (postgres:postgres)", () => {
@@ -177,5 +196,20 @@ describe("the environment of an e2e run", () => {
     expect(() => closedEnvironment({ PATH: "/bin" }, "preview")).toThrow(
       PREVIEW_VARIABLES_MISSING
     );
+  });
+
+  it("gives the keys of the offline runtime to the preview the stack lists them for, never to the build", () => {
+    const names = ["OFFLINE_LEASE_SECRET", "SYNC_PAYLOAD_HASH_SECRET"];
+    const environment = {
+      E2E_PREVIEW_VARIABLES: names.join(","),
+      OFFLINE_LEASE_SECRET: "a".repeat(64),
+      SYNC_PAYLOAD_HASH_SECRET: "b".repeat(64),
+    };
+    const preview = closedEnvironment(environment, "preview");
+    const build = closedEnvironment(environment, "build");
+    for (const name of names) {
+      expect(preview[name], name).toHaveLength(64);
+      expect(build[name], name).toBeUndefined();
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkerBindings } from "../environment";
+import { testPasswordPepper } from "./password-hash-test-support";
 import { handleBetterAuthRequest, withBoundedBody } from "./handler";
 
 describe("Better Auth handler database role", () => {
@@ -40,6 +41,7 @@ describe("Better Auth handler database role", () => {
       AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
       BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
       BETTER_AUTH_SECRET: "a".repeat(32),
+      AUTH_PASSWORD_PEPPER: testPasswordPepper,
       EMAIL_PASSWORD_AUTH_ENABLED: "true",
       HYPERDRIVE: { connectionString: "postgresql://tenant.invalid/neondb" },
       RESEND_API_KEY: "re_test_only",
@@ -143,6 +145,7 @@ describe("Better Auth handler database role", () => {
       AUTH_EMAIL_FROM: "Polaris <no-reply@example.invalid>",
       BETTER_AUTH_BASE_URL: "https://polaris.example.invalid",
       BETTER_AUTH_SECRET: "a".repeat(32),
+      AUTH_PASSWORD_PEPPER: testPasswordPepper,
       EMAIL_PASSWORD_AUTH_ENABLED: "true",
       HYPERDRIVE: { connectionString: "postgresql://tenant.invalid/neondb" },
       RESEND_API_KEY: "re_test_only",

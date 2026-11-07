@@ -1,13 +1,21 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   // The top level is for local development only: the Hyperdrive id is `local-only`, so a deploy that
-  // forgets `--env` fails. What is deployed lives in `env.production` (ADR 0097). `env.staging` exists
-  // for parity and for the isolation check, but the Admin is not exposed in staging: no route, no
-  // workers.dev, no Access variables and no database binding, so even an invocation fails closed.
+  // forgets `--env` fails. What is deployed lives in `env.staging` and `env.production` (ADR 0097), each
+  // behind its own Access application.
   "name": "polaris-admin-local",
   "compatibility_date": "2026-10-06",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./src/worker.ts",
+  // The operator's page script and sheet, built by `build:ui` (package.json) and embedded as text: no Assets binding,
+  // so every file passes through the Worker and its Access verification (corte admin-tela-v1, D-2).
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/ui/generated/*.txt"],
+      "fallthrough": false
+    }
+  ],
   // Production defaults (ADR 0094); each environment repeats the whole block.
   // Logs stay at 100% because the platform samples a request as a whole and has no separate rate for errors:
   // lowering the rate would drop error events with the rest. Invocation logs are off, so only our own
@@ -43,15 +51,28 @@
     }
   ],
   "env": {
-    // Not exposed (ADR 0097): the staging workflow does not deploy it, and if it were deployed it would
-    // have no public hostname, no ACCESS_* variables (every API request is refused) and no database.
+    // Exposed only behind the Access application of the staging team (amendments to ADR 0097 and ADR 0070):
+    // no route is declared here. The hostname admin.araute.app is attached by hand as a Custom Domain, because
+    // the token of the CI has no permission on the zone (the web and the catalog work the same way), and it
+    // sits behind the staging Access application. workers_dev and previews stay off, so no other address
+    // reaches the Worker. The Worker still verifies the token itself.
+    // ADMIN_HYPERDRIVE logs in as polaris_staging_admin (member of polaris_admin_runtime only); the billing
+    // configuration is the one of the web, shared on purpose (ADR 0073). Caching is off in both.
     "staging": {
       "name": "polaris-admin-staging",
       "account_id": "9c133cfac44a3bcabc02b7cf8b5f6618",
       "workers_dev": false,
       "preview_urls": false,
+      // The operator's provider commands (ADR 0105) call the sandboxes only, as the web of staging does; the keys
+      // (ASAAS_API_KEY, WOOVI_APP_ID) are Worker secrets of this environment, and the Asaas client refuses a
+      // production key against the sandbox host. No setting of the webhooks comes here.
       "vars": {
-        "POLARIS_ENVIRONMENT": "staging"
+        "POLARIS_ENVIRONMENT": "staging",
+        "ACCESS_TEAM_DOMAIN": "polaris-staging.cloudflareaccess.com",
+        "ACCESS_AUDIENCE": "8e08707bd1989a6e4f8cc738b5c9fddd2c589fa235613d22c7bcca60a485a4ca",
+        "ASAAS_BASE_URL": "https://api-sandbox.asaas.com/v3",
+        "WOOVI_BASE_URL": "https://api.woovi-sandbox.com",
+        "WOOVI_REFUND_ENABLED": "true"
       },
       "observability": {
         "enabled": true,
@@ -61,7 +82,17 @@
           "invocation_logs": false
         },
         "traces": { "enabled": true, "head_sampling_rate": 1 }
-      }
+      },
+      "hyperdrive": [
+        {
+          "binding": "ADMIN_HYPERDRIVE",
+          "id": "819b2703a2a74f98a2d7ae3c59c22504"
+        },
+        {
+          "binding": "ADMIN_BILLING_HYPERDRIVE",
+          "id": "04fc6cc95ba8442cb3d516baf5b94614"
+        }
+      ]
     },
     // The go-live (Phase 15, PR133), in another account, behind its own Access application.
     "production": {
@@ -69,10 +100,14 @@
       "account_id": "PLACEHOLDER-production-account-id",
       "workers_dev": false,
       "preview_urls": false,
+      // The production hosts of the providers, as the web of production; the keys are secrets still to be set.
       "vars": {
         "POLARIS_ENVIRONMENT": "production",
         "ACCESS_TEAM_DOMAIN": "PLACEHOLDER-production-team.cloudflareaccess.com",
-        "ACCESS_AUDIENCE": "PLACEHOLDER-production-access-audience"
+        "ACCESS_AUDIENCE": "PLACEHOLDER-production-access-audience",
+        "ASAAS_BASE_URL": "https://api.asaas.com/v3",
+        "WOOVI_BASE_URL": "https://api.woovi.com",
+        "WOOVI_REFUND_ENABLED": "false"
       },
       "observability": {
         "enabled": true,

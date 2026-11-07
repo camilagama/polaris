@@ -1,0 +1,105 @@
+import type { ScreenTools } from "../app";
+import { facts } from "../blocks";
+import type { Dom } from "../dom";
+import { ENVIRONMENT_BANNER } from "../environment-banner";
+import { SIGN_OUT_LABEL, SIGN_OUT_PATH } from "../sign-out";
+
+/**
+ * What each permission the server lists lets the operator do, in words. The list is the one of
+ * `platformCapabilitiesForRole`; a code that is not here is shown as "Permissão {código}", so a new capability is
+ * never given a meaning the page did not write.
+ */
+const PERMISSION_TEXT: Readonly<Record<string, string>> = {
+  "access_log:read": "Consultar o registro de acessos",
+  "billing:operate":
+    "Dar e encerrar liberações temporárias, cancelar a renovação e ver a janela de reembolso",
+  "billing:refund": "Reembolsar o período em vigor de uma loja",
+  "operational_incident:read": "Ver as falhas de envio",
+  "operational_incident:retry": "Reenviar um evento de uma falha de envio",
+  "organization:classify": "Marcar e desmarcar uma loja como interna",
+  "organization:diagnose": "Buscar lojas e ver como cada uma está",
+  "organization:legal_hold": "Pôr e tirar a trava legal de uma loja",
+  "organization:purge":
+    "Agendar e cancelar o apagamento de uma loja e cuidar do aviso de encerramento",
+  "organization:suspend": "Suspender e reativar uma loja",
+  "pii:reveal": "Revelar um dado pessoal de um cliente",
+  "platform:read":
+    "Ver o Início, o Funil de ativação e esta tela, Minha conta e permissões",
+  "privacy_case:manage": "Tratar atendimentos de privacidade",
+  "support_case:manage": "Abrir, ver e fechar atendimentos de suporte",
+  "tenant_access:grant":
+    "Dar e encerrar o acesso temporário aos dados de uma loja",
+  "tenant_data:read": "Ver a lista de clientes de uma loja com acesso ativo",
+};
+
+const ROLE_TEXT: Readonly<Record<string, string>> = {
+  platform_owner: "Dono da plataforma",
+};
+
+export const PERMISSIONS_NOTE =
+  "Estas permissões vêm do cadastro do Admin; não se mudam por aqui. Para mudar o que você pode fazer, peça ao responsável pelo cadastro do painel.";
+export const SIGN_OUT_TEXT =
+  "Sair encerra a sessão do Access e fecha o Polaris Admin em todos os aparelhos em até 30 segundos.";
+
+export function permissionText(code: string): string {
+  return PERMISSION_TEXT[code] ?? `Permissão ${code}`;
+}
+
+export function roleText(role: string): string {
+  return ROLE_TEXT[role] ?? `desconhecido: ${role}`;
+}
+
+function area(dom: Dom, id: string, title: string, ...content: Node[]) {
+  return dom.el(
+    "section",
+    { "aria-labelledby": id, class: "area" },
+    dom.el("h2", { id }, title),
+    ...content
+  );
+}
+
+/**
+ * Configurações (corte admin-v2, Parte 9): who the operator is to the Admin, in which environment this is and the link that
+ * ends the session. Read only: it uses the `whoami` the page already read, makes no request, keeps nothing in the
+ * browser and has no field. The operator's label is the one of the top of the page.
+ */
+export function settingsView(tools: ScreenTools): HTMLElement[] {
+  const { context, dom, who } = tools;
+  const operator = who.principal.emailSnapshot ?? who.principal.id;
+  const permissions = dom.el(
+    "ul",
+    { class: "permissions" },
+    ...who.capabilities.map((code) => dom.el("li", {}, permissionText(code)))
+  );
+  return [
+    area(
+      dom,
+      "configuracoes-voce",
+      "Você",
+      facts(dom, [
+        ["Operador", operator],
+        ["Papel", roleText(who.principal.role)],
+      ]),
+      dom.el("h3", {}, "Permissões"),
+      permissions,
+      dom.el("p", { class: "hint" }, PERMISSIONS_NOTE)
+    ),
+    area(
+      dom,
+      "configuracoes-ambiente",
+      "Ambiente",
+      dom.el(
+        "p",
+        { class: `env env-${context.environment}` },
+        ENVIRONMENT_BANNER[context.environment]
+      )
+    ),
+    area(
+      dom,
+      "configuracoes-sessao",
+      "Sessão",
+      dom.el("p", {}, SIGN_OUT_TEXT),
+      dom.el("p", {}, dom.el("a", { href: SIGN_OUT_PATH }, SIGN_OUT_LABEL))
+    ),
+  ];
+}

@@ -35,7 +35,7 @@ import {
   uploadProductMedia,
 } from "../lib/media-upload";
 import { orpcClient } from "../lib/orpc";
-import { useReportUnsentWork } from "../lib/unsent-work";
+import { useHoldSwap } from "../lib/unsent-work";
 import { endSessionHere } from "../offline/runtime/session-ended";
 import {
   LimitHelp,
@@ -44,6 +44,7 @@ import {
 } from "../subscription/limit-help";
 import {
   describeMediaFailure,
+  isMediaItemGone,
   isMediaLegalAcceptanceRequired,
   isMediaSessionEnded,
   type MediaFailure,
@@ -68,6 +69,7 @@ import { ProductMediaFilePicker } from "./product-media-file-picker";
 import {
   type ConfirmKind,
   type ConfirmRequest,
+  CoverNotice,
   ProductMediaList,
   type RunningCommand,
 } from "./product-media-list";
@@ -244,7 +246,7 @@ export function ProductMediaPanel({
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replacementPending, setReplacementPending] = useState(false);
   // a photo picked and prepared that was not sent yet
-  useReportUnsentWork(preparedFile !== null);
+  useHoldSwap(preparedFile !== null);
   const fileSelectionGeneration = useRef(0);
   const assetsVersion = useRef(0);
   const commandLock = useRef<boolean>(false);
@@ -701,7 +703,9 @@ export function ProductMediaPanel({
         loadAssets(true);
       } catch (cause: unknown) {
         failCommand("remove", cause);
-        focusRequest.current = { assetId, fallbacks: [kind], type: "item" };
+        focusRequest.current = isMediaItemGone(cause)
+          ? { type: "heading" }
+          : { assetId, fallbacks: [kind], type: "item" };
       } finally {
         commandLock.current = false;
         setConfirm(null);
@@ -888,13 +892,14 @@ export function ProductMediaPanel({
         className="grid gap-3 border-border border-t pt-4"
       >
         <h3
-          className="text-section outline-none"
+          className="focus-ring text-section"
           id="product-media-list-heading"
           ref={listHeadingRef}
           tabIndex={-1}
         >
           Imagens associadas
         </h3>
+        <CoverNotice />
         {list}
       </section>
     </div>

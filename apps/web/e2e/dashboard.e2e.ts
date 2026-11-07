@@ -1,6 +1,16 @@
 /// <reference lib="dom" />
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import {
+  assertAmountsOnOneLine,
+  assertNothingClipped,
+  assertTextsApart,
+  expectReflowFont,
+  openReflowViewport,
+  reflowTest,
+  skipOutsideChromium,
+} from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -123,7 +133,7 @@ const NO_SURCHARGE_MONTH: FixtureMonth = {
   ],
 };
 
-/** October with no cost of the goods known (T399-3): every item line sold has an unknown cost; fees and expenses known. */
+/** October with no cost of the goods known: every item line sold has an unknown cost; fees and expenses known. */
 const NO_COST_MONTH: FixtureMonth = {
   expenses: [
     { amount: 3000, linked: false },
@@ -155,7 +165,45 @@ const NO_COST_MONTH: FixtureMonth = {
   ],
 };
 
+/** May: one sale with every cost known and no expense recorded, so the estimate is partial like June's. */
+const MAY_MONTH: FixtureMonth = {
+  expenses: [],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: 2000,
+      discount: 0,
+      gross: 6000,
+      itemLines: 1,
+      items: 2,
+      processingFee: 120,
+      returns: 0,
+      surcharge: 0,
+    },
+  ],
+};
+
+/** June: one sale that was returned whole, so the month has a sale and nothing to draw (the net of every day is zero). */
+const RETURNED_MONTH: FixtureMonth = {
+  expenses: [],
+  sales: [
+    {
+      anticipationFee: 0,
+      cogs: 0,
+      discount: 0,
+      gross: 10_000,
+      itemLines: 1,
+      items: 0,
+      processingFee: 0,
+      returns: 10_000,
+      surcharge: 0,
+    },
+  ],
+};
+
 const FIXTURE: Readonly<Record<string, FixtureMonth>> = {
+  "2026-05": MAY_MONTH,
+  "2026-06": RETURNED_MONTH,
   "2026-07": NO_SURCHARGE_MONTH,
   "2026-09": PARTIAL_MONTH,
   "2026-10": COMPLETE_MONTH,
@@ -265,7 +313,8 @@ function summaryOf(
   month: string,
   from: string,
   to: string,
-  fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE
+  fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE,
+  now: string = NOW
 ) {
   const data = fixture[month] ?? { expenses: [], sales: [] };
   const { sales } = data;
@@ -337,7 +386,7 @@ function summaryOf(
     },
     daily: dailyOf(data, from, to),
     // the server clock at the read: what the screen says it is updated until
-    generatedAt: NOW,
+    generatedAt: now,
     period: { from, to },
     quality: {
       anticipationFeesUnknown: unknownAnticipation,
@@ -373,6 +422,8 @@ class FakeReportServer {
   networkDown = false as boolean;
   /** The records of each month the answers are computed from. */
   fixture: Readonly<Record<string, FixtureMonth>> = FIXTURE;
+  /** The server clock at each read: it fixes the store's today. */
+  now = NOW;
   private readonly holds = new Map<string, Promise<void>>();
 
   /** Holds the answer for a month until the returned function is called. */
@@ -407,7 +458,7 @@ class FakeReportServer {
       }
       return {
         body: {
-          json: summaryOf(from.slice(0, 7), from, to, this.fixture),
+          json: summaryOf(from.slice(0, 7), from, to, this.fixture, this.now),
           meta: [],
         },
         status: 200,
@@ -421,7 +472,10 @@ class FakeReportServer {
       return this.fail(this.failure.code, this.failure.status);
     }
     return {
-      body: { json: summaryOf(month, from, to, this.fixture), meta: [] },
+      body: {
+        json: summaryOf(month, from, to, this.fixture, this.now),
+        meta: [],
+      },
       status: 200,
     };
   }
@@ -435,7 +489,13 @@ class FakeReportServer {
     if (this.failure) {
       return this.fail(this.failure.code, this.failure.status);
     }
-    const { daily } = summaryOf(from.slice(0, 7), from, to, this.fixture);
+    const { daily } = summaryOf(
+      from.slice(0, 7),
+      from,
+      to,
+      this.fixture,
+      this.now
+    );
     return {
       body: {
         json: {
@@ -499,7 +559,7 @@ async function signIn(page: Page, user: string, extra = "") {
 /** Opens the screen as a new user and returns the user, to open it again later. */
 async function openDashboard(page: Page, server: FakeReportServer, extra = "") {
   // the screen reads today's date from the browser: October 2026
-  await page.clock.setFixedTime(new Date(NOW));
+  await page.clock.setFixedTime(new Date(server.now));
   await installServer(page, server);
   const user = `user-${crypto.randomUUID()}`;
   await signIn(page, user, extra);
@@ -514,7 +574,7 @@ const CARD = {
   ticket: 2,
 } as const;
 
-const kpiCards = (page: Page) => page.locator("[data-kpi-row] > [data-kpi]");
+const kpiCards = (page: Page) => page.locator("[data-kpi-row] [data-kpi]");
 const card = (page: Page, index: number) => kpiCards(page).nth(index);
 const quality = (page: Page) =>
   page.getByRole("region", { name: "Qualidade dos dados" });
@@ -526,8 +586,9 @@ const chainRow = (page: Page, label: string) =>
   chain(page).locator("tbody tr").filter({ hasText: label });
 const preset = (page: Page, name: string) =>
   page.getByRole("button", { exact: true, name });
+const CHART_REGION_NAME = /^Vendas × custos por (dia|mês)$/;
 const chartRegion = (page: Page) =>
-  page.getByRole("region", { name: "Vendas × custos por dia" });
+  page.getByRole("region", { name: CHART_REGION_NAME });
 /** A phone (the Pixel 5 project too) has the periods in a Select; from 768 px they are a strip of buttons. */
 const compact = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
 const periodSelect = (page: Page) =>
@@ -570,14 +631,23 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   await expect(card(page, CARD.result)).toContainText("outubro inteiro");
   await expect(card(page, CARD.netSales)).toContainText("Vendas em outubro");
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
-  await expect(card(page, CARD.netSales)).toContainText("2 vendas no mês");
+  await expect(card(page, CARD.netSales)).toContainText("2 vendas");
   await expect(card(page, CARD.ticket)).toContainText("Ticket médio");
   await expect(card(page, CARD.ticket)).toContainText("R$ 65,00");
   await expect(card(page, CARD.margin)).toContainText("Margem");
   await expect(card(page, CARD.margin)).toContainText("52,69%");
   // the chips compare with the same days of September (v7 § 8): R$ 130,00 against R$ 100,00
   await expect(card(page, CARD.netSales)).toContainText("+30,0%");
-  await expect(card(page, CARD.netSales)).toContainText("vs. 1 a 14/09");
+  // what it compares with is said short beside the chip, in full in its name and in the (i)
+  await expect(
+    card(page, CARD.netSales).locator("[data-kpi-delta]")
+  ).toHaveAttribute(
+    "aria-label",
+    "subiu 30,0 por cento em relação a setembro (1 a 14/09)"
+  );
+  await expect(
+    card(page, CARD.netSales).locator("[data-kpi-delta]")
+  ).toContainText("vs. setembro");
   // the chips of sales and ticket read `dailySales`; the result's chip reads the summary of the same month
   expect(server.salesComparisons).toContainEqual({
     from: "2026-09-01",
@@ -746,12 +816,10 @@ test("nenhum custo de mercadoria conhecido: o CMV é “—” com a nota, a bar
 
   const result = card(page, CARD.result);
   await expect(result).toContainText(
-    "Sem custo conhecido: o resultado não dá para estimar."
+    "Sem custo informado: não dá para estimar."
   );
   await expect(result).not.toContainText(AN_AMOUNT);
-  await expect(card(page, CARD.margin)).toContainText(
-    "Sem custo conhecido no período."
-  );
+  await expect(card(page, CARD.margin)).toContainText("Sem custo informado");
   await expect(card(page, CARD.margin)).not.toContainText("%");
 
   const cogs = chainRow(page, "(CMV)");
@@ -1012,6 +1080,37 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   await expect(copyNotice(page)).toHaveCount(0);
 });
 
+test("sem conexão, o mês vazio guardado mostra o estado vazio com a cópia dita como tal, e os dois botões seguem como com conexão", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  server.fixture = { ...FIXTURE, "2026-10": { expenses: [], sales: [] } };
+  const user = await openDashboard(page, server);
+  const empty = page.getByText("Sem vendas nem despesas em 1 a 31 de outubro");
+  await expect(empty).toBeVisible();
+  expect(await cachedMonths(page)).toEqual(["2026-10"]);
+  const newSale = page.getByRole("link", { exact: true, name: "Nova venda" });
+  const newExpense = page.getByRole("link", {
+    exact: true,
+    name: "Nova despesa",
+  });
+  await expect(newSale).toHaveAttribute("href", "/sales");
+  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+
+  server.networkDown = true;
+  await signIn(page, user);
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
+  await expect(empty).toBeVisible();
+  await expect(kpiCards(page)).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(newSale).toBeVisible();
+  await expect(newSale).toHaveAttribute("href", "/sales");
+  await expect(newExpense).toBeVisible();
+  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+});
+
 test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai", async ({
   page,
 }) => {
@@ -1064,6 +1163,8 @@ const reading = (page: Page) =>
 const METAS_TAB = /^Metas/;
 const ONE_UNKNOWN_DAY = /1 de 30 dias sem custo informado/;
 const CHART_IMAGE = /Vendas líquidas e custos por dia, 1 a 31 de outubro/;
+const YEAR_CHART_IMAGE =
+  /^Vendas líquidas e custos por mês, 1 de janeiro a 14 de outubro/;
 const metasTab = (page: Page) => page.getByRole("tab", { name: METAS_TAB });
 const resultTab = (page: Page) =>
   page.getByRole("tab", { exact: true, name: "Resultado" });
@@ -1170,7 +1271,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     // the card of the result: the badge and the count, no sparkline and no chip (AC-9)
     const result = card(page, CARD.result);
     await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText("1 de 30 dias sem custo informado");
+    await expect(result).toContainText("1 de 30 dias sem custo");
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
     await expect(
@@ -1229,8 +1330,6 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    // "Este ano" waits for the CPU measure (AC-23)
-    await expect(preset(page, "Este ano")).toHaveCount(0);
 
     await choosePreset(page, "Últimos 30 dias");
     await expect(chartRegion(page)).toContainText(
@@ -1256,6 +1355,69 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     });
   });
 
+  test("Este ano lê de 1º de janeiro até hoje e o gráfico mostra os meses do servidor (AC-1, AC-7)", async ({
+    page,
+  }) => {
+    const server = new MonthlyReportServer();
+    // the sales of the year fall on January 1st, the first day the year reads
+    server.fixture = { ...FIXTURE, "2026-01": COMPLETE_MONTH };
+    await openDashboard(page, server);
+    const deltas = page.locator("[data-kpi-delta]");
+    // the month compares with the month before
+    await expect(deltas.first()).toBeVisible();
+
+    await choosePreset(page, "Este ano");
+    await expectPreset(page, "Este ano");
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2026-01-01", to: "2026-10-14" });
+    await expect(
+      page.getByRole("region", { name: "Vendas × custos por dia" })
+    ).toHaveCount(0);
+    const region = page.getByRole("region", {
+      name: "Vendas × custos por mês",
+    });
+    await expect(region).toContainText("1 de janeiro a 14 de outubro");
+    await expect(region).toContainText(
+      "O resultado de cada mês está em Ver os números. Despesas do período entram no dia da competência."
+    );
+    await expect(
+      region.getByRole("img", {
+        name: YEAR_CHART_IMAGE,
+      })
+    ).toBeVisible();
+    // above 62 days the cards compare with nothing
+    await expect(deltas).toHaveCount(0);
+
+    await region.getByRole("button", { name: "Ver os números" }).click();
+    const rows = region.locator("table").locator("tbody tr");
+    await expect(rows).toHaveCount(10);
+    await expect(region.locator("table thead")).toContainText("Mês");
+    await expect(region.locator("table thead")).toContainText(
+      "Resultado do mês"
+    );
+    await expect(region.locator("table thead")).not.toContainText(
+      "Resultado do dia"
+    );
+    await expect(rows.first()).toContainText("janeiro de 2026");
+    await expect(rows.first()).toContainText("R$ 130,00");
+    await expect(rows.last()).toContainText("outubro de 2026");
+
+    // a free range of a whole year is accepted too
+    // the fake server reads the records of the month the range starts in
+    server.fixture = { ...server.fixture, "2025-10": COMPLETE_MONTH };
+    await rangeFields(page, "2025-10-15", "2026-10-14");
+    await expectPreset(page, "Período");
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2025-10-15", to: "2026-10-14" });
+    const yearRegion = page.getByRole("region", {
+      name: "Vendas × custos por mês",
+    });
+    await expect(yearRegion).toContainText("15 de outubro de 2025");
+    await expect(yearRegion.locator("table tbody tr")).toHaveCount(13);
+  });
+
   test("um intervalo inválido diz o que está errado e não chama o servidor", async ({
     page,
   }) => {
@@ -1272,10 +1434,10 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       "A data inicial vem depois da final."
     );
 
-    await page.getByLabel("De", { exact: true }).fill("2026-01-01");
-    await page.getByLabel("Até", { exact: true }).fill("2026-03-05");
+    await page.getByLabel("De", { exact: true }).fill("2025-10-13");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-14");
     await page.getByRole("button", { name: "Ver período" }).click();
-    await expect(page.getByRole("alert")).toContainText("Escolha até 62 dias.");
+    await expect(page.getByRole("alert")).toContainText("Escolha até 1 ano.");
 
     await page.getByLabel("De", { exact: true }).fill("");
     await page.getByRole("button", { name: "Ver período" }).click();
@@ -1287,6 +1449,40 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   });
 
+  test("com o formulário De/Até aberto o seletor diz Período, válido ou não, e volta ao período escolhido ao fechar", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await choosePreset(page, "Este ano");
+    await expectPreset(page, "Este ano");
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2026-01-01", to: "2026-10-14" });
+    const asked = server.periods.length;
+
+    await choosePreset(page, "Período");
+    await expectPreset(page, "Período");
+    await page.getByLabel("De", { exact: true }).fill("2025-10-13");
+    await page.getByLabel("Até", { exact: true }).fill("2026-10-14");
+    await page.getByRole("button", { name: "Ver período" }).click();
+    await expect(page.getByRole("alert")).toContainText("Escolha até 1 ano.");
+    await expectPreset(page, "Período");
+    if (!compact(page)) {
+      await expect(preset(page, "Este ano")).toHaveAttribute(
+        "aria-pressed",
+        "false"
+      );
+    }
+    expect(server.periods).toHaveLength(asked);
+
+    await choosePreset(page, "Este mês");
+    await expectPreset(page, "Este mês");
+    await expect(
+      page.getByRole("form", { name: "Escolher o período" })
+    ).toHaveCount(0);
+  });
+
   test("enquanto lê outro período, mantém os números de antes marcados como tal, e um erro nunca deixa os de antes com o nome do novo", async ({
     page,
   }) => {
@@ -1296,12 +1492,12 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
 
     const release = server.hold("2026-09");
     await choosePreset(page, "Mês passado");
-    await expect(page.locator("#dashboard-updated")).toHaveText("Atualizando…");
-    // still the figures of October, said so, and never under the name of September
+    // still the figures of October, said so in the line beside the period (nothing is put above the figures), and
+    // never under the name of September
+    await expect(page.locator("#dashboard-updated")).toHaveText(
+      "Mostrando 1 a 31 de outubro até o novo período carregar."
+    );
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
-    await expect(
-      page.getByText("Mostrando 1 a 31 de outubro até o novo período carregar.")
-    ).toBeVisible();
     release();
     await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
     await expect(page.getByText("Mostrando 1 a 31 de outubro")).toHaveCount(0);
@@ -1526,4 +1722,1026 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
     await page.waitForTimeout(500);
     expect(server.periods).toHaveLength(2);
   });
+});
+
+const SIZES = [
+  { height: 740, width: 360 },
+  { height: 800, width: 1280 },
+] as const;
+
+/** Where a box is on the page, whatever the scroll: the height and the top in document coordinates. */
+const placeOf = (locator: Locator) =>
+  locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { height: box.height, top: box.top + window.scrollY };
+  });
+
+/** Two frames with nothing moving between them: the layout the page settled on. */
+const settled = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+
+/**
+ * The largest vertical step between consecutive rows of the pieces of the reading and of the legend: room reserved
+ * below the text is no step, an empty row between two fragments is.
+ */
+const rowStep = (chart: Locator) =>
+  chart.evaluate((region) => {
+    let step = 0;
+    for (const lines of region.querySelectorAll(
+      "[data-chart-reading], [data-chart-legend]"
+    )) {
+      const tops = [
+        ...new Set(
+          [...lines.children].map((child) =>
+            Math.round(child.getBoundingClientRect().top)
+          )
+        ),
+      ].sort((a, b) => a - b);
+      for (let at = 1; at < tops.length; at += 1) {
+        step = Math.max(step, (tops[at] ?? 0) - (tops[at - 1] ?? 0));
+      }
+    }
+    return step;
+  });
+
+async function chartPlaces(page: Page) {
+  await settled(page);
+  const chart = chartRegion(page);
+  return {
+    card: await placeOf(chart),
+    rowStep: await rowStep(chart),
+    next: await placeOf(chain(page)),
+    numbers: await placeOf(
+      chart.getByRole("button", { name: "Ver os números" })
+    ),
+    totals: await placeOf(chart.locator("dl")),
+  };
+}
+
+type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
+
+function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
+  for (const key of ["card", "next", "numbers", "totals"] as const) {
+    expect(
+      Math.abs(after[key].height - before[key].height),
+      `altura de ${key}`
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(after[key].top - before[key].top),
+      `topo de ${key}`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+/**
+ * The box of the chart's card and where its totals and its "Ver os números" sit inside it: what the card itself
+ * reserves, whatever the cards above it do.
+ */
+function insideTheCard(places: ChartPlaces) {
+  return {
+    height: places.card.height,
+    numbers: places.numbers.top - places.card.top,
+    totals: places.totals.top - places.card.top,
+  };
+}
+
+const ONE_ROW_AND_ITS_GAP = 28;
+
+function expectSameBox(after: ChartPlaces, before: ChartPlaces) {
+  expect(
+    after.rowStep,
+    "linha vazia entre os pedaços da leitura ou da legenda"
+  ).toBeLessThanOrEqual(ONE_ROW_AND_ITS_GAP);
+  const now = insideTheCard(after);
+  const was = insideTheCard(before);
+  for (const key of ["height", "numbers", "totals"] as const) {
+    expect(
+      Math.abs(now[key] - was[key]),
+      `${key} dentro do cartão do gráfico: ${was[key]} px antes, ${now[key]} px agora`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+test.describe("o Resultado estimado num dia sem custo diz o porquê e não muda de altura (RES-1)", () => {
+  const WIDTHS = [{ height: 740, width: 320 }, ...SIZES] as const;
+  for (const size of WIDTHS) {
+    test(`'sem custo neste dia' cabe numa linha, sem mexer no cartão (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openDashboard(page, new FakeReportServer());
+      await choosePreset(page, "Mês passado");
+      const result = card(page, CARD.result);
+      await expect(result).toContainText("estimativa incompleta");
+      await settled(page);
+      const rest = await placeOf(result);
+      const restValue = await placeOf(result.locator("p").first());
+
+      const slider = card(page, CARD.netSales).getByRole("slider");
+      await slider.focus();
+      await slider.press("Home");
+      await expect(result).toContainText("sem custo neste dia");
+      await expect(result).not.toContainText("sem valor");
+      await settled(page);
+      const unknownDay = await placeOf(result);
+      expect(
+        Math.abs(unknownDay.height - rest.height),
+        "altura do cartão"
+      ).toBeLessThanOrEqual(1);
+      const text = result.getByText("sem custo neste dia", { exact: true });
+      const line = await text.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rects = [...range.getClientRects()];
+        const box = element.closest("[data-kpi]")?.getBoundingClientRect();
+        return {
+          lines: new Set(rects.map((rect) => Math.round(rect.top))).size,
+          right: Math.max(...rects.map((rect) => rect.right)),
+          limit: box?.right ?? 0,
+        };
+      });
+      expect(line.lines, "linhas do texto").toBe(1);
+      expect(line.right, "texto dentro do cartão").toBeLessThanOrEqual(
+        line.limit
+      );
+      const valueBox = await placeOf(result.locator("p").first());
+      expect(
+        Math.abs(valueBox.height - restValue.height),
+        "altura da linha do valor"
+      ).toBeLessThanOrEqual(1);
+
+      await slider.press("End");
+      await expect(result).not.toContainText("sem custo neste dia");
+    });
+  }
+});
+
+test.describe("Vendas × custos por dia: trocar de período não muda a altura do cartão nem o que vem depois", () => {
+  // May and June are both partial estimates (no expense recorded): May has a sale to draw, June one returned whole
+  const periods = [
+    {
+      data: ["2026-05-05", "2026-05-11"],
+      empty: ["2026-06-05", "2026-06-11"],
+      name: "7 dias",
+    },
+    {
+      data: ["2026-05-05", "2026-05-14"],
+      empty: ["2026-06-05", "2026-06-14"],
+      name: "10 dias",
+    },
+  ] as const;
+
+  for (const size of SIZES) {
+    for (const { data, empty, name } of periods) {
+      test(`${name}: com venda, sem venda e com venda de novo (${size.width} px)`, async ({
+        page,
+      }) => {
+        await page.setViewportSize(size);
+        await openDashboard(page, new FakeReportServer());
+        await rangeFields(page, data[0], data[1]);
+        await expect(chartRegion(page)).toContainText("Melhor dia");
+        const withSales = await chartPlaces(page);
+
+        await rangeFields(page, empty[0], empty[1]);
+        await expect(chartRegion(page)).toContainText("Sem vendas no período.");
+        expectSamePlaces(await chartPlaces(page), withSales);
+
+        await rangeFields(page, data[0], data[1]);
+        await expect(chartRegion(page)).toContainText("Melhor dia");
+        expectSamePlaces(await chartPlaces(page), withSales);
+      });
+    }
+  }
+});
+
+/** The store's today at `NOW` (09:00 in São Paulo). */
+const TODAY = "2026-10-14";
+/** The reading of a monthly curve at rest, to today, and at the end of a range of 63 days (D1-2). */
+const UNTIL_TODAY = /^Até 14\/10: /;
+const UNTIL_JULY_6 = /^Até 06\/07: /;
+
+/**
+ * A summary of a period above 62 days as the server sends it (`granularity` "month"): the days added up by calendar
+ * month up to today, the ends cut, each month with its last day, its days and its unknown days, and the days after
+ * today apart.
+ */
+function byMonth(summary: ReturnType<typeof summaryOf>) {
+  type Day = (typeof summary.daily)[number];
+  const add = (values: ReadonlyArray<string | null>) =>
+    values.some((value) => value === null)
+      ? null
+      : money(sum(values.map((value) => Math.round(Number(value) * 100))));
+  const bucket = (days: Day[]) => ({
+    costs: add(days.map((day) => day.costs)),
+    date: (days[0] as Day).date,
+    days: days.length,
+    netSales: add(days.map((day) => day.netSales)) as string,
+    operatingExpenses: add(days.map((day) => day.operatingExpenses)) as string,
+    operatingResult: add(days.map((day) => day.operatingResult)),
+    salesCount: sum(days.map((day) => day.salesCount)),
+    to: (days.at(-1) as Day).date,
+    unknownDays: days.filter((day) => day.costs === null).length,
+  });
+  const today = summary.generatedAt.slice(0, 10);
+  const months = new Map<string, Day[]>();
+  for (const day of summary.daily.filter((entry) => entry.date <= today)) {
+    months.set(day.date.slice(0, 7), [
+      ...(months.get(day.date.slice(0, 7)) ?? []),
+      day,
+    ]);
+  }
+  const later = summary.daily.filter((day) => day.date > today);
+  return {
+    ...summary,
+    daily: [...months.values()].map(bucket),
+    granularity: "month",
+    ...(later.length > 0 ? { afterToday: bucket(later) } : {}),
+  };
+}
+
+/** The server of `FakeReportServer` that answers a period above 62 days by month, as the real one does. */
+class MonthlyReportServer extends FakeReportServer {
+  override async handle(procedure: string, input: Record<string, unknown>) {
+    const answer = await super.handle(procedure, input);
+    const from = String(input.from);
+    const to = String(input.to);
+    const { json } = answer.body as { json?: unknown };
+    if (
+      procedure !== "report/periodSummary" ||
+      answer.status !== 200 ||
+      datesBetween(from, to).length <= 62
+    ) {
+      return answer;
+    }
+    return {
+      ...answer,
+      body: {
+        json: byMonth(json as ReturnType<typeof summaryOf>),
+        meta: [],
+      },
+    };
+  }
+}
+
+/** The heights of the KPI row, of each KPI card and of the chart's card: what must not move between periods. */
+async function resultHeights(page: Page) {
+  await settled(page);
+
+  const cards = await kpiCards(page).evaluateAll((elements) =>
+    elements.map((element) => element.getBoundingClientRect().height)
+  );
+  return {
+    cards,
+    chart: (await placeOf(chartRegion(page))).height,
+    row: (await placeOf(page.locator("[data-kpi-row]"))).height,
+  };
+}
+
+function expectSameHeights(
+  after: Awaited<ReturnType<typeof resultHeights>>,
+  before: Awaited<ReturnType<typeof resultHeights>>
+) {
+  expect(
+    Math.abs(after.row - before.row),
+    "altura da linha de KPI"
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(after.chart - before.chart),
+    "altura do gráfico"
+  ).toBeLessThanOrEqual(1);
+  expect(after.cards).toHaveLength(before.cards.length);
+  for (const [index, height] of after.cards.entries()) {
+    expect(
+      Math.abs(height - (before.cards[index] ?? 0)),
+      `altura do cartão ${index}`
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+test.describe("períodos longos por mês: trocar entre o mês, 30 dias e o ano não muda a altura dos cartões nem do gráfico", () => {
+  // the same complete records at the start of every period read (the month, the 30 days from September, the year from
+  // January and 63 days from May): only the granularity changes between them, not the quality nor its badge
+  const fixture = {
+    ...FIXTURE,
+    "2026-01": COMPLETE_MONTH,
+    "2026-05": COMPLETE_MONTH,
+    "2026-09": COMPLETE_MONTH,
+  };
+
+  for (const size of SIZES) {
+    test(`Últimos 30 dias → Este ano → Últimos 30 dias → Este ano (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const server = new MonthlyReportServer();
+      server.fixture = fixture;
+      await openDashboard(page, server);
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      await expect(
+        card(page, CARD.netSales).getByRole("slider")
+      ).toHaveAccessibleName("Vendas líquidas, acumulado por dia");
+      const days = await resultHeights(page);
+
+      await choosePreset(page, "Este ano");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      expect(server.periods.at(-1)).toEqual({ from: "2026-01-01", to: TODAY });
+      const sales = card(page, CARD.netSales).getByRole("slider");
+      await expect(sales).toHaveAccessibleName(
+        "Vendas líquidas, acumulado por mês"
+      );
+      await expect(sales).toHaveAttribute("max", "9");
+      await expect(sales).toHaveAttribute("aria-valuetext", UNTIL_TODAY);
+      // no comparison above 62 days: the chip line is empty and keeps its place
+      await expect(
+        card(page, CARD.netSales).locator("[data-kpi-delta]")
+      ).toHaveCount(0);
+      const year = await resultHeights(page);
+      expectSameHeights(year, days);
+
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      expectSameHeights(await resultHeights(page), days);
+
+      await choosePreset(page, "Este ano");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      expectSameHeights(await resultHeights(page), year);
+    });
+
+    test(`63 dias, três meses, com a mesma altura de 30 dias (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const server = new MonthlyReportServer();
+      server.fixture = fixture;
+      await openDashboard(page, server);
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      const days = await resultHeights(page);
+
+      await rangeFields(page, "2026-05-05", "2026-07-06");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      const sales = card(page, CARD.netSales).getByRole("slider");
+      await expect(sales).toHaveAttribute("max", "2");
+      await expect(sales).toHaveAttribute("aria-valuetext", UNTIL_JULY_6);
+      expectSameHeights(await resultHeights(page), days);
+    });
+  }
+});
+
+/** The chart drawn (not the box that holds its place while the chunk comes). */
+const DRAWN_CHART = /^Vendas líquidas/;
+
+/** A store whose today is on November: the range from a year before to today crosses a year, 366 days. */
+const NOVEMBER_5 = "2026-11-05T12:00:00.000Z";
+const YEAR_AGO_TO_TODAY = ["2025-11-05", "2026-11-05"] as const;
+
+/**
+ * The record that opens each period of the sequence (the fake server reads the month the period starts in): the month,
+ * the 30 days, the year from January and the 366 days.
+ */
+/** The longest reading of a month: amounts of six digits and an expense of the same size on the day that closes it. */
+const BIG_MONTH: FixtureMonth = {
+  expenses: [{ amount: 99_999_999, linked: false }],
+  sales: [
+    {
+      anticipationFee: null,
+      cogs: null,
+      discount: 0,
+      gross: 99_999_999,
+      itemLines: 1,
+      items: 1,
+      processingFee: null,
+      returns: 0,
+      surcharge: 0,
+    },
+  ],
+};
+
+/** The server of a store whose copy of the year has no cost per day (the line of the costs is not drawn). */
+class NoCostsOfTheYearServer extends MonthlyReportServer {
+  override async handle(procedure: string, input: Record<string, unknown>) {
+    const answer = await super.handle(procedure, input);
+    const { json } = answer.body as {
+      json?: { daily?: Record<string, unknown>[] };
+    };
+    if (
+      procedure === "report/periodSummary" &&
+      answer.status === 200 &&
+      input.from === "2026-01-01" &&
+      json?.daily
+    ) {
+      for (const day of json.daily) {
+        day.costs = undefined;
+        day.operatingResult = undefined;
+      }
+    }
+    return answer;
+  }
+}
+
+const CHART_BOX_FIXTURES = {
+  completo: {
+    "2025-11": COMPLETE_MONTH,
+    "2026-01": COMPLETE_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+  incompleto: {
+    "2025-11": PARTIAL_MONTH,
+    "2026-01": PARTIAL_MONTH,
+    "2026-10": PARTIAL_MONTH,
+    "2026-11": PARTIAL_MONTH,
+  },
+  "só o ano incompleto": {
+    "2025-11": PARTIAL_MONTH,
+    "2026-01": PARTIAL_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+  "valores de seis dígitos": {
+    "2025-11": BIG_MONTH,
+    "2026-01": BIG_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+  "ano sem os custos por dia": {
+    "2025-11": COMPLETE_MONTH,
+    "2026-01": COMPLETE_MONTH,
+    "2026-10": COMPLETE_MONTH,
+    "2026-11": COMPLETE_MONTH,
+  },
+} as const;
+
+test.describe("a caixa inteira do cartão do gráfico não muda de altura entre o mês, 30 dias, Este ano e um período de 366 dias", () => {
+  for (const size of SIZES) {
+    for (const hidden of [false, true]) {
+      for (const [name, fixture] of Object.entries(CHART_BOX_FIXTURES)) {
+        test(`${name}, ${hidden ? "com" : "sem"} Esconder valores (${size.width} px)`, async ({
+          page,
+        }) => {
+          await page.setViewportSize(size);
+          if (hidden) {
+            await page.addInitScript(() =>
+              localStorage.setItem("polaris-valores", "escondidos")
+            );
+          }
+          const server =
+            name === "ano sem os custos por dia"
+              ? new NoCostsOfTheYearServer()
+              : new MonthlyReportServer();
+          server.now = NOVEMBER_5;
+          server.fixture = fixture;
+          await openDashboard(page, server);
+          const drawn = () =>
+            chartRegion(page).getByRole("img", { name: DRAWN_CHART });
+          await expect(drawn()).toBeVisible();
+          const month = await chartPlaces(page);
+
+          await choosePreset(page, "Este ano");
+          await expect(chartRegion(page)).toContainText("Melhor mês");
+          await expect(drawn()).toBeVisible();
+          await expect(page.locator("[data-kpi-group]")).toContainText(
+            "01/01 a 05/11"
+          );
+          expectSameBox(await chartPlaces(page), month);
+
+          await choosePreset(page, "Últimos 30 dias");
+          await expect(chartRegion(page)).toContainText("Melhor dia");
+          await expect(drawn()).toBeVisible();
+          expectSameBox(await chartPlaces(page), month);
+
+          await choosePreset(page, "Este ano");
+          await expect(chartRegion(page)).toContainText("Melhor mês");
+          await expect(drawn()).toBeVisible();
+          expectSameBox(await chartPlaces(page), month);
+
+          await rangeFields(page, ...YEAR_AGO_TO_TODAY);
+          await expectPreset(page, "Período");
+          await expect(chartRegion(page)).toContainText("Melhor mês");
+          await expect(drawn()).toBeVisible();
+          await expect(page.locator("[data-kpi-group]")).toContainText(
+            "05/11/2025 a 05/11/2026"
+          );
+          expectSameBox(await chartPlaces(page), month);
+        });
+      }
+    }
+  }
+});
+
+test.describe("a caixa do cartão do gráfico no carregamento do pedaço é a mesma de depois do desenho", () => {
+  for (const size of SIZES) {
+    for (const name of ["completo", "valores de seis dígitos"] as const) {
+      test(`${name} (${size.width} px)`, async ({ page }) => {
+        await page.setViewportSize(size);
+        let release: () => void = () => undefined;
+        const arrives = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await page.route("**/assets/charts-*.js", async (route) => {
+          await arrives;
+          await route.continue();
+        });
+        const server = new MonthlyReportServer();
+        server.now = NOVEMBER_5;
+        server.fixture = CHART_BOX_FIXTURES[name];
+        await openDashboard(page, server);
+        await expect(
+          chartRegion(page).locator("[data-chart-loading]")
+        ).toBeAttached();
+        await expect(
+          chartRegion(page).getByRole("img", { name: DRAWN_CHART })
+        ).toHaveCount(0);
+        const loading = await chartPlaces(page);
+
+        release();
+        await expect(
+          chartRegion(page).getByRole("img", { name: DRAWN_CHART })
+        ).toBeVisible();
+        await expect(
+          chartRegion(page).locator("[data-chart-loading]")
+        ).toHaveCount(0);
+        expectSamePlaces(await chartPlaces(page), loading);
+      });
+    }
+  }
+});
+
+const JULY_6 = "2026-07-06T12:00:00.000Z";
+
+test.describe("Este ano até julho, sem custo por dia, e o mês na primeira semana têm a caixa dos 30 dias", () => {
+  for (const size of SIZES) {
+    test(`sete linhas sem custos (${size.width} px)`, async ({ page }) => {
+      await page.setViewportSize(size);
+      const server = new NoCostsOfTheYearServer();
+      server.now = JULY_6;
+      server.fixture = {
+        "2026-01": COMPLETE_MONTH,
+        "2026-06": COMPLETE_MONTH,
+        "2026-07": COMPLETE_MONTH,
+      };
+      await openDashboard(page, server);
+      const drawn = () =>
+        chartRegion(page).getByRole("img", { name: DRAWN_CHART });
+      await expect(drawn()).toBeVisible();
+      const month = await chartPlaces(page);
+
+      await choosePreset(page, "Este ano");
+      await expect(chartRegion(page)).toContainText("Melhor mês");
+      await expect(drawn()).toBeVisible();
+      await expect(page.locator("[data-kpi-group]")).toContainText(
+        "01/01 a 06/07"
+      );
+      expectSameBox(await chartPlaces(page), month);
+
+      await choosePreset(page, "Últimos 30 dias");
+      await expect(chartRegion(page)).toContainText("Melhor dia");
+      await expect(drawn()).toBeVisible();
+      expectSameBox(await chartPlaces(page), month);
+    });
+  }
+});
+
+const stripOf = (page: Page) => page.locator("[data-kpi-row]");
+
+/** A box-shadow value that draws something: an offset, a blur or a spread above zero (the ring is a 1 px spread). */
+const NON_ZERO_PIXELS = /[1-9]\d*(\.\d+)?px/;
+const drawsShadow = (shadow: string) => NON_ZERO_PIXELS.test(shadow);
+
+/** The lab has no shell: the room of the side menu (16 rem open, 3 rem folded) is taken from the left of the page. */
+const SIDE_MENU = { aberta: 256, recolhida: 48 } as const;
+
+async function withSideMenu(page: Page, side: keyof typeof SIDE_MENU) {
+  await page.addInitScript((room) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = `#root { box-sizing: border-box; padding-left: ${room}px; }`;
+      document.head.append(style);
+    });
+  }, SIDE_MENU[side]);
+}
+
+/** The boxes of the four cards: where each is and what it paints. */
+const cardBoxes = (page: Page) =>
+  kpiCards(page).evaluateAll((cards) =>
+    cards.map((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        background: style.backgroundColor,
+        height: box.height,
+        left: box.left,
+        shadow: style.boxShadow,
+        top: box.top + window.scrollY,
+        width: box.width,
+      };
+    })
+  );
+
+test.describe("a faixa de KPIs do Resultado: uma peça a partir de 900 px, cartões abaixo (AC-T1.1)", () => {
+  for (const width of [899, 900]) {
+    test(`${width} px, lateral aberta`, async ({ page }) => {
+      await page.setViewportSize({ height: 800, width });
+      await withSideMenu(page, "aberta");
+      await openDashboard(page, new FakeReportServer());
+      await expect(kpiCards(page)).toHaveCount(4);
+      await settled(page);
+      const boxes = await cardBoxes(page);
+      const strip = await stripOf(page).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { background: style.backgroundColor, shadow: style.boxShadow };
+      });
+      if (width < 900) {
+        expect(new Set(boxes.map((box) => Math.round(box.top))).size).toBe(3);
+        for (const box of boxes) {
+          expect(box.background).not.toBe("rgba(0, 0, 0, 0)");
+          expect(drawsShadow(box.shadow)).toBe(true);
+        }
+        expect(drawsShadow(strip.shadow)).toBe(false);
+        return;
+      }
+      expect(new Set(boxes.map((box) => Math.round(box.top))).size).toBe(1);
+      expect(new Set(boxes.map((box) => Math.round(box.height))).size).toBe(1);
+      const lefts = boxes.map((box) => box.left);
+      expect([...lefts].sort((a, b) => a - b)).toEqual(lefts);
+      for (const box of boxes) {
+        expect(box.background).toBe("rgba(0, 0, 0, 0)");
+        expect(drawsShadow(box.shadow)).toBe(false);
+      }
+      expect(strip.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(drawsShadow(strip.shadow)).toBe(true);
+      const lines = await kpiCards(page).evaluateAll((cards) =>
+        cards.map((element) => getComputedStyle(element).borderRightWidth)
+      );
+      expect(lines).toEqual(["1px", "1px", "1px", "0px"]);
+      const figures = await page
+        .locator("[data-kpi-row] [data-kpi-value]")
+        .evaluateAll((values) =>
+          values.map((element) => {
+            const style = getComputedStyle(element);
+            return [style.fontSize, style.fontWeight, style.fontVariantNumeric];
+          })
+        );
+      expect(figures).toHaveLength(4);
+      for (const figure of figures) {
+        expect(figure).toEqual(["24px", "650", "tabular-nums"]);
+      }
+    });
+  }
+});
+
+const STRIP_FIXTURES = {
+  "Este ano": { fixture: CHART_BOX_FIXTURES.completo, preset: "Este ano" },
+  "Este ano incompleto": {
+    fixture: CHART_BOX_FIXTURES.incompleto,
+    preset: "Este ano",
+  },
+  "últimos 30 dias": {
+    fixture: { ...CHART_BOX_FIXTURES.completo, "2026-09": COMPLETE_MONTH },
+    preset: "Últimos 30 dias",
+  },
+  "mês completo": { fixture: CHART_BOX_FIXTURES.completo, preset: null },
+  "mês incompleto": { fixture: CHART_BOX_FIXTURES.incompleto, preset: null },
+  "mês sem custo informado": {
+    fixture: {
+      "2025-11": NO_COST_MONTH,
+      "2026-01": NO_COST_MONTH,
+      "2026-10": NO_COST_MONTH,
+      "2026-11": NO_COST_MONTH,
+    },
+    preset: null,
+  },
+  "mês sem comparação": {
+    fixture: { "2026-11": COMPLETE_MONTH },
+    preset: null,
+  },
+  "seis dígitos": {
+    fixture: CHART_BOX_FIXTURES["valores de seis dígitos"],
+    preset: "Este ano",
+  },
+} as const;
+
+const HIDDEN_RUNS = ["mês completo", "mês incompleto", "seis dígitos"] as const;
+
+const RANGE_AGAINST = /^vs\. \d/;
+
+const SWEEP_WIDTHS = [
+  900, 920, 940, 970, 980, 1024, 1060, 1080, 1150, 1280, 1300, 1440,
+] as const;
+
+/** What a state of the strip measures at one width: its box, where each card's note and foot sit, and what is cut. */
+async function measureStrip(page: Page) {
+  await settled(page);
+  return stripOf(page).evaluate((strip) => ({
+    cards: [...strip.querySelectorAll("[data-kpi]")].map((cell) => {
+      const box = cell.getBoundingClientRect();
+      const rowTop = (selector: string) => {
+        const row = cell.querySelector(selector);
+        return row ? row.getBoundingClientRect().top - box.top : null;
+      };
+      return {
+        foot: rowTop("[data-kpi-foot]"),
+        note: rowTop("[data-kpi-note-row]"),
+      };
+    }),
+    cut: [
+      ...[...strip.querySelectorAll("[data-kpi-value]")]
+        .filter((value) => value.scrollWidth > value.clientWidth)
+        .map((value) => value.textContent),
+      ...[...strip.querySelectorAll("[data-kpi-delta-against]")]
+        .filter((against) => {
+          const column = against.closest("[data-kpi-headline]");
+          const narrow = (column?.getBoundingClientRect().width ?? 0) < 224;
+          const cutOff = against.scrollWidth > against.clientWidth;
+          return (
+            cutOff &&
+            (narrow || against.getAttribute("title") !== against.textContent)
+          );
+        })
+        .map((against) => against.textContent),
+    ],
+    height: strip.getBoundingClientRect().height,
+  }));
+}
+
+type StripState = Awaited<ReturnType<typeof measureStrip>>;
+
+/** Opens a state of the strip once and measures it at every width of the sweep. */
+async function sweepStrip(
+  page: Page,
+  name: keyof typeof STRIP_FIXTURES,
+  hidden: boolean
+) {
+  const { fixture, preset: period } = STRIP_FIXTURES[name];
+  if (hidden) {
+    await page.addInitScript(() =>
+      localStorage.setItem("polaris-valores", "escondidos")
+    );
+  }
+  const server = new MonthlyReportServer();
+  server.now = NOVEMBER_5;
+  server.fixture = fixture;
+  await openDashboard(page, server);
+  await expect(kpiCards(page)).toHaveCount(4);
+  if (period) {
+    await choosePreset(page, period);
+    await expect(page.locator("[data-kpi-group]")).toContainText(
+      period === "Este ano" ? "01/01 a 05/11" : "07/10 a 05/11"
+    );
+  }
+  const states: Record<number, StripState> = {};
+  for (const width of SWEEP_WIDTHS) {
+    // biome-ignore lint/performance/noAwaitInLoops: the widths are set one after the other on the same page
+    await page.setViewportSize({ height: 800, width });
+    states[width] = await measureStrip(page);
+  }
+  return {
+    badge: await page.locator("[data-kpi-unknown]").count(),
+    noCost: await page.locator("[data-kpi-no-cost]").count(),
+    ranges: await page
+      .locator("[data-kpi-delta-against]", { hasText: RANGE_AGAINST })
+      .count(),
+    states,
+  };
+}
+
+type Measured = Record<string, Awaited<ReturnType<typeof sweepStrip>>>;
+
+function expectSameStripHeight(measured: Measured, width: number) {
+  const heights = Object.fromEntries(
+    Object.entries(measured).map(([name, run]) => [
+      name,
+      run.states[width]?.height ?? 0,
+    ])
+  );
+  const values = Object.values(heights);
+  expect(
+    Math.max(...values) - Math.min(...values),
+    `${width} px: ${JSON.stringify(heights)}`
+  ).toBeLessThanOrEqual(1);
+}
+
+function expectNothingCut(measured: Measured, width: number) {
+  for (const [name, run] of Object.entries(measured)) {
+    expect(
+      run.states[width]?.cut,
+      `${name} a ${width} px: valor ou "vs. …" cortado`
+    ).toEqual([]);
+  }
+}
+
+/** A change that comes and goes moves nothing under it: the note and the foot sit where they sat. */
+function expectChipMovesNothing(measured: Measured, width: number) {
+  const withChip = measured["mês completo"]?.states[width]?.cards ?? [];
+  const withoutChip =
+    measured["mês sem comparação"]?.states[width]?.cards ?? [];
+  expect(withChip).toHaveLength(4);
+  for (const [index, here] of withChip.entries()) {
+    for (const key of ["note", "foot"] as const) {
+      expect(
+        Math.abs((here[key] ?? 0) - (withoutChip[index]?.[key] ?? 0)),
+        `${width} px, cartão ${index}: ${key} com e sem comparação`
+      ).toBeLessThanOrEqual(1);
+    }
+  }
+}
+
+test.describe("a altura da faixa de KPIs não muda com o período, a comparação, o custo nem Esconder valores (AC-T1.3, AC-T1.5)", () => {
+  for (const side of ["aberta", "recolhida"] as const) {
+    test(`lateral ${side}, de 900 a 1440 px`, async ({ baseURL, browser }) => {
+      test.setTimeout(300_000);
+      const runs = [
+        ...(
+          Object.keys(STRIP_FIXTURES) as Array<keyof typeof STRIP_FIXTURES>
+        ).map((name) => ({ hidden: false, name })),
+        ...HIDDEN_RUNS.map((name) => ({ hidden: true, name })),
+      ];
+      const measured: Record<
+        string,
+        Awaited<ReturnType<typeof sweepStrip>>
+      > = {};
+      for (const { hidden, name } of runs) {
+        // biome-ignore lint/performance/noAwaitInLoops: one browser context at a time, the machine has two cores
+        const context = await browser.newContext({
+          ...(baseURL ? { baseURL } : {}),
+          viewport: { height: 800, width: SWEEP_WIDTHS[0] },
+        });
+        const page = await context.newPage();
+        await withSideMenu(page, side);
+        measured[`${name}${hidden ? ", escondido" : ""}`] = await sweepStrip(
+          page,
+          name,
+          hidden
+        );
+        await context.close();
+      }
+      // the tallest states are the ones that show the longest foot of the result card
+      expect(measured["mês incompleto"]?.badge).toBeGreaterThan(0);
+      expect(measured["mês sem custo informado"]?.noCost).toBeGreaterThan(0);
+      // the "vs. 07/09 a 06/10" of a period that is not a month is the longest text the chip row takes
+      expect(measured["últimos 30 dias"]?.ranges).toBeGreaterThan(0);
+      for (const width of SWEEP_WIDTHS) {
+        expectSameStripHeight(measured, width);
+        expectNothingCut(measured, width);
+        expectChipMovesNothing(measured, width);
+      }
+    });
+  }
+});
+
+test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal e nome completo, e a faixa não tem violação de axe (AC-T1.2)", () => {
+  const CASES = [
+    { beside: false, side: "aberta", width: 900 },
+    { beside: true, side: "recolhida", width: 1280 },
+  ] as const;
+  for (const { beside, side, width } of CASES) {
+    for (const scheme of ["light", "dark"] as const) {
+      test(`${width} px, lateral ${side}, tema ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ height: 800, width });
+        await page.emulateMedia({ colorScheme: scheme });
+        await withSideMenu(page, side);
+        await openDashboard(page, new FakeReportServer());
+        await expect(kpiCards(page)).toHaveCount(4);
+        await settled(page);
+        const sales = card(page, CARD.netSales);
+        const chip = sales.locator("[data-kpi-delta]");
+        await expect(chip).toContainText("+30,0%");
+        await expect(chip).toContainText("vs. setembro");
+        await expect(chip).toHaveAttribute(
+          "aria-label",
+          "subiu 30,0 por cento em relação a setembro (1 a 14/09)"
+        );
+        const value = await placeOf(sales.locator("[data-kpi-value]"));
+        const chipPlace = await placeOf(chip);
+        if (beside) {
+          expect(chipPlace.top).toBeGreaterThanOrEqual(value.top - 1);
+          expect(chipPlace.top + chipPlace.height).toBeLessThanOrEqual(
+            value.top + value.height + 6
+          );
+        } else {
+          expect(chipPlace.top).toBeGreaterThanOrEqual(
+            value.top + value.height
+          );
+        }
+        const left = await sales
+          .locator("[data-kpi-value]")
+          .evaluate((element) => element.getBoundingClientRect().right);
+        const chipLeft = await chip.evaluate(
+          (element) => element.getBoundingClientRect().left
+        );
+        if (beside) {
+          expect(chipLeft - left).toBeGreaterThanOrEqual(5);
+        }
+        const [chipRight, columnRight] = await Promise.all([
+          chip.evaluate((element) => element.getBoundingClientRect().right),
+          sales.evaluate((element) => element.getBoundingClientRect().right),
+        ]);
+        expect(chipRight, "o delta não passa da coluna").toBeLessThanOrEqual(
+          columnRight
+        );
+        expect(await axeFaults(page, "[data-kpi-row]")).toEqual([]);
+      });
+    }
+  }
+
+  for (const period of [null, "Últimos 30 dias"] as const) {
+    test(`900 px, lateral aberta${period ? `, ${period}` : ""}: o "vs. …" fica inteiro, sob o chip, na linha reservada`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width: 900 });
+      await withSideMenu(page, "aberta");
+      const server = new MonthlyReportServer();
+      server.now = NOVEMBER_5;
+      server.fixture = {
+        ...CHART_BOX_FIXTURES.completo,
+        "2026-09": COMPLETE_MONTH,
+      };
+      await openDashboard(page, server);
+      await expect(kpiCards(page)).toHaveCount(4);
+      if (period) {
+        await choosePreset(page, period);
+      }
+      await settled(page);
+      const sales = card(page, CARD.netSales);
+      const chip = sales.locator("[data-kpi-delta]");
+      const against = chip.locator("[data-kpi-delta-against]");
+      await expect(against).toContainText("vs. ");
+      const [pill, line, row] = await Promise.all([
+        placeOf(chip.locator("[data-kpi-pill]")),
+        placeOf(against),
+        placeOf(sales.locator("[data-kpi-chip-row]")),
+      ]);
+      expect(line.top, "o vs. fica sob o chip").toBeGreaterThanOrEqual(
+        pill.top + pill.height
+      );
+      expect(
+        line.top + line.height,
+        "dentro da linha reservada"
+      ).toBeLessThanOrEqual(row.top + row.height + 0.5);
+      const cut = await against.evaluate(
+        (element) => element.scrollWidth > element.clientWidth
+      );
+      expect(cut, "o vs. não é cortado").toBe(false);
+      const [lineRight, columnRight] = await Promise.all([
+        against.evaluate((element) => element.getBoundingClientRect().right),
+        sales.evaluate((element) => element.getBoundingClientRect().right),
+      ]);
+      expect(lineRight).toBeLessThanOrEqual(columnRight);
+    });
+  }
+});
+
+test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 20 px", () => {
+  skipOutsideChromium();
+
+  /** Millions of reais: the half of the chart totals is 126 px wide at this size when they sit in two fixed halves, and a value this long is wider. */
+  const MILLIONS_MONTH: FixtureMonth = {
+    expenses: [{ amount: 12_345, linked: false }],
+    sales: [
+      {
+        anticipationFee: 0,
+        cogs: 600_000,
+        discount: 50_000,
+        gross: 170_710_000,
+        itemLines: 1,
+        items: 3,
+        processingFee: 1234,
+        returns: 0,
+        surcharge: 0,
+      },
+    ],
+  };
+
+  for (const fontPixels of [20, 16]) {
+    reflowTest(
+      `com a letra em ${fontPixels} px, o R$ e o número de cada valor ficam na mesma linha`,
+      async ({ page }) => {
+        const server = new FakeReportServer();
+        server.fixture = { "2026-10": MILLIONS_MONTH };
+        await openReflowViewport(page, { fontPixels });
+        await openDashboard(page, server);
+        await expect(chainRow(page, "(=) Vendas líquidas")).toContainText(
+          "R$ 1.706.600,00"
+        );
+        await expectReflowFont(page, fontPixels);
+        await assertAmountsOnOneLine(chartRegion(page));
+        await assertTextsApart(chartRegion(page), "dd", 2);
+        await assertNothingClipped(chartRegion(page), {
+          allowScroll: ["[data-slot=card]"],
+        });
+        expect(
+          await assertAmountsOnOneLine(chain(page))
+        ).toBeGreaterThanOrEqual(10);
+        await assertNothingClipped(chain(page), {
+          allowScroll: ["[data-slot=table-container]"],
+        });
+      }
+    );
+  }
 });

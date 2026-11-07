@@ -7,6 +7,7 @@ import {
   tryConnectionNow,
   useConnectionOnline,
 } from "../lib/browser-connection";
+import { useTabActive } from "./screen-title";
 
 /**
  * The one notice of the screens that work only with a connection (`ONLINE_ONLY_ROUTES`), shown by the
@@ -50,10 +51,14 @@ function subscribeForm(listener: () => void) {
  * route's default stands when no screen says.
  */
 export function useConnectionNoticeForm(form: boolean) {
+  const active = useTabActive();
   useEffect(() => {
+    if (!active) {
+      return;
+    }
     declareForm(form);
     return () => declareForm(null);
-  }, [form]);
+  }, [active, form]);
 }
 
 function ConnectionRequiredNotice({ form }: { form: boolean }) {

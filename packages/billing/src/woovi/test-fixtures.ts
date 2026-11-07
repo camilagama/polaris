@@ -1,6 +1,6 @@
 /**
  * Woovi payloads for the tests, built from the SHAPE of what the sandbox
- * returned on 20/10/2026 and of the documentation (key names and types, never
+ * returned and of the documentation (key names and types, never
  * the values). Every value here is made up; the personal data and the Pix
  * payload are fake on purpose, so a test can prove none of it leaves the
  * adapter (AC-3). No key lives here: a test generates its own RSA pair.

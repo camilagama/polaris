@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import {
   expectFormDialogLayout,
   expectKeyboardKeepsMainButton,
@@ -11,7 +12,7 @@ import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
- * Categorias, Clientes and the public catalog of the ERP on the interface v5.1 (t235, lot 2 of the migration): the
+ * Categorias, Clientes and the public catalog of the ERP on the interface v5.1 (lot 2 of the migration): the
  * real route, with the API answered by the test (the server mode, no offline runtime). What the lab of the screens
  * already proves for Clientes and for the catalog is in `offline-screens.e2e.ts` and `usabilidade-lote-1.e2e.ts`; here
  * is Categorias (the whole screen), the strip of the screens that need a connection (U-54), the states a server
@@ -35,6 +36,27 @@ const rpc = (json: unknown, status = 200) => ({
 const refusal = (code: string, status: number) =>
   rpc({ code, data: undefined, defined: false, message: code, status }, status);
 const unavailable = refusal("SERVICE_UNAVAILABLE", 503);
+const serverBusy = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
+
+const unavailableForAnotherReason = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "billing_not_configured" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
 
 type Handler = (route: Route) => Promise<void>;
 const reply =
@@ -202,6 +224,30 @@ test("Categorias: criar deixa o cursor no campo, que se esvazia, e diz o resulta
   await expect(field).toBeFocused();
 });
 
+test("Categorias: criar com o 503 server_busy diz que pode ter sido salvo e não repete sozinho", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/categories", "Categorias", {
+    "category/create": (route) => {
+      created += 1;
+      return route.fulfill(serverBusy);
+    },
+    "category/list": reply({ categories: [] }),
+  });
+  await page.getByLabel("Nova categoria").fill("Acessórios");
+  await page.getByRole("button", { name: "Adicionar categoria" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  await expect(page.getByLabel("Nova categoria")).toHaveValue("Acessórios");
+});
+
 test("Categorias: nome repetido é dito junto do campo de cima e o que foi digitado fica", async ({
   page,
 }) => {
@@ -286,11 +332,15 @@ test("Categorias: remover pede confirmação na linha, 'Cancelar' desiste e conf
     }),
   });
   await menuOf(page, "Camisetas").click();
-  await page.getByRole("menuitem", { exact: true, name: "Remover" }).click();
+  await activateByKeyboard(
+    page,
+    page.getByRole("menuitem", { exact: true, name: "Remover" })
+  );
   const confirmation = page.getByRole("group", {
     name: "Confirmar remoção de Camisetas",
   });
-  await expect(confirmation).toBeFocused();
+  // the confirmation of the row takes the focus, and the keyboard sees it
+  await expectFocusRing(confirmation);
   await expect(confirmation).toContainText(
     "O histórico de vendas continua igual."
   );
@@ -474,6 +524,65 @@ test("Clientes: cadastrar um cliente fecha o formulário, diz o resultado e o pr
   await expect(name).toBeFocused();
 });
 
+test("Clientes: cadastrar com o 503 server_busy diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/create": (route) => {
+      created += 1;
+      return route.fulfill(serverBusy);
+    },
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
+  });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+  await page.getByLabel("Telefone").fill("11900000002");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  await expect(page.getByText("salvo neste aparelho")).toHaveCount(0);
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
+  await expect(page.getByLabel("Nome", { exact: true })).toHaveValue(
+    "Bia Souza"
+  );
+});
+
+test("Clientes: cadastrar com um 503 de outro motivo também diz que pode ter sido salvo e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/create": (route) => {
+      created += 1;
+      return route.fulfill(unavailableForAnotherReason);
+    },
+    "customer/findPossibleDuplicates": reply({ matches: [] }),
+    "customer/list": reply({ customers: [] }),
+  });
+  await page.getByRole("button", { name: "Novo cliente" }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Bia Souza");
+  await page.getByLabel("Telefone").fill("11900000002");
+  await page.getByRole("button", { name: "Cadastrar cliente" }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText(
+    "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir."
+  );
+  await expect(alert).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  expect(created).toBe(1);
+});
+
 for (const width of FORM_WIDTHS) {
   test(`Clientes a ${width} px: o formulário abre, cancela e salva na tela inteira do celular ou no diálogo central`, async ({
     page,
@@ -562,6 +671,105 @@ test("Clientes: a lista vazia diz o que fazer e traz o botão que abre o formul�
   await expect(
     page.getByRole("dialog", { name: "Novo cliente" })
   ).toBeVisible();
+});
+
+test("Clientes: a linha não traz observações nem a data, e o editor traz a data e as observações", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({
+      customers: [
+        customer(1, "Ana Lima", {
+          email: "ana@exemplo.com",
+          notes: "Prefere o WhatsApp.",
+        }),
+      ],
+    }),
+  });
+  const row = page.locator("[data-customer-id]");
+  await expect(row).toContainText("11 91234-5678 · ana@exemplo.com");
+  await expect(row).not.toContainText("Prefere o WhatsApp.");
+  await expect(row).not.toContainText("Atualizado em");
+  // the row itself opens the edit
+  await page
+    .getByRole("button", { exact: true, name: "Editar Ana Lima" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await expect(dialog).toContainText("Atualizado em 14 de out. de 2026");
+  await expect(dialog.getByLabel("Observações")).toHaveValue(
+    "Prefere o WhatsApp."
+  );
+});
+
+test("Clientes: a busca acha por nome sem acento, por telefone com ou sem máscara e por e-mail, e diz quando nada casa", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({
+      customers: [
+        customer(1, "Beatriz Souza", {
+          email: "bia@exemplo.com",
+          phone: "11987654321",
+        }),
+        customer(2, "João Araújo", { phone: "21 3000-1234" }),
+        customer(3, "Carla Dias", { email: "carla@loja.com", phone: null }),
+      ],
+    }),
+  });
+  const rows = page.locator("[data-customer-id]");
+  await expect(page.getByText("3 clientes", { exact: true })).toBeVisible();
+  const search = page.getByLabel("Buscar cliente");
+  await search.fill("JOAO araujo");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("João Araújo");
+  await expect(page.getByText("1 de 3 clientes")).toBeVisible();
+  await search.fill("(11) 98765");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Beatriz Souza");
+  await search.fill("213000");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("João Araújo");
+  await search.fill("carla@");
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Carla Dias");
+  await search.fill("zé");
+  await expect(page.getByText("Nenhum cliente com “zé”.")).toBeVisible();
+  await expect(rows).toHaveCount(0);
+  await page.getByRole("button", { name: "Limpar busca" }).click();
+  await expect(rows).toHaveCount(3);
+});
+
+test("Clientes: a linha abre o cliente pelo clique ou pelo Enter, sem 'Editar' no menu, e o foco volta à linha", async ({
+  page,
+}) => {
+  await openScreen(page, "/customers", "Clientes", {
+    "customer/list": reply({ customers: [customer(1, "Ana Lima")] }),
+  });
+  const open = page.getByRole("button", {
+    exact: true,
+    name: "Editar Ana Lima",
+  });
+  await page.getByRole("button", { name: "Mais ações para Ana Lima" }).click();
+  await expect(page.getByRole("menuitem", { name: "Arquivar" })).toBeVisible();
+  await expect(
+    page.getByRole("menuitem", { exact: true, name: "Editar" })
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+
+  // a tap on the contact line, away from the name, opens the row too (by the point: the line itself is under the
+  // stretched button, which is what takes the tap)
+  const contact = await page.getByText("11 91234-5678").boundingBox();
+  if (!contact) {
+    throw new Error("contact line not drawn");
+  }
+  await page.mouse.click(contact.x + 4, contact.y + contact.height / 2);
+  const dialog = page.getByRole("dialog", { name: "Editar cliente" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancelar edição" }).click();
+  await expect(open).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
 });
 
 test("Clientes: anonimizar pede a confirmação na linha, 'Cancelar' desiste e confirmar diz que não dá para desfazer e anonimiza", async ({
@@ -745,6 +953,55 @@ test("Catálogo público: a leitura que falha diz o motivo, não mostra o formul
   await alert.getByRole("button", { name: "Tentar novamente" }).click();
   await expect(page.getByLabel("Nome público")).toBeVisible();
   expect(reads).toBe(4);
+});
+
+test("Catálogo público: 50 produtos de cada vez com 'Carregar mais', a contagem com milhar e a busca de Produtos", async ({
+  page,
+}) => {
+  const many = Array.from({ length: 1248 }, (_, index) => ({
+    archivedAt: null,
+    categoryId: null,
+    createdAt: DAY,
+    deletedAt: null,
+    description: null,
+    id: `0199c2d0-0000-7000-8000-${String(index).padStart(12, "0")}`,
+    name: `Peça ${String(index + 1).padStart(4, "0")}`,
+    organizationId: ORGANIZATION.id,
+    status: "active",
+    updatedAt: DAY,
+    version: 1,
+  }));
+  await openScreen(page, "/public-catalog", "Catálogo público", {
+    "product/list": reply({ products: many }),
+    "publicCatalog/setup": reply(SETUP),
+  });
+  const toggles = page.getByRole("button", { name: "Mostrar no catálogo" });
+  await expect(
+    page.getByText("0 de 1.248 produtos ativos escolhidos")
+  ).toBeVisible();
+  await expect(toggles).toHaveCount(50);
+  await page.getByRole("button", { name: "Carregar mais" }).click();
+  await expect(toggles).toHaveCount(100);
+  await expect(
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "Peça 0051" })
+      .getByRole("button", { name: "Mostrar no catálogo" })
+  ).toBeFocused();
+
+  const search = page.getByLabel("Buscar produto");
+  await search.fill("peça 0007");
+  await expect(toggles).toHaveCount(1);
+  await expect(
+    page.getByText("1 de 1.248 produtos", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Carregar mais" })).toHaveCount(
+    0
+  );
+  await search.fill("tenis");
+  await expect(page.getByText("Nenhum produto com “tenis”.")).toBeVisible();
+  await search.fill("");
+  await expect(toggles).toHaveCount(50);
 });
 
 test("Catálogo público a 320 px: nada transborda com o endereço de teste longo, o erro do campo e a lista de produtos", async ({

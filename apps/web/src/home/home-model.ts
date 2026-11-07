@@ -1,12 +1,12 @@
 import type { GoalReadModel, PeriodSummaryReadModel } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { Money } from "@polaris/domain/money/money";
-import { groupGoals } from "../dashboard/goal-model";
+import { formatGoalValue, groupGoals } from "../dashboard/goal-model";
 import { calendarDayInTimezone, clockPartsInTimezone } from "../lib/dates";
 import { formatBrlAmount, formatQuantity } from "../lib/format";
 
 /**
- * Pure rules of the Início (desenho t269 v2, § 2.4 and § 5): which periods it reads, what "today" is, the line under
+ * Pure rules of the Início: which periods it reads, what "today" is, the line under
  * the title, the series of the chart, which goal the card shows, the lines of "Precisa de atenção" and the checklist
  * of a store with no sale (the KPI cards are in home-kpis.ts). Every figure is the server's; money is added in
  * exact cents (`Money`), never as a float, and the numbers given to a drawing are only for the drawing.
@@ -180,14 +180,6 @@ export function bestDay(series: Daily): Daily[number] | null {
   return best;
 }
 
-/** "Melhor dia: 18/10, R$ 1.840,00", said once above the chart (§ 5.5). */
-export function bestDayText(series: Daily): string | null {
-  const best = bestDay(series);
-  return best
-    ? `Melhor dia: ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}`
-    : null;
-}
-
 const MONTH_NAMES = [
   "janeiro",
   "fevereiro",
@@ -281,11 +273,69 @@ export function pickGoal(
   return recent ? { goal: recent, kind: "settled" } : { kind: "none" };
 }
 
-/** "de 01/10 a 31/10": the period of a goal (AC-10). */
+/** Whether a goal ended in a month before the one of `today`: what it reached is the past month's, not this month's. */
+export function endedInPastMonth(
+  goal: Pick<GoalReadModel, "endsOn">,
+  today: string
+): boolean {
+  return goal.endsOn < firstOfMonth(today);
+}
+
+/**
+ * "Outubro: R$ 166.619,00 de R$ 200.000,00 (não atingida)": the line under the invitation to set this month's goal. A
+ * goal that began on the 1st is the month's and is named by it; one with any other period says its period
+ * ("25 a 31/10"), because the month would claim more than the goal measured.
+ */
+export function pastGoalSummary(
+  goal: Pick<
+    GoalReadModel,
+    "achievedValue" | "endsOn" | "kind" | "startsOn" | "status" | "target"
+  >
+): string {
+  const outcome = goal.status === "completed" ? "atingida" : "não atingida";
+  const label =
+    goal.startsOn === firstOfMonth(goal.endsOn)
+      ? monthTitle(goal.endsOn)
+      : goalPeriodShort(goal);
+  if (goal.achievedValue === null) {
+    return `${label}: meta ${outcome}`;
+  }
+  return `${label}: ${formatGoalValue(goal.kind, goal.achievedValue)} de ${formatGoalValue(goal.kind, goal.target)} (${outcome})`;
+}
+
+/** "18/10/2026" for "2026-10-18". */
+export function fullDate(day: string): string {
+  return `${shortDate(day)}/${day.slice(0, 4)}`;
+}
+
+/**
+ * A period written the short way: "1 a 31/10" within a month, "26/09 a 25/10" across two, "25/10" for one day. The year
+ * goes on both ends ("05/11/2025 a 05/11/2026", "1 a 31/12/2025") when they are in different years or, given
+ * `thisYear`, when the last day is not in that year: without it a range that crosses a year reads as a single day.
+ */
+export function periodShort(
+  first: string,
+  last: string,
+  thisYear?: string
+): string {
+  const withYear =
+    first.slice(0, 4) !== last.slice(0, 4) ||
+    (thisYear !== undefined && last.slice(0, 4) !== thisYear);
+  const write = withYear ? fullDate : shortDate;
+  if (first === last) {
+    return write(last);
+  }
+  if (first.slice(0, 7) === last.slice(0, 7)) {
+    return `${Number(first.slice(8, 10))} a ${write(last)}`;
+  }
+  return `${write(first)} a ${write(last)}`;
+}
+
+/** "1 a 31/10": the period of a goal (AC-10). */
 export function goalPeriodShort(
   goal: Pick<GoalReadModel, "endsOn" | "startsOn">
 ): string {
-  return `de ${shortDate(goal.startsOn)} a ${shortDate(goal.endsOn)}`;
+  return periodShort(goal.startsOn, goal.endsOn);
 }
 
 /** Whole days from `from` to `to` (YYYY-MM-DD), negative when `to` is before. */
@@ -343,9 +393,9 @@ export type GoalProjection =
   | { kind: "no_sales" };
 
 /**
- * "No ritmo dos últimos 7 dias, chega a R$ 3.380,00 em 31/10. Estimativa." (v7 § 3 item 9), only from what is known;
- * when the rhythm crosses the target, the day it does ("a meta é batida em 28/10", Petković, 26/10), and with nothing
- * sold in the 7 days no figure at all (a "chega a" equal to what was reached is no estimate):
+ * "No ritmo atual, deve chegar a R$ 3.380,00 em 31/10." (the help of the block says it is the mean of the last 7 days
+ * repeated), only from what is known; when the rhythm crosses the target, the day it does ("a meta deve ser batida
+ * em" that day), and with nothing sold in the 7 days no figure at all (a "chega a" equal to what was reached is no estimate):
  * the goal's own measure today (the server's `progress.value`) plus, for each day after today up to its last one, the
  * mean of the 7 whole days before today, from the daily series the server sent (`month.daily` and `before.daily`):
  *
@@ -460,8 +510,8 @@ function variantsText(page: BalancesPage): string {
 export interface AttentionLine {
   href: string;
   id: "device" | "unknown-cost" | "without-stock";
-  /** The next step, written (v7 § 3 item 8): "Informe para as próximas vendas." */
-  next: string;
+  /** The next step, written under the line: only the cost one has it ("Informe para as próximas vendas."), the screen of the others says what to do. */
+  next: string | null;
   /** What needs attention, with its number: "1 variante sem custo". */
   text: string;
 }
@@ -481,7 +531,7 @@ export interface AttentionInput {
 const MAX_ATTENTION_LINES = 3;
 
 /**
- * The lines of "Precisa de atenção", in the order of AC-12, at most three, each with a real number and the link
+ * The lines of "Precisa de ação", in the order of AC-12, at most three, each with a real number and the link
  * that resolves it. The payment line (2) waits for the reading of the plan (corte assinatura-e-cancelar). The
  * unknown cost line exists only when the month sold something without a cost **and** the list filtered by it has a
  * variant (AC-14 emendado); its number is the list's.
@@ -492,11 +542,11 @@ export function attentionLines(input: AttentionInput): AttentionLine[] {
     lines.push({
       href: "/attention",
       id: "device",
-      next: "Corrija e envie de novo.",
+      next: null,
       text:
         input.refused === 1
-          ? "1 operação deste aparelho precisa de atenção"
-          : `${formatQuantity(input.refused)} operações deste aparelho precisam de atenção`,
+          ? "1 registro recusado neste aparelho"
+          : `${formatQuantity(input.refused)} registros recusados neste aparelho`,
     });
   }
   if (
@@ -516,7 +566,7 @@ export function attentionLines(input: AttentionInput): AttentionLine[] {
     lines.push({
       href: "/inventory?filtro=sem-saldo",
       id: "without-stock",
-      next: "Dê entrada no estoque.",
+      next: null,
       text: `${variantsText(input.withoutStock)} sem saldo`,
     });
   }
@@ -545,13 +595,17 @@ export function checklistNext(
     : { kind: "stock", productId: firstProductId };
 }
 
+/**
+ * The button under the steps for the next one, or null for "product": that step shows its own two ways ("Cadastrar à mão" and
+ * "Importar planilha"), so a third exit to the same place would only repeat them.
+ */
 export function checklistLink(next: ChecklistNext): {
   href: string;
   label: string;
-} {
+} | null {
   switch (next.kind) {
     case "product":
-      return { href: "/products?novo=1", label: "Cadastrar produto" };
+      return null;
     case "stock":
       return {
         href: `/products?produto=${encodeURIComponent(next.productId)}`,
@@ -578,8 +632,7 @@ export interface HomeReads {
   sales: boolean;
   /**
    * The unknown cost line reads `movingAverageCost` through a filter on it: it follows the rule of that field, today
-   * `inventory:read`. A role that reads the stock without the cost (none exists yet) must lose this line too
-   * (Rodrigo, PR 281, menor 2).
+   * `inventory:read`. A role that reads the stock without the cost (none exists yet) must lose this line too.
    */
   unknownCost: boolean;
 }
@@ -622,17 +675,30 @@ export function copyStanding(
   };
 }
 
-/** The line under the title when the figures are the device's copy (AC-28, AC-31). */
-export function copyLine(confirmed: string, stale: boolean): string {
-  return stale
-    ? `${confirmed}. Estes números podem estar desatualizados.`
-    : confirmed;
+/** "Confirmado em 14/10 12:30", and "· pode estar desatualizado" after 24 h: the line under the title for a copy (AC-28, AC-31). */
+export function copyLine(
+  confirmedAt: string,
+  timezone: string | null,
+  stale: boolean
+): string {
+  const instant = new Date(confirmedAt);
+  if (Number.isNaN(instant.getTime())) {
+    return "";
+  }
+  const { time } = clockPartsInTimezone(instant, timezone);
+  const line = `Confirmado em ${shortDate(calendarDayInTimezone(instant, timezone))} ${time}`;
+  return stale ? `${line} · pode estar desatualizado` : line;
 }
 
 /** The goal of the card without a connection (§ 7.3, emenda (ii) do ADR 0056). */
 export type OfflineGoal =
   | { ended: boolean; goal: GoalReadModel; kind: "active" }
-  | { goal: GoalReadModel; kind: "settled" }
+  | {
+      /** The month of `today` ("Novembro") when the goal is from a month already over; absent otherwise. */
+      currentMonth?: string;
+      goal: GoalReadModel;
+      kind: "settled";
+    }
   | { kind: "online-only" };
 
 /**
@@ -659,14 +725,41 @@ export function offlineGoal(
   if (view.kind === "settled") {
     // the same 7 days as with a connection, counted from today
     const kept = pickGoal([view.goal], today, timezone);
-    return kept.kind === "settled" ? kept : { kind: "online-only" };
+    if (kept.kind !== "settled") {
+      return { kind: "online-only" };
+    }
+    return endedInPastMonth(kept.goal, today)
+      ? { ...kept, currentMonth: monthTitle(today) }
+      : kept;
   }
   return { kind: "online-only" };
 }
 
-/** What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. */
-export function newSaleOfflineText(canSellOffline: boolean): string {
-  return canSellOffline
-    ? "Você pode vender sem internet. A venda é enviada quando a conexão voltar."
+/**
+ * What "Nova venda" says without a connection (AC-30): a promise only when this device can keep a sale now. When the
+ * line under the title already says "Sem internet." (no copy), this one does not repeat it, and says nothing when the
+ * device cannot keep a sale (the title line already says the sales come back with the connection).
+ */
+export function newSaleOfflineText(
+  canSellOffline: boolean,
+  titleSaysNoConnection: boolean
+): string | null {
+  if (canSellOffline) {
+    return titleSaysNoConnection
+      ? "A venda é enviada quando a conexão voltar."
+      : "Sem internet. A venda é enviada quando a conexão voltar.";
+  }
+  return titleSaysNoConnection
+    ? null
     : "Sem internet: para vender é preciso conexão.";
+}
+
+/**
+ * The line under the title without a connection and without a copy: why the cards say "Sem conexão", said once. When
+ * this device can keep a sale, the line under "Nova venda" says that, so this one speaks of the figures only.
+ */
+export function noCopyText(canSellOffline: boolean): string {
+  return canSellOffline
+    ? "Sem internet. Os números voltam com a conexão."
+    : "Sem internet. Os números e as vendas voltam com a conexão.";
 }

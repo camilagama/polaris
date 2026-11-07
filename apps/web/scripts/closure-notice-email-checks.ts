@@ -1,5 +1,6 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import {
   dismissClosureNotice,
   openPrivacyCase,
@@ -7,9 +8,9 @@ import {
 } from "@polaris/db/admin-support-repository";
 import type { ClosureNoticeRecipientClient } from "@polaris/db/closure-notice-recipient";
 import { InvalidSupportRequestError } from "@polaris/domain/admin/support-access";
-import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
-import { randomUUID } from "node:crypto";
 import { outboxIdempotencyKey } from "@polaris/domain/events/outbox";
+import { OrganizationPurgeRefusedError } from "@polaris/domain/privacy/organization-purge";
+import { queryAsGateRole } from "../../../packages/db/scripts/gate-roles";
 import { expectSqlState } from "../../../packages/db/scripts/sales-gate-support";
 import {
   type ClosureNoticeDependencies,
@@ -18,12 +19,12 @@ import {
   handOverOwedClosureNotices,
 } from "../src/server/privacy/closure-notice";
 import type {
-  ClosureNoticeSendResult,
   ClosureNoticeSender,
+  ClosureNoticeSendResult,
 } from "../src/server/privacy/closure-notice-email";
 import {
-  acceptedDeletionCase,
   type AutomaticPurgeContext,
+  acceptedDeletionCase,
   asRole,
   awayFromMidnight,
   closedOrganization as closedWithDeliveredNotice,
@@ -35,8 +36,8 @@ import {
 } from "./organization-purge-automatic-checks";
 
 /**
- * The e-mail of the closure notices and the act of the support (ADR 0102 amended, line E of design t107, conditions of
- * the security review of 20/10/2026) on a real PostgreSQL 18, with the real functions and roles: the address is read
+ * The e-mail of the closure notices and the act of the support (ADR 0102 amended, conditions of
+ * the security review) on a real PostgreSQL 18, with the real functions and roles: the address is read
  * only by the function of the authentication role, only for a notice still owed and only when verified; the provider
  * (a fake that records what it got) takes the notice's ID as its key; the handover sends the latest notice owed and
  * settles the earlier ones `skipped`; and the support sends a `d7` again or dismisses it, never by an UPDATE, under a
@@ -124,7 +125,10 @@ async function emailOf(owner: Pool, userId: string): Promise<string> {
 }
 
 async function waitOf(owner: Pool, organizationId: string) {
-  const result = await owner.query<{ wait: string | null }>(
+  // the function is internal to the purge: only its owner executes it
+  const result = await queryAsGateRole<{ wait: string | null }>(
+    owner,
+    "polaris_purge_owner",
     `SELECT public.closed_organization_purge_wait(closure.organization_id, closure.requested_at) AS wait
        FROM public.organization_closures AS closure WHERE closure.organization_id = $1`,
     [organizationId]
@@ -454,14 +458,17 @@ async function emailScenario(
   assert.ok(message);
   assert.equal(message.idempotencyKey, notice.id);
   assert.equal(message.to, address);
-  // every link of the message is the panel: the app's origin, with no path, query or token
+  // every link of the message is the panel of the closed store on the app's origin, with no store, query or token
   const links = [...message.html.matchAll(/href="([^"]*)"/g)].map(
     (match) => new URL(match[1] ?? "")
   );
   assert.ok(links.length > 0, "the message links to the panel");
   for (const link of links) {
     assert.equal(link.origin, new URL(CONFIG.appOrigin).origin);
-    assert.equal(`${link.pathname}${link.search}${link.hash}`, "/");
+    assert.equal(
+      `${link.pathname}${link.search}${link.hash}`,
+      "/loja-encerrada"
+    );
   }
   assert.ok(!message.html.includes(address), "the address is not in the text");
   const delivered = (await rowsOf(owner, store.organizationId)).find(
@@ -692,6 +699,96 @@ async function emailScenario(
   }
   tests.push(
     "the handover (with the e-mail on) sends the latest notice owed of each cycle and settles the earlier owed ones skipped, leaves one recorded in the last 15 minutes to its consumer, takes a bounded batch, and only the privacy runtime runs it"
+  );
+
+  // two stores in one run: the owner of the first never verified the e-mail (so it could not even own a store through
+  // the app), and the handover still sends the second, leaving the first owed with the note, and throws nothing
+  const heldBack = await closed(
+    "handover not verified",
+    await localDayStart(owner, ZONE, -85)
+  );
+  await record();
+  const heldBackNotice = await owedOf(owner, heldBack.organizationId);
+  await owner.query(
+    'UPDATE public."user" SET email_verified = false WHERE id = $1',
+    [heldBack.userId]
+  );
+  const goesOut = await closed("handover verified");
+  await record();
+  const goesOutNotice = await owedOf(owner, goesOut.organizationId);
+  await owner.query(
+    "UPDATE public.closure_notices SET recorded_at = now() - interval '20 minutes' WHERE id = ANY($1::uuid[])",
+    [[heldBackNotice.id, goesOutNotice.id]]
+  );
+  const batch = await maintenance.listOwedClosureNotices(20);
+  const batchIds = batch.map((row) => row.noticeId);
+  assert.ok(
+    batchIds.indexOf(heldBackNotice.id) >= 0 &&
+      batchIds.indexOf(heldBackNotice.id) < batchIds.indexOf(goesOutNotice.id),
+    "the notice of the owner not verified is handed over first, so the second store proves the run goes on"
+  );
+  const twoStores = fakeProvider();
+  const twoStoresReport = await handOverOwedClosureNotices({
+    email: email(twoStores.send),
+    notices: maintenance,
+  });
+  assert.ok(twoStoresReport.notVerified >= 1 && twoStoresReport.sent >= 1);
+  assert.equal(twoStoresReport.failed, 0);
+  assert.equal(twoStoresReport.retry, 0);
+  assert.equal(
+    twoStores.sent.filter((sent) => sent.idempotencyKey === goesOutNotice.id)
+      .length,
+    1,
+    "the notice of the verified owner goes out once"
+  );
+  assert.ok(
+    !twoStores.sent.some((sent) => sent.idempotencyKey === heldBackNotice.id),
+    "nothing goes for the owner not verified"
+  );
+  assert.ok(
+    (await rowsOf(owner, goesOut.organizationId)).find(
+      (row) => row.id === goesOutNotice.id
+    )?.sent_at,
+    "the second store's notice is sent"
+  );
+  const heldBackRow = (await rowsOf(owner, heldBack.organizationId)).find(
+    (row) => row.id === heldBackNotice.id
+  );
+  assert.ok(heldBackRow);
+  assert.equal(heldBackRow.sent_at, null);
+  assert.equal(heldBackRow.failed_at, null);
+  assert.equal(heldBackRow.failure_code, null);
+  assert.equal(heldBackRow.skipped, false);
+  assert.equal(
+    (await owedOf(owner, heldBack.organizationId)).id,
+    heldBackNotice.id,
+    "the notice of the owner not verified stays owed"
+  );
+  assert.ok(
+    (
+      await owner.query<{ unverified_at: Date | null }>(
+        "SELECT unverified_at FROM public.closure_notices WHERE id = $1",
+        [heldBackNotice.id]
+      )
+    ).rows[0]?.unverified_at,
+    "and the database keeps the note that the address was found not verified"
+  );
+  assert.equal(
+    (
+      await owner.query<{ unverified_at: Date | null }>(
+        "SELECT unverified_at FROM public.closure_notices WHERE id = $1",
+        [goesOutNotice.id]
+      )
+    ).rows[0]?.unverified_at,
+    null,
+    "the note is only on the notice of the owner not verified"
+  );
+  await owner.query(
+    "UPDATE public.closure_notices SET skipped = true WHERE id = $1",
+    [heldBackNotice.id]
+  );
+  tests.push(
+    "the handover with two stores in one run, the first of an owner whose e-mail is not verified: only the second is sent, the first stays owed (neither sent, failed nor skipped) with the note of an address not verified, and nothing throws"
   );
 
   // the handover takes turns: 21 cycles that cannot go out now (an address not verified, requested earlier) and 3 owed

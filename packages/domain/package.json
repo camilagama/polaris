@@ -5,11 +5,11 @@
   "exports": {
     "./admin/organization-diagnostics": "./src/admin/organization-diagnostics.ts",
     "./admin/access-log": "./src/admin/access-log.ts",
-    "./admin/operational-incident": "./src/admin/operational-incident.ts",
     "./admin/privacy-case": "./src/admin/privacy-case.ts",
     "./admin/refund-window": "./src/admin/refund-window.ts",
     "./admin/support-access": "./src/admin/support-access.ts",
     "./admin/platform-capabilities": "./src/admin/platform-capabilities.ts",
+    "./auth/password-rules": "./src/auth/password-rules.ts",
     "./authorization/capabilities": "./src/authorization/capabilities.ts",
     "./catalog/category": "./src/catalog/category.ts",
     "./catalog/media": "./src/catalog/media.ts",
@@ -21,6 +21,7 @@
     "./billing/grants": "./src/billing/grants.ts",
     "./billing/notices": "./src/billing/notices.ts",
     "./billing/operational-selection": "./src/billing/operational-selection.ts",
+    "./billing/operator-commands": "./src/billing/operator-commands.ts",
     "./billing/plan-view": "./src/billing/plan-view.ts",
     "./billing/provider-period": "./src/billing/provider-period.ts",
     "./billing/renewal-cancellation": "./src/billing/renewal-cancellation.ts",
@@ -41,6 +42,7 @@
     "./money/money": "./src/money/money.ts",
     "./organization/closure": "./src/organization/closure.ts",
     "./organization/closure-deadlines": "./src/organization/closure-deadlines.ts",
+    "./legal/legal-company": "./src/legal/legal-company.ts",
     "./legal/legal-documents": "./src/legal/legal-documents.ts",
     "./events/dead-letter": "./src/events/dead-letter.ts",
     "./events/outbox": "./src/events/outbox.ts",
@@ -70,9 +72,12 @@
   "scripts": {
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
+    "test:mutation": "bun scripts/mutation.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "fast-check": "^4.10.2"
   }
 }

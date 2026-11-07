@@ -5,7 +5,7 @@ import { hold, json, settle } from "./ui-entry-states";
 
 /**
  * The states of the first access (no organization yet), of the acceptance (`/aceite`) and of the legal texts the
- * interface guardrails measure (t239): the pages of the pwa-e2e build under the CSP of `_headers`, with the session
+ * interface guardrails measure: the pages of the pwa-e2e build under the CSP of `_headers`, with the session
  * and the server answered by the test (`page.route`) and synthetic data only.
  */
 const ORGANIZATION = {
@@ -65,6 +65,9 @@ async function serveFirstAccess(
     const procedure = procedureOf(route);
     if (procedure === "organization/listMine") {
       return list ? list(route) : route.fulfill(rpc({ organizations: [] }));
+    }
+    if (procedure === "organization/listClosed") {
+      return route.fulfill(rpc({ organizations: [] }));
     }
     if (procedure === "organization/createInitial") {
       return create
@@ -155,11 +158,11 @@ export const firstAccessStates = {
 };
 
 export const acceptanceStates = {
-  /** "Continuar" with the box unticked: the box says what is missing. */
+  /** "Aceitar e continuar" with the box unticked: the box says what is missing. */
   boxMissing: async (page: Page) => {
     await serveAcceptance(page);
     await openAcceptance(page, "Para usar o Polaris, leia e aceite.");
-    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.getByRole("button", { name: "Aceitar e continuar" }).click();
     await page.getByText("Marque a caixa para aceitar e continuar.").waitFor();
     await settle(page);
   },
@@ -209,7 +212,7 @@ export const acceptanceStates = {
     });
     await openAcceptance(page, "Para usar o Polaris, leia e aceite.");
     await page.getByRole("checkbox").click();
-    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.getByRole("button", { name: "Aceitar e continuar" }).click();
     await page.getByText("Não foi possível registrar o aceite.").waitFor();
     await settle(page);
   },
@@ -217,7 +220,7 @@ export const acceptanceStates = {
     await serveAcceptance(page, { accept: hold });
     await openAcceptance(page, "Para usar o Polaris, leia e aceite.");
     await page.getByRole("checkbox").click();
-    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.getByRole("button", { name: "Aceitar e continuar" }).click();
     await page.getByRole("button", { name: "Registrando o aceite…" }).waitFor();
     await settle(page);
   },

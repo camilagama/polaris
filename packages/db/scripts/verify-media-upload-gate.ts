@@ -26,6 +26,7 @@ import {
   disposableHostPattern,
   isLocalGateHost,
 } from "./gate-hosts";
+import { setLoginRole } from "./gate-roles";
 
 const gateDatabase =
   process.env.POLARIS_GATE_DATABASE ??
@@ -213,7 +214,7 @@ async function createRuntimeClient(connectionString: string): Promise<Client> {
   await client.connect();
   if (process.env.POLARIS_GATE_RUNTIME_LOGIN) {
     // The unified gate runner connects through a temporary login that is a member of the runtime role.
-    await client.query(`SET ROLE ${runtimeRole}`);
+    await setLoginRole(client, runtimeRole, "session");
   }
   const role = await client.query<{ role: string }>(
     "SELECT current_user AS role"

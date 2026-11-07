@@ -32,3 +32,15 @@ Decidido na revisão do checkpoint Gate 4 (13/10/2026):
 - **Manter uma única role e confiar na aplicação.** É o estado atual; a exploração é concreta e o ganho de simplicidade não justifica a superfície.
 - **Esconder as tabelas de auth com RLS por `user_id`.** Better Auth precisa ler e escrever essas tabelas antes de existir contexto de usuário, o que inviabiliza a policy.
 - **Funções `SECURITY DEFINER` para todo acesso de auth.** Fecha a superfície, mas reimplementa o adaptador do Better Auth em SQL e dificulta atualizações da biblioteca.
+
+## Emenda (30/10/2026): as superfícies de prova saíram do banco e da configuração
+
+A parte de banco e configuração da decisão "Superfícies PoC saem do build de produção" foi feita:
+
+- A migration 0108 apaga `db_poc_operations` e `rls_poc_operations`, com a política `rls_poc_operations_organization_isolation` (`FOR ALL TO PUBLIC`) e os grants do papel de tenant sobre ela. As duas tabelas saíram do schema do Drizzle e das listas da exportação e do purge.
+- A rota `/api/poc/database` e o `DB_POC_ENABLED` já não existiam no código; o script `poc` de `packages/db`, que usava a definição da tabela, saiu.
+- `DB_RLS_POC_ENABLED` saiu da rota de RLS e do `wrangler.pr11.jsonc`. A rota continua só no Worker de prova do PR11 (`apps/web/poc/pr11.ts`, configuração própria) e no servidor local do gate `rls` do CI; o Worker do app nunca a importa.
+- Os gates que provam RLS nessa tabela (`tenant-context` e `rls`, da suíte `ci`) não perderam asserção: cada um cria a tabela na base descartável já confirmada, a partir da migration 0001 (as mesmas instruções que o bootstrap do PR11 roda num projeto Neon vazio), e a apaga ao terminar (`packages/db/scripts/rls-gate-fixture.ts`). A prova remota pelo Worker e pelo Hyperdrive (`poc:rls:bootstrap` e `poc:rls:verify`) não mudou: ela já criava a tabela num projeto vazio.
+- O `verify:staging-isolation` recusa `DB_POC_ENABLED` e `DB_RLS_POC_ENABLED` em qualquer bloco do `wrangler.jsonc` (nível de cima, staging, produção) e no `wrangler.json` da build, com qualquer valor.
+
+Continua fora do repositório e do código: remover os Workers e o Hyperdrive de PoC no Cloudflare e rotacionar a credencial owner do PR11 (checklist de go-live dos [runbooks](../runbooks/README.md#superfícies-e-credenciais-de-prova)). O laboratório offline é outra etapa.

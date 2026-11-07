@@ -5,6 +5,8 @@ import { SaleHistoryList } from "./sale-history-list";
 import type { HistoryRow } from "./sale-history-model";
 import { SaleReceipt } from "./sale-receipt";
 
+const FRAME = /\bborder|\bring|\bshadow/;
+const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
 const SALE_ID = "77777777-7777-4777-8777-777777777777";
 
 const sale: ConfirmedSaleView = {
@@ -64,6 +66,23 @@ describe("the sale as a receipt", () => {
     expect(markup).toContain("219,90");
   });
 
+  it("sets the dates and the payment back as a muted block with no border, two columns from 760 px", () => {
+    const markup = render();
+    const blocks = markup.match(MUTED_BLOCK) ?? [];
+    expect(blocks).toHaveLength(2);
+    for (const block of blocks) {
+      expect(block).toContain("rounded-lg");
+      expect(block).toContain("p-4");
+      expect(block).toContain("min-[760px]:grid-cols-2");
+      expect(block).not.toMatch(FRAME);
+    }
+    expect(markup).toContain('class="text-muted-foreground text-xs">Método<');
+  });
+
+  it("has no ink button: the receipt only reads", () => {
+    expect(render()).not.toContain("<button");
+  });
+
   it("names the status beside the title", () => {
     expect(render()).toContain("Confirmada");
   });
@@ -119,6 +138,51 @@ describe("the history list", () => {
     expect(markup).toContain("Cancelada");
     expect(markup).toContain("Com devoluções");
     expect(markup).toContain("Retroativa");
-    expect(markup).toContain("Cliente: Ana Souza");
+  });
+
+  it("writes customer, method and items on one line, with no 'Cliente:' prefix", () => {
+    const markup = renderToStaticMarkup(
+      <SaleHistoryList offline={false} rows={[row()]} />
+    );
+    expect(markup).toContain(
+      '<span class="min-w-[5ch] truncate">Ana Souza</span>'
+    );
+    expect(markup).toContain(
+      '<span class="overflow-hidden text-ellipsis"> · Pix</span>'
+    );
+    expect(markup).toContain('<span class="shrink-0"> · 2 itens</span>');
+    expect(markup).toContain("shrink-0 whitespace-pre");
+    expect(markup).toContain("min-w-0 flex-1");
+    expect(markup).toContain("overflow-hidden");
+    expect(markup).not.toContain("line-clamp");
+    expect(markup).not.toContain("Cliente:");
+    const none = renderToStaticMarkup(
+      <SaleHistoryList
+        offline={false}
+        rows={[
+          row({
+            customerText: "Sem cliente",
+            itemCountText: "1 item",
+            methodText: "Dinheiro",
+          }),
+        ]}
+      />
+    );
+    expect(none).toContain(
+      '<span class="min-w-[5ch] truncate">Sem cliente</span>'
+    );
+    expect(none).toContain(" · Dinheiro</span>");
+    expect(none).toContain('<span class="shrink-0"> · 1 item</span>');
+  });
+
+  it("ends the row in a chevron with a connection and has none without one", () => {
+    const online = renderToStaticMarkup(
+      <SaleHistoryList offline={false} rows={[row()]} />
+    );
+    const offline = renderToStaticMarkup(
+      <SaleHistoryList offline rows={[row()]} />
+    );
+    expect(online).toContain("lucide-chevron-right");
+    expect(offline).not.toContain("lucide-chevron-right");
   });
 });

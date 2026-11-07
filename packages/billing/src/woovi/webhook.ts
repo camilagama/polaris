@@ -102,7 +102,7 @@ function unresolved(
     // Woovi's body has no time of the event, so it never counts as recent: a
     // resource this account does not have is acknowledged and logged as an
     // error for the reconciliation, never refused in a loop (the read back was
-    // consistent at once in the sandbox, spike t092)
+    // consistent at once in the sandbox)
     occurredAt: now,
     occurredAtClamped: true,
     providerEventId: wooviEventId(

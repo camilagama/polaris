@@ -51,8 +51,8 @@ interface RowProps {
 
 const THIS_DEVICE_ONLINE_HELP = (
   <>
-    Para tirar este aparelho, use <strong>Sair</strong>: no celular ele está em
-    Mais; em tela grande, no menu ⋯ do cartão da loja, no pé da barra lateral.
+    Para tirar este aparelho, use <strong>Sair</strong>, no menu da loja, no
+    alto da tela.
   </>
 );
 const THIS_DEVICE_OFFLINE_HELP =
@@ -72,7 +72,7 @@ interface RevokeFormProps {
 }
 
 /**
- * The rest of the confirmation of a revocation, in the order of the rule of 19/10: the extra choice (always
+ * The rest of the confirmation of a revocation, in the order of the rule: the extra choice (always
  * unticked on opening), the error of the attempt right above the buttons, then the buttons.
  */
 export function RevokeForm({

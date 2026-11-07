@@ -6,6 +6,7 @@ import {
   serveUnderProductionCsp,
   watchCspViolations,
 } from "./csp-fixture";
+import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import { solidPng } from "./media-fixtures";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -40,6 +41,9 @@ const rpc = (json: unknown, status = 200) => ({
   headers: { ...WORKER_MARK },
   status,
 });
+/** What a write the platform cut says (`platformCut` below): it may have been saved. */
+const SERVER_CUT_WRITE =
+  "O servidor está ocupado e não confirmou. Pode ter sido salvo: confira em alguns minutos antes de repetir.";
 const unavailable = rpc(
   {
     code: "SERVICE_UNAVAILABLE",
@@ -50,6 +54,29 @@ const unavailable = rpc(
   },
   503
 );
+
+/** The Worker's own 503 for an unexpected fault, with its reason: on a write it may have come after the COMMIT. */
+const serverBusy = rpc(
+  {
+    code: "SERVICE_UNAVAILABLE",
+    data: { reason: "server_busy" },
+    defined: false,
+    message: "Unavailable",
+    status: 503,
+  },
+  503
+);
+/** What a direct write that met `serverBusy` says: it may have been saved, so no second try is offered. */
+const CHANGE_FAULT_UNKNOWN =
+  "A alteração não foi confirmada. Pode ter sido salva: confira antes de repetir.";
+
+/** The page Cloudflare answers for a Worker the platform killed (1102): a 503 with `cf-ray` and no mark. */
+const platformCut = {
+  body: "<html><body>Worker exceeded resource limits</body></html>",
+  contentType: "text/html",
+  headers: { "cf-ray": "8d1e2f3a4b5c6d7e-GRU" },
+  status: 503,
+};
 
 /** The body without its scripts: what the person reads and what the markup carries, not the bundle. */
 const bodyMarkup = (page: Page) =>
@@ -130,6 +157,9 @@ const statusTab = (page: Page, name: string) =>
 
 const menuOf = (page: Page, name: string) =>
   page.getByRole("button", { name: `Mais ações para ${name}` });
+/** The row of a product, which opens it on Dados ("Editar" is not in the menu: the row is). */
+const rowOf = (page: Page, name: string) =>
+  page.getByRole("button", { exact: true, name: `Editar ${name}` });
 
 test("as abas Ativos e Arquivados: setas trocam de aba, Tab sai do grupo e o leitor de tela lê aba selecionada", async ({
   page,
@@ -146,13 +176,20 @@ test("as abas Ativos e Arquivados: setas trocam de aba, Tab sai do grupo e o lei
 });
 
 async function useEveryControl(page: Page) {
-  // the menu of a row, and the form of an edit with its category
+  // the menu of a row has no "Editar" (the row opens the product), and the form of an edit with its category
   await menuOf(page, "Camiseta do teste").click();
   await expect(page.getByRole("menuitem", { name: "Imagens" })).toBeVisible();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await expect(
+    page.getByRole("menuitem", { exact: true, name: "Editar" })
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await rowOf(page, "Camiseta do teste").click();
   const name = page.getByLabel("Nome do produto");
   await expect(name).toHaveValue("Camiseta do teste");
   await expect(name).toBeFocused();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Produto · atualizado em 14 de out. de 2026"
+  );
   const category = page.getByRole("combobox", {
     exact: true,
     name: "Categoria",
@@ -163,8 +200,8 @@ async function useEveryControl(page: Page) {
   await expect(category).toContainText("Acessórios");
   await page.getByLabel("Descrição").fill("Algodão, corte reto, azul.");
   await page.getByRole("button", { name: "Cancelar" }).click();
-  // closing the form gives the focus back to the menu of the product that was edited
-  await expect(menuOf(page, "Camiseta do teste")).toBeFocused();
+  // closing the form gives the focus back to the row of the product that was edited
+  await expect(rowOf(page, "Camiseta do teste")).toBeFocused();
 
   // the variants: the options, the values and a combination
   await menuOf(page, "Camiseta do teste").click();
@@ -653,9 +690,7 @@ test("sem produto, a tela convida a cadastrar o primeiro, e o botão abre o form
   page,
 }) => {
   await openServerScreen(page, { lists: [answer([])] });
-  await expect(
-    page.getByText("Cadastre o primeiro para vender.")
-  ).toBeVisible();
+  await expect(page.getByText("Nenhum produto ainda")).toBeVisible();
   await page.getByRole("button", { name: "Novo produto" }).last().click();
   await expect(page.getByLabel("Nome do produto")).toBeFocused();
 });
@@ -688,6 +723,90 @@ test("a busca ignora maiúsculas e acentos, diz quando nada casa e o número aco
     0
   );
   await expect(page.getByText("3 produtos")).toBeVisible();
+});
+
+const ROW_NAMES = "[data-product-id] [data-row-open]";
+
+test("lista longa: 50 de cada vez com 'Carregar mais', o total no alto com milhar, e a busca volta a uma página", async ({
+  page,
+}) => {
+  const many = Array.from({ length: 1248 }, (_, index) =>
+    product(index + 1, `Peça ${String(index + 1).padStart(4, "0")}`)
+  );
+  await openServerScreen(page, { lists: [answer(many)] });
+  const count = page.getByText("1.248 produtos", { exact: true });
+  await expect(count).toBeVisible();
+  // the count is above the list, read before the rows
+  const list = page.getByRole("list", { name: "Produtos" });
+  const [countBox, listBox] = await Promise.all([
+    count.boundingBox(),
+    list.boundingBox(),
+  ]);
+  expect(countBox?.y ?? 0).toBeLessThan(listBox?.y ?? 0);
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+  await expect(menuOf(page, "Peça 0051")).toHaveCount(0);
+
+  const more = page.getByRole("button", { name: "Carregar mais" });
+  await more.click();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(100);
+  // the keyboard goes on from the first new row
+  await expect(rowOf(page, "Peça 0051")).toBeFocused();
+  await expect(rowOf(page, "Peça 0100")).toBeVisible();
+  await expect(count).toBeVisible();
+
+  // a search starts again from one page, and so does clearing it
+  const search = page.getByLabel("Buscar produto");
+  await search.fill("peça 1");
+  await expect(page.getByText("249 de 1.248 produtos")).toBeVisible();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+  await search.fill("peça 11");
+  await expect(page.getByText("100 de 1.248 produtos")).toBeVisible();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+  await more.click();
+  await expect(page.locator(ROW_NAMES)).toHaveCount(100);
+  await expect(more).toHaveCount(0);
+  // the button left with the last page: the focus is on the first new row, not on the body
+  await expect(rowOf(page, "Peça 1150")).toBeFocused();
+  await search.fill("");
+  await expect(page.locator(ROW_NAMES)).toHaveCount(50);
+});
+
+test("a linha abre o produto: clique em qualquer ponto dela ou Enter no nome, e o foco volta à linha", async ({
+  page,
+}) => {
+  await openServerScreen(page, {
+    lists: [
+      answer([product(1, "Camiseta do teste"), product(2, "Calça jeans")]),
+    ],
+    others: variantsOf,
+  });
+  const row = page.locator(`[data-product-id="${id(22)}"]`);
+  // the far side of the row, away from the name: the stretched button takes it
+  const box = await row.boundingBox();
+  const menuBox = await menuOf(page, "Calça jeans").boundingBox();
+  if (!(box && menuBox)) {
+    throw new Error("row not drawn");
+  }
+  await page.mouse.click(menuBox.x - 24, box.y + box.height / 2);
+  const dialog = page.getByRole("dialog", { name: "Calça jeans" });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByLabel("Nome do produto")).toBeFocused();
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
+  await expect(rowOf(page, "Calça jeans")).toBeFocused();
+
+  // the keyboard: Tab goes from the row to its menu, Enter on the row opens it
+  await page.keyboard.press("Tab");
+  await expect(menuOf(page, "Calça jeans")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(rowOf(page, "Calça jeans")).toBeFocused();
+
+  // the menu keeps its own place on the row: it opens the menu, not the product
+  await menuOf(page, "Calça jeans").click();
+  await expect(page.getByRole("menuitem", { name: "Variantes" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("o nome é obrigatório: o erro fica no campo, o foco volta a ele e nada é enviado", async ({
@@ -725,14 +844,111 @@ test("cadastrar: o formulário fecha, o resultado é dito e recebe o foco, e a l
   });
   await page.getByRole("button", { name: "Novo produto" }).first().click();
   await page.getByLabel("Nome do produto").fill("Bolsa de couro");
-  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await activateByKeyboard(
+    page,
+    page.getByRole("button", { name: "Cadastrar produto" })
+  );
   const notice = page.getByText("Produto “Bolsa de couro” cadastrado.");
   await expect(notice).toBeVisible();
   await expect(page.locator(":focus").filter({ has: notice })).toHaveCount(1);
+  // the region of the notice has the ring of the keyboard
+  await expectFocusRing(page.locator(":focus").filter({ has: notice }));
   await expect(page.getByLabel("Nome do produto")).toHaveCount(0);
   await expect(page.locator("[data-product-id]")).toContainText(
     "Bolsa de couro"
   );
+});
+
+test("cadastrar o 1º produto muda o pé do menu de 1 de 3 para 2 de 3 sem abrir o Início", async ({
+  page,
+}) => {
+  const created = product(1, "Bolsa de couro");
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.addInitScript((organizationId) => {
+    sessionStorage.setItem(
+      "polaris.home.firstSteps",
+      JSON.stringify({ done: 1, organizationId })
+    );
+  }, ORGANIZATION.id);
+  await openServerScreen(page, {
+    lists: [answer([]), answer([created])],
+    others: {
+      "product/create": (route) => route.fulfill(rpc(created)),
+    },
+  });
+  const steps = (done: number) =>
+    page.getByRole("dialog", { name: "Mais" }).getByRole("link", {
+      exact: true,
+      name: `Primeiros passos, ${done} de 3 concluídos`,
+    });
+  const more = page.getByRole("button", { exact: true, name: "Mais" });
+  await more.click();
+  await expect(steps(1)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Mais" })).toBeHidden();
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(
+    page.getByText("Produto “Bolsa de couro” cadastrado.")
+  ).toBeVisible();
+  await more.click();
+  await expect(steps(2)).toBeVisible();
+  await expect(steps(1)).toHaveCount(0);
+});
+
+test("o cadastro que o servidor recusa deixa o pé do menu em 1 de 3", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 360 });
+  await page.addInitScript((organizationId) => {
+    sessionStorage.setItem(
+      "polaris.home.firstSteps",
+      JSON.stringify({ done: 1, organizationId })
+    );
+  }, ORGANIZATION.id);
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: { "product/create": (route) => route.fulfill(unavailable) },
+  });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("button", { exact: true, name: "Mais" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Mais" }).getByRole("link", {
+      exact: true,
+      name: "Primeiros passos, 1 de 3 concluídos",
+    })
+  ).toBeVisible();
+});
+
+test("cadastrar com o 503 server_busy: diz que pode ter sido salvo, não repete sozinho e não oferece tentar de novo", async ({
+  page,
+}) => {
+  let created = 0;
+  await openServerScreen(page, {
+    lists: [answer([])],
+    others: {
+      "product/create": (route) => {
+        created += 1;
+        return route.fulfill(serverBusy);
+      },
+    },
+  });
+  await page.getByRole("button", { name: "Novo produto" }).first().click();
+  await page.getByLabel("Nome do produto").fill("Bolsa de couro");
+  await page.getByRole("button", { name: "Cadastrar produto" }).click();
+  await expect(page.getByRole("alert")).toContainText(CHANGE_FAULT_UNKNOWN);
+  await expect(page.getByRole("alert")).not.toContainText("Tente novamente");
+  await expect(
+    page.getByRole("button", { name: "Tentar novamente" })
+  ).toHaveCount(0);
+  // a write is never sent again by itself (the reads try twice more at ~1.5 s and ~4 s)
+  await page.waitForTimeout(6000);
+  expect(created).toBe(1);
 });
 
 test("arquivar pelo menu: 'Arquivando…' na linha, o resultado dito e focado e a lista lida de novo", async ({
@@ -810,7 +1026,7 @@ test("desfazer o arquivamento restaura o produto pela mesma chamada do Restaurar
   );
 });
 
-test("o desfazer que o servidor recusa diz o erro e o botão continua para tentar de novo", async ({
+test("o desfazer que o servidor ocupado não confirmou diz que pode ter sido salvo e o botão continua", async ({
   page,
 }) => {
   const shirt = product(1, "Camiseta do teste");
@@ -828,7 +1044,7 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
       "product/restore": (route) => {
         restores += 1;
         return restores === 1
-          ? route.fulfill(unavailable)
+          ? route.fulfill(serverBusy)
           : route.fulfill(
               rpc({
                 changed: true,
@@ -841,9 +1057,9 @@ test("o desfazer que o servidor recusa diz o erro e o botão continua para tenta
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   await page.getByRole("button", { name: "Desfazer" }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  // the Worker's own 503 is a fault it answered, not the platform's cut: the restore may have been saved
+  await expect(page.getByRole("alert")).toContainText(CHANGE_FAULT_UNKNOWN);
+  await expect(page.getByRole("alert")).not.toContainText("ocupado");
   const undo = page.getByRole("button", { name: "Desfazer" });
   await expect(undo).toBeEnabled();
   await undo.click();
@@ -858,14 +1074,12 @@ test("arquivar que o servidor recusa: o erro é dito e focado e a linha continua
 }) => {
   await openServerScreen(page, {
     lists: [answer([product(1, "Camiseta do teste")])],
-    others: { "product/archive": (route) => route.fulfill(unavailable) },
+    others: { "product/archive": (route) => route.fulfill(platformCut) },
   });
   await menuOf(page, "Camiseta do teste").click();
   await page.getByRole("menuitem", { name: "Arquivar" }).click();
   const alert = page.getByRole("alert");
-  await expect(alert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(alert).toContainText(SERVER_CUT_WRITE);
   await expect(page.locator(":focus").filter({ has: alert })).toHaveCount(1);
   await expect(page.locator("[data-product-id]")).toContainText(
     "Camiseta do teste"
@@ -893,8 +1107,7 @@ test("editar: o formulário abre com os dados, salva pelo servidor com a versão
       },
     },
   });
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await expect(page.getByLabel("Descrição")).toHaveValue("Azul");
   await page.getByLabel("Nome do produto").fill("Camiseta nova");
   await page.getByRole("button", { name: "Salvar alterações" }).click();
@@ -1010,6 +1223,130 @@ test("SKU repetido: o erro aparece no campo, diz qual SKU e não se confunde com
   await expect(
     skuSection.getByRole("button", { name: "Atualizar variantes" })
   ).toBeVisible();
+});
+
+/** What the server answers an input its contract refuses (a tab of an older build sends a text over the limit). */
+const inputRefused = rpc(
+  {
+    code: "BAD_REQUEST",
+    data: { issues: [] },
+    defined: false,
+    message: "Input validation failed",
+    status: 400,
+  },
+  400
+);
+
+test("SKU acima de 64: o campo diz a contagem e guarda o texto, 'Salvar SKU' fica desligado com o motivo e nada é enviado; a recusa do servidor não apaga o digitado", async ({
+  page,
+}) => {
+  const sent: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+      "product/setVariantSku": (route) => {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill(inputRefused);
+      },
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  const skuSection = page.getByRole("region", { name: "SKU das variantes" });
+  const field = skuSection.getByRole("textbox");
+  const save = skuSection.getByRole("button", { name: "Salvar SKU" });
+  const long = `SKU-${"A".repeat(67)}`;
+
+  await field.fill(long);
+  const message = "Use até 64 caracteres. Agora são 71.";
+  await expect(skuSection.getByText(message)).toBeVisible();
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  const describedBy = await field.getAttribute("aria-describedby");
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${describedBy}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
+  // no native maxLength: the whole text stays in the field
+  await expect(field).toHaveValue(long);
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  await expect(save).toHaveAttribute("aria-describedby", describedBy ?? "");
+  await field.press("Enter");
+  await save.focus();
+  await page.keyboard.press("Enter");
+  await expect(field).toHaveValue(long);
+  expect(sent).toEqual([]);
+
+  // within the limit the message goes; a server that still refuses the input keeps what was typed
+  await field.fill("CAM-001");
+  await expect(skuSection.getByText(message)).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-disabled", "true");
+  await save.click();
+  await expect(skuSection.getByRole("alert")).toContainText(
+    "Revise os valores e as combinações informadas."
+  );
+  await expect(field).toHaveValue("CAM-001");
+  expect(sent).toHaveLength(1);
+});
+
+test("valor de opção acima de 80: o campo diz a contagem e guarda o texto, 'Salvar variantes' fica desligado com o motivo; a recusa do servidor não apaga o digitado", async ({
+  page,
+}) => {
+  const sent: unknown[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/configureVariants": (route) => {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill(inputRefused);
+      },
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  const values = page.getByLabel("Valores de Cor");
+  const save = page.getByRole("button", { name: "Salvar variantes" });
+  const long = `Azul\n${"a".repeat(91)}`;
+
+  await values.fill(long);
+  const message = "Use até 80 caracteres por valor. A linha 2 tem 91.";
+  await expect(page.getByText(message)).toBeVisible();
+  await expect(values).toHaveAttribute("aria-invalid", "true");
+  const describedBy = (await values.getAttribute("aria-describedby")) ?? "";
+  const errorId = describedBy
+    .split(" ")
+    .find((idRef) => idRef.endsWith("-error"));
+  await expect(page.locator(`[id="${errorId}"]`)).toHaveText(message);
+  await expect(page.locator(`[id="${errorId}"]`)).toHaveAttribute(
+    "role",
+    "status"
+  );
+  await expect(values).toHaveValue(long);
+  await expect(save).toHaveAttribute("aria-disabled", "true");
+  await expect(save).toHaveAttribute("aria-describedby", errorId ?? "");
+  await save.focus();
+  await page.keyboard.press("Enter");
+  expect(sent).toEqual([]);
+
+  // within the limit, one combination, and a server that still refuses: the values and the combination stay
+  await values.fill("Azul\nPreta");
+  await expect(page.getByText(message)).toHaveCount(0);
+  await page.getByRole("button", { name: "Adicionar combinação" }).click();
+  await page.getByRole("combobox", { exact: true, name: "Cor" }).click();
+  await page.getByRole("option", { exact: true, name: "Azul" }).click();
+  await page.getByRole("listbox").waitFor({ state: "detached" });
+  await save.click();
+  await expect(
+    page.getByText("Revise os valores e as combinações informadas.")
+  ).toBeVisible();
+  await expect(values).toHaveValue("Azul\nPreta");
+  await expect(
+    page.getByRole("combobox", { exact: true, name: "Cor" })
+  ).toHaveText("Azul");
+  expect(sent).toHaveLength(1);
 });
 
 test("variantes: o aviso do SKU só com opção marcada, linhas vazias não são repetidas, e os rótulos e o exemplo do preço cabem em 360 px", async ({
@@ -1253,7 +1590,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
                 },
                 409
               )
-            : unavailable
+            : platformCut
         );
       },
     },
@@ -1264,9 +1601,7 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await skuSection.getByRole("textbox").fill("CAM-1");
   await skuSection.getByRole("button", { name: "Salvar SKU" }).click();
   const skuAlert = skuSection.getByRole("alert");
-  await expect(skuAlert).toContainText(
-    "O catálogo está temporariamente indisponível."
-  );
+  await expect(skuAlert).toContainText(SERVER_CUT_WRITE);
   await expect(skuAlert.locator("svg")).toHaveCount(1);
   await expect(skuSection.getByRole("status")).toHaveCount(0);
 
@@ -1276,8 +1611,9 @@ test("o erro de 'Salvar SKU' e de 'Salvar preço' é um alerta com texto e ícon
   await priceSection.getByRole("textbox").fill("59,90");
   await priceSection.getByRole("button", { name: "Salvar preço" }).click();
   await expect(priceSection.getByRole("alert")).toContainText(
-    "Não foi possível salvar o preço."
+    CHANGE_FAULT_UNKNOWN
   );
+  await expect(priceSection.getByRole("alert")).not.toContainText("ocupado");
   await expect(priceSection.getByRole("alert").locator("svg")).toHaveCount(1);
 
   skuAnswer = "conflict";
@@ -1307,8 +1643,7 @@ test("as abas do produto: nome de cada aba e do painel, setas trocam de aba e Ta
 }, testInfo) => {
   onlyDesktop(testInfo.project.name);
   await openProductsLab(page);
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
   await expect(
     dialog.getByRole("tablist", { name: "Partes do produto" })
@@ -1332,8 +1667,7 @@ test("trocar de aba não perde o rascunho de nenhuma aba e não cria passo no hi
   onlyDesktop(testInfo.project.name);
   await openProductsLab(page);
   const steps = await page.evaluate(() => window.history.length);
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
   await page.getByLabel("Nome do produto").fill("Camiseta azul");
   await dialog.getByRole("tab", { name: "Variantes" }).click();
@@ -1380,8 +1714,7 @@ test("erro numa aba que não está à vista: salvar abre a aba Dados marcada, co
       },
     },
   });
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   const dialog = page.getByRole("dialog", { name: "Camiseta do teste" });
   await page.getByLabel("Nome do produto").fill("");
   await dialog.getByRole("tab", { name: "Variantes" }).click();
@@ -1451,8 +1784,7 @@ test("no celular, o voltar fecha o produto e guarda o rascunho; Cancelar o desca
     others: variantsOf,
   });
   const address = page.url();
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await page.getByLabel("Nome do produto").fill("Camiseta guardada");
   // the tabs change in place: the step back closes the dialog, it does not walk back through the tabs
   await page.getByRole("tab", { name: "Variantes" }).click();
@@ -1460,17 +1792,15 @@ test("no celular, o voltar fecha o produto e guarda o rascunho; Cancelar o desca
   await page.goBack();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(page.url()).toBe(address);
-  await expect(menuOf(page, "Camiseta do teste")).toBeFocused();
+  await expect(rowOf(page, "Camiseta do teste")).toBeFocused();
 
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await expect(page.getByLabel("Nome do produto")).toHaveValue(
     "Camiseta guardada"
   );
   await page.getByRole("button", { name: "Cancelar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await expect(page.getByLabel("Nome do produto")).toHaveValue(
     "Camiseta do teste"
   );
@@ -1575,8 +1905,7 @@ test("o produto que sai da lista com o diálogo aberto fecha o diálogo, sem vir
         ),
     },
   });
-  await menuOf(page, "Camiseta do teste").click();
-  await page.getByRole("menuitem", { exact: true, name: "Editar" }).click();
+  await rowOf(page, "Camiseta do teste").click();
   await page.getByLabel("Nome do produto").fill("Camiseta mudada");
   // archived elsewhere: the next read of the list no longer has it ("Atualizar variantes" reads the list again)
   catalog.products = [];
@@ -1590,4 +1919,117 @@ test("o produto que sai da lista com o diálogo aberto fecha o diálogo, sem vir
   await expect(page.getByRole("dialog", { name: "Novo produto" })).toHaveCount(
     0
   );
+});
+
+const ADD_ALL_COMBINATIONS = /^Adicionar todas as combinações/;
+const REMOVE_COMBINATION = /^Remover combinação/;
+
+test("variantes: 'Adicionar todas as combinações' põe 12 linhas no rascunho em um toque, nada é enviado antes de 'Salvar variantes', e acima de 50 não acrescenta nenhuma", async ({
+  page,
+}) => {
+  const sent: { variants: { values: Record<string, string> }[] }[] = [];
+  await openServerScreen(page, {
+    lists: [answer([product(1, "Camiseta do teste")])],
+    others: {
+      "product/configureVariants": (route) => {
+        const body = route.request().postDataJSON();
+        sent.push(body.json ?? body);
+        const variants = (body.json ?? body).variants as {
+          values: Record<string, string>;
+        }[];
+        return route.fulfill(
+          rpc({
+            configuration: {
+              ...CONFIGURATION,
+              configured: true,
+              productVersion: 2,
+              variants: variants.map((variant, index) => ({
+                id: id(40 + index),
+                isDefault: false,
+                listPrice: null,
+                sku: null,
+                values: Object.entries(variant.values).map(
+                  ([optionName, optionValueName]) => ({
+                    optionName,
+                    optionValueName,
+                  })
+                ),
+                version: 1,
+              })),
+            },
+            product: { ...product(1, "Camiseta do teste"), version: 2 },
+          })
+        );
+      },
+      "product/getVariants": (route) => route.fulfill(rpc(CONFIGURATION)),
+    },
+  });
+  await menuOf(page, "Camiseta do teste").click();
+  await page.getByRole("menuitem", { name: "Variantes" }).click();
+  await page.getByRole("checkbox", { name: "Cor" }).click();
+  await page.getByRole("checkbox", { name: "Tamanho" }).click();
+  const colors = page.getByLabel("Valores de Cor");
+  const sizes = page.getByLabel("Valores de Tamanho");
+  const addAll = page.getByRole("button", {
+    name: ADD_ALL_COMBINATIONS,
+  });
+
+  await test.step("acima de 50 (6 × 9 = 54): nada entra, diz quantas e o limite", async () => {
+    await colors.fill(
+      Array.from({ length: 6 }, (_, n) => `Cor ${n}`).join("\n")
+    );
+    await sizes.fill(Array.from({ length: 9 }, (_, n) => `T${n}`).join("\n"));
+    await expect(addAll).toHaveText("Adicionar todas as combinações (54)");
+    await addAll.click();
+    await expect(
+      page.getByText(
+        "Seriam 54 combinações e o limite é 50 por produto. Nenhuma foi adicionada."
+      )
+    ).toBeVisible();
+    await expect(
+      page.getByText("Nenhuma combinação adicionada.")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: REMOVE_COMBINATION })
+    ).toHaveCount(0);
+  });
+
+  await test.step("3 cores × 4 tamanhos: um toque para as 12 (AC-3), só no rascunho", async () => {
+    await colors.fill("Preta\nBranca\nAzul");
+    await sizes.fill("P\nM\nG\nGG");
+    await expect(
+      page.getByText("Seriam 54 combinações", { exact: false })
+    ).toHaveCount(0);
+    await addAll.click();
+    await expect(
+      page.getByRole("button", { name: "Remover combinação 12" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Remover combinação 13" })
+    ).toHaveCount(0);
+    await expect(addAll).toHaveText("Adicionar todas as combinações");
+    expect(sent).toEqual([]);
+  });
+
+  await test.step("outro toque não repete nenhuma", async () => {
+    await addAll.click();
+    await expect(
+      page.getByText("Todas as combinações já estão na lista.")
+    ).toBeVisible();
+    expect(sent).toEqual([]);
+  });
+
+  await test.step("'Salvar variantes' envia as 12 (o segundo toque do AC-3)", async () => {
+    await page.getByRole("button", { name: "Salvar variantes" }).click();
+    await expect(
+      page.getByText("Variantes configuradas e salvas.")
+    ).toBeVisible();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.variants).toHaveLength(12);
+    expect(sent[0]?.variants[0]?.values).toEqual({ color: "Preta", size: "P" });
+    expect(sent[0]?.variants[11]?.values).toEqual({
+      color: "Azul",
+      size: "GG",
+    });
+  });
 });

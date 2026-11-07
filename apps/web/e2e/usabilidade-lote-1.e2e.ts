@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * Correções de usabilidade do staging, lote 1 (t213; U-NN são os achados do Diego e do Petković de 22/10).
+ * Correções de usabilidade do staging, lote 1 (U-NN são os achados da revisão de usabilidade).
  * Navegador de verdade, com o servidor substituído por respostas no formato do RPC.
  */
 const ORGANIZATION = {
@@ -247,10 +247,18 @@ test("U-19: a barra presa da venda tem fundo opaco e a página guarda espaço pa
   // an opaque color has no alpha: `rgb(...)`, or an `oklch(...)` without `/`
   expect(background).not.toContain("/");
   expect(background).not.toMatch(RGBA_WITH_ALPHA);
-  const padding = await page.evaluate(
-    () => getComputedStyle(document.documentElement).scrollPaddingBottom
-  );
-  expect(Number.parseFloat(padding)).toBeGreaterThanOrEqual(96);
+  const reserve = await page.evaluate(() => {
+    const px = (value: string | undefined) => {
+      const parsed = Number.parseFloat(value ?? "");
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+    const control = document.querySelector("[data-sale-form] button");
+    return (
+      px(getComputedStyle(document.documentElement).scrollPaddingBottom) +
+      px(control ? getComputedStyle(control).scrollMarginBottom : undefined)
+    );
+  });
+  expect(reserve).toBeGreaterThanOrEqual(96);
 });
 
 /* -------------------------------------------------------------------------- */

@@ -126,7 +126,7 @@ describe("assertExpenseCompetenceInRange", () => {
   });
 
   it("counts the leap day", () => {
-    // 2027-02-28 + 366 days = 2028-02-29 (2028 is a leap year)
+    // `2027-02-28` + 366 days = `2028-02-29` (2028 is a leap year)
     expect(() =>
       assertExpenseCompetenceInRange("2028-02-29", "2027-02-28")
     ).not.toThrow();

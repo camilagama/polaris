@@ -27,6 +27,11 @@ export async function initSentry(env: SentryBuildEnv): Promise<boolean> {
   return true;
 }
 
+/** Whether the SDK started: then Sentry is the destination of the errors, and its own handlers catch the global ones. */
+export function sentryActive(): boolean {
+  return loaded !== null;
+}
+
 /** For the Error Boundary: reports the render error with React's component stack. A no-op while the SDK is off, and never throws. */
 export function reportRenderError(error: Error, info: ErrorInfo): void {
   try {

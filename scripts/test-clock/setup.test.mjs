@@ -1,0 +1,300 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import datasConfig from "../../vitest.datas.config";
+import rootConfig from "../../vitest.config";
+import { FUSOS, INSTANTES, parseNow } from "./instants.mjs";
+import { assertTimeZone, freezeClock } from "./setup.mjs";
+
+const pinned = process.env.POLARIS_TEST_NOW;
+
+function realClockOffset() {
+  return Math.abs(Date.now() - performance.timeOrigin - performance.now());
+}
+
+function saoPaulo(instant) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(instant)
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+describe("relógio congelado por POLARIS_TEST_NOW", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.runIf(pinned)("o Date do teste é o instante pedido", () => {
+    expect(new Date().toISOString()).toBe(parseNow(pinned).toISOString());
+    expect(Date.now()).toBe(Date.parse(pinned));
+  });
+
+  it.runIf(pinned)("o relógio não anda com o tempo real", async () => {
+    const before = performance.now();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(performance.now() - before).toBeGreaterThanOrEqual(25);
+    expect(Date.now()).toBe(Date.parse(pinned));
+  });
+
+  it.runIf(pinned)(
+    "um teste que devolve o relógio real não leva isso ao teste seguinte",
+    () => {
+      vi.useRealTimers();
+      expect(realClockOffset()).toBeLessThan(1000);
+    }
+  );
+
+  it.runIf(pinned)("o teste depois dele volta ao instante pedido", () => {
+    expect(Date.now()).toBe(Date.parse(pinned));
+  });
+
+  it.runIf(pinned)("um teste que fixa o próprio relógio manda no dele", () => {
+    vi.useFakeTimers({
+      now: new Date("2020-01-02T03:04:05Z"),
+      toFake: ["Date"],
+    });
+    expect(new Date().toISOString()).toBe("2020-01-02T03:04:05.000Z");
+  });
+
+  it.runIf(!pinned)("sem o setup, o relógio é o real", () => {
+    expect(vi.isFakeTimers()).toBe(false);
+    expect(realClockOffset()).toBeLessThan(1000);
+  });
+});
+
+describe("freezeClock", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("congela só o Date: o tempo real passa e o Date fica", async () => {
+    const instant = parseNow("2026-12-01T02:50:00Z");
+    vi.useRealTimers();
+    freezeClock(instant);
+    const before = performance.now();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(performance.now() - before).toBeGreaterThanOrEqual(25);
+    expect(Date.now()).toBe(instant.getTime());
+    expect(new Date().toISOString()).toBe("2026-12-01T02:50:00.000Z");
+  });
+
+  it("deixa em paz o relógio que o teste já fixou", () => {
+    vi.useFakeTimers({
+      now: new Date("2020-01-02T03:04:05Z"),
+      toFake: ["Date"],
+    });
+    freezeClock(parseNow("2026-12-01T02:50:00Z"));
+    expect(new Date().toISOString()).toBe("2020-01-02T03:04:05.000Z");
+  });
+
+  it("o setup recusa POLARIS_TEST_NOW sem fuso ao carregar", async () => {
+    vi.stubEnv("POLARIS_TEST_NOW", "2026-11-01T03:30:00");
+    vi.stubEnv("TZ", "America/Manaus");
+    vi.resetModules();
+    await expect(import("./setup.mjs")).rejects.toThrow(
+      "POLARIS_TEST_NOW inválido"
+    );
+  });
+
+  it.each([
+    ["ausente", undefined],
+    ["vazio", ""],
+    ["inválido", "Marte/Olimpo"],
+  ])(
+    "o setup falha ao carregar com POLARIS_TEST_NOW e TZ %s, citando bun run test:datas",
+    async (_caso, tz) => {
+      vi.stubEnv("POLARIS_TEST_NOW", "2026-11-01T03:30:00Z");
+      vi.stubEnv("TZ", tz);
+      vi.resetModules();
+      await expect(import("./setup.mjs")).rejects.toThrow("bun run test:datas");
+    }
+  );
+
+  it("sem POLARIS_TEST_NOW o setup carrega mesmo sem TZ e não congela o relógio", async () => {
+    vi.stubEnv("POLARIS_TEST_NOW", undefined);
+    vi.stubEnv("TZ", undefined);
+    vi.resetModules();
+    vi.useRealTimers();
+    await import("./setup.mjs");
+    expect(vi.isFakeTimers()).toBe(false);
+  });
+});
+
+describe("assertTimeZone", () => {
+  it.each(["America/Manaus", "America/Sao_Paulo", "UTC", "Asia/Tokyo"])(
+    "aceita %s quando o processo usa esse fuso",
+    (tz) => {
+      expect(() => assertTimeZone(tz, tz)).not.toThrow();
+    }
+  );
+
+  it.each([undefined, "", "Marte/Olimpo", ":America/Sao_Paulo"])(
+    "recusa %j",
+    (tz) => {
+      expect(() => assertTimeZone(tz, "America/Sao_Paulo")).toThrow(
+        "bun run test:datas"
+      );
+    }
+  );
+
+  it.each([
+    ["america/sao_paulo", "UTC"],
+    ["+03:00", "America/Sao_Paulo"],
+    ["America/Manaus", "America/Sao_Paulo"],
+    ["UTC", null],
+  ])("recusa TZ=%s quando o processo usa %j", (tz, effective) => {
+    expect(() => assertTimeZone(tz, effective)).toThrow("mas o processo usa");
+    expect(() => assertTimeZone(tz, effective)).toThrow("bun run test:datas");
+  });
+});
+
+describe("fuso efetivo do processo", () => {
+  const originalTz = process.env.TZ;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.resetModules();
+    if (originalTz === undefined) {
+      Reflect.deleteProperty(process.env, "TZ");
+    } else {
+      process.env.TZ = originalTz;
+    }
+  });
+
+  function loadSetup(tz) {
+    vi.stubEnv("POLARIS_TEST_NOW", "2026-11-01T03:30:00Z");
+    vi.stubEnv("TZ", tz);
+    vi.resetModules();
+    return import("./setup.mjs");
+  }
+
+  function pinEffectiveZone(effective) {
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    const proxy = new Proxy(RealDateTimeFormat, {
+      apply: (target, _thisArg, args) => {
+        const formatter = Reflect.construct(target, args);
+        if (args[1]?.timeZone !== undefined) {
+          return formatter;
+        }
+        const resolved = formatter.resolvedOptions();
+        formatter.resolvedOptions = () => ({
+          ...resolved,
+          timeZone: effective,
+        });
+        return formatter;
+      },
+    });
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(proxy);
+  }
+
+  // Node resolves a lowercase TZ to no zone at all, so the process falls back to the machine zone; on a machine in Manaus that fallback would equal the requested zone. The effective zone is pinned to a different one so the refusal does not depend on where the suite runs.
+  it("o setup falha ao carregar com TZ em minúsculas quando o processo cai em outro fuso que não o pedido", async () => {
+    pinEffectiveZone("America/Sao_Paulo");
+    const failure = loadSetup("america/manaus");
+    await expect(failure).rejects.toThrow(
+      'TZ="america/manaus" pede America/Manaus, mas o processo usa "America/Sao_Paulo"'
+    );
+    await expect(failure).rejects.toThrow("bun run test:datas");
+  });
+
+  it("com o fuso efetivo igual ao pedido, o setup carrega mesmo com TZ em minúsculas: a recusa vem da diferença entre os fusos", async () => {
+    pinEffectiveZone("America/Manaus");
+    await loadSetup("america/manaus");
+    expect(vi.isFakeTimers()).toBe(true);
+  });
+
+  // A +03:00 offset never resolves to an IANA name, so it cannot equal the process zone on any machine.
+  it("o setup falha ao carregar com TZ em deslocamento, que o Intl aceita e o processo não usa", async () => {
+    await expect(loadSetup("+03:00")).rejects.toThrow("mas o processo usa");
+    await expect(loadSetup("+03:00")).rejects.toThrow("bun run test:datas");
+  });
+
+  it("o setup carrega com TZ=America/Manaus, que o processo usa de fato", async () => {
+    await loadSetup("America/Manaus");
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(
+      "America/Manaus"
+    );
+    expect(vi.isFakeTimers()).toBe(true);
+  });
+});
+
+describe("POLARIS_TEST_NOW", () => {
+  it.each([
+    "2026-11-01T03:30:00Z",
+    "2026-11-01T00:30:00-03:00",
+    "2026-11-01T00:30Z",
+    "2026-11-01T03:30:00.250+00:00",
+  ])("aceita %s", (raw) => {
+    expect(parseNow(raw).getTime()).not.toBeNaN();
+  });
+
+  it.each([
+    "2026-11-01T03:30:00",
+    "2026-11-01",
+    "2026-11-01 03:30:00Z",
+    "2026-13-01T03:30:00Z",
+    "2026-02-30T00:00:00Z",
+    "2026-11-31T00:00:00Z",
+    "2026-11-01T24:00:00Z",
+    "2026-11-01T03:60:00Z",
+    "ontem",
+  ])("recusa %s", (raw) => {
+    expect(() => parseNow(raw)).toThrow("POLARIS_TEST_NOW inválido");
+  });
+});
+
+describe("instantes da varredura", () => {
+  it("são os cinco combinados, em dois fusos", () => {
+    expect(INSTANTES.map((item) => item.chave)).toEqual([
+      "dia-1-0030",
+      "ultimo-dia-2350",
+      "virada-do-ano",
+      "bissexto-1200",
+      "fim-fev-2350",
+    ]);
+    expect(FUSOS).toEqual(["America/Sao_Paulo", "UTC"]);
+  });
+
+  it.each(INSTANTES.map((item) => [item.chave, item]))(
+    "%s cai na hora de São Paulo declarada",
+    (_chave, item) => {
+      expect(saoPaulo(parseNow(item.now))).toBe(item.saoPaulo);
+    }
+  );
+});
+
+describe("config da varredura de datas", () => {
+  it("exclui (mais packages/db) e resolve alias como o projeto node da raiz", () => {
+    const rootProject = rootConfig.test?.projects?.[0];
+    if (typeof rootProject !== "object" || rootProject === null) {
+      throw new Error("o primeiro projeto da raiz deixou de ser o node");
+    }
+    const rootNode = rootProject.test;
+    expect(rootNode.name).toBe("node");
+    expect(datasConfig.test?.exclude).toEqual([
+      ...rootNode.exclude,
+      "packages/db/**",
+    ]);
+    expect(datasConfig.resolve).toEqual(rootConfig.resolve);
+  });
+
+  it("inclui o que o projeto node da raiz inclui em apps e packages, mais o próprio helper", () => {
+    const rootNode = rootConfig.test?.projects?.[0].test;
+    expect(datasConfig.test?.include).toEqual([
+      "scripts/test-clock/*.test.mjs",
+      ...rootNode.include.filter((glob) => !glob.startsWith("scripts/")),
+    ]);
+  });
+});

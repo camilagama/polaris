@@ -6,7 +6,10 @@ import { describe, expect, it } from "vitest";
  * measured again from theme.css, OKLCH to sRGB, WCAG 2.x. A pair fails below its target or when it drifts from
  * the ratio the document states, so a token change cannot leave the map behind.
  */
-const theme = readFileSync(new URL("./theme.css", import.meta.url), "utf8");
+const theme = readFileSync(
+  new URL("../../../../packages/ui/src/theme.css", import.meta.url),
+  "utf8"
+);
 const map = readFileSync(
   new URL("../../../../docs/design/contraste-v5.1.md", import.meta.url),
   "utf8"
@@ -60,7 +63,7 @@ function luminance([r, g, b]: Rgb) {
 const over = (top: Rgb, alpha: number, bottom: Rgb): Rgb =>
   top.map((v, i) => alpha * v + (1 - alpha) * (bottom[i] as number)) as Rgb;
 
-const CELL = /^`([a-z0-9-]+)(?:\/(\d+) sobre ([a-z0-9-]+))?`$/;
+const CELL = /^`([a-z0-9-]+)(?:\/(\d+))?(?: sobre ([a-z0-9-]+))?`$/;
 
 function color(cell: string, palette: ReturnType<typeof tokens>): Rgb {
   const [, name, percent, base] = CELL.exec(cell) ?? [];
@@ -68,14 +71,16 @@ function color(cell: string, palette: ReturnType<typeof tokens>): Rgb {
   if (!top) {
     throw new Error(`unknown token in ${cell}`);
   }
-  if (percent === undefined) {
+  if (base === undefined) {
     return top.rgb;
   }
-  const bottom = palette.get(base as string);
+  const bottom = palette.get(base);
   if (!bottom) {
     throw new Error(`unknown token in ${cell}`);
   }
-  return over(top.rgb, Number(percent) / 100, bottom.rgb);
+  // `x/NN sobre y` is the utility with an opacity; `x sobre y` is a token that carries its own alpha (the dark borders)
+  const alpha = percent === undefined ? top.alpha : Number(percent) / 100;
+  return over(top.rgb, alpha, bottom.rgb);
 }
 
 function ratio(a: Rgb, b: Rgb) {
@@ -132,7 +137,7 @@ describe.each([
 });
 
 /**
- * The two colors of the charts of src/ui/charts/ (t285): the ink (`--chart-5`, the series) and the middle gray
+ * The two colors of the charts of src/ui/charts/: the ink (`--chart-5`, the series) and the middle gray
  * (`--chart-3`, the dashed second series and the third part of a bar), each over the card they are drawn on. Both pairs
  * are rows of the tables above; this one says they cannot be taken out of the map, and holds them to the bar of a graphic
  * element (WCAG 1.4.11, 3:1) with the ink held to the 4.5:1 of text, since the line carries the series for whoever
@@ -164,4 +169,116 @@ describe.each([
       ).toBeGreaterThanOrEqual(bar);
     }
   );
+});
+
+/**
+ * The step of the hour of the "Primeiros passos" (Início): its number is `mark-foreground` over the tint of the circle
+ * (`mark/10`, `mark/15` in the dark) and its border is `mark` over the card. Both pairs are rows of the tables above;
+ * this one says they cannot leave the map, and holds the number to the 4.5:1 of text and the border to the 3:1 of a
+ * graphic element.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), "mark/10"],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    "mark/15",
+  ],
+])("contraste do passo atual, %s", (section, palette, tint) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`mark-foreground`", `\`${tint} sobre card\``, 4.5],
+    ["`mark`", "`card`", 3],
+  ] as const)(
+    "%s / %s is in the map and reaches %d:1",
+    (foreground, background, bar) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === foreground && item.background === background
+      );
+      expect(
+        row,
+        `${foreground} / ${background} is not in "${section}"`
+      ).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
+
+/**
+ * The timeline of the sale detail (src/sales/sale-timeline.tsx), over the card: the word in `card-foreground` and the
+ * time in `muted-foreground` are text (4.5:1), and the three dots (the sale's `chart-sales`, `destructive`, and the
+ * supporting `muted-foreground`) are graphic elements that carry no meaning alone (WCAG 1.4.11, 3:1). Each pair is a row
+ * of the tables above, so a token change that breaks one is read there too.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root"))],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+  ],
+])("contraste da linha do tempo da venda, %s", (section, palette) => {
+  const rows = pairs(section);
+
+  it.each([
+    ["`card-foreground`", "texto do evento", 4.5],
+    ["`muted-foreground`", "hora do evento", 4.5],
+    ["`muted-foreground`", "ponto neutro", 3],
+    ["`chart-sales`", "ponto da venda", 3],
+    ["`destructive`", "ponto da venda cancelada", 3],
+  ] as const)(
+    "%s / `card` (%s) reaches %d:1 and is in the map",
+    (foreground, _use, bar) => {
+      const row = rows.find(
+        (item) => item.foreground === foreground && item.background === "`card`"
+      );
+      expect(row, `${foreground} / card is not in "${section}"`).toBeDefined();
+      expect(
+        ratio(color(foreground, palette), color("`card`", palette))
+      ).toBeGreaterThanOrEqual(bar);
+    }
+  );
+});
+
+/**
+ * The border of the outline button (src/ui/button.tsx, `border-input`) is what marks where the button ends, so it is a
+ * graphic element (WCAG 1.4.11, 3:1) against the card around it and, in the dark, against the button's own fill
+ * (`dark:bg-secondary/60`). Each pair is a row of the tables above; `border` stays out because it is 1.3:1.
+ */
+describe.each([
+  ["Tema claro", tokens(block(":root")), ["`card`"]],
+  [
+    "Tema escuro",
+    new Map([...tokens(block(":root")), ...tokens(block(".dark"))]),
+    ["`card`", "`secondary/60 sobre card`"],
+  ],
+])("contraste do contorno do botão outline, %s", (section, palette, fills) => {
+  const rows = pairs(section);
+
+  it.each(fills)("`input` / %s reaches 3:1 and is in the map", (background) => {
+    const row = rows.find(
+      (item) => item.foreground === "`input`" && item.background === background
+    );
+    expect(row, `input / ${background} is not in "${section}"`).toBeDefined();
+    expect(
+      ratio(color("`input`", palette), color(background, palette))
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+const OUTLINE_VARIANT = /outline:\s*"([^"]*)"/;
+
+describe("borda do botão outline", () => {
+  it("draws the border with `--input`, the token measured above, never `--border`", () => {
+    const button = readFileSync(
+      new URL("../ui/button.tsx", import.meta.url),
+      "utf8"
+    );
+    const classes = (OUTLINE_VARIANT.exec(button)?.[1] ?? "").split(" ");
+    expect(classes).toContain("border-input");
+    expect(classes).not.toContain("border-border");
+  });
 });

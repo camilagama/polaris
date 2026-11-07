@@ -83,13 +83,12 @@ describe("a device row", () => {
     expect(on).not.toContain("aria-describedby");
   });
 
-  it("says where Sair is: under Mais on a phone, or in the menu of the store card on a big screen", () => {
+  it("says where Sair is: in the store menu at the top of the screen, at any width", () => {
     const html = render({ row: row({ isCurrent: true }) });
-    expect(html).toContain("use <strong>Sair</strong>");
-    expect(html).toContain("no celular ele está em Mais");
-    expect(html).toContain(
-      "em tela grande, no menu ⋯ do cartão da loja, no pé da barra lateral"
-    );
+    expect(html).toContain("use <strong>Sair</strong>, no menu da loja");
+    expect(html).toContain("no alto da tela");
+    expect(html).not.toContain("Mais");
+    expect(html).not.toContain("cartão da loja");
   });
 
   it("this device, without a connection: says Sair will not take it off the list until it leaves online", () => {

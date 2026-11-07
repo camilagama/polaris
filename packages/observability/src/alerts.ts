@@ -154,6 +154,20 @@ export const alertSignals = [
     windowMinutes: 180,
   },
   {
+    id: "cobranca-provedor-nao-confirmou",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["billing_unavailable_refused"],
+      where:
+        'reason in ("previous_checkout_unverified", "previous_renewal_cancel_unverified")',
+    },
+    threshold: { atLeast: 3, kind: "count" },
+    title:
+      "Provedor de cobrança não confirmou o checkout ou o cancelamento antigo",
+    windowMinutes: 180,
+  },
+  {
     id: "pix-cadastros-por-loja",
     notify: "report",
     severity: "warning",
@@ -296,6 +310,18 @@ export const alertSignals = [
     windowMinutes: 1440,
   },
   {
+    id: "purge-parado",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["organization_purge_stalled"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Purge de loja encerrada parado: um passo que falha na 3ª tentativa ou mais, ou um purge sem avançar em 24 h que nenhum log viu",
+    windowMinutes: 1440,
+  },
+  {
     id: "aviso-de-encerramento-falhando",
     notify: "report",
     severity: "warning",
@@ -324,10 +350,39 @@ export const alertSignals = [
     notify: "wake",
     severity: "critical",
     source: {
-      events: ["billing_refund_pending_incident_failed"],
+      events: [
+        "billing_refund_pending_incident_failed",
+        "billing_amount_mismatch_incident_failed",
+      ],
     },
     threshold: { atLeast: 1, kind: "count" },
     title: "Incidente do reembolso não gravado",
+    windowMinutes: 60,
+  },
+  {
+    // every command of an operator that reached a provider wakes the other person of the Access (ADR 0105): the
+    // Admin has no second approval, so the other person sees each one as it happens
+    id: "comando-de-cobranca-do-operador",
+    notify: "wake",
+    severity: "critical",
+    source: {
+      events: ["billing_operator_command"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Operador cancelou uma renovação ou reembolsou pelo Admin",
+    windowMinutes: 15,
+  },
+  {
+    // the refused 31st reveal of an operator leaves no audit row (ADR 0072), so this event is the only trace of a read in
+    // bulk; it is reported, not waking, because one refusal can be a long legitimate attendance
+    id: "revelacoes-por-hora",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["admin_reveal_rate_limited"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title: "Operador chegou ao limite de revelações de dado pessoal por hora",
     windowMinutes: 60,
   },
 ] as const satisfies readonly AlertSignal[];

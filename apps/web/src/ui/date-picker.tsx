@@ -45,7 +45,7 @@ export interface DatePickerProps {
 /**
  * One date: an outline button with the calendar icon and the date written "24/10/2026" ("Escolher data" when there
  * is none) opens the month in a Popover, with "Hoje" in its footer. A touch on a day chooses it and closes. In this
- * first version the phone uses the same Popover; the full-screen Dialog comes with t331.
+ * first version the phone uses the same Popover; the full-screen Dialog comes later.
  */
 export function DatePicker({
   className,
@@ -62,6 +62,7 @@ export function DatePicker({
   value: valueProp,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
+  const [openings, setOpenings] = useState(0);
   const errorId = useId();
   const today = todayOr(todayProp);
   const value = validDay(valueProp);
@@ -79,6 +80,13 @@ export function DatePicker({
     ...(max ? [{ after: parseIsoDate(max) as Date }] : []),
   ];
 
+  // a popup reopened while it is still leaving keeps its calendar mounted: a new key gives each opening its first month
+  const handleOpenChange = useCallback((opening: boolean) => {
+    if (opening) {
+      setOpenings((count) => count + 1);
+    }
+    setOpen(opening);
+  }, []);
   const choose = useCallback(
     (day: IsoDate) => {
       onValueChange(day);
@@ -100,7 +108,7 @@ export function DatePicker({
 
   return (
     <div className={cn("grid gap-1.5", className)}>
-      <Popover onOpenChange={setOpen} open={open}>
+      <Popover onOpenChange={handleOpenChange} open={open}>
         <PopoverTrigger
           render={
             <Button
@@ -141,6 +149,7 @@ export function DatePicker({
               defaultMonth={firstMonth}
               disabled={outside}
               disabledReason={disabledReason}
+              key={openings}
               mode="single"
               onSelect={pickDay}
               selected={selected}

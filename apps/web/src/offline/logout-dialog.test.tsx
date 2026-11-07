@@ -16,6 +16,27 @@ const blocked = (
   ...overrides,
 });
 
+const refusedWork = () =>
+  blocked({
+    attention: {
+      items: [
+        {
+          actions: ["discard"],
+          blocksQueue: true,
+          cause: "sku_conflict",
+          code: "sku_conflict",
+          commandId: "0199c2d0-0000-7000-8000-000000000101",
+          detail: "x",
+          kind: "product",
+          redone: false,
+          title: "Produto",
+        },
+      ],
+      waitingBehind: 0,
+    },
+    reason: "refused",
+  });
+
 function render(items: BlockedWorkspace[], busy = false): string {
   return renderToStaticMarkup(
     <LogoutDialog
@@ -30,6 +51,20 @@ function render(items: BlockedWorkspace[], busy = false): string {
 }
 
 describe("the logout dialog", () => {
+  it("leaves out Ver Pendências where the person is already on that page", () => {
+    const html = renderToStaticMarkup(
+      <LogoutDialog
+        blocked={[refusedWork()]}
+        onCancel={none}
+        onDiscard={none}
+        onRetry={none}
+      />
+    );
+    expect(html).not.toContain("Ver Pendências");
+    expect(html).toContain("Ficar conectado");
+    expect(render([refusedWork()])).toContain("Ver Pendências");
+  });
+
   it("says how much work would be lost and why it could not be sent", () => {
     const html = render([blocked()]);
     expect(html).toContain("2 operações");
@@ -44,7 +79,7 @@ describe("the logout dialog", () => {
     expect(html).toContain("Ficar conectado");
     expect(html).toContain("Descartar e sair…");
     expect(html).not.toContain("Confirmar");
-    expect(html).not.toContain("Ver o que precisa de atenção");
+    expect(html).not.toContain("Ver Pendências");
   });
 
   it("offers the attention panel only when the server refused something", () => {
@@ -60,6 +95,7 @@ describe("the logout dialog", () => {
               commandId: "0199c2d0-0000-7000-8000-000000000101",
               detail: "x",
               kind: "product",
+              redone: false,
               title: "Produto",
             },
           ],
@@ -69,7 +105,7 @@ describe("the logout dialog", () => {
       }),
     ]);
     expect(html).toContain("O servidor recusou operações");
-    expect(html).toContain("Ver o que precisa de atenção");
+    expect(html).toContain("Ver Pendências");
   });
 
   it("adds up several workspaces and has no way to log out anyway", () => {

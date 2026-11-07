@@ -355,11 +355,15 @@ describe("the brakes on retries", () => {
       gate.record(true);
     }
     expect(gate.mayRetry()).toBe(true); // 10 of 19: not more than half of 20
+    expect(gate.breakerOpen()).toBe(false);
     gate.record(true); // 11 of 20
     expect(gate.mayRetry()).toBe(false);
+    expect(gate.breakerOpen()).toBe(true);
     await time.advance(14_999);
     expect(gate.mayRetry()).toBe(false);
+    expect(gate.breakerOpen()).toBe(true);
     await time.advance(1);
+    expect(gate.breakerOpen()).toBe(false);
     expect(gate.mayRetry()).toBe(true);
   });
 
@@ -376,6 +380,7 @@ describe("the brakes on retries", () => {
         })
       );
     }
+    expect(t.connection.isServerFailing()).toBe(true);
     expect(t.connection.mayRetryRead()).toBe(false);
     expect(t.connection.isOnline()).toBe(true);
   });

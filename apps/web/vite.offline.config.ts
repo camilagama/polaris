@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { legalBuildGuardPlugin } from "./legal/legal-build-guard-plugin";
 import { uiBuild, uiPlugins } from "./vite.ui";
 
 export default defineConfig({
@@ -14,5 +15,5 @@ export default defineConfig({
   define: {
     "import.meta.env.VITE_OFFLINE_RUNTIME_ENABLED": JSON.stringify("true"),
   },
-  plugins: [uiPlugins(), react()],
+  plugins: [legalBuildGuardPlugin({}, { check: false }), uiPlugins(), react()],
 });

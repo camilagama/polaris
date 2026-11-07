@@ -1,12 +1,11 @@
 import { Suspense, useEffect } from "react";
 import type { LegalDocumentId } from "@polaris/domain/legal/legal-documents";
 import { resolveLegalRoute } from "../legal/legal-routes";
+import { isClosedStorePath } from "../lib/closed-store-path";
 import { OrganizationProvider } from "../lib/current-organization";
 import { isLegalAcceptancePath } from "../lib/legal-acceptance";
 import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
 import { legacyCheckoutReturnPath } from "../subscription/plan-notice";
-import { getUpdateStore } from "../pwa/runtime";
-import { UpdateBanner } from "../pwa/update-banner";
 import { useAddress } from "./address";
 import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
@@ -42,6 +41,11 @@ const pages: Readonly<Record<ScreenId, Page>> = {
   dashboard: lazyScreen(() =>
     import("../dashboard/dashboard-page").then((module) => ({
       default: module.DashboardPage,
+    }))
+  ),
+  help: lazyScreen(() =>
+    import("../help/help-page").then((module) => ({
+      default: module.HelpPage,
     }))
   ),
   home: lazyScreen(() =>
@@ -92,6 +96,12 @@ const AcceptancePage: Page = lazyScreen(() =>
   }))
 );
 
+const ClosedStorePage: Page = lazyScreen(() =>
+  import("../organization/closed-store-page").then((module) => ({
+    default: module.ClosedStorePage,
+  }))
+);
+
 /** The sign-in group: each page its own chunk, all outside the shell (ADR 0100). */
 const entryPages: Record<EntryPageId, Page> = {
   "confirm-email": lazyScreen(() =>
@@ -129,11 +139,7 @@ const entryPages: Record<EntryPageId, Page> = {
 function RouteContent({ route }: { route: ResolvedRoute }) {
   if (route.kind === "not-found") {
     return (
-      <AppShell
-        navId={null}
-        requiresOrganization={false}
-        updateNotice={<UpdateSlot />}
-      >
+      <AppShell navId={null} requiresOrganization={false}>
         <NotFoundPage pathname={window.location.pathname} />
       </AppShell>
     );
@@ -144,8 +150,9 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
       connectionForm={route.connectionForm}
       navId={route.navId}
       onlineOnly={route.onlineOnly}
+      // Ajuda is the way out when the organization does not open: it needs none and makes no request
+      requiresOrganization={route.id !== "help"}
       routeId={route.id}
-      updateNotice={<UpdateSlot />}
     >
       <ErrorBoundary onRetry={Page.reset}>
         <Suspense fallback={<PageLoading />}>
@@ -156,25 +163,9 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
   );
 }
 
-/** The new-version notice, where there is a service worker to update. */
-function UpdateSlot({ standalone = false }: { standalone?: boolean }) {
-  const store = getUpdateStore();
-  if (!store) {
-    return null;
-  }
-  // outside the shell there is no content column to sit in: the notice makes its own, above the page
-  return standalone ? (
-    <div className="mx-auto w-[min(100%-2rem,28rem)] pt-4">
-      <UpdateBanner store={store} />
-    </div>
-  ) : (
-    <UpdateBanner store={store} />
-  );
-}
-
 /**
  * The sign-in screen has no organization, no menu and no offline runtime: nobody is signed in yet, so
- * there is nothing to register or read. It only needs the error boundary and the update notice.
+ * there is nothing to register or read. It only needs the error boundary.
  */
 function SignInApp({ page }: { page: EntryPageId }) {
   const EntryPage = entryPages[page];
@@ -184,7 +175,6 @@ function SignInApp({ page }: { page: EntryPageId }) {
       message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
       onRetry={EntryPage.reset}
     >
-      <UpdateSlot standalone />
       {/* `fullPage`: the color of the page while the chunk loads, so there is no white flash in the dark theme */}
       <Suspense fallback={<PageLoading fullPage />}>
         <EntryPage />
@@ -204,9 +194,23 @@ function AcceptanceApp() {
       message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
       onRetry={AcceptancePage.reset}
     >
-      <UpdateSlot standalone />
       <Suspense fallback={<PageLoading fullPage />}>
         <AcceptancePage />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
+/** The panel of a closed store stands apart too (ADR 0081): the store no longer opens as a tenant. */
+function ClosedStoreApp() {
+  return (
+    <ErrorBoundary
+      fullPage
+      message="O Polaris não conseguiu abrir. Recarregue a página para tentar de novo."
+      onRetry={ClosedStorePage.reset}
+    >
+      <Suspense fallback={<PageLoading fullPage />}>
+        <ClosedStorePage />
       </Suspense>
     </ErrorBoundary>
   );
@@ -256,6 +260,9 @@ export function App() {
   }
   if (isLegalAcceptancePath(window.location.pathname)) {
     return <AcceptanceApp />;
+  }
+  if (isClosedStorePath(window.location.pathname)) {
+    return <ClosedStoreApp />;
   }
   // a card checkout opened before the return moved to the Assinatura comes back to the root: the same return there
   const checkoutReturn = legacyCheckoutReturnPath(

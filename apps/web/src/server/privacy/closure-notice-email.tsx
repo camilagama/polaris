@@ -16,10 +16,11 @@ import {
   render,
   Text,
 } from "react-email";
+import { closedStorePath } from "../../lib/closed-store-path";
 import { emailColors } from "../email-colors.generated";
 
 /**
- * The e-mail of a closure notice (ADR 0102 amended, design t107 §5), one per milestone: the request, D minus 30 and
+ * The e-mail of a closure notice (ADR 0102 amended), one per milestone: the request, D minus 30 and
  * minus 7 days, D, and a purge rescheduled after a legal hold. Only what the condition of the security review allows:
  * the store's name, the dates in the organization's calendar and a link to the panel, which asks the owner to sign in
  * (no token in the URL). Nothing of the owner (name, address) is in the text; the address only goes to the provider.
@@ -53,9 +54,16 @@ function formatTime(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
-/** The panel of the store: the app's own origin, with no path parameter, query or token. */
+function calendarDaysBetween(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T12:00:00.000Z`) - Date.parse(`${from}T12:00:00.000Z`)) /
+      DAY_MS
+  );
+}
+
+/** The panel of the closed store on the app's own origin: a fixed path, with no store, query or token. */
 export function closureNoticePanelUrl(appOrigin: string): string {
-  return `${new URL(appOrigin).origin}/`;
+  return new URL(closedStorePath(), new URL(appOrigin).origin).toString();
 }
 
 export interface ClosureNoticeContent {
@@ -111,8 +119,7 @@ export function closureNoticeContent(
   const beforeDeletionDay =
     delivery.dueAt.getTime() < delivery.deletableFrom.getTime();
   const copyLimit = `${deletionDay}, ${formatTime(delivery.deletableFrom, delivery.timeZone)} (horário da sua loja)`;
-  // The panel of a closed store is not on the app yet, so from D on there is nothing to open: no button, and no link
-  // that would only lead to the sign-in.
+  // From D on a copy can no longer be asked for, so the e-mail invites nothing: no button, and no link to the panel.
   const panelLabel = beforeDeletionDay ? "Abrir o painel" : null;
   const copyLine = beforeDeletionDay
     ? `Se quiser guardar uma cópia dos dados, peça pelo painel até ${copyLimit}.`
@@ -144,21 +151,24 @@ export function closureNoticeContent(
           copyLine,
           ...signInParagraph,
         ],
-        preview: `Os dados da loja ${store} podem ser apagados a partir de ${deletionDay}.`,
-        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
+        preview: `Faltam 30 dias: os dados da loja ${store} podem ser apagados a partir de ${deletionDay}.`,
+        subject: `Faltam 30 dias: os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${deletionDay}`,
       };
-    case "d7":
+    case "d7": {
+      // a d7 sent again counts from the day it is sent, so the number is the real one, not always 7
+      const daysLeft = `Faltam ${calendarDaysBetween(localDate(delivery.dueAt, delivery.timeZone), closureNoticeDeletionDate(delivery))} dias`;
       return {
         actionLabel: panelLabel,
-        heading: "Faltam 7 dias para os dados da loja poderem ser apagados",
+        heading: `${daysLeft} para os dados da loja poderem ser apagados`,
         paragraphs: [
           `Os dados da loja ${store}, encerrada em ${requested}, podem ser apagados a partir de ${firstDay}.${beforeDeletionDay ? " Depois de apagados, não podem ser recuperados." : ""}`,
           copyLine,
           ...signInParagraph,
         ],
-        preview: `Os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
-        subject: `Os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${firstDay}`,
+        preview: `${daysLeft}: os dados da loja ${store} podem ser apagados a partir de ${firstDay}.`,
+        subject: `${daysLeft}: os dados da sua loja ${subjectStore} no Polaris podem ser apagados a partir de ${firstDay}`,
       };
+    }
     case "deletion_day":
       return {
         actionLabel: panelLabel,
@@ -258,7 +268,7 @@ function ClosureNoticeEmail({
             }}
           >
             Este é um aviso automático sobre o encerramento da loja. O Polaris
-            nunca pede a sua senha por e-mail.
+            nunca pede senha, código ou pagamento por e-mail.
           </Text>
         </Container>
       </Body>

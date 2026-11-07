@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   axeFaults,
@@ -22,14 +22,14 @@ import {
 } from "./ui-screens";
 
 /**
- * The interface guardrails (t180): what the UX review finds by measuring, measured on every screen of
+ * The interface guardrails: what the UX review finds by measuring, measured on every screen of
  * `ui-screens.ts`, each check only on the axes that can change its result (`CHECK_CONTEXTS`, with the table in
  * docs/runbooks/testes-de-tela.md). Each check has a control case below that
  * proves it catches the fault it is for (a check that never fails proves nothing). Adding a screen:
  * docs/runbooks/testes-de-tela.md.
  *
  *   1. nothing leaves its container nor the viewport      4. colors only in OKLCH and tokens: scripts/ui-source-rules.test.ts
- *   2. touch area of 44/48 px, neighbors do not overlap   5. motion: nothing animates with reduce
+ *   2. touch area of 44 px, neighbors do not overlap      5. motion: nothing animates with reduce
  *   3. axe, WCAG 2.2 A and AA                              6. keyboard focus draws the 3 px ring
  */
 
@@ -93,7 +93,7 @@ for (const screen of SCREENS) {
       // One page load for the checks that only read: each reports on its own (soft), so a run shows every fault.
       test(`verificações: ${checks.join(", ")}`, async ({ page }) => {
         await openScreen(screen, page);
-        // the context is what the name says: the 48 px areas of the touch check exist only with `pointer: coarse`
+        // the context is what the name says: the 44 px areas of the touch check exist only with `pointer: coarse`
         expect(
           await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
           "o contexto tem o ponteiro que o nome diz"
@@ -112,7 +112,7 @@ for (const screen of SCREENS) {
               (
                 await touchFaults(page, {
                   exemptInlineLinks: true,
-                  minimum: 48,
+                  minimum: 44,
                 })
               ).sort(),
               "2. área de toque"
@@ -146,7 +146,95 @@ for (const screen of SCREENS) {
   });
 }
 
-/** A desktop window of 360 px with a mouse: the panel of the phone and the `full` level of motion (t386). */
+/** What the panel of the phone was doing when its own exit animation began. */
+interface ExitStart {
+  closing: boolean;
+  duration: number;
+  open: boolean;
+}
+
+/**
+ * Records, inside the page and at the `animationstart` of the panel's own `exit` animation, what the panel was doing:
+ * `data-closing` set, still open, and the duration of the animation. The event comes once the animation exists and
+ * before it can end, so the reading depends on no round trip of the test (the exit lasts 200 ms and a loaded runner
+ * outlasts that between two calls). With `reopenWith`, that button is clicked in the same task, while the exit runs.
+ */
+async function watchExitStart(panel: Locator, reopenWith?: Locator) {
+  const reopen = (await reopenWith?.elementHandle()) ?? null;
+  await panel.evaluate(
+    (node: HTMLDialogElement, trigger: HTMLElement | SVGElement | null) => {
+      const seen = window as unknown as { exitStart: ExitStart | null };
+      seen.exitStart = null;
+      const onStart = (event: AnimationEvent) => {
+        if (event.animationName !== "exit" || event.pseudoElement !== "") {
+          return;
+        }
+        node.removeEventListener("animationstart", onStart);
+        const exit = node
+          .getAnimations()
+          .find((item) => (item as CSSAnimation).animationName === "exit");
+        seen.exitStart = {
+          closing: node.hasAttribute("data-closing"),
+          duration: Number(exit?.effect?.getComputedTiming().duration),
+          open: node.open,
+        };
+        (trigger as HTMLElement | null)?.click();
+      };
+      node.addEventListener("animationstart", onStart);
+    },
+    reopen
+  );
+}
+
+const exitStart = (page: Page) =>
+  page.evaluate(
+    () => (window as unknown as { exitStart: ExitStart | null }).exitStart
+  );
+
+/**
+ * The guard of the panel waits 300 ms of wall clock for `animationend`. On a loaded runner the main thread can stall
+ * longer than that between the request and the frame that starts the exit animation, and the guard then closes the panel
+ * before any animation exists. This stretches the timers of exactly 300 ms by a factor the test sets, so the cases that
+ * look at the animation are not at the mercy of the runner; the case of the guard itself runs unstretched.
+ */
+interface ExitGuardScale {
+  guard: number;
+  stretched: number;
+}
+
+const stretchExitGuard = (page: Page) =>
+  page.addInitScript(() => {
+    const scale: ExitGuardScale = { guard: 1, stretched: 0 };
+    (window as unknown as { exitGuardScale: ExitGuardScale }).exitGuardScale =
+      scale;
+    const real = window.setTimeout.bind(window);
+    window.setTimeout = ((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      if (delay === 300 && scale.guard !== 1) {
+        scale.stretched += 1;
+      }
+      return real(handler, delay === 300 ? 300 * scale.guard : delay, ...args);
+    }) as typeof window.setTimeout;
+  });
+
+const setExitGuardScale = (page: Page, guard: number) =>
+  page.evaluate((value) => {
+    (
+      window as unknown as { exitGuardScale: ExitGuardScale }
+    ).exitGuardScale.guard = value;
+  }, guard);
+
+const stretchedGuards = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as unknown as { exitGuardScale: ExitGuardScale }).exitGuardScale
+        .stretched
+  );
+
+/** A desktop window of 360 px with a mouse: the panel of the phone and the `full` level of motion. */
 const NARROW_MOUSE = {
   colorScheme: "light",
   hasTouch: false,
@@ -229,7 +317,7 @@ test.describe("controle: cada verificação pega a falha", () => {
     page,
   }) => {
     await openScreen(gallery, page);
-    const check = { exemptInlineLinks: true, minimum: 48 };
+    const check = { exemptInlineLinks: true, minimum: 44 };
     expect(await touchFaults(page, check)).toEqual([]);
     await page.evaluate(() => {
       const main = document.querySelector("main");
@@ -278,7 +366,33 @@ test.describe("controle: cada verificação pega a falha", () => {
       kept.style.height = "20px";
       kept.style.position = "relative";
       field.append(input, end, kept);
-      main?.append(small, first, second, line, row, field);
+      // the controls of a group: from 24 px with no area of their own, but 8 px apart; closer than that, or smaller, fail
+      const group = (name: string, gap: number, size: number) => {
+        const box = document.createElement("div");
+        box.dataset.targetGroup = "";
+        box.style.display = "flex";
+        box.style.gap = `${gap}px`;
+        box.style.marginTop = "40px";
+        for (const part of ["um", "dois"]) {
+          const button = document.createElement("button");
+          button.textContent = `${name} ${part}`;
+          button.style.height = `${size}px`;
+          button.style.width = `${size}px`;
+          box.append(button);
+        }
+        return box;
+      };
+      main?.append(
+        small,
+        first,
+        second,
+        line,
+        row,
+        field,
+        group("Afastado", 8, 24),
+        group("Junto", 2, 24),
+        group("Miúdo", 8, 20)
+      );
     });
     const faults = (await touchFaults(page, check)).join("\n");
     expect(faults).toContain('button "Dentro do campo" tem área de toque');
@@ -290,6 +404,13 @@ test.describe("controle: cada verificação pega a falha", () => {
     expect(faults).toContain('a "Ajuda" tem área de toque');
     expect(faults).toContain(
       'a área de toque de button "Vizinho um" se sobrepõe à de button "Vizinho dois"'
+    );
+    expect(faults).not.toContain("Afastado");
+    expect(faults).toContain(
+      'a área de toque de button "Junto um" se sobrepõe à de button "Junto dois"'
+    );
+    expect(faults).toContain(
+      'button "Miúdo um" tem área de toque de 20 × 20 px (mínimo 24)'
     );
   });
 
@@ -484,10 +605,12 @@ test.describe("controle: cada verificação pega a falha", () => {
     const context = await browser.newContext(NARROW_MOUSE);
     try {
       const page = await context.newPage();
+      await stretchExitGuard(page);
       await openScreen(homeSold, page);
       expect(
         await page.evaluate(() => document.documentElement.dataset.motion)
       ).toBe("full");
+      await setExitGuardScale(page, 5);
       const more = page.getByRole("button", { exact: true, name: "Mais" });
       const panel = page.getByRole("dialog", { name: "Mais" });
       const close = () => page.keyboard.press("Escape");
@@ -506,17 +629,16 @@ test.describe("controle: cada verificação pega a falha", () => {
         await panel.evaluate((node: HTMLDialogElement) =>
           Promise.all(node.getAnimations().map((item) => item.finished))
         );
+        await watchExitStart(panel);
+        const stretchedBefore = await stretchedGuards(page);
         await ask();
-        // right after the request the panel is still there, closing, and the 200 ms exit animation runs
-        expect(
-          await panel.evaluate((node: HTMLDialogElement) => ({
-            closing: node.hasAttribute("data-closing"),
-            exit: node
-              .getAnimations()
-              .some((item) => (item as CSSAnimation).animationName === "exit"),
-            open: node.open,
-          }))
-        ).toEqual({ closing: true, exit: true, open: true });
+        // when the exit animation begins the panel is still there, closing, and the animation lasts 200 ms
+        await expect
+          .poll(() => exitStart(page), { message: "a saída animada começou" })
+          .toEqual({ closing: true, duration: 200, open: true });
+        // the stretch reached the guard of this exit (the counter is cumulative, so it is compared with its value before
+        // the way out was asked for): without it nothing here would fail
+        expect(await stretchedGuards(page)).toBeGreaterThan(stretchedBefore);
         await expect(panel).toBeHidden();
         await expect(more).toBeFocused();
         await expect(more).toHaveAttribute("aria-expanded", "false");
@@ -527,9 +649,14 @@ test.describe("controle: cada verificação pega a falha", () => {
       await panel.evaluate((node: HTMLDialogElement) =>
         Promise.all(node.getAnimations().map((item) => item.finished))
       );
+      await watchExitStart(panel, more);
       await close();
-      await more.evaluate((node: HTMLButtonElement) => node.click());
-      await page.waitForTimeout(600);
+      // the trigger was clicked at the start of the exit, which is what this case is about
+      await expect
+        .poll(() => exitStart(page), { message: "a saída animada começou" })
+        .toEqual({ closing: true, duration: 200, open: true });
+      // longer than the stretched guard (1.5 s): a close that was only postponed would have happened by now
+      await page.waitForTimeout(1700);
       expect(
         await panel.evaluate((node: HTMLDialogElement) => ({
           closing: node.hasAttribute("data-closing"),
@@ -538,7 +665,8 @@ test.describe("controle: cada verificação pega a falha", () => {
       ).toEqual({ closing: false, open: true });
       await close();
       await expect(panel).toBeHidden();
-      // no `animationend` (a browser that skips the animation): the guard of 300 ms closes it
+      // no `animationend` (a browser that skips the animation): the real guard of 300 ms closes it
+      await setExitGuardScale(page, 1);
       await page.evaluate(() => {
         const sheet = new CSSStyleSheet();
         sheet.replaceSync(
@@ -551,6 +679,65 @@ test.describe("controle: cada verificação pega a falha", () => {
       await close();
       await expect(panel).toBeHidden({ timeout: 1500 });
       await expect(more).toBeFocused();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("5. sem reduce e no nível full, um segundo Esc enquanto o painel do celular sai fecha de uma vez, sem erro na página", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext(NARROW_MOUSE);
+    try {
+      const page = await context.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await openScreen(homeSold, page);
+      const more = page.getByRole("button", { exact: true, name: "Mais" });
+      const panel = page.getByRole("dialog", { name: "Mais" });
+      await more.click();
+      await expect(panel).toBeVisible();
+      await panel.evaluate((node: HTMLDialogElement) =>
+        Promise.all(node.getAnimations().map((item) => item.finished))
+      );
+      // what the panel was doing when each Escape arrived: read in the page, in the same task as the key, because the
+      // exit lasts 200 ms and a round trip of the test can outlast it
+      await panel.evaluate((node: HTMLDialogElement) => {
+        const seen: boolean[] = [];
+        (window as unknown as { escapes: boolean[] }).escapes = seen;
+        document.addEventListener(
+          "keydown",
+          (event) => {
+            if (event.key === "Escape") {
+              seen.push(node.hasAttribute("data-closing"));
+            }
+          },
+          true
+        );
+      });
+      await Promise.all([
+        page.keyboard.press("Escape"),
+        page.keyboard.press("Escape"),
+      ]);
+      expect(
+        await page.evaluate(
+          () => (window as unknown as { escapes: boolean[] }).escapes
+        ),
+        "o 2º Esc tem de chegar com o painel já saindo"
+      ).toEqual([false, true]);
+      await expect(panel).toBeHidden();
+      await expect(more).toBeFocused();
+      await expect(more).toHaveAttribute("aria-expanded", "false");
+      // a closed dialog is out of the role tree: `panel` no longer finds it, the attribute still does
+      expect(
+        await page
+          .locator('dialog[aria-label="Mais"]')
+          .evaluate((node: HTMLDialogElement) => ({
+            closing: node.hasAttribute("data-closing"),
+            open: node.open,
+          }))
+      ).toEqual({ closing: false, open: false });
+      expect(errors).toEqual([]);
     } finally {
       await context.close();
     }

@@ -11,20 +11,20 @@ import { homeStates } from "./ui-home-states";
 import { SCREENS } from "./ui-screens";
 
 /**
- * The levels of motion on a phone (t386, ADR 0103 "Níveis de movimento", src/lib/motion-level.ts), in the project
+ * The levels of motion on a phone (ADR 0103 "Níveis de movimento", src/lib/motion-level.ts), in the project
  * `chromium-celular` of playwright.pwa.config.ts (Chromium, touch, 360×740), the only one that runs this file. Every
  * test starts by proving the page is a phone (`pointer: coarse` emulated and `data-motion="essential"`): a run whose
  * emulation gave a fine pointer would test the desktop thinking it is a phone, so it fails loudly instead.
  *
  * a) the filter bar never asks for the `motion` chunk and a pill goes at once, with no style of motion;
  * b) the chart is drawn finished on the first frame: no clip of the reveal, and the path and the y axis already at the
- *    final scale one frame after the change from 7 to 30 days; the map of the Início with no entrance nor wave (t394);
+ *    final scale one frame after the change from 7 to 30 days; the map of the Início with no entrance nor wave;
  * c) the essential motion still runs (the pulse of the skeleton, the press of a button) and nothing else does;
  * d) control: the desktop and the tablet are `full`, the bar loads its layer and the pill animates;
  * e) with `prefers-reduced-motion` the level is `none`;
- * h) the form Dialog (t331) opens and closes at once on a phone, with no animation on the box or on the veil; on the
+ * h) the form Dialog opens and closes at once on a phone, with no animation on the box or on the veil; on the
  *    desktop the same dialog animates;
- * g) the sales history, the first screen on the filter bar (t391), asks for neither the `motion` chunk nor the layer on
+ * g) the sales history, the first screen on the filter bar, asks for neither the `motion` chunk nor the layer on
  *    a phone, and its pills go at once; on the desktop the same page loads the layer.
  */
 const MOTION_CHUNK = /\/assets\/motion-[\w-]+\.js$/;
@@ -216,7 +216,7 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
   await page.waitForTimeout(1300);
   expect(await drawing(chart)).toEqual(next);
 
-  // the map (t394): no entrance of 1 600 ms and no wave of the cells; every cell is drawn finished a frame after it
+  // the map: no entrance of 1 600 ms and no wave of the cells; every cell is drawn finished a frame after it
   // appears, nothing of it runs an animation, and reading a day changes the line at once
   const map = page.getByRole("region", { name: "Ritmo de vendas" });
   const cells = map.locator(

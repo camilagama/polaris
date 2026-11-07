@@ -45,7 +45,7 @@ export const GOAL_KIND_OPTIONS: readonly GoalKindOption[] = [
   {
     hint: "Estimativa, como no cartão “Resultado estimado”: não é lucro líquido nem dinheiro já recebido.",
     key: "operating_result",
-    label: "Resultado operacional estimado",
+    label: "Resultado estimado",
   },
   {
     hint: "Quantidade de vendas confirmadas no período, como no cartão “Vendas”.",

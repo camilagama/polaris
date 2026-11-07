@@ -1,6 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { closedEnvironment } from "./closed-environment.ts";
+import { workerLogPath } from "./worker-log.ts";
 
 /**
  * The web server of one Playwright project: `vite build` into its own directory, then `vite preview` of it (the
@@ -52,9 +54,18 @@ const preview = spawn(
   {
     cwd: appRoot,
     env: closedEnvironment(process.env, "preview"),
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
   }
 );
+// the Worker logs to the preview's output (`info` to stdout, `warn` and `error` to stderr), which Playwright drops: a
+// copy of both in a file of the run, for a journey that checks a log line (worker-log.ts)
+const workerLog = createWriteStream(workerLogPath(project), { flags: "w" });
+preview.stdout.pipe(process.stdout);
+preview.stderr.pipe(process.stderr);
+// two sources into one file: neither ends it (the other may still write), and a failure of the copy never stops the preview
+workerLog.on("error", () => undefined);
+preview.stdout.pipe(workerLog, { end: false });
+preview.stderr.pipe(workerLog, { end: false });
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => preview.kill(signal));
 }

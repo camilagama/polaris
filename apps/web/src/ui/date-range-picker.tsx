@@ -6,6 +6,7 @@ import {
   useId,
   useState,
 } from "react";
+import { TWO_MONTHS_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { OnDemandCalendar, warmCalendar } from "@/ui/calendar-on-demand";
@@ -45,15 +46,14 @@ export interface DateRangePickerProps {
   value: DateRange | null;
 }
 
-/** From 1280 px the calendar shows two months side by side (`xl`, the same width as the `xl:flex-row` of the months). */
-const TWO_MONTHS = "(min-width: 1280px)";
-
 function useTwoMonths(): boolean {
   const [wide, setWide] = useState(
-    () => typeof window !== "undefined" && window.matchMedia(TWO_MONTHS).matches
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia(TWO_MONTHS_QUERY).matches
   );
   useEffect(() => {
-    const query = window.matchMedia(TWO_MONTHS);
+    const query = window.matchMedia(TWO_MONTHS_QUERY);
     const update = () => setWide(query.matches);
     query.addEventListener("change", update);
     update();
@@ -147,7 +147,7 @@ export function DateRangePanel({
 
   return (
     <>
-      {/* 16 px down to the month: the 48 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
+      {/* 16 px down to the month: the 44 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
       <fieldset
         aria-label="Atalhos do período"
         className="m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
@@ -217,6 +217,7 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   const value = validRange(valueProp);
   const [open, setOpen] = useState(false);
+  const [openings, setOpenings] = useState(0);
   const errorId = useId();
   const today = todayOr(todayProp);
   // the accessible name holds the text the button shows (WCAG 2.5.3): "Período, 01/10 a 24/10"
@@ -230,9 +231,18 @@ export function DateRangePicker({
     [onValueChange]
   );
 
+  // a popup reopened while it is still leaving keeps its panel mounted: a new key gives each opening a fresh draft and
+  // its first month
+  const handleOpenChange = useCallback((opening: boolean) => {
+    if (opening) {
+      setOpenings((count) => count + 1);
+    }
+    setOpen(opening);
+  }, []);
+
   return (
     <div className={cn("grid gap-1.5", className)}>
-      <Popover onOpenChange={setOpen} open={open}>
+      <Popover onOpenChange={handleOpenChange} open={open}>
         <PopoverTrigger
           render={
             <Button
@@ -265,7 +275,12 @@ export function DateRangePicker({
           className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-hidden p-2"
           initialFocus={false}
         >
-          <DateRangePanel onCommit={commit} today={today} value={value} />
+          <DateRangePanel
+            key={openings}
+            onCommit={commit}
+            today={today}
+            value={value}
+          />
         </PopoverContent>
       </Popover>
       <FieldError id={errorId}>{error}</FieldError>
