@@ -93,13 +93,23 @@ const describeOffenders = (offenders: readonly Offender[]) =>
         `${tag} "${text}": ${scrollWidth} px of content in ${clientWidth} px`
     );
 
-/** Nothing under `root` that holds text has more content than box, apart from what scrolls on purpose. */
-export async function assertNothingClipped(
+/** An element that holds text and has more content than box, with where it is in the page. */
+export interface ClippedElement extends Offender {
+  selector: string;
+}
+
+/**
+ * Every element under `root` that `assertNothingClipped` calls a defect, each with a `selector` that names it by its
+ * tag and the attributes that survive a change of style (`id`, `data-slot`, `role`), with up to two ancestors that have
+ * one of them (or are a landmark): the `div`s with nothing to say are left out, so a wrapper added or removed does not
+ * rename the finding. `measured` is how many elements with text were looked at.
+ */
+export async function findClipped(
   root: Locator,
   { allowScroll = [] }: ClippedOptions = {}
-) {
+): Promise<{ measured: number; offenders: ClippedElement[] }> {
   await expect(root, "the root of the sweep is not on the page").toHaveCount(1);
-  const { measured, offenders } = await root.evaluate(
+  return await root.evaluate(
     (element, { allowed, slack }) => {
       const hiddenOnPurpose = (item: Element) => {
         const style = getComputedStyle(item);
@@ -115,7 +125,44 @@ export async function assertNothingClipped(
             node.nodeType === Node.TEXT_NODE &&
             (node.textContent ?? "").trim() !== ""
         );
-      const found: Offender[] = [];
+      const label = (item: Element) => {
+        const tag = item.tagName.toLowerCase();
+        // the ids React and Base UI make (`_r_5_`, `base-ui-_r_5_`) change from one run to the next
+        const named =
+          item.id !== "" &&
+          !item.id.startsWith("_r_") &&
+          !item.id.startsWith("base-ui-");
+        if (named) {
+          return `${tag}#${item.id}`;
+        }
+        const slot = item.getAttribute("data-slot");
+        if (slot !== null) {
+          return `${tag}[data-slot="${slot}"]`;
+        }
+        const role = item.getAttribute("role");
+        return role === null ? tag : `${tag}[role="${role}"]`;
+      };
+      const LANDMARKS = ["main", "section", "form", "table"];
+      const identified = (item: Element) =>
+        label(item).length > item.tagName.length ||
+        LANDMARKS.includes(item.tagName.toLowerCase());
+      // the element, and up to two ancestors that say what they are: a bare `div` in between is no part of the name
+      const selectorOf = (item: Element) => {
+        const names = [label(item)];
+        let current = item.parentElement;
+        while (
+          current !== null &&
+          names.length < 3 &&
+          current !== element.parentElement
+        ) {
+          if (identified(current)) {
+            names.unshift(label(current));
+          }
+          current = current.parentElement;
+        }
+        return names.join(" > ");
+      };
+      const found: ClippedElement[] = [];
       let count = 0;
       for (const item of [element, ...element.querySelectorAll("*")]) {
         if (
@@ -130,6 +177,7 @@ export async function assertNothingClipped(
           found.push({
             clientWidth: item.clientWidth,
             scrollWidth: item.scrollWidth,
+            selector: selectorOf(item),
             tag: item.tagName.toLowerCase(),
             text: (item.textContent ?? "").trim().slice(0, 40),
           });
@@ -139,6 +187,14 @@ export async function assertNothingClipped(
     },
     { allowed: [...allowScroll], slack: SLACK_PIXELS }
   );
+}
+
+/** Nothing under `root` that holds text has more content than box, apart from what scrolls on purpose. */
+export async function assertNothingClipped(
+  root: Locator,
+  options: ClippedOptions = {}
+) {
+  const { measured, offenders } = await findClipped(root, options);
   // a sweep that measured nothing proves nothing
   expect(measured, "no element with text was measured").toBeGreaterThan(0);
   expect(describeOffenders(offenders)).toEqual([]);
