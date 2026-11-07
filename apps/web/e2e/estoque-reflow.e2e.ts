@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import type { Page } from "@playwright/test";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
@@ -8,6 +8,7 @@ import {
   expectReflowFont,
   openReflowViewport,
   skipOutsideChromium,
+  reflowTest,
 } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -165,159 +166,97 @@ function geometry(page: Page) {
   });
 }
 
-test("a 320 px com letra de 20 px os três botões de cada linha empilham, inteiros, dentro do cartão e com 44 px", async ({
-  page,
-}) => {
-  await openStock(page, 320, 20);
-  const rows = await geometry(page);
-  expect(rows).toHaveLength(ENTRIES.length);
-  for (const row of rows) {
-    expect(row.buttons.map((button) => button.label)).toHaveLength(3);
-    const lefts = new Set(row.buttons.map((button) => Math.round(button.left)));
-    expect(lefts.size, `${row.groupName}: os botões alinham à esquerda`).toBe(
-      1
-    );
-    let previousBottom = Number.NEGATIVE_INFINITY;
-    for (const button of row.buttons) {
-      const name = `${row.groupName}: ${button.label}`;
-      expect(button.scrollWidth, `${name} inteiro`).toBeLessThanOrEqual(
-        button.clientWidth + 1
+reflowTest(
+  "a 320 px com letra de 20 px os três botões de cada linha empilham, inteiros, dentro do cartão e com 44 px",
+  async ({ page }) => {
+    await openStock(page, 320, 20);
+    const rows = await geometry(page);
+    expect(rows).toHaveLength(ENTRIES.length);
+    for (const row of rows) {
+      expect(row.buttons.map((button) => button.label)).toHaveLength(3);
+      const lefts = new Set(
+        row.buttons.map((button) => Math.round(button.left))
       );
-      expect(
-        button.width,
-        `${name} com 44 px de largura`
-      ).toBeGreaterThanOrEqual(TOUCH);
-      expect(
-        button.height,
-        `${name} com 44 px de altura`
-      ).toBeGreaterThanOrEqual(TOUCH);
-      expect(button.right, `${name} dentro do cartão`).toBeLessThanOrEqual(
-        row.card.right + 0.5
+      expect(lefts.size, `${row.groupName}: os botões alinham à esquerda`).toBe(
+        1
       );
-      expect(button.left).toBeGreaterThanOrEqual(row.card.left - 0.5);
-      expect(button.top, `${name} abaixo do anterior`).toBeGreaterThanOrEqual(
-        previousBottom - 0.5
-      );
-      expect(button.right).toBeLessThanOrEqual(320);
-      previousBottom = button.bottom;
-    }
-    expect(row.group.right).toBeLessThanOrEqual(row.card.right + 0.5);
-  }
-  expect(await untouchable(page), "botões que não recebem o toque").toEqual([]);
-  expect(rows.map((row) => row.buttons.map((button) => button.label))).toEqual([
-    ["Receber", "Contar", "Baixar"],
-    ["Receber", "Informar custo", "Baixar"],
-    ["Receber", "Contar", "Baixar"],
-    ["Dar entrada", "Contar", "Baixar"],
-    ["Receber", "Contar", "Baixar"],
-  ]);
-  const list = page.getByRole("list", { name: "Saldos por variante" });
-  await assertNothingClipped(list);
-  await assertNoEllipsis(list.locator(`${ACTIONS}, dd`));
-  await assertNoPageScroll(page);
-});
-
-test("a 320 px com letra de 20 px o Custo médio e o Saldo leem inteiros, e Custo desconhecido quebra em vez de cortar", async ({
-  page,
-}) => {
-  await openStock(page, 320, 20);
-  const unknown = page.getByText("Custo desconhecido", { exact: true });
-  await expect(unknown).toHaveCount(2);
-  const fits = await unknown.evaluateAll((elements) =>
-    elements.map((element) => {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      const lines = new Set(
-        [...range.getClientRects()].map((rect) => Math.round(rect.top))
-      );
-      const figure = element.closest("dd");
-      const row = element.closest("li");
-      const rowStyle = row ? getComputedStyle(row) : null;
-      return {
-        contentRight:
-          (row?.getBoundingClientRect().right ?? 0) -
-          Number.parseFloat(rowStyle?.paddingRight ?? "0"),
-        figureClient: figure?.clientWidth ?? 0,
-        figureScroll: figure?.scrollWidth ?? 0,
-        lines: lines.size,
-        right: range.getBoundingClientRect().right,
-      };
-    })
-  );
-  for (const fit of fits) {
-    expect(fit.figureScroll).toBeLessThanOrEqual(fit.figureClient + 1);
-    expect(fit.right).toBeLessThanOrEqual(fit.contentRight + 0.5);
-    // a word broken in the middle would make a third line
-    expect(fit.lines).toBeLessThanOrEqual(2);
-  }
-  const columns = await page
-    .locator("li dl")
-    .evaluateAll((lists) =>
-      lists.map(
-        (figures) =>
-          getComputedStyle(figures).gridTemplateColumns.split(" ").length
-      )
-    );
-  expect(columns, "Saldo e Custo médio numa coluna só").toEqual(
-    ENTRIES.map(() => 1)
-  );
-  const list = page.getByRole("list", { name: "Saldos por variante" });
-  await assertNoEllipsis(list.locator("dl, dt, dd"));
-  await assertNothingClipped(list);
-});
-
-test("a 320 px com letra de 20 px, com o painel aberto, os botões ficam desligados e empilhados e nada passa da janela", async ({
-  page,
-}) => {
-  await openStock(page, 320, 20);
-  await page
-    .getByRole("button", { name: "Baixar estoque de Calça jeans, 42" })
-    .click();
-  await expect(page.getByLabel("Quantidade a baixar")).toBeVisible();
-  await expect(page.locator(`${ACTIONS}[aria-disabled="true"]`)).toHaveCount(
-    ENTRIES.length * 3
-  );
-  const rows = await geometry(page);
-  for (const row of rows) {
-    const lefts = new Set(row.buttons.map((button) => Math.round(button.left)));
-    expect(lefts.size, `${row.groupName}: empilhados`).toBe(1);
-  }
-  await assertNoPageScroll(page);
-  await assertNothingClipped(
-    page.getByRole("list", { name: "Saldos por variante" })
-  );
-});
-
-test("o grupo continua um controle só, com o mesmo nome acessível, e os botões mantêm o nome de cada um", async ({
-  page,
-}) => {
-  await openStock(page, 320, 20);
-  const group = page.getByRole("group", {
-    name: "Movimentos de Calça jeans, 42",
-  });
-  await expect(group.getByRole("button")).toHaveCount(3);
-  await expect(
-    group.getByRole("button", { name: "Baixar estoque de Calça jeans, 42" })
-  ).toBeVisible();
-});
-
-for (const width of [360, 1280]) {
-  test(`a ${width} px com letra de 16 px os três botões ficam lado a lado, como sempre`, async ({
-    page,
-  }) => {
-    await openStock(page, width, 16);
-    for (const row of await geometry(page)) {
-      const [first, second, third] = row.buttons;
+      let previousBottom = Number.NEGATIVE_INFINITY;
       for (const button of row.buttons) {
+        const name = `${row.groupName}: ${button.label}`;
+        expect(button.scrollWidth, `${name} inteiro`).toBeLessThanOrEqual(
+          button.clientWidth + 1
+        );
         expect(
-          Math.abs(button.top - (first?.top ?? 0)),
-          `${row.groupName}: ${button.label} na mesma linha`
-        ).toBeLessThanOrEqual(1);
-        expect(button.right).toBeLessThanOrEqual(row.card.right + 0.5);
+          button.width,
+          `${name} com 44 px de largura`
+        ).toBeGreaterThanOrEqual(TOUCH);
+        expect(
+          button.height,
+          `${name} com 44 px de altura`
+        ).toBeGreaterThanOrEqual(TOUCH);
+        expect(button.right, `${name} dentro do cartão`).toBeLessThanOrEqual(
+          row.card.right + 0.5
+        );
+        expect(button.left).toBeGreaterThanOrEqual(row.card.left - 0.5);
+        expect(button.top, `${name} abaixo do anterior`).toBeGreaterThanOrEqual(
+          previousBottom - 0.5
+        );
+        expect(button.right).toBeLessThanOrEqual(320);
+        previousBottom = button.bottom;
       }
-      expect(second?.left).toBeGreaterThanOrEqual((first?.right ?? 0) - 1);
-      expect(third?.left).toBeGreaterThanOrEqual((second?.right ?? 0) - 1);
-      expect(row.group.height).toBeLessThan(TOUCH);
+      expect(row.group.right).toBeLessThanOrEqual(row.card.right + 0.5);
+    }
+    expect(await untouchable(page), "botões que não recebem o toque").toEqual(
+      []
+    );
+    expect(
+      rows.map((row) => row.buttons.map((button) => button.label))
+    ).toEqual([
+      ["Receber", "Contar", "Baixar"],
+      ["Receber", "Informar custo", "Baixar"],
+      ["Receber", "Contar", "Baixar"],
+      ["Dar entrada", "Contar", "Baixar"],
+      ["Receber", "Contar", "Baixar"],
+    ]);
+    const list = page.getByRole("list", { name: "Saldos por variante" });
+    await assertNothingClipped(list);
+    await assertNoEllipsis(list.locator(`${ACTIONS}, dd`));
+    await assertNoPageScroll(page);
+  }
+);
+
+reflowTest(
+  "a 320 px com letra de 20 px o Custo médio e o Saldo leem inteiros, e Custo desconhecido quebra em vez de cortar",
+  async ({ page }) => {
+    await openStock(page, 320, 20);
+    const unknown = page.getByText("Custo desconhecido", { exact: true });
+    await expect(unknown).toHaveCount(2);
+    const fits = await unknown.evaluateAll((elements) =>
+      elements.map((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const lines = new Set(
+          [...range.getClientRects()].map((rect) => Math.round(rect.top))
+        );
+        const figure = element.closest("dd");
+        const row = element.closest("li");
+        const rowStyle = row ? getComputedStyle(row) : null;
+        return {
+          contentRight:
+            (row?.getBoundingClientRect().right ?? 0) -
+            Number.parseFloat(rowStyle?.paddingRight ?? "0"),
+          figureClient: figure?.clientWidth ?? 0,
+          figureScroll: figure?.scrollWidth ?? 0,
+          lines: lines.size,
+          right: range.getBoundingClientRect().right,
+        };
+      })
+    );
+    for (const fit of fits) {
+      expect(fit.figureScroll).toBeLessThanOrEqual(fit.figureClient + 1);
+      expect(fit.right).toBeLessThanOrEqual(fit.contentRight + 0.5);
+      // a word broken in the middle would make a third line
+      expect(fit.lines).toBeLessThanOrEqual(2);
     }
     const columns = await page
       .locator("li dl")
@@ -327,8 +266,86 @@ for (const width of [360, 1280]) {
             getComputedStyle(figures).gridTemplateColumns.split(" ").length
         )
       );
-    expect(columns, "Saldo e Custo médio lado a lado").toEqual(
-      ENTRIES.map(() => 2)
+    expect(columns, "Saldo e Custo médio numa coluna só").toEqual(
+      ENTRIES.map(() => 1)
     );
-  });
+    const list = page.getByRole("list", { name: "Saldos por variante" });
+    await assertNoEllipsis(list.locator("dl, dt, dd"));
+    await assertNothingClipped(list);
+  }
+);
+
+reflowTest(
+  "a 320 px com letra de 20 px, com o painel aberto, os botões ficam desligados e empilhados e nada passa da janela",
+  async ({ page }) => {
+    await openStock(page, 320, 20);
+    await page
+      .getByRole("button", { name: "Baixar estoque de Calça jeans, 42" })
+      .click();
+    await expect(page.getByLabel("Quantidade a baixar")).toBeVisible();
+    await expect(page.locator(`${ACTIONS}[aria-disabled="true"]`)).toHaveCount(
+      ENTRIES.length * 3
+    );
+    const rows = await geometry(page);
+    for (const row of rows) {
+      const lefts = new Set(
+        row.buttons.map((button) => Math.round(button.left))
+      );
+      expect(lefts.size, `${row.groupName}: empilhados`).toBe(1);
+    }
+    await assertNoPageScroll(page);
+    await assertNothingClipped(
+      page.getByRole("list", { name: "Saldos por variante" })
+    );
+  }
+);
+
+reflowTest(
+  "o grupo continua um controle só, com o mesmo nome acessível, e os botões mantêm o nome de cada um",
+  async ({ page }) => {
+    await openStock(page, 320, 20);
+    const group = page.getByRole("group", {
+      name: "Movimentos de Calça jeans, 42",
+    });
+    await expect(group.getByRole("button")).toHaveCount(3);
+    await expect(
+      group.getByRole("button", { name: "Baixar estoque de Calça jeans, 42" })
+    ).toBeVisible();
+  }
+);
+
+const WIDE_WINDOW = 1280;
+
+for (const width of [360, WIDE_WINDOW]) {
+  reflowTest(
+    `a ${width} px com letra de 16 px os três botões ficam lado a lado, como sempre`,
+    async ({ page }) => {
+      await openStock(page, width, 16);
+      for (const row of await geometry(page)) {
+        const [first, second, third] = row.buttons;
+        for (const button of row.buttons) {
+          expect(
+            Math.abs(button.top - (first?.top ?? 0)),
+            `${row.groupName}: ${button.label} na mesma linha`
+          ).toBeLessThanOrEqual(1);
+          expect(button.right).toBeLessThanOrEqual(row.card.right + 0.5);
+        }
+        expect(second?.left).toBeGreaterThanOrEqual((first?.right ?? 0) - 1);
+        expect(third?.left).toBeGreaterThanOrEqual((second?.right ?? 0) - 1);
+        expect(row.group.height).toBeLessThan(TOUCH);
+      }
+      const columns = await page
+        .locator("li dl")
+        .evaluateAll((lists) =>
+          lists.map(
+            (figures) =>
+              getComputedStyle(figures).gridTemplateColumns.split(" ").length
+          )
+        );
+      expect(columns, "Saldo e Custo médio lado a lado").toEqual(
+        ENTRIES.map(() => 2)
+      );
+    },
+    { coarse: width !== WIDE_WINDOW }
+  );
 }

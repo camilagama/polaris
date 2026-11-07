@@ -8,6 +8,7 @@ import {
   expectReflowFont,
   openReflowViewport,
   skipOutsideChromium,
+  reflowTest,
 } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -207,77 +208,78 @@ async function scrollTo(page: Page, where: "top" | "card" | "bottom") {
 }
 
 test.describe("a 320 px com letra de 20 px", () => {
-  test("o título do cartão lê inteiro e o botão Nova despesa não cobre nada, no início e depois de rolar", async ({
-    page,
-  }) => {
-    await openReflowViewport(page);
-    await openExpenses(page);
-    await expectReflowFont(page);
-    await expect(newButton(page)).toBeVisible();
+  reflowTest(
+    "o título do cartão lê inteiro e o botão Nova despesa não cobre nada, no início e depois de rolar",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await openExpenses(page);
+      await expectReflowFont(page);
+      await expect(newButton(page)).toBeVisible();
 
-    expect(await scrollTo(page, "top")).toBe(0);
-    await expectTitleAndButtonApart(page);
+      expect(await scrollTo(page, "top")).toBe(0);
+      await expectTitleAndButtonApart(page);
 
-    expect(
-      await scrollTo(page, "card"),
-      "the page did not scroll"
-    ).toBeGreaterThan(0);
-    await expect(newButton(page)).toBeInViewport();
-    await expectTitleAndButtonApart(page);
+      expect(
+        await scrollTo(page, "card"),
+        "the page did not scroll"
+      ).toBeGreaterThan(0);
+      await expect(newButton(page)).toBeInViewport();
+      await expectTitleAndButtonApart(page);
 
-    expect(
-      await scrollTo(page, "bottom"),
-      "the page did not scroll"
-    ).toBeGreaterThan(0);
-    await expect(page.locator("[data-list-total]")).toBeInViewport();
-    await expectTitleAndButtonApart(page);
-  });
+      expect(
+        await scrollTo(page, "bottom"),
+        "the page did not scroll"
+      ).toBeGreaterThan(0);
+      await expect(page.locator("[data-list-total]")).toBeInViewport();
+      await expectTitleAndButtonApart(page);
+    }
+  );
 
-  test("com a mensagem de erro de carga das categorias na tela o título e o botão seguem inteiros e separados", async ({
-    page,
-  }) => {
-    await openReflowViewport(page);
-    await openExpenses(page, { categoriesFail: true });
-    await expectReflowFont(page);
-    await expect(
-      page.getByRole("button", { name: "Tentar novamente" }).first()
-    ).toBeVisible({ timeout: 20_000 });
+  reflowTest(
+    "com a mensagem de erro de carga das categorias na tela o título e o botão seguem inteiros e separados",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await openExpenses(page, { categoriesFail: true });
+      await expectReflowFont(page);
+      await expect(
+        page.getByRole("button", { name: "Tentar novamente" }).first()
+      ).toBeVisible({ timeout: 20_000 });
 
-    expect(await scrollTo(page, "top")).toBe(0);
-    await expectTitleAndButtonApart(page);
-    expect(
-      await scrollTo(page, "card"),
-      "the page did not scroll"
-    ).toBeGreaterThan(0);
-    await expect(newButton(page)).toBeInViewport();
-    await expectTitleAndButtonApart(page);
-  });
+      expect(await scrollTo(page, "top")).toBe(0);
+      await expectTitleAndButtonApart(page);
+      expect(
+        await scrollTo(page, "card"),
+        "the page did not scroll"
+      ).toBeGreaterThan(0);
+      await expect(newButton(page)).toBeInViewport();
+      await expectTitleAndButtonApart(page);
+    }
+  );
 });
 
-test.describe("a 360 px com a letra padrão e toque", () => {
-  test.use({ hasTouch: true, isMobile: true });
-
-  test("o título e o botão ficam numa linha e o alvo do botão tem 44 px ou mais", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ height: 740, width: 360 });
-    await openExpenses(page);
-    const titleBox = await boxOf(title(page));
-    const buttonBox = await boxOf(newButton(page));
-    expect(buttonBox.y, "the button went below the title").toBeLessThan(
-      titleBox.y + titleBox.height
-    );
-    expect(overlap(titleBox, buttonBox)).toBe(false);
-    const height = await newButton(page).evaluate((element) => {
-      const box = element.getBoundingClientRect();
-      const hit = getComputedStyle(element, "::before");
-      const grow =
-        hit.content === '""' && hit.position === "absolute"
-          ? -(Number.parseFloat(hit.top) || 0) -
-            (Number.parseFloat(hit.bottom) || 0)
-          : 0;
-      return box.height + Math.max(0, grow);
-    });
-    expect(height).toBeGreaterThanOrEqual(TOUCH);
-  });
+test.describe("a 360 px com a letra padrão", () => {
+  reflowTest(
+    "o título e o botão ficam numa linha e o alvo do botão tem 44 px ou mais",
+    async ({ page }) => {
+      await page.setViewportSize({ height: 740, width: 360 });
+      await openExpenses(page);
+      const titleBox = await boxOf(title(page));
+      const buttonBox = await boxOf(newButton(page));
+      expect(buttonBox.y, "the button went below the title").toBeLessThan(
+        titleBox.y + titleBox.height
+      );
+      expect(overlap(titleBox, buttonBox)).toBe(false);
+      const height = await newButton(page).evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const hit = getComputedStyle(element, "::before");
+        const grow =
+          hit.content === '""' && hit.position === "absolute"
+            ? -(Number.parseFloat(hit.top) || 0) -
+              (Number.parseFloat(hit.bottom) || 0)
+            : 0;
+        return box.height + Math.max(0, grow);
+      });
+      expect(height).toBeGreaterThanOrEqual(TOUCH);
+    }
+  );
 });

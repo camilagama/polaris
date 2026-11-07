@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import {
   assertNoEllipsis,
   assertNoPageScroll,
@@ -8,6 +8,7 @@ import {
   expectReflowFont,
   openReflowViewport,
   skipOutsideChromium,
+  reflowTest,
 } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -159,134 +160,143 @@ function rowGeometry(page: Page) {
 }
 
 for (const width of [320, 360]) {
-  test(`a ${width} px com letra de 20 px cada linha mostra hora, cliente, pagamento e valor inteiros, sem reticências nem sobreposição`, async ({
-    page,
-  }) => {
-    const sales = manySales();
-    await openHistory(page, sales, { width });
-    const list = page.getByRole("list", { name: "Vendas" });
-    await expect(list.locator("> li")).toHaveCount(ROWS);
+  reflowTest(
+    `a ${width} px com letra de 20 px cada linha mostra hora, cliente, pagamento e valor inteiros, sem reticências nem sobreposição`,
+    async ({ page }) => {
+      const sales = manySales();
+      await openHistory(page, sales, { width });
+      const list = page.getByRole("list", { name: "Vendas" });
+      await expect(list.locator("> li")).toHaveCount(ROWS);
 
-    const rows = await rowGeometry(page);
-    for (const [index, row] of rows.entries()) {
-      const sale = sales[index];
-      const name = `linha ${index + 1}`;
-      expect(row.text, `${name}: a hora`).toMatch(TIME);
-      if (sale?.customerName) {
-        expect(row.text, `${name}: o cliente inteiro`).toContain(
-          sale.customerName
+      const rows = await rowGeometry(page);
+      for (const [index, row] of rows.entries()) {
+        const sale = sales[index];
+        const name = `linha ${index + 1}`;
+        expect(row.text, `${name}: a hora`).toMatch(TIME);
+        if (sale?.customerName) {
+          expect(row.text, `${name}: o cliente inteiro`).toContain(
+            sale.customerName
+          );
+        }
+        expect(row.text, `${name}: o valor`).toContain(
+          Number(sale?.totalDue).toLocaleString("pt-BR", {
+            minimumFractionDigits: 2,
+          })
+        );
+        expect(row.overlaps, `${name}: blocos sobrepostos`).toEqual([]);
+        expect(row.inside, `${name}: tudo dentro da linha`).toBe(true);
+        expect(row.height, `${name}: alvo de toque`).toBeGreaterThanOrEqual(
+          TOUCH
         );
       }
-      expect(row.text, `${name}: o valor`).toContain(
-        Number(sale?.totalDue).toLocaleString("pt-BR", {
-          minimumFractionDigits: 2,
-        })
+      expect(
+        rows.some((row) => row.text.includes("Pagamento não informado"))
+      ).toBe(true);
+      expect(rows.some((row) => row.text.includes("Transferência"))).toBe(true);
+      expect(rows.some((row) => row.text.includes("Com devoluções"))).toBe(
+        true
       );
-      expect(row.overlaps, `${name}: blocos sobrepostos`).toEqual([]);
-      expect(row.inside, `${name}: tudo dentro da linha`).toBe(true);
-      expect(row.height, `${name}: alvo de toque`).toBeGreaterThanOrEqual(
-        TOUCH
-      );
-    }
-    expect(
-      rows.some((row) => row.text.includes("Pagamento não informado"))
-    ).toBe(true);
-    expect(rows.some((row) => row.text.includes("Transferência"))).toBe(true);
-    expect(rows.some((row) => row.text.includes("Com devoluções"))).toBe(true);
-    expect(rows.some((row) => row.text.includes("Retroativa"))).toBe(true);
-    expect(rows.some((row) => row.text.includes("Cancelada"))).toBe(true);
+      expect(rows.some((row) => row.text.includes("Retroativa"))).toBe(true);
+      expect(rows.some((row) => row.text.includes("Cancelada"))).toBe(true);
 
-    await assertNothingClipped(list);
-    await assertNoEllipsis(list);
-    await assertNoPageScroll(page);
-  });
+      await assertNothingClipped(list);
+      await assertNoEllipsis(list);
+      await assertNoPageScroll(page);
+    }
+  );
 }
 
-test("a 320 px com letra de 20 px o rodapé tem o valor com as duas casas, dentro do cartão, com 5 dígitos e com há mais", async ({
-  page,
-}) => {
-  const footer = await openHistory(
-    page,
-    [entry(1, { totalDue: "7000.00" }), entry(2, { totalDue: "857.60" })],
-    { hasMore: true }
-  );
-  await expect(footer).toContainText("2 vendas · há mais");
-  const value = footer.locator(".tabular-nums");
-  const text = (await value.textContent())?.trim() ?? "";
-  expect(text).toMatch(FOOT_VALUE);
-  expect(text).toBe("R$ 7.857,60");
+reflowTest(
+  "a 320 px com letra de 20 px o rodapé tem o valor com as duas casas, dentro do cartão, com 5 dígitos e com há mais",
+  async ({ page }) => {
+    const footer = await openHistory(
+      page,
+      [entry(1, { totalDue: "7000.00" }), entry(2, { totalDue: "857.60" })],
+      { hasMore: true }
+    );
+    await expect(footer).toContainText("2 vendas · há mais");
+    const value = footer.locator(".tabular-nums");
+    const text = (await value.textContent())?.trim() ?? "";
+    expect(text).toMatch(FOOT_VALUE);
+    expect(text).toBe("R$ 7.857,60");
 
-  const [card, valueBox, countBox] = await Promise.all([
-    footer.locator("xpath=ancestor::*[@data-slot='card'][1]").boundingBox(),
-    value.boundingBox(),
-    footer.getByText("2 vendas · há mais").boundingBox(),
-  ]);
-  expect(card).not.toBeNull();
-  expect(valueBox).not.toBeNull();
-  expect(countBox).not.toBeNull();
-  expect((valueBox?.x ?? 0) + (valueBox?.width ?? 0)).toBeLessThanOrEqual(
-    (card?.x ?? 0) + (card?.width ?? 0)
-  );
-  expect(valueBox?.x ?? 0).toBeGreaterThanOrEqual(card?.x ?? 0);
-  // stacked: the value is under the count, not beside it
-  expect(valueBox?.y ?? 0).toBeGreaterThanOrEqual(
-    (countBox?.y ?? 0) + (countBox?.height ?? 0) - 1
-  );
-  await assertNothingClipped(footer);
-  await assertNoEllipsis(footer);
-  await assertNoPageScroll(page);
-});
-
-test("a 320 px com letra de 20 px o rodapé tem a mesma altura com e sem vendas", async ({
-  page,
-}) => {
-  const filled = await (
-    await openHistory(page, manySales().slice(0, 3), { hasMore: true })
-  ).boundingBox();
-  await expect(page.locator("[data-list-total]")).toContainText("há mais");
-  const empty = await (await openHistory(page, [])).boundingBox();
-  await expect(page.locator("[data-list-total]")).toContainText("0 vendas");
-  await expect(page.locator("[data-list-total]")).toContainText("R$ 0,00");
-  expect(filled).not.toBeNull();
-  expect(empty).not.toBeNull();
-  expect(
-    Math.abs((filled?.height ?? 0) - (empty?.height ?? 0))
-  ).toBeLessThanOrEqual(1);
-});
-
-for (const width of [360, 1280]) {
-  test(`a ${width} px com letra de 16 px a linha e o rodapé ficam lado a lado, como sempre`, async ({
-    page,
-  }) => {
-    const footer = await openHistory(page, manySales().slice(0, 6), {
-      fontPixels: 16,
-      width,
-    });
-    const first = page
-      .getByRole("list", { name: "Vendas" })
-      .locator("> li")
-      .first();
-    const [rowBox, moneyBox] = await Promise.all([
-      first.boundingBox(),
-      first.locator("span.inline-flex.tabular-nums").boundingBox(),
+    const [card, valueBox, countBox] = await Promise.all([
+      footer.locator("xpath=ancestor::*[@data-slot='card'][1]").boundingBox(),
+      value.boundingBox(),
+      footer.getByText("2 vendas · há mais").boundingBox(),
     ]);
+    expect(card).not.toBeNull();
+    expect(valueBox).not.toBeNull();
+    expect(countBox).not.toBeNull();
+    expect((valueBox?.x ?? 0) + (valueBox?.width ?? 0)).toBeLessThanOrEqual(
+      (card?.x ?? 0) + (card?.width ?? 0)
+    );
+    expect(valueBox?.x ?? 0).toBeGreaterThanOrEqual(card?.x ?? 0);
+    // stacked: the value is under the count, not beside it
+    expect(valueBox?.y ?? 0).toBeGreaterThanOrEqual(
+      (countBox?.y ?? 0) + (countBox?.height ?? 0) - 1
+    );
+    await assertNothingClipped(footer);
+    await assertNoEllipsis(footer);
+    await assertNoPageScroll(page);
+  }
+);
+
+reflowTest(
+  "a 320 px com letra de 20 px o rodapé tem a mesma altura com e sem vendas",
+  async ({ page }) => {
+    const filled = await (
+      await openHistory(page, manySales().slice(0, 3), { hasMore: true })
+    ).boundingBox();
+    await expect(page.locator("[data-list-total]")).toContainText("há mais");
+    const empty = await (await openHistory(page, [])).boundingBox();
+    await expect(page.locator("[data-list-total]")).toContainText("0 vendas");
+    await expect(page.locator("[data-list-total]")).toContainText("R$ 0,00");
+    expect(filled).not.toBeNull();
+    expect(empty).not.toBeNull();
     expect(
-      Math.abs(
-        (moneyBox?.y ?? 0) +
-          (moneyBox?.height ?? 0) / 2 -
-          ((rowBox?.y ?? 0) + (rowBox?.height ?? 0) / 2)
-      )
-    ).toBeLessThanOrEqual(2);
-    const [value, count] = await Promise.all([
-      footer.locator(".tabular-nums").boundingBox(),
-      footer.getByText(COUNT_TEXT).boundingBox(),
-    ]);
-    expect(
-      Math.abs(
-        (value?.y ?? 0) +
-          (value?.height ?? 0) -
-          ((count?.y ?? 0) + (count?.height ?? 0))
-      )
-    ).toBeLessThanOrEqual(8);
-  });
+      Math.abs((filled?.height ?? 0) - (empty?.height ?? 0))
+    ).toBeLessThanOrEqual(1);
+  }
+);
+
+const WIDE_WINDOW = 1280;
+
+for (const width of [360, WIDE_WINDOW]) {
+  reflowTest(
+    `a ${width} px com letra de 16 px a linha e o rodapé ficam lado a lado, como sempre`,
+    async ({ page }) => {
+      const footer = await openHistory(page, manySales().slice(0, 6), {
+        fontPixels: 16,
+        width,
+      });
+      const first = page
+        .getByRole("list", { name: "Vendas" })
+        .locator("> li")
+        .first();
+      const [rowBox, moneyBox] = await Promise.all([
+        first.boundingBox(),
+        first.locator("span.inline-flex.tabular-nums").boundingBox(),
+      ]);
+      expect(
+        Math.abs(
+          (moneyBox?.y ?? 0) +
+            (moneyBox?.height ?? 0) / 2 -
+            ((rowBox?.y ?? 0) + (rowBox?.height ?? 0) / 2)
+        )
+      ).toBeLessThanOrEqual(2);
+      const [value, count] = await Promise.all([
+        footer.locator(".tabular-nums").boundingBox(),
+        footer.getByText(COUNT_TEXT).boundingBox(),
+      ]);
+      expect(
+        Math.abs(
+          (value?.y ?? 0) +
+            (value?.height ?? 0) -
+            ((count?.y ?? 0) + (count?.height ?? 0))
+        )
+      ).toBeLessThanOrEqual(8);
+    },
+    { coarse: width !== WIDE_WINDOW }
+  );
 }
