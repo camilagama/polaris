@@ -237,7 +237,7 @@ function ProductTabs({
       >
         {tabs.map((value) => (
           <TabsTrigger
-            className="h-[calc(var(--spacing-ctl-md)-6px)]"
+            className="h-[calc(var(--spacing-ctl-md)-0.375rem)]"
             key={value}
             value={value}
           >

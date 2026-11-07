@@ -727,9 +727,9 @@
     width: calc(var(--spacing) * 4);
     height: calc(var(--spacing) * 4);
   }
-  .\[\&_svg\]\:size-\[18px\] svg {
-    width: 18px;
-    height: 18px;
+  .\[\&_svg\]\:size-4\.5 svg {
+    width: calc(var(--spacing) * 4.5);
+    height: calc(var(--spacing) * 4.5);
   }
   .\[\&_svg\]\:shrink-0 svg {
     flex-shrink: 0;
@@ -1408,7 +1408,7 @@
     align-items: center;
     border-radius: var(--radius);
     background-color: var(--muted);
-    padding: 3px;
+    padding: calc(var(--spacing) * 0.75);
     color: var(--muted-foreground);
   }
   .tabs li {

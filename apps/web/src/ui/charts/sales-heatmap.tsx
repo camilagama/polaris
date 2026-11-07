@@ -187,7 +187,7 @@ function Labels({ days }: { days: readonly HeatmapDay[] }) {
     }
   }
   return (
-    <g className="fill-muted-foreground text-[11px] tabular-nums">
+    <g className="fill-muted-foreground text-[0.6875rem] tabular-nums">
       {months.map((month) => (
         <text key={month.x} x={month.x} y={-6}>
           {month.label}

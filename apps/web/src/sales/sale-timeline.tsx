@@ -10,7 +10,7 @@ const DOT: Record<SaleTimelineEvent["tone"], string> = {
 
 /** The line runs from the dot to the next one and stops at the last. */
 const ITEM =
-  "relative flex items-baseline justify-between gap-3 pb-3 pl-5 before:absolute before:top-3.5 before:-bottom-1.5 before:left-[3.5px] before:w-px before:bg-border last:pb-0 last:before:hidden";
+  "relative flex items-baseline justify-between gap-3 pb-3 pl-5 before:absolute before:top-3.5 before:-bottom-1.5 before:left-0.875 before:w-px before:bg-border last:pb-0 last:before:hidden";
 
 /**
  * What happened to the sale and when, under the receipt. A sale with a single event has nothing to put in order, so

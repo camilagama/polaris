@@ -45,7 +45,7 @@ export function LeaderRow({
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <dt className="flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:-translate-y-[3px] after:border-input after:border-b after:border-dotted after:content-['']">
+      <dt className="flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:-translate-y-0.75 after:border-input after:border-b after:border-dotted after:content-['']">
         {label}
       </dt>
       <dd

@@ -205,7 +205,7 @@ export function AreaValueLabels({ series }: { series: AreaProps[] }) {
             }
           >
             <text
-              className="font-medium text-[10px]"
+              className="font-medium text-[0.625rem]"
               fill={
                 area.valueLabelColor ??
                 area.stroke ??

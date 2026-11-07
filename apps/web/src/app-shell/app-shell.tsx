@@ -335,7 +335,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
   const marked = navId === null ? null : bottomBarMark(navId);
   const moreCurrent = marked === "more";
   const tab =
-    "@container/tab focus-ring relative grid min-h-13 min-w-0 content-center justify-items-center gap-0.5 px-0.5 pt-1 font-medium text-xs [&_svg]:size-[18px]";
+    "@container/tab focus-ring relative grid min-h-13 min-w-0 content-center justify-items-center gap-0.5 px-0.5 pt-1 font-medium text-xs [&_svg]:size-4.5";
   const mark = (
     <span
       aria-hidden="true"
@@ -409,7 +409,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           {rejected > 0 ? (
             <span
               aria-hidden="true"
-              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground tabular-nums leading-4"
+              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[0.625rem] text-warning-foreground tabular-nums leading-4"
               data-attention-count=""
             >
               {countText(rejected)}
@@ -595,7 +595,7 @@ function FirstAccessPage({
   if (closedNotice) {
     return (
       <div className="flow-root min-h-dvh bg-background px-(--gutter) pt-4">
-        <main className="mx-auto max-w-[420px]" id="conteudo">
+        <main className="mx-auto max-w-[26.25rem]" id="conteudo">
           {closedNotice}
         </main>
       </div>
@@ -605,7 +605,7 @@ function FirstAccessPage({
     <>
       {sessionNotice || acceptanceNotice ? (
         <div className="flow-root bg-background px-(--gutter) pt-4">
-          <div className="mx-auto max-w-[420px]">
+          <div className="mx-auto max-w-[26.25rem]">
             {sessionNotice ? <SessionEndedNotice alone /> : null}
             {acceptanceNotice ? <LegalAcceptanceNotice /> : null}
           </div>
