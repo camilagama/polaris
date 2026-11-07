@@ -67,7 +67,7 @@ async function expectPointer(page: Page, pointer: ReflowPointer) {
  * same project); the finger case sits in a group "com toque" with `hasTouch` and `isMobile`, only in the desktop project
  * (the Pixel 5 project is a finger already), and proves the browser reports `(pointer: coarse)` before the body runs.
  * The body gets `pointer` to tell the two apart. `coarse: false` leaves the finger case out, and each use of it has its
- * reason in `verify-reflow-pointers.test.ts` (a window of 1280 px is not a phone; 24 px of font is Q-1 of the cut).
+ * reason in `verify-reflow-pointers.test.ts` (a window of 1280 px is not a phone; the font of 24 px is a best effort, not a promise).
  */
 export function reflowTest(
   title: string,
@@ -105,13 +105,14 @@ async function stillUnknown<T extends Finding>(
   if (!(await readCoarse(page))) {
     return [...found];
   }
-  const [file] = test.info().titlePath;
-  const spec = basename(file ?? "");
+  const { title, titlePath } = test.info();
+  const spec = basename(titlePath[0] ?? "");
   return found.filter(
     (item) =>
       !known.some(
         (line) =>
           line.spec === spec &&
+          line.cases.includes(title) &&
           line.selector === item.selector &&
           line.clientWidth === item.clientWidth &&
           line.scrollWidth === item.scrollWidth

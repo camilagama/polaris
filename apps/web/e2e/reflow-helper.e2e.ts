@@ -184,6 +184,9 @@ test.describe("ponteiros", () => {
       expect(offenders).toHaveLength(1);
       const [cut] = offenders;
       const line: KnownCoarseFinding = {
+        cases: [
+          "a lista de conhecidos só desculpa o corte com toque, o nome e a medida que ela diz",
+        ],
         clientWidth: cut?.clientWidth ?? 0,
         reason: "campo de teste que corta de propósito",
         screen: "página de teste do auxiliar",
@@ -203,6 +206,7 @@ test.describe("ponteiros", () => {
         { ...line, clientWidth: line.clientWidth + 1 },
         { ...line, selector: "span#outro" },
         { ...line, spec: "outro.e2e.ts" },
+        { ...line, cases: ["outro caso do mesmo spec"] },
       ];
       await Promise.all(
         others.map((other) =>
@@ -233,6 +237,9 @@ test.describe("ponteiros", () => {
         scroll: document.documentElement.scrollWidth,
       }));
       const line: KnownCoarseFinding = {
+        cases: [
+          "a rolagem lateral da página com toque também só passa se estiver na lista",
+        ],
         clientWidth: scroll.client,
         reason: "página de teste que rola de propósito",
         screen: "página de teste do auxiliar",

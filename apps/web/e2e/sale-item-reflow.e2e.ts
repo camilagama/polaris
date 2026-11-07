@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { reflowTest } from "./reflow";
 import {
   type ItemGeometry,
   layoutOf,
@@ -8,7 +9,6 @@ import {
   measureStates,
   setBrowserFont,
 } from "./sale-item-geometry";
-import { reflowTest } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**

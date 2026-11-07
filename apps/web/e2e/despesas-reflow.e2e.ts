@@ -7,8 +7,8 @@ import {
   assertNothingClipped,
   expectReflowFont,
   openReflowViewport,
-  skipOutsideChromium,
   reflowTest,
+  skipOutsideChromium,
 } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 

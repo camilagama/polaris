@@ -166,7 +166,7 @@ describe("the reflow specs run with a finger too", () => {
     const rotas = readFileSync(join(E2E, "reflow-rotas.e2e.ts"), "utf8");
     expect(rotas).toContain("test.use({ hasTouch: true, isMobile: true });");
     const helper = readFileSync(join(E2E, "reflow-helper.e2e.ts"), "utf8");
-    expect(count(helper, REFLOW_TEST)).toBeGreaterThanOrEqual(2);
+    expect(count(helper, REFLOW_TEST)).toBe(3);
     expect(helper).toContain("@media (pointer: coarse)");
   });
 
@@ -179,6 +179,7 @@ describe("the reflow specs run with a finger too", () => {
     expect(new Set(keys).size).toBe(keys.length);
     for (const line of lines) {
       expect(Object.keys(SPECS)).toContain(line.spec);
+      expect(line.cases.length).toBeGreaterThan(0);
       expect(line.screen.trim().length).toBeGreaterThan(0);
       expect(line.selector.trim().length).toBeGreaterThan(0);
       expect(line.reason.trim().length).toBeGreaterThanOrEqual(30);
