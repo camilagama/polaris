@@ -123,9 +123,10 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `mark` / `accent` | marcador sobre item atual | composição | **5.64** | 3 | ✓ |
 | `mark-foreground` / `card` | texto de destaque esmeralda | composição | **10.07** | 7 | ✓ |
 | `mark-foreground` / `mark/15 sobre card` | texto esmeralda sobre bg-mark/15 (escuro) | composição | **7.66** | 4.5 | ✓ |
-| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado e botão de contorno (cartão) | border-input | **3.42** | 3 | ✓ |
-| `input` / `background` | borda de campo sobre o fundo | border-input | **3.71** | 3 | ✓ |
-| `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.18** | 3 | ✓ |
+| `input` / `card` | borda de Input, Select, Checkbox, Radio, Switch desligado e botão de contorno (cartão) | border-input | **3.89** | 3 | ✓ |
+| `input` / `background` | borda de campo sobre o fundo | border-input | **4.23** | 3 | ✓ |
+| `input` / `popover` | borda de campo em diálogo e menu | border-input | **3.63** | 3 | ✓ |
+| `input` / `muted` | borda de campo, seletor e botão de contorno sobre faixa neutra (bloco rebaixado) | border-input | **3.18** | 3 | ✓ |
 | `ring` / `card` | anel de foco (borda) sobre cartão | focus-visible:border-ring | **5.28** | 3 | ✓ |
 | `ring` / `background` | anel de foco sobre o fundo | focus-visible:border-ring | **5.73** | 3 | ✓ |
 | `ring` / `accent` | anel de foco sobre item em foco | focus-visible:border-ring | **3.88** | 3 | ✓ |
@@ -157,10 +158,11 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `muted-foreground` / `muted/60 sobre card` | texto de apoio em linha de tabela em hover | TableRow | **7.61** | 4.5 | ✓ |
 | `muted-foreground` / `accent` | texto de apoio em item de lista em hover/foco | Item, Select, menu | **6.33** | 4.5 | ✓ |
 | `foreground` / `secondary/60 sobre card` | rótulo do botão de contorno no escuro (dark:bg-secondary/60) | Button outline | **12.57** | 7 | ✓ |
-| `input` / `secondary/60 sobre card` | borda do botão de contorno contra o próprio fundo no escuro (dark:bg-secondary/60) | Button outline | **3.06** | 3 | ✓ |
-| `input` / `input/30 sobre card` | borda do campo contra o próprio fundo (dark:bg-input/30) | Input, Select | **2.44** | 1.5 | ✓ |
-| `foreground` / `input/30 sobre card` | texto digitado no campo (dark:bg-input/30) | Input, Select | **10.15** | 7 | ✓ |
-| `muted-foreground` / `input/30 sobre card` | texto de apoio (placeholder) no campo (dark:bg-input/30) | Input, Select | **6.15** | 4.5 | ✓ |
+| `input` / `secondary/60 sobre card` | borda do botão de contorno contra o próprio fundo no escuro (dark:bg-secondary/60) | Button outline | **3.47** | 3 | ✓ |
+| `input` / `secondary/60 sobre popover` | borda do botão de contorno em diálogo e menu, contra o próprio fundo (dark:bg-secondary/60) | Button outline | **3.36** | 3 | ✓ |
+| `input` / `input/30 sobre card` | borda do campo contra o próprio fundo (dark:bg-input/30) | Input, Select | **2.67** | 1.5 | ✓ |
+| `foreground` / `input/30 sobre card` | texto digitado no campo (dark:bg-input/30) | Input, Select | **9.74** | 7 | ✓ |
+| `muted-foreground` / `input/30 sobre card` | texto de apoio (placeholder) no campo (dark:bg-input/30) | Input, Select | **5.92** | 4.5 | ✓ |
 | `foreground/70 sobre card` / `card` | borda do cartão de escolha marcado (border-foreground/70) | FieldLabel + RadioGroup | **7.59** | 3 | ✓ |
 | `foreground` / `card` | rótulo do cartão de escolha marcado | FieldLabel + RadioGroup | **14.22** | 7 | ✓ |
 | `ring` / `muted/60 sobre card` | foco do teclado sobre linha de tabela em hover | focus-ring | **4.67** | 3 | ✓ |
@@ -174,7 +176,7 @@ Mapa de contraste do desenho v5.1 (Petković, 20/10/2026), trazido para o reposi
 | `destructive` / `popover` | ícone de erro do toast | Toast | **7.1** | 3 | ✓ |
 | `warning` / `popover` | ícone de aviso do toast | Toast | **8.5** | 3 | ✓ |
 | `ring` / `popover` | foco do teclado no toast | Toast | **4.92** | 3 | ✓ |
-| `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.42** | 3 | ✓ |
+| `input` / `card` | borda da representação do widget do desafio | ChallengeSlot | **3.89** | 3 | ✓ |
 | `foreground` / `sidebar` | marca do cabeçalho do celular e item atual da barra de destinos (moldura) | ShellHeader, BottomBar | **16.15** | 7 | ✓ |
 | `sidebar-foreground` / `sidebar` | "?" e seta do menu da loja, no cabeçalho | ShellHeader, StoreMenu | **9.48** | 7 | ✓ |
 | `sidebar-accent-foreground` / `sidebar` | nome da loja no botão do menu do cabeçalho | StoreMenu | **16.15** | 7 | ✓ |

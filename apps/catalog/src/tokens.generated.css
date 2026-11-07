@@ -32,7 +32,7 @@
     --muted-foreground: oklch(0.79 0.004 85);
     --accent: oklch(0.33 0.0035 85);
     --border: oklch(1 0 0 / 0.06);
-    --input: oklch(0.55 0.0035 85);
+    --input: oklch(0.58 0.0035 85);
     --ring: oklch(0.64 0.134 165);
     --mark: oklch(0.74 0.14 165);
     --card-ring: oklch(1 0 0 / 0.06);
