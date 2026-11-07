@@ -194,7 +194,7 @@ Só o que existe em `apps/web/src/ui/` e nas telas hoje; o que não tem desenho 
 
 Seis componentes de `src/ui`; o `Button` é o dos três pesos de ação (regra D3). "—" quer dizer que o componente não tem esse estado e que, se a tela precisa dele, ela o desenha com as peças de baixo; "nunca desabilitado" é um componente que não é controle.
 
-| Componente | Variante padrão | Padrão | Hover | Foco | Desabilitado | Carregando | Erro |
+| Componente | Variante padrão | Aparência em repouso | Hover | Foco | Desabilitado | Carregando | Erro |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `Button` (`ui/button.tsx`) | `default` (tinta), tamanho `default` (`h-ctl-md`); existem `outline`, `ghost`, `secondary`, `destructive` (fundo suave) e `link` | tinta com brilho e sombra do `--btn-shine` e `--btn-drop`; afunda em `active` | `bg-primary/88`; nas demais, `--accent` em `outline`, `ghost` e `secondary` (`destructive`, a 15%; `link` só muda o sublinhado) | contorno de 3 px (`focus-ring`) | `disabled` e `aria-disabled`: 50% e sem toque, com a mesma aparência | — (sem rótulo nem ícone próprios: a tela troca o rótulo, "Salvando…", e impede o reenvio) | `aria-invalid` põe a borda em `--destructive`; a variante `destructive` é ação destrutiva, não erro |
 | `Badge` (`ui/badge.tsx`) | `outline`; existem `secondary`, `ink`, `warning` e `destructive` | pílula de 20 px, com texto (o ícone e o texto vão junto da cor) | — | contorno de 3 px (`focus-ring`) | nunca desabilitado | — | variante `destructive` ("precisa de atenção") |
@@ -463,4 +463,4 @@ O painel de movimento abre dentro da linha, abaixo dela (a linha ganha fundo sua
 - Só o cabeçalho da casca foi verificado em navegador a 360 px; nenhuma tela foi verificada no iPhone nesta fase; as telas de cancelamento, devolução e datas da venda só têm testes dos modelos de visão.
 - `theme-color` por `prefers-color-scheme`, sem acompanhar o seletor de tema; recorte de mídia sem `aria-valuetext`.
 - Sem desenho na v5.1: Toast e Combobox, o widget do Turnstile (de terceiro) e a tabela que vira cartão com `data-label` (o desenho usa `Item`). Aparelhos e Pendências não têm mockup: a auditoria de 22/10 achou que as peças de `src/ui` já cobrem (cartão por item, selo, alerta, diálogo), e as duas telas foram feitas só com elas. As telas de senha têm o desenho v5.2 (20/10/2026), todas no código. O ícone que gira dos estados pendentes do mockup não entra.
-- Histórico de vendas sem filtro nem busca (a paginação usa "Carregar mais"); a lista mostra o momento comercial e só o detalhe mostra as três datas.
+- Histórico de vendas: a paginação usa "Carregar mais"; a lista mostra o momento comercial e só o detalhe mostra as três datas.
