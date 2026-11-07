@@ -65,7 +65,7 @@ export function Perforation() {
   return (
     <div
       aria-hidden="true"
-      className="relative h-0 border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]"
+      className="relative h-0 overflow-x-clip border-input border-t border-dashed before:absolute before:-top-2 before:-left-2 before:size-4 before:rounded-full before:bg-background before:ring-1 before:ring-foreground/[0.08] after:absolute after:-top-2 after:-right-2 after:size-4 after:rounded-full after:bg-background after:ring-1 after:ring-foreground/[0.08]"
     />
   );
 }

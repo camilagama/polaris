@@ -84,19 +84,6 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     selector:
       'tfoot[data-slot="table-footer"] > tr[data-slot="table-row"] > td[data-slot="table-cell"]',
   },
-  {
-    clientWidth: 280,
-    reason:
-      "o cartão da venda (Confirmada, Data da venda…) tem 10 px de conteúdo a mais que a caixa",
-    screens: [
-      "detalhe da venda aberto",
-      "detalhe da venda cancelamento revisado",
-      "detalhe da venda cliente da venda",
-      "detalhe da venda trocar o cliente",
-    ],
-    scrollWidth: 290,
-    selector: 'main > section > div[data-slot="card"]',
-  },
 ];
 
 const MEASURE_TOLERANCE = 1;
