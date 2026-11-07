@@ -4607,63 +4607,69 @@ function expectNameReads(
 
 test.describe("Mais vendidos do mês de 1150 a 1280 px: o nome lê inteiro com a lateral aberta e recolhida", () => {
   for (const side of ["aberta", "recolhida"] as const) {
-    test(`lateral ${side}`, async ({ page }) => {
-      const names = side === "aberta" ? LONG_NAMES : SHORT_NAMES;
-      await page.setViewportSize({ height: 800, width: 1150 });
-      const server = new FakeServer(SOLD);
-      server.top = rankingOf(names);
-      await openHome(page, server);
-      if (side === "recolhida") {
-        await foldSideMenu(page);
-      }
-      const seen = new Set<string>();
-      for (const width of [1150, 1200, 1280]) {
-        // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other on the same page
-        await page.setViewportSize({ height: 800, width });
-        const block = region(page, "Mais vendidos do mês");
-        await expect(block).toContainText("un.");
-        const rows = await rankingRows(page);
-        const rem = await columnRem(block);
-        const stacked = rem < ONE_LINE_REM;
-        seen.add(stacked ? "empilhada" : "numa linha");
-        expect(rows, `${side} ${width} px`).toHaveLength(3);
-        rows.forEach((row, index) => {
-          expectNameReads(
-            row,
-            names[index] ?? "",
-            stacked,
-            `${side} ${width} px (${rem} rem), nome ${index + 1}`
-          );
-        });
-        await assertNoPageScroll(page);
-      }
-      expect([...seen].sort()).toEqual(
-        side === "aberta" ? ["empilhada"] : ["empilhada", "numa linha"]
-      );
-    });
+    reflowTest(
+      `lateral ${side}`,
+      async ({ page }) => {
+        const names = side === "aberta" ? LONG_NAMES : SHORT_NAMES;
+        await page.setViewportSize({ height: 800, width: 1150 });
+        const server = new FakeServer(SOLD);
+        server.top = rankingOf(names);
+        await openHome(page, server);
+        if (side === "recolhida") {
+          await foldSideMenu(page);
+        }
+        const seen = new Set<string>();
+        for (const width of [1150, 1200, 1280]) {
+          // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other on the same page
+          await page.setViewportSize({ height: 800, width });
+          const block = region(page, "Mais vendidos do mês");
+          await expect(block).toContainText("un.");
+          const rows = await rankingRows(page);
+          const rem = await columnRem(block);
+          const stacked = rem < ONE_LINE_REM;
+          seen.add(stacked ? "empilhada" : "numa linha");
+          expect(rows, `${side} ${width} px`).toHaveLength(3);
+          rows.forEach((row, index) => {
+            expectNameReads(
+              row,
+              names[index] ?? "",
+              stacked,
+              `${side} ${width} px (${rem} rem), nome ${index + 1}`
+            );
+          });
+          await assertNoPageScroll(page);
+        }
+        expect([...seen].sort()).toEqual(
+          side === "aberta" ? ["empilhada"] : ["empilhada", "numa linha"]
+        );
+      },
+      { coarse: false }
+    );
   }
 
-  test("a 1024 px com a lateral aberta o nome tem a sua linha, e a 360 px segue numa linha só", async ({
-    page,
-  }) => {
-    const server = new FakeServer(SOLD);
-    server.top = rankingOf(SHORT_NAMES);
-    await page.setViewportSize({ height: 800, width: 1024 });
-    await openHome(page, server);
-    const open = await rankingRows(page);
-    expect(open).toHaveLength(3);
-    open.forEach((row, index) => {
-      expectNameReads(
-        row,
-        SHORT_NAMES[index] ?? "",
-        true,
-        `1024 px, nome ${index + 1}`
-      );
-    });
-    await page.setViewportSize({ height: 740, width: 360 });
-    const phone = await rankingRows(page);
-    for (const row of phone) {
-      expect(row.nameBottom).toBeGreaterThan(row.figuresTop);
-    }
-  });
+  reflowTest(
+    "a 1024 px com a lateral aberta o nome tem a sua linha, e a 360 px segue numa linha só",
+    async ({ page }) => {
+      const server = new FakeServer(SOLD);
+      server.top = rankingOf(SHORT_NAMES);
+      await page.setViewportSize({ height: 800, width: 1024 });
+      await openHome(page, server);
+      const open = await rankingRows(page);
+      expect(open).toHaveLength(3);
+      open.forEach((row, index) => {
+        expectNameReads(
+          row,
+          SHORT_NAMES[index] ?? "",
+          true,
+          `1024 px, nome ${index + 1}`
+        );
+      });
+      await page.setViewportSize({ height: 740, width: 360 });
+      const phone = await rankingRows(page);
+      for (const row of phone) {
+        expect(row.nameBottom).toBeGreaterThan(row.figuresTop);
+      }
+    },
+    { coarse: false }
+  );
 });
