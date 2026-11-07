@@ -191,9 +191,11 @@ for (const [fontPixels, historyLines] of [
   [20, 1],
   [21, 2],
   [22, 2],
+  [23, 2],
+  [24, 2],
 ] as const) {
   reflowTest(
-    `a 320 px com letra de ${fontPixels} px nenhum rótulo da barra deixa uma letra sozinha numa linha e Histórico quebra numa sílaba`,
+    `a 320 px com letra de ${fontPixels} px nenhum rótulo da barra deixa uma letra sozinha numa linha e Histórico e Estoque, quando quebram, quebram numa sílaba`,
     async ({ page }) => {
       await open(page, "/inventory", { fontPixels, width: 320 });
       const boxes = await labelBoxes(bar(page));
@@ -209,6 +211,11 @@ for (const [fontPixels, historyLines] of [
       expect(history?.lineTexts.join("")).toBe("Histórico");
       expect(history?.lineTexts).toEqual(
         historyLines === 1 ? ["Histórico"] : ["Histó", "rico"]
+      );
+      const inventory = boxes.find((box) => box.name === "Estoque");
+      expect(inventory?.lineTexts.join("")).toBe("Estoque");
+      expect([["Estoque"], ["Esto", "que"]]).toContainEqual(
+        inventory?.lineTexts
       );
     }
   );
