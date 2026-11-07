@@ -30,11 +30,11 @@ import { WORKER_MARK } from "./worker-mark";
  * each one that has tabs; `a consistência` below fails for a key that is in neither list):
  * - covered here (`COVERED`): dashboard:resultado, dashboard:metas, dashboard:despesas (its three tabs and the form
  *   of an expense; the title of the list card and the button have `despesas-reflow.e2e.ts`), products:produtos
- *   (the list, "Novo produto", the variants and the images), products:categorias, sale-detail, attention (until
- *   the test of its own exists), help, customers (only the dialog of the customer), settings:formas-de-receber,
+ *   (the list, "Novo produto", the variants and the images), products:categorias, sale-detail, help, customers (only
+ *   the dialog of the customer), settings:formas-de-receber,
  *   settings:catalogo-publico, settings:aparelhos, settings:assinatura, settings:senha and settings:seus-dados;
- * - left out because a test of its own measures them (`EXCLUDED`): home (`home.e2e.ts`), customers (the list,
- *   `clientes-reflow.e2e.ts`), inventory (`estoque-reflow.e2e.ts`), sale (`sale-item-reflow.e2e.ts`) and sale-history
+ * - left out because a test of its own measures them (`EXCLUDED`): home (`home.e2e.ts`), attention
+ *   (`pendencias-reflow.e2e.ts`), customers (the list, `clientes-reflow.e2e.ts`), inventory (`estoque-reflow.e2e.ts`), sale (`sale-item-reflow.e2e.ts`) and sale-history
  *   (`historico-reflow.e2e.ts`).
  * - not measured at all: the screens of the Admin (desktop), the font of 24 px and the dark theme.
  */
@@ -284,7 +284,6 @@ const DATA_EXPORT: Case = {
 
 /** The cases of each screen of `screenKeys()` this file measures. */
 const COVERED: Readonly<Record<string, readonly Case[]>> = {
-  attention: states("pendências com itens"),
   customers: states("clientes cliente parecido"),
   "dashboard:despesas": states(
     "despesas lista",
@@ -345,6 +344,7 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
 
 /** The screens a test of its own measures at 320 px with 20 px: the file of that test. */
 const EXCLUDED: Readonly<Record<string, string>> = {
+  attention: "pendencias-reflow.e2e.ts",
   customers: "clientes-reflow.e2e.ts",
   home: "home.e2e.ts",
   inventory: "estoque-reflow.e2e.ts",
