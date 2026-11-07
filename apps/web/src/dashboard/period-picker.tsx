@@ -105,7 +105,7 @@ function PresetChoice({ onChoose, preset }: PresetChoiceProps) {
           </SelectContent>
         </Select>
       </div>
-      <FieldSet className="hidden h-ctl-md w-fit flex-row items-center gap-0 rounded-lg bg-muted p-[3px] md:flex">
+      <FieldSet className="hidden h-ctl-md w-fit flex-row items-center gap-0 rounded-lg bg-muted p-0.75 md:flex">
         <FieldLegend className="sr-only" variant="label">
           Período
         </FieldLegend>

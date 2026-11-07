@@ -15,7 +15,7 @@ export function ConfirmedDetails({
     return null;
   }
   return (
-    <dl className="grid gap-3 rounded-lg bg-muted p-4 min-[760px]:grid-cols-2">
+    <dl className="grid gap-3 rounded-lg bg-muted p-4 md:grid-cols-2">
       {details.map((detail) => (
         <div className="grid gap-0.5" key={detail.label}>
           <dt className="text-muted-foreground text-xs">{detail.label}</dt>

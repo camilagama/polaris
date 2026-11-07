@@ -145,10 +145,10 @@ function Legend({ view }: { view: RhythmView }) {
     <div className="grid min-w-0 flex-[1_1_16rem] content-start gap-1.5">
       <p className="flex items-center gap-2 text-muted-foreground text-xs">
         <span>Menos</span>
-        <span aria-hidden="true" className="inline-flex gap-[3px]">
+        <span aria-hidden="true" className="inline-flex gap-0.75">
           {SWATCHES.map((swatch) => (
             <span
-              className={cn("size-3.5 rounded-[3px]", swatch)}
+              className={cn("size-3.5 rounded-[0.1875rem]", swatch)}
               key={swatch}
             />
           ))}
@@ -198,7 +198,7 @@ function WeekdayMeans({ still, view }: { still: boolean; view: RhythmView }) {
         {WEEKDAY_SHORT.map((label, weekday) => (
           <span
             className={cn(
-              "text-[11px] text-muted-foreground",
+              "text-[0.6875rem] text-muted-foreground",
               weekday === best && "font-semibold text-foreground"
             )}
             key={label}

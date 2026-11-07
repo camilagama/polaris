@@ -101,7 +101,7 @@ describe("EntryScreen outside the entry pages (t239)", () => {
 
   it("is the card of the entry, with the two legal links, by default", () => {
     const markup = screen();
-    expect(markup).toContain("max-w-[380px]");
+    expect(markup).toContain("max-w-[23.75rem]");
     expect(markup).toContain("Termos de Uso");
     expect(markup).toContain("Política de Privacidade");
     // the brand is a name, not a link, where nobody is going back to the start
@@ -109,7 +109,7 @@ describe("EntryScreen outside the entry pages (t239)", () => {
   });
 
   it("is wider for the acceptance and a reading column for a legal text", () => {
-    expect(screen({ width: "wide" })).toContain("max-w-[420px]");
+    expect(screen({ width: "wide" })).toContain("max-w-[26.25rem]");
     const reading = screen({ width: "reading" });
     expect(reading).toContain("max-w-[calc(68ch+3rem)]");
     // the title of a text is the 24/32 of the reading scale

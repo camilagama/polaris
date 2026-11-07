@@ -50,7 +50,7 @@ export function ShellHeader({
           <SyncStatus onlineOnly={onlineOnly} />
           <a
             aria-current={helpCurrent ? "page" : undefined}
-            className="touch-hit focus-ring hidden size-10 shrink-0 place-items-center rounded-md text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground md:grid md:@max-[30rem]/header:size-8 [&_svg]:size-[18px]"
+            className="touch-hit focus-ring hidden size-10 shrink-0 place-items-center rounded-md text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground md:grid md:@max-[30rem]/header:size-8 [&_svg]:size-4.5"
             data-header-help=""
             href={HELP_HREF}
             title={HELP_LABEL}

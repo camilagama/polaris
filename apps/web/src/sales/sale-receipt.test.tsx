@@ -73,7 +73,7 @@ describe("the sale as a receipt", () => {
     for (const block of blocks) {
       expect(block).toContain("rounded-lg");
       expect(block).toContain("p-4");
-      expect(block).toContain("min-[760px]:grid-cols-2");
+      expect(block).toContain("md:grid-cols-2");
       expect(block).not.toMatch(FRAME);
     }
     expect(markup).toContain('class="text-muted-foreground text-xs">Método<');

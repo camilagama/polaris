@@ -101,27 +101,27 @@ describe("HeroValue in a column of the strip", () => {
 
   it("is 24 px from 900 px for an amount that fits the narrowest column", () => {
     const markup = sizeOf("129.90");
-    expect(markup).toContain("min-[900px]:text-[1.5rem]");
+    expect(markup).toContain("min-[56.25rem]:text-[1.5rem]");
     expect(markup).not.toContain("@max-");
   });
 
   it("steps an amount of 12 or 13 characters down to 20 px, and of 14 or more to 18 px, only in a column too narrow for it", () => {
     const twelve = sizeOf("12345.67");
-    expect(twelve).toContain("min-[900px]:@[9rem]:text-[1.5rem]");
-    expect(twelve).toContain("min-[900px]:@max-[8.999rem]:text-[1.25rem]");
+    expect(twelve).toContain("min-[56.25rem]:@[9rem]:text-[1.5rem]");
+    expect(twelve).toContain("min-[56.25rem]:@max-[8.999rem]:text-[1.25rem]");
     expect(sizeOf("999999.99")).toContain("@max-[8.999rem]:text-[1.25rem]");
     const long = sizeOf("-9999999.99");
-    expect(long).toContain("min-[900px]:@[10.5rem]:text-[1.5rem]");
-    expect(long).toContain("min-[900px]:@max-[10.499rem]:text-[1.125rem]");
+    expect(long).toContain("min-[56.25rem]:@[10.5rem]:text-[1.5rem]");
+    expect(long).toContain("min-[56.25rem]:@max-[10.499rem]:text-[1.125rem]");
   });
 
   it("keeps the dash and the empty text at 24 px, with no step", () => {
-    expect(sizeOf(null)).toContain("min-[900px]:text-[1.5rem]");
+    expect(sizeOf(null)).toContain("min-[56.25rem]:text-[1.5rem]");
   });
 
   it("does not touch the value of a card that is not in the strip", () => {
     const markup = renderToStaticMarkup(<HeroValue amount="999999.99" />);
-    expect(markup).not.toContain("min-[900px]");
+    expect(markup).not.toContain("min-[56.25rem]");
     expect(markup).toContain("md:text-[1.875rem]");
   });
 });
@@ -170,14 +170,18 @@ describe("DeltaChip in a column of the strip", () => {
 
   it("stacks the 'vs. …' under the pill, wrapping and muted, in a column narrower than 14 rem", () => {
     const markup = chip(true);
-    expect(markup).toContain("min-[900px]:@max-[13.999rem]:flex-col");
-    expect(markup).toContain("min-[900px]:@max-[13.999rem]:bg-transparent");
-    expect(markup).toContain("min-[900px]:@max-[13.999rem]:whitespace-normal");
-    expect(markup).toContain("min-[900px]:@max-[13.999rem]:overflow-visible");
+    expect(markup).toContain("min-[56.25rem]:@max-[13.999rem]:flex-col");
+    expect(markup).toContain("min-[56.25rem]:@max-[13.999rem]:bg-transparent");
     expect(markup).toContain(
-      "min-[900px]:@max-[13.999rem]:text-muted-foreground"
+      "min-[56.25rem]:@max-[13.999rem]:whitespace-normal"
     );
-    expect(markup).toContain("min-[900px]:@max-[13.999rem]:rounded-full");
+    expect(markup).toContain(
+      "min-[56.25rem]:@max-[13.999rem]:overflow-visible"
+    );
+    expect(markup).toContain(
+      "min-[56.25rem]:@max-[13.999rem]:text-muted-foreground"
+    );
+    expect(markup).toContain("min-[56.25rem]:@max-[13.999rem]:rounded-full");
   });
 
   it("still cuts the 'vs. …' beside the number, where the line never wraps", () => {
@@ -191,7 +195,7 @@ describe("DeltaChip in a column of the strip", () => {
 
   it("is the chip of before outside the strip", () => {
     expect(chip(false)).not.toContain("@max-");
-    expect(chip(false)).not.toContain("min-[900px]");
+    expect(chip(false)).not.toContain("min-[56.25rem]");
   });
 
   it("keeps the name of the chip on the whole, so the screen reader reads it once", () => {
@@ -207,7 +211,9 @@ describe("DeltaChip in a column of the strip", () => {
 
   it("keeps the two lines of the chip row in the narrow column, empty without a comparison", () => {
     const markup = card({ strip: true });
-    expect(markup).toContain("min-[900px]:@max-[13.999rem]:min-h-[3.375rem]");
+    expect(markup).toContain(
+      "min-[56.25rem]:@max-[13.999rem]:min-h-[3.375rem]"
+    );
     expect(markup).toContain('data-kpi-chip-row=""');
   });
 });
