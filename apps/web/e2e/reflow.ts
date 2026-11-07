@@ -100,8 +100,9 @@ export interface ClippedElement extends Offender {
 
 /**
  * Every element under `root` that `assertNothingClipped` calls a defect, each with a `selector` that names it by its
- * tag and the attributes that survive a change of style (`id`, `data-slot`, `role`), from the nearest ancestor that has
- * one of them. `measured` is how many elements with text were looked at.
+ * tag and the attributes that survive a change of style (`id`, `data-slot`, `role`), with up to two ancestors that have
+ * one of them (or are a landmark): the `div`s with nothing to say are left out, so a wrapper added or removed does not
+ * rename the finding. `measured` is how many elements with text were looked at.
  */
 export async function findClipped(
   root: Locator,
@@ -141,17 +142,21 @@ export async function findClipped(
         const role = item.getAttribute("role");
         return role === null ? tag : `${tag}[role="${role}"]`;
       };
+      const LANDMARKS = ["main", "section", "form", "table"];
+      const identified = (item: Element) =>
+        label(item).length > item.tagName.length ||
+        LANDMARKS.includes(item.tagName.toLowerCase());
+      // the element, and up to two ancestors that say what they are: a bare `div` in between is no part of the name
       const selectorOf = (item: Element) => {
-        const names: string[] = [];
-        let current: Element | null = item;
-        while (current !== null && current !== element.parentElement) {
-          names.unshift(label(current));
-          const outer = names[0] ?? "";
-          if (
-            names.length > 1 &&
-            (outer.includes("#") || outer.includes("["))
-          ) {
-            break;
+        const names = [label(item)];
+        let current = item.parentElement;
+        while (
+          current !== null &&
+          names.length < 3 &&
+          current !== element.parentElement
+        ) {
+          if (identified(current)) {
+            names.unshift(label(current));
           }
           current = current.parentElement;
         }

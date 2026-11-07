@@ -26,17 +26,11 @@ import { WORKER_MARK } from "./worker-mark";
  * has to take its line out). `SCROLLS_ON_PURPOSE` lists what scrolls by design: only a data table or the tab strip.
  * Fixing a finding is not this file's job: each line of `KNOWN_FINDINGS` is the work of a later change.
  *
- * Which screen is where (`screenKeys()` of `src/app-shell/navigation-model.ts`, the screens of `ROUTES` and the tab of
- * each one that has tabs; `a consistência` below fails for a key that is in neither list):
- * - covered here (`COVERED`): dashboard:resultado, dashboard:metas, dashboard:despesas (its three tabs and the form
- *   of an expense; the title of the list card and the button have `despesas-reflow.e2e.ts`), products:produtos
- *   (the list, "Novo produto", the variants and the images), products:categorias, sale-detail, help, customers (only
- *   the dialog of the customer), settings:formas-de-receber,
- *   settings:catalogo-publico, settings:aparelhos, settings:assinatura, settings:senha and settings:seus-dados;
- * - left out because a test of its own measures them (`EXCLUDED`): home (`home.e2e.ts`), attention
- *   (`pendencias-reflow.e2e.ts`), customers (the list, `clientes-reflow.e2e.ts`), inventory (`estoque-reflow.e2e.ts`), sale (`sale-item-reflow.e2e.ts`) and sale-history
- *   (`historico-reflow.e2e.ts`).
- * - not measured at all: the screens of the Admin (desktop), the font of 24 px and the dark theme.
+ * `COVERED` lists the screens of `screenKeys()` (the screens of `ROUTES` and each tab) that are measured here, and
+ * `EXCLUDED` the ones that a test of its own measures, with its file; a screen in neither fails `a consistência`
+ * below. Customers is in both: the list is `clientes-reflow.e2e.ts`, only the dialog of the customer is here. The title
+ * of the expenses list card and its button are `despesas-reflow.e2e.ts`; here are its three tabs and the form.
+ * Not measured: the screens of the Admin (desktop), the font of 24 px and the dark theme.
  */
 skipOutsideChromium();
 test.use({ hasTouch: true, isMobile: true });
@@ -87,7 +81,7 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     screens: ["resultado mês incompleto e gráfico de vendas"],
     scrollWidth: 302,
     selector:
-      'div[data-slot="tabs-content"] > div > div > div[data-slot="card"]',
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
     clientWidth: 250,
@@ -95,7 +89,8 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
       'na tabela "Vendas e custos de cada dia" o texto "Depois de hoje: despesas R$ 135,10" passa 68 px da célula (a tabela rola, o texto sai da célula)',
     screens: ["resultado gráfico de vendas e custos e a tabela"],
     scrollWidth: 318,
-    selector: 'tr[data-slot="table-row"] > td[data-slot="table-cell"]',
+    selector:
+      'tfoot[data-slot="table-footer"] > tr[data-slot="table-row"] > td[data-slot="table-cell"]',
   },
   {
     clientWidth: 320,
@@ -111,13 +106,12 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
       "Novo produto: as partes Dados, Variantes e Imagens somam 67 px a mais que o corpo do diálogo, sem rolagem própria",
     screens: ["produtos variantes, opções e combinação"],
     scrollWidth: 387,
-    selector:
-      'div[data-slot="dialog-content"] > div > div[data-slot="dialog-body"]',
+    selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
   },
   {
     clientWidth: 320,
     reason:
-      'Imagens do produto: o título "Camiseta do teste / Produto · atualizado em…" passa 73 px do diálogo',
+      'Imagens do produto: o diálogo (que começa em "Camiseta do teste / Produto · atualizado em…") tem 73 px de conteúdo a mais que a caixa',
     screens: ["produtos imagens, remoção pedindo confirmação"],
     scrollWidth: 393,
     selector: 'div[data-slot="dialog-content"]',
@@ -128,8 +122,7 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
       "Imagens do produto: as partes Dados, Variantes e Imagens passam 6 px do corpo do diálogo",
     screens: ["produtos imagens, remoção pedindo confirmação"],
     scrollWidth: 326,
-    selector:
-      'div[data-slot="dialog-content"] > div > div[data-slot="dialog-body"]',
+    selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
   },
   {
     clientWidth: 280,
@@ -142,7 +135,7 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
       "detalhe da venda trocar o cliente",
     ],
     scrollWidth: 290,
-    selector: 'main > div > div > section > div[data-slot="card"]',
+    selector: 'main > section > div[data-slot="card"]',
   },
   {
     clientWidth: 280,
@@ -151,7 +144,7 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     screens: ["assinatura Pix aguardando o banco"],
     scrollWidth: 339,
     selector:
-      'div[data-slot="tabs-content"] > div > div > div[data-slot="card"]',
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
     clientWidth: 280,
@@ -160,7 +153,7 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     screens: ["assinatura Pro ativo", "assinatura cancelar a renovação"],
     scrollWidth: 294,
     selector:
-      'div[data-slot="tabs-content"] > div > div > div[data-slot="card"]',
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
     clientWidth: 280,
@@ -169,7 +162,7 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     screens: ["assinatura carência com o aviso"],
     scrollWidth: 334,
     selector:
-      'div[data-slot="tabs-content"] > div > div > div[data-slot="card"]',
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
   {
     clientWidth: 320,
@@ -181,7 +174,7 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
   },
 ];
 
-const MEASURE_TOLERANCE = 2;
+const MEASURE_TOLERANCE = 1;
 const REFLOW_WIDTH = 320;
 
 interface Case {
@@ -369,6 +362,21 @@ const matches = (known: KnownFinding, finding: Finding) =>
   sameMeasure(known.scrollWidth, finding.scrollWidth) &&
   sameMeasure(known.clientWidth, finding.clientWidth);
 
+/** Each known finding takes one finding that shows up: a second element with the same name and measure is new. */
+function judge(seen: readonly Finding[], mine: readonly KnownFinding[]) {
+  const unused = [...mine];
+  const fresh: Finding[] = [];
+  for (const finding of seen) {
+    const at = unused.findIndex((entry) => matches(entry, finding));
+    if (at === -1) {
+      fresh.push(finding);
+    } else {
+      unused.splice(at, 1);
+    }
+  }
+  return { fresh, gone: unused };
+}
+
 const describe = ({ clientWidth, scrollWidth, selector, text }: Finding) =>
   `${selector} "${text}": ${scrollWidth} px of content in ${clientWidth} px`;
 
@@ -452,14 +460,7 @@ async function sweep(
   if (scrolled !== null) {
     seen.push(scrolled);
   }
-  return {
-    fresh: seen.filter(
-      (finding) => !mine.some((entry) => matches(entry, finding))
-    ),
-    gone: mine.filter(
-      (entry) => !seen.some((finding) => matches(entry, finding))
-    ),
-  };
+  return judge(seen, mine);
 }
 
 async function expectScreenWhole(page: Page, screen: string) {
@@ -517,7 +518,15 @@ test.describe("a consistência da lista de telas", () => {
     }
   });
 
-  test("cada estado nomeado existe e cada caso tem nome único", () => {
+  test("a lista de rolagem de propósito é exatamente a faixa de abas e a tabela de dados", () => {
+    expect(SCROLLS_ON_PURPOSE).toEqual([
+      { reason: "faixa de abas", selector: '[role="tablist"]' },
+      { reason: "faixa de abas", selector: ':has(> [role="tablist"])' },
+      { reason: "tabela de dados", selector: '[data-slot="table-container"]' },
+    ]);
+  });
+
+  test("os casos têm nome único", () => {
     const names = Object.values(COVERED).flatMap((cases) =>
       cases.map(({ name }) => name)
     );
@@ -614,6 +623,89 @@ test.describe("a guarda pega o que diz pegar", () => {
     const fixed = await sweep(page, "controle", [known]);
     expect(fixed.fresh).toEqual([]);
     expect(fixed.gone).toEqual([known]);
+  });
+});
+
+test.describe("a guarda pega o que diz pegar, nas isenções e nos diálogos", () => {
+  test("a tabela de dados que rola passa, e o corte dentro dela reprova", async ({
+    page,
+  }) => {
+    await plant(
+      page,
+      '<div data-slot="table-container" style="width:200px;overflow-x:auto"><table style="width:500px"><tbody><tr><td><span id="cell" style="display:block;width:100px;overflow:hidden;white-space:nowrap">Depois de hoje: despesas R$ 135,10</span></td></tr></tbody></table></div>'
+    );
+    const { fresh } = await sweep(page, "controle", []);
+    expect(fresh.map(describe).join("\n")).toContain("Depois de hoje");
+    expect(fresh).toHaveLength(1);
+    await page.locator("#cell").evaluate((element) => {
+      element.style.whiteSpace = "normal";
+    });
+    expect((await sweep(page, "controle", [])).fresh).toEqual([]);
+  });
+
+  test("o corte dentro de um diálogo aberto reprova, fora de main também", async ({
+    page,
+  }) => {
+    await plant(page, "<p>página</p>");
+    await page.evaluate(() => {
+      const dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      dialog.innerHTML =
+        '<span id="cut" style="display:block;width:60px;overflow:hidden;white-space:nowrap">Cartão de crédito parcelado em doze vezes</span>';
+      document.body.append(dialog);
+    });
+    const { fresh } = await sweep(page, "controle", []);
+    expect(fresh.map(describe).join("\n")).toContain("Cartão de crédito");
+    await page.locator("#cut").evaluate((element) => {
+      element.style.whiteSpace = "normal";
+      element.style.overflowWrap = "anywhere";
+    });
+    expect((await sweep(page, "controle", [])).fresh).toEqual([]);
+  });
+
+  test("a página que rola para o lado é um achado conhecido enquanto rola, e reprova quando deixa de rolar", async ({
+    page,
+  }) => {
+    await plant(
+      page,
+      '<div id="wide" style="width:400px;height:20px">largura</div>'
+    );
+    const { fresh: [wide] = [] } = await sweep(page, "controle", []);
+    const known: KnownFinding = {
+      clientWidth: wide?.clientWidth ?? 0,
+      reason: "controle",
+      screens: ["controle"],
+      scrollWidth: wide?.scrollWidth ?? 0,
+      selector: "html",
+    };
+    expect(await sweep(page, "controle", [known])).toEqual({
+      fresh: [],
+      gone: [],
+    });
+    await page.locator("#wide").evaluate((element) => {
+      element.style.width = "100%";
+    });
+    expect((await sweep(page, "controle", [known])).gone).toEqual([known]);
+  });
+
+  test("um segundo elemento com o mesmo nome e a mesma medida de um achado conhecido é um achado novo", async ({
+    page,
+  }) => {
+    const cut =
+      '<p data-slot="card" style="width:60px;overflow:hidden;white-space:nowrap;margin:0">Cartão de crédito parcelado</p>';
+    await plant(page, cut);
+    const { fresh: [first] = [] } = await sweep(page, "controle", []);
+    const known: KnownFinding = {
+      clientWidth: first?.clientWidth ?? 0,
+      reason: "controle",
+      screens: ["controle"],
+      scrollWidth: first?.scrollWidth ?? 0,
+      selector: first?.selector ?? "",
+    };
+    await plant(page, cut + cut);
+    const both = await sweep(page, "controle", [known]);
+    expect(both.fresh).toHaveLength(1);
+    expect(both.gone).toEqual([]);
   });
 });
 

@@ -96,7 +96,7 @@ Ficam no fim de `ui-guardrails.e2e.ts` (`controle: cada verificação pega a fal
 
 ## Guarda de reflow a 320 px com letra de 20 px
 
-`apps/web/e2e/reflow-rotas.e2e.ts` abre, a 320 px com a letra do navegador a 20 px (auxiliar `e2e/reflow.ts`), as telas que ainda não têm teste de reflow próprio, nos estados de `e2e-pwa/ui-screens.ts` (lojas fictícias), num celular com toque, só no projeto desktop do `test:offline-poc` (um arquivo, um shard). Reprova texto cortado de lado e página que rola para o lado, e olha o diálogo aberto como parte da tela.
+`apps/web/e2e/reflow-rotas.e2e.ts` abre, a 320 px com a letra do navegador a 20 px (auxiliar `e2e/reflow.ts`), as telas e abas que não têm teste de reflow próprio (de Clientes, só o diálogo; de Despesas, as três abas e o formulário), nos estados de `e2e-pwa/ui-screens.ts` (lojas fictícias), num celular com toque, só no projeto desktop do `test:offline-poc` (um arquivo, um shard). Reprova texto cortado de lado e página que rola para o lado, e olha o diálogo aberto como parte da tela.
 
 - **Cobertura:** o teste de consistência compara `screenKeys()` (as telas de `ROUTES` e cada aba) com as listas `COVERED` e `EXCLUDED` do arquivo; tela nova que não esteja em nenhuma reprova. Quem já tem teste próprio entra em `EXCLUDED` com o arquivo dele (o teste confere que existe).
 - **Achado conhecido:** o que a guarda acha e ainda não foi consertado fica em `KNOWN_FINDINGS`, com os casos, o seletor, `scrollWidth` e `clientWidth` e o motivo. O teste reprova o achado novo e o conhecido que sumiu: quem conserta tira a linha da lista no mesmo PR.
