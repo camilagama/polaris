@@ -783,7 +783,10 @@ test.describe("acesso sem internet vencido (AC-37, AC-38, emenda do ADR 0047)", 
     await expect(
       page.getByRole("button", { name: "Tentar agora" })
     ).toHaveCount(0);
-    await expect(chip(page)).toHaveAttribute("title", EXPIRED_TITLE);
+    await expect(chip(page).locator(".sync-status-short")).toHaveAttribute(
+      "title",
+      EXPIRED_TITLE
+    );
     expect(new URL(page.url()).pathname).toBe("/sales");
     expect(await outboxCommands(page)).toEqual(queued);
     expect(server.leasesIssued).toBe(leases); // no network, no try

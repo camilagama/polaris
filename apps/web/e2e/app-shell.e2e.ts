@@ -622,10 +622,16 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
     const list = tabList(page, "Produtos e categorias");
     await list.getByRole("tab", { exact: true, name: "Categorias" }).click();
     await expect(strip).toBeVisible({ timeout: 20_000 });
-    await expect(chip(page)).toHaveAttribute("title", NEEDS_INTERNET_TITLE);
+    await expect(chip(page).locator(".sync-status-short")).toHaveAttribute(
+      "title",
+      NEEDS_INTERNET_TITLE
+    );
     await list.getByRole("tab", { exact: true, name: "Produtos" }).click();
     await expect(strip).toHaveCount(0);
-    await expect(chip(page)).not.toHaveAttribute("title", NEEDS_INTERNET_TITLE);
+    await expect(chip(page).locator(".sync-status-short")).not.toHaveAttribute(
+      "title",
+      NEEDS_INTERNET_TITLE
+    );
   });
 
   test("as abas andam com as setas do teclado e a tela da aba tem o título dela", async ({

@@ -1401,5 +1401,8 @@ test("a 360 px o chip é de uma linha e Mais abre com a frase do estado; no desk
 
   await page.setViewportSize({ height: 800, width: 1280 });
   await expect(line).toHaveCount(0);
-  await expect(chip(page)).toHaveAttribute("title", "Tudo sincronizado");
+  await expect(chip(page).locator(".sync-status-short")).toHaveAttribute(
+    "title",
+    "Tudo sincronizado"
+  );
 });
