@@ -169,6 +169,8 @@ export async function expectReflowFont(
 interface ClippedOptions {
   /** Selectors of elements that scroll on purpose: they are not measured themselves. */
   allowScroll?: readonly string[];
+  /** Selector of the subtrees below the root that are left out (they are measured as roots of their own). */
+  skip?: string | undefined;
   /** The list of cuts excused with a coarse pointer; `KNOWN_COARSE_FINDINGS` unless a test of the helper passes its own. */
   known?: readonly KnownCoarseFinding[];
 }
@@ -201,11 +203,11 @@ export interface ClippedElement extends Offender {
  */
 export async function findClipped(
   root: Locator,
-  { allowScroll = [] }: ClippedOptions = {}
+  { allowScroll = [], skip }: ClippedOptions = {}
 ): Promise<{ measured: number; offenders: ClippedElement[] }> {
   await expect(root, "the root of the sweep is not on the page").toHaveCount(1);
   return await root.evaluate(
-    (element, { allowed, slack }) => {
+    (element, { allowed, skipped, slack }) => {
       const hiddenOnPurpose = (item: Element) => {
         const style = getComputedStyle(item);
         return style.clipPath !== "none" || style.clip !== "auto";
@@ -257,12 +259,17 @@ export async function findClipped(
         }
         return names.join(" > ");
       };
+      const isBelowRoot = (item: Element, selector: string) => {
+        const hit = item.closest(selector);
+        return hit !== null && hit !== element && element.contains(hit);
+      };
       const found: ClippedElement[] = [];
       let count = 0;
       for (const item of [element, ...element.querySelectorAll("*")]) {
         if (
           !mayCut(item) ||
           item.clientWidth === 0 ||
+          (skipped !== undefined && isBelowRoot(item, skipped)) ||
           allowed.some((selector) => item.matches(selector))
         ) {
           continue;
@@ -280,7 +287,7 @@ export async function findClipped(
       }
       return { measured: count, offenders: found };
     },
-    { allowed: [...allowScroll], slack: SLACK_PIXELS }
+    { allowed: [...allowScroll], skipped: skip, slack: SLACK_PIXELS }
   );
 }
 
