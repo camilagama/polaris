@@ -138,33 +138,6 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     selector: 'main > section > div[data-slot="card"]',
   },
   {
-    clientWidth: 280,
-    reason:
-      'o cartão "Falta autorizar o pagamento" tem 59 px de conteúdo a mais que a caixa',
-    screens: ["assinatura Pix aguardando o banco"],
-    scrollWidth: 339,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 280,
-    reason:
-      'o cartão "Plano Pro / Ativo / Próxima cobrança…" tem 14 px de conteúdo a mais que a caixa',
-    screens: ["assinatura Pro ativo", "assinatura cancelar a renovação"],
-    scrollWidth: 294,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 280,
-    reason:
-      'o cartão "Pagamento não confirmado / 7 dias…" tem 54 px de conteúdo a mais que a caixa',
-    screens: ["assinatura carência com o aviso"],
-    scrollWidth: 334,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
     clientWidth: 320,
     reason:
       'Catálogo público: o cabeçalho "Catálogo público / Mostre produtos…" alarga a página em 2 px',

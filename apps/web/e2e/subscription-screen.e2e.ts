@@ -788,6 +788,48 @@ test("Pix: documento inválido não sai; válido manda só os dígitos, mostra o
   await expect(page.getByLabel("Código Pix (copia e cola)")).toHaveCount(0);
 });
 
+test("Pix: 'Copiar' copia o código inteiro, e o campo mostra o mesmo valor", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "only Chromium lets a test read the clipboard"
+  );
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const waiting = plan({ method: "pix_automatic", state: "trial_setup" });
+  await openScreen(page, {
+    checkouts: [
+      (route) =>
+        route.fulfill(
+          rpc({
+            handoff: {
+              emv: PIX_CODE,
+              kind: "pix_authorization",
+              url: PIX_PAGE,
+            },
+          })
+        ),
+    ],
+    plans: [plan(), waiting],
+  });
+  await page
+    .getByRole("radiogroup", { name: "Como pagar" })
+    .getByRole("radio", { name: PIX })
+    .click();
+  await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
+  await page.getByRole("button", { name: "Começar o teste grátis" }).click();
+  await expect(page.getByLabel("Código Pix (copia e cola)")).toHaveValue(
+    PIX_CODE
+  );
+  await page.getByRole("button", { name: "Copiar", exact: true }).click();
+  await expect(page.getByText("Código copiado.")).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    PIX_CODE
+  );
+});
+
 test("cada recusa do checkout tem texto próprio, e 'Atualizar' quando o plano pode ter mudado (AS-17)", async ({
   page,
 }) => {
