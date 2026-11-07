@@ -4666,6 +4666,7 @@ test.describe("Mais vendidos do mês de 1150 a 1280 px: o nome lê inteiro com a
       });
       await page.setViewportSize({ height: 740, width: 360 });
       const phone = await rankingRows(page);
+      expect(phone).toHaveLength(3);
       for (const row of phone) {
         expect(row.nameBottom).toBeGreaterThan(row.figuresTop);
       }
