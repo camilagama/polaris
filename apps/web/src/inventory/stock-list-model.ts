@@ -259,7 +259,7 @@ export function stockRowActions(target: StockTarget): StockRowAction[] {
       ? {
           action: "cost",
           label: "Informar custo",
-          name: `Informar custo de ${target.productName} · ${target.variantText}`,
+          name: `Informar custo de ${subject}`,
         }
       : {
           action: "count",
