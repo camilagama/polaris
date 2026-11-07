@@ -2302,7 +2302,7 @@ function confirmedItems(sale: ConfirmedSaleReadModel): ConfirmedSaleItemView[] {
     costText:
       item.unitCost === null
         ? "Custo desconhecido. Margem indeterminada."
-        : `Custo unitário registrado: ${formatBrlAmount(item.unitCost)}.`,
+        : `Custo unitário registrado: ${formatBrlCents(item.unitCost)}.`,
     detail: `${item.quantity} × ${formatBrlAmount(item.chargedUnitPrice)} (tabela ${formatBrlAmount(item.listedUnitPrice)}) = ${formatBrlAmount(
       Money.from(item.chargedUnitPrice)
         .multiplyByQuantity(item.quantity)
