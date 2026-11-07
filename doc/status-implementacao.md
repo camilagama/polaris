@@ -2700,7 +2700,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Status | Observação |
 | --- | --- | --- |
-| A ação (AC-1, AC-7, AC-9) | Concluído (PR 424, 7e81fd55) | `stockRowActions` (`inventory/stock-list-model.ts`): com saldo maior que 0, custo desconhecido e conexão, "Informar custo" (nome "Informar custo de {produto · variante}") fica no lugar de "Contar"; sem saldo e sem custo, "Receber" vira "Dar entrada"; sem conexão, os três de sempre. |
+| A ação (AC-1, AC-7, AC-9) | Concluído (PR 424, 7e81fd55) | `stockRowActions` (`inventory/stock-list-model.ts`): com saldo maior que 0, custo desconhecido e conexão, "Informar custo" (nome "Informar custo de {produto}, {variante}") fica no lugar de "Contar"; sem saldo e sem custo, "Receber" vira "Dar entrada"; sem conexão, os três de sempre. |
 | O painel (AC-4, AC-6) | Concluído (PR 424, 7e81fd55) | Ação `cost` em `stock-command-model.ts`: "Para as N unidades que você tem agora.", o campo "Custo de cada unidade (R$)" com foco, o resumo "R$ X por unidade, para N unidades. Depois de confirmar, o custo não pode ser editado.", "Confirmar custo" e "Custo informado: R$ X por unidade."; conflito e recusa com textos próprios, sem "contagem" nem "valoração". |
 | O envio (AC-2) | Concluído (PR 424, 7e81fd55) | `inventory.inventoryCount` com o saldo lido, a versão lida e `valuationUnitCost`; o conflito relê o saldo e descarta a tentativa; sem conexão é recusado (`stockConfirmRoute`), nunca vai para a fila. |
 | Recebimento bloqueado | Concluído (PR 424, 7e81fd55) | "Antes de receber, informe o custo das unidades que você já tem." com o botão "Informar custo", que troca o painel aberto; `receiveStock` continua recusando. |

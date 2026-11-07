@@ -135,7 +135,7 @@ describe("the row buttons for each real state of a variant", () => {
     expect(built.target.movingAverageCost).toBeNull();
     expect(read(markup, BUTTON_NAME)).toEqual([
       "Receber estoque de Camiseta Polaris, Azul / M",
-      "Informar custo de Camiseta Polaris · Azul / M",
+      "Informar custo de Camiseta Polaris, Azul / M",
       "Baixar estoque de Camiseta Polaris, Azul / M",
     ]);
     expect(read(markup, BUTTON_LABEL)).toEqual([
@@ -230,7 +230,7 @@ describe("the row buttons for each real state of a variant", () => {
     expect(unknown.built.archived).toBe(true);
     expect(read(unknown.markup, BUTTON_NAME)).toEqual([
       "Receber estoque de Camiseta Polaris, Azul / M",
-      "Informar custo de Camiseta Polaris · Azul / M",
+      "Informar custo de Camiseta Polaris, Azul / M",
       "Baixar estoque de Camiseta Polaris, Azul / M",
     ]);
     expect(read(unknown.markup, BUTTON_ID)[1]).toBe(
@@ -264,7 +264,7 @@ describe("the row buttons for each real state of a variant", () => {
     );
     expect(read(markup, BUTTON_NAME)).toEqual([
       "Receber estoque de Camiseta Polaris, Variante padrão",
-      "Informar custo de Camiseta Polaris · Variante padrão",
+      "Informar custo de Camiseta Polaris, Variante padrão",
       "Baixar estoque de Camiseta Polaris, Variante padrão",
     ]);
   });

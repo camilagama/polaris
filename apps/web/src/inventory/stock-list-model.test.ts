@@ -549,7 +549,7 @@ describe("stockRowActions (the buttons of a row, AC-1 and AC-7)", () => {
     expect(actions[1]).toEqual({
       action: "cost",
       label: "Informar custo",
-      name: "Informar custo de Camiseta Polaris · Azul / M",
+      name: "Informar custo de Camiseta Polaris, Azul / M",
     });
   });
 

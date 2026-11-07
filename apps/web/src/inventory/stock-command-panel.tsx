@@ -477,7 +477,7 @@ export function StockCommandPanel({
             <p>{block}</p>
             {informCost ? (
               <Button
-                aria-label={`Informar custo de ${state.target.productName} · ${state.target.variantText}`}
+                aria-label={`Informar custo de ${state.target.productName}, ${state.target.variantText}`}
                 onClick={handleInformCost}
                 size="sm"
                 type="button"

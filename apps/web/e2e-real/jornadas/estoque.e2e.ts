@@ -162,13 +162,13 @@ test("estoque: informar custo do item com saldo muda a linha, a faixa e o Iníci
   await expect(strip).toHaveText("3 sem custo");
   const informCandle = page.getByRole("button", {
     exact: true,
-    name: `Informar custo de ${candle.productName} · Variante padrão`,
+    name: `Informar custo de ${candle.productName}, Variante padrão`,
   });
   await expect(informCandle).toBeVisible();
   await expect(
     page.getByRole("button", {
       exact: true,
-      name: `Informar custo de ${soap.productName} · Variante padrão`,
+      name: `Informar custo de ${soap.productName}, Variante padrão`,
     })
   ).toBeVisible();
   // no units: the way to a cost is the entry, which asks for it
