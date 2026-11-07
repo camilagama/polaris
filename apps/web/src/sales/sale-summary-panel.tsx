@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
+import { NoBreakMoney } from "@/ui/hidden-values";
 import { stockEntryHref } from "../inventory/stock-entry-link";
 import { focusLater } from "../lib/focus";
 import {
@@ -102,7 +103,7 @@ export function FeeValue({ line }: { line: FeeLine }) {
     <span
       className={cn(line.tone === "not_applicable" && "text-muted-foreground")}
     >
-      {line.text}
+      <NoBreakMoney text={line.text} />
     </span>
   );
 }

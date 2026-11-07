@@ -166,8 +166,9 @@ interface Contacts {
 /**
  * Each contact is an atom of the line: an inline box is as wide as the line allows (never wider), so one that does
  * not fit beside the other goes down to a line of its own before anything breaks, and only a contact wider than the
- * whole line breaks, at any character. The line takes no clamp: it would hide the second line, which is where the last
- * digit and the e-mail go.
+ * whole line breaks, at any character (an e-mail wider than the line breaks before the "@" first, see `EmailText`,
+ * and anywhere only if a part still does not fit). The line takes no clamp: it would hide the second line, which is
+ * where the last digit and the e-mail go.
  */
 const CONTACT_CLASS = "inline-block max-w-full [overflow-wrap:anywhere]";
 

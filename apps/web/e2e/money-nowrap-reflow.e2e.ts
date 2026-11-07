@@ -13,8 +13,8 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * The amounts of the sale detail read at 320 px with the browser font at 20 px (`./reflow`): "R$" and the number of
- * "Custo unitário registrado" and of the item line stay on one line, and the text of the page is the one it always
- * was. With the default font (16 px) the cost line is the same line.
+ * "Custo unitário registrado", of the item line and of the payment block (value and fee) stay on one line, and the
+ * text of the page is the one it always was. With the default font (16 px) the cost line is the same line.
  */
 skipOutsideChromium();
 
@@ -71,7 +71,13 @@ const detail = {
       paymentProfileName: null,
       paymentProfileRuleId: null,
       paymentProfileVersion: null,
-      processingFee: NO_FEE,
+      processingFee: {
+        amount: "18894.09",
+        basisPoints: null,
+        fixedAmount: "1111.50",
+        mode: "fixed_and_percentage",
+        percentage: "12.5",
+      },
     },
     sale: {
       commandId: "0199c2d0-0000-7000-8000-0000000000c3",
@@ -147,6 +153,21 @@ test("Detalhe da venda: o R$ e o número do custo e da linha do item ficam na me
   await assertNothingClipped(page.locator("main"), {
     allowScroll: ['[data-slot="card"]'],
   });
+  await assertNoPageScroll(page);
+});
+
+test("Detalhe da venda: o R$ e o número do bloco de pagamento ficam na mesma linha, com o texto de sempre", async ({
+  page,
+}) => {
+  await openDetail(page, 20);
+  const payment = page.locator("dl").filter({ hasText: "Valor do pagamento" });
+  await expect(payment.locator("dd").nth(1)).toHaveText("R$ 3.703,50");
+  await expect(
+    payment.locator("div").filter({ hasText: "Taxa de processamento" })
+  ).toHaveText(
+    "Taxa de processamentoR$ 18.894,09 (R$ 1.111,50 + 12,5% do total devido)"
+  );
+  expect(await assertAmountsOnOneLine(payment)).toBe(3);
   await assertNoPageScroll(page);
 });
 
