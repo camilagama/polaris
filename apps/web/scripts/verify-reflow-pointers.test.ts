@@ -110,7 +110,8 @@ const count = (source: string, pattern: RegExp) =>
 const BARE_TEST = /^\s*test(?:\.only)?\(/gm;
 const REFLOW_TEST = /^\s*reflowTest\(/gm;
 const COARSE_OPTION = /\bcoarse:/g;
-const PLAIN_TEST_TITLE = /^\s*test(?:\.only)?\(\s*(["'`])(.*?)\1/gms;
+const PLAIN_TEST_TITLE =
+  /^\s*test(?:\.(?:only|skip|fixme|fail))?\(\s*(["'`])(.*?)\1/gms;
 const REFLOW_TITLE = /\b320\s*px|\b20\s*px|reflow/i;
 
 /** Titles of the plain `test(` calls in `source` that read like a reflow case. */
@@ -131,15 +132,21 @@ function problemsOf(name: string, whole: string, rule: SpecRule) {
   const source = whole.slice(start);
   const found: string[] = [];
   const before = reflowLookingTitles(whole.slice(0, start));
-  const allowed = rule.before ?? [];
-  for (const title of before.filter((each) => !allowed.includes(each))) {
+  const allowed = [...(rule.before ?? [])];
+  const unlisted = [...before];
+  for (const title of allowed) {
+    const at = unlisted.indexOf(title);
+    if (at < 0) {
+      found.push(
+        `${name}: SPECS \`before\` lists "${title}", which is no longer a plain test before the sweep; remove it from the list`
+      );
+    } else {
+      unlisted.splice(at, 1);
+    }
+  }
+  for (const title of unlisted) {
     found.push(
       `${name}: plain \`test("${title}")\` before the part that sweeps reads like a reflow case; declare it with reflowTest, or list it in SPECS \`before\` with the reason`
-    );
-  }
-  for (const title of allowed.filter((each) => !before.includes(each))) {
-    found.push(
-      `${name}: SPECS \`before\` lists "${title}", which is no longer a plain test before the sweep; remove it from the list`
     );
   }
   if (count(source, REFLOW_TEST) === 0) {
@@ -272,6 +279,7 @@ describe("the check fails on what it says it fails on", () => {
       'test("a 320 px, o gráfico lê", async () => {});\n',
       '  test.only("com a letra em 20 px", async () => {});\n',
       'test(\n  "reflow do menu",\n  async () => {}\n);\n',
+      'test.skip("a 320 px, o gráfico lê", async () => {});\n',
     ]) {
       const found = problemsOf("a.e2e.ts", early + opening + WITH, rule);
       expect(found).toHaveLength(1);
@@ -284,6 +292,12 @@ describe("the check fails on what it says it fails on", () => {
         before: ["a 320 px, o gráfico lê"],
       })
     ).toEqual([]);
+    const twice = problemsOf("a.e2e.ts", listed + listed + opening + WITH, {
+      ...rule,
+      before: ["a 320 px, o gráfico lê"],
+    });
+    expect(twice).toHaveLength(1);
+    expect(twice[0]).toContain("before the part that sweeps");
     const stale = problemsOf("a.e2e.ts", opening + WITH, {
       ...rule,
       before: ["a 320 px, o gráfico lê"],
