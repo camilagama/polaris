@@ -298,9 +298,28 @@ function AppSidebar({
 }
 
 /* 4.4 em is the width of "Histórico", 0.25 rem of slack. Below the 0.6875 rem floor the label breaks in two
-   lines (`--app-bottom-bar` grows) instead of being cut. */
+   lines (`--app-bottom-bar` grows) instead of being cut. `overflow-wrap: anywhere` alone breaks it where the letters
+   run out ("Históric" and "o"), so the label offers its own syllable break (`<wbr>`, which adds nothing to the text or
+   to the accessible name). */
 const BOTTOM_BAR_LABEL =
   "max-w-full text-center [font-size:clamp(0.6875rem,calc((100cqw-0.25rem)/4.4),0.75rem)] [overflow-wrap:anywhere] @max-[3.275rem]/tab:tracking-[-0.01em]";
+
+const SYLLABLE_BREAKS: Readonly<Record<string, readonly [string, string]>> = {
+  Histórico: ["Histó", "rico"],
+};
+
+function BottomBarLabel({ text }: { text: string }) {
+  const parts = SYLLABLE_BREAKS[text];
+  return parts ? (
+    <>
+      {parts[0]}
+      <wbr />
+      {parts[1]}
+    </>
+  ) : (
+    text
+  );
+}
 
 /**
  * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
@@ -356,7 +375,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
                 <Icon aria-hidden />
               </span>
               <span className={`${BOTTOM_BAR_LABEL} font-semibold`}>
-                {item.label}
+                <BottomBarLabel text={item.label} />
               </span>
             </a>
           );
@@ -370,7 +389,9 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           >
             {current ? mark : null}
             <Icon aria-hidden />
-            <span className={BOTTOM_BAR_LABEL}>{item.label}</span>
+            <span className={BOTTOM_BAR_LABEL}>
+              <BottomBarLabel text={item.label} />
+            </span>
           </a>
         );
       })}

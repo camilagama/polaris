@@ -45,14 +45,35 @@ interface LabelBox {
   clientWidth: number;
   fontPixels: number;
   letterSpacing: string;
+  lineTexts: string[];
   lines: number;
   name: string;
   scrollWidth: number;
 }
 
 function labelBoxes(navigation: Locator) {
-  return navigation.evaluate((nav) =>
-    [...nav.querySelectorAll("a, button")].map((cell): LabelBox => {
+  return navigation.evaluate((nav) => {
+    const linesOf = (target: HTMLElement) => {
+      const lines: string[] = [];
+      let lastTop = Number.NaN;
+      const texts = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+      for (let part = texts.nextNode(); part; part = texts.nextNode()) {
+        const content = part.textContent ?? "";
+        for (let index = 0; index < content.length; index += 1) {
+          const letter = document.createRange();
+          letter.setStart(part, index);
+          letter.setEnd(part, index + 1);
+          const { top } = letter.getBoundingClientRect();
+          if (Number.isNaN(lastTop) || Math.abs(top - lastTop) > 1) {
+            lines.push("");
+            lastTop = top;
+          }
+          lines[lines.length - 1] += content[index];
+        }
+      }
+      return lines;
+    };
+    return [...nav.querySelectorAll("a, button")].map((cell): LabelBox => {
       const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
       let node = walker.nextNode();
       while (node && (node.textContent ?? "").trim() === "") {
@@ -62,17 +83,19 @@ function labelBoxes(navigation: Locator) {
       const style = getComputedStyle(target);
       const line = Number.parseFloat(style.lineHeight);
       const range = document.createRange();
-      range.selectNodeContents(node ?? target);
+      range.selectNodeContents(target);
+      const lineTexts = linesOf(target);
       return {
         clientWidth: target.clientWidth,
         fontPixels: Number.parseFloat(style.fontSize),
         letterSpacing: style.letterSpacing,
+        lineTexts,
         lines: Math.round(range.getBoundingClientRect().height / line),
         name: (target.textContent ?? "").trim(),
         scrollWidth: target.scrollWidth,
       };
-    })
-  );
+    });
+  });
 }
 
 for (const path of ["/", "/sales/history", "/inventory"]) {
@@ -147,6 +170,62 @@ test("a 320 px com letra de 24 px os rótulos quebram em duas linhas, inteiros, 
     heights.reserved,
     "o conteúdo termina acima da barra"
   ).toBeGreaterThanOrEqual(heights.bar - SLACK);
+});
+
+for (const [fontPixels, historyLines] of [
+  [20, 1],
+  [21, 2],
+  [22, 2],
+] as const) {
+  test(`a 320 px com letra de ${fontPixels} px nenhum rótulo da barra deixa uma letra sozinha numa linha e Histórico quebra numa sílaba`, async ({
+    page,
+  }) => {
+    await open(page, "/inventory", { fontPixels, width: 320 });
+    const boxes = await labelBoxes(bar(page));
+    for (const box of boxes) {
+      for (const line of box.lineTexts) {
+        expect(
+          line.length,
+          `${box.name}: linhas ${JSON.stringify(box.lineTexts)}`
+        ).toBeGreaterThan(1);
+      }
+    }
+    const history = boxes.find((box) => box.name === "Histórico");
+    expect(history?.lineTexts.join("")).toBe("Histórico");
+    expect(history?.lineTexts).toEqual(
+      historyLines === 1 ? ["Histórico"] : ["Histó", "rico"]
+    );
+  });
+}
+
+test("a 360 px com letra de 16 px a reserva da barra de uma linha é a altura medida da barra", async ({
+  page,
+}) => {
+  await open(page, "/inventory", { fontPixels: 16, width: 360 });
+  const measured = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:absolute;visibility:hidden;height:var(--app-bottom-bar)";
+    document.body.append(probe);
+    const reserve = probe.getBoundingClientRect().height;
+    probe.remove();
+    const nav = document.querySelector("[data-bottom-bar]");
+    const inset = document.querySelector("[data-slot=sidebar-inset]");
+    return {
+      barHeight: nav?.getBoundingClientRect().height ?? 0,
+      insetPadding: inset
+        ? Number.parseFloat(getComputedStyle(inset).paddingBottom)
+        : 0,
+      reserve,
+    };
+  });
+  expect(measured.barHeight).toBeGreaterThan(0);
+  expect(Math.abs(measured.reserve - measured.barHeight)).toBeLessThanOrEqual(
+    0.5
+  );
+  expect(
+    Math.abs(measured.insetPadding - measured.barHeight)
+  ).toBeLessThanOrEqual(0.5);
 });
 
 // The emulated window is never narrower than 320 px, so the reserve is read at the narrowest real window with fonts
