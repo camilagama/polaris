@@ -39,6 +39,13 @@ const TOOLTIP_EDGE = "filete de 1 px do painel do tooltip (traço)";
 const PX_EXCEPTIONS: readonly PxException[] = [
   {
     count: 1,
+    path: "app-shell/app-shell.tsx",
+    reason:
+      "ícone de 18 px da aba da barra inferior: a reserva --app-bottom-bar de styles/index.css soma 18px à altura de duas linhas de rótulo",
+    segment: "size-[18px]",
+  },
+  {
+    count: 1,
     path: "catalog/product-media-crop.tsx",
     reason: "contorno de 1 px do retângulo de recorte sobre a foto (traço)",
     segment: "shadow-[0_0_0_1px_var(--background)]",
