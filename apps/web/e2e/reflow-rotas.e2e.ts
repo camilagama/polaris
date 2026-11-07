@@ -101,30 +101,6 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [
     selector: "html",
   },
   {
-    clientWidth: 320,
-    reason:
-      "Novo produto: as partes Dados, Variantes e Imagens somam 67 px a mais que o corpo do diálogo, sem rolagem própria",
-    screens: ["produtos variantes, opções e combinação"],
-    scrollWidth: 387,
-    selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
-  },
-  {
-    clientWidth: 320,
-    reason:
-      'Imagens do produto: o diálogo (que começa em "Camiseta do teste / Produto · atualizado em…") tem 73 px de conteúdo a mais que a caixa',
-    screens: ["produtos imagens, remoção pedindo confirmação"],
-    scrollWidth: 393,
-    selector: 'div[data-slot="dialog-content"]',
-  },
-  {
-    clientWidth: 320,
-    reason:
-      "Imagens do produto: as partes Dados, Variantes e Imagens passam 6 px do corpo do diálogo",
-    screens: ["produtos imagens, remoção pedindo confirmação"],
-    scrollWidth: 326,
-    selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
-  },
-  {
     clientWidth: 280,
     reason:
       "o cartão da venda (Confirmada, Data da venda…) tem 10 px de conteúdo a mais que a caixa",
