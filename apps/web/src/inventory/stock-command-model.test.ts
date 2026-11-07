@@ -724,6 +724,16 @@ describe("submission and idempotency", () => {
       phase: "success",
       replayed: false,
     });
+    expect(received.submission).toMatchObject({
+      message: expect.stringContaining("Custo médio: R$ 11,00."),
+    });
+    const fractional = stockSucceeded(run("receive", receiveFields), {
+      ...result(23),
+      balance: { ...result(23).balance, movingAverageCost: "19.391304" },
+    });
+    expect(fractional.submission).toMatchObject({
+      message: expect.stringContaining("Custo médio: R$ 19,39."),
+    });
     expect(received.target).toMatchObject({ quantity: 15, version: 4 });
     expect(received.attempt).toBeNull();
     expect(canCloseStock(received)).toBe(true);

@@ -6,7 +6,11 @@ import type {
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
-import { formatBrlAmount, formatCalendarDate } from "../lib/format";
+import {
+  formatBrlAmount,
+  formatBrlCents,
+  formatCalendarDate,
+} from "../lib/format";
 import {
   acknowledgeProfileReview,
   addAdjustment,
@@ -225,6 +229,24 @@ describe("formatting", () => {
     expect(formatBrlAmount("12.340000")).toBe("R$ 12,34");
     expect(formatBrlAmount("12.345600")).toBe("R$ 12,3456");
     expect(formatBrlAmount("0.00")).toBe("R$ 0,00");
+  });
+
+  it("formats the average cost to the cent, half-up, never dropping the zeros", () => {
+    expect(formatBrlCents("19.391304")).toBe("R$ 19,39");
+    expect(formatBrlCents("19.395")).toBe("R$ 19,40");
+    expect(formatBrlCents("19.395000")).toBe("R$ 19,40");
+    expect(formatBrlCents("19.399999")).toBe("R$ 19,40");
+    expect(formatBrlCents("19.394999")).toBe("R$ 19,39");
+    expect(formatBrlCents("8")).toBe("R$ 8,00");
+    expect(formatBrlCents("8.000000")).toBe("R$ 8,00");
+    expect(formatBrlCents("8.5")).toBe("R$ 8,50");
+    expect(formatBrlCents("0.004999")).toBe("R$ 0,00");
+    expect(formatBrlCents("0.005")).toBe("R$ 0,01");
+    expect(formatBrlCents("99.995")).toBe("R$ 100,00");
+    expect(formatBrlCents("1234567.891")).toBe("R$ 1.234.567,89");
+    expect(formatBrlCents("-1.005")).toBe("-R$ 1,01");
+    expect(formatBrlCents("-0.001")).toBe("R$ 0,00");
+    expect(formatBrlCents("abc")).toBe("abc");
   });
 
   it("formats percentages in percentage points", () => {
@@ -1014,6 +1036,12 @@ describe("loading and empty states", () => {
     expect(some?.needsEntry).toBe(false);
     expect(some?.text).toBe("Saldo atual: 5 unidades.");
     expect(some?.costText).toBe("Custo médio: R$ 12,34.");
+    expect(stockView(balance(5, "19.391304"), true)?.costText).toBe(
+      "Custo médio: R$ 19,39."
+    );
+    expect(stockView(balance(5, "8.000000"), true)?.costText).toBe(
+      "Custo médio: R$ 8,00."
+    );
   });
 
   it("maps load failures to actionable messages", () => {

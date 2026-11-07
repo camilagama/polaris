@@ -450,7 +450,7 @@ export function ProductsCard(props: ProductsCardProps) {
         <CardTitle aria-level={2} id="catalog-products" role="heading">
           Produtos
         </CardTitle>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button
             {...connectionControlProps(props.online)}
             disabled={
