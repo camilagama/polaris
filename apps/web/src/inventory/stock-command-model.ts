@@ -15,6 +15,7 @@ import { DecimalAmount } from "@polaris/domain/money/money";
 import { isCalendarDate } from "../lib/dates";
 import {
   formatBrlAmount,
+  formatBrlCents,
   formatCalendarDate,
   formatQuantity,
 } from "../lib/format";
@@ -337,12 +338,16 @@ export function receiveNeedsCost(
   return action === "receive" && canInformCost(target);
 }
 
+function informedCostText(cost: string | null): string {
+  return cost === null ? costText(cost) : formatBrlAmount(cost);
+}
+
 function costActionBlock(target: StockTarget): string | null {
   if (target.costUnavailable) {
     return "Sem conexão. O custo só pode ser informado com conexão.";
   }
   if (target.movingAverageCost !== null) {
-    return `Esta variante já tem custo: ${formatBrlAmount(target.movingAverageCost)} por unidade.`;
+    return `Esta variante já tem custo: ${formatBrlCents(target.movingAverageCost)} por unidade.`;
   }
   if (target.quantity === 0) {
     return "Esta variante está com saldo 0. Para informar o custo, dê entrada no estoque.";
@@ -1428,7 +1433,7 @@ function stockSuccessMessage(
     return `Este mesmo pedido já tinha sido registrado. Nada foi duplicado. ${balanceText}`;
   }
   if (action === "cost") {
-    return `Custo informado: ${costText(result.balance.movingAverageCost)} por unidade.`;
+    return `Custo informado: ${informedCostText(result.balance.movingAverageCost)} por unidade.`;
   }
   if (action === "receive") {
     return `Recebimento registrado. ${balanceText} Custo médio: ${costText(result.balance.movingAverageCost)}.`;

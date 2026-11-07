@@ -31,6 +31,7 @@ import {
 } from "@polaris/domain/sales/sale-adjustments";
 import {
   formatBrlAmount,
+  formatBrlCents,
   formatCalendarDate,
   formatInstant,
   formatQuantity,
@@ -866,7 +867,7 @@ export function stockView(
   const costText =
     movingAverageCost === null
       ? "Custo desconhecido. Margem indeterminada."
-      : `Custo médio: ${formatBrlAmount(movingAverageCost)}.`;
+      : `Custo médio: ${formatBrlCents(movingAverageCost)}.`;
   return {
     costText,
     needsEntry: false,

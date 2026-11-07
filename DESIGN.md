@@ -407,7 +407,7 @@ O Admin é o dash com outro menu e uma faixa de ambiente ([ADR 0070](docs/adr/00
 
 Decidido na revisão do checkpoint Gate 4 (13/10/2026) ([ADR 0026](docs/adr/0026-ui-de-estoque-organizacao-pela-sessao-e-preco-de-tabela.md)). A tela `/inventory` já existe e está no menu do shell, com receber, contar e baixar; a lista abaixo segue como a diretriz do que ela cobre. As telas consomem os commands existentes, sem alterar o domínio, e seguem os tokens e os estados deste documento:
 
-- **Saldo por variante:** quantidade, custo médio e versão do saldo; custo desconhecido aparece como texto explícito, nunca como zero.
+- **Saldo por variante:** quantidade, custo médio e versão do saldo; custo desconhecido aparece como texto explícito, nunca como zero; custo médio ao centavo, half-up; o dado guarda 6 casas (ADR 0008).
 - **Receber:** custo unitário em BRL, data de ocorrência, identificador de comando gerado pela tela.
 - **Baixar:** quantidade, motivo da lista fixa e nota (obrigatória para "outro"), sem permitir saldo negativo.
 - **Contar:** quantidade física; conflito de versão reapresenta o saldo atualizado, e o valor de valoração só é oferecido quando o custo é desconhecido e a quantidade é positiva.
