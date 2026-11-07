@@ -12,6 +12,9 @@ export interface PixHandoff {
   url: string | null;
 }
 
+/* A label longer than the card at a large browser font breaks into lines instead of widening the card. */
+const WRAPS = "h-auto min-h-ctl-md whitespace-normal py-1.5";
+
 function PageLink({ className, url }: { className: string; url: string }) {
   return (
     <a
@@ -82,22 +85,28 @@ export function PixWaiting({
     </Field>
   );
   return (
-    <CardContent className="grid gap-3 border-t pt-(--card-spacing)">
+    <CardContent className="grid grid-cols-1 gap-3 border-t pt-(--card-spacing)">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="m-0 font-medium text-sm">Pix Automático</h3>
-        <Badge variant="warning">Aguardando a aprovação no app do banco</Badge>
+        <Badge
+          className="h-auto min-h-5 min-w-0 shrink whitespace-normal py-px text-start leading-tight"
+          variant="warning"
+        >
+          Aguardando a aprovação no app do banco
+        </Badge>
       </div>
       <p className="m-0 text-muted-foreground text-support">
         Autorize uma vez. O teste começa quando o banco confirmar; gerar o
         código não inicia o teste.
       </p>
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {code}
         {handoff.url ? (
           <div className="order-2 grid justify-items-start gap-1 md:order-1">
             <PageLink
               className={cn(
                 buttonVariants({ variant: "outline" }),
+                WRAPS,
                 "md:hidden"
               )}
               url={handoff.url}
@@ -105,6 +114,7 @@ export function PixWaiting({
             <PageLink
               className={cn(
                 buttonVariants({ variant: "default" }),
+                WRAPS,
                 "hidden md:inline-flex"
               )}
               url={handoff.url}
@@ -122,7 +132,12 @@ export function PixWaiting({
         waitedOut={waitedOut}
       />
       <div>
-        <Button onClick={onChooseAgain} type="button" variant="ghost">
+        <Button
+          className={WRAPS}
+          onClick={onChooseAgain}
+          type="button"
+          variant="ghost"
+        >
           Escolher outra forma de pagamento
         </Button>
       </div>
