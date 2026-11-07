@@ -2759,6 +2759,9 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
           .click();
         const footer = chartRegion(page).locator("tfoot");
         await expect(footer).toContainText("Depois de hoje: despesas R$ 30,00");
+        expect(
+          await assertAmountsOnOneLine(chartRegion(page).locator("tbody"))
+        ).toBeGreaterThanOrEqual(10);
         await assertAmountsOnOneLine(footer);
         await assertNothingClipped(chartRegion(page), {
           allowScroll: ["[data-slot=card]"],
