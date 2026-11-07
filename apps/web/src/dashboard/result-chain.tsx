@@ -40,7 +40,8 @@ function rowClass(row: ChainRow): string {
 /**
  * The dotted line from the end of the name to the value: it fills what is left of the cell and says nothing. Its 1 rem
  * floor holds the line apart from the name, but in a window of 22 rem or less (320 px with the font at 20 px) the floor
- * plus the longest word of a name is wider than the card, so there the line may shrink to nothing.
+ * plus the longest word of a name is wider than the card, so there the line may shrink to nothing. The limit is in rem because a media query follows the browser font, which is
+ * what makes a window of 320 px with 20 px letters narrow in rem; in px it would not catch that case.
  */
 const LEADER =
   "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted";
