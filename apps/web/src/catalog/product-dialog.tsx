@@ -233,10 +233,14 @@ function ProductTabs({
       <TabsList
         activateOnFocus
         aria-label="Partes do produto"
-        className="w-full"
+        className="h-auto w-full flex-wrap gap-y-4"
       >
         {tabs.map((value) => (
-          <TabsTrigger key={value} value={value}>
+          <TabsTrigger
+            className="h-[calc(var(--spacing-ctl-md)-6px)]"
+            key={value}
+            value={value}
+          >
             <TabLabel
               invalid={value === "dados" && dataInvalid}
               label={TAB_LABELS[value]}
