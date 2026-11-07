@@ -90,12 +90,13 @@ function isNegative(value: string | null | undefined): boolean {
 
 /* The table measures its own box (`@container`), like the one of the return of a sale: narrower than 48rem (a phone, or
    a tablet with the sidebar open) each day is a card, with the date as its title and the name of each column
-   (`data-label`) beside its value; the head row is only for the screen reader. Nothing scrolls sideways, and "Depois de
-   hoje" stays in view under the cards. */
+   (`data-label`) beside its value; narrower than 14rem (320 px with the browser font at 24 px) the name goes above the
+   value, because its 7rem would leave the value a sliver. The head row is only for the screen reader. Nothing scrolls
+   sideways, and "Depois de hoje" stays in view under the cards. */
 const CARD_ROW =
   "@max-3xl:grid @max-3xl:gap-1 @max-3xl:border-b @max-3xl:py-3 @max-3xl:hover:bg-transparent";
 const CARD_CELL =
-  "text-right tabular-nums @max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-3xl:whitespace-normal @max-3xl:px-0! @max-3xl:py-0.5 @max-3xl:text-left @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
+  "text-right tabular-nums @max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-[13.999rem]:grid-cols-1 @max-[13.999rem]:gap-0 @max-3xl:whitespace-normal @max-3xl:px-0! @max-3xl:py-0.5 @max-3xl:text-left @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
 const CARD_TITLE =
   "h-auto whitespace-normal py-2.5 text-left align-middle font-medium text-foreground text-sm @max-3xl:px-0 @max-3xl:py-0";
 

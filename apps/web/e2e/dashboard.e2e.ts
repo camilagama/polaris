@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import {
   assertAmountsOnOneLine,
+  assertNoPageScroll,
   assertNothingClipped,
   assertTextsApart,
   expectReflowFont,
@@ -2697,7 +2698,7 @@ test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal
   }
 });
 
-test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 20 px", () => {
+test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 24, 20 e 16 px", () => {
   skipOutsideChromium();
 
   /** Millions of reais: the half of the chart totals is 126 px wide at this size when they sit in two fixed halves, and a value this long is wider. */
@@ -2718,7 +2719,7 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
     ],
   };
 
-  for (const fontPixels of [20, 16]) {
+  for (const fontPixels of [24, 20, 16]) {
     reflowTest(
       `com a letra em ${fontPixels} px, o R$ e o número de cada valor ficam na mesma linha`,
       async ({ page }) => {
@@ -2741,6 +2742,28 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
         await assertNothingClipped(chain(page), {
           allowScroll: ["[data-slot=table-container]"],
         });
+      }
+    );
+  }
+
+  for (const fontPixels of [24, 20, 16]) {
+    reflowTest(
+      `com a letra em ${fontPixels} px, a tabela dos dias é um cartão por dia e o "Depois de hoje" lê inteiro, sem rolar de lado`,
+      async ({ page }) => {
+        const server = new FakeReportServer();
+        await openReflowViewport(page, { fontPixels });
+        await openDashboard(page, server);
+        await expectReflowFont(page, fontPixels);
+        await chartRegion(page)
+          .getByRole("button", { name: "Ver os números" })
+          .click();
+        const footer = chartRegion(page).locator("tfoot");
+        await expect(footer).toContainText("Depois de hoje: despesas R$ 30,00");
+        await assertAmountsOnOneLine(footer);
+        await assertNothingClipped(chartRegion(page), {
+          allowScroll: ["[data-slot=card]"],
+        });
+        await assertNoPageScroll(page);
       }
     );
   }
