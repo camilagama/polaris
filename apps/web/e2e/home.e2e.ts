@@ -4564,9 +4564,12 @@ async function foldSideMenu(page: Page) {
   await expect(
     page.getByRole("button", { exact: true, name: "Expandir menu" })
   ).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.getAnimations().length))
+    .toBe(0);
 }
 
-/** Names that fit in one line at the 9 rem the row keeps for the name when the column is 20 rem wide. */
+/** Names that fit in one line at the 9 rem or so the row keeps for the name, with a value of up to four digits, when the column is 20 rem wide. */
 const SHORT_NAMES = ["Camiseta lisa", "Calça jeans slim", "Tênis de corrida"];
 
 /** From the sidebar up the line is one row only when its box is 20 rem or wider; under it the name has its own line. */
@@ -4576,7 +4579,7 @@ function columnRem(block: Locator) {
   return block
     .locator("ol > li")
     .first()
-    .evaluate((row) => row.clientWidth / 16);
+    .evaluate((row) => row.getBoundingClientRect().width / 16);
 }
 
 function expectNameReads(
@@ -4644,13 +4647,19 @@ test.describe("Mais vendidos do mês de 1150 a 1280 px: o nome lê inteiro com a
     page,
   }) => {
     const server = new FakeServer(SOLD);
-    server.top = rankingOf(LONG_NAMES);
+    server.top = rankingOf(SHORT_NAMES);
     await page.setViewportSize({ height: 800, width: 1024 });
     await openHome(page, server);
     const open = await rankingRows(page);
-    for (const row of open) {
-      expect(row.figuresTop).toBeGreaterThanOrEqual(row.nameBottom - 1);
-    }
+    expect(open).toHaveLength(3);
+    open.forEach((row, index) => {
+      expectNameReads(
+        row,
+        SHORT_NAMES[index] ?? "",
+        true,
+        `1024 px, nome ${index + 1}`
+      );
+    });
     await page.setViewportSize({ height: 740, width: 360 });
     const phone = await rankingRows(page);
     for (const row of phone) {
