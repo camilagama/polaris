@@ -6,7 +6,9 @@ import { expect } from "e2e";
  * com M os dias do ano até hoje, e a leitura do mês do gráfico (novembro) diz "· N de 7 dias sem custo informado".
  * O explorador esperava o mesmo período nos dois; este teste afirma isso.
  */
-const CHART_TEXT = /\d+ de \d+ dias sem custo informado\. A diferença/;
+// o texto de "Este mês" ("1 a 30 de novembro. 1 de 7 dias…") fica na tela até o ano chegar: espera o do ano
+const CHART_TEXT =
+  /^1 de janeiro a .*\d+ de \d+ dias sem custo informado\. A diferença/;
 const READING_TEXT = /^· \d+ de \d+ dias sem custo informado$/;
 const DAYS = /(\d+) de (\d+) dias sem custo informado/;
 

@@ -18,6 +18,9 @@ interface StoredSession {
 const STORES = (process.env.E2E_AGENT_LOJAS ?? "")
   .split(" ")
   .filter((store) => store !== "");
+if (STORES.length === 0) {
+  throw new Error("E2E_AGENT_LOJAS vazia: diga as lojas fictícias do run.");
+}
 
 function storedSession(store: string): StoredSession {
   const file = join(process.env.E2E_AGENT_STATE ?? "", "sessoes.json");
