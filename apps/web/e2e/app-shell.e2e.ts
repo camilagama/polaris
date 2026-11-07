@@ -1526,11 +1526,11 @@ test.describe("a altura mínima do conteúdo vem do cabeçalho", () => {
     const main = await page.locator("main#conteudo").evaluate((element) => ({
       minHeight: Number.parseFloat(getComputedStyle(element).minHeight),
     }));
-    // the window minus the header (`--app-header`) and the 3.25 rem the bar reserves (`--app-bottom-bar`)
-    expect(main.minHeight).toBeCloseTo(740 - 48 - 52, 0);
+    // the window minus the header (`--app-header`) and the 3.375 rem the bar reserves (`--app-bottom-bar`)
+    expect(main.minHeight).toBeCloseTo(740 - 48 - 54, 0);
     // the panel of the content fills the window down to the bar
     const panel = await page.locator("[data-app-panel]").boundingBox();
-    expect(panel?.height ?? 0).toBeGreaterThanOrEqual(740 - 48 - 52);
+    expect(panel?.height ?? 0).toBeGreaterThanOrEqual(740 - 48 - 54);
   });
 
   test("a 1280 px não há altura mínima e o cabeçalho tem 56 px", async ({
