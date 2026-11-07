@@ -269,6 +269,34 @@ describe.each([
   });
 });
 
+/**
+ * The same `--input` border on the two surfaces that sit lighter than the card in the dark: the `--muted` strip a field
+ * can land on (the lowered block inside a card) and the outline button's own fill (`dark:bg-secondary/60`) inside a dialog
+ * or menu, where the surface under it is `--popover`, not the card. Both are graphic elements (WCAG 1.4.11, 3:1); with
+ * `--input` at L 0.55 they measured 2.81 and 2.97.
+ */
+describe("contraste do contorno sobre muted e sobre o botão outline em popover, tema escuro", () => {
+  const palette = new Map([
+    ...tokens(block(":root")),
+    ...tokens(block(".dark")),
+  ]);
+  const rows = pairs("Tema escuro");
+
+  it.each(["`muted`", "`secondary/60 sobre popover`"])(
+    "`input` / %s reaches 3:1 and is in the map",
+    (background) => {
+      const row = rows.find(
+        (item) =>
+          item.foreground === "`input`" && item.background === background
+      );
+      expect(row, `input / ${background} is not in the map`).toBeDefined();
+      expect(
+        ratio(color("`input`", palette), color(background, palette))
+      ).toBeGreaterThanOrEqual(3);
+    }
+  );
+});
+
 const OUTLINE_VARIANT = /outline:\s*"([^"]*)"/;
 
 describe("borda do botão outline", () => {
