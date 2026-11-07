@@ -177,7 +177,7 @@ export function NumbersTable({ hasCosts, series }: NumbersTableProps) {
           <TableFooter className="@max-3xl:block">
             <TableRow className="@max-3xl:block">
               <TableCell
-                className="@max-3xl:block @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left text-right tabular-nums"
+                className="@max-3xl:block @max-3xl:whitespace-normal @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left text-right tabular-nums"
                 colSpan={columns}
               >
                 <MoneyText
