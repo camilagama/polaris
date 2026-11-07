@@ -61,9 +61,9 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
   },
   "home.e2e.ts": {
     bare: 1,
-    coarse: 3,
+    coarse: 4,
     from: 'test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"',
-    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1280 px are not a phone",
+    why: "the heights test opens its own browser contexts, which a finger case would not share; the windows of 1024 to 1361 px are not a phone",
   },
   "money-nowrap-reflow.e2e.ts": { bare: 0, coarse: 0, why: "" },
   "pendencias-reflow.e2e.ts": {
