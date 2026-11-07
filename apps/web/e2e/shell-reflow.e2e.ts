@@ -56,6 +56,7 @@ function labelBoxes(navigation: Locator) {
     const linesOf = (target: HTMLElement) => {
       const lines: string[] = [];
       let lastTop = Number.NaN;
+      let current = "";
       const texts = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
       for (let part = texts.nextNode(); part; part = texts.nextNode()) {
         const content = part.textContent ?? "";
@@ -65,10 +66,12 @@ function labelBoxes(navigation: Locator) {
           letter.setEnd(part, index + 1);
           const { top } = letter.getBoundingClientRect();
           if (Number.isNaN(lastTop) || Math.abs(top - lastTop) > 1) {
-            lines.push("");
+            current = "";
+            lines.push(current);
             lastTop = top;
           }
-          lines[lines.length - 1] += content[index];
+          current += content[index];
+          lines[lines.length - 1] = current;
         }
       }
       return lines;
