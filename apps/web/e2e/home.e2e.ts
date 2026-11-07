@@ -4605,7 +4605,7 @@ function expectNameReads(
   }
 }
 
-test.describe("Mais vendidos do mês de 1150 a 1280 px: o nome lê inteiro com a lateral aberta e recolhida", () => {
+test.describe("Mais vendidos do mês de 1150 a 1361 px: o nome lê inteiro com a lateral aberta e recolhida, e a coluna chega a 20 rem em 1153 px (recolhida) e 1361 px (aberta)", () => {
   for (const side of ["aberta", "recolhida"] as const) {
     reflowTest(
       `lateral ${side}`,
@@ -4642,6 +4642,59 @@ test.describe("Mais vendidos do mês de 1150 a 1280 px: o nome lê inteiro com a
         expect([...seen].sort()).toEqual(
           side === "aberta" ? ["empilhada"] : ["empilhada", "numa linha"]
         );
+      },
+      { coarse: false }
+    );
+  }
+
+  const EDGES = [
+    { oneLineAt: 1153, side: "recolhida", stackedAt: 1152 },
+    { oneLineAt: 1361, side: "aberta", stackedAt: 1360 },
+  ] as const;
+
+  for (const edge of EDGES) {
+    reflowTest(
+      `lateral ${edge.side}: o nome empilha a ${edge.stackedAt} px e fica numa linha só a ${edge.oneLineAt} px`,
+      async ({ page }) => {
+        await page.setViewportSize({ height: 800, width: edge.stackedAt });
+        const server = new FakeServer(SOLD);
+        server.top = rankingOf(SHORT_NAMES);
+        await openHome(page, server);
+        if (edge.side === "recolhida") {
+          await foldSideMenu(page);
+        }
+        for (const [width, stacked] of [
+          [edge.stackedAt, true],
+          [edge.oneLineAt, false],
+        ] as const) {
+          // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other on the same page
+          await page.setViewportSize({ height: 800, width });
+          const block = region(page, "Mais vendidos do mês");
+          await expect(block).toContainText("un.");
+          const rows = await rankingRows(page);
+          const rem = await columnRem(block);
+          const when = `${edge.side} ${width} px (${rem} rem)`;
+          if (stacked) {
+            expect(rem, `${when}: coluna abaixo de 20 rem`).toBeLessThan(
+              ONE_LINE_REM
+            );
+          } else {
+            expect(
+              rem,
+              `${when}: coluna a partir de 20 rem`
+            ).toBeGreaterThanOrEqual(ONE_LINE_REM);
+          }
+          expect(rows, when).toHaveLength(3);
+          rows.forEach((row, index) => {
+            expectNameReads(
+              row,
+              SHORT_NAMES[index] ?? "",
+              stacked,
+              `${when}, nome ${index + 1}`
+            );
+          });
+          await assertNoPageScroll(page);
+        }
       },
       { coarse: false }
     );
