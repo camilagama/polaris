@@ -329,13 +329,29 @@ function judge(seen: readonly Finding[], mine: readonly KnownFinding[]) {
 const describe = ({ clientWidth, scrollWidth, selector, text }: Finding) =>
   `${selector} "${text}": ${scrollWidth} px of content in ${clientWidth} px`;
 
-/** The roots of a screen: the page (its `main` when there is one) and each dialog that is open over it. */
-async function rootsOf(page: Page): Promise<Locator[]> {
+const DIALOG = '[role="dialog"]';
+
+interface Root {
+  locator: Locator;
+  skip?: string | undefined;
+}
+
+/**
+ * The roots of a screen: the page (its `main` when there is one) and each dialog that is open over it. When the page
+ * falls back to `body` the dialogs are inside it, so `body` leaves them out and each is measured once, as its own root.
+ */
+async function rootsOf(page: Page): Promise<Root[]> {
   const main = page.locator("main");
-  const page_ = (await main.count()) === 1 ? main : page.locator("body");
-  const dialogs = page.locator('[role="dialog"]');
+  const onMain = (await main.count()) === 1;
+  const pageRoot: Root = onMain
+    ? { locator: main }
+    : { locator: page.locator("body"), skip: DIALOG };
+  const dialogs = page.locator(DIALOG);
   const count = await dialogs.count();
-  return [page_, ...Array.from({ length: count }, (_, i) => dialogs.nth(i))];
+  return [
+    pageRoot,
+    ...Array.from({ length: count }, (_, i) => ({ locator: dialogs.nth(i) })),
+  ];
 }
 
 /**
@@ -386,10 +402,11 @@ async function sweep(
   );
   const seen: Finding[] = [];
   let measured = 0;
-  for (const root of await rootsOf(page)) {
+  for (const { locator, skip } of await rootsOf(page)) {
     // biome-ignore lint/performance/noAwaitInLoops: one root at a time, the page is shared
-    const found = await findClipped(root, {
+    const found = await findClipped(locator, {
       allowScroll: SCROLLS_ON_PURPOSE.map(({ selector }) => selector),
+      skip,
     });
     measured += found.measured;
     seen.push(
@@ -610,6 +627,30 @@ test.describe("a guarda pega o que diz pegar, nas isenções e nos diálogos", (
       element.style.overflowWrap = "anywhere";
     });
     expect((await sweep(page, "controle", [])).fresh).toEqual([]);
+  });
+
+  test("sem main, o diálogo aberto é medido uma vez, e o corte da página fora dele também reprova", async ({
+    page,
+  }) => {
+    await openReflowViewport(page);
+    const cut = (id: string) =>
+      `<span id="${id}" style="display:block;width:60px;overflow:hidden;white-space:nowrap">Cartão de crédito parcelado em doze vezes</span>`;
+    await page.setContent(
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0"><div role="dialog">${cut("in-dialog")}</div></body></html>`
+    );
+    await expect(page.locator("main")).toHaveCount(0);
+    const once = await sweep(page, "controle", []);
+    expect(once.fresh.map(describe)).toEqual([
+      expect.stringContaining("Cartão de crédito"),
+    ]);
+    await page.evaluate((html) => {
+      document.body.insertAdjacentHTML("afterbegin", html);
+    }, cut("in-page"));
+    const both = await sweep(page, "controle", []);
+    expect(both.fresh.map(({ selector }) => selector).sort()).toEqual([
+      'div[role="dialog"] > span#in-dialog',
+      "span#in-page",
+    ]);
   });
 
   test("a página que rola para o lado é um achado conhecido enquanto rola, e reprova quando deixa de rolar", async ({
