@@ -177,7 +177,7 @@ export function NumbersTable({ hasCosts, series }: NumbersTableProps) {
           <TableFooter className="@max-3xl:block">
             <TableRow className="@max-3xl:block">
               <TableCell
-                className="@max-3xl:block @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left text-right tabular-nums"
+                className="@max-3xl:block @max-3xl:whitespace-normal @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left text-right tabular-nums"
                 colSpan={columns}
               >
                 <MoneyText
@@ -207,13 +207,13 @@ function costsNote(fromCopy: boolean): string {
  * the first width that reads fewer lines. The reading and the legend wrap in lines, so they also take `content-start`:
  * the room goes below the text, not between its fragments.
  */
-const TITLE_RESERVE = "min-h-[2.875rem] min-[390px]:min-h-[1.375rem]";
+const TITLE_RESERVE = "min-h-[2.875rem] min-[24.375rem]:min-h-[1.375rem]";
 const DESCRIPTION_RESERVE =
-  "min-h-[calc(6*1.125rem)] min-[360px]:min-h-[calc(5*1.125rem)] min-[412px]:min-h-[calc(4*1.125rem)] min-[540px]:min-h-[calc(3*1.125rem)] min-[767px]:min-h-[calc(2*1.125rem)]";
+  "min-h-[calc(6*1.125rem)] min-[22.5rem]:min-h-[calc(5*1.125rem)] min-[25.75rem]:min-h-[calc(4*1.125rem)] min-[33.75rem]:min-h-[calc(3*1.125rem)] min-[47.9375rem]:min-h-[calc(2*1.125rem)]";
 const READING_RESERVE =
-  "content-start min-h-[calc(5*1.125rem)] min-[340px]:min-h-[calc(4*1.125rem)] min-[480px]:min-h-[calc(3*1.125rem)] min-[600px]:min-h-[calc(2*1.125rem)]";
+  "content-start min-h-[calc(5*1.125rem)] min-[21.25rem]:min-h-[calc(4*1.125rem)] min-[30rem]:min-h-[calc(3*1.125rem)] min-[37.5rem]:min-h-[calc(2*1.125rem)]";
 const LEGEND_RESERVE =
-  "content-start min-h-[3.5rem] min-[390px]:min-h-[2.25rem] min-[680px]:min-h-[1rem]";
+  "content-start min-h-[3.5rem] min-[24.375rem]:min-h-[2.25rem] min-[42.5rem]:min-h-[1rem]";
 const NOTE_RESERVE = "min-h-[1.125rem]";
 const CHART_RESERVE = { legend: LEGEND_RESERVE, reading: READING_RESERVE };
 

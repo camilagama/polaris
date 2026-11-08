@@ -491,7 +491,7 @@ const HEADER_BRAND =
   "touch-hit focus-ring flex shrink-0 items-center gap-2 rounded-sm font-semibold text-foreground tracking-tight md:hidden";
 const HEADER_END = "ml-auto flex min-w-0 items-center gap-2 md:gap-3";
 const HEADER_BUTTON =
-  "touch-hit focus-ring inline-flex size-10 shrink-0 cursor-pointer list-none items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-accent-foreground [&::-webkit-details-marker]:hidden [&_svg]:size-[18px]";
+  "touch-hit focus-ring inline-flex size-10 shrink-0 cursor-pointer list-none items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-hover hover:text-sidebar-accent-foreground [&::-webkit-details-marker]:hidden [&_svg]:size-4.5";
 const MOBILE_MENU =
   "absolute inset-x-0 top-full max-h-[calc(100dvh-var(--app-header))] overflow-y-auto bg-sidebar pb-2 shadow-lg";
 const ACCOUNT_BUTTON =

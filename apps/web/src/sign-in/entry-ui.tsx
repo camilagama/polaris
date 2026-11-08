@@ -144,10 +144,10 @@ function HelpLine() {
 export type EntryWidth = "narrow" | "reading" | "wide";
 
 const ENTRY_WIDTH: Record<EntryWidth, string> = {
-  narrow: "max-w-[380px]",
+  narrow: "max-w-[23.75rem]",
   // 68 characters of the body text (14 px) and the two paddings of the card
   reading: "max-w-[calc(68ch+3rem)]",
-  wide: "max-w-[420px]",
+  wide: "max-w-[26.25rem]",
 };
 
 /**

@@ -327,14 +327,14 @@ describe("one column, one group, one (i) a card", () => {
   it("is one column up to 759 px, two up to 899 px and one strip of four columns from 900 px", () => {
     const markup = cards(october([]));
     expect(markup).toContain(
-      "grid grid-cols-1 gap-3 md:max-[899.98px]:grid-cols-2 min-[900px]:grid-cols-4 min-[900px]:gap-0"
+      "grid grid-cols-1 gap-3 md:max-[56.24875rem]:grid-cols-2 min-[56.25rem]:grid-cols-4 min-[56.25rem]:gap-0"
     );
     // no card takes half the width below 760 px: a span only from the first breakpoint, and none in the strip
     expect(markup).not.toMatch(BARE_SPAN);
-    expect(markup).not.toContain("min-[900px]:col-span");
+    expect(markup).not.toContain("min-[56.25rem]:col-span");
     expect(markup.match(/data-kpi-row=/g)).toHaveLength(1);
     // the cells of the strip give up their own card from 900 px
-    expect(markup.match(/min-\[900px\]:bg-transparent/g)).toHaveLength(4);
+    expect(markup.match(/min-\[56\.25rem\]:bg-transparent/g)).toHaveLength(4);
   });
 
   it("puts the chip in the box of the number, after it, with its sign and the name of what it compares with", () => {
@@ -349,9 +349,9 @@ describe("one column, one group, one (i) a card", () => {
     expect(headline.indexOf("data-kpi-chip-row")).toBeLessThan(
       headline.indexOf("data-kpi-note-row")
     );
-    expect(headline).toContain("min-[900px]:@[14rem]:flex-row");
+    expect(headline).toContain("min-[56.25rem]:@[14rem]:flex-row");
     expect(headline).not.toContain("@[14rem]:flex-wrap");
-    expect(headline).toContain("min-[900px]:@[14rem]:items-baseline");
+    expect(headline).toContain("min-[56.25rem]:@[14rem]:items-baseline");
     expect(words(sales)).toContain("+25,0%vs. setembro");
     expect(sales).toContain(
       'aria-label="subiu 25,0 por cento em relação a setembro (1 a 25/09)"'
@@ -369,9 +369,9 @@ describe("one column, one group, one (i) a card", () => {
 
   it("gives the four figures 24 px from 900 px, the one of the card below it", () => {
     const markup = cards(october([]));
-    expect(markup.match(/min-\[900px\]:text-\[1\.5rem\]/g)).toHaveLength(4);
+    expect(markup.match(/min-\[56\.25rem\]:text-\[1\.5rem\]/g)).toHaveLength(4);
     const sales = card(markup, "result-kpi-sales");
-    expect(sales).toContain("md:max-[899.98px]:text-[1.875rem]");
+    expect(sales).toContain("md:max-[56.24875rem]:text-[1.875rem]");
     expect(sales).not.toContain(" md:text-[1.875rem]");
   });
 });

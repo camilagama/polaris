@@ -27,7 +27,7 @@ const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const RECEIVE_JEANS = "Receber estoque de Calça jeans, 42";
 const WRITE_OFF_JEANS = "Baixar estoque de Calça jeans, 42";
-const INFORM_SHIRT = "Informar custo de Camiseta do teste · Azul";
+const INFORM_SHIRT = "Informar custo de Camiseta do teste, Azul";
 
 const VARIANT_IDS = /"variantIds":\["([^"]+)"\]/;
 

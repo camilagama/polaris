@@ -29,10 +29,10 @@ export const KPI_GRID =
  * The row of the Resultado: the cards of `KPI_GRID` up to 899 px (two columns from 760 px), and from 900 px one card
  * with four columns and a 1 px line between them (the Venda changes layout at the same line). The cells give up their
  * own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the sparklines to its corners. The two-column
- * rule of 760 px stops at 899.98 px because Tailwind writes an arbitrary `min-[900px]` before `md:`, which would win.
+ * rule of 760 px stops at 899.98 px (56.24875 rem) so the two rules never overlap, whatever order Tailwind writes them in.
  */
 const STRIP_LAYOUT =
-  "grid grid-cols-1 gap-3 md:max-[899.98px]:grid-cols-2 min-[900px]:grid-cols-4 min-[900px]:gap-0 min-[900px]:divide-x min-[900px]:divide-border min-[900px]:overflow-hidden min-[900px]:rounded-xl min-[900px]:bg-card min-[900px]:shadow-xs min-[900px]:ring-1 min-[900px]:ring-foreground/[0.06] min-[900px]:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
+  "grid grid-cols-1 gap-3 md:max-[56.24875rem]:grid-cols-2 min-[56.25rem]:grid-cols-4 min-[56.25rem]:gap-0 min-[56.25rem]:divide-x min-[56.25rem]:divide-border min-[56.25rem]:overflow-hidden min-[56.25rem]:rounded-xl min-[56.25rem]:bg-card min-[56.25rem]:shadow-xs min-[56.25rem]:ring-1 min-[56.25rem]:ring-foreground/[0.06] min-[56.25rem]:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
 
 /**
  * The height the strip keeps from 900 px, by its own width (its container is `KPI_STRIP_ROOT`): the tallest it gets
@@ -44,7 +44,7 @@ const STRIP_LAYOUT =
  * changes (`dashboard.e2e.ts`, "a altura da faixa de KPIs não muda").
  */
 const STRIP_RESERVE =
-  "min-[900px]:@max-[40.124rem]:min-h-[19.125rem] min-[900px]:@[40.125rem]:@max-[44.624rem]:min-h-[18.125rem] min-[900px]:@[44.625rem]:@max-[49.499rem]:min-h-[17.5rem] min-[900px]:@[49.5rem]:@max-[64.249rem]:min-h-[15.375rem] min-[900px]:@[64.25rem]:min-h-[11.875rem]";
+  "min-[56.25rem]:@max-[40.124rem]:min-h-[19.125rem] min-[56.25rem]:@[40.125rem]:@max-[44.624rem]:min-h-[18.125rem] min-[56.25rem]:@[44.625rem]:@max-[49.499rem]:min-h-[17.5rem] min-[56.25rem]:@[49.5rem]:@max-[64.249rem]:min-h-[15.375rem] min-[56.25rem]:@[64.25rem]:min-h-[11.875rem]";
 
 export const KPI_STRIP = `${STRIP_LAYOUT} ${STRIP_RESERVE}`;
 
@@ -52,7 +52,7 @@ export const KPI_STRIP = `${STRIP_LAYOUT} ${STRIP_RESERVE}`;
 export const KPI_STRIP_ROOT = "@container grid gap-3";
 
 const KPI_STRIP_CELL =
-  "@container min-[900px]:rounded-none min-[900px]:bg-transparent min-[900px]:shadow-none! min-[900px]:ring-0";
+  "@container min-[56.25rem]:rounded-none min-[56.25rem]:bg-transparent min-[56.25rem]:shadow-none! min-[56.25rem]:ring-0";
 
 /**
  * A column of the strip lines value and change up on one baseline once its content box is 14 rem wide (the value, 6 px
@@ -61,7 +61,7 @@ const KPI_STRIP_CELL =
  * with `strip`): only the arrow and the number are in the pill, and the "vs. …" is under it, in as many lines as it needs.
  */
 const STRIP_HEADLINE =
-  "min-[900px]:@[14rem]:flex-row min-[900px]:@[14rem]:items-baseline min-[900px]:@[14rem]:gap-x-1.5";
+  "min-[56.25rem]:@[14rem]:flex-row min-[56.25rem]:@[14rem]:items-baseline min-[56.25rem]:@[14rem]:gap-x-1.5";
 
 /**
  * Beside the number the row of the change keeps no height of its own: empty, it would move the baseline of the line.
@@ -70,7 +70,7 @@ const STRIP_HEADLINE =
  * comparison that comes or goes moves nothing under it.
  */
 const STRIP_CHIP_ROW =
-  "min-[900px]:@[14rem]:min-h-0 min-[900px]:@max-[13.999rem]:min-h-[3.375rem] min-[900px]:@max-[13.999rem]:items-start";
+  "min-[56.25rem]:@[14rem]:min-h-0 min-[56.25rem]:@max-[13.999rem]:min-h-[3.375rem] min-[56.25rem]:@max-[13.999rem]:items-start";
 
 /**
  * The figure of a column of the strip: 24 px in all four, whatever size the card has below 900 px. An amount of 12
@@ -81,12 +81,12 @@ const STRIP_CHIP_ROW =
  */
 function stripValueSize(characters: number): string {
   if (characters >= 14) {
-    return "min-[900px]:@[10.5rem]:text-[1.5rem] min-[900px]:@max-[10.499rem]:text-[1.125rem]";
+    return "min-[56.25rem]:@[10.5rem]:text-[1.5rem] min-[56.25rem]:@max-[10.499rem]:text-[1.125rem]";
   }
   if (characters >= 12) {
-    return "min-[900px]:@[9rem]:text-[1.5rem] min-[900px]:@max-[8.999rem]:text-[1.25rem]";
+    return "min-[56.25rem]:@[9rem]:text-[1.5rem] min-[56.25rem]:@max-[8.999rem]:text-[1.25rem]";
   }
-  return "min-[900px]:text-[1.5rem]";
+  return "min-[56.25rem]:text-[1.5rem]";
 }
 
 /**
@@ -160,7 +160,7 @@ function heroBox(size: "lg" | "md", strip = false, characters = 0): string {
     size === "lg"
       ? cn(
           "text-[1.75rem]",
-          strip ? "md:max-[899.98px]:text-[1.875rem]" : "md:text-[1.875rem]"
+          strip ? "md:max-[56.24875rem]:text-[1.875rem]" : "md:text-[1.875rem]"
         )
       : "text-[1.3125rem]",
     strip && stripValueSize(characters),
@@ -282,13 +282,13 @@ const CHIP_UP =
  * pill, so they win; they are written whole because Tailwind reads only class names that are in the source.
  */
 const STACKED_CHIP =
-  "min-[900px]:@max-[13.999rem]:h-auto min-[900px]:@max-[13.999rem]:flex-col min-[900px]:@max-[13.999rem]:items-start min-[900px]:@max-[13.999rem]:gap-0.5 min-[900px]:@max-[13.999rem]:bg-transparent min-[900px]:@max-[13.999rem]:py-0";
+  "min-[56.25rem]:@max-[13.999rem]:h-auto min-[56.25rem]:@max-[13.999rem]:flex-col min-[56.25rem]:@max-[13.999rem]:items-start min-[56.25rem]:@max-[13.999rem]:gap-0.5 min-[56.25rem]:@max-[13.999rem]:bg-transparent min-[56.25rem]:@max-[13.999rem]:py-0";
 const STACKED_PILL_UP =
-  "min-[900px]:@max-[13.999rem]:bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))]";
+  "min-[56.25rem]:@max-[13.999rem]:bg-[color-mix(in_oklab,var(--chart-sales)_12%,var(--card))]";
 const STACKED_PILL =
-  "min-[900px]:@max-[13.999rem]:h-5 min-[900px]:@max-[13.999rem]:rounded-full min-[900px]:@max-[13.999rem]:py-0.5 min-[900px]:@max-[13.999rem]:pr-[7px]";
+  "min-[56.25rem]:@max-[13.999rem]:h-5 min-[56.25rem]:@max-[13.999rem]:rounded-full min-[56.25rem]:@max-[13.999rem]:py-0.5 min-[56.25rem]:@max-[13.999rem]:pr-1.75";
 const STACKED_AGAINST =
-  "min-[900px]:@max-[13.999rem]:ml-0 min-[900px]:@max-[13.999rem]:overflow-visible min-[900px]:@max-[13.999rem]:whitespace-normal min-[900px]:@max-[13.999rem]:pr-0 min-[900px]:@max-[13.999rem]:text-muted-foreground min-[900px]:@max-[13.999rem]:leading-4";
+  "min-[56.25rem]:@max-[13.999rem]:ml-0 min-[56.25rem]:@max-[13.999rem]:overflow-visible min-[56.25rem]:@max-[13.999rem]:whitespace-normal min-[56.25rem]:@max-[13.999rem]:pr-0 min-[56.25rem]:@max-[13.999rem]:text-muted-foreground min-[56.25rem]:@max-[13.999rem]:leading-4";
 
 export function DeltaChip({
   delta,
@@ -327,11 +327,11 @@ export function DeltaChip({
     >
       <span
         className={cn(
-          "inline-flex shrink-0 items-center gap-0.5 pl-[5px]",
-          delta.against ? "pr-0" : "pr-[7px]",
+          "inline-flex shrink-0 items-center gap-0.5 pl-1.25",
+          delta.against ? "pr-0" : "pr-1.75",
           strip && STACKED_PILL,
           strip &&
-            (up ? STACKED_PILL_UP : "min-[900px]:@max-[13.999rem]:bg-muted")
+            (up ? STACKED_PILL_UP : "min-[56.25rem]:@max-[13.999rem]:bg-muted")
         )}
         data-kpi-pill=""
       >
@@ -347,7 +347,7 @@ export function DeltaChip({
       {delta.against ? (
         <span
           className={cn(
-            "ml-1.5 min-w-0 truncate pr-[7px] font-normal",
+            "ml-1.5 min-w-0 truncate pr-1.75 font-normal",
             strip && STACKED_AGAINST
           )}
           data-kpi-delta-against=""
@@ -517,7 +517,7 @@ export function KpiCard({
       <div
         className={cn(
           TOP_ROW,
-          strip && "min-[900px]:flex-wrap min-[900px]:gap-y-0"
+          strip && "min-[56.25rem]:flex-wrap min-[56.25rem]:gap-y-0"
         )}
       >
         <div className="flex min-w-0 items-center gap-1">
@@ -535,7 +535,7 @@ export function KpiCard({
             <span className="min-w-0">{title}</span>
           </h2>
           {help ? (
-            <HelpTip about={help.about} className="-my-[3px]">
+            <HelpTip about={help.about} className="-my-0.75">
               {help.text}
             </HelpTip>
           ) : null}

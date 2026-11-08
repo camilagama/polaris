@@ -117,7 +117,7 @@ function DayMarks({
               }
               return (
                 <text
-                  className="fill-foreground font-medium text-[11px] tabular-nums"
+                  className="fill-foreground font-medium text-[0.6875rem] tabular-nums"
                   data-chart-value-label=""
                   key={`label-${mark.index}`}
                   textAnchor={anchor}

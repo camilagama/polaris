@@ -65,26 +65,7 @@ interface KnownFinding {
   selector: string;
 }
 
-const KNOWN_FINDINGS: readonly KnownFinding[] = [
-  {
-    clientWidth: 280,
-    reason:
-      'o cartão "Como chegamos a este resultado" tem 22 px de conteúdo a mais que a caixa',
-    screens: ["resultado mês incompleto e gráfico de vendas"],
-    scrollWidth: 302,
-    selector:
-      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
-  },
-  {
-    clientWidth: 250,
-    reason:
-      'na tabela "Vendas e custos de cada dia" o texto "Depois de hoje: despesas R$ 135,10" passa 68 px da célula (a tabela rola, o texto sai da célula)',
-    screens: ["resultado gráfico de vendas e custos e a tabela"],
-    scrollWidth: 318,
-    selector:
-      'tfoot[data-slot="table-footer"] > tr[data-slot="table-row"] > td[data-slot="table-cell"]',
-  },
-];
+const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 
 const MEASURE_TOLERANCE = 1;
 const REFLOW_WIDTH = 320;

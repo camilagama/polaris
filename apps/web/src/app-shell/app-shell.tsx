@@ -299,12 +299,13 @@ function AppSidebar({
 
 /* 4.4 em is the width of "Histórico", 0.25 rem of slack. Below the 0.6875 rem floor the label breaks in two
    lines (`--app-bottom-bar` grows) instead of being cut. `overflow-wrap: anywhere` alone breaks it where the letters
-   run out ("Históric" and "o"), so the label offers its own syllable break (`<wbr>`, which adds nothing to the text or
-   to the accessible name). */
+   run out ("Históric" and "o", "Estoqu" and "e"), so the label offers its own syllable break (`<wbr>`, which adds
+   nothing to the text or to the accessible name). */
 const BOTTOM_BAR_LABEL =
   "max-w-full text-center [font-size:clamp(0.6875rem,calc((100cqw-0.25rem)/4.4),0.75rem)] [overflow-wrap:anywhere] @max-[3.275rem]/tab:tracking-[-0.01em]";
 
 const SYLLABLE_BREAKS: Readonly<Record<string, readonly [string, string]>> = {
+  Estoque: ["Esto", "que"],
   Histórico: ["Histó", "rico"],
 };
 
@@ -409,7 +410,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           {rejected > 0 ? (
             <span
               aria-hidden="true"
-              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[10px] text-warning-foreground tabular-nums leading-4"
+              className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-warning px-1 text-center font-semibold text-[0.625rem] text-warning-foreground tabular-nums leading-4"
               data-attention-count=""
             >
               {countText(rejected)}
@@ -595,7 +596,7 @@ function FirstAccessPage({
   if (closedNotice) {
     return (
       <div className="flow-root min-h-dvh bg-background px-(--gutter) pt-4">
-        <main className="mx-auto max-w-[420px]" id="conteudo">
+        <main className="mx-auto max-w-[26.25rem]" id="conteudo">
           {closedNotice}
         </main>
       </div>
@@ -605,7 +606,7 @@ function FirstAccessPage({
     <>
       {sessionNotice || acceptanceNotice ? (
         <div className="flow-root bg-background px-(--gutter) pt-4">
-          <div className="mx-auto max-w-[420px]">
+          <div className="mx-auto max-w-[26.25rem]">
             {sessionNotice ? <SessionEndedNotice alone /> : null}
             {acceptanceNotice ? <LegalAcceptanceNotice /> : null}
           </div>

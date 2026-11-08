@@ -118,7 +118,7 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
  */
 const ACTIONS_WIDTH = "min-[30rem]:w-48";
 const TOTAL_UNDER_VALUES =
-  "min-[30rem]:pr-[calc(12rem+11px)] md:pr-[calc(12rem+11px)]";
+  "min-[30rem]:pr-[calc(12rem+0.6875rem)] md:pr-[calc(12rem+0.6875rem)]";
 
 /**
  * The total of the rows loaded, under them: the sum the eye does down the column. The "Total do período" above is the

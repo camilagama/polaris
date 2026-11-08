@@ -238,7 +238,7 @@ export function ResultCards({
           <KpiCard
             {...(noCost ? {} : chip(read.result))}
             strip
-            className="md:max-[899.98px]:col-span-2"
+            className="md:max-[56.24875rem]:col-span-2"
             {...(resultDate ? { date: resultDate } : {})}
             {...(resultDateAtRest ? { dateReserve: resultDateAtRest } : {})}
             entity="result"
@@ -279,7 +279,7 @@ export function ResultCards({
           <KpiCard
             {...chip(read.sales)}
             strip
-            className="md:max-[899.98px]:col-span-2"
+            className="md:max-[56.24875rem]:col-span-2"
             entity="sales"
             footer={read.sales.count}
             help={{ about: "Vendas", text: read.sales.help }}
@@ -390,7 +390,7 @@ function MarginCard({
 function MarginValue({ percent }: { percent: string | null }) {
   const text = formatPercentOrDash(percent);
   const box =
-    "whitespace-nowrap font-[650] text-[1.3125rem] tabular-nums leading-[1.05] tracking-[-0.035em] min-[900px]:text-[1.5rem]";
+    "whitespace-nowrap font-[650] text-[1.3125rem] tabular-nums leading-[1.05] tracking-[-0.035em] min-[56.25rem]:text-[1.5rem]";
   if (percent === null) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
