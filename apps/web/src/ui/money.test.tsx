@@ -102,6 +102,19 @@ describe("Money, with the values showing", () => {
     );
   });
 
+  it("splits a signed amount of lg and xl with each sign, and writes a text that is not an amount as it is", () => {
+    for (const sign of ["+", "-", "−"]) {
+      const markup = renderToStaticMarkup(
+        <Money size="lg" text={`${sign}R$ 436,86`} />
+      );
+      expect(textOf(markup)).toBe(`${sign}R$ 436,86`);
+      expect(markup).toContain('data-money-currency=""');
+    }
+    const plain = renderToStaticMarkup(<Money size="lg" text="R$ 12" />);
+    expect(textOf(plain)).toBe("R$ 12");
+    expect(plain).not.toContain("data-money-currency");
+  });
+
   it("says a dash and 'sem valor' for an amount nobody knows", () => {
     const markup = renderToStaticMarkup(<Money size="lg" text={null} />);
     expect(textOf(markup)).toBe("—sem valor");

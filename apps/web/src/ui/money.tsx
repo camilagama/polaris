@@ -1,4 +1,5 @@
 import {
+  MASKED_DOTS,
   MASKED_MONEY,
   MASKED_SPOKEN,
   useHiddenValues,
@@ -21,8 +22,6 @@ const SIZE_CLASS: Record<MoneySize, string> = {
 
 /** "-R$ 1.234,56" into its sign, its whole part and its cents ("R$ 1.234,56" has the sign empty). */
 const AMOUNT = /^([-+−]?)R\$\s?([\d.]+)(,\d{2})$/;
-
-const MASKED_DOTS = MASKED_MONEY.replace("R$ ", "");
 
 /* the "R$" is a size smaller than the number and the cents one step under it, in the color of the number */
 const CURRENCY_CLASS = "font-medium text-[0.56em] tracking-normal";

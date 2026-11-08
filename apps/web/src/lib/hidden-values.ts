@@ -11,7 +11,8 @@ const HIDDEN_VALUES_STORAGE_KEY = "polaris-valores";
 const HIDDEN = "escondidos";
 
 /** What an amount becomes on the screen, and what a screen reader says in its place. */
-export const MASKED_MONEY = "R$ ••••";
+export const MASKED_DOTS = "••••";
+export const MASKED_MONEY = `R$ ${MASKED_DOTS}`;
 export const MASKED_SPOKEN = "valor escondido";
 
 /** An amount as `formatBrlAmount` writes it, with its sign: "R$ 1.234,56", "-R$ 12,00", "+R$ 436,86". */
