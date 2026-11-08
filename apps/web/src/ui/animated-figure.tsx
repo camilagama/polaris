@@ -17,8 +17,10 @@ import { cn } from "@/lib/utils";
  * `scripts/ui-source-rules.test.ts`). Nothing else on a screen counts: the rest appears finished.
  *
  * The figure is written twice on purpose. The static one (`children`, the same DOM the screen had before the counter)
- * stays in the tree for a screen reader, a search and the tests, with the final text from the first frame, and is out of
- * sight while the counter shows; the counter is `aria-hidden`, so no step of the count is ever announced.
+ * stays in the tree for a screen reader, a search and the tests, with the final text from the first frame; the counter
+ * is `aria-hidden`, so no step of the count is ever announced. Both sit in the same cell of a grid: the static figure is
+ * transparent and holds the width of the final text, so the counter has its room in every frame of a figure that grows
+ * and the card keeps its size.
  *
  * The counter runs only at the `full` level of motion: on a phone and under `prefers-reduced-motion` the static figure
  * is all there is, final at the first frame. It also never runs while the values are hidden (the amount is written
@@ -199,8 +201,12 @@ const SYMBOL_PARTS =
 const SMALL_PERCENT =
   "[&::part(right)]:font-medium [&::part(right)]:text-[0.56em] [&::part(right)]:tracking-normal";
 /* the fade of the digits spills half an em past each side of the number: clipped sideways, so the card that holds it never
-   scrolls or looks cut, and left open vertically, where the digits roll */
-const WRAPPER = "inline-block overflow-x-clip align-baseline";
+   scrolls or looks cut, and left open vertically, where the digits roll. The two figures share the one cell, aligned by
+   their baselines */
+const WRAPPER =
+  "inline-grid overflow-x-clip align-baseline *:col-start-1 *:row-start-1 *:self-baseline";
+/* the static figure: it holds the width of the final text, no height (the counter sets the line), and is seen only by the reading tools */
+const TWIN = "pointer-events-none h-0 select-none whitespace-nowrap opacity-0";
 /* the host takes room above and below the digits for the fade of their mask: pulled back so the line keeps its height */
 const HOST_BOX = "-my-[0.25em] align-baseline";
 
@@ -231,7 +237,6 @@ function Counter({
   return (
     <span
       aria-hidden="true"
-      className={WRAPPER}
       data-figure-counting={counting ? "" : undefined}
     >
       <NumberFlow
@@ -278,9 +283,9 @@ export function AnimatedFigure({
     return <>{children}</>;
   }
   return (
-    <>
-      <span className="sr-only">{children}</span>
+    <span className={WRAPPER}>
+      <span className={TWIN}>{children}</span>
       <Counter enter={enter.current} figure={figure} smallSign={smallSign} />
-    </>
+    </span>
   );
 }
