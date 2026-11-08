@@ -63,6 +63,12 @@ export interface TabPanel {
   value: string;
 }
 
+/** A named set of tabs drawn as its own row: "Da loja" and "Da conta" in Configurações. */
+export interface TabGroup {
+  label: string;
+  values: readonly string[];
+}
+
 /** What the edges of the list hide: tabs to the left (already passed) and to the right (not reached yet). */
 interface HiddenEdges {
   end: boolean;
@@ -76,16 +82,20 @@ const EDGE_FADE =
 
 /**
  * The list of tabs of a screen, on one line: on a narrow phone it scrolls sideways (Configurações has six), with room
- * above and below for the 44 px touch area of each tab. The tab that opened is brought into view, again when the set of
- * tabs changes (`signature`), and a fade at the edge that hides tabs says there are more to reach.
+ * above and below for the 44 px touch area of each tab; `grouped` draws it in named rows instead. The tab that opened
+ * is brought into view, again when the set of tabs or the way they are drawn changes (`signature`), and a fade at the
+ * edge that hides tabs says there are more to reach.
  */
 export function ScreenTabList({
   children,
+  grouped = false,
   label,
   signature = "",
   value,
 }: {
   children: ReactNode;
+  /** The tabs come in rows (`ScreenTabGroup`) instead of one segmented strip. */
+  grouped?: boolean;
   label: string;
   /** Changes when the tabs of the list change (one more, one less): the open tab is placed again. */
   signature?: string;
@@ -140,7 +150,14 @@ export function ScreenTabList({
         onScroll={measure}
         ref={scroller}
       >
-        <TabsList aria-label={label} className="justify-start">
+        <TabsList
+          aria-label={label}
+          className={
+            grouped
+              ? "h-auto w-full flex-col items-start gap-3 bg-transparent p-0"
+              : "justify-start"
+          }
+        >
           {children}
         </TabsList>
       </div>
@@ -160,6 +177,50 @@ export function ScreenTabList({
       ) : null}
     </div>
   );
+}
+
+/**
+ * One row of a grouped list: the name of the group, then its tabs on the muted strip. It owns no tab stop of its own
+ * (`role="none"`): the arrows keep walking the whole list, as they do in the single strip, and the name of each tab is
+ * the same.
+ */
+function ScreenTabGroup({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <div className="flex max-w-full items-center gap-3" role="none">
+      <span
+        aria-hidden="true"
+        className="min-w-16 shrink-0 text-muted-foreground text-xs"
+        data-tabs-group={label}
+      >
+        {label}
+      </span>
+      <div
+        className="inline-flex h-ctl-md items-center rounded-lg bg-muted p-0.75"
+        role="none"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** The tabs of the list, row by row, the rows with no tab to show left out (not even their name). */
+export function groupedTabsOf<Tab extends { value: string }>(
+  tabs: readonly Tab[],
+  groups: readonly TabGroup[]
+): { label: string; tabs: Tab[] }[] {
+  return groups
+    .map((group) => ({
+      label: group.label,
+      tabs: tabs.filter((tab) => group.values.includes(tab.value)),
+    }))
+    .filter((group) => group.tabs.length > 0);
 }
 
 /**
@@ -279,12 +340,15 @@ function useKeptPanels(): [
  * listed off, in their place, with no panel.
  */
 export function ScreenTabs({
+  groups,
   label,
   panels,
   reserved = [],
   screen,
   title,
 }: {
+  /** Draws the tabs in named rows instead of one strip (Configurações, from 760 px). */
+  groups?: readonly TabGroup[] | undefined;
   /** The name of the list of tabs, for a screen reader. */
   label: string;
   panels: readonly TabPanel[];
@@ -296,24 +360,28 @@ export function ScreenTabs({
   const [value, select] = useScreenTab(screen, available);
   const [kept, hold] = useKeptPanels();
   const tabs = listedTabs(screen, available, reserved);
+  const trigger = (tab: (typeof tabs)[number]) => (
+    <ScreenTabTrigger key={tab.value} reserved={tab.reserved} value={tab.value}>
+      {tab.label}
+    </ScreenTabTrigger>
+  );
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">{title}</h1>
       <Tabs className="min-w-0 gap-5" onValueChange={select} value={value}>
         <ScreenTabList
+          grouped={groups !== undefined}
           label={label}
-          signature={tabs.map((tab) => tab.value).join()}
+          signature={`${groups === undefined ? "strip" : "rows"}:${tabs.map((tab) => tab.value).join()}`}
           value={value}
         >
-          {tabs.map((tab) => (
-            <ScreenTabTrigger
-              key={tab.value}
-              reserved={tab.reserved}
-              value={tab.value}
-            >
-              {tab.label}
-            </ScreenTabTrigger>
-          ))}
+          {groups === undefined
+            ? tabs.map(trigger)
+            : groupedTabsOf(tabs, groups).map((group) => (
+                <ScreenTabGroup key={group.label} label={group.label}>
+                  {group.tabs.map(trigger)}
+                </ScreenTabGroup>
+              ))}
         </ScreenTabList>
         {panels.map((panel) => (
           <ScreenTabPanel

@@ -79,3 +79,44 @@ describe("the screen of a tab knows whether its tab is the open one", () => {
     expect(stateOf(html, "produtos")).toBe("active");
   });
 });
+
+const NAME_OF_ROW = /<span[^>]*data-tabs-group="Da loja"[^>]*>/;
+
+describe("the tabs in named rows", () => {
+  const GROUPS = [
+    { label: "Da loja", values: ["produtos"] },
+    { label: "Da conta", values: ["outra"] },
+  ];
+
+  function rows(groups: typeof GROUPS) {
+    address.search = "";
+    return renderToStaticMarkup(
+      <ScreenTabs
+        groups={groups}
+        label="Abas"
+        panels={PANELS}
+        screen="products"
+        title="Produtos"
+      />
+    );
+  }
+
+  it("writes the name of each row that has a tab, and none for a row with none", () => {
+    const html = rows(GROUPS);
+    expect(html).toContain('data-tabs-group="Da loja"');
+    expect(html).not.toContain('data-tabs-group="Da conta"');
+    expect(html.split("data-tabs-group=")).toHaveLength(2);
+  });
+
+  it("hides the name of a row from the screen reader and keeps the tabs inside it", () => {
+    const html = rows([
+      { label: "Da loja", values: ["produtos", "categorias"] },
+    ]);
+    const name = html.match(NAME_OF_ROW)?.[0] ?? "";
+    expect(name).toContain('aria-hidden="true"');
+    expect(html).toContain('role="none"');
+    const row = html.slice(html.indexOf('role="none"'));
+    expect(row.indexOf("Produtos")).toBeGreaterThan(row.indexOf("Da loja"));
+    expect(row.indexOf("Categorias")).toBeGreaterThan(row.indexOf("Produtos"));
+  });
+});

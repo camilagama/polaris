@@ -6,10 +6,11 @@ import { requestedTab } from "../app-shell/navigation-model";
 import { ScreenTabs, type TabPanel } from "../app-shell/screen-tabs";
 import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
+import { useIsMobile } from "../lib/use-mobile";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { loadAuthMethods } from "../sign-in/sign-in-model";
 import { AppVersionLine } from "./app-version-line";
-import { settingsTabsShown } from "./settings-tabs";
+import { SETTINGS_GROUPS, settingsTabsShown } from "./settings-tabs";
 
 /** Each tab is its own chunk, as each screen was. */
 const PANELS: Readonly<Record<string, TabPanel>> = {
@@ -99,6 +100,7 @@ function usePasswordOn(): boolean | null {
 export function SettingsScreen() {
   const { billingSelfService, organization } = useCurrentOrganization();
   const passwordOn = usePasswordOn();
+  const phone = useIsMobile();
   const { search } = useAddress();
   const asked = requestedTab("settings", search).value;
   const shows = settingsTabsShown({
@@ -119,6 +121,7 @@ export function SettingsScreen() {
   return (
     <>
       <ScreenTabs
+        groups={phone ? undefined : SETTINGS_GROUPS}
         label="Configurações"
         panels={panels}
         reserved={reserved}
