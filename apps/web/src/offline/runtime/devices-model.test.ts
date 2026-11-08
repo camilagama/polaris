@@ -18,6 +18,7 @@ import {
   SESSION_OLD_PANEL,
   signInAgainPanel,
 } from "./devices-model";
+import { PLAN_REFUSED_REASON } from "./offline-runtime";
 
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
@@ -195,5 +196,37 @@ describe("what the screen says while it does not know this device", () => {
       "Este navegador não conseguiu preparar o acesso offline, e sem isso não dá para revogar por aqui. Recarregue a página. Se continuar, tente em outro celular ou computador em que o Polaris funcione."
     );
     expect(RECOGNIZING_UNAVAILABLE_TEXT).not.toBe(RECOGNIZING_SLOW_TEXT);
+  });
+
+  it.each([
+    ["no reason is known", null],
+    ["the local queue does not open", "queue_open_failed"],
+    ["the last sync failed", "sync_failed"],
+  ])("blames the browser when %s", (_name, reason) => {
+    for (const slow of [false, true]) {
+      expect(recognitionState(slow, "unavailable", reason)).toBe("unavailable");
+    }
+  });
+
+  it.each([
+    "legal_acceptance_required",
+    "organization_closed",
+    "purge_failed",
+    "session_changed",
+    "session_refused",
+    PLAN_REFUSED_REASON,
+  ])(
+    "does not blame the browser when the reason is about the account or the plan (%s)",
+    (reason) => {
+      for (const slow of [false, true]) {
+        expect(recognitionState(slow, "unavailable", reason)).toBe("slow");
+      }
+    }
+  );
+
+  it("an absent runtime blames the browser whatever the stale reason", () => {
+    expect(recognitionState(false, null, "session_refused")).toBe(
+      "unavailable"
+    );
   });
 });

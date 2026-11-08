@@ -386,6 +386,15 @@ function isPlanRefusal(error: unknown): boolean {
 /** The `unavailable` reason when the plan of the store does not include offline writes (the device is fine). */
 export const PLAN_REFUSED_REASON = "entitlement_denied";
 
+/** Reasons of the `unavailable` phase that come from the account or the store, not from the browser. */
+export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
+  "legal_acceptance_required",
+  "organization_closed",
+  "purge_failed",
+  "session_changed",
+  "session_refused",
+]);
+
 function startFailureReason(
   error: unknown,
   legal: boolean,

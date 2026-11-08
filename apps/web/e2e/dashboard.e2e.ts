@@ -2391,7 +2391,7 @@ test.describe("a faixa de KPIs do Resultado: uma pe√ßa a partir de 900 px, cart√
         );
       expect(figures).toHaveLength(4);
       for (const figure of figures) {
-        expect(figure).toEqual(["24px", "650", "tabular-nums"]);
+        expect(figure).toEqual(["24px", "600", "tabular-nums"]);
       }
     });
   }

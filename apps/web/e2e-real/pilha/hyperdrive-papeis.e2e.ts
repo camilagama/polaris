@@ -94,7 +94,7 @@ test("as conexões vivas do preview são dos logins do run, sem superusuário ne
   const origin = String(testInfo.project.use.baseURL);
   const user = await createJourneyUser(
     origin,
-    journeyName("pilha", "papeis", testInfo.retry)
+    journeyName("pilha", "papeis", testInfo.retry, testInfo.repeatEachIndex)
   );
   const seen = new Map<string, { rolsuper: boolean; rolbypassrls: boolean }>();
   let polling = true;

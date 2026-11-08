@@ -22,6 +22,11 @@ const onboardingOwnerRole = "polaris_onboarding_owner";
  * notice of the call (0098, 0101).
  */
 const noticeRecipientOwnerRole = "polaris_notice_recipient_owner";
+/**
+ * Owns the freezing of the M3 (ADR 0106, D9): three columns of every session, read only to count; the filter is the
+ * function's.
+ */
+const activationOwnerRole = "polaris_activation_owner";
 const deviceSessionUserScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.device_session_user_id', true), '')`;
 const onboardingUserScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.onboarding_user_id', true), '')`;
 const noticeRecipientNoticeScope = sql`NULLIF(pg_catalog.current_setting('app.owner_scope.notice_recipient_notice_id', true), '')`;
@@ -129,7 +134,8 @@ export const session = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
   },
   // Row security with FORCE (0097): one policy per role with a grant, none TO PUBLIC; a role that gets a grant one day and
-  // no policy sees no row. The purge owner sees only the sessions of users never verified (0098).
+  // no policy sees no row. The purge owner sees only the sessions of users never verified (0098); the owner of the
+  // measure sees every row, through its column grant of `user_id`, `created_at` and `updated_at` only.
   (table) => [
     index("session_user_id_idx").on(table.userId),
     pgPolicy("session_auth_runtime_all", {
@@ -152,6 +158,11 @@ export const session = pgTable(
       for: "delete",
       to: deviceSessionOwnerRole,
       using: sql`${table.userId} = ${deviceSessionUserScope}`,
+    }),
+    pgPolicy("session_activation_owner_select", {
+      for: "select",
+      to: activationOwnerRole,
+      using: sql`true`,
     }),
   ]
 ).enableRLS();

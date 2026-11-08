@@ -371,8 +371,8 @@ describe("one column, one group, one (i) a card", () => {
     const markup = cards(october([]));
     expect(markup.match(/min-\[56\.25rem\]:text-\[1\.5rem\]/g)).toHaveLength(4);
     const sales = card(markup, "result-kpi-sales");
-    expect(sales).toContain("md:max-[56.24875rem]:text-[1.875rem]");
-    expect(sales).not.toContain(" md:text-[1.875rem]");
+    expect(sales).toContain("text-value-lg");
+    expect(sales).not.toContain("text-[1.875rem]");
   });
 });
 

@@ -575,11 +575,16 @@ async function run() {
                      ORDER BY 1) AS reach
          FROM pg_class AS c WHERE c.oid = 'public.platform_internal_organizations'::regclass`
     );
-    // the owner of the activation series reads it too (ADR 0106, D2: an internal store gets no e-mail), by column
+    // the owners of the activation series and of its measure read it too (ADR 0106, D2 and D9: an internal store gets
+    // no e-mail and is not counted), by column
     assert.deepEqual(marker.rows, [
       {
         forced: true,
-        reach: ["polaris_activation_notice_owner", "polaris_admin_owner"],
+        reach: [
+          "polaris_activation_notice_owner",
+          "polaris_activation_owner",
+          "polaris_admin_owner",
+        ],
         rls: true,
       },
     ]);

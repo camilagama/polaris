@@ -282,6 +282,14 @@ gates.push(
     name: "activation-candidates",
     script: "verify-activation-candidates-gate.ts",
   },
+  // the M3 of the activation (ADR 0106, D9): its cases mark internal, inside a transaction rolled back, the stores the
+  // other gates left, and write sale headers whose items the deferred checks never see
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "activation-returns",
+    script: "verify-activation-returns-gate.ts",
+  },
   // lives in apps/admin: the Admin Worker through its real fetch in workerd (Access simulated), against the job's Postgres.
   // Local Postgres only: the harness refuses any other host (the Neon proof of the Worker is the staging smoke).
   {
@@ -395,6 +403,7 @@ const suites: Record<string, string[]> = {
     "admin-suspension",
     "activation-funnel",
     "activation-candidates",
+    "activation-returns",
     "admin-worker",
     "privacy-cases",
     "data-export",
