@@ -58,6 +58,7 @@ const NOTICE_OWNER = "polaris_notice_recipient_owner";
 const DEVICE_OWNER = "polaris_device_session_owner";
 const ADMIN_OWNER = "polaris_admin_owner";
 const ACTIVATION_NOTICE_OWNER = "polaris_activation_notice_owner";
+const ACTIVATION_OWNER = "polaris_activation_owner";
 const TABLES = [
   "account",
   "auth_security_audit_event",
@@ -151,6 +152,13 @@ const EXPECTED_POLICIES: PolicyRow[] = [
     UNVERIFIED_OWNER,
     null,
     "((event_type = 'unverified_user_deleted'::auth_security_audit_event_type) AND (outcome = 'succeeded'::auth_security_audit_outcome) AND (actor_id IS NULL))"
+  ),
+  // the M3 of the activation (ADR 0106, D9): every row, read through three columns only; the filter is the function's
+  policy(
+    "session.session_activation_owner_select",
+    "SELECT",
+    ACTIVATION_OWNER,
+    "true"
   ),
   policy(
     "session.session_auth_runtime_all",
