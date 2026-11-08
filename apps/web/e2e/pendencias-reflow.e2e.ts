@@ -275,3 +275,84 @@ for (const { maxRows, width } of ROWS_AT_16_PIXELS) {
     { coarse: width < WIDE_WINDOW }
   );
 }
+
+const UNAVAILABLE_STATES = [
+  {
+    motivo: "plano",
+    other: "Este navegador não conseguiu preparar o acesso offline.",
+    reason: "O modo offline faz parte do plano Pro.",
+  },
+  {
+    motivo: "navegador",
+    other: "O modo offline faz parte do plano Pro.",
+    reason: "Este navegador não conseguiu preparar o acesso offline.",
+  },
+];
+
+async function openUnavailable(
+  page: Page,
+  motivo: string,
+  width: number,
+  fontPixels: number
+) {
+  await openReflowViewport(page, { fontPixels, width });
+  await serveLabWorker(page);
+  await page.goto(
+    `/offline-screens-lab?screen=attention&state=unavailable&motivo=${motivo}`
+  );
+  await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
+  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  await expect(page.getByTestId("message")).toContainText(
+    "Iniciar: ok (ready)",
+    { timeout: 20_000 }
+  );
+  await expectReflowFont(page, fontPixels);
+}
+
+async function expectUnavailableWhole(
+  page: Page,
+  width: number,
+  fontPixels: number
+) {
+  const link = page.getByRole("link", { name: "Voltar ao Início" });
+  await expect(link).toBeVisible();
+  const box = await link.boundingBox();
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
+  if (fontPixels > 16) {
+    expect(box?.height).toBeGreaterThanOrEqual(TOUCH);
+    expect(box?.width).toBeGreaterThanOrEqual(TOUCH);
+  }
+  const list = frame(page);
+  await assertNothingClipped(list);
+  await assertNoEllipsis(list);
+  await assertNoPageScroll(page);
+}
+
+for (const { motivo, other, reason } of UNAVAILABLE_STATES) {
+  reflowTest(
+    `sem o modo offline (${motivo}): título, aviso, o motivo certo e o caminho de volta, a 320 px com letra de 20 px`,
+    async ({ page }) => {
+      await openUnavailable(page, motivo, 320, 20);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Pendências" })
+      ).toBeVisible();
+      const notice = page.getByRole("status").filter({
+        hasText: "Sem modo offline neste aparelho",
+      });
+      await expect(notice).toContainText(reason);
+      await expect(notice).not.toContainText(other);
+      await expect(
+        page.getByRole("link", { name: "Voltar ao Início" })
+      ).toHaveAttribute("href", "/");
+      await expectUnavailableWhole(page, 320, 20);
+    }
+  );
+
+  reflowTest(
+    `sem o modo offline (${motivo}): a 360 px com letra de 16 px lê inteiro`,
+    async ({ page }) => {
+      await openUnavailable(page, motivo, 360, 16);
+      await expectUnavailableWhole(page, 360, 16);
+    }
+  );
+}
