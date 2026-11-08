@@ -258,23 +258,23 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
     expect(box).not.toBeNull();
     const { height, width, x, y } = box as NonNullable<typeof box>;
     const middle = y + height / 2;
-    const points = {
-      borda: [x + 0.5, middle],
-      icone: [x + 12, middle],
-      recheio: [x + width - 3, middle],
-      texto: [x + width / 2, middle],
-    } as const;
-    for (const [where, [left, top]] of Object.entries(points)) {
+    const points = [
+      { left: x + 0.5, where: "borda" },
+      { left: x + 12, where: "icone" },
+      { left: x + width - 3, where: "recheio" },
+      { left: x + width / 2, where: "texto" },
+    ];
+    for (const { left, where } of points) {
       // biome-ignore lint/performance/noAwaitInLoops: one point at a time
       const tip = await page.evaluate(
-        ([pointX, pointY]) => {
+        ({ pointX, pointY }) => {
           const hit = document.elementFromPoint(pointX, pointY);
           return {
             inside: Boolean(hit?.closest(".sync-status")),
             title: hit?.closest("[title]")?.getAttribute("title") ?? null,
           };
         },
-        [left, top]
+        { pointX: left, pointY: middle }
       );
       expect(tip, where).toEqual({ inside: true, title: sentence });
     }
