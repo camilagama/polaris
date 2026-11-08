@@ -32,8 +32,9 @@ import {
  *      product (not a minute before) or on the 5th day still without one; a3 on the 10th day only after the a2 went out;
  *      nothing at 07:59 or 12:00 of São Paulo, everything at 08:00 and 11:59; a store of exactly 14 days is out, and no
  *      person gets a 4th e-mail;
- *   5. the switch and the validity: nothing while the state is null or later than the clock; what fell due before the
- *      switch went on comes back `series_off`, a step 3 days past its trigger comes back `expired`, a minute less `due`;
+ *   5. the switch and the validity: nothing while the state is null or later than the clock; every step of a store
+ *      created before the switch went on comes back `series_off` (even one falling due after it), a store created at
+ *      that very instant keeps its series, a step 3 days past its trigger comes back `expired`, a minute less `due`;
  *   6. the daily cap of 60 (with 58 recorded today, 5 skipped that do not count): 2 `due` and `truncated`, the skipped
  *      kinds still answered; another session cannot take its lock while the sweep's transaction is open; the billing
  *      role records them, and the next day the rest comes back in order; the day is São Paulo's from its midnight
@@ -712,10 +713,10 @@ async function run() {
 
     // 5. the switch and the validity
     await scenario(async (client) => {
-      const owedSince = (hours: number) =>
+      const createdBefore = (hours: number) =>
         newStore(client, { createdAt: at(ten, -(24 + hours) * HOUR) });
-      const beforeSwitch = await owedSince(3);
-      const afterSwitch = await owedSince(1);
+      const beforeSwitch = await createdBefore(3);
+      const afterSwitch = await createdBefore(1);
       const almostExpired = await newStore(client, {
         createdAt: at(ten, -(4 * DAY - MINUTE)),
       });
@@ -737,7 +738,7 @@ async function run() {
       );
       await client.query(
         "UPDATE public.activation_series_state SET enabled_since = $1",
-        [at(ten, -2 * HOUR)]
+        [at(ten, -(24 + 2) * HOUR)]
       );
       const rows = await candidates(client, ten);
       assert.deepEqual(stepsOf(rows, beforeSwitch), ["a1:series_off"]);
@@ -751,7 +752,58 @@ async function run() {
       assert.deepEqual(stepsOf(later, expired), ["a1:expired", "a2:due"]);
     });
     tests.push(
-      "the switch: nothing while the state is null or later than the clock; a step that fell due before the instant comes back series_off, one after it due; the validity: an a1 3 days past its trigger comes back expired, a minute less due"
+      "the switch: nothing while the state is null or later than the clock; a step of a store created before the instant comes back series_off, one of a store created after it due; the validity: an a1 3 days past its trigger comes back expired, a minute less due"
+    );
+
+    await scenario(async (client) => {
+      const madeWhileOff = await newStore(client, {
+        createdAt: at(ten, -6 * DAY),
+      });
+      const madeWhileOffWithA2 = await newStore(client, {
+        createdAt: at(ten, -11 * DAY),
+        product: { at: at(ten, -10 * DAY) },
+      });
+      await seedNotice(
+        client,
+        madeWhileOffWithA2,
+        "a2",
+        "sent",
+        at(ten, -7 * DAY)
+      );
+      const madeWhileOn = await newStore(client, {
+        createdAt: at(ten, -(24 + 1) * HOUR),
+      });
+      const madeAtTheInstant = await newStore(client, {
+        createdAt: at(ten, -3 * DAY),
+      });
+      await client.query(
+        "UPDATE public.activation_series_state SET enabled_since = $1",
+        [at(ten, -3 * DAY)]
+      );
+      const rows = await candidates(client, ten);
+      assert.deepEqual(
+        stepsOf(rows, madeWhileOff),
+        ["a1:series_off", "a2:series_off"],
+        "the a1 and the a2 of a store created before the switch went on, the a2 falling due after it, are series_off"
+      );
+      assert.deepEqual(
+        stepsOf(rows, madeWhileOffWithA2),
+        ["a3:series_off"],
+        "the a3 falling due after the instant, of a store created before it, is series_off"
+      );
+      assert.deepEqual(
+        stepsOf(rows, madeWhileOn),
+        ["a1:due"],
+        "a store created after the instant keeps its series"
+      );
+      assert.deepEqual(
+        stepsOf(rows, madeAtTheInstant),
+        ["a1:due"],
+        "a store created at the very instant keeps its series"
+      );
+    });
+    tests.push(
+      "the switch is read from the creation of the store: a store created before the instant, with the a2 (or the a3 after a sent a2) falling due after it, comes back series_off at every step and never joins the series; a store created at or after the instant is due"
     );
 
     // 6. the daily cap

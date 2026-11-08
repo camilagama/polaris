@@ -4,9 +4,9 @@
 -- sends an e-mail: the function only answers IDs, and the series stays off (D6).
 --
 -- * `activation_series_state`: one row, the instant the hourly sweep first found the switch of the series on, or null
---   while it finds it off. Only the billing role writes it. The function answers nothing while it is null, and a step
---   that fell due before it comes back as `series_off`, recorded skipped: turning the switch on sends nothing owed
---   while it was off.
+--   while it finds it off. Only the billing role writes it. The function answers nothing while it is null, and every
+--   step of a store created before it comes back as `series_off`, recorded skipped: a store made while the switch was
+--   off never joins the series, and switching it on again does not resume the series of the stores of the earlier span.
 -- * `activation_notice_candidates(p_now, p_limit)`, SECURITY DEFINER of `polaris_activation_notice_owner`, EXECUTE to
 --   the billing role only: the steps owed now, at most `p_limit` (1 to 50) and whether more wait. `p_now` is the
 --   caller's clock, which the day, the window and the triggers read; the role still sees only the stores of the last 14
@@ -63,9 +63,10 @@ SET ROLE polaris_activation_notice_owner;--> statement-breakpoint
 --   a3  10 days after the store, once the a2 of the person went out.
 -- Only between 08:00 and 12:00 of São Paulo, at most 60 recorded and not skipped a day of São Paulo, and only after the
 -- switch is seen on. `outcome` says how the caller records each: `due` (owed), `expired` (3 days after the trigger
--- went by: recorded skipped) or `series_off` (fell due before the switch went on: recorded skipped); the last two do not
--- count in the cap. `truncated` says that more were owed than this call returns, by the batch or by the cap (with the
--- cap reached and nothing but due steps, the answer is empty). Only IDs, a step and instants.
+-- went by: recorded skipped) or `series_off` (a step of a store created before the switch went on: recorded
+-- skipped); the last two do not count in the cap. `truncated` says that more were owed than this call returns, by the
+-- batch or by the cap (with the cap reached and nothing but due steps, the answer is empty). Only IDs, a step and
+-- instants.
 CREATE FUNCTION public.activation_notice_candidates(p_now timestamptz, p_limit integer)
 RETURNS TABLE (organization_id text, user_id text, step text, due_at timestamptz, outcome text, truncated boolean)
 LANGUAGE plpgsql
@@ -158,7 +159,7 @@ BEGIN
   ),
   owed AS (
     SELECT s.organization_id, s.user_id, s.created_at, s.step, s.due_at,
-           CASE WHEN s.due_at < enabled THEN 'series_off'
+           CASE WHEN s.created_at < enabled THEN 'series_off'
                 WHEN p_now >= s.due_at + interval '3 days' THEN 'expired'
                 ELSE 'due' END AS outcome
       FROM steps AS s

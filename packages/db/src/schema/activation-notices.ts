@@ -220,8 +220,8 @@ export const activationEmailSuppressions = pgTable(
 /**
  * The switch of the series as the database last saw it (ADR 0106, D6): one row, and only the instant the hourly sweep
  * first found `ACTIVATION_EMAILS_ENABLED` on, or null while it finds it off. The candidates' function answers nothing
- * while it is null, and a step that fell due before it is recorded skipped (`series_off`): turning the switch on never
- * sends what was owed while it was off. The billing role writes it; the owner of the series reads it.
+ * while it is null, and every step of a store created before it is recorded skipped (`series_off`): a store made while
+ * the switch was off never joins the series. The billing role writes it; the owner of the series reads it.
  */
 export const activationSeriesState = pgTable(
   "activation_series_state",
