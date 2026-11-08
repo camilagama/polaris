@@ -7,6 +7,8 @@ import { SaleReceipt } from "./sale-receipt";
 
 const FRAME = /\bborder|\bring|\bshadow/;
 const MUTED_BLOCK = /<dl class="[^"]*bg-muted[^"]*"/g;
+const TOTAL_PARTS =
+  /data-money-currency="">R\$ <\/span><span data-money-number="">219<\/span><span[^>]*data-money-cents="">,90</;
 const SALE_ID = "77777777-7777-4777-8777-777777777777";
 
 const sale: ConfirmedSaleView = {
@@ -63,7 +65,7 @@ describe("the sale as a receipt", () => {
     expect(markup.indexOf("Subtotal")).toBeLessThan(perforation);
     expect(markup.indexOf("Desconto")).toBeLessThan(perforation);
     expect(markup.indexOf("Total devido")).toBeGreaterThan(perforation);
-    expect(markup).toContain("219,90");
+    expect(markup).toMatch(TOTAL_PARTS);
   });
 
   it("sets the dates and the payment back as a muted block with no border, two columns from 760 px", () => {

@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { Card, CardContent } from "@/ui/card";
+import { MoneyText } from "@/ui/hidden-values";
+import { Money } from "@/ui/money";
 import { ConfirmedDetails, ConfirmedItems } from "./confirmed-sale-parts";
 import type { ConfirmedSaleView } from "./sale-form-model";
-import { LeaderRow, Money, Perforation } from "./sale-summary-panel";
+import { LeaderRow, Perforation } from "./sale-summary-panel";
 
 interface SaleReceiptProps {
   /** Shown above the dates: the cancellation, when the sale was cancelled. */
@@ -44,7 +46,7 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
                 key={row.key}
                 label={row.label}
                 tone={row.tone}
-                value={row.value}
+                value={<MoneyText text={row.value} />}
               />
             ))}
           </dl>
@@ -60,7 +62,8 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
                   </dt>
                   <dd>
                     <Money
-                      className="font-semibold text-value-lg tracking-[-0.035em]"
+                      className="font-semibold tracking-[-0.035em]"
+                      size="lg"
                       text={total.value}
                     />
                   </dd>

@@ -328,7 +328,10 @@ export function moneyFontFaults(path: string, text: string): string[] {
 const MONEY_LIST_FILES = [
   "src/catalog/screen-parts.tsx",
   "src/expenses/expense-list.tsx",
+  "src/inventory/inventory-page.tsx",
+  "src/sales/confirmed-sale-parts.tsx",
   "src/sales/sale-history-list.tsx",
+  "src/sales/sale-receipt.tsx",
 ] as const;
 const HAND_TYPED_REAIS = /R\$/;
 

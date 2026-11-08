@@ -4,9 +4,11 @@ import { expect, test } from "@playwright/test";
 import { skipOutsideChromium } from "../e2e/reflow";
 import { expenseStates } from "./ui-expense-states";
 import { historyStates } from "./ui-history-states";
+import { saleDetailStates } from "./ui-sale-detail-states";
+import { stockStates } from "./ui-stock-states";
 
 /**
- * "Esconder valores" on the lists: with the choice on, the history and the expenses, with their totals, write no amount in reais in their
+ * "Esconder valores" on the lists and the receipt: with the choice on, the history, the expenses, the sale detail and the stock, with their totals, write no amount in reais in their
  * text, names, titles or alternative texts, and say "valor escondido" in its place; with it off, the "R$" is in the same
  * text, size and color as the number (`sm` and `md`), and the figures of the column end in the same x.
  */
@@ -23,6 +25,8 @@ const WRITTEN_AMOUNT = /^R\$ [\d.]+,\d{2}$/;
 const SCREENS = [
   { name: "Histórico", open: historyStates.list },
   { name: "Despesas", open: expenseStates.list },
+  { name: "Detalhe da venda", open: saleDetailStates.detail },
+  { name: "Estoque", open: stockStates.list },
 ] as const;
 
 async function useDevice(
@@ -118,6 +122,33 @@ for (const theme of THEMES) {
           1.01
         );
       }
+    });
+  }
+}
+
+for (const theme of THEMES) {
+  for (const viewport of VIEWPORTS) {
+    test(`Detalhe da venda: o R$ do total tem a cor do número, apartado e menor (${viewport.name}, ${theme})`, async ({
+      page,
+    }) => {
+      await useDevice(page, viewport, theme, false);
+      await saleDetailStates.detail(page);
+      const total = page.locator("[data-money-currency]").first();
+      await expect(total).toBeAttached();
+      const measured = await total.evaluate((currency) => {
+        const root = currency.closest("[data-money]") as HTMLElement;
+        const number = root.querySelector("[data-money-number]") as HTMLElement;
+        return {
+          currencyColor: getComputedStyle(currency).color,
+          currencySize: Number.parseFloat(getComputedStyle(currency).fontSize),
+          numberColor: getComputedStyle(number).color,
+          numberSize: Number.parseFloat(getComputedStyle(number).fontSize),
+          text: root.textContent ?? "",
+        };
+      });
+      expect(measured.text).toMatch(WRITTEN_AMOUNT);
+      expect(measured.currencyColor).toBe(measured.numberColor);
+      expect(measured.currencySize).toBeLessThan(measured.numberSize);
     });
   }
 }
