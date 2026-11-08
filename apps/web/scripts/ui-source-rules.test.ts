@@ -330,6 +330,7 @@ const MONEY_LIST_FILES = [
   "src/expenses/expense-list.tsx",
   "src/inventory/inventory-page.tsx",
   "src/sales/confirmed-sale-parts.tsx",
+  "src/sales/sale-confirmed-panel.tsx",
   "src/sales/sale-history-list.tsx",
   "src/sales/sale-receipt.tsx",
 ] as const;

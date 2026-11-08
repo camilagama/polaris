@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { skipOutsideChromium } from "../e2e/reflow";
 import { expenseStates } from "./ui-expense-states";
 import { historyStates } from "./ui-history-states";
+import { saleStates } from "./ui-sale-states";
 import { saleDetailStates } from "./ui-sale-detail-states";
 import { stockStates } from "./ui-stock-states";
 
@@ -27,6 +28,7 @@ const SCREENS = [
   { name: "Despesas", open: expenseStates.list },
   { name: "Detalhe da venda", open: saleDetailStates.detail },
   { name: "Estoque", open: stockStates.list },
+  { name: "Venda confirmada", open: saleStates.confirmed },
 ] as const;
 
 async function useDevice(
