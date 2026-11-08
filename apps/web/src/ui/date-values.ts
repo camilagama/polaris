@@ -223,7 +223,7 @@ type TypedDate =
   | { iso: IsoDate; ok: true }
   | { ok: false; reason: "empty" | "incomplete" | "invalid" };
 
-/** The day a text field holds: empty, not yet all there (`dd/mm/aaaa`), not a real day (31/02/2026) or the day. */
+/** The day a text field holds: empty, not yet all there (`dd/mm/aaaa`), not a real day (`31/02/2026`) or the day. */
 export function parseTypedDate(text: string): TypedDate {
   const trimmed = text.trim();
   if (!trimmed) {

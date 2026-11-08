@@ -10,7 +10,7 @@ import {
 import { axeFaults } from "./ui-guardrails";
 
 /**
- * "Digitar as datas" in the panel of the period picker, in the gallery ("hoje" is 24/10/2026): the two fields take
+ * "Digitar as datas" in the panel of the period picker, in the gallery ("hoje" is `24/10/2026`): the two fields take
  * `dd/mm/aaaa` from the keyboard with the bars put by the mask, the period they make is the one the calendar makes
  * from the same two days, a day touched in the calendar is written in the fields and a day typed is marked in the
  * calendar, a day that does not exist, an unfinished one, an empty field and an inverted range each say what is wrong
