@@ -174,7 +174,11 @@ function trialTable(dom: Dom, funnel: ActivationFunnelResponse) {
   return funnelTable(
     dom,
     "Teste do Pro e a 1ª venda, por semana de criação da loja",
-    ["Semana", "Lojas que começaram o teste", "1ª venda dentro do teste"],
+    [
+      "Semana",
+      "Lojas com o teste usado ou dispensado",
+      "1ª venda até 7 dias depois do teste ou do pagamento",
+    ],
     funnel.cohorts.map((cohort) => [
       weekText(cohort),
       optionalCountAndShare(cohort.trialStarted, undefined),
@@ -198,7 +202,7 @@ function activeTable(dom: Dom, funnel: ActivationFunnelResponse) {
 const FOURTEEN_DAYS_NOTE =
   'Ativação em 14 dias: lojas da semana com a 1ª venda confirmada até 14 dias depois de criadas. Enquanto o prazo corre, a semana aparece como "não disponível". A ativação em 7 e 14 dias é hipótese a ajustar com a linha de base.';
 const TRIAL_NOTE =
-  "Teste do Pro: lojas da semana que começaram o teste e, entre elas, as que tiveram a 1ª venda confirmada dentro do teste.";
+  "Teste do Pro: lojas da semana com o teste usado ou dispensado (quem assina o Pro sem teste também entra) e, entre elas, as que tiveram a 1ª venda confirmada até 7 dias depois do início do teste ou do pagamento (a duração do teste).";
 
 /** What the numbers leave out, from the answer: the count of internal stores and the server's own sentences. */
 function notesBlock(dom: Dom, funnel: ActivationFunnelResponse) {
