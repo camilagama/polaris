@@ -454,7 +454,8 @@ function PhoneEditorContent({
 
 /** What each kind of editor needs of its Popover: the period takes the width of its month, a choice is a short list. */
 const POPUP_CLASS = {
-  "date-range": "w-auto max-w-[calc(100vw-1rem)] gap-3 p-2",
+  "date-range":
+    "max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-y-auto overflow-x-hidden p-2",
   select: "w-56 gap-0 p-1",
   text: "",
 } as const;
