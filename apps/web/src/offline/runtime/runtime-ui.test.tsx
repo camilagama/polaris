@@ -230,6 +230,8 @@ describe("the sync status in the header", () => {
       expect(html).toContain(`<span class="sr-only">${label.text}</span>`);
       expect(html).toContain(`title="${label.text}">${label.short}</span>`);
       expect(html).toMatch(SHORT_TEXT);
+      // the tooltip is stretched over the whole chip, the icon and the border included
+      expect(html).toContain("after:absolute after:inset-0");
       // never only color: an icon goes with the text
       expect(html).toMatch(HIDDEN_ICON);
     }

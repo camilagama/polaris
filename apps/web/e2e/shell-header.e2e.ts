@@ -253,6 +253,7 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
     await serve(page);
     await openShell(page);
     const sentence = (await chip(page).locator(".sr-only").textContent()) ?? "";
+    expect(sentence).not.toBe("");
     const box = await chip(page).boundingBox();
     expect(box).not.toBeNull();
     const { height, width, x, y } = box as NonNullable<typeof box>;
