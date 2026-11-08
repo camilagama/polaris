@@ -36,7 +36,7 @@ export const LEGAL_DOCUMENTS: Readonly<
     changes: null,
     effectiveFrom: null,
     minAcceptedVersion: 1,
-    sha256: "73fee38bfe65f14f9e94e3f7cefe1b3b9853b644029214b381cc21474d60f757",
+    sha256: "4e5ffe3eadfa4f9cd294fc47d70e1675b8bf38754ca75359d60f13c4b7509ce1",
     version: 1,
   }),
   terms: Object.freeze({

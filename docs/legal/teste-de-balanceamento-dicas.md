@@ -49,7 +49,7 @@ Só entra no envio quem é **dono ativo com e-mail verificado**: nunca e-mail di
 - **Flag desligada em todos os ambientes.** Ligar depois não manda o acumulado.
 - **Uma reclamação desliga a série**, e só o usuário a religa, por decisão explícita e registrada.
 - **Sem rastreio de abertura nem de clique**, sem imagem, sem pixel; texto fixo; a fila leva só o ID do aviso.
-- **Texto na Política**, com como parar, retenção e que a resposta ao e-mail chega à caixa de suporte (quem lê: `[P48/U7: quem lê as respostas]`).
+- **Texto na Política**, com como parar, retenção e que a resposta ao e-mail chega à caixa de suporte (quem lê: `{{SUPORTE_QUEM_LE_RESPOSTAS}}`).
 - **Direitos do titular:** acesso (o estado das dicas aparece nas configurações da conta), oposição (o próprio parar de receber; art. 18, § 2º, de memória) e a tabela fora da exportação da loja.
 
 ## 5. Conclusão
