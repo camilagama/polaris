@@ -214,5 +214,58 @@ for (const viewport of FORM_VIEWPORTS) {
         )
         .toBe(true);
     });
+
+    test("digitar as datas: a data que não existe não aplica e leva o foco ao campo; o período digitado chega à lista", async ({
+      page,
+    }) => {
+      const asked = await openHistory(page);
+      const popup = await addFilter(page, "Período");
+      await expect(popup.getByRole("grid").first()).toBeVisible();
+      await popup.getByRole("button", { name: "Digitar as datas" }).click();
+      const start = popup.getByRole("textbox", { name: "Início" });
+      const end = popup.getByRole("textbox", { name: "Fim" });
+      await expect(start).toBeFocused();
+
+      await start.pressSequentially("31022026");
+      await end.pressSequentially("14102026");
+      const apply = popup.getByRole("button", { exact: true, name: "Aplicar" });
+      await expect(apply).toHaveAttribute("aria-disabled", "true");
+      await expect(apply).toHaveAccessibleDescription(
+        "Essa data não existe. Confira dia, mês e ano."
+      );
+      await apply.focus();
+      await page.keyboard.press("Enter");
+      await expect(start).toBeFocused();
+      await expect(popup).toBeVisible();
+      await expect(popup.getByRole("alert")).toHaveText(
+        "Essa data não existe. Confira dia, mês e ano."
+      );
+
+      await start.fill("");
+      await start.pressSequentially("01102026");
+      await expect(popup.getByRole("alert")).toHaveCount(0);
+      await expect(apply).not.toHaveAttribute("aria-disabled", "true");
+      await apply.click();
+      await expect(popup).toBeHidden();
+      await expect(pill(page, "Período")).toHaveAccessibleName(
+        "Período: 01/10 a 14/10, editar"
+      );
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({
+          occurredFrom: "2026-10-01",
+          occurredTo: "2026-10-14",
+        });
+
+      // reopened, the fields show the period there is, and a day touched is written in them
+      const again = await openPeriod(page);
+      await again.getByRole("button", { name: "Digitar as datas" }).click();
+      await expect(again.getByRole("textbox", { name: "Início" })).toHaveValue(
+        "01/10/2026"
+      );
+      await expect(again.getByRole("textbox", { name: "Fim" })).toHaveValue(
+        "14/10/2026"
+      );
+    });
   });
 }

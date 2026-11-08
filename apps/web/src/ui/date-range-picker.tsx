@@ -10,6 +10,7 @@ import { TWO_MONTHS_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { OnDemandCalendar, warmCalendar } from "@/ui/calendar-on-demand";
+import { DateRangeTyping, useTypedDates } from "@/ui/date-range-typing";
 import {
   type DateRange,
   type DraftRange,
@@ -84,7 +85,7 @@ function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
 export function DateRangePanel({
   onCommit,
   onHalfChange,
-  statusId,
+  statusId: statusIdProp,
   today: todayProp,
   value: valueProp,
 }: {
@@ -106,15 +107,24 @@ export function DateRangePanel({
   const today = todayOr(todayProp);
   const todayDate = parseIsoDate(today) as Date;
   const pressed = matchingPreset(value, today);
-
-  const commit = useCallback(
-    (range: DateRange | null) => {
-      setDraft(range ?? undefined);
-      onHalfChange?.(false);
-      onCommit(range);
-    },
-    [onCommit, onHalfChange]
+  const [month, setMonth] = useState(() =>
+    firstMonth(value ?? undefined, todayDate, two)
   );
+  const typed = useTypedDates({
+    callerApplies: onHalfChange !== undefined,
+    draft,
+    onCommit,
+    setDraft,
+    setMonth: (next) => setMonth(firstMonth(next, todayDate, two)),
+    statusId: statusIdProp,
+    value,
+  });
+  const { adopt, commit } = typed;
+
+  const half = draft?.from && !draft.to ? draft.from : undefined;
+  useEffect(() => {
+    onHalfChange?.(Boolean(half) || typed.blocksCaller);
+  }, [half, onHalfChange, typed.blocksCaller]);
 
   const pickDay = useCallback(
     (_range: unknown, day: Date) => {
@@ -122,11 +132,10 @@ export function DateRangePanel({
       if (next.complete) {
         commit(next.range);
       } else {
-        setDraft(next.draft);
-        onHalfChange?.(true);
+        adopt(next.draft);
       }
     },
-    [commit, draft, onHalfChange]
+    [adopt, commit, draft]
   );
 
   const pickPreset = useCallback(
@@ -143,7 +152,6 @@ export function DateRangePanel({
     from: parseIsoDate(draft?.from),
     to: parseIsoDate(draft?.to),
   };
-  const half = draft?.from && !draft.to ? draft.from : undefined;
 
   return (
     <>
@@ -172,9 +180,10 @@ export function DateRangePanel({
       <div className="-m-1 min-h-0 overflow-y-auto p-1" data-range-month>
         <OnDemandCalendar
           autoFocus
-          defaultMonth={firstMonth(draft, todayDate, two)}
           mode="range"
+          month={month}
           numberOfMonths={two ? 2 : 1}
+          onMonthChange={setMonth}
           onSelect={pickDay}
           selected={selected}
           // with two months a day of the neighbour would show twice, once in each
@@ -182,13 +191,21 @@ export function DateRangePanel({
           today={todayDate}
         />
       </div>
+      <div ref={typed.anchor}>
+        <DateRangeTyping {...typed.typingProps} />
+      </div>
       <div className="flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2">
         <p
-          aria-live="polite"
-          className="text-muted-foreground text-support"
-          id={statusId}
+          aria-live={typed.open ? undefined : "polite"}
+          className={cn(
+            "min-w-0 text-muted-foreground text-support",
+            typed.statusQuiet && "sr-only"
+          )}
+          id={typed.statusId}
         >
-          {half ? `Início ${formatDate(half)}. Escolha o último dia.` : null}
+          {typed.open
+            ? typed.reason
+            : half && `Início ${formatDate(half)}. Escolha o último dia.`}
         </p>
         {value || half ? (
           <Button onClick={clear} size="sm" variant="ghost">
