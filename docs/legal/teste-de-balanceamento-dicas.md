@@ -7,7 +7,7 @@ Os campos da empresa ficam abertos, e nenhum valor é inventado aqui: `[P48: raz
 ## O que este teste cobre
 
 - **As dicas para começar:** até 3 e-mails em 14 dias, só para a dona ou o dono da primeira loja, só enquanto a loja não tem venda. Não há e-mail de boas-vindas separado.
-- **A estatística agregada de uso** (item 6): contar, sem identificar ninguém, quantas lojas novas voltam ao app e chegam à primeira venda, para saber se as dicas ajudam.
+- **A estatística agregada de uso** (item 6): contar, em números somados e em grupos de pelo menos 5 lojas, quantas lojas novas voltam ao app e quantas chegam à primeira venda, para saber se as dicas ajudam.
 
 Base legal: **legítimo interesse** (LGPD, art. 7º, IX), **sem consentimento** e sem caixa marcada. O que muda a base (Pro, preço, plano, newsletter, pesquisa, mais de 3 e-mails, outro destinatário, abertura ou clique medidos, trilha de tela por pessoa) pede teste novo e parecer novo.
 
@@ -49,7 +49,7 @@ Só entra no envio quem é **dono ativo com e-mail verificado**: nunca e-mail di
 - **Flag desligada em todos os ambientes.** Ligar depois não manda o acumulado.
 - **Uma reclamação desliga a série**, e só o usuário a religa, por decisão explícita e registrada.
 - **Sem rastreio de abertura nem de clique**, sem imagem, sem pixel; texto fixo; a fila leva só o ID do aviso.
-- **Texto na Política**, com como parar, retenção e que a resposta ao e-mail é lida por uma pessoa.
+- **Texto na Política**, com como parar, retenção e que a resposta ao e-mail chega à caixa de suporte (quem lê: `[P48/U7: quem lê as respostas]`).
 - **Direitos do titular:** acesso (o estado das dicas aparece nas configurações da conta), oposição (o próprio parar de receber; art. 18, § 2º, de memória) e a tabela fora da exportação da loja.
 
 ## 5. Conclusão
@@ -60,7 +60,7 @@ Conclusão proposta: aprovável **para as dicas descritas acima**, a confirmar p
 
 - **Finalidade:** saber se as dicas ajudam a ativar, comparando coortes de lojas novas: quantas voltam ao app em até 14 dias e quantas chegam à primeira venda. A decisão que depende disto: ligar ou não a série em produção, e se o problema é o e-mail ou a tela de produto.
 - **Necessidade e dado mínimo:** as datas de acesso à conta (`user_id`, `created_at` e `updated_at` da sessão), lidas por um papel próprio do banco e por função que devolve só contagens por semana de coorte. Nada de IP, navegador, token, registro de acesso do Marco Civil nem aparelho.
-- **Saída só agregada, com k = 5:** célula com menos de 5 lojas não sai (nem pela soma complementar); a coorte pequena é "inconclusiva". Sem ID de pessoa nem de loja e nenhuma lista de lojas com marcos. Cinco lojas não garantem anonimato (uma célula em que as 5 voltaram diz o que cada uma fez, e o dono costuma ser a única pessoa da loja): a saída só vale como agregada enquanto a supressão valer, e a Política não promete mais que isso. **Retenção dos contadores:** o ADR propõe 13 meses, prazo que não está entre os aprovados em 19/10/2026; a decidir pelo usuário.
+- **Saída só agregada, com k = 5:** célula com menos de 5 lojas não sai (nem pela soma complementar); a coorte pequena é "inconclusiva". Sem ID de pessoa nem de loja e nenhuma lista de lojas com marcos. Cinco lojas não garantem anonimato (uma célula em que as 5 voltaram diz o que cada uma fez, e o dono costuma ser a única pessoa da loja): a saída só vale como agregada enquanto a supressão valer, e a Política não promete mais que isso. **Retenção dos contadores:** 12 meses, contados do congelamento da semana (a mesma classe operacional de 12 meses já aprovada em 19/10/2026; cobre a comparação com a mesma semana do ano anterior); decisão do Arrascaeta; o usuário pode preferir mais (U3).
 - **Expectativa e impacto:** a pessoa não vê nem sofre nada; ninguém é tratado de modo diferente por causa do resultado. A Política diz que as datas de acesso são usadas só em contagem somada.
 - **Salvaguardas:** só agregado congelado por semana, em tabela só de acrescentar; o Admin lê só essa tabela; o gate de banco prova cada coluna proibida; nada é gravado por loja nem por pessoa; a leitura de `session` segue a retenção da sessão.
 - **Limite honesto:** a contagem é um piso de "voltou" (sessão apagada ao sair e renovação de um dia subcontam), então "nunca voltou" aparece maior do que é. Por isso a série não liga só porque "nunca voltou" está alto: exige também a ativação em até 14 dias baixa.
@@ -68,4 +68,4 @@ Conclusão proposta: aprovável **para as dicas descritas acima**, a confirmar p
 
 ## Pré-requisitos para ligar em produção
 
-O jurídico confirma o legítimo interesse e os artigos citados; `[P48: razão social]`, `[P48: caixa de suporte de produção]` e `[P48: e-mail do encarregado]` preenchidos; subdomínio de envio no lugar de `[P48: domínio de produção]`; região e DPA do Resend (art. 33); rastreio de abertura e de clique desligado no domínio de envio, conferido no painel; a seção da Política publicada antes de ligar (art. 9º); o prazo de guarda das respostas na caixa de suporte (`[P48: prazo de guarda da caixa de suporte]`); a decisão do usuário sobre o prazo do código do endereço de quem reclamou (hoje "enquanto as dicas existirem, com revisão anual", prazo proposto) e sobre o dos contadores agregados; e a decisão do usuário depois de 4 a 6 coortes de lojas reais.
+O jurídico confirma o legítimo interesse e os artigos citados; `[P48: razão social]`, `[P48: caixa de suporte de produção]` e `[P48: e-mail do encarregado]` preenchidos; subdomínio de envio no lugar de `[P48: domínio de produção]`; região e DPA do Resend (art. 33); rastreio de abertura e de clique desligado no domínio de envio, conferido no painel; a seção da Política publicada antes de ligar (art. 9º); o prazo de guarda das respostas na caixa de suporte (`[P48: prazo de guarda da caixa de suporte]`); quem lê as respostas (`[P48/U7: quem lê as respostas]`); o prazo de 12 meses do código de quem reclamou e dos contadores agregados (decisão do Arrascaeta, dentro dos 12 meses aprovados em 19/10/2026; o usuário decide só se quiser mais (U3)); depois do primeiro aceite real da Política, qualquer mudança nela é a versão 2, não edição da v1; e a decisão do usuário depois de 4 a 6 coortes de lojas reais.
