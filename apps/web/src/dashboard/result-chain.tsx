@@ -49,7 +49,7 @@ const LEADER =
 
 /**
  * The card measures its own box (`@container`): narrower than 18 rem (320 px with the font at 17 px or more, 360 px
- * with 20 px or more) the name of the line and its value no longer fit side by side, so each row stacks them, the name
+ * with 19 px or more) the name of the line and its value no longer fit side by side, so each row stacks them, the name
  * above the value, and the value keeps the whole width of the card instead of rolling the table sideways. The dotted
  * line has nothing to lead to.
  */

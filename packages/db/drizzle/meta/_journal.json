@@ -848,6 +848,13 @@
       "when": 1793964218365,
       "tag": "0121_prazo_dos_pedidos_de_dados_no_banco",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1794116077089,
+      "tag": "0124_avisos_de_ativacao",
+      "breakpoints": true
     }
   ]
 }

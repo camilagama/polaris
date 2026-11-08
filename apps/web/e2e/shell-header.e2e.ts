@@ -528,6 +528,42 @@ test.describe("AC-2.3: teclado, foco e alvos", () => {
     expect(area).toBeGreaterThanOrEqual(44);
   });
 
+  test("o link de atenção do chip tem área de toque de 44 × 44 px no celular", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await leaveOneRefused(page);
+    const attention = header(page).locator("a.sync-status");
+    await expect(attention).toBeVisible();
+    await expect(attention).toHaveAttribute("href", "/attention");
+    const area = await attention.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const before = getComputedStyle(element, "::before");
+      if (before.content === "none" || before.position !== "absolute") {
+        return { height: box.height, width: box.width };
+      }
+      const px = (value: string) => Number.parseFloat(value);
+      const style = getComputedStyle(element);
+      return {
+        height:
+          box.height -
+          px(style.borderTopWidth) -
+          px(style.borderBottomWidth) -
+          px(before.top) -
+          px(before.bottom),
+        width:
+          box.width -
+          px(style.borderLeftWidth) -
+          px(style.borderRightWidth) -
+          px(before.left) -
+          px(before.right),
+      };
+    });
+    expect(area.height).toBeGreaterThanOrEqual(44);
+    expect(area.width).toBeGreaterThanOrEqual(44);
+  });
+
   test("AC-4.5: o foco ao rolar fica abaixo do cabeçalho e Ir para o conteúdo é o primeiro alvo", async ({
     page,
   }) => {
