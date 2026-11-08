@@ -140,7 +140,8 @@ function TypedDateField({
 }) {
   const errorId = `${id}-error`;
   const box = useRef<HTMLDivElement>(null);
-  // the focus scroll brings the input into view, not the sentence that comes under it
+  // the focus scroll brings the input into view, not the sentence that comes under it; the margin keeps the sentence whole
+  // where the panel's height is fractional and the browser rounds the scroll position down to a whole pixel
   const showError = useCallback(() => {
     box.current?.scrollIntoView?.({ block: "nearest" });
   }, []);
@@ -170,7 +171,7 @@ function TypedDateField({
     [onEnter]
   );
   return (
-    <div className="grid min-w-0 content-start gap-1.5" ref={box}>
+    <div className="grid min-w-0 scroll-mb-1 content-start gap-1.5" ref={box}>
       <Label htmlFor={id}>{label}</Label>
       <Input
         aria-describedby={error ? errorId : undefined}
