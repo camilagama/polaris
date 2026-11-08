@@ -911,6 +911,78 @@ describe("mapStockError", () => {
 });
 
 describe("summaries", () => {
+  const nonRoundCosts: [string, string][] = [
+    ["19.391304", "R$ 19,39"],
+    ["19.395", "R$ 19,40"],
+    ["17", "R$ 17,00"],
+  ];
+
+  it("shows every unit cost to the centavo, half-up, while the body keeps six places", () => {
+    const receive = validateStockDraft(
+      filled("receive", { ...receiveFields, unitCost: "19,391304" }).draft,
+      target,
+      today
+    ).body;
+    const count = validateStockDraft(
+      filled(
+        "count",
+        { ...countFields, valuationUnitCost: "19,391304" },
+        unknownCostTarget
+      ).draft,
+      unknownCostTarget,
+      today
+    ).body;
+    if (receive?.action !== "receive" || count?.action !== "count") {
+      throw new Error("expected receive and count bodies");
+    }
+    expect(receive.unitCost).toBe("19.391304");
+    expect(count.valuationUnitCost).toBe("19.391304");
+    const lineOf = (lines: { label: string; value: string }[], label: string) =>
+      lines.find((line) => line.label === label)?.value;
+    for (const [cost, shown] of nonRoundCosts) {
+      const received = { ...receive, unitCost: cost };
+      expect(lineOf(stockSummary(received, target), "Custo unitário")).toBe(
+        shown
+      );
+      const counted = { ...count, valuationUnitCost: cost };
+      expect(
+        lineOf(
+          stockSummary(counted, unknownCostTarget),
+          "Custo unitário informado"
+        )
+      ).toBe(shown);
+    }
+  });
+
+  it("shows the cost of the cost panel summary and of its result to the centavo, half-up", () => {
+    const costFields = { valuationUnitCost: "12,5" };
+    const state = filled("cost", costFields, unknownCostTarget);
+    const { body } = validateStockDraft(state.draft, unknownCostTarget, today);
+    if (body?.action !== "cost") {
+      throw new Error("no cost body");
+    }
+    for (const [cost, shown] of nonRoundCosts) {
+      expect(costSummaryText({ ...body, valuationUnitCost: cost })).toBe(
+        `${shown} por unidade, para 5 unidades. Depois de confirmar, o custo não pode ser editado.`
+      );
+      const done = stockSucceeded(
+        confirming(filled("cost", costFields, unknownCostTarget)),
+        {
+          balance: {
+            movingAverageCost: cost,
+            quantity: 5,
+            variantId,
+            version: 4,
+          },
+          replayed: false,
+        }
+      );
+      expect(done.submission).toMatchObject({
+        message: `Custo informado: ${shown} por unidade.`,
+      });
+    }
+  });
+
   it("previews a receipt with the resulting balance and average cost", () => {
     const state = filled("receive", receiveFields);
     const { body } = validateStockDraft(state.draft, target, today);
