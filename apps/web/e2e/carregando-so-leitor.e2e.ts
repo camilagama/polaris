@@ -7,8 +7,8 @@ const SCREEN_READER_ONLY = /sr-only/;
 const CUSTOMERS_CHUNK = /customers-page[^/]*\.js/;
 const EXPENSE_LIST = "**/rpc/expense/list";
 const VIEWPORTS = [
-  { height: 740, width: 360 },
-  { height: 800, width: 1280 },
+  { height: 740, minNoteHeight: 84, width: 360 },
+  { height: 800, minNoteHeight: 66, width: 1280 },
 ] as const;
 
 /** The text a sighted person reads: `innerText` also counts the `sr-only` clip, so a text in a 1 px box is left out. */
@@ -38,7 +38,7 @@ function hold() {
 
 for (const viewport of VIEWPORTS) {
   test.describe(`carregando só para o leitor de tela a ${viewport.width} px`, () => {
-    test.use({ viewport });
+    test.use({ viewport: { height: viewport.height, width: viewport.width } });
 
     test("a troca de tela espera o código com o esqueleto, sem a palavra Carregando à vista, e o status tem nome", async ({
       page,
@@ -80,6 +80,8 @@ for (const viewport of VIEWPORTS) {
         .filter({ hasText: "Carregando despesas…" });
       await expect(status).toBeAttached();
       expect(await visibleText(page)).not.toContain("Carregando");
+      const box = await status.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(viewport.minNoteHeight);
       release();
     });
   });
