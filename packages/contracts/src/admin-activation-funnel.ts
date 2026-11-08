@@ -11,6 +11,9 @@ import { z } from "zod";
  *   the missing side otherwise. No store, person, amount or individual date; the only dates are the week starts and
  *   the instant of the read. `internalStoresExcluded` is an exact count, not suppressed: the stores the team marked as
  *   its own, not a customer's activity (ADR 0071 amended).
+ *
+ * The "up to 14 days" and Pro trial cells of a cohort are optional in both shapes: the Admin is deployed before the
+ * function that writes them, and an answer without them keeps the shape it had.
  */
 
 // The pages run under a CSP without 'unsafe-eval' and the Worker never allows it: no code generation (as in ./index).
@@ -51,6 +54,26 @@ const rawBands = z
   })
   .strict();
 
+/**
+ * The cells of the "up to 14 days" band and of the Pro trial (corte ativacao-fase1, item 3). Optional on the way in:
+ * the Admin is deployed before the function that writes them, and the old function answers without them. The two
+ * trial cells come together or not at all, since one is the share of the other.
+ */
+const rawFourteenDayCells = {
+  activatedWithin14Days: rawCell.optional(),
+  soldInTrial: rawCell.optional(),
+  trialStarted: rawCell.optional(),
+};
+
+function trialCellsTogether(cohort: {
+  soldInTrial?: unknown;
+  trialStarted?: unknown;
+}): boolean {
+  return (
+    (cohort.trialStarted === undefined) === (cohort.soldInTrial === undefined)
+  );
+}
+
 const rawRetention = z
   .object({ week2: rawCell, week3: rawCell, week5: rawCell })
   .strict();
@@ -65,6 +88,7 @@ export const rawActivationFunnel = z
         z
           .object({
             ...rawWeek,
+            ...rawFourteenDayCells,
             activatedIn7Days: rawCell,
             retention: rawRetention,
             stores: rawCell,
@@ -74,6 +98,7 @@ export const rawActivationFunnel = z
             withoutSale: rawCell,
           })
           .strict()
+          .refine(trialCellsTogether)
       )
       .max(26),
     generatedAt: z.string(),
@@ -122,6 +147,12 @@ const week = {
   weekStart,
 };
 
+const fourteenDayCells = {
+  activatedWithin14Days: funnelCount.optional(),
+  soldInTrial: funnelCount.optional(),
+  trialStarted: funnelCount.optional(),
+};
+
 /** What the numbers leave out, said with them (AC-12 moves to the screen; the JSON says it already). */
 export const ACTIVATION_FUNNEL_NOT_COUNTED = Object.freeze({
   internalStores:
@@ -141,13 +172,16 @@ export const activationFunnelResponse = z
         z
           .object({
             ...week,
+            ...fourteenDayCells,
             activatedIn7Days: funnelCount,
             percent: z
               .object({
                 activatedIn7Days: funnelPercent,
+                activatedWithin14Days: funnelPercent.optional(),
                 retentionWeek2: funnelPercent,
                 retentionWeek3: funnelPercent,
                 retentionWeek5: funnelPercent,
+                soldInTrial: funnelPercent.optional(),
                 withFirstProduct: funnelPercent,
                 withFirstSale: funnelPercent,
               })
@@ -174,6 +208,7 @@ export const activationFunnelResponse = z
             withoutSale: funnelCount,
           })
           .strict()
+          .refine(trialCellsTogether)
       )
       .max(26),
     internalStoresExcluded: count,
