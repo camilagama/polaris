@@ -144,7 +144,7 @@ export function DateRangeTyping({
       </Button>
       {open ? (
         <div className="grid gap-3" id={regionId}>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 min-[22rem]:grid-cols-2">
             {FIELDS.map(({ field, label }) => (
               <TypedDateField
                 error={errors[field]}
