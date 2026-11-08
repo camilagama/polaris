@@ -862,6 +862,13 @@
       "when": 1794122790000,
       "tag": "0125_funil_ate_14_dias",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1794135497470,
+      "tag": "0126_candidatos_da_serie",
+      "breakpoints": true
     }
   ]
 }
