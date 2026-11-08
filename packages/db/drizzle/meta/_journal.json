@@ -855,6 +855,13 @@
       "when": 1794116077089,
       "tag": "0124_avisos_de_ativacao",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1794122790000,
+      "tag": "0125_funil_ate_14_dias",
+      "breakpoints": true
     }
   ]
 }

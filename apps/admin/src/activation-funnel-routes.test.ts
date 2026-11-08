@@ -391,6 +391,17 @@ describe("GET /api/funnel", () => {
       },
     ],
     [
+      "more stores with a trial than stores",
+      {
+        ...raw(),
+        cohorts: raw().cohorts.map((cohort, index) =>
+          index === 0
+            ? { ...cohort, soldInTrial: suppressed, trialStarted: shown(22) }
+            : cohort
+        ),
+      },
+    ],
+    [
       "more activated in 14 days than stores",
       {
         ...raw(),

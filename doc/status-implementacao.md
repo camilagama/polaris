@@ -3222,3 +3222,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Exportação (AC-5.5) | Em revisão | `activation_notices` em `EXPORT_EXCLUDED_TABLES`; as outras duas não têm loja. A entrega ao titular espera a Política (Item 2). |
 | Retenção | Em revisão | Classe `activation_series`, `proposta`, sem job (ADR 0106, D11). |
 | Fora deste PR | Pendente | O destinatário (papel e função, D2) vai com o consumidor (Item 7); o gate novo de papéis e colunas vai em PR seguinte (o PR passou de 8 arquivos). O gate permanente de papéis e colunas precisa entrar antes do consumidor (Item 7). Gates existentes ajustados à tabela e ao papel novos: `auth-tables-row-security`, `tenant-context`, `activation-funnel`, `organization-purge` e o piso `MIN_OWNER_ROLES` (19, também em `scripts/backup/restore-lib.mjs`, no ADR 0093 e nos runbooks). |
+
+### Funil de ativação: a função devolve "em até 14 dias" e o teste do Pro (corte ativacao-fase1, Item 3b; migration 0125, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Função (AC-3.2, AC-3.3, AC-3.4) | Em revisão | Migration 0125 recria `admin_activation_funnel` (mesma assinatura, mesmos grants) com `activatedWithin14Days` (janela própria de 21 dias, `unavailable` com `activation_window_open` antes), `trialStarted` e `soldInTrial`, k = 5 com a complementar. Gate `activation-funnel`: semana 2 (janela aberta) e 3 (fechada), 14 dias exatos, 1, 4, 5, 6 lojas, contra a contagem direta de 26 semanas. Só roda no CI e no PostgreSQL local. |
+| `trial_started_at` (AC-3.6) | Em revisão | Nunca é zerado e também é gravado por quem assina o Pro sem teste; o M4 conta todas as coortes e `trialStarted` é "lojas com a data do teste". Gate prova o teste que acabou, a loja de volta ao Free e o registro sem a data. A tela ainda diz "começaram o teste": texto a rever. |
+| Rota (menor do Léo) | Em revisão | `trialStarted` maior que as lojas da coorte vira `activation_funnel_inconsistent`; o contrato não mudou. |
+| Ordem de deploy (AC-3.1) | Em revisão | SHA mínimo do Admin `0ddc9698`; o runbook de staging diz que reverter antes dele depois da migration dá 500 no Funil. |
