@@ -230,7 +230,13 @@ const MOTION_SCOPE = sourcesUnder("src").filter((path) =>
  * `text-[…]` size beside `tabular-nums`; the "R$" and the cents are a fraction of the number (`text-[0.56em]`,
  * `text-[0.72em]`) and that fraction lives only in `ui/money.tsx`, apart from the strings listed here.
  */
-const MONEY_FILES = ["src/ui/money.tsx", "src/ui/hidden-values.tsx"] as const;
+const MONEY_FILES = [
+  "src/ui/money.tsx",
+  "src/ui/hidden-values.tsx",
+  "src/ui/kpi-card.tsx",
+  "src/home/home-kpi-cards.tsx",
+  "src/dashboard/result-cards.tsx",
+] as const;
 const MONEY_COMPONENT = "src/ui/money.tsx";
 const ABSOLUTE_TEXT_SIZE = /(?:^|:)text-\[[\d.]+(?:rem|px)\]$/;
 const FREE_TEXT_SIZE = /(?:^|:)text-\[/;
@@ -242,9 +248,25 @@ const MONEY_FRACTION_ELSEWHERE: readonly {
   why: string;
 }[] = [
   {
-    file: "src/dashboard/result-cards.tsx",
+    file: "src/ui/kpi-card.tsx",
     strings: 1,
-    why: "o sufixo % da Margem usa a mesma fração do R$ e passa pela caixa do valor quando a Margem ganhar o mesmo recipiente",
+    why: "o sufixo % da Margem (HeroPercent) usa a mesma fração do R$ na caixa do valor do cartão",
+  },
+];
+
+/**
+ * The strings that keep a size in rem for a money value: the four columns of the strip of the Resultado, which from
+ * 900 px have a size of their own (24 px, and 20 or 18 px for a long amount in a narrow column). The list is exact.
+ */
+const MONEY_ABSOLUTE_SIZE_ELSEWHERE: readonly {
+  file: string;
+  strings: number;
+  why: string;
+}[] = [
+  {
+    file: "src/ui/kpi-card.tsx",
+    strings: 3,
+    why: "a faixa de quatro KPIs do Resultado, de 900 px em diante, tem 24 px nas quatro colunas e desce a 20 ou 18 px um valor longo numa coluna estreita (stripValueSize); a escala de dinheiro não cabe em 120 px",
   },
 ];
 
@@ -262,11 +284,18 @@ export function moneyFontFaults(path: string, text: string): string[] {
     value.split(SPACES).filter(Boolean)
   );
   if ((MONEY_FILES as readonly string[]).includes(path)) {
+    const absolute = values.filter((tokens) =>
+      tokens.some((token) => ABSOLUTE_TEXT_SIZE.test(token))
+    ).length;
+    const allowed =
+      MONEY_ABSOLUTE_SIZE_ELSEWHERE.find((entry) => entry.file === path)
+        ?.strings ?? 0;
+    if (absolute !== allowed) {
+      faults.push(
+        `${absolute} texto(s) com tamanho em rem ou px em dinheiro, e a lista diz ${allowed}`
+      );
+    }
     for (const tokens of values) {
-      const absolute = tokens.find((token) => ABSOLUTE_TEXT_SIZE.test(token));
-      if (absolute) {
-        faults.push(`tamanho em rem ou px em dinheiro: ${absolute}`);
-      }
       if (
         tokens.includes("tabular-nums") &&
         tokens.some((token) => FREE_TEXT_SIZE.test(token))
@@ -688,20 +717,39 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     expect(money('const a = "text-value-lg tabular-nums";')).toEqual([]);
     expect(money('const a = "font-medium text-[0.56em]";')).toEqual([]);
     expect(
-      money('const a = "text-[0.56em]";', "src/ui/kpi-card.tsx").join()
+      money('const a = "text-[0.56em]";', "src/home/home-kpi-cards.tsx").join()
     ).toContain("fora de ui/money.tsx");
     expect(
       money('const a = "text-[0.72em]";', "src/home/home-page.tsx").join()
     ).toContain("fora de ui/money.tsx");
-    expect(
-      money('const a = "text-[0.56em]";', "src/dashboard/result-cards.tsx")
-    ).toEqual([]);
+    const strip =
+      'const a = "min-[56.25rem]:text-[1.5rem]"; const b = "x:text-[1.25rem]"; const c = "y:text-[1.125rem]"; const d = "text-[0.56em]";';
+    expect(money(strip, "src/ui/kpi-card.tsx")).toEqual([]);
     expect(
       money(
-        'const a = "text-[0.56em] text-[0.72em]";',
-        "src/dashboard/result-cards.tsx"
+        `${strip} const d = "md:text-[1.875rem]";`,
+        "src/ui/kpi-card.tsx"
+      ).join()
+    ).toContain(
+      "4 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 3"
+    );
+    expect(
+      money(
+        'const a = "text-[1.3125rem] tabular-nums";',
+        "src/home/home-kpi-cards.tsx"
+      ).join()
+    ).toContain(
+      "1 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
+    );
+    expect(
+      money(
+        `${strip} const e = "text-[0.56em] text-[0.72em]";`,
+        "src/ui/kpi-card.tsx"
       ).join()
     ).toContain("a lista diz 1");
+    expect(
+      money(`${strip}`, "src/dashboard/result-cards.tsx").join()
+    ).toContain("fora de ui/money.tsx");
     expect(money('// "text-[1.75rem]" in a comment')).toEqual([]);
   });
 
