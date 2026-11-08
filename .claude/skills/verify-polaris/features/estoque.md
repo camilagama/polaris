@@ -44,5 +44,5 @@ Preconditions:
 
 - Os nomes dos botões de linha levam produto e variante; o produto sem variante própria tem a "Variante padrão".
 - Logo depois de confirmar, os botões da lista ficam `[disabled]` enquanto a tela relê: espere o saldo novo (`toHaveText`) antes do próximo clique.
-- O custo médio aparece com até 6 casas ("R$ 11,411765") depois de recebimentos com custos diferentes: é o que a tela mostra hoje.
+- Custo unitário e custo médio aparecem ao centavo, half-up ("R$ 11,41" para 11,411765), na lista e nos textos do painel (resumo do recebimento, da contagem e do custo informado); o dado e o que vai ao servidor guardam 6 casas.
 - O saldo semeado é o de antes das vendas: a Camiseta começa com 30 recebidas e as vendas semeadas já tiraram algumas.
