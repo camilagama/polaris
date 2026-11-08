@@ -4369,7 +4369,7 @@ const alone = (cents: number): Scenario => ({
   soldWithoutCost: 0,
 });
 const BIG_SALE = 9_964_035;
-/** Below 760 px the scale of money comes down a step (theme.css, "Touch … or a narrow screen"). */
+/** Below 760 px, or with a finger, the scale of money comes down a step (theme.css, "Touch … or a narrow screen"). */
 const PHONE_WIDTH = 760;
 const KPI_IDS = ["home-today", "home-month", "home-result", "home-ticket"];
 
@@ -4412,7 +4412,10 @@ test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2,
       const reads = await readHeroes(page);
       expect(reads.map((read) => read.card)).toEqual(KPI_IDS);
       const [today, ...rest] = reads;
-      const [xl, lg] = width < PHONE_WIDTH ? [32, 24] : [36, 26];
+      const coarse = await page.evaluate(
+        () => matchMedia("(pointer: coarse)").matches
+      );
+      const [xl, lg] = width < PHONE_WIDTH || coarse ? [32, 24] : [36, 26];
       expect(today?.size, "o principal: text-value-xl").toBe(xl);
       expect(
         rest.map((read) => read.size),
