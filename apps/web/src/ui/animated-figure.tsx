@@ -200,13 +200,15 @@ const SYMBOL_PARTS =
   "[&::part(currency)]:font-medium [&::part(currency)]:text-[0.56em] [&::part(currency)]:tracking-normal [&::part(literal)]:text-[0.56em] [&::part(literal)]:tracking-normal [&::part(fraction)]:text-[0.72em]";
 const SMALL_PERCENT =
   "[&::part(right)]:font-medium [&::part(right)]:text-[0.56em] [&::part(right)]:tracking-normal";
-/* the fade of the digits spills half an em past each side of the number: clipped sideways, so the card that holds it never
-   scrolls or looks cut, and left open vertically, where the digits roll. The two figures share the one cell, aligned by
-   their baselines */
+/* the figure and its counter share the one cell of a grid, aligned by their baselines */
 const WRAPPER =
-  "inline-grid overflow-x-clip align-baseline *:col-start-1 *:row-start-1 *:self-baseline";
+  "inline-grid align-baseline *:col-start-1 *:row-start-1 *:self-baseline";
 /* the static figure: it holds the width of the final text, no height (the counter sets the line), and is seen only by the reading tools */
 const TWIN = "pointer-events-none h-0 select-none whitespace-nowrap opacity-0";
+/* the fade of the digits spills half an em past each side of the number: clipped sideways, so the card that holds it never
+   scrolls or looks cut, and left open vertically, where the digits roll. Only the counter is inside the clip: the text of
+   the figure is outside it, so the box that cuts holds no text to be cut */
+const CLIP = "overflow-x-clip";
 /* the host takes room above and below the digits for the fade of their mask: pulled back so the line keeps its height */
 const HOST_BOX = "-my-[0.25em] align-baseline";
 
@@ -235,7 +237,11 @@ function Counter({
   const finish = useCallback(() => setCounting(false), []);
   const money = figure.kind === "money";
   return (
-    <span aria-hidden="true" data-figure-counting={counting ? "" : undefined}>
+    <span
+      aria-hidden="true"
+      className={CLIP}
+      data-figure-counting={counting ? "" : undefined}
+    >
       <NumberFlow
         className={cn(HOST_BOX, partsClass(figure, smallSign))}
         data-animated-figure=""
