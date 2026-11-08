@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 /**
  * Names and ids of the journeys' data (T-125a). Every organization and its owner are `qa-<project>-<journey>-t<attempt>`:
  * the project is in the name because both projects share the run database, and the attempt because a retry starts
- * from its own clean organization (nothing is deleted). The user id is a UUID v5 of that name.
+ * from its own clean organization (nothing is deleted). A repetition of `--repeat-each` (index above 0) adds `-r<n>`,
+ * or the second one would insert the same user. The user id is a UUID v5 of that name.
  */
 
 // a fixed namespace of the e2e suite (UUID v4 written once); any constant works, it only has to never change
@@ -13,19 +14,25 @@ const namePattern = /^[a-z0-9-]+$/;
 export function journeyName(
   project: string,
   journey: string,
-  attempt: number
+  attempt: number,
+  repetition = 0
 ): string {
   if (
     !(
       namePattern.test(project) &&
       namePattern.test(journey) &&
       Number.isInteger(attempt) &&
-      attempt >= 0
+      attempt >= 0 &&
+      Number.isInteger(repetition) &&
+      repetition >= 0
     )
   ) {
-    throw new Error(`Refused journey name: ${project} ${journey} ${attempt}`);
+    throw new Error(
+      `Refused journey name: ${project} ${journey} ${attempt} ${repetition}`
+    );
   }
-  return `qa-${project}-${journey}-t${attempt}`;
+  const base = `qa-${project}-${journey}-t${attempt}`;
+  return repetition === 0 ? base : `${base}-r${repetition}`;
 }
 
 /** RFC 9562 version 5 (SHA-1, name-based). */

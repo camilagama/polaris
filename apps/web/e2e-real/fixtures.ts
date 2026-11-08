@@ -175,7 +175,12 @@ export async function openJourney(
   options: JourneyOptions = {}
 ): Promise<Journey> {
   const origin = String(testInfo.project.use.baseURL);
-  const name = journeyName(testInfo.project.name, journey, testInfo.retry);
+  const name = journeyName(
+    testInfo.project.name,
+    journey,
+    testInfo.retry,
+    testInfo.repeatEachIndex
+  );
   const user = await createJourneyUser(origin, name);
   let organizationId: string | undefined;
   if (options.organization !== false) {

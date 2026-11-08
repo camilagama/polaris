@@ -29,6 +29,21 @@ describe("journey names", () => {
     expect(() => journeyName("online", "venda'; drop", 0)).toThrow();
     expect(() => journeyName("Online", "venda", 0)).toThrow();
     expect(() => journeyName("online", "venda", -1)).toThrow();
+    expect(() => journeyName("online", "venda", 0, -1)).toThrow();
+  });
+
+  it("keeps the name of the first repetition and tells the others apart", () => {
+    expect(journeyName("online", "venda", 0, 0)).toBe("qa-online-venda-t0");
+    expect(journeyName("online", "venda", 1, 3)).toBe("qa-online-venda-t1-r3");
+    const names = [0, 1, 2].flatMap((repetition) =>
+      [0, 1].map((attempt) =>
+        journeyName("runtime-ligado", "venda", attempt, repetition)
+      )
+    );
+    expect(new Set(names).size).toBe(names.length);
+    expect(new Set(names.map((name) => journeyClientIp(name))).size).toBe(
+      names.length
+    );
   });
 
   it("makes a stable version 5 UUID", () => {
