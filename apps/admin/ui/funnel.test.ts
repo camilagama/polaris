@@ -397,7 +397,8 @@ describe("what the funnel shows (AC-8)", () => {
     expect(text).toContain(
       "A ativação em 7 e 14 dias é hipótese a ajustar com a linha de base."
     );
-    expect(text).toContain("Lojas internas e apagadas não contam.");
+    expect(text).toContain("Enquanto o prazo corre, a semana aparece como");
+    expect(text).not.toContain("21 dias");
     const all = ["Lojas criadas em cada semana e o que fizeram"]
       .concat(["Teste do Pro e a 1ª venda, por semana de criação da loja"])
       .flatMap((caption) => cells(page.root, caption).flat());

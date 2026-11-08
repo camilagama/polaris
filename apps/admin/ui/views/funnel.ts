@@ -196,9 +196,9 @@ function activeTable(dom: Dom, funnel: ActivationFunnelResponse) {
 }
 
 const FOURTEEN_DAYS_NOTE =
-  "Ativação em 14 dias: lojas da semana com a 1ª venda confirmada até 14 dias depois de criadas; a semana só aparece quando já se passaram 21 dias do começo dela. Lojas internas e apagadas não contam. A ativação em 7 e 14 dias é hipótese a ajustar com a linha de base.";
+  'Ativação em 14 dias: lojas da semana com a 1ª venda confirmada até 14 dias depois de criadas. Enquanto o prazo corre, a semana aparece como "não disponível". A ativação em 7 e 14 dias é hipótese a ajustar com a linha de base.';
 const TRIAL_NOTE =
-  "Teste do Pro: lojas que começaram o teste e, entre elas, as que tiveram a 1ª venda confirmada antes de o teste acabar. Lojas internas e apagadas não contam.";
+  "Teste do Pro: lojas da semana que começaram o teste e, entre elas, as que tiveram a 1ª venda confirmada dentro do teste.";
 
 /** What the numbers leave out, from the answer: the count of internal stores and the server's own sentences. */
 function notesBlock(dom: Dom, funnel: ActivationFunnelResponse) {
