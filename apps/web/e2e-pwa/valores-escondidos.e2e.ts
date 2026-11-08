@@ -2,10 +2,11 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { skipOutsideChromium } from "../e2e/reflow";
+import { expenseStates } from "./ui-expense-states";
 import { historyStates } from "./ui-history-states";
 
 /**
- * "Esconder valores" on the lists: with the choice on, the history and its total write no amount in reais in their
+ * "Esconder valores" on the lists: with the choice on, the history and the expenses, with their totals, write no amount in reais in their
  * text, names, titles or alternative texts, and say "valor escondido" in its place; with it off, the "R$" is in the same
  * text, size and color as the number (`sm` and `md`), and the figures of the column end in the same x.
  */
@@ -19,7 +20,10 @@ const THEMES = ["claro", "escuro"] as const;
 const REAIS = /R\$\s?\d/;
 const WRITTEN_AMOUNT = /^R\$ [\d.]+,\d{2}$/;
 
-const SCREENS = [{ name: "Histórico", open: historyStates.list }] as const;
+const SCREENS = [
+  { name: "Histórico", open: historyStates.list },
+  { name: "Despesas", open: expenseStates.list },
+] as const;
 
 async function useDevice(
   page: Page,

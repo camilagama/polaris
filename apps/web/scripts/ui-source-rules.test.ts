@@ -321,12 +321,13 @@ export function moneyFontFaults(path: string, text: string): string[] {
 }
 
 /**
- * The lists and the receipt (DESIGN.md "Dinheiro"): the amount is written by `Money` or `MoneyText`, which decide the
- * "R$" and the mask, so these files have no "R$" of their own in a string or in JSX text. The list is exact: a file
- * that left it makes the test fail, and so does a file that is not in it but should be.
+ * The lists (DESIGN.md "Dinheiro"): the amount is written by `Money` or `MoneyText`, which decide the "R$" and the
+ * mask, so these files have no "R$" of their own in a string or in JSX text. The list is of files that exist (a file
+ * that was renamed or deleted makes the test fail); a list screen that migrates to `Money` enters it in the same change.
  */
 const MONEY_LIST_FILES = [
   "src/catalog/screen-parts.tsx",
+  "src/expenses/expense-list.tsx",
   "src/sales/sale-history-list.tsx",
 ] as const;
 const HAND_TYPED_REAIS = /R\$/;
