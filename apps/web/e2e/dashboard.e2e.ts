@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import {
   assertAmountsOnOneLine,
+  assertNoPageScroll,
   assertNothingClipped,
   assertTextsApart,
   expectReflowFont,
@@ -2697,8 +2698,47 @@ test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal
   }
 });
 
-test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 20 px", () => {
+test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 24, 20 e 16 px", () => {
   skipOutsideChromium();
+
+  /**
+   * The chain does not roll sideways (the box of the table is as wide as its content) and the name of each line and its
+   * value, whether side by side or one above the other, sit inside the box the reader sees.
+   */
+  async function assertChainInView(region: Locator) {
+    const report = await region.evaluate((root) => {
+      const box = root.querySelector<HTMLElement>(
+        "[data-slot=table-container]"
+      );
+      if (!box) {
+        return { rolls: ["no table container"], outside: [], measured: 0 };
+      }
+      const view = box.getBoundingClientRect();
+      const outside: string[] = [];
+      const cells = root.querySelectorAll<HTMLElement>("tbody th, tbody td");
+      for (const cell of cells) {
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        const text = range.getBoundingClientRect();
+        if (text.right > view.right + 1 || text.left < view.left - 1) {
+          outside.push((cell.textContent ?? "").trim().slice(0, 40));
+        }
+      }
+      const rolls =
+        box.scrollWidth > box.clientWidth
+          ? [`${box.scrollWidth} px of table in a box of ${box.clientWidth} px`]
+          : [];
+      return { measured: cells.length, outside, rolls };
+    });
+    expect(
+      report.measured,
+      "no cell of the chain was measured"
+    ).toBeGreaterThan(0);
+    expect(report.rolls, "the chain rolls sideways").toEqual([]);
+    expect(report.outside, "text of the chain outside the visible box").toEqual(
+      []
+    );
+  }
 
   /** Millions of reais: the half of the chart totals is 126 px wide at this size when they sit in two fixed halves, and a value this long is wider. */
   const MILLIONS_MONTH: FixtureMonth = {
@@ -2718,7 +2758,7 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
     ],
   };
 
-  for (const fontPixels of [20, 16]) {
+  for (const fontPixels of [24, 20, 16]) {
     reflowTest(
       `com a letra em ${fontPixels} px, o R$ e o número de cada valor ficam na mesma linha`,
       async ({ page }) => {
@@ -2738,9 +2778,79 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
         expect(
           await assertAmountsOnOneLine(chain(page))
         ).toBeGreaterThanOrEqual(10);
-        await assertNothingClipped(chain(page), {
-          allowScroll: ["[data-slot=table-container]"],
+        await assertNothingClipped(chain(page));
+        await assertChainInView(chain(page));
+      }
+    );
+  }
+
+  for (const width of [360, 375]) {
+    reflowTest(
+      `a ${width} px com a letra em 20 px, a cadeia do mês de milhões empilha o nome acima do valor, sem rolar de lado`,
+      async ({ page }) => {
+        const server = new FakeReportServer();
+        server.fixture = { "2026-10": MILLIONS_MONTH };
+        await openReflowViewport(page, { fontPixels: 20, width });
+        await openDashboard(page, server);
+        await expect(chainRow(page, "(=) Vendas líquidas")).toContainText(
+          "R$ 1.706.600,00"
+        );
+        await expectReflowFont(page, 20);
+        await assertNothingClipped(chain(page));
+        await assertChainInView(chain(page));
+        const row = chainRow(page, "(=) Vendas líquidas");
+        const [name, value] = await Promise.all([
+          row.locator("th").boundingBox(),
+          row.locator("td").boundingBox(),
+        ]);
+        expect(name, "the name of the line was not measured").not.toBeNull();
+        expect(value, "the value of the line was not measured").not.toBeNull();
+        expect(
+          (name?.y ?? 0) + (name?.height ?? 0),
+          "the name sits above the value"
+        ).toBeLessThanOrEqual((value?.y ?? 0) + 1);
+      }
+    );
+  }
+
+  for (const fontPixels of [24, 20, 16]) {
+    reflowTest(
+      `com a letra em ${fontPixels} px, a cadeia de um mês comum cabe no cartão: o valor à vista, sem rolar de lado`,
+      async ({ page }) => {
+        const server = new FakeReportServer();
+        await openReflowViewport(page, { fontPixels });
+        await openDashboard(page, server);
+        await expect(chainRow(page, "(=) Vendas líquidas")).toContainText(
+          "R$ 130,00"
+        );
+        await expectReflowFont(page, fontPixels);
+        await assertNothingClipped(chain(page));
+        await assertChainInView(chain(page));
+      }
+    );
+  }
+
+  for (const fontPixels of [24, 20, 16]) {
+    reflowTest(
+      `com a letra em ${fontPixels} px, a tabela dos dias é um cartão por dia e o "Depois de hoje" lê inteiro, sem rolar de lado`,
+      async ({ page }) => {
+        const server = new FakeReportServer();
+        await openReflowViewport(page, { fontPixels });
+        await openDashboard(page, server);
+        await expectReflowFont(page, fontPixels);
+        await chartRegion(page)
+          .getByRole("button", { name: "Ver os números" })
+          .click();
+        const footer = chartRegion(page).locator("tfoot");
+        await expect(footer).toContainText("Depois de hoje: despesas R$ 30,00");
+        expect(
+          await assertAmountsOnOneLine(chartRegion(page).locator("tbody"))
+        ).toBeGreaterThanOrEqual(10);
+        await assertAmountsOnOneLine(footer);
+        await assertNothingClipped(chartRegion(page), {
+          allowScroll: ["[data-slot=card]"],
         });
+        await assertNoPageScroll(page);
       }
     );
   }

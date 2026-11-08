@@ -3192,6 +3192,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Dica da busca (AC-5.3, Q-2) | Em revisão | `SearchField`: com o grupo do campo abaixo de 14 rem (15 rem em Clientes, `narrowBelowRem`), o `placeholder` vira "Buscar" e o texto de apoio desce inteiro para uma linha sob o campo, ligada por `aria-describedby`; Estoque usa `flex-wrap` e `hintClassName` para a linha ficar sob o campo e o botão "Filtros". Clientes e Produtos a 320 px com 20 px têm 14 rem exatos; o texto de apoio de Clientes (25 caracteres) não cabe ao lado da lupa, então Clientes usa 15 rem e desce a dica; Produtos ("Nome do produto") cabe e fica como estava. Um limiar de 15 rem para todos mudaria o Estoque a 360 px com 16 px (o campo divide a linha com "Filtros" e mede entre 14 e 15 rem), que deve ficar como era. |
 | Provas | Em revisão | `apps/web/e2e/shell-reflow.e2e.ts` (Chromium, `reflow.ts`), nos projetos desktop e mobile emulado; o que só roda no CI: as baselines de regressão visual. |
 
+### Funil de ativação: contrato e tela aceitam "ativação em 14 dias" e o teste do Pro, opcionais (t914; corte ativacao-fase1, Item 3a; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Contrato (AC-3.1) | Em revisão | `admin-activation-funnel.ts`: cada semana de criação aceita, **opcionais**, `activatedWithin14Days`, `trialStarted` e `soldInTrial` (entrada e saída), com os percentuais `activatedWithin14Days` e `soldInTrial` (sobre `trialStarted`). `trialStarted` e `soldInTrial` vêm juntos ou nenhum. Valor mostrado abaixo de 5, chave a mais e parte maior que o todo continuam recusados (500, sem registrar o conteúdo). A resposta sem as células é a de antes, sem chave inventada: o Admin vai ao ar antes da migration do Item 3b. |
+| Tela (AC-3.8) | Em revisão | Com as células na resposta, a tabela das semanas ganha "Ativação em 14 dias", surge a tabela "Teste do Pro e a 1ª venda, por semana de criação da loja" e as notas dizem o que a faixa e o teste medem e que a ativação em 7 e 14 dias é hipótese a ajustar com a linha de base (o que não conta continua na nota do servidor, `notCounted`; a tela não repete prazo que o servidor não manda). Sem as células, nada disso aparece. O motivo `activation_window_open` passou a "não disponível (o prazo ainda corre)", porque serve às duas janelas. |
+| Provas | Em revisão | `src/activation-funnel-routes.test.ts` (resposta com e sem as células, recusas) e `ui/funnel.test.ts`. Fica para o Item 3b: a função e o gate de banco (AC-3.2, AC-3.3, AC-3.4 no banco), a conferência de `trial_started_at` (AC-3.6) e o texto do M4 se ele mudar. |
+
 ### Avisos de ativação e medida de comportamento: ADR 0106 (corte ativacao-fase1, Item 1; só documentação, sem migration; número do ADR provisório)
 
 | Item | Estado | Detalhe |
