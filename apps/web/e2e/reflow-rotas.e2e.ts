@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BrowserContext, Locator, Page } from "@playwright/test";
@@ -30,7 +30,13 @@ import { WORKER_MARK } from "./worker-mark";
  * `EXCLUDED` the ones that a test of its own measures, with its file; a screen in neither fails `a consistência`
  * below. Customers is in both: the list is `clientes-reflow.e2e.ts`, only the dialog of the customer is here. The title
  * of the expenses list card and its button are `despesas-reflow.e2e.ts`; here are its three tabs and the form.
- * Not measured: the screens of the Admin (desktop), the font of 24 px and the dark theme.
+ * Not measured: the screens of the Admin (desktop) and the dark theme.
+ *
+ * The same cases run a second time with the font at 24 px ("Muito grande" in Chrome), as a report and not as a promise:
+ * 20 px is the floor the interface guarantees, 24 px is best effort. What is cut at 24 px and fits at 20 goes in
+ * `KNOWN_FINDINGS_24`, apart from `KNOWN_FINDINGS`, with the same rule: a new cut fails, and a known one that no longer
+ * shows up has to leave the list. `ALREADY_AT_24` names the cases whose chart, chain and day table another spec already reads at 24 px (that spec does
+ * not sweep the page or the KPI cards).
  */
 skipOutsideChromium();
 test.use({ hasTouch: true, isMobile: true });
@@ -67,8 +73,161 @@ interface KnownFinding {
 
 const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 
+/** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise and never an excuse. */
+const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
+  {
+    clientWidth: 320,
+    reason:
+      'a página das Despesas rola 4 px para o lado; na medida, o elemento que mais passa é o botão só de ícone "Próximo mês" do seletor de mês (54 px, sem quebra de linha), que termina em 324 px; o seletor tem de encolher ou quebrar a linha',
+    screens: [
+      "despesas lista",
+      "despesas grade de meses aberta",
+      "despesas erros nos campos",
+    ],
+    scrollWidth: 324,
+    selector: "html",
+  },
+  {
+    clientWidth: 211,
+    reason:
+      'no formulário de Nova despesa, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (211 px) e o campo não quebra a linha',
+    screens: ["despesas erros nos campos"],
+    scrollWidth: 219,
+    selector:
+      'div[data-slot="field"] > button#expense-categoryId > span[data-slot="select-value"]',
+  },
+  {
+    clientWidth: 272,
+    reason:
+      'na aba Recorrentes, o cartão tem 272 px e o conteúdo (o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra) mede 331 px: passa 59 px da borda direita do cartão',
+    screens: ["despesas recorrentes e o diálogo da regra"],
+    scrollWidth: 331,
+    selector:
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
+  },
+  {
+    clientWidth: 207,
+    reason:
+      'no diálogo da regra recorrente, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (207 px)',
+    screens: ["despesas recorrentes e o diálogo da regra"],
+    scrollWidth: 219,
+    selector:
+      'div[data-slot="field"] > button#expense-rule-categoryId > span[data-slot="select-value"]',
+  },
+  {
+    clientWidth: 272,
+    reason:
+      'na aba Categorias, o cartão tem 272 px e o conteúdo (o "Mostrar categorias arquivadas" e a lista de categorias, com Renomear e Arquivar) mede 309 px: passa 37 px da borda direita do cartão',
+    screens: ["despesas categorias e o diálogo da categoria"],
+    scrollWidth: 309,
+    selector:
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
+  },
+  {
+    clientWidth: 207,
+    reason:
+      'no diálogo da categoria, o campo Grupo mostra "Operacional/Administrativa" cortado: o texto (265 px) não cabe na caixa do campo (207 px)',
+    screens: ["despesas categorias e o diálogo da categoria"],
+    scrollWidth: 265,
+    selector:
+      'div[data-slot="field"] > button#expense-new-category-group > span[data-slot="select-value"]',
+  },
+  {
+    clientWidth: 43,
+    reason:
+      'no Resultado sem custo conhecido, o título "Resultado estimado" do cartão é cortado: o texto (92 px) fica numa caixa de 43 px; o título tem de poder quebrar em duas linhas',
+    screens: ["resultado sem custo conhecido"],
+    scrollWidth: 92,
+    selector: 'div[data-slot="card"] > h2#result-kpi-result > span',
+  },
+  {
+    clientWidth: 272,
+    reason:
+      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
+    screens: ["ajuda"],
+    scrollWidth: 290,
+    selector: 'main#conteudo > div[data-slot="card"]',
+  },
+  {
+    clientWidth: 272,
+    reason:
+      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
+    screens: ["ajuda"],
+    scrollWidth: 290,
+    selector: 'main#conteudo > div[data-slot="card"]',
+  },
+  {
+    clientWidth: 320,
+    reason:
+      "a página de Categorias rola 35 px para o lado; na medida, a faixa de abas Ativas, Arquivadas e Removidas mede 331 px e o título e o texto de apoio vão até 355 px; as abas têm de caber em 272 px ou rolar dentro da faixa",
+    screens: ["categorias lista", "categorias remover"],
+    scrollWidth: 355,
+    selector: "html",
+  },
+  {
+    clientWidth: 320,
+    reason:
+      "no diálogo de produto, o conteúdo do corpo mede 366 px em 320 px e passa 46 px: a faixa de abas Dados, Variantes e Imagens vai até 342 px e a aba Imagens termina em 338 px, além da janela",
+    screens: ["produtos variantes, opções e combinação"],
+    scrollWidth: 366,
+    selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
+  },
+  {
+    clientWidth: 272,
+    reason:
+      'no Detalhe da venda, a data da linha do tempo ("15 out 09:00", 107 px, sem quebra) passa 2 px da borda direita do cartão "Linha do tempo"',
+    screens: [
+      "detalhe da venda aberto",
+      "detalhe da venda cliente da venda",
+      "detalhe da venda trocar o cliente",
+    ],
+    scrollWidth: 274,
+    selector: 'main > section > div[data-slot="card"]',
+  },
+  {
+    clientWidth: 320,
+    reason:
+      "no Detalhe da venda com o cancelamento revisado, a página rola 21 px para o lado (341 px de conteúdo em 320 px); a causa dentro da coluna não foi isolada",
+    screens: ["detalhe da venda cancelamento revisado"],
+    scrollWidth: 341,
+    selector: "html",
+  },
+  {
+    clientWidth: 272,
+    reason:
+      'na Assinatura, o cartão "Plano Pro" tem 272 px e o conteúdo da oferta mede 310 px: passa 38 px da borda direita do cartão',
+    screens: ["assinatura oferta com Pix"],
+    scrollWidth: 310,
+    selector:
+      'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
+  },
+  {
+    clientWidth: 272,
+    reason:
+      'no diálogo "Cancelar a renovação do Pro?", o diálogo tem 272 px e o conteúdo mede 298 px: passa 26 px da borda direita, e quem mais passa é o rodapé com "Continuar no Pro" e "Cancelar a renovação"',
+    screens: ["assinatura cancelar a renovação"],
+    scrollWidth: 298,
+    selector: 'div[data-slot="dialog-content"]',
+  },
+];
+
+const FONT_TEMPLATE = ["$", "{fontPixels}"].join("");
+const escapeForRegex = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Whether `source` declares `title` (with `24 px` as the font of the loop) with `reflowTest` inside a loop whose fonts include 24. */
+function readsAt24(source: string, title: string) {
+  const template = title.replace("24 px", `${FONT_TEMPLATE} px`);
+  return new RegExp(
+    `for \\(const fontPixels of \\[[^\\]]*\\b24\\b[^\\]]*\\]\\) \\{\\s*reflowTest\\(\\s*\`${escapeForRegex(template)}\``
+  ).test(source);
+}
+
+const REVOKE_OTHER = /^Revogar o aparelho Celular da Ana/;
 const MEASURE_TOLERANCE = 1;
 const REFLOW_WIDTH = 320;
+const FLOOR_FONT_PIXELS = 20;
+const BEST_EFFORT_FONT_PIXELS = 24;
 
 interface Case {
   name: string;
@@ -228,6 +387,32 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
   "settings:seus-dados": [DATA_EXPORT],
 };
 
+/**
+ * The cases of `COVERED` whose chart, chain and day table another spec already reads at 320 px with 24 px (it does not
+ * sweep the rest of the page or the KPI cards), so they do not run twice: the case, and the file and the test.
+ */
+const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
+  {
+    "resultado mês incompleto e gráfico de vendas": {
+      file: "dashboard.e2e.ts",
+      test: "com a letra em 24 px, o R$ e o número de cada valor ficam na mesma linha",
+    },
+    "resultado gráfico de vendas e custos e a tabela": {
+      file: "dashboard.e2e.ts",
+      test: 'com a letra em 24 px, a tabela dos dias é um cartão por dia e o "Depois de hoje" lê inteiro, sem rolar de lado',
+    },
+  };
+
+/**
+ * The cases of `COVERED` that cannot be driven at 24 px because the screen does not let the person reach a control the
+ * case has to press: the case, and what is measured (it is read again by `a guarda de 24 px confere o que não alcança`
+ * below, which fails when the control can be reached, so the case goes back to `COVERED_24`).
+ */
+const UNREACHABLE_AT_24: Readonly<Record<string, string>> = {
+  "aparelhos confirmação aberta":
+    'the dialog of the revocation is taller than the window, centered and without scroll (overflow visible), so the button "Sim, revogar e encerrar as outras sessões" stays outside the window even after scrolling it into view',
+};
+
 /** The screens a test of its own measures at 320 px with 20 px: the file of that test. */
 const EXCLUDED: Readonly<Record<string, string>> = {
   attention: "pendencias-reflow.e2e.ts",
@@ -338,9 +523,10 @@ async function pageScroll(page: Page): Promise<Finding | null> {
 async function sweep(
   page: Page,
   screen: string,
-  known: readonly KnownFinding[] = KNOWN_FINDINGS
+  known: readonly KnownFinding[] = KNOWN_FINDINGS,
+  fontPixels = FLOOR_FONT_PIXELS
 ) {
-  await expectReflowFont(page);
+  await expectReflowFont(page, fontPixels);
   expect(page.viewportSize()?.width, "the window is not 320 px wide").toBe(
     REFLOW_WIDTH
   );
@@ -373,19 +559,65 @@ async function sweep(
   return judge(seen, mine);
 }
 
-async function expectScreenWhole(page: Page, screen: string) {
-  const { fresh, gone } = await sweep(page, screen);
+async function expectScreenWhole(
+  page: Page,
+  screen: string,
+  fontPixels = FLOOR_FONT_PIXELS
+) {
+  const best = fontPixels === BEST_EFFORT_FONT_PIXELS;
+  const list = best ? "KNOWN_FINDINGS_24" : "KNOWN_FINDINGS";
+  const { fresh, gone } = await sweep(
+    page,
+    screen,
+    best ? KNOWN_FINDINGS_24 : KNOWN_FINDINGS,
+    fontPixels
+  );
   expect(
     fresh.map(describe),
-    `cut at 320 px with 20 px in "${screen}"`
+    `cut at 320 px with ${fontPixels} px in "${screen}"`
   ).toEqual([]);
   expect(
     gone.map(
       (known) =>
         `${known.selector} (${known.scrollWidth} px in ${known.clientWidth} px)`
     ),
-    `known finding that no longer shows up in "${screen}": take it out of KNOWN_FINDINGS`
+    `known finding that no longer shows up in "${screen}": take it out of ${list}`
   ).toEqual([]);
+}
+
+const coveredNames = () =>
+  Object.values(COVERED).flatMap((cases) => cases.map(({ name }) => name));
+
+/** The cases of `COVERED` that run at 24 px: all of them but the ones `ALREADY_AT_24` and `UNREACHABLE_AT_24` name. */
+const COVERED_24: Readonly<Record<string, readonly Case[]>> =
+  Object.fromEntries(
+    Object.entries(COVERED)
+      .map(([key, cases]): [string, readonly Case[]] => [
+        key,
+        cases.filter(
+          ({ name }) => !(name in ALREADY_AT_24 || name in UNREACHABLE_AT_24)
+        ),
+      ])
+      .filter(([, cases]) => cases.length > 0)
+  );
+
+function expectKnownLines(
+  list: readonly KnownFinding[],
+  caseNames: readonly string[],
+  suffix: string
+) {
+  const names = new Set(caseNames);
+  for (const known of list) {
+    for (const screen of known.screens) {
+      expect(names.has(screen), `no case "${screen}"${suffix}`).toBe(true);
+    }
+    expect(known.screens.length, known.selector).toBeGreaterThan(0);
+    expect(known.selector, known.reason).not.toBe("");
+    expect(known.scrollWidth, known.selector).toBeGreaterThan(
+      known.clientWidth
+    );
+    expect(known.reason.trim(), known.selector).not.toBe("");
+  }
 }
 
 test.describe("a consistência da lista de telas", () => {
@@ -409,19 +641,19 @@ test.describe("a consistência da lista de telas", () => {
   });
 
   test("cada achado conhecido nomeia um caso, a medida e o motivo, e cada rolagem de propósito é tabela de dados ou faixa de abas", () => {
-    const names = new Set(
-      Object.values(COVERED).flatMap((cases) => cases.map(({ name }) => name))
+    expectKnownLines(KNOWN_FINDINGS, coveredNames(), "");
+    expectKnownLines(
+      KNOWN_FINDINGS_24,
+      Object.values(COVERED_24).flatMap((cases) =>
+        cases.map(({ name }) => name)
+      ),
+      " that runs at 24 px"
     );
-    for (const known of KNOWN_FINDINGS) {
-      for (const screen of known.screens) {
-        expect(names.has(screen), `no case "${screen}"`).toBe(true);
-      }
-      expect(known.screens.length, known.selector).toBeGreaterThan(0);
-      expect(known.selector, known.reason).not.toBe("");
-      expect(known.scrollWidth, known.selector).toBeGreaterThan(
-        known.clientWidth
-      );
-      expect(known.reason.trim(), known.selector).not.toBe("");
+    for (const known of KNOWN_FINDINGS_24) {
+      expect(
+        known.reason.trim().length,
+        `${known.selector}: say in the words of the screen what is cut and what the fix has to do`
+      ).toBeGreaterThanOrEqual(30);
     }
     for (const purpose of SCROLLS_ON_PURPOSE) {
       expect(["faixa de abas", "tabela de dados"]).toContain(purpose.reason);
@@ -436,6 +668,60 @@ test.describe("a consistência da lista de telas", () => {
     ]);
   });
 
+  test("cada caso de 20 px roda também a 24 px, menos os que outro teste já mede a 24 px (nomeados com o arquivo e o teste) e os que a tela não deixa alcançar (nomeados com a medida)", () => {
+    const all = new Set(coveredNames());
+    const at24 = Object.values(COVERED_24).flatMap((cases) =>
+      cases.map(({ name }) => name)
+    );
+    const exempt = [
+      ...Object.keys(ALREADY_AT_24),
+      ...Object.keys(UNREACHABLE_AT_24),
+    ];
+    expect(exempt.filter((name) => !all.has(name))).toEqual([]);
+    expect(new Set(exempt).size).toBe(exempt.length);
+    expect([...at24, ...exempt].sort()).toEqual([...all].sort());
+    expect(at24.length).toBeGreaterThan(0);
+    for (const [name, { file, test: title }] of Object.entries(ALREADY_AT_24)) {
+      const source = existsSync(join(here, file))
+        ? readFileSync(join(here, file), "utf8")
+        : "";
+      expect(source, `${name}: ${file} does not exist`).not.toBe("");
+      expect(
+        readsAt24(source, title),
+        `${name}: ${file} no longer runs "${title}" with reflowTest in a loop over the font that includes 24 px`
+      ).toBe(true);
+    }
+    expect(at24.length).toBe(all.size - exempt.length);
+  });
+
+  test("a conferência de ALREADY_AT_24 pega o arquivo sem o título, o laço sem 24 px, o título fora do laço e o teste pulado", () => {
+    const title = "com a letra em 24 px, o valor fica inteiro";
+    const body = (loop: string, call = "reflowTest(") =>
+      `${loop} {\n    ${call}\n      \`com a letra em ${FONT_TEMPLATE} px, o valor fica inteiro\`,\n      async () => {}\n    );\n  }\n`;
+    expect(
+      readsAt24(body("for (const fontPixels of [24, 20, 16])"), title)
+    ).toBe(true);
+    expect(readsAt24(body("for (const fontPixels of [20, 16])"), title)).toBe(
+      false
+    );
+    expect(readsAt24(body("for (const fontPixels of [240, 16])"), title)).toBe(
+      false
+    );
+    expect(
+      readsAt24(
+        body("for (const fontPixels of [24, 20])", "reflowTest.skip("),
+        title
+      )
+    ).toBe(false);
+    expect(
+      readsAt24(
+        `for (const fontPixels of [24, 20]) {}\nreflowTest(\`com a letra em ${FONT_TEMPLATE} px, o valor fica inteiro\`, async () => {});\n`,
+        title
+      )
+    ).toBe(false);
+    expect(readsAt24("", title)).toBe(false);
+  });
+
   test("os casos têm nome único", () => {
     const names = Object.values(COVERED).flatMap((cases) =>
       cases.map(({ name }) => name)
@@ -445,8 +731,12 @@ test.describe("a consistência da lista de telas", () => {
   });
 });
 
-const plant = async (page: Page, body: string) => {
-  await openReflowViewport(page);
+const plant = async (
+  page: Page,
+  body: string,
+  fontPixels = FLOOR_FONT_PIXELS
+) => {
+  await openReflowViewport(page, { fontPixels });
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0"><main>${body}</main></body></html>`
   );
@@ -533,6 +823,94 @@ test.describe("a guarda pega o que diz pegar", () => {
     const fixed = await sweep(page, "controle", [known]);
     expect(fixed.fresh).toEqual([]);
     expect(fixed.gone).toEqual([known]);
+  });
+});
+
+test.describe("a guarda pega o que corta só a 24 px", () => {
+  const TEXT = "Cartão de crédito";
+  const styled = (width: number) =>
+    `<span id="cut" style="display:block;width:${width}px;overflow:hidden;white-space:nowrap">${TEXT}</span>`;
+
+  test("o texto que cabe a 20 px e corta a 24 px passa a 20, reprova a 24, e com o conserto passa a 24", async ({
+    page,
+  }) => {
+    await plant(
+      page,
+      `<span id="cut" style="display:inline-block;white-space:nowrap">${TEXT}</span>`
+    );
+    const natural = await page
+      .locator("#cut")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    const width = Math.ceil(natural) + 2;
+    await plant(page, styled(width));
+    expect((await sweep(page, "controle", [])).fresh).toEqual([]);
+    await plant(page, styled(width), BEST_EFFORT_FONT_PIXELS);
+    const { fresh } = await sweep(
+      page,
+      "controle",
+      [],
+      BEST_EFFORT_FONT_PIXELS
+    );
+    expect(fresh.map(describe).join("\n")).toContain("Cartão de crédito");
+    await page.locator("#cut").evaluate((element) => {
+      element.style.whiteSpace = "normal";
+      element.style.overflowWrap = "anywhere";
+    });
+    expect(
+      (await sweep(page, "controle", [], BEST_EFFORT_FONT_PIXELS)).fresh
+    ).toEqual([]);
+  });
+
+  test("a guarda de 24 px confere o tamanho da letra: a 20 px ela reprova", async ({
+    page,
+  }) => {
+    await plant(page, styled(300));
+    await expect(
+      sweep(page, "controle", [], BEST_EFFORT_FONT_PIXELS)
+    ).rejects.toThrow();
+  });
+});
+
+test.describe("a guarda de 24 px confere o que não alcança", () => {
+  test("o botão de confirmar a revogação segue fora da janela a 24 px: se couber, o caso volta para COVERED_24", async ({
+    context,
+    page,
+  }) => {
+    await openReflowViewport(page, { fontPixels: BEST_EFFORT_FONT_PIXELS });
+    await stateOf("aparelhos lista").open(page, context);
+    await page.getByRole("button", { name: REVOKE_OTHER }).click();
+    await page
+      .getByRole("checkbox", { name: "Encerrar também as outras sessões" })
+      .click();
+    await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
+    const button = page.getByRole("button", {
+      exact: true,
+      name: "Sim, revogar e encerrar as outras sessões",
+    });
+    await button.scrollIntoViewIfNeeded();
+    const seen = await button.evaluate((element) => {
+      const dialog = element.closest('[role="dialog"]');
+      const box = element.getBoundingClientRect();
+      return {
+        bottom: box.bottom,
+        dialogHeight: dialog?.getBoundingClientRect().height ?? 0,
+        overflowY: dialog ? getComputedStyle(dialog).overflowY : "",
+        top: box.top,
+        windowHeight: window.innerHeight,
+      };
+    });
+    expect(
+      seen.dialogHeight,
+      "the dialog fits the window now: take the case out of UNREACHABLE_AT_24"
+    ).toBeGreaterThan(seen.windowHeight);
+    expect(
+      seen.overflowY,
+      "the dialog scrolls now: take the case out of UNREACHABLE_AT_24"
+    ).toBe("visible");
+    expect(
+      seen.bottom > seen.windowHeight || seen.top < 0,
+      "the button is inside the window now: take the case out of UNREACHABLE_AT_24"
+    ).toBe(true);
   });
 });
 
@@ -653,6 +1031,23 @@ test.describe("a 320 px com letra de 20 px", () => {
         await openReflowViewport(page);
         await item.open(page, context);
         await expectScreenWhole(page, item.name);
+      });
+    }
+  }
+});
+
+test.describe("a 320 px com letra de 24 px, melhor esforço: relatório, não promessa", () => {
+  for (const [key, cases] of Object.entries(COVERED_24)) {
+    for (const item of cases) {
+      test(`${key}: ${item.name} lê inteira a 24 px, sem corte e sem rolagem para o lado, fora o que KNOWN_FINDINGS_24 lista`, async ({
+        context,
+        page,
+      }) => {
+        await openReflowViewport(page, {
+          fontPixels: BEST_EFFORT_FONT_PIXELS,
+        });
+        await item.open(page, context);
+        await expectScreenWhole(page, item.name, BEST_EFFORT_FONT_PIXELS);
       });
     }
   }
