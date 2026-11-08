@@ -76,6 +76,12 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 0,
     why: "the order of the DOM does not depend on the size of anything, so there is nothing for a finger to change",
   },
+  "settings-groups.e2e.ts": {
+    bare: 0,
+    coarse: 0,
+    from: "for (const fontPixels of [20, 24]) {",
+    why: "",
+  },
   "shell-reflow.e2e.ts": {
     bare: 0,
     coarse: 2,

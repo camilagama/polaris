@@ -13,13 +13,14 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Separator } from "@/ui/separator";
-import { tabHref } from "../app-shell/navigation-model";
+import { addressWithTab, tabHref } from "../app-shell/navigation-model";
 import { NotFoundPage } from "../app-shell/not-found-page";
 import { ScreenTitle, useInTab } from "../app-shell/screen-title";
 import { SessionEndedNotice } from "../app-shell/session-ended-notice";
 import { canManageBilling } from "../lib/billing-access";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { signInPath } from "../lib/sign-in-path";
+import { useIsMobile } from "../lib/use-mobile";
 import { LogoutDialog } from "../offline/logout-dialog";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import { useLogout } from "../offline/runtime/logout-control";
@@ -96,10 +97,11 @@ function UiBlock({ children }: { children: ReactNode }) {
 /**
  * "Cancelar": back to the first tab of Configurações this person has (the same list the screen draws, so never to one
  * the menu does not offer, Aparelhos, which exists only with the offline runtime), without saving. A link in the look of an
- * outline button.
+ * outline button. On a phone the address without a tab is the list of Configurações, so the first tab is named.
  */
 export function CancelLink() {
   const { billingSelfService, organization } = useCurrentOrganization();
+  const phone = useIsMobile();
   const tab = firstSettingsTab({
     billing: canManageBilling(billingSelfService, organization.role),
     dataExport: hasCapabilityForRole(organization.role, "organization:export"),
@@ -114,7 +116,16 @@ export function CancelLink() {
         buttonVariants({ size: "lg", variant: "outline" }),
         "w-full sm:w-fit"
       )}
-      href={tabHref("settings", tab.value)}
+      href={
+        phone
+          ? addressWithTab(
+              tabHref("settings", tab.value),
+              "settings",
+              tab.value,
+              true
+            )
+          : tabHref("settings", tab.value)
+      }
     >
       {CHANGE_CANCEL}
     </a>

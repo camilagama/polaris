@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { Page, Request, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { OFFLINE_POC_ORIGIN } from "./run-settings";
+import { onPhone } from "./settings-nav";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
@@ -1254,7 +1255,10 @@ test.describe("trocar senha dentro do app (AC-57, V8)", () => {
       page.getByRole("link", {
         name: "Cancelar e voltar para Formas de receber",
       })
-    ).toHaveAttribute("href", "/configuracoes");
+    ).toHaveAttribute(
+      "href",
+      onPhone(page) ? "/configuracoes?aba=formas-de-receber" : "/configuracoes"
+    );
     await shot(page, "trocar-senha-conta-google");
   });
 

@@ -480,11 +480,17 @@ export function resolveRoute(
   };
 }
 
+const SETTINGS_LIST_KEY = "settings:lista";
+
 /**
  * The screen on display as the report of an error names it (`routeId` of `@polaris/contracts/client-error`): the
  * screen of `ROUTES`, and for a screen with tabs `screen:tab`, by the tab the address asks. Null outside the shell.
  */
-export function screenKeyOf(pathname: string, search = ""): string | null {
+export function screenKeyOf(
+  pathname: string,
+  search = "",
+  phone = false
+): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const route = Object.hasOwn(ROUTES, normalized)
     ? ROUTES[normalized]
@@ -492,20 +498,24 @@ export function screenKeyOf(pathname: string, search = ""): string | null {
   if (!route) {
     return null;
   }
+  if (phone && route.screen === "settings" && !namesTab("settings", search)) {
+    return SETTINGS_LIST_KEY;
+  }
   return isTabScreen(route.screen)
     ? `${route.screen}:${requestedTab(route.screen, search).value}`
     : route.screen;
 }
 
-/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, and each tab of a screen with tabs. */
+/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, each tab of a screen with tabs, and the list of Configurações on a phone. */
 export function screenKeys(): string[] {
-  return Object.values(ROUTES)
-    .flatMap(({ screen }) =>
+  return [
+    ...Object.values(ROUTES).flatMap(({ screen }) =>
       isTabScreen(screen)
         ? SCREEN_TABS[screen].map((tab) => `${screen}:${tab.value}`)
         : [screen]
-    )
-    .sort();
+    ),
+    SETTINGS_LIST_KEY,
+  ].sort();
 }
 
 /**

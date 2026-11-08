@@ -636,10 +636,25 @@ describe("the screen key of an error report", () => {
     }
   });
 
+  it("names the list of Configurações on a phone apart from its first tab, and every tab by its own name", () => {
+    expect(screenKeyOf("/configuracoes", "", true)).toBe("settings:lista");
+    expect(screenKeyOf("/configuracoes", "", false)).toBe(
+      "settings:formas-de-receber"
+    );
+    expect(screenKeyOf("/configuracoes", "?aba=formas-de-receber", true)).toBe(
+      "settings:formas-de-receber"
+    );
+    expect(screenKeyOf("/configuracoes", "?aba=senha", true)).toBe(
+      "settings:senha"
+    );
+    expect(screenKeyOf("/sales", "", true)).toBe("sale");
+  });
+
   it("reaches every key of the list from some address of the shell", () => {
     const reached = new Set<string | null>([
       ...shellPaths.map((path) => screenKeyOf(path)),
       ...tabAddresses.map(({ href }) => keyOfHref(href)),
+      screenKeyOf("/configuracoes", "", true),
     ]);
     expect([...reached].sort()).toEqual([...shellRouteIds].sort());
   });

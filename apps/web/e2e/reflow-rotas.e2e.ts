@@ -260,6 +260,23 @@ const HELP: Case = {
   },
 };
 
+const SETTINGS_LIST: Case = {
+  name: "configurações a lista do celular",
+  open: async (page) => {
+    await serve(page);
+    await page.goto("/configuracoes");
+    await expect(
+      page.getByRole("heading", { exact: true, level: 2, name: "Da loja" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { exact: true, level: 2, name: "Da conta" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { exact: true, name: "Seus dados" })
+    ).toBeVisible();
+  },
+};
+
 const DATA_EXPORT: Case = {
   name: "seus dados com uma cópia pronta e um pedido em andamento",
   open: async (page) => {
@@ -379,6 +396,7 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "perfis de pagamento edição",
     "perfis de pagamento erros nos campos"
   ),
+  "settings:lista": [SETTINGS_LIST],
   "settings:senha": states(
     "trocar senha",
     "trocar senha atual errada",
