@@ -123,7 +123,7 @@ As tabelas novas **não entram na exportação do tenant** (como `billing_notice
 
 ### D12. Migrations e ordem
 
-Tudo é **expand**: só `CREATE` e `GRANT`; nada apaga dado nem função existente neste corte (ADR 0096). Números provisórios: 0122 (funil até 14 dias e M4), 0123 (M3 da sessão), 0124 (tabelas e papel da série), 0125 (candidatos), 0126 (supressão e parada, se não couber na 0124). O contrato do funil é **estrito**, e a migration roda antes do Worker: o Admin que aceita as células novas como opcionais **entra e é implantado antes** da migration que as devolve.
+Tudo é **expand**: só `CREATE` e `GRANT`; nada apaga dado nem função existente neste corte (ADR 0096). Números provisórios: 0125 (funil até 14 dias e M4, como saiu), 0123 (M3 da sessão), 0124 (tabelas e papel da série), 0126 (candidatos), 0127 (supressão e parada, se não couber na 0124). O contrato do funil é **estrito**, e a migration roda antes do Worker: o Admin que aceita as células novas como opcionais **entra e é implantado antes** da migration que as devolve.
 
 ## Consequências
 

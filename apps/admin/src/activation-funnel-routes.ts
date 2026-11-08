@@ -143,6 +143,10 @@ function fourteenDayCells(
   const activatedWithin14Days = optionalCount(cohort.activatedWithin14Days);
   const trialStarted = optionalCount(cohort.trialStarted);
   const soldInTrial = optionalCount(cohort.soldInTrial);
+  if (trialStarted) {
+    // a part of the cohort: more than the cohort cannot be (it has no share of its own to show)
+    percent(trialStarted, stores);
+  }
   return {
     cells: {
       ...(activatedWithin14Days && { activatedWithin14Days }),
