@@ -662,9 +662,10 @@ test("a data de competência com pouca altura (celular deitado): o mês rola den
         .evaluate((element) => element.scrollHeight > element.clientHeight)
     )
     .toBe(true);
+  // the edge of the popover lands on a fractional pixel of the window: 0.999 is the whole button
   await expect(
     popup.getByRole("button", { exact: true, name: "Hoje" })
-  ).toBeInViewport({ ratio: 1 });
+  ).toBeInViewport({ ratio: 0.999 });
 });
 
 test("o calendário da data de competência: o teclado abre, as setas andam, Enter escolhe e o foco volta ao botão", async ({
