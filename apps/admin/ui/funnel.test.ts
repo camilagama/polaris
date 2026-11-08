@@ -300,6 +300,13 @@ describe("what the funnel shows (AC-8)", () => {
       .map((row) => byTag(row, "td").map((cell) => cell.textContent));
   };
 
+  const headers = (root: FakeElement, caption: string) => {
+    const found = byTag(root, "table").find(
+      (table) => table.querySelector("caption")?.textContent === caption
+    );
+    return byTag(found as FakeElement, "th").map((cell) => cell.textContent);
+  };
+
   it("keeps each table a table, in a region that scrolls and is named, and says the read once", async () => {
     const page = await openFunnel([json(funnel())]);
     const tables = byTag(byId(page.root, "funil-corpo"), "table");
@@ -393,7 +400,25 @@ describe("what the funnel shows (AC-8)", () => {
       ],
     ]);
     expect(byTag(byId(page.root, "funil-corpo"), "table")).toHaveLength(5);
+    expect(
+      headers(
+        page.root,
+        "Teste do Pro e a 1ª venda, por semana de criação da loja"
+      )
+    ).toEqual([
+      "Semana",
+      "Lojas com o teste usado ou dispensado",
+      "1ª venda até 7 dias do início do teste ou do pagamento",
+    ]);
     const text = visibleText(page.root);
+    expect(text).toContain(
+      "lojas da semana com o teste usado ou dispensado (quem assina o Pro sem teste também entra)"
+    );
+    expect(text).toContain(
+      "até 7 dias (a duração do teste) depois do início do teste ou do pagamento"
+    );
+    expect(text).not.toContain("começaram o teste");
+    expect(text).not.toContain("dentro do teste");
     expect(text).toContain(
       "A ativação em 7 e 14 dias é hipótese a ajustar com a linha de base."
     );
