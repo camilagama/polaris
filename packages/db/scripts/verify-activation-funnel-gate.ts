@@ -973,12 +973,14 @@ async function run() {
       oldBusinessDate?: boolean;
       product?: "deleted" | "live" | "none";
       /** Offsets from the Monday 00:00 (Brasília) of the cohort, for each confirmed sale. */
-      sales?: string[];
+      sales?: string[] | undefined;
       /** The billing record: when the trial started (an offset as above) and the state the store is in now. */
-      trial?: {
-        at: string;
-        state: "active" | "free" | "free_over_limit" | "trialing";
-      };
+      trial?:
+        | {
+            at: string;
+            state: "active" | "free" | "free_over_limit" | "trialing";
+          }
+        | undefined;
     }
     const weekStart = (weeksAgo: number) =>
       `(date_trunc('week', now() AT TIME ZONE '${ZONE}') - ${weeksAgo} * interval '7 days')`;
