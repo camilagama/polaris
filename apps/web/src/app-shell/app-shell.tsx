@@ -300,7 +300,8 @@ function AppSidebar({
 /* 4.4 em is the width of "Histórico", 0.25 rem of slack. Below the 0.6875 rem floor the label breaks in two
    lines (`--app-bottom-bar` grows) instead of being cut. `overflow-wrap: anywhere` alone breaks it where the letters
    run out ("Históric" and "o", "Estoqu" and "e"), so the label offers its own syllable break (`<wbr>`, which adds
-   nothing to the text or to the accessible name). */
+   nothing to the text). Chromium's accessibility tree still reads the two halves as two words ("Histó rico"), so each
+   link carries the whole word in `aria-label` and the split text is hidden from the tree. */
 const BOTTOM_BAR_LABEL =
   "max-w-full text-center [font-size:clamp(0.6875rem,calc((100cqw-0.25rem)/4.4),0.75rem)] [overflow-wrap:anywhere] @max-[3.275rem]/tab:tracking-[-0.01em]";
 
@@ -366,6 +367,7 @@ function BottomBar({ navId }: { navId: NavId | null }) {
           return (
             <a
               aria-current={ariaCurrent}
+              aria-label={item.label}
               className={`${tab} text-foreground`}
               data-bottom-sell=""
               href={item.href}
@@ -375,7 +377,10 @@ function BottomBar({ navId }: { navId: NavId | null }) {
               <span className="grid h-8 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs">
                 <Icon aria-hidden />
               </span>
-              <span className={`${BOTTOM_BAR_LABEL} font-semibold`}>
+              <span
+                aria-hidden="true"
+                className={`${BOTTOM_BAR_LABEL} font-semibold`}
+              >
                 <BottomBarLabel text={item.label} />
               </span>
             </a>
@@ -384,13 +389,14 @@ function BottomBar({ navId }: { navId: NavId | null }) {
         return (
           <a
             aria-current={ariaCurrent}
+            aria-label={item.label}
             className={`${tab} ${current ? "text-foreground" : "text-muted-foreground"}`}
             href={item.href}
             key={id}
           >
             {current ? mark : null}
             <Icon aria-hidden />
-            <span className={BOTTOM_BAR_LABEL}>
+            <span aria-hidden="true" className={BOTTOM_BAR_LABEL}>
               <BottomBarLabel text={item.label} />
             </span>
           </a>
