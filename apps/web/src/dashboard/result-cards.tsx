@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
   DeltaChip,
+  HeroPercent,
   HeroValue,
   KPI_STRIP,
   KPI_STRIP_ROOT,
@@ -317,7 +317,7 @@ export function ResultCards({
                 }
               : {})}
             title="Ticket médio"
-            value={<HeroValue amount={read.ticket.value} size="md" strip />}
+            value={<HeroValue amount={read.ticket.value} strip />}
           />
           <MarginCard
             incomplete={incomplete}
@@ -388,22 +388,10 @@ function MarginCard({
 
 /** The margin as a display: "41,2%", the sign of a percent a step smaller; a dash when there is none. Never hidden. */
 function MarginValue({ percent }: { percent: string | null }) {
-  const text = formatPercentOrDash(percent);
-  const box =
-    "whitespace-nowrap font-[650] text-[1.3125rem] tabular-nums leading-[1.05] tracking-[-0.035em] min-[56.25rem]:text-[1.5rem]";
-  if (percent === null) {
-    return (
-      <p className={cn(box, "text-muted-foreground")}>
-        <span aria-hidden="true">—</span>
-        <span className="sr-only">sem valor</span>
-      </p>
-    );
-  }
-  const negative = percent.trim().startsWith("-");
   return (
-    <p className={cn(box, negative && "text-destructive")} data-kpi-value="">
-      {text.replace("%", "")}
-      <span className="font-medium text-[0.56em] tracking-normal">%</span>
-    </p>
+    <HeroPercent
+      strip
+      text={percent === null ? null : formatPercentOrDash(percent)}
+    />
   );
 }

@@ -1,4 +1,5 @@
 import { SCREEN_TABS, type ScreenTab } from "../app-shell/navigation-model";
+import type { TabGroup } from "../app-shell/screen-tabs";
 
 /** What decides which tabs of Configurações a person has. */
 export interface SettingsTabConditions {
@@ -34,3 +35,15 @@ export function firstSettingsTab(conditions: SettingsTabConditions): ScreenTab {
     (SCREEN_TABS.settings[0] as ScreenTab)
   );
 }
+
+/**
+ * The rows of the tabs from 760 px: what belongs to the store, then what belongs to the account of the person. Together
+ * they are the tabs of `SCREEN_TABS.settings`, in its order, and a row with no tab this person has is not drawn.
+ */
+export const SETTINGS_GROUPS: readonly TabGroup[] = [
+  { label: "Da loja", values: ["formas-de-receber", "catalogo-publico"] },
+  {
+    label: "Da conta",
+    values: ["aparelhos", "assinatura", "senha", "seus-dados"],
+  },
+];

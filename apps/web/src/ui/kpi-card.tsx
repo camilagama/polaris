@@ -53,7 +53,7 @@ export const KPI_STRIP = `${STRIP_LAYOUT} ${STRIP_RESERVE}`;
 export const KPI_STRIP_ROOT = "@container grid gap-3";
 
 const KPI_STRIP_CELL =
-  "@container min-[56.25rem]:rounded-none min-[56.25rem]:bg-transparent min-[56.25rem]:shadow-none! min-[56.25rem]:ring-0";
+  "min-[56.25rem]:rounded-none min-[56.25rem]:bg-transparent min-[56.25rem]:shadow-none! min-[56.25rem]:ring-0";
 
 /**
  * A column of the strip lines value and change up on one baseline once its content box is 14 rem wide (the value, 6 px
@@ -116,10 +116,7 @@ export function KpiGroup({
       role="group"
     >
       <p
-        className={cn(
-          "text-[0.8125rem] text-muted-foreground leading-[1.125rem]",
-          className
-        )}
+        className={cn("text-muted-foreground text-support", className)}
         data-kpi-group=""
       >
         {title ? (
@@ -147,23 +144,64 @@ const ENTITY_SQUARE: Record<KpiEntity, string> = {
 const SIGN = /^[+-]/;
 
 /**
- * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller, which push
- * the line down), "R$ ••••" (whose dots may come from another font) and "—" take the same height, and nothing under
- * them moves when the values are hidden or a day is read. The line height is the card's (`text-sm`, 20 px), the one
- * the number has been drawn with (a `leading` put before the size class was dropped by the merge of the classes); the
- * size class comes first so the merge keeps both.
+ * What the principal card steps down to (`text-value-lg`) when its box is too narrow for the amount at `xl`, by the
+ * characters of the amount ("−R$ 99.640,35" is 13): the box is the card's content, which measures itself
+ * (`@container`), and the limits are in rem so they follow the letter size of the browser. Each limit is what the
+ * amount takes at 36 px (measured: 4.9 em for 12 characters, 5.4 em for 13, 6 em for 14) times 2.25 rem, plus a tenth
+ * of a rem of room. The first list is for a card of its own; the second is for a column of the strip, where the step holds only
+ * below 900 px, because from there the column has its own sizes (`stripValueSize`).
  */
-function heroBox(size: "lg" | "md", strip = false, characters = 0): string {
+const PRINCIPAL_STEP = [
+  "@max-[8.25rem]:text-value-lg",
+  "@max-[9rem]:text-value-lg",
+  "@max-[10rem]:text-value-lg",
+  "@max-[11.25rem]:text-value-lg",
+  "@max-[12.25rem]:text-value-lg",
+  "@max-[13.5rem]:text-value-lg",
+  "@max-[14.75rem]:text-value-lg",
+] as const;
+const PRINCIPAL_STEP_STRIP = [
+  "max-[56.24875rem]:@max-[8.25rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[9rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[10rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[11.25rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[12.25rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[13.5rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[14.75rem]:text-value-lg",
+] as const;
+const STEP_FROM = 9;
+
+function principalStep(characters: number, strip: boolean): string {
+  const steps = strip ? PRINCIPAL_STEP_STRIP : PRINCIPAL_STEP;
+  return (
+    steps[Math.min(Math.max(characters - STEP_FROM, 0), steps.length - 1)] ?? ""
+  );
+}
+
+/**
+ * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller), "R$ ••••"
+ * (whose dots may come from another font) and "—" take the same height, and nothing under them moves when the values
+ * are hidden or a day is read. The height is the line of the size (`xl` 40 px, `lg` 30 px; 36 and 28 on a phone) and, in the principal, it
+ * stays the line of `xl` when the number steps down to `lg`, so the card does not change height with the length of the amount.
+ * The size is one of the tokens of the scale; `leading-*` sets the line whatever the size class says, and goes after
+ * the size classes of its own variant, because the merge of the classes drops a `leading-*` that comes before one.
+ */
+function heroBox(
+  size: "xl" | "lg",
+  strip = false,
+  characters = 0,
+  stripCharacters = 0
+): string {
   return cn(
-    "whitespace-nowrap font-[650] tabular-nums tracking-[-0.035em]",
-    size === "lg"
+    "whitespace-nowrap font-semibold tabular-nums tracking-[-0.035em]",
+    size === "xl"
       ? cn(
-          "text-[1.75rem]",
-          strip ? "md:max-[56.24875rem]:text-[1.875rem]" : "md:text-[1.875rem]"
+          "h-(--text-value-xl--line-height) text-value-xl leading-(--text-value-xl--line-height)",
+          principalStep(characters, strip)
         )
-      : "text-[1.3125rem]",
-    strip && stripValueSize(characters),
-    "h-[1.05em] leading-5"
+      : "h-(--text-value-lg--line-height) text-value-lg",
+    strip && stripValueSize(stripCharacters),
+    strip && "min-[56.25rem]:h-[1.05em] min-[56.25rem]:leading-5"
   );
 }
 
@@ -177,14 +215,14 @@ export function HeroValue({
   amount: string | null;
   /** What a missing amount says in place of the dash, in the same one-line box ("sem custo neste dia"). */
   emptyText?: string | undefined;
-  size?: "lg" | "md";
+  /** `xl` for the principal number of a screen (it steps down to `lg` where it does not fit), `lg` for the rest. */
+  size?: "xl" | "lg";
   /** The value of a column of `KPI_STRIP`: 24 px from 900 px. */
   strip?: boolean;
 }) {
   const [hidden] = useHiddenValues();
-  const characters =
-    strip && amount !== null && !hidden ? formatBrlAmount(amount).length : 0;
-  const box = heroBox(size, strip, characters);
+  const characters = amount === null ? 0 : formatBrlAmount(amount).length;
+  const box = heroBox(size, strip, characters, hidden ? 0 : characters);
   if (amount === null && emptyText) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
@@ -211,6 +249,38 @@ export function HeroValue({
   return (
     <p className={cn(box, negative && "text-destructive")} data-kpi-value="">
       {money}
+    </p>
+  );
+}
+
+/**
+ * A percent in the box of the number (the Margem): the same size, weight and line as the amounts beside it, with the
+ * "%" a step smaller, as the "R$" is. Never hidden: a percent does not tell what the store sells.
+ */
+export function HeroPercent({
+  strip = false,
+  text,
+}: {
+  strip?: boolean;
+  /** The percent as the app writes it ("41,2%"), or null when there is none. */
+  text: string | null;
+}) {
+  const box = heroBox("lg", strip);
+  if (text === null) {
+    return (
+      <p className={cn(box, "text-muted-foreground")}>
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">sem valor</span>
+      </p>
+    );
+  }
+  return (
+    <p
+      className={cn(box, text.trim().startsWith("-") && "text-destructive")}
+      data-kpi-value=""
+    >
+      {text.replace("%", "")}
+      <span className="font-medium text-[0.56em] tracking-normal">%</span>
     </p>
   );
 }
@@ -403,7 +473,7 @@ function SparkSlot({
 }
 
 const TOP_ROW =
-  "flex min-h-[1.125rem] min-w-0 items-center justify-between gap-x-2 text-[0.8125rem] text-muted-foreground leading-[1.125rem]";
+  "flex min-h-[1.125rem] min-w-0 items-center justify-between gap-x-2 text-muted-foreground text-support";
 const SUPPORT_ROWS = "grid gap-y-1";
 const CHIP_ROW = "flex min-h-5 min-w-0 items-center";
 const NOTE_ROW = "text-muted-foreground text-xs leading-4";
@@ -411,7 +481,8 @@ const NOTE_ROW = "text-muted-foreground text-xs leading-4";
 const NOTE_LINES = { 1: "min-h-4", 2: "min-h-8" } as const;
 const FOOTER_ROW = "min-h-4 text-muted-foreground text-xs leading-4";
 const SPARK_SLOT = "-mx-(--card-spacing) mt-auto h-[3.25rem] md:h-16";
-const CARD = "min-w-0 gap-1 overflow-hidden px-(--card-spacing) pb-0";
+const CARD =
+  "@container min-w-0 gap-1 overflow-hidden px-(--card-spacing) pb-0";
 
 /** The date at the top right, over the width of the longest one the card may show (`reserve`), kept out of sight. */
 function KpiDate({
@@ -583,7 +654,7 @@ export function KpiCardSkeleton({
   footer?: number;
   /** The lines the note of the card keeps, as in `KpiCard`. */
   noteLines?: 1 | 2;
-  size?: "lg" | "md";
+  size?: "xl" | "lg";
   spark?: boolean;
 }) {
   return (

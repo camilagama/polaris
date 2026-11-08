@@ -1317,7 +1317,7 @@ export function UiGallery() {
                 }}
                 id="galeria-kpi-resultado"
                 title="Resultado estimado"
-                value={<HeroValue amount="-48.30" size="md" />}
+                value={<HeroValue amount="-48.30" />}
               />
             </div>
           </Section>

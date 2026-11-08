@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   DeltaChip,
+  HeroPercent,
   HeroValue,
   type KpiDelta,
   KpiCard,
@@ -13,6 +14,9 @@ import {
  * `null` keeps its line, the longest date keeps its width out of sight, and the number, the dash and "R$ ••••" share
  * one box of exactly the line height. The heights themselves are measured in the browser (e2e-real/cls).
  */
+
+const CLASS_ATTRIBUTE = /class="([^"]*)"/;
+const TEXT_IN_REM = /text-\[[\d.]+rem\]/;
 
 const CHIP_THEN_NOTE =
   /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
@@ -74,8 +78,8 @@ describe("HeroValue", () => {
       renderToStaticMarkup(<HeroValue amount="129.90" />),
       renderToStaticMarkup(<HeroValue amount={null} />),
     ]) {
-      expect(markup).toContain("h-[1.05em]");
-      expect(markup).toContain("leading-5");
+      expect(markup).toContain("h-(--text-value-lg--line-height)");
+      expect(markup).toContain("text-value-lg");
     }
   });
 
@@ -83,7 +87,7 @@ describe("HeroValue", () => {
     const empty = renderToStaticMarkup(
       <HeroValue amount={null} emptyText="sem custo neste dia" />
     );
-    expect(empty).toContain("h-[1.05em]");
+    expect(empty).toContain("h-(--text-value-lg--line-height)");
     expect(empty).toContain("sem custo neste dia");
     expect(empty).not.toContain("sem valor");
     expect(empty).not.toContain("—");
@@ -115,6 +119,17 @@ describe("HeroValue in a column of the strip", () => {
     expect(long).toContain("min-[56.25rem]:@max-[10.499rem]:text-[1.125rem]");
   });
 
+  it("keeps the line of 20 px and the box of 1.05 em at 900 px, which the merge of the classes drops when the line comes before the size", () => {
+    for (const amount of ["129.90", "12345.67", "-9999999.99", null]) {
+      const classes =
+        CLASS_ATTRIBUTE.exec(
+          renderToStaticMarkup(<HeroValue amount={amount} strip />)
+        )?.[1]?.split(" ") ?? [];
+      expect(classes).toContain("min-[56.25rem]:leading-5");
+      expect(classes).toContain("min-[56.25rem]:h-[1.05em]");
+    }
+  });
+
   it("keeps the dash and the empty text at 24 px, with no step", () => {
     expect(sizeOf(null)).toContain("min-[56.25rem]:text-[1.5rem]");
   });
@@ -122,7 +137,72 @@ describe("HeroValue in a column of the strip", () => {
   it("does not touch the value of a card that is not in the strip", () => {
     const markup = renderToStaticMarkup(<HeroValue amount="999999.99" />);
     expect(markup).not.toContain("min-[56.25rem]");
-    expect(markup).toContain("md:text-[1.875rem]");
+    expect(markup).toContain("text-value-lg");
+  });
+
+  it("steps the principal down to lg only below 900 px, so the sizes of the column rule from there", () => {
+    const markup = renderToStaticMarkup(
+      <HeroValue amount="-99640.35" size="xl" strip />
+    );
+    expect(markup).toContain("max-[56.24875rem]:@max-[12.25rem]:text-value-lg");
+    const classes = CLASS_ATTRIBUTE.exec(markup)?.[1]?.split(" ") ?? [];
+    expect(classes).not.toContain("@max-[12.25rem]:text-value-lg");
+    expect(markup).toContain("min-[56.25rem]:@max-[8.999rem]:text-[1.25rem]");
+  });
+});
+
+describe("HeroValue sizes", () => {
+  const principal = (amount: string | null) =>
+    renderToStaticMarkup(<HeroValue amount={amount} size="xl" />);
+
+  it("writes the principal at xl and every other value at lg, with the weight 600 and no size in rem", () => {
+    const xl = principal("129.90");
+    const lg = renderToStaticMarkup(<HeroValue amount="129.90" />);
+    expect(xl).toContain("text-value-xl");
+    expect(lg).toContain("text-value-lg");
+    expect(lg).not.toContain("text-value-xl");
+    for (const markup of [xl, lg]) {
+      expect(markup).toContain("font-semibold");
+      expect(markup).not.toContain("font-[650]");
+      expect(markup).not.toMatch(TEXT_IN_REM);
+    }
+  });
+
+  it("keeps the principal's box at the line of xl whatever it steps down to, and the others at the line of lg", () => {
+    const xl = principal("-99640.35");
+    expect(xl).toContain("h-(--text-value-xl--line-height)");
+    expect(xl).toContain("leading-(--text-value-xl--line-height)");
+    const lg = renderToStaticMarkup(<HeroValue amount="-99640.35" />);
+    expect(lg).toContain("h-(--text-value-lg--line-height)");
+    expect(lg).not.toContain("@max-");
+  });
+
+  it("gives a longer amount a higher limit under which the principal steps down", () => {
+    expect(principal("129.90")).toContain("@max-[8.25rem]:text-value-lg");
+    expect(principal("12345.67")).toContain("@max-[11.25rem]:text-value-lg");
+    expect(principal("-99640.35")).toContain("@max-[12.25rem]:text-value-lg");
+    expect(principal("-9999999.99")).toContain("@max-[14.75rem]:text-value-lg");
+  });
+});
+
+describe("HeroPercent", () => {
+  it("is in the box of the amounts beside it, in the same size and weight, with the % a step smaller", () => {
+    const markup = renderToStaticMarkup(<HeroPercent strip text="41,2%" />);
+    expect(markup).toContain("font-semibold");
+    expect(markup).toContain("text-value-lg");
+    expect(markup).toContain("min-[56.25rem]:leading-5");
+    expect(markup).toContain("min-[56.25rem]:text-[1.5rem]");
+    expect(markup).toContain('data-kpi-value="">41,2<span');
+    expect(markup).toContain("text-[0.56em]");
+  });
+
+  it("says a dash and a word for a screen reader when there is no percent, and writes a negative in red", () => {
+    const none = renderToStaticMarkup(<HeroPercent text={null} />);
+    expect(none).toContain("sem valor");
+    expect(none).not.toContain("data-kpi-value");
+    expect(renderToStaticMarkup(<HeroPercent text="-3,0%" />)).toContain(
+      "text-destructive"
+    );
   });
 });
 
@@ -131,21 +211,17 @@ const SKELETON_FOOT = /data-kpi-skeleton-foot=""/g;
 
 describe("KpiCardSkeleton", () => {
   it("draws the rows of the card it stands for, out of the accessibility tree", () => {
-    const markup = renderToStaticMarkup(
-      <KpiCardSkeleton action footer={1} size="md" />
-    );
+    const markup = renderToStaticMarkup(<KpiCardSkeleton action footer={1} />);
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).toContain('data-kpi-chip-row=""');
     expect(markup).toContain('data-kpi-note-row=""');
-    expect(markup).toContain("h-[1.05em]");
+    expect(markup).toContain("h-(--text-value-lg--line-height)");
     expect(markup).toContain("h-[3.25rem]");
     expect(markup.match(SKELETON_FOOT)).toHaveLength(1);
   });
 
   it("has no text for a screen reader: the box is hidden and holds no words", () => {
-    const markup = renderToStaticMarkup(
-      <KpiCardSkeleton action footer={2} size="md" />
-    );
+    const markup = renderToStaticMarkup(<KpiCardSkeleton action footer={2} />);
     expect(markup.startsWith('<div aria-hidden="true"')).toBe(true);
     expect(markup.match(TEXT_BETWEEN_TAGS)).toBeNull();
     expect(markup.match(SKELETON_FOOT)).toHaveLength(2);
