@@ -335,7 +335,8 @@ for (const viewport of VIEWPORTS) {
       await typeRange(popup, "31022026", "14102026");
       await to(popup).press("Enter");
       await expect(popup.getByRole("alert")).toHaveText(NOT_A_DAY);
-      await expect(from(popup)).toBeInViewport();
+      await expect(from(popup)).toBeInViewport({ ratio: 1 });
+      await expect(popup.getByRole("alert")).toBeInViewport({ ratio: 1 });
     });
 
     test("AC-2.3: período invertido não existe: diz que a data final vem antes da inicial e não aplica", async ({
