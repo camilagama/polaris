@@ -2,8 +2,8 @@ import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import type { ReactNode } from "react";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
+import { Money } from "@/ui/money";
 import type { HistoryRow } from "./sale-history-model";
-import { Money } from "./sale-summary-panel";
 
 /** The status of a sale, as the badges of the history and of the detail write it. */
 export function SaleStatusBadges({
@@ -82,7 +82,8 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
         </p>
       </div>
       <Money
-        className="@max-[17.9rem]:ml-auto shrink-0 font-semibold text-value-sm tracking-tight md:text-value-md"
+        className="@max-[17.9rem]:ml-auto shrink-0 font-semibold tracking-tight md:text-value-md"
+        size="sm"
         text={row.totalText}
       />
       {chevron ? (
