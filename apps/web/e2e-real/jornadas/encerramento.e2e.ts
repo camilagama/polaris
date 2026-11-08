@@ -387,7 +387,12 @@ test("encerramento: com outra loja ativa na conta, o desfazer é recusado e nada
   const origin = String(testInfo.project.use.baseURL);
   const owner = await createJourneyUser(
     origin,
-    journeyName(testInfo.project.name, "encerramento-outra", testInfo.retry)
+    journeyName(
+      testInfo.project.name,
+      "encerramento-outra",
+      testInfo.retry,
+      testInfo.repeatEachIndex
+    )
   );
   const first = (
     await owner.rpc.organization.createInitial({

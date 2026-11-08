@@ -67,6 +67,7 @@ import {
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
+import { Money } from "@/ui/money";
 import {
   Field,
   FieldContent,
@@ -1318,6 +1319,20 @@ export function UiGallery() {
                 title="Resultado estimado"
                 value={<HeroValue amount="-48.30" size="md" />}
               />
+            </div>
+          </Section>
+
+          <Section title="Dinheiro">
+            <div className="grid gap-2" data-gallery-money="">
+              {(["sm", "md", "lg", "xl"] as const).map((size) => (
+                <p className="flex flex-wrap items-baseline gap-x-3" key={size}>
+                  <span className="w-8 text-muted-foreground text-support">
+                    {size}
+                  </span>
+                  <Money size={size} text="R$ 234,50" />
+                  <Money size={size} text="-R$ 6,35" />
+                </p>
+              ))}
             </div>
           </Section>
 
