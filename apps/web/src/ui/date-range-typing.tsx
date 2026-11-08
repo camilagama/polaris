@@ -30,7 +30,7 @@ const FIELDS: readonly { field: TypedField; label: string }[] = [
   { field: "to", label: "Fim" },
 ];
 
-export interface DateRangeTypingProps {
+interface DateRangeTypingProps {
   /** The button that applies the typed range, for an editor that closes on its own commit; none where the caller applies. */
   apply?: { blocked: boolean; onApply: () => void } | undefined;
   /** What is wrong with each field, shown under it, only for a field the person already left or tried to apply. */
@@ -91,7 +91,6 @@ function TypedDateField({
         enterKeyHint="done"
         id={id}
         inputMode="numeric"
-        maxLength={10}
         onBlur={blur}
         onChange={change}
         onKeyDown={keyDown}
@@ -127,7 +126,7 @@ export function DateRangeTyping({
   return (
     <div className="grid shrink-0 gap-2">
       <Button
-        aria-controls={regionId}
+        aria-controls={open ? regionId : undefined}
         aria-expanded={open}
         className="w-fit justify-self-start"
         onClick={onToggle}
@@ -277,9 +276,11 @@ export function useTypedDates({
   }, [commit, focusFirstProblem, texts]);
 
   const toggle = useCallback(() => {
-    adopt(callerApplies ? (value ?? undefined) : draft);
+    // opening shows the draft as the calendar has it, a touched first day included; closing drops what was typed and
+    // goes back to the range the caller holds, which is what its own button would apply
+    adopt(open && callerApplies ? (value ?? undefined) : draft);
     setOpen((was) => !was);
-  }, [adopt, callerApplies, draft, value]);
+  }, [adopt, callerApplies, draft, open, value]);
 
   useEffect(() => {
     if (open) {

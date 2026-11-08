@@ -219,7 +219,7 @@ export function maskTypedDate(text: string): string {
     .join("/");
 }
 
-export type TypedDate =
+type TypedDate =
   | { iso: IsoDate; ok: true }
   | { ok: false; reason: "empty" | "incomplete" | "invalid" };
 

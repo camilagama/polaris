@@ -221,11 +221,16 @@ for (const viewport of FORM_VIEWPORTS) {
       const asked = await openHistory(page);
       const popup = await addFilter(page, "Período");
       await expect(popup.getByRole("grid").first()).toBeVisible();
+      // a first day touched is written in the field when the typing opens, and kept where the caller applies
+      await touchDay(popup, "2026-10-12");
       await popup.getByRole("button", { name: "Digitar as datas" }).click();
       const start = popup.getByRole("textbox", { name: "Início" });
       const end = popup.getByRole("textbox", { name: "Fim" });
       await expect(start).toBeFocused();
+      await expect(start).toHaveValue("12/10/2026");
+      await expect(end).toHaveValue("");
 
+      await start.fill("");
       await start.pressSequentially("31022026");
       await end.pressSequentially("14102026");
       const apply = popup.getByRole("button", { exact: true, name: "Aplicar" });

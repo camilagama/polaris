@@ -89,11 +89,17 @@ export function DateRangePanel({
   today: todayProp,
   value: valueProp,
 }: {
-  /** Called with the closed range, or null for "Limpar"; the caller closes the popover. */
+  /**
+   * Called with the closed range, or null for "Limpar"; the caller closes the popover. Where the caller applies by a
+   * button of its own it is also called with each typed range that is good, and with null when both fields are emptied.
+   */
   onCommit: (range: DateRange | null) => void;
-  /** Called with whether only the start is marked: a caller that applies by a button of its own waits for the last day. */
+  /**
+   * Called with whether the range cannot be applied yet: only the start is marked, or a typed date has an error. A
+   * caller that applies by a button of its own waits; its presence also takes "Aplicar" out of the typed fields.
+   */
   onHalfChange?: ((half: boolean) => void) | undefined;
-  /** The id of the line that asks for the last day, for a button that is off while it shows. */
+  /** The id of the line that says why the range cannot be applied (the last day, or the typed error), for a button that is off while it shows. */
   statusId?: string | undefined;
   today?: IsoDate | undefined;
   /** The range there is, both ends `AAAA-MM-DD`, or null. */
