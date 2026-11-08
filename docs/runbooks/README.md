@@ -102,6 +102,7 @@ Promoção de um SHA para produção: [Checklist de release](./release-checklist
 - [ ] Provar a limpeza de objetos de imagens removidas no R2 real (implementada e provada em banco, [ADR 0061](../adr/0061-limpeza-de-imagens-removidas.md)) e decidir o limite de envio de imagens por organização: a limpeza apaga o que foi removido, não impede o envio em massa.
 
 - [ ] Bucket R2 de mídia privado, sem domínio público nem acesso anônimo, e cron horário de reconciliação ativo com a binding de cleanup ([media-storage-reconciliation.md](./media-storage-reconciliation.md)).
+- [ ] Regra de ciclo de vida do bucket de mídia: apagar `exports/v1/` 7 dias depois da criação, sem tocar `media/`, criada e lida de volta ([item 5 do checklist de release](./release-checklist.md#5-pendências-de-ambiente-do-go-live-block), [ADR 0081](../adr/0081-purge-completo-da-organizacao-encerrada.md)).
 - [ ] Prova da orientação EXIF e da remoção de metadados com o Cloudflare Images real, e tetos de tamanho de upload e de transformação configurados.
 
 ### Integração e ambiente
