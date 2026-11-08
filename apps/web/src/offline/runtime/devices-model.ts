@@ -6,11 +6,7 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../../lib/rpc-error";
-import {
-  ACCOUNT_UNAVAILABLE_REASONS,
-  PLAN_REFUSED_REASON,
-  type RuntimeSnapshot,
-} from "./offline-runtime";
+import { isBrowserFailure, type RuntimeSnapshot } from "./offline-runtime";
 
 /**
  * The devices of the signed-in user, as the "Aparelhos" screen shows them. A
@@ -97,11 +93,7 @@ export function recognitionState(
     return "unavailable";
   }
   if (phase === "unavailable") {
-    return reason !== null &&
-      (reason === PLAN_REFUSED_REASON ||
-        ACCOUNT_UNAVAILABLE_REASONS.has(reason))
-      ? "slow"
-      : "unavailable";
+    return isBrowserFailure(reason) ? "unavailable" : "slow";
   }
   return slow ? "slow" : "waiting";
 }

@@ -20,7 +20,7 @@ import {
   discardWarning,
 } from "./attention";
 import {
-  ACCOUNT_UNAVAILABLE_REASONS,
+  isBrowserFailure,
   PLAN_REFUSED_REASON,
 } from "./runtime/offline-runtime";
 import { type RedoLineProblem, redoProblemText } from "./sale-redo";
@@ -168,9 +168,9 @@ function unavailableSentence(reason: string | null): string {
   if (reason === PLAN_REFUSED_REASON) {
     return OFFLINE_PLAN_REASON;
   }
-  return reason !== null && ACCOUNT_UNAVAILABLE_REASONS.has(reason)
-    ? OFFLINE_NEUTRAL_REASON
-    : OFFLINE_BROWSER_REASON;
+  return isBrowserFailure(reason)
+    ? OFFLINE_BROWSER_REASON
+    : OFFLINE_NEUTRAL_REASON;
 }
 
 /**
