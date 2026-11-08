@@ -4479,7 +4479,7 @@ test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2,
   }
 
   for (const fontPixels of [20, 24]) {
-    test(`o cartão do principal tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, a 320 px com a letra em ${fontPixels} px`, async ({
+    test(`o cartão do principal tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, na largura mínima com a letra em ${fontPixels} px`, async ({
       page,
     }) => {
       await openReflowViewport(page, { fontPixels, width: 320 });
