@@ -79,9 +79,14 @@ for (const viewport of VIEWPORTS) {
         .getByRole("status")
         .filter({ hasText: "Carregando despesas…" });
       await expect(status).toBeAttached();
+      await expect(status.locator('[data-slot="skeleton"]')).toHaveCount(3);
+      await expect(
+        status.locator('[data-slot="skeleton"]').first()
+      ).toBeVisible();
       expect(await visibleText(page)).not.toContain("Carregando");
       const box = await status.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(viewport.minNoteHeight);
+      expect(box?.height ?? 0).toBeLessThan(viewport.minNoteHeight + 1);
       release();
     });
   });

@@ -109,10 +109,13 @@ describe("ExpenseList", () => {
     expect(html).toContain("Carregando despesas…");
   });
 
-  it("the loading line is for the screen reader only, and the empty list stays drawn", () => {
+  it("the loading line is for the screen reader only, three skeleton lines are drawn, and the empty list stays drawn", () => {
     expect(list(state({ isLoading: true }))).toContain(
       '<span class="sr-only">Carregando despesas…</span>'
     );
+    expect(
+      list(state({ isLoading: true })).match(/data-slot="skeleton"/g)
+    ).toHaveLength(3);
     const empty = list(state({}));
     expect(empty).not.toContain("sr-only");
     expect(empty).toContain("text-muted-foreground");
