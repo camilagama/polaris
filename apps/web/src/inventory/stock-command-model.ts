@@ -339,7 +339,7 @@ export function receiveNeedsCost(
 }
 
 function informedCostText(cost: string | null): string {
-  return cost === null ? costText(cost) : formatBrlAmount(cost);
+  return cost === null ? costText(cost) : formatBrlCents(cost);
 }
 
 function costActionBlock(target: StockTarget): string | null {
@@ -682,7 +682,7 @@ function receiveCostLine(
 export function costSummaryText(
   body: Extract<StockBody, { action: "cost" }>
 ): string {
-  return `${formatBrlAmount(body.valuationUnitCost)} por unidade, para ${unitsText(body.physicalQuantity)}. Depois de confirmar, o custo não pode ser editado.`;
+  return `${formatBrlCents(body.valuationUnitCost)} por unidade, para ${unitsText(body.physicalQuantity)}. Depois de confirmar, o custo não pode ser editado.`;
 }
 
 /** "Para as 5 unidades que você tem agora.": the quantity the cost covers is the balance, not a field. */
@@ -710,7 +710,7 @@ export function stockSummary(
   if (body.action === "receive") {
     lines.push(
       { label: "Quantidade recebida", value: signedUnits(body.quantity) },
-      { label: "Custo unitário", value: formatBrlAmount(body.unitCost) },
+      { label: "Custo unitário", value: formatBrlCents(body.unitCost) },
       {
         label: "Data do recebimento",
         value: formatCalendarDate(body.occurredOn),
@@ -742,7 +742,7 @@ export function stockSummary(
     if (body.valuationUnitCost !== null) {
       lines.push({
         label: "Custo unitário informado",
-        value: formatBrlAmount(body.valuationUnitCost),
+        value: formatBrlCents(body.valuationUnitCost),
       });
     } else if (
       target.movingAverageCost === null &&
