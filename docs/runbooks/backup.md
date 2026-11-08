@@ -67,7 +67,7 @@ O job usa o grupo `deploy-staging`, o mesmo do deploy: um `pg_dump` (que segura 
 
 Quem: o titular da chave, com a branch criada pelo responsável. Quando: depois do primeiro backup do staging, depois de qualquer mudança de formato, de chave ou do script, e a cada trimestre. O ensaio do staging é o que libera o PR da produção.
 
-1. **Branch descartável.** O responsável cria uma branch Neon filha da branch principal do projeto do staging, com nome único (`restore-drill-AAAAMMDD`; nunca `--schema-only`, que cria raiz). A branch traz os papéis do staging, então os 19 `polaris_*_owner` já existem. Nela, com o dono e a conexão direta da branch:
+1. **Branch descartável.** O responsável cria uma branch Neon filha da branch principal do projeto do staging, com nome único (`restore-drill-AAAAMMDD`; nunca `--schema-only`, que cria raiz). A branch traz os papéis do staging, então os 20 `polaris_*_owner` já existem. Nela, com o dono e a conexão direta da branch:
 
    ```sql
    CREATE DATABASE polaris_restore_drill;

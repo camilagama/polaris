@@ -1200,6 +1200,15 @@ async function run() {
         "SELECT"
       ),
       ownerPolicy("devices.devices_session_owner_select", "SELECT"),
+      // the owner of the M3 (ADR 0106, D9): every row, through three columns; the filter is its function's
+      {
+        cmd: "SELECT",
+        permissive: "PERMISSIVE",
+        policy: "session.session_activation_owner_select",
+        qual: "true",
+        roles: ["polaris_activation_owner"],
+        with_check: null,
+      },
       {
         cmd: "ALL",
         permissive: "PERMISSIVE",
@@ -1220,8 +1229,8 @@ async function run() {
         with_check: null,
       },
     ]);
-    // the grants on session are the ones of before 0097, and no other application role (nor PUBLIC) has any (the groups and
-    // owners, NOLOGIN; a login gets its rights from its group)
+    // the grants on session are the ones of before 0097 plus the three columns of the owner of the M3 (0127), and no
+    // other application role (nor PUBLIC) has any (the groups and owners, NOLOGIN; a login gets its rights from its group)
     const sessionGrants = await admin.pool.query<{
       grantee: string;
       privileges: string[];
@@ -1246,6 +1255,10 @@ async function run() {
     );
     assert.deepEqual(sessionGrants.rows, [
       {
+        grantee: "polaris_activation_owner",
+        privileges: ["SELECT (created_at,updated_at,user_id)"],
+      },
+      {
         grantee: authRuntimeRole,
         privileges: ["SELECT", "INSERT", "UPDATE", "DELETE"],
       },
@@ -1267,7 +1280,7 @@ async function run() {
       "PUBLIC has nothing on session"
     );
     tests.push(
-      "session has row security enabled and forced, with exactly four permissive policies, each TO one role (auth runtime ALL true; unverified-user owner SELECT of the sessions of users never verified, since 0098; device-session owner SELECT and DELETE on app.owner_scope.device_session_user_id), and the two policies of the owner on devices and device_sessions and its INSERT of device_revoked in the auth audit (0098) read the same scope; the grants on session are those of before (auth runtime SELECT, INSERT, UPDATE, DELETE; owner SELECT of id, user_id, created_at and DELETE; unverified-user owner SELECT of user_id) and PUBLIC has none"
+      "session has row security enabled and forced, with exactly five permissive policies, each TO one role (auth runtime ALL true; unverified-user owner SELECT of the sessions of users never verified, since 0098; device-session owner SELECT and DELETE on app.owner_scope.device_session_user_id; the owner of the M3 SELECT true, since 0127), and the two policies of the owner on devices and device_sessions and its INSERT of device_revoked in the auth audit (0098) read the same scope; the grants on session are those of before (auth runtime SELECT, INSERT, UPDATE, DELETE; owner SELECT of id, user_id, created_at and DELETE; unverified-user owner SELECT of user_id) plus the owner of the M3's SELECT of user_id, created_at and updated_at (0127) and PUBLIC has none"
     );
 
     // the auth runtime through a real login (a member of the group, INHERIT), not the admin: every Better Auth operation
