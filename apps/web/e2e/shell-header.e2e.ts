@@ -354,7 +354,9 @@ test.describe("AC-1.1, AC-1.4 e AC-2.2: a altura do cabeçalho nos estados da ca
         await route.fallback();
       });
       await page.goto("/products");
-      await expect(page.getByText("Carregando sua loja…")).toBeVisible();
+      await expect(
+        page.getByRole("status").filter({ hasText: "Carregando sua loja…" })
+      ).toBeAttached();
       await read("carregando a loja");
       release();
       await expect(storeMenu(page)).toHaveAccessibleName(
