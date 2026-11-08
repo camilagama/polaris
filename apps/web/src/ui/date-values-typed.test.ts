@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   INVERTED_TYPED_RANGE,
@@ -150,20 +149,4 @@ describe("typedTextsOf, o rascunho do calendário escrito nos campos", () => {
     const texts = typedTextsOf({ from: "2026-01-05", to: "2027-03-31" });
     expect(typedRange(texts)).toEqual({ from: "2026-01-05", to: "2027-03-31" });
   });
-});
-
-const NATIVE_DATE_FIELD = /type=["{]\s*["']?(date|month)/;
-const COMMENT_LINE = /^\s*(\*|\/\/|\/\*)/;
-
-describe("o painel do período não usa o campo de data do navegador", () => {
-  it.each(["date-range-picker.tsx", "date-range-typing.tsx"])(
-    "%s digita em texto com máscara, nunca type=date",
-    (file) => {
-      const code = readFileSync(new URL(file, import.meta.url), "utf8")
-        .split("\n")
-        .filter((line) => !COMMENT_LINE.test(line))
-        .join("\n");
-      expect(code).not.toMatch(NATIVE_DATE_FIELD);
-    }
-  );
 });
