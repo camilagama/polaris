@@ -8,14 +8,15 @@ import {
 const legalVariable = /^VITE_LEGAL_[A-Z_]+$/;
 
 describe("the company tokens", () => {
-  it("name four distinct tokens, each with its own VITE_LEGAL_ variable and an example that says so", () => {
+  it("name five distinct tokens, each with its own VITE_LEGAL_ variable and an example that says so", () => {
     expect(LEGAL_COMPANY_FIELDS.map((field) => field.token)).toEqual([
       "{{EMPRESA_RAZAO_SOCIAL}}",
       "{{EMPRESA_ENDERECO}}",
       "{{CONTATO_EMAIL}}",
       "{{DPO_EMAIL}}",
+      "{{SUPORTE_QUEM_LE_RESPOSTAS}}",
     ]);
-    expect(new Set(LEGAL_COMPANY_FIELDS.map((f) => f.env)).size).toBe(4);
+    expect(new Set(LEGAL_COMPANY_FIELDS.map((f) => f.env)).size).toBe(5);
     for (const { env, example } of LEGAL_COMPANY_FIELDS) {
       expect(env).toMatch(legalVariable);
       expect(example).toContain("exemplo");

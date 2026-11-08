@@ -14,6 +14,7 @@ const company = {
   VITE_LEGAL_DPO_EMAIL: "dpo@empresa.com.br",
   VITE_LEGAL_ENDERECO: "Rua das Flores, 10, Centro",
   VITE_LEGAL_RAZAO_SOCIAL: "Agência Summit Serviços Digitais Ltda.",
+  VITE_LEGAL_SUPORTE_QUEM_LE_RESPOSTAS: "Ana Souza, do suporte",
 };
 const exportPrefix = /^export default /;
 const exportSuffix = /;$/;
@@ -63,6 +64,14 @@ describe("the plugin that fills the templates", () => {
     expect(text).not.toContain("{{");
     expect(text).toContain("dpo-exemplo@example.com");
     expect(text).toContain("(endereço de exemplo)");
+    expect(text).toContain("uma pessoa da equipe de suporte (exemplo)");
+  });
+
+  it("keeps who reads the replies as a token in a production build without its variable, which the guard refuses", () => {
+    vi.stubEnv("CLOUDFLARE_ENV", "production");
+    const { VITE_LEGAL_SUPORTE_QUEM_LE_RESPOSTAS: _omitted, ...rest } = company;
+    const text = exported(setUp(rest, "build").load(templateId("privacy")));
+    expect(text).toContain("{{SUPORTE_QUEM_LE_RESPOSTAS}}");
   });
 
   it("loads the examples on the dev server, whatever the environment says", () => {
