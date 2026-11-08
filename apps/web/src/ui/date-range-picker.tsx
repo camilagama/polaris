@@ -1,9 +1,14 @@
 import CalendarDaysIcon from "lucide-react/dist/esm/icons/calendar-days";
+import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import {
+  type ChangeEvent,
+  type KeyboardEvent,
   type MouseEvent,
+  type Ref,
   useCallback,
   useEffect,
   useId,
+  useRef,
   useState,
 } from "react";
 import { TWO_MONTHS_QUERY } from "@/lib/breakpoints";
@@ -17,16 +22,25 @@ import {
   formatRange,
   type IsoDate,
   matchingPreset,
+  maskTypedDate,
   nextRange,
   parseIsoDate,
+  parseTypedDate,
   presetRange,
   RANGE_PRESETS,
   type RangePreset,
   todayOr,
   toIsoDate,
+  type TypedField,
+  type TypedTexts,
+  typedProblems,
+  typedRange,
+  typedTextsOf,
   validRange,
 } from "@/ui/date-values";
 import { FieldError } from "@/ui/field";
+import { Input } from "@/ui/input";
+import { Label } from "@/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 
 export interface DateRangePickerProps {
@@ -73,6 +87,340 @@ function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
   return from && from < previous ? from : previous;
 }
 
+// the box takes the width of the month, whatever sentence an error or a status line holds: such a block adds nothing to
+// the width the popup asks for (width 0) and fills what the month gave it (min-width 100%), so a long sentence wraps
+const HOLD_WIDTH = "w-0 min-w-full";
+
+// the four shortcuts need about 16 rem in a row; where the window (in the browser's own rem, so the large letter counts)
+// is narrower than 18 rem they make two rows of two, apart by 12 px so the 44 px areas of touch stay apart
+const SHORTCUTS_CLASS =
+  "m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs max-[18rem]:grid max-[18rem]:grid-cols-2 max-[18rem]:gap-3 max-[18rem]:shadow-none";
+const SHORTCUT_CLASS =
+  "touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground max-[18rem]:not-first:ml-0 max-[18rem]:rounded-md max-[18rem]:first:rounded-md max-[18rem]:last:rounded-md dark:bg-secondary/60";
+
+const FIELD_LABELS: Record<TypedField, string> = { from: "Início", to: "Fim" };
+// taken from the keys: a string literal of that word followed by a quote is read as an import by the source scan of src/ui
+const FIELDS = Object.keys(FIELD_LABELS) as TypedField[];
+
+interface DateRangeTypingProps {
+  /** The button that applies the typed range, for an editor that closes on its own commit; none where the caller applies. */
+  apply?: { blocked: boolean; onApply: () => void } | undefined;
+  /** What is wrong with each field, shown under it, only for a field the person already left or tried to apply. */
+  errors: Record<TypedField, string | undefined>;
+  inputRefs: Record<TypedField, Ref<HTMLInputElement>>;
+  onBlurField: (field: TypedField) => void;
+  onToggle: () => void;
+  onType: (field: TypedField, text: string) => void;
+  open: boolean;
+  /** The line of the footer that gives the reason the range cannot be applied: the apply button is described by it. */
+  statusId: string | undefined;
+  texts: TypedTexts;
+}
+
+function TypedDateField({
+  error,
+  field,
+  id,
+  inputRef,
+  label,
+  onBlurField,
+  onEnter,
+  onType,
+  text,
+}: {
+  error: string | undefined;
+  field: TypedField;
+  id: string;
+  inputRef: Ref<HTMLInputElement>;
+  label: string;
+  onBlurField: (field: TypedField) => void;
+  onEnter: (() => void) | undefined;
+  onType: (field: TypedField, text: string) => void;
+  text: string;
+}) {
+  const errorId = `${id}-error`;
+  const box = useRef<HTMLDivElement>(null);
+  // the focus scroll brings the input into view, not the sentence that comes under it; the margin keeps the sentence whole
+  // where the panel's height is fractional and the browser rounds the scroll position down to a whole pixel
+  const showError = useCallback(() => {
+    box.current?.scrollIntoView?.({ block: "nearest" });
+  }, []);
+  useEffect(() => {
+    const input = box.current?.querySelector("input");
+    if (error && input && document.activeElement === input) {
+      showError();
+    }
+  }, [error, showError]);
+  const focus = useCallback(() => {
+    if (error) {
+      showError();
+    }
+  }, [error, showError]);
+  const blur = useCallback(() => onBlurField(field), [field, onBlurField]);
+  const change = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => onType(field, event.target.value),
+    [field, onType]
+  );
+  const keyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter" && onEnter) {
+        event.preventDefault();
+        onEnter();
+      }
+    },
+    [onEnter]
+  );
+  return (
+    <div className="grid min-w-0 scroll-mb-1 content-start gap-1.5" ref={box}>
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        aria-describedby={error ? errorId : undefined}
+        aria-invalid={error ? true : undefined}
+        autoComplete="off"
+        enterKeyHint="done"
+        id={id}
+        inputMode="numeric"
+        onBlur={blur}
+        onChange={change}
+        onFocus={focus}
+        onKeyDown={keyDown}
+        placeholder="dd/mm/aaaa"
+        ref={inputRef}
+        value={text}
+      />
+      <FieldError id={errorId}>{error}</FieldError>
+    </div>
+  );
+}
+
+/**
+ * "Digitar as datas" inside the panel of a period: a button that opens two text fields (Início, Fim) in `dd/mm/aaaa`,
+ * never `type="date"` (the browser's own field differs from one to the other and has no mask on a phone). The fields
+ * show and edit the draft the calendar shows. Where the panel closes on its own commit "Aplicar" sits under the fields,
+ * `aria-disabled` (still focusable, so it reads why) until both days are good; the toggle is a disclosure button.
+ */
+function DateRangeTyping({
+  apply,
+  errors,
+  inputRefs,
+  onBlurField,
+  onToggle,
+  onType,
+  open,
+  statusId,
+  texts,
+}: DateRangeTypingProps) {
+  const base = useId();
+  const regionId = `${base}-region`;
+
+  return (
+    <div className={cn("grid shrink-0 gap-2", HOLD_WIDTH)}>
+      <Button
+        aria-controls={open ? regionId : undefined}
+        aria-expanded={open}
+        className="w-fit justify-self-start"
+        onClick={onToggle}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        Digitar as datas
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={open ? "rotate-180" : undefined}
+          data-icon="inline-end"
+        />
+      </Button>
+      {open ? (
+        <div className="grid gap-3" id={regionId}>
+          <div className="grid gap-3 min-[22rem]:grid-cols-2">
+            {FIELDS.map((field) => (
+              <TypedDateField
+                error={errors[field]}
+                field={field}
+                id={`${base}-${field}`}
+                inputRef={inputRefs[field]}
+                key={field}
+                label={FIELD_LABELS[field]}
+                onBlurField={onBlurField}
+                onEnter={apply?.onApply}
+                onType={onType}
+                text={texts[field]}
+              />
+            ))}
+          </div>
+          {apply ? (
+            <Button
+              aria-describedby={apply.blocked ? statusId : undefined}
+              aria-disabled={apply.blocked || undefined}
+              className="justify-self-end"
+              onClick={apply.onApply}
+              type="button"
+            >
+              Aplicar
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const NOT_SEEN: Record<TypedField, boolean> = { from: false, to: false };
+
+interface TypedDatesOptions {
+  /** The panel sits where the caller applies by a button of its own (the Dialog of a phone): no "Aplicar" here. */
+  callerApplies: boolean;
+  draft: DraftRange | undefined;
+  onCommit: (range: DateRange | null) => void;
+  setDraft: (draft: DraftRange | undefined) => void;
+  /** Brings the calendar to the month of a draft the person typed. */
+  setMonth: (draft: DraftRange) => void;
+  statusId: string | undefined;
+  /** The range the caller holds, both ends `AAAA-MM-DD`, or null: where the caller applies, closing the fields goes back to it. */
+  value: DateRange | null;
+}
+
+/**
+ * The state of the typed fields of a period panel. The texts follow the draft whenever the calendar or a shortcut
+ * changes it (`adopt`), and a day that is typed whole goes the other way, to the draft and the month shown; so the
+ * two show the same period. Where the panel closes on its own commit (the Popover) nothing leaves the panel until
+ * "Aplicar"; where the caller applies (the Dialog) a good pair, or both fields emptied, is handed over at once and
+ * any other state is told to the caller as "half" (`blocksCaller`), so its button never applies the older range.
+ */
+function useTypedDates({
+  callerApplies,
+  draft,
+  onCommit,
+  setDraft,
+  setMonth,
+  statusId: statusIdProp,
+  value,
+}: TypedDatesOptions) {
+  const ownStatusId = useId();
+  const statusId = statusIdProp ?? ownStatusId;
+  const [open, setOpen] = useState(false);
+  const [texts, setTexts] = useState<TypedTexts>(() => typedTextsOf(draft));
+  const [seen, setSeen] = useState(NOT_SEEN);
+  const anchor = useRef<HTMLDivElement>(null);
+  const fromRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
+  const problems = typedProblems(texts);
+  const blank = texts.from === "" && texts.to === "";
+  const hasProblem = problems.from !== undefined || problems.to !== undefined;
+  const blocksCaller = open && hasProblem && !blank;
+  const errors = {
+    from: seen.from ? problems.from : undefined,
+    to: seen.to ? problems.to : undefined,
+  };
+  const reason = !(callerApplies && blank) && (problems.from ?? problems.to);
+
+  const adopt = useCallback(
+    (next: DraftRange | undefined) => {
+      setDraft(next);
+      setTexts(typedTextsOf(next));
+      setSeen(NOT_SEEN);
+    },
+    [setDraft]
+  );
+
+  const commit = useCallback(
+    (range: DateRange | null) => {
+      adopt(range ?? undefined);
+      onCommit(range);
+    },
+    [adopt, onCommit]
+  );
+
+  const onType = useCallback(
+    (field: TypedField, text: string) => {
+      const next = { ...texts, [field]: maskTypedDate(text) };
+      setTexts(next);
+      const range = typedRange(next);
+      const from = parseTypedDate(next.from);
+      const nextDraft: DraftRange | undefined =
+        range ?? (from.ok ? { from: from.iso, to: undefined } : undefined);
+      setDraft(nextDraft);
+      if (nextDraft) {
+        setMonth(nextDraft);
+      }
+      if (callerApplies && (range || (next.from === "" && next.to === ""))) {
+        onCommit(range);
+      }
+    },
+    [callerApplies, onCommit, setDraft, setMonth, texts]
+  );
+
+  const focusFirstProblem = useCallback(() => {
+    setSeen({ from: true, to: true });
+    (problems.from ? fromRef : toRef).current?.focus();
+  }, [problems.from]);
+
+  const onApply = useCallback(() => {
+    const range = typedRange(texts);
+    if (range) {
+      commit(range);
+    } else {
+      focusFirstProblem();
+    }
+  }, [commit, focusFirstProblem, texts]);
+
+  const toggle = useCallback(() => {
+    // opening shows the draft as the calendar has it, a touched first day included; closing drops what was typed and
+    // goes back to the range the caller holds, which is what its own button would apply
+    adopt(open && callerApplies ? (value ?? undefined) : draft);
+    setOpen((was) => !was);
+  }, [adopt, callerApplies, draft, open, value]);
+
+  useEffect(() => {
+    if (open) {
+      fromRef.current?.focus();
+    }
+  }, [open]);
+
+  // the button of the Dialog is a submit: pressed with the range not good, it says what is wrong and goes to the field
+  useEffect(() => {
+    const form = anchor.current?.closest("form");
+    if (!(open && callerApplies && form)) {
+      return;
+    }
+    const onSubmit = () => {
+      if (blocksCaller) {
+        focusFirstProblem();
+      }
+    };
+    form.addEventListener("submit", onSubmit);
+    return () => form.removeEventListener("submit", onSubmit);
+  }, [blocksCaller, callerApplies, focusFirstProblem, open]);
+
+  const onBlurField = useCallback(
+    (field: TypedField) => setSeen((was) => ({ ...was, [field]: true })),
+    []
+  );
+
+  return {
+    adopt,
+    anchor,
+    blocksCaller,
+    commit,
+    open,
+    reason: reason || undefined,
+    statusId,
+    statusQuiet: errors.from !== undefined || errors.to !== undefined,
+    typingProps: {
+      apply: callerApplies ? undefined : { blocked: hasProblem, onApply },
+      errors,
+      inputRefs: { from: fromRef, to: toRef },
+      onBlurField,
+      onToggle: toggle,
+      onType,
+      open,
+      statusId,
+      texts,
+    } satisfies DateRangeTypingProps,
+  };
+}
+
 /**
  * What a range editor shows inside a popover: the shortcuts (Hoje · 7 dias · Este mês · Mês passado) above the month and
  * "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
@@ -84,15 +432,21 @@ function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
 export function DateRangePanel({
   onCommit,
   onHalfChange,
-  statusId,
+  statusId: statusIdProp,
   today: todayProp,
   value: valueProp,
 }: {
-  /** Called with the closed range, or null for "Limpar"; the caller closes the popover. */
+  /**
+   * Called with the closed range, or null for "Limpar"; the caller closes the popover. Where the caller applies by a
+   * button of its own it is also called with each typed range that is good, and with null when both fields are emptied.
+   */
   onCommit: (range: DateRange | null) => void;
-  /** Called with whether only the start is marked: a caller that applies by a button of its own waits for the last day. */
+  /**
+   * Called with whether the range cannot be applied yet: only the start is marked, or a typed date has an error. A
+   * caller that applies by a button of its own waits; its presence also takes "Aplicar" out of the typed fields.
+   */
   onHalfChange?: ((half: boolean) => void) | undefined;
-  /** The id of the line that asks for the last day, for a button that is off while it shows. */
+  /** The id of the line that says why the range cannot be applied (the last day, or the typed error), for a button that is off while it shows. */
   statusId?: string | undefined;
   today?: IsoDate | undefined;
   /** The range there is, both ends `AAAA-MM-DD`, or null. */
@@ -106,15 +460,24 @@ export function DateRangePanel({
   const today = todayOr(todayProp);
   const todayDate = parseIsoDate(today) as Date;
   const pressed = matchingPreset(value, today);
-
-  const commit = useCallback(
-    (range: DateRange | null) => {
-      setDraft(range ?? undefined);
-      onHalfChange?.(false);
-      onCommit(range);
-    },
-    [onCommit, onHalfChange]
+  const [month, setMonth] = useState(() =>
+    firstMonth(value ?? undefined, todayDate, two)
   );
+  const typed = useTypedDates({
+    callerApplies: onHalfChange !== undefined,
+    draft,
+    onCommit,
+    setDraft,
+    setMonth: (next) => setMonth(firstMonth(next, todayDate, two)),
+    statusId: statusIdProp,
+    value,
+  });
+  const { adopt, commit } = typed;
+
+  const half = draft?.from && !draft.to ? draft.from : undefined;
+  useEffect(() => {
+    onHalfChange?.(Boolean(half) || typed.blocksCaller);
+  }, [half, onHalfChange, typed.blocksCaller]);
 
   const pickDay = useCallback(
     (_range: unknown, day: Date) => {
@@ -122,11 +485,10 @@ export function DateRangePanel({
       if (next.complete) {
         commit(next.range);
       } else {
-        setDraft(next.draft);
-        onHalfChange?.(true);
+        adopt(next.draft);
       }
     },
-    [commit, draft, onHalfChange]
+    [adopt, commit, draft]
   );
 
   const pickPreset = useCallback(
@@ -143,19 +505,15 @@ export function DateRangePanel({
     from: parseIsoDate(draft?.from),
     to: parseIsoDate(draft?.to),
   };
-  const half = draft?.from && !draft.to ? draft.from : undefined;
 
   return (
     <>
       {/* 16 px down to the month: the 44 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
-      <fieldset
-        aria-label="Atalhos do período"
-        className="m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
-      >
+      <fieldset aria-label="Atalhos do período" className={SHORTCUTS_CLASS}>
         {RANGE_PRESETS.map((preset) => (
           <button
             aria-pressed={preset.value === pressed}
-            className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
+            className={SHORTCUT_CLASS}
             data-preset={preset.value}
             key={preset.value}
             onClick={pickPreset}
@@ -166,15 +524,22 @@ export function DateRangePanel({
         ))}
       </fieldset>
       {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
-          and the line that asks for the last day stay in view (the popover itself does not scroll, so with less
-          room than the shortcuts and the footer, as a phone on its side, the month is what gives way); the 4 px
-          around keep the focus ring of a day */}
-      <div className="-m-1 min-h-0 overflow-y-auto p-1" data-range-month>
+          and the line that asks for the last day stay in view; the 4 px around keep the focus ring of a day. With the
+          typed fields open the month keeps its six weeks and the whole panel scrolls instead (the popup, or the body
+          of the Dialog), so no week is hidden in a box that scrolls on its own */}
+      <div
+        className={cn(
+          "-m-1 p-1",
+          typed.open ? "shrink-0" : "min-h-0 overflow-y-auto"
+        )}
+        data-range-month
+      >
         <OnDemandCalendar
           autoFocus
-          defaultMonth={firstMonth(draft, todayDate, two)}
           mode="range"
+          month={month}
           numberOfMonths={two ? 2 : 1}
+          onMonthChange={setMonth}
           onSelect={pickDay}
           selected={selected}
           // with two months a day of the neighbour would show twice, once in each
@@ -182,13 +547,26 @@ export function DateRangePanel({
           today={todayDate}
         />
       </div>
-      <div className="flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2">
+      <div ref={typed.anchor}>
+        <DateRangeTyping {...typed.typingProps} />
+      </div>
+      <div
+        className={cn(
+          "flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2",
+          HOLD_WIDTH
+        )}
+      >
         <p
-          aria-live="polite"
-          className="text-muted-foreground text-support"
-          id={statusId}
+          aria-live={typed.open ? undefined : "polite"}
+          className={cn(
+            "min-w-0 text-muted-foreground text-support",
+            typed.statusQuiet && "sr-only"
+          )}
+          id={typed.statusId}
         >
-          {half ? `Início ${formatDate(half)}. Escolha o último dia.` : null}
+          {typed.open
+            ? typed.reason
+            : half && `Início ${formatDate(half)}. Escolha o último dia.`}
         </p>
         {value || half ? (
           <Button onClick={clear} size="sm" variant="ghost">
@@ -272,7 +650,7 @@ export function DateRangePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-hidden p-2"
+          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-y-auto overflow-x-hidden p-2"
           initialFocus={false}
         >
           <DateRangePanel

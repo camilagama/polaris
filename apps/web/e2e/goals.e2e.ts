@@ -3,6 +3,7 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   datePickerButton,
+  expectWholeMonthWhileTyping,
   FORM_VIEWPORTS,
   openDatePicker,
   pickPeriod,
@@ -1108,6 +1109,57 @@ for (const viewport of FORM_VIEWPORTS) {
     expect(server.created[0]).toMatchObject({
       endsOn: "2026-10-25",
       startsOn: "2026-10-05",
+    });
+  });
+}
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`o período da meta, a ${viewport.name} px: digitar as datas faz o mesmo período, a data que não existe não aplica e o calendário acompanha`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const server = new FakeGoalServer();
+    await openGoals(page, server);
+    await page.getByRole("button", { name: "Nova meta" }).click();
+    await page.locator("#goal-create-target").fill("100");
+
+    const popup = await openDatePicker(page, "Período da meta");
+    await popup.getByRole("button", { name: "Digitar as datas" }).click();
+    const start = popup.getByRole("textbox", { name: "Início" });
+    const end = popup.getByRole("textbox", { name: "Fim" });
+    await expect(start).toBeFocused();
+    await expect(start).toHaveValue("01/10/2026");
+    await expect(end).toHaveValue("31/10/2026");
+    await expectWholeMonthWhileTyping(popup);
+
+    await start.fill("");
+    await start.pressSequentially("31022026");
+    await end.fill("");
+    await end.pressSequentially("20102026");
+    const apply = popup.getByRole("button", { exact: true, name: "Aplicar" });
+    await expect(apply).toHaveAttribute("aria-disabled", "true");
+    await expect(apply).toHaveAccessibleDescription(
+      "Essa data não existe. Confira dia, mês e ano."
+    );
+    await end.press("Enter");
+    await expect(start).toBeFocused();
+    await expect(popup).toBeVisible();
+
+    await start.fill("");
+    await start.pressSequentially("10102026");
+    await expect(
+      popup.locator('button[data-day="2026-10-10"]')
+    ).toHaveAttribute("data-range-start", "true");
+    await apply.click();
+    await expect(popup).toBeHidden();
+    await expect(
+      datePickerButton(page, "Período da meta")
+    ).toHaveAccessibleName("Período da meta, 10/10 a 20/10");
+    await page.getByRole("button", { name: "Criar meta" }).click();
+    await expect(page.getByText("Meta criada.")).toBeVisible();
+    expect(server.created[0]).toMatchObject({
+      endsOn: "2026-10-20",
+      startsOn: "2026-10-10",
     });
   });
 }

@@ -199,3 +199,112 @@ export function matchingPreset(
     return preset.from === range.from && preset.to === range.to;
   })?.value;
 }
+
+const TYPED_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+const TYPED_ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
+const FIRST_TYPED_YEAR = 2000;
+const LAST_TYPED_YEAR = 2099;
+
+/**
+ * What a text field of the period shows after a key or a paste: only the digits, at most eight, with the bars put
+ * where the next digit needs them ("01/1", never "01/" so the bar can be erased). A pasted `AAAA-MM-DD` is turned into
+ * `dd/mm/aaaa` first, for its digits would otherwise be read in the wrong order.
+ */
+export function maskTypedDate(text: string): string {
+  const iso = TYPED_ISO.exec(text.trim());
+  const source = iso ? `${iso[3]}${iso[2]}${iso[1]}` : text;
+  const digits = source.replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)]
+    .filter(Boolean)
+    .join("/");
+}
+
+type TypedReason = "empty" | "incomplete" | "invalid" | "year";
+
+type TypedDate =
+  | { iso: IsoDate; ok: true }
+  | { ok: false; reason: TypedReason };
+
+/**
+ * The day a text field holds: empty, not yet all there (`dd/mm/aaaa`), a year outside 2000 to 2099 (`01/10/1999`, which
+ * a slip of the finger makes), not a real day (`31/02/2026`) or the day.
+ */
+export function parseTypedDate(text: string): TypedDate {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { ok: false, reason: "empty" };
+  }
+  const match = TYPED_DATE.exec(trimmed);
+  if (!match) {
+    return { ok: false, reason: "incomplete" };
+  }
+  const iso = `${match[3]}-${match[2]}-${match[1]}`;
+  const year = Number(match[3]);
+  if (year < FIRST_TYPED_YEAR || year > LAST_TYPED_YEAR) {
+    return { ok: false, reason: "year" };
+  }
+  return parseIsoDate(iso)
+    ? { iso, ok: true }
+    : { ok: false, reason: "invalid" };
+}
+
+export interface TypedTexts {
+  from: string;
+  to: string;
+}
+
+export type TypedField = keyof TypedTexts;
+
+/** The two fields' texts, as `dd/mm/aaaa`, for the days of a range being chosen. */
+export function typedTextsOf(range: DraftRange | undefined): TypedTexts {
+  return {
+    from: range?.from ? formatDate(range.from) : "",
+    to: range?.to ? formatDate(range.to) : "",
+  };
+}
+
+const TYPED_YEAR_OUT_OF_RANGE = "O ano precisa estar entre 2000 e 2099.";
+
+const TYPED_MESSAGES: Record<TypedField, Record<TypedReason, string>> = {
+  from: {
+    empty: "Digite a data de início, como 01/10/2026.",
+    incomplete: "Faltam números. Escreva dia, mês e ano, como 01/10/2026.",
+    invalid: "Essa data não existe. Confira dia, mês e ano.",
+    year: TYPED_YEAR_OUT_OF_RANGE,
+  },
+  to: {
+    empty: "Digite a data final, como 14/10/2026.",
+    incomplete: "Faltam números. Escreva dia, mês e ano, como 14/10/2026.",
+    invalid: "Essa data não existe. Confira dia, mês e ano.",
+    year: TYPED_YEAR_OUT_OF_RANGE,
+  },
+};
+
+export const INVERTED_TYPED_RANGE = "A data final vem antes da inicial.";
+
+/** What is wrong with each text field, in words; a field that is fine has no entry. An inverted range is the end's fault. */
+export function typedProblems(
+  texts: TypedTexts
+): Partial<Record<TypedField, string>> {
+  const from = parseTypedDate(texts.from);
+  const to = parseTypedDate(texts.to);
+  const problems: Partial<Record<TypedField, string>> = {};
+  if (!from.ok) {
+    problems.from = TYPED_MESSAGES.from[from.reason];
+  }
+  if (!to.ok) {
+    problems.to = TYPED_MESSAGES.to[to.reason];
+  } else if (from.ok && to.iso < from.iso) {
+    problems.to = INVERTED_TYPED_RANGE;
+  }
+  return problems;
+}
+
+/** The range both fields hold, in order; null while either is empty, unfinished, not a day or the end is before the start. */
+export function typedRange(texts: TypedTexts): DateRange | null {
+  const from = parseTypedDate(texts.from);
+  const to = parseTypedDate(texts.to);
+  return from.ok && to.ok && from.iso <= to.iso
+    ? { from: from.iso, to: to.iso }
+    : null;
+}
