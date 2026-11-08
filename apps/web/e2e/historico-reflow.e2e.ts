@@ -276,7 +276,7 @@ for (const width of [360, WIDE_WINDOW]) {
         .first();
       const [rowBox, moneyBox] = await Promise.all([
         first.boundingBox(),
-        first.locator("span.inline-flex.tabular-nums").boundingBox(),
+        first.locator("[data-money]").boundingBox(),
       ]);
       expect(
         Math.abs(
