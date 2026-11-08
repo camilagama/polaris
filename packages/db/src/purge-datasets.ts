@@ -48,12 +48,17 @@ export const PURGE_DELETE_ORDER = Object.freeze([
   "memberships",
 ] as const);
 
-/** Removed with their product by the foreign key cascade (deleting a default variant directly is refused). */
+/**
+ * Removed by a foreign key cascade from a table the purge deletes: the variants and options with their product (deleting
+ * a default variant directly is refused), and the notices of the activation series with the membership of their person
+ * (ADR 0106, D11).
+ */
 export const PURGE_CASCADED_TABLES = Object.freeze([
   "product_variants",
   "product_options",
   "product_option_values",
   "variant_option_values",
+  "activation_notices",
 ] as const);
 
 /**

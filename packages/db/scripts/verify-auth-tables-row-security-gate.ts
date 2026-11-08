@@ -57,6 +57,7 @@ const ONBOARDING_OWNER = "polaris_onboarding_owner";
 const NOTICE_OWNER = "polaris_notice_recipient_owner";
 const DEVICE_OWNER = "polaris_device_session_owner";
 const ADMIN_OWNER = "polaris_admin_owner";
+const ACTIVATION_NOTICE_OWNER = "polaris_activation_notice_owner";
 const TABLES = [
   "account",
   "auth_security_audit_event",
@@ -176,6 +177,13 @@ const EXPECTED_POLICIES: PolicyRow[] = [
     UNVERIFIED_OWNER,
     ofUnverified("session")
   ),
+  // whether the e-mail of an active owner of a store of the last 14 days is verified (ADR 0106, D2): never the address
+  policy(
+    "user.user_activation_notice_owner_select_recent_owner",
+    "SELECT",
+    ACTIVATION_NOTICE_OWNER,
+    `(EXISTS ( SELECT 1\n   FROM (memberships m\n     JOIN organizations o ON ((o.id = m.organization_id)))\n  WHERE ((m.user_id = "user".id) AND (m.role = 'owner'::text) AND (m.status = 'active'::text))))`
+  ),
   // the sign-ups of the activation funnel (0105, ADR 0071 amended): three columns, counted by week, never a row out
   policy("user.user_admin_owner_select", "SELECT", ADMIN_OWNER, "true"),
   policy("user.user_auth_runtime_all", "ALL", AUTH_RUNTIME, "true", "true"),
@@ -250,6 +258,8 @@ const EXPECTED_GRANTS = [
   "auth_security_audit_event polaris_unverified_user_owner INSERT (outcome)",
   "auth_security_audit_event polaris_unverified_user_owner INSERT (request_id)",
   "auth_security_audit_event polaris_unverified_user_owner INSERT (subject_id)",
+  "user polaris_activation_notice_owner SELECT (email_verified)",
+  "user polaris_activation_notice_owner SELECT (id)",
   "user polaris_admin_owner SELECT (created_at)",
   "user polaris_admin_owner SELECT (email_verified)",
   "user polaris_admin_owner SELECT (id)",
