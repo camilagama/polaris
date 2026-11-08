@@ -4,7 +4,7 @@ import { Skeleton } from "@/ui/skeleton";
 interface PageLoadingProps {
   /** Outside the shell: the color of the page, so there is no white flash in the dark theme. */
   fullPage?: boolean;
-  /** What is going on; read by the screen reader and shown above the skeleton. */
+  /** What is going on; read by the screen reader; drawn only when there is no skeleton. */
   label?: string;
   /** Without the drawing of the page: for a status that is not a wait ("not available on this device"). */
   skeleton?: boolean;
@@ -13,10 +13,10 @@ interface PageLoadingProps {
 const ROWS = [0, 1, 2];
 
 /**
- * "Carregando…" of a screen (v5.1): the line that says it, and the skeleton of a page under it (a heading and a
- * card with three rows). The skeleton is drawing only: the status is the line. It is the fallback of every lazy
- * screen, so it is in the first chunk: the card is drawn with classes and not with `Card`, which would take the
- * component (and what it brings) out of the screens' chunk into the first one.
+ * "Carregando…" of a screen (v5.1): the line that says it, for the screen reader only, and the skeleton of a page
+ * (a heading and a card with three rows) as the picture. The skeleton is drawing only: the status is the line. It
+ * is the fallback of every lazy screen, so it is in the first chunk: the card is drawn with classes and not with
+ * `Card`, which would take the component (and what it brings) out of the screens' chunk into the first one.
  */
 export function PageLoading({
   fullPage = false,
@@ -31,7 +31,7 @@ export function PageLoading({
       )}
       role="status"
     >
-      <p className="text-muted-foreground">{label}</p>
+      <p className={skeleton ? "sr-only" : "text-muted-foreground"}>{label}</p>
       {skeleton ? (
         <div aria-hidden="true" className="grid gap-4">
           <Skeleton className="h-6 w-40" />
