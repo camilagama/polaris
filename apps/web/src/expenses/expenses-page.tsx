@@ -5,7 +5,11 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Tabs, TabsContent, TabsTrigger } from "@/ui/tabs";
-import { ScreenTitle } from "../app-shell/screen-title";
+import {
+  ScreenTitle,
+  TITLE_ACTION_CLASS,
+  TitleLine,
+} from "../app-shell/screen-title";
 import { ScreenTabList } from "../app-shell/screen-tabs";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -77,10 +81,25 @@ function dropPreviousWindow(organizationId: string, competences: string[]) {
   }
 }
 
-function Heading() {
+function Heading({ busy, onNew }: { busy: boolean; onNew: () => void }) {
   return (
     <header className="grid gap-1">
-      <ScreenTitle>Despesas</ScreenTitle>
+      <TitleLine
+        action={
+          <Button
+            className={TITLE_ACTION_CLASS}
+            data-expense-new=""
+            disabled={busy}
+            onClick={onNew}
+            type="button"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Nova despesa
+          </Button>
+        }
+      >
+        <ScreenTitle>Despesas</ScreenTitle>
+      </TitleLine>
       <p className="text-muted-foreground text-support">
         Cada despesa conta no mês de competência, não no dia do pagamento.
       </p>
@@ -257,7 +276,12 @@ export function ExpensesPage() {
     (expense: ExpenseReadModel) => handleStatusChange(expense, "restore"),
     [handleStatusChange]
   );
-  const handleNew = useCallback(() => openForm("new"), [openForm]);
+  const handleNew = useCallback(() => {
+    if (view !== "lancamentos") {
+      selectView("lancamentos");
+    }
+    openForm("new");
+  }, [openForm, selectView, view]);
   const handleMonth = useCallback(
     (month: string) =>
       setChoices((current) => ({ ...current, chosenMonth: month })),
@@ -292,7 +316,7 @@ export function ExpensesPage() {
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <Heading />
+      <Heading busy={busy !== null} onNew={handleNew} />
       {categories.state.error ? (
         <LoadError
           busy={categories.state.isLoading}
@@ -362,20 +386,9 @@ export function ExpensesPage() {
           </Dialog>
           <Card aria-labelledby={LIST_TITLE_ID} role="region">
             <CardHeader className="gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
-                  Despesas do período
-                </CardTitle>
-                <Button
-                  data-expense-new=""
-                  disabled={busy !== null}
-                  onClick={handleNew}
-                  type="button"
-                >
-                  <PlusIcon aria-hidden="true" data-icon="inline-start" />
-                  Nova despesa
-                </Button>
-              </div>
+              <CardTitle aria-level={2} id={LIST_TITLE_ID} role="heading">
+                Despesas do período
+              </CardTitle>
               <ExpenseSummary filters={filters} state={state} />
             </CardHeader>
             <CardContent className="grid gap-4">

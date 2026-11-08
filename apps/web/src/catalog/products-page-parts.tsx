@@ -9,7 +9,12 @@ import { useConnectionOnline } from "../lib/browser-connection";
 import { Button } from "@/ui/button";
 import { SearchField } from "@/ui/search-field";
 import type { ProductListStatus } from "./product-list";
-import { ScreenTitle } from "../app-shell/screen-title";
+import {
+  ScreenTitle,
+  TITLE_ACTION_CLASS,
+  TitleLine,
+} from "../app-shell/screen-title";
+import { useIsMobile } from "@/lib/use-mobile";
 
 /* The small parts of the products screen: the title with its button, the notices, the search and the two lists. */
 
@@ -46,6 +51,53 @@ export function importedNotice(entered: number): string {
 /** Read with "Importar planilha" while it is off for lack of connection. */
 const IMPORT_OFFLINE_REASON_ID = "products-import-offline-reason";
 
+interface ImportButtonProps {
+  importButtonRef: Ref<HTMLButtonElement>;
+  isOffline: boolean;
+  onImport: () => void;
+}
+
+/** "Importar planilha" with the reason it is off for lack of connection right under it. */
+function ImportButton({
+  className,
+  importButtonRef,
+  isOffline,
+  onImport,
+}: ImportButtonProps & { className?: string | undefined }) {
+  // the import never goes to the offline queue: without a connection "Importar planilha" stays reachable, off, and
+  // reads why
+  const importOffline = !useConnectionOnline() || isOffline;
+  return (
+    <div className={className ? `grid gap-1 ${className}` : "grid gap-1"}>
+      <Button
+        aria-describedby={importOffline ? IMPORT_OFFLINE_REASON_ID : undefined}
+        aria-disabled={importOffline || undefined}
+        className={TITLE_ACTION_CLASS}
+        onClick={importOffline ? undefined : onImport}
+        ref={importButtonRef}
+        type="button"
+        variant="outline"
+      >
+        <UploadIcon aria-hidden="true" data-icon="inline-start" />
+        Importar planilha
+      </Button>
+      {importOffline ? (
+        <p
+          className="text-muted-foreground text-support"
+          id={IMPORT_OFFLINE_REASON_ID}
+        >
+          Importar planilha precisa de conexão.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The title line of Produtos: "Novo produto" is the main action and, from 760 px, "Importar planilha" is the outline
+ * button beside it. On a phone the import is not a second 44 px button under the first: it comes after the list
+ * (`ProductsImportFooter`).
+ */
 export function ProductsHeader({
   buttonRef,
   importButtonRef,
@@ -54,46 +106,53 @@ export function ProductsHeader({
   onNew,
   showNew,
 }: HeaderProps) {
-  // the import never goes to the offline queue: without a connection "Importar planilha" stays reachable, off, and
-  // reads why
-  const importOffline = !useConnectionOnline() || isOffline;
+  const wide = !useIsMobile();
   return (
-    <div className="grid gap-3 min-[30rem]:flex min-[30rem]:items-center min-[30rem]:justify-between">
-      <ScreenTitle>Produtos</ScreenTitle>
-      {showNew ? (
-        // "Novo produto" first, at every width; the reason of the import right under its button
-        <div className="grid gap-3 min-[30rem]:flex min-[30rem]:items-start min-[30rem]:gap-2">
-          <Button onClick={onNew} ref={buttonRef} type="button">
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Novo produto
-          </Button>
-          <div className="grid gap-1 min-[30rem]:justify-items-start">
+    <TitleLine
+      action={
+        showNew ? (
+          <>
             <Button
-              aria-describedby={
-                importOffline ? IMPORT_OFFLINE_REASON_ID : undefined
-              }
-              aria-disabled={importOffline || undefined}
-              onClick={importOffline ? undefined : onImport}
-              ref={importButtonRef}
+              className={`${TITLE_ACTION_CLASS} min-[47.5rem]:order-2`}
+              onClick={onNew}
+              ref={buttonRef}
               type="button"
-              variant="outline"
             >
-              <UploadIcon aria-hidden="true" data-icon="inline-start" />
-              Importar planilha
+              <PlusIcon aria-hidden="true" data-icon="inline-start" />
+              Novo produto
             </Button>
-            {importOffline ? (
-              <p
-                className="text-muted-foreground text-support"
-                id={IMPORT_OFFLINE_REASON_ID}
-              >
-                Importar planilha precisa de conexão.
-              </p>
+            {wide ? (
+              <ImportButton
+                className="min-[47.5rem]:order-1"
+                importButtonRef={importButtonRef}
+                isOffline={isOffline}
+                onImport={onImport}
+              />
             ) : null}
-          </div>
-        </div>
-      ) : null}
-    </div>
+          </>
+        ) : null
+      }
+    >
+      <ScreenTitle tabNamesIt>Produtos</ScreenTitle>
+    </TitleLine>
   );
+}
+
+/** The import of a phone: after the list, with the reason it is off under it; from 760 px it is in the title line. */
+export function ProductsImportFooter({
+  importButtonRef,
+  isOffline,
+  onImport,
+  showNew,
+}: ImportButtonProps & { showNew: boolean }) {
+  const phone = useIsMobile();
+  return showNew && phone ? (
+    <ImportButton
+      importButtonRef={importButtonRef}
+      isOffline={isOffline}
+      onImport={onImport}
+    />
+  ) : null;
 }
 
 /** The id of the offline notice: the archived notice's "Desfazer" points at it while it is off for lack of connection. */
