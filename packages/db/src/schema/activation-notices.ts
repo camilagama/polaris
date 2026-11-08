@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   customType,
   foreignKey,
@@ -212,6 +213,47 @@ export const activationEmailSuppressions = pgTable(
       to: billingRuntimeRole,
       using: sql`true`,
       withCheck: sql`true`,
+    }),
+  ]
+).enableRLS();
+
+/**
+ * The switch of the series as the database last saw it (ADR 0106, D6): one row, and only the instant the hourly sweep
+ * first found `ACTIVATION_EMAILS_ENABLED` on, or null while it finds it off. The candidates' function answers nothing
+ * while it is null, and every step of a store created before it is recorded skipped (`series_off`): a store made while
+ * the switch was off never joins the series. The billing role writes it; the owner of the series reads it.
+ */
+export const activationSeriesState = pgTable(
+  "activation_series_state",
+  {
+    enabledSince: timestamp("enabled_since", { withTimezone: true }),
+    id: boolean("id").default(true).primaryKey(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check("activation_series_state_single_row", sql`${table.id}`),
+    pgPolicy("activation_series_state_billing_runtime_select", {
+      for: "select",
+      to: billingRuntimeRole,
+      using: sql`true`,
+    }),
+    pgPolicy("activation_series_state_billing_runtime_insert", {
+      for: "insert",
+      to: billingRuntimeRole,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("activation_series_state_billing_runtime_update", {
+      for: "update",
+      to: billingRuntimeRole,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
+    pgPolicy("activation_series_state_owner_select", {
+      for: "select",
+      to: activationNoticeOwnerRole,
+      using: sql`true`,
     }),
   ]
 ).enableRLS();

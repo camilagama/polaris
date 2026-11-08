@@ -21,16 +21,22 @@ const seriesSchema = await import("./schema/activation-notices");
 const TABLES = Object.values(seriesSchema as Record<string, unknown>).filter(
   (value): value is PgTable => is(value, PgTable)
 );
-const MIGRATION_NAME = /^\d{4}_avisos_de_ativacao\.sql$/;
+/** The migrations of the series: the tables and the role, then the candidates and the state of the switch. */
+const MIGRATION_NAMES = [
+  /^\d{4}_avisos_de_ativacao\.sql$/,
+  /^\d{4}_candidatos_da_serie\.sql$/,
+];
 const drizzleDirectory = new URL("../drizzle/", import.meta.url);
-// found by its name: a renumbering at the merge does not break the test
-const migrationSql = readFileSync(
-  new URL(
-    readdirSync(drizzleDirectory).find((name) => MIGRATION_NAME.test(name)) ??
-      "missing-activation-migration.sql",
-    drizzleDirectory
-  ),
-  "utf8"
+// found by their names: a renumbering at the merge does not break the test
+const migrationSqls = MIGRATION_NAMES.map((pattern) =>
+  readFileSync(
+    new URL(
+      readdirSync(drizzleDirectory).find((name) => pattern.test(name)) ??
+        "missing-activation-migration.sql",
+      drizzleDirectory
+    ),
+    "utf8"
+  )
 );
 /** Column names that would hold personal data or free text (ADR 0106, D1 and D8). */
 const PERSONAL = new Set([
@@ -91,12 +97,14 @@ function textColumnsWithoutRefusal(table: SeriesTable): string[] {
 }
 
 /** The statements of the migration, without their comment lines and string literals (a privilege named in a check). */
-const statements = migrationSql.split("--> statement-breakpoint").map((part) =>
-  part
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n")
-    .replace(STRING_LITERAL, "''")
+const statements = migrationSqls.flatMap((migrationSql) =>
+  migrationSql.split("--> statement-breakpoint").map((part) =>
+    part
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("--"))
+      .join("\n")
+      .replace(STRING_LITERAL, "''")
+  )
 );
 
 describe("the tables of the activation series", () => {
@@ -133,10 +141,11 @@ describe("the tables of the activation series", () => {
     ]);
   });
 
-  it("list the three tables of the series", () => {
+  it("list the four tables of the series", () => {
     expect(TABLES.map((table) => getTableConfig(table).name).sort()).toEqual([
       "activation_email_suppressions",
       "activation_notices",
+      "activation_series_state",
       "email_opt_outs",
     ]);
   });
@@ -170,21 +179,23 @@ describe("the tables of the activation series", () => {
     expect(getTableConfig(activationEmailSuppressions).foreignKeys).toEqual([]);
   });
 
-  it("come from a migration that only creates and grants", () => {
+  it("come from migrations that only create and grant", () => {
     expect(statements.filter((part) => DESTRUCTIVE.test(part))).toEqual([]);
     expect(
       statements.filter((part) => ALTER_OF_ANOTHER_TABLE.test(part))
     ).toEqual([]);
   });
 
-  it("give the owner of the series neither the session nor the address, and the migration refuses both at its end", () => {
-    expect(migrationSql).not.toMatch(EMAIL_GRANT_TO_OWNER);
-    expect(migrationSql).not.toMatch(SESSION_GRANT_TO_OWNER);
-    expect(migrationSql).toContain(
-      "has_column_privilege('polaris_activation_notice_owner', 'public.\"user\"', 'email', 'SELECT')"
-    );
-    expect(migrationSql).toContain(
-      "has_any_column_privilege('polaris_activation_notice_owner', 'public.session', 'SELECT')"
-    );
+  it("give the owner of the series neither the session nor the address, and each migration refuses both at its end", () => {
+    for (const migrationSql of migrationSqls) {
+      expect(migrationSql).not.toMatch(EMAIL_GRANT_TO_OWNER);
+      expect(migrationSql).not.toMatch(SESSION_GRANT_TO_OWNER);
+      expect(migrationSql).toContain(
+        "has_column_privilege('polaris_activation_notice_owner', 'public.\"user\"', 'email', 'SELECT')"
+      );
+      expect(migrationSql).toContain(
+        "has_any_column_privilege('polaris_activation_notice_owner', 'public.session', 'SELECT')"
+      );
+    }
   });
 });

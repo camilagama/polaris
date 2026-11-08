@@ -1262,6 +1262,8 @@ async function run() {
       [
         "privacy_case_actions_admin_owner_insert",
         "privacy_case_actions_admin_owner_select",
+        // the owner of the activation series reads two columns of the open requests of the stores it sees (ADR 0106, D2)
+        "privacy_cases_activation_notice_owner_select_recent",
         "privacy_cases_admin_owner_insert",
         "privacy_cases_admin_owner_select",
         "privacy_cases_admin_owner_update",
