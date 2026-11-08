@@ -82,7 +82,7 @@ function TypedDateField({
     [onEnter]
   );
   return (
-    <div className="grid min-w-0 gap-1.5">
+    <div className="grid min-w-0 content-start gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       <Input
         aria-describedby={error ? errorId : undefined}
