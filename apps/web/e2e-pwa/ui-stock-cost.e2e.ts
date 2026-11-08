@@ -10,7 +10,7 @@ import { WORKER_MARK } from "./worker-mark";
  * it where counting was and the jeans (cost known) do not; the blocked receipt opens it; without a connection it is
  * not there; a balance that moved meanwhile is refused with the panel's own words and read again; axe finds nothing.
  */
-const INFORM_SHIRT = "Informar custo de Camiseta do teste · Azul";
+const INFORM_SHIRT = "Informar custo de Camiseta do teste, Azul";
 const INFORM_ANY = /^Informar custo/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
 const COST_FIELD = "Custo de cada unidade (R$)";

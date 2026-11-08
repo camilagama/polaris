@@ -1699,6 +1699,25 @@ describe("submission state", () => {
     );
   });
 
+  it("shows the recorded unit cost to the cent, half-up, from the exact text", () => {
+    const costLines = (unitCost: string) => {
+      const state = confirmSubmission({
+        ...confirmed,
+        items: confirmed.items.map((item) => ({ ...item, unitCost })),
+      });
+      return state.phase === "confirmed"
+        ? state.sale.items.map((item) => item.costText)
+        : [];
+    };
+    expect(costLines("19.391304")).toEqual([
+      "Custo unitário registrado: R$ 19,39.",
+    ]);
+    expect(costLines("19.395")).toEqual([
+      "Custo unitário registrado: R$ 19,40.",
+    ]);
+    expect(costLines("17")).toEqual(["Custo unitário registrado: R$ 17,00."]);
+  });
+
   it("locks again if the retry also ends with an unknown outcome", () => {
     expect(failSubmission({ code: "GATEWAY_TIMEOUT" }, []).phase).toBe(
       "locked"
