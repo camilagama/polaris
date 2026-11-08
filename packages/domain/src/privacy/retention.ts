@@ -37,6 +37,7 @@ export const RETENTION_CLASSES = Object.freeze([
   "billing_trial_claims",
   "billing_cancellation_feedback",
   "billing_notices",
+  "activation_series",
   "sync_commands",
   "sync_change_log",
   "data_exports",
@@ -409,6 +410,22 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = Object.freeze([
       "docs/business-rules/privacy.md",
       "docs/runbooks/email-auth.md",
     ],
+    status: "proposta",
+  },
+  {
+    basis: "decisao",
+    class: "activation_series",
+    data: [
+      "activation_notices (os avisos das dicas para começar: loja, pessoa, passo, datas de registro, de vencimento, da primeira e da última tentativa, de envio ou de falha e o código curto da falha ou do motivo de não envio; sem e-mail, sem nome e sem texto)",
+      "email_opt_outs (quem pediu para não receber os e-mails de legítimo interesse, e quando)",
+      "activation_email_suppressions (o HMAC-SHA256 do endereço depois de um bounce ou de uma reclamação, o motivo e a data; nunca o endereço)",
+    ],
+    period: { kind: "undecided" },
+    proposed:
+      "O aviso: 12 meses contados de `recorded_at`, só o aviso já encerrado (enviado, falhou ou pulado); sai antes com a loja no purge e com a conta, pela membership em cascata (já implementado). A preferência: enquanto a conta existe, e sai com ela. A supressão: bounce, 12 meses da gravação; reclamação, enquanto a série existir, com revisão anual; não sai com a conta. Nenhum job existe: a classe só vira aprovada com o job, que pula a loja sob legal hold (ADR 0079), e com a decisão do usuário sobre o prazo da reclamação (ADR 0106, D11).",
+    review: { state: "pendente_juridica" },
+    rule: 'Cada e-mail das dicas para começar (até 3 por pessoa, só na primeira loja dela) vira uma linha, com ou sem envio, uma por pessoa e passo. Nenhuma tabela guarda endereço, nome, IP, texto livre ou valor, e o banco recusa "@" nos textos; a supressão guarda só o HMAC do endereço, com chave que o banco não tem, e vale mesmo depois de apagada a conta. Fica fora da exportação do tenant; nenhum papel do tenant a lê.',
+    sources: ["ADR 0079", "ADR 0106"],
     status: "proposta",
   },
   {

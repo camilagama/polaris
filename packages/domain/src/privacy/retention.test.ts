@@ -179,10 +179,11 @@ describe("review state", () => {
   });
 
   it("has every class decided by the user on 19/10/2026, but the one created after it", () => {
-    // the trial per person (ADR 0101), the notices of a closure (ADR 0102, amended), the notices of billing (ADR 0104)
-    // and the reports of errors of the browser (ADR 0098, amended) came later: their period waits for the responsible
-    // person
+    // the trial per person (ADR 0101), the notices of a closure (ADR 0102, amended), the notices of billing (ADR 0104),
+    // the reports of errors of the browser (ADR 0098, amended) and the activation series (ADR 0106) came later: their
+    // period waits for the responsible person
     const undecided = [
+      "activation_series",
       "billing_notices",
       "billing_trial_claims",
       "client_error_log",
@@ -632,6 +633,30 @@ describe("the notices of billing", () => {
     expect(policy.proposed).toContain("legal hold");
     expect(policy.proposed).toContain("operacional e não fiscal");
     expect(policy.proposed).toContain("nenhum job existe");
+  });
+});
+
+describe("the activation series", () => {
+  it("is a proposed class, with no job and no period applied, and keeps no address", () => {
+    const policy = retentionPolicy("activation_series");
+    expect(policy.status).toBe("proposta");
+    expect(policy.period).toEqual({ kind: "undecided" });
+    expect("job" in policy).toBe(false);
+    expect(RETENTION_PURGE_JOBS.map((job) => job.class)).not.toContain(
+      "activation_series"
+    );
+    expect(() => approvedRetention("activation_series")).toThrow(
+      RetentionNotApprovedError
+    );
+    expect(policy.data.join(" ")).toContain("activation_notices");
+    expect(policy.data.join(" ")).toContain("HMAC-SHA256");
+    expect(policy.sources).toEqual(["ADR 0079", "ADR 0106"]);
+    if (policy.status !== "proposta") {
+      throw new Error("activation_series must stay proposed");
+    }
+    expect(policy.proposed).toContain("12 meses contados de `recorded_at`");
+    expect(policy.proposed).toContain("legal hold");
+    expect(policy.proposed).toContain("não sai com a conta");
   });
 });
 
