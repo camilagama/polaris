@@ -245,6 +245,56 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
     expect(clipped).toEqual({ ellipsis: "ellipsis", wraps: "nowrap" });
     await expect(header(page).locator(".sync-status .sr-only")).not.toBeEmpty();
   });
+
+  test("1280 px: a dica vale sobre o ícone, o texto, o recheio e a borda, sem mudar o que o leitor de tela diz", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page);
+    const sentence = (await chip(page).locator(".sr-only").textContent()) ?? "";
+    expect(sentence).not.toBe("");
+    const box = await chip(page).boundingBox();
+    expect(box).not.toBeNull();
+    const { height, width, x, y } = box as NonNullable<typeof box>;
+    const middle = y + height / 2;
+    const points = [
+      { left: x + 0.5, where: "borda" },
+      { left: x + 12, where: "icone" },
+      { left: x + width - 3, where: "recheio" },
+      { left: x + width / 2, where: "texto" },
+    ];
+    for (const { left, where } of points) {
+      // biome-ignore lint/performance/noAwaitInLoops: one point at a time
+      const tip = await page.evaluate(
+        ({ pointX, pointY }) => {
+          const hit = document.elementFromPoint(pointX, pointY);
+          return {
+            inside: Boolean(hit?.closest(".sync-status")),
+            title: hit?.closest("[title]")?.getAttribute("title") ?? null,
+          };
+        },
+        { pointX: left, pointY: middle }
+      );
+      expect(tip, where).toEqual({ inside: true, title: sentence });
+    }
+    for (const attribute of ["title", "aria-label", "aria-describedby"]) {
+      // biome-ignore lint/performance/noAwaitInLoops: one attribute at a time
+      expect(await chip(page).getAttribute(attribute), attribute).toBeNull();
+    }
+    const session = await page.context().newCDPSession(page);
+    const { nodes } = await session.send("Accessibility.getFullAXTree");
+    const spoken = nodes.filter(
+      (node) =>
+        node.name?.value === sentence || node.description?.value === sentence
+    );
+    expect(
+      spoken.filter((node) => node.description?.value === sentence)
+    ).toEqual([]);
+    expect(
+      spoken.filter((node) => node.name?.value === sentence)
+    ).not.toHaveLength(0);
+  });
 });
 
 /** The states of the shell that are not the chip's: none of them changes the height of the header. */
