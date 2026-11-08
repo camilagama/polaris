@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
-import { Alert, AlertDescription } from "@/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { ActionStrip } from "../app-shell/action-strip";
@@ -140,6 +140,37 @@ export function AttentionStateCard({
     <Card className="items-center px-(--card-spacing) text-center" role={role}>
       <p className="text-muted-foreground">{children}</p>
     </Card>
+  );
+}
+
+export const OFFLINE_UNAVAILABLE_TITLE = "Sem modo offline neste aparelho";
+export const OFFLINE_PLAN_REASON = "O modo offline faz parte do plano Pro.";
+/** The first sentence of the text of Aparelhos for the same cause. */
+export const OFFLINE_BROWSER_REASON =
+  "Este navegador não conseguiu preparar o acesso offline.";
+const HOME_HREF = "/";
+
+/** Pendências on a device where the offline mode is not available: the title, why, and the way back to the app. */
+export function AttentionUnavailable({
+  planRefused,
+}: {
+  planRefused: boolean;
+}) {
+  return (
+    <AttentionFrame>
+      <Alert variant="warning">
+        <TriangleAlertIcon aria-hidden="true" />
+        <AlertTitle>{OFFLINE_UNAVAILABLE_TITLE}</AlertTitle>
+        <AlertDescription>
+          {planRefused ? OFFLINE_PLAN_REASON : OFFLINE_BROWSER_REASON}
+        </AlertDescription>
+      </Alert>
+      <div>
+        <a className={buttonVariants()} href={HOME_HREF}>
+          Voltar ao Início
+        </a>
+      </div>
+    </AttentionFrame>
   );
 }
 

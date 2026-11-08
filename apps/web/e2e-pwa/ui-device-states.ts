@@ -234,6 +234,15 @@ export const attentionStates = {
     );
   },
 
+  /** The offline mode is not available on this device: the title, the warning with the reason, and the way back. */
+  async unavailable(page: Page) {
+    await openNoticeLab(
+      page,
+      "screen=attention&state=unavailable&motivo=plano",
+      () => page.getByRole("link", { name: "Voltar ao Início" }).waitFor()
+    );
+  },
+
   /** A refused sale holding the queue, a refused product and an account change. */
   async items(page: Page) {
     await openNoticeLab(page, "screen=attention", () =>

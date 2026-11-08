@@ -1004,4 +1004,5 @@ export const SCREENS: UiScreen[] = [
   attentionScreen("com itens", attentionStates.items),
   attentionScreen("descartando", attentionStates.discarding),
   attentionScreen("vazio", attentionStates.empty),
+  attentionScreen("sem offline", attentionStates.unavailable),
 ];

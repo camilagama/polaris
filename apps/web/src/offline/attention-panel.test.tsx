@@ -5,10 +5,16 @@ import type { AttentionItem, AttentionSummary } from "./attention";
 import {
   AttentionPanel,
   type AttentionPanelProps,
+  AttentionUnavailable,
+  OFFLINE_BROWSER_REASON,
+  OFFLINE_PLAN_REASON,
+  OFFLINE_UNAVAILABLE_TITLE,
   refusedText,
   signInAgainButtonId,
 } from "./attention-panel";
+import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
 
+const HOME_LINK = /<a [^>]*href="\/"[^>]*>Voltar ao Início<\/a>/;
 const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
 const none = () => undefined;
 const item = (overrides: Partial<AttentionItem> = {}): AttentionItem => ({
@@ -332,5 +338,42 @@ describe("the attention panel", () => {
     const html = render({ items: [], waitingBehind: 0 });
     expect(html).toContain("Nenhuma pendência de envio.");
     expect(html).not.toContain("Nada precisa de atenção");
+  });
+});
+
+describe("Pendências without the offline mode", () => {
+  const html = (planRefused: boolean) =>
+    renderToStaticMarkup(<AttentionUnavailable planRefused={planRefused} />);
+
+  it("has the title, one warning and one link back to the Início", () => {
+    for (const planRefused of [true, false]) {
+      const out = html(planRefused);
+      expect(out.match(/<h1[ >]/g)).toHaveLength(1);
+      expect(out).toContain("Pendências</h1>");
+      expect(out).toContain('role="status"');
+      expect(out).toContain(OFFLINE_UNAVAILABLE_TITLE);
+      expect(out.match(/<a /g)).toHaveLength(1);
+      expect(out).toMatch(HOME_LINK);
+    }
+  });
+
+  it("says the plan when the plan refused it, and never the browser's sentence", () => {
+    const out = html(true);
+    expect(out).toContain(OFFLINE_PLAN_REASON);
+    expect(out).not.toContain(OFFLINE_BROWSER_REASON);
+  });
+
+  it("says the browser's sentence when the browser could not prepare it, and never the plan's", () => {
+    const out = html(false);
+    expect(out).toContain(OFFLINE_BROWSER_REASON);
+    expect(out).not.toContain(OFFLINE_PLAN_REASON);
+  });
+
+  it("uses the words of Aparelhos for the browser", () => {
+    expect(
+      RECOGNIZING_UNAVAILABLE_TEXT.startsWith(
+        OFFLINE_BROWSER_REASON.slice(0, -1)
+      )
+    ).toBe(true);
   });
 });

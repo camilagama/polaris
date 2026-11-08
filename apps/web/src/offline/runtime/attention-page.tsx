@@ -26,6 +26,7 @@ import {
   AttentionFrame,
   AttentionPanel,
   AttentionStateCard,
+  AttentionUnavailable,
   type RedoProblem,
   signInAgainButtonId,
 } from "../attention-panel";
@@ -48,6 +49,7 @@ import {
   startSaleRedo,
 } from "../sale-redo-storage";
 import { LogoutNotices, useLogout } from "./logout-control";
+import { PLAN_REFUSED_REASON } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -326,17 +328,15 @@ export function AttentionPage() {
       </AttentionFrame>
     );
   }
-  if (snapshot.phase !== "ready") {
+  if (snapshot.phase === "unavailable") {
     return (
-      <PageLoading
-        label={
-          snapshot.phase === "unavailable"
-            ? "O modo offline não está disponível neste aparelho agora."
-            : "Preparando o modo offline…"
-        }
-        skeleton={snapshot.phase !== "unavailable"}
+      <AttentionUnavailable
+        planRefused={snapshot.reason === PLAN_REFUSED_REASON}
       />
     );
+  }
+  if (snapshot.phase !== "ready") {
+    return <PageLoading label="Preparando o modo offline…" />;
   }
   return (
     <AttentionPanel
