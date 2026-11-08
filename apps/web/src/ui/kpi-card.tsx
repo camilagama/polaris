@@ -6,7 +6,8 @@ import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Card } from "./card";
 import { HelpTip } from "./help-tip";
-import { MaskedMoney, MoneyText } from "./hidden-values";
+import { MoneyText } from "./hidden-values";
+import { Money } from "./money";
 import { Skeleton } from "./skeleton";
 
 /**
@@ -145,8 +146,6 @@ const ENTITY_SQUARE: Record<KpiEntity, string> = {
 
 const SIGN = /^[+-]/;
 
-const SPLIT = /^(-?)R\$\s?(.*?)(,\d{2})?$/;
-
 /**
  * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller, which push
  * the line down), "R$ ••••" (whose dots may come from another font) and "—" take the same height, and nothing under
@@ -186,7 +185,6 @@ export function HeroValue({
   const characters =
     strip && amount !== null && !hidden ? formatBrlAmount(amount).length : 0;
   const box = heroBox(size, strip, characters);
-  const currency = "font-medium text-[0.56em] tracking-normal";
   if (amount === null && emptyText) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
@@ -197,27 +195,22 @@ export function HeroValue({
   if (amount === null) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
-        <span aria-hidden="true">—</span>
-        <span className="sr-only">sem valor</span>
+        <Money text={null} />
       </p>
     );
   }
   const negative = amount.trim().startsWith("-");
+  const money = <Money split text={formatBrlAmount(amount)} />;
   if (hidden) {
     return (
       <p className={box} data-kpi-value="">
-        <MaskedMoney />
+        {money}
       </p>
     );
   }
-  const match = SPLIT.exec(formatBrlAmount(amount));
   return (
     <p className={cn(box, negative && "text-destructive")} data-kpi-value="">
-      {match?.[1] ?? ""}
-      {/* the space is inside the small part: "R$ 90,00" is one text for a screen reader and a search */}
-      <span className={currency}>R$ </span>
-      {match?.[2] ?? amount}
-      <span className="text-[0.72em]">{match?.[3] ?? ""}</span>
+      {money}
     </p>
   );
 }

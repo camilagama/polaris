@@ -1,14 +1,10 @@
 import EyeIcon from "lucide-react/dist/esm/icons/eye";
 import EyeOffIcon from "lucide-react/dist/esm/icons/eye-off";
 import { useCallback } from "react";
-import {
-  MASKED_MONEY,
-  MASKED_SPOKEN,
-  moneyParts,
-  useHiddenValues,
-} from "@/lib/hidden-values";
+import { moneyParts, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
+import { Money } from "./money";
 
 /**
  * "Esconder valores" (revisão de UI v7, § 6): the toggle (`aria-pressed`) and the text whose amounts it hides. The
@@ -44,22 +40,6 @@ export function HideValuesButton({
   );
 }
 
-/** One amount hidden: seen as "R$ ••••", heard as "valor escondido". */
-export function MaskedMoney() {
-  return (
-    <>
-      <span
-        aria-hidden="true"
-        className="whitespace-nowrap"
-        data-masked-money=""
-      >
-        {MASKED_MONEY}
-      </span>
-      <span className="sr-only">{MASKED_SPOKEN}</span>
-    </>
-  );
-}
-
 /**
  * A text with its amounts kept in one piece: "R$" and the number never fall on two lines, however large the font is.
  * The text is the same, only each amount sits in a box that does not break.
@@ -68,13 +48,7 @@ export function NoBreakMoney({ text }: { text: string }) {
   return (
     <>
       {moneyParts(text).map((part, index) =>
-        part.money ? (
-          <span className="whitespace-nowrap" key={index}>
-            {part.text}
-          </span>
-        ) : (
-          part.text
-        )
+        part.money ? <Money key={index} text={part.text} unmasked /> : part.text
       )}
     </>
   );
@@ -85,14 +59,10 @@ export function NoBreakMoney({ text }: { text: string }) {
  * amount masked while they are hidden (the rest of the words, the percents and the counts stay).
  */
 export function MoneyText({ text }: { text: string }) {
-  const [hidden] = useHiddenValues();
-  if (!hidden) {
-    return <NoBreakMoney text={text} />;
-  }
   return (
     <>
       {moneyParts(text).map((part, index) =>
-        part.money ? <MaskedMoney key={index} /> : part.text
+        part.money ? <Money key={index} text={part.text} /> : part.text
       )}
     </>
   );

@@ -225,6 +225,73 @@ const MOTION_SCOPE = sourcesUnder("src").filter((path) =>
 );
 
 /**
+ * Dinheiro (DESIGN.md "Dinheiro"): every amount in reais is written by `Money`, whose sizes are the four `text-value-*`.
+ * The files that write amounts have no size in rem or px (`text-[1.75rem]`), and no class string that sets a free
+ * `text-[…]` size beside `tabular-nums`; the "R$" and the cents are a fraction of the number (`text-[0.56em]`,
+ * `text-[0.72em]`) and that fraction lives only in `ui/money.tsx`, apart from the strings listed here.
+ */
+const MONEY_FILES = ["src/ui/money.tsx", "src/ui/hidden-values.tsx"] as const;
+const MONEY_COMPONENT = "src/ui/money.tsx";
+const ABSOLUTE_TEXT_SIZE = /(?:^|:)text-\[[\d.]+(?:rem|px)\]$/;
+const FREE_TEXT_SIZE = /(?:^|:)text-\[/;
+const MONEY_FRACTION = /(?:^|:)text-\[0\.(?:56|72)em\]$/;
+
+const MONEY_FRACTION_ELSEWHERE: readonly {
+  file: string;
+  strings: number;
+  why: string;
+}[] = [
+  {
+    file: "src/dashboard/result-cards.tsx",
+    strings: 1,
+    why: "o sufixo % da Margem usa a mesma fração do R$ e passa pela caixa do valor quando a Margem ganhar o mesmo recipiente",
+  },
+];
+
+const stringsOf = (text: string) =>
+  [...withoutComments(text).matchAll(STRING)].map(
+    (match) => match[1] ?? match[2] ?? match[3] ?? ""
+  );
+
+export function moneyFontFaults(path: string, text: string): string[] {
+  if (!TS_OR_TSX.test(path)) {
+    return [];
+  }
+  const faults: string[] = [];
+  const values = stringsOf(text).map((value) =>
+    value.split(SPACES).filter(Boolean)
+  );
+  if ((MONEY_FILES as readonly string[]).includes(path)) {
+    for (const tokens of values) {
+      const absolute = tokens.find((token) => ABSOLUTE_TEXT_SIZE.test(token));
+      if (absolute) {
+        faults.push(`tamanho em rem ou px em dinheiro: ${absolute}`);
+      }
+      if (
+        tokens.includes("tabular-nums") &&
+        tokens.some((token) => FREE_TEXT_SIZE.test(token))
+      ) {
+        faults.push("text-[…] livre junto de tabular-nums em dinheiro");
+      }
+    }
+  }
+  if (path !== MONEY_COMPONENT) {
+    const fractions = values
+      .flat()
+      .filter((token) => MONEY_FRACTION.test(token)).length;
+    const listed =
+      MONEY_FRACTION_ELSEWHERE.find((entry) => entry.file === path)?.strings ??
+      0;
+    if (fractions !== listed) {
+      faults.push(
+        `${fractions} fração(ões) do R$ ou dos centavos fora de ui/money.tsx, e a lista diz ${listed}`
+      );
+    }
+  }
+  return faults;
+}
+
+/**
  * Focus (DESIGN.md "Acessibilidade"): `outline-none` takes the browser's focus ring away, so the class string that
  * has it also carries the ring of its own (`focus-visible:…`, `focus:…`, `has-[…:focus-visible]…`), or the element is a
  * programmatic target that uses the `focus-ring` utility instead. Where the ring is somewhere else, the string is here
@@ -409,6 +476,27 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   );
 
+  it.each(FOCUS_SCOPE)(
+    "%s: dinheiro só pelo Money, nos tamanhos da escala",
+    (path) => {
+      expect(moneyFontFaults(path, read(path))).toEqual([]);
+    }
+  );
+
+  it("os arquivos de dinheiro e a lista da fração ainda existem (uma lista velha deixaria passar outra coisa)", () => {
+    for (const path of [
+      ...MONEY_FILES,
+      ...MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file),
+    ]) {
+      expect(existsSync(join(web, path)), path).toBe(true);
+    }
+    expect(MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file)).toEqual(
+      FOCUS_SCOPE.filter((path) => path !== MONEY_COMPONENT).filter((path) =>
+        read(path).includes("text-[0.56em]")
+      )
+    );
+  });
+
   it("a lista de foco em outro lugar ainda é verdade (uma lista velha deixaria passar outra coisa)", () => {
     expect(FOCUS_ELSEWHERE.map((entry) => entry.file)).toEqual([
       "src/ui/dialog-layout.ts",
@@ -583,6 +671,38 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     'className="outline-offset-2 outline-3"',
   ])("%s: passa na regra do foco", (text) => {
     expect(outlineStrings("src/x.tsx", text)).toEqual([]);
+  });
+
+  it("dinheiro: rem, px, text livre ao lado de tabular-nums e a fração do R$ fora do Money reprovam (controle plantado)", () => {
+    const money = (text: string, path = "src/ui/money.tsx") =>
+      moneyFontFaults(path, text);
+    expect(money('const a = "font-semibold text-[1.75rem]";').join()).toContain(
+      "rem ou px"
+    );
+    expect(money('const a = "md:text-[28px] p-2";').join()).toContain(
+      "rem ou px"
+    );
+    expect(money('const a = "tabular-nums text-[0.9em]";').join()).toContain(
+      "tabular-nums"
+    );
+    expect(money('const a = "text-value-lg tabular-nums";')).toEqual([]);
+    expect(money('const a = "font-medium text-[0.56em]";')).toEqual([]);
+    expect(
+      money('const a = "text-[0.56em]";', "src/ui/kpi-card.tsx").join()
+    ).toContain("fora de ui/money.tsx");
+    expect(
+      money('const a = "text-[0.72em]";', "src/home/home-page.tsx").join()
+    ).toContain("fora de ui/money.tsx");
+    expect(
+      money('const a = "text-[0.56em]";', "src/dashboard/result-cards.tsx")
+    ).toEqual([]);
+    expect(
+      money(
+        'const a = "text-[0.56em] text-[0.72em]";',
+        "src/dashboard/result-cards.tsx"
+      ).join()
+    ).toContain("a lista diz 1");
+    expect(money('// "text-[1.75rem]" in a comment')).toEqual([]);
   });
 
   it("a lista exata reprova o que saiu dela e o que entrou (controle plantado)", () => {
