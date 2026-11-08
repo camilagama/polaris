@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -180,23 +181,27 @@ export function ScreenTabList({
 }
 
 /**
- * One row of a grouped list: the name of the group, then its tabs on the muted strip. It owns no tab stop of its own
- * (`role="none"`): the arrows keep walking the whole list, as they do in the single strip, and the name of each tab is
- * the same.
+ * One row of a grouped list: the name of the group as plain text, then its tabs on the muted strip. Neither a heading nor
+ * a `role="group"` is allowed among the children of a `tablist` (axe, `aria-required-children`), so the name is text a
+ * screen reader reads in browse mode, and each tab of the row points at it with `aria-describedby` (`ScreenTabTrigger`),
+ * which is what says the group when the arrows land on a tab. The row owns no tab stop of its own (`role="none"`): the
+ * arrows keep walking the whole list, as they do in the single strip, and the name of each tab is the same.
  */
 function ScreenTabGroup({
   children,
   label,
+  nameId,
 }: {
   children: ReactNode;
   label: string;
+  nameId: string;
 }) {
   return (
     <div className="flex max-w-full items-center gap-3" role="none">
       <span
-        aria-hidden="true"
         className="min-w-16 shrink-0 text-muted-foreground text-xs"
         data-tabs-group={label}
+        id={nameId}
       >
         {label}
       </span>
@@ -229,16 +234,20 @@ export function groupedTabsOf<Tab extends { value: string }>(
  */
 export function ScreenTabTrigger({
   children,
+  groupNameId,
   reserved = false,
   value,
 }: {
   children: ReactNode;
+  /** The id of the name of the row this tab is in, when the list is drawn in named rows. */
+  groupNameId?: string | undefined;
   reserved?: boolean;
   value: string;
 }) {
   return (
     <TabsTrigger
       aria-busy={reserved || undefined}
+      aria-describedby={groupNameId}
       className="flex-none"
       data-value={value}
       disabled={reserved}
@@ -360,8 +369,14 @@ export function ScreenTabs({
   const [value, select] = useScreenTab(screen, available);
   const [kept, hold] = useKeptPanels();
   const tabs = listedTabs(screen, available, reserved);
-  const trigger = (tab: (typeof tabs)[number]) => (
-    <ScreenTabTrigger key={tab.value} reserved={tab.reserved} value={tab.value}>
+  const namesId = useId();
+  const trigger = (groupNameId?: string) => (tab: (typeof tabs)[number]) => (
+    <ScreenTabTrigger
+      groupNameId={groupNameId}
+      key={tab.value}
+      reserved={tab.reserved}
+      value={tab.value}
+    >
       {tab.label}
     </ScreenTabTrigger>
   );
@@ -376,12 +391,19 @@ export function ScreenTabs({
           value={value}
         >
           {groups === undefined
-            ? tabs.map(trigger)
-            : groupedTabsOf(tabs, groups).map((group) => (
-                <ScreenTabGroup key={group.label} label={group.label}>
-                  {group.tabs.map(trigger)}
-                </ScreenTabGroup>
-              ))}
+            ? tabs.map(trigger())
+            : groupedTabsOf(tabs, groups).map((group, index) => {
+                const nameId = `${namesId}-${index}`;
+                return (
+                  <ScreenTabGroup
+                    key={group.label}
+                    label={group.label}
+                    nameId={nameId}
+                  >
+                    {group.tabs.map(trigger(nameId))}
+                  </ScreenTabGroup>
+                );
+              })}
         </ScreenTabList>
         {panels.map((panel) => (
           <ScreenTabPanel

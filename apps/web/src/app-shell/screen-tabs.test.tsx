@@ -24,8 +24,16 @@ vi.mock("@/ui/tabs", () => ({
     value: string;
   }) => <section data-panel={value}>{children}</section>,
   TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TabsTrigger: ({ children }: { children: ReactNode }) => (
-    <button type="button">{children}</button>
+  TabsTrigger: ({
+    children,
+    "aria-describedby": describedBy,
+  }: {
+    children: ReactNode;
+    "aria-describedby"?: string | undefined;
+  }) => (
+    <button aria-describedby={describedBy} type="button">
+      {children}
+    </button>
   ),
 }));
 
@@ -81,6 +89,7 @@ describe("the screen of a tab knows whether its tab is the open one", () => {
 });
 
 const NAME_OF_ROW = /<span[^>]*data-tabs-group="Da loja"[^>]*>/;
+const ID_ATTRIBUTE = /id="([^"]+)"/;
 
 describe("the tabs in named rows", () => {
   const GROUPS = [
@@ -108,15 +117,45 @@ describe("the tabs in named rows", () => {
     expect(html.split("data-tabs-group=")).toHaveLength(2);
   });
 
-  it("hides the name of a row from the screen reader and keeps the tabs inside it", () => {
+  it("leaves the name of a row readable and points each tab of the row at it", () => {
     const html = rows([
-      { label: "Da loja", values: ["produtos", "categorias"] },
+      { label: "Da loja", values: ["produtos"] },
+      { label: "Da conta", values: ["categorias"] },
     ]);
     const name = html.match(NAME_OF_ROW)?.[0] ?? "";
-    expect(name).toContain('aria-hidden="true"');
+    expect(name).not.toContain("aria-hidden");
     expect(html).toContain('role="none"');
-    const row = html.slice(html.indexOf('role="none"'));
-    expect(row.indexOf("Produtos")).toBeGreaterThan(row.indexOf("Da loja"));
-    expect(row.indexOf("Categorias")).toBeGreaterThan(row.indexOf("Produtos"));
+    expect(html).not.toContain('role="group"');
+    expect(html).not.toContain("<h2");
+    const nameId = name.match(ID_ATTRIBUTE)?.[1] ?? "";
+    expect(nameId).not.toBe("");
+    const describedBy = (tabName: string) =>
+      html.match(
+        new RegExp(`<button[^>]*aria-describedby="([^"]+)"[^>]*>${tabName}<`)
+      )?.[1];
+    expect(describedBy("Produtos")).toBe(nameId);
+    const other = describedBy("Categorias") ?? "";
+    expect(other).not.toBe("");
+    expect(other).not.toBe(nameId);
+    expect(html).toContain(`id="${other}"`);
+    expect(html.indexOf('data-tabs-group="Da loja"')).toBeLessThan(
+      html.indexOf(">Produtos</button>")
+    );
+    expect(html.indexOf(">Produtos</button>")).toBeLessThan(
+      html.indexOf('data-tabs-group="Da conta"')
+    );
+  });
+
+  it("gives the tabs of a single strip no description", () => {
+    address.search = "";
+    const html = renderToStaticMarkup(
+      <ScreenTabs
+        label="Abas"
+        panels={PANELS}
+        screen="products"
+        title="Produtos"
+      />
+    );
+    expect(html).not.toContain("aria-describedby");
   });
 });

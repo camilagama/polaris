@@ -249,14 +249,25 @@ test("trocar de 1280 para 400 px e voltar mantém a aba aberta, o endereço e o 
   );
 });
 
-test("o nome da linha não entra na árvore de acessibilidade: a lista só tem as abas", async ({
+test("o nome da linha é lido e cada aba é anunciada dentro do seu grupo, na lista única", async ({
   page,
 }) => {
   await openSettings(page, "/configuracoes");
-  await expect(label(page, "Da loja")).toHaveAttribute("aria-hidden", "true");
+  expect(await label(page, "Da loja").getAttribute("aria-hidden")).toBeNull();
   const tree = await list(page).ariaSnapshot();
-  expect(tree).not.toContain("Da loja");
-  expect(tree).not.toContain("Da conta");
-  expect(tree).toContain("Formas de receber");
-  await expect(list(page).getByRole("group")).toHaveCount(0);
+  expect(tree).toContain("Da loja");
+  expect(tree).toContain("Da conta");
+  await expect(page.getByRole("tablist")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "Da loja" })).toHaveCount(0);
+  const inGroup = {
+    "Da loja": ["Formas de receber", "Catálogo público"],
+    "Da conta": ["Aparelhos", "Assinatura", "Senha", "Seus dados"],
+  };
+  await Promise.all(
+    Object.entries(inGroup).flatMap(([group, names]) =>
+      names.map((name) =>
+        expect(tab(page, name)).toHaveAccessibleDescription(group)
+      )
+    )
+  );
 });
