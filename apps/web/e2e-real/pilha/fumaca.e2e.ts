@@ -16,7 +16,7 @@ test("o preview aceita a sessão assinada pelo segredo do run e recusa a de outr
   const origin = String(testInfo.project.use.baseURL);
   const user = await createJourneyUser(
     origin,
-    journeyName("pilha", "fumaca", testInfo.retry)
+    journeyName("pilha", "fumaca", testInfo.retry, testInfo.repeatEachIndex)
   );
 
   const accepted = await request.get("/api/auth/get-session", {

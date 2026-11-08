@@ -28,11 +28,21 @@ test("o usuário A não lê dados da organização B pela /rpc, com os ids reais
   const origin = String(testInfo.project.use.baseURL);
   const owner = await createJourneyUser(
     origin,
-    journeyName("pilha", "isolamento-b", testInfo.retry)
+    journeyName(
+      "pilha",
+      "isolamento-b",
+      testInfo.retry,
+      testInfo.repeatEachIndex
+    )
   );
   const stranger = await createJourneyUser(
     origin,
-    journeyName("pilha", "isolamento-a", testInfo.retry)
+    journeyName(
+      "pilha",
+      "isolamento-a",
+      testInfo.retry,
+      testInfo.repeatEachIndex
+    )
   );
   const b = (
     await owner.rpc.organization.createInitial({
@@ -144,11 +154,11 @@ test("a RLS do PostgreSQL esconde as linhas de B do login de tenant no contexto 
   const origin = String(testInfo.project.use.baseURL);
   const owner = await createJourneyUser(
     origin,
-    journeyName("pilha", "rls-b", testInfo.retry)
+    journeyName("pilha", "rls-b", testInfo.retry, testInfo.repeatEachIndex)
   );
   const stranger = await createJourneyUser(
     origin,
-    journeyName("pilha", "rls-a", testInfo.retry)
+    journeyName("pilha", "rls-a", testInfo.retry, testInfo.repeatEachIndex)
   );
   const b = (
     await owner.rpc.organization.createInitial({

@@ -207,7 +207,11 @@ function useRecognition(
   if (!waiting) {
     return null;
   }
-  return recognitionState(slow, snapshot?.phase ?? null);
+  return recognitionState(
+    slow,
+    snapshot?.phase ?? null,
+    snapshot?.reason ?? null
+  );
 }
 
 function RecognitionLine({ state }: { state: Recognition }) {
