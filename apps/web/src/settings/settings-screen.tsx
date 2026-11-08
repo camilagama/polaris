@@ -11,7 +11,12 @@ import {
   useState,
 } from "react";
 import { Card } from "@/ui/card";
-import { replaceAddress, useAddress } from "../app-shell/address";
+import {
+  isMarkedEntry,
+  pushAddress,
+  replaceAddress,
+  useAddress,
+} from "../app-shell/address";
 import { lazyScreen } from "../app-shell/lazy-screen";
 import {
   addressWithTab,
@@ -112,18 +117,21 @@ function usePasswordOn(): boolean | null {
 
 const SETTINGS_ADDRESS = "/configuracoes";
 
+/** Marks the history step a row of the list added, so "Voltar" knows the list is the step before it. */
+const FROM_LIST = "polarisSettingsFromList";
+
 const MENU_ROW =
   "flex min-h-12 items-center justify-between gap-3 px-4 py-2 font-medium text-sm";
 
 /** Where the focus goes on the next screen of the phone. */
 interface PhoneFocus {
-  /** A row was pressed: the way back takes the focus on the tab's screen. */
+  /** A row was pressed: the tab's screen takes the focus on its "Voltar". */
   entering: boolean;
-  /** The tab the person left through "Voltar": its row takes the focus on the list. */
+  /** The tab the person came from, by a row or by "Voltar": its row takes the focus when the list is drawn again. */
   row: string | null;
 }
 
-/** A plain click on a link of the phone rewrites the address in place; a click to open elsewhere goes on as a link. */
+/** A plain click on a link of the phone is handled by the screen; a click to open elsewhere goes on as a link. */
 function opensInPlace(event: MouseEvent<HTMLAnchorElement>): boolean {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) {
     return false;
@@ -137,23 +145,28 @@ function SettingsBack({ focus }: { focus: RefObject<PhoneFocus> }) {
   const { search } = useAddress();
   const open = requestedTab("settings", search).value;
   useEffect(() => {
+    focus.current.row = open;
     if (focus.current.entering) {
       focus.current.entering = false;
       back.current?.focus();
     }
-  }, [focus]);
+  }, [focus, open]);
   const leave = useCallback(
     (event: MouseEvent<HTMLAnchorElement>) => {
       if (opensInPlace(event)) {
         focus.current.row = open;
-        replaceAddress(SETTINGS_ADDRESS);
+        if (isMarkedEntry(FROM_LIST)) {
+          window.history.back();
+        } else {
+          replaceAddress(SETTINGS_ADDRESS);
+        }
       }
     },
     [focus, open]
   );
   return (
     <a
-      className="touch-hit focus-ring -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 font-medium text-muted-foreground text-sm hover:text-foreground"
+      className="touch-hit focus-ring inline-flex w-fit items-center gap-1 rounded-md font-medium text-muted-foreground text-sm hover:text-foreground"
       href={SETTINGS_ADDRESS}
       onClick={leave}
       ref={back}
@@ -179,10 +192,11 @@ function SettingsRow({
     (event: MouseEvent<HTMLAnchorElement>) => {
       if (opensInPlace(event)) {
         focus.current.entering = true;
-        replaceAddress(href);
+        focus.current.row = tab.value;
+        pushAddress(href, FROM_LIST);
       }
     },
-    [focus, href]
+    [focus, href, tab.value]
   );
   if (reserved) {
     return (
@@ -213,7 +227,7 @@ function SettingsRow({
 
 /**
  * The list of Configurações on a phone: the tabs this person has, in the two groups of the screen, each row opening its
- * tab (a rewrite of the address in place, as the strip does). The group names are headings and the rows a list, as
+ * tab as a step of the history, so "voltar" of the browser comes back to the list as "Voltar" of the screen does. The group names are headings and the rows a list, as
  * there is no `tablist` here to forbid either; a group with no row has neither. A tab that waits for the server (Senha)
  * keeps its row, off and busy, so the rows do not move when the answer arrives.
  */

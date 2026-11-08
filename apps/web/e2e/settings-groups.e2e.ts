@@ -29,6 +29,7 @@ const rpc = (json: unknown) => ({
 });
 
 const LIST_ADDRESS = /\/configuracoes$/;
+const HEALTH_ADDRESS = /\/health$/;
 const PHONE_WIDTH = 760;
 const PHONE = { height: 740, width: 360 };
 
@@ -352,6 +353,96 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     });
   }
 
+  for (const name of SIX) {
+    test(`${name}: o voltar do navegador, na tela da aba, leva à lista com o foco na linha`, async ({
+      page,
+    }) => {
+      await openSettings(page, "/configuracoes", { size: PHONE });
+      const row = page.getByRole("link", { exact: true, name });
+      await row.click();
+      await expect(voltar(page)).toBeFocused();
+      await page.goBack();
+      await expect(rows(page)).toHaveCount(6);
+      await expect(page).toHaveURL(LIST_ADDRESS);
+      await expect(row).toBeFocused();
+      await page.goForward();
+      await expect(voltar(page)).toBeVisible();
+      expect(page.url()).toContain("aba=");
+    });
+  }
+
+  test("voltar, avançar e voltar de novo: a linha de origem tem o foco nas duas voltas", async ({
+    page,
+  }) => {
+    await openSettings(page, "/configuracoes", { size: PHONE });
+    const row = page.getByRole("link", { exact: true, name: "Assinatura" });
+    await row.click();
+    await page.goBack();
+    await expect(row).toBeFocused();
+    await page.goForward();
+    await expect(voltar(page)).toBeVisible();
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(6);
+    await expect(row).toBeFocused();
+  });
+
+  test("recarregar a tela de uma aba aberta por uma linha e voltar leva à lista com o foco na linha", async ({
+    page,
+  }) => {
+    await openSettings(page, "/configuracoes", { size: PHONE });
+    const row = page.getByRole("link", { exact: true, name: "Assinatura" });
+    await row.click();
+    await expect(voltar(page)).toBeVisible();
+    await page.reload();
+    await expect(voltar(page)).toBeVisible();
+    await page.goBack();
+    await expect(rows(page)).toHaveCount(6);
+    await expect(page).toHaveURL(LIST_ADDRESS);
+    await expect(row).toBeFocused();
+  });
+
+  test("o Voltar da tela gasta um passo só: depois dele o voltar do navegador sai de Configurações", async ({
+    page,
+  }) => {
+    await openSettings(page, "/configuracoes", { size: PHONE });
+    await page.goto("/health");
+    await page.goto("/configuracoes");
+    await expect(rows(page)).toHaveCount(6);
+    await page.getByRole("link", { exact: true, name: "Senha" }).click();
+    await voltar(page).click();
+    await expect(rows(page)).toHaveCount(6);
+    await expect(page).toHaveURL(LIST_ADDRESS);
+    await page.goBack();
+    await expect(page).toHaveURL(HEALTH_ADDRESS);
+  });
+
+  test("uma aba aberta direto pelo endereço não tem lista antes: o voltar do navegador sai de Configurações", async ({
+    page,
+  }) => {
+    await openSettings(page, "/configuracoes?aba=senha", { size: PHONE });
+    await page.goto("/health");
+    await page.goto("/configuracoes?aba=senha");
+    await expect(voltar(page)).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(HEALTH_ADDRESS);
+  });
+
+  test("uma aba aberta direto pelo endereço: o Voltar da tela abre a lista no lugar, sem gastar o passo anterior", async ({
+    page,
+  }) => {
+    await openSettings(page, "/configuracoes?aba=senha", { size: PHONE });
+    await page.goto("/health");
+    await page.goto("/configuracoes?aba=senha");
+    await voltar(page).click();
+    await expect(rows(page)).toHaveCount(6);
+    await expect(page).toHaveURL(LIST_ADDRESS);
+    await expect(
+      page.getByRole("link", { exact: true, name: "Senha" })
+    ).toBeFocused();
+    await page.goBack();
+    await expect(page).toHaveURL(HEALTH_ADDRESS);
+  });
+
   for (const [address, name] of [
     ["/configuracoes?aba=formas-de-receber", "Formas de receber"],
     ["/configuracoes?aba=catalogo-publico", "Catálogo público"],
@@ -452,20 +543,35 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     ).toHaveAttribute("href", "/configuracoes?aba=formas-de-receber");
   });
 
-  test("Ctrl e clique numa linha abre outra aba do navegador e deixa a lista onde está", async ({
+  test("Ctrl e clique numa linha não é tomado pela tela: o navegador o trata como link e a lista fica onde está", async ({
     page,
   }) => {
     await openSettings(page, "/configuracoes", { size: PHONE });
-    const [opened] = await Promise.all([
-      page.context().waitForEvent("page"),
-      page
-        .getByRole("link", { exact: true, name: "Senha" })
-        .click({ modifiers: ["Control"] }),
-    ]);
+    const prevented = await page.evaluate(
+      () =>
+        new Promise<boolean>((resolve) => {
+          document.addEventListener(
+            "click",
+            (event) => {
+              resolve(event.defaultPrevented);
+              event.preventDefault();
+            },
+            { once: true }
+          );
+          document.querySelector('[data-settings-row="senha"]')?.dispatchEvent(
+            new MouseEvent("click", {
+              bubbles: true,
+              button: 0,
+              cancelable: true,
+              ctrlKey: true,
+            })
+          );
+        })
+    );
+    expect(prevented).toBe(false);
     await expect(page).toHaveURL(LIST_ADDRESS);
     await expect(rows(page)).not.toHaveCount(0);
     await expect(voltar(page)).toHaveCount(0);
-    await opened.close();
   });
 });
 

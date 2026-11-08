@@ -14,7 +14,7 @@ Configurações (`/configuracoes`) junta, em abas, o que se ajusta uma vez (a pa
 ## How to get to it (user POV)
 
 - Desktop: link `Configurações` do menu "Principal" (grupo "Configurações").
-- Celular: "Mais", o link `Configurações` e, na lista, a linha da tela (`list "Configurações"`, títulos `h2` "Da loja" e "Da conta"); na tela aberta, o link `Voltar para Configurações` leva de volta à lista.
+- Celular: "Mais", o link `Configurações` e, na lista, a linha da tela (`list "Configurações"`, títulos `h2` "Da loja" e "Da conta"); na tela aberta, o link `Voltar para Configurações` e o `page.goBack()` levam de volta à lista (a linha de origem ganha o foco), porque abrir uma linha acrescenta um passo ao histórico; uma aba aberta direto pelo endereço não tem lista antes, e o `goBack` sai de Configurações.
 - Abas (a partir de 760 px): `tablist "Configurações"`. Endereços antigos: `/payment-profiles`, `/public-catalog`, `/devices`, `/subscription` e `/conta/seguranca` abrem a aba correspondente.
 
 ## Driving it with verify.sh (Playwright)
