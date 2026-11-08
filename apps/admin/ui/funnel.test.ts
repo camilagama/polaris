@@ -37,7 +37,7 @@ const missing = (
  * Two weeks of the contract. The shares do not match the counts on purpose (7 of 10 is said to be 33.3%): the page
  * must show the server's share, never one of its own.
  */
-function funnel(weeks = 2): ActivationFunnelResponse {
+function funnel(weeks = 2, fourteenDays = false): ActivationFunnelResponse {
   const week = (index: number) => ({
     inProgress: index === weeks - 1,
     week: `2026-W${String(41 + index).padStart(2, "0")}`,
@@ -52,9 +52,20 @@ function funnel(weeks = 2): ActivationFunnelResponse {
     })),
     cohorts: Array.from({ length: weeks }, (_x, index) => ({
       ...week(index),
+      ...(fourteenDays && {
+        activatedWithin14Days:
+          index === 0 ? shown(8) : missing("activation_window_open"),
+        soldInTrial: index === 0 ? shown(5) : missing("suppressed"),
+        trialStarted: index === 0 ? shown(6) : missing("suppressed"),
+      }),
       activatedIn7Days:
         index === 0 ? shown(6) : missing("activation_window_open"),
       percent: {
+        ...(fourteenDays && {
+          activatedWithin14Days:
+            index === 0 ? shown(80) : missing("activation_window_open"),
+          soldInTrial: index === 0 ? shown(83.3) : missing("suppressed"),
+        }),
         activatedIn7Days:
           index === 0 ? shown(60) : missing("activation_window_open"),
         retentionWeek2: missing("suppressed"),
@@ -358,6 +369,49 @@ describe("what the funnel shows (AC-8)", () => {
     const all = captions.flatMap((caption) => cells(page.root, caption).flat());
     expect(all).not.toContain("0");
     expect(all).not.toContain("");
+  });
+
+  it("shows the 14-day column and the trial table when the answer carries the cells, with the server's shares", async () => {
+    const page = await openFunnel([json(funnel(2, true))]);
+    const [first, second] = cells(
+      page.root,
+      "Lojas criadas em cada semana e o que fizeram"
+    );
+    expect(first?.slice(4, 6)).toEqual(["6 (60%)", "8 (80%)"]);
+    expect(second?.[5]).toBe("não disponível (o prazo ainda corre)");
+    expect(
+      cells(
+        page.root,
+        "Teste do Pro e a 1ª venda, por semana de criação da loja"
+      )
+    ).toEqual([
+      ["semana de 05/10/2026", "6", "5 (83,3%)"],
+      [
+        "semana de 12/10/2026 (em andamento)",
+        "não disponível (grupo pequeno)",
+        "não disponível (grupo pequeno)",
+      ],
+    ]);
+    expect(byTag(byId(page.root, "funil-corpo"), "table")).toHaveLength(5);
+    const text = visibleText(page.root);
+    expect(text).toContain(
+      "A ativação em 7 e 14 dias é hipótese a ajustar com a linha de base."
+    );
+    expect(text).toContain("Enquanto o prazo corre, a semana aparece como");
+    expect(text).not.toContain("21 dias");
+    const all = ["Lojas criadas em cada semana e o que fizeram"]
+      .concat(["Teste do Pro e a 1ª venda, por semana de criação da loja"])
+      .flatMap((caption) => cells(page.root, caption).flat());
+    expect(all).not.toContain("0");
+    expect(all).not.toContain("");
+  });
+
+  it("shows nothing of the 14 days or the trial when the answer carries none of the cells", async () => {
+    const page = await openFunnel([json(funnel())]);
+    const text = visibleText(page.root);
+    expect(text).not.toContain("Ativação em 14 dias");
+    expect(text).not.toContain("Teste do Pro");
+    expect(text).not.toContain("hipótese");
   });
 
   it("says what the numbers leave out, with the count of internal stores of the answer", async () => {
