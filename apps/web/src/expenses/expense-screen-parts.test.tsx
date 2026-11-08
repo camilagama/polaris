@@ -109,6 +109,19 @@ describe("ExpenseList", () => {
     expect(html).toContain("Carregando despesas…");
   });
 
+  it("the loading line is for the screen reader only, three skeleton lines are drawn, and the empty list stays drawn", () => {
+    expect(list(state({ isLoading: true }))).toContain(
+      '<span class="sr-only">Carregando despesas…</span>'
+    );
+    const loading = list(state({ isLoading: true }));
+    expect(loading.match(/data-slot="skeleton"/g)).toHaveLength(3);
+    expect(loading.match(/aria-hidden="true"/g)).toHaveLength(3);
+    expect(loading).toContain('aria-busy="true"');
+    const empty = list(state({}));
+    expect(empty).not.toContain("sr-only");
+    expect(empty).toContain("text-muted-foreground");
+  });
+
   it("a failed read says why and offers to read again, never the empty list", () => {
     const html = list(state({ error: "Sem conexão com o servidor." }));
     expect(html).toContain('role="alert"');
