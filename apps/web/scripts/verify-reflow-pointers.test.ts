@@ -198,6 +198,9 @@ describe("the reflow specs run with a finger too", () => {
   it("the routes spec and the helper spec keep what makes them what they are", () => {
     const rotas = readFileSync(join(E2E, "reflow-rotas.e2e.ts"), "utf8");
     expect(rotas).toContain("test.use({ hasTouch: true, isMobile: true });");
+    expect(rotas).toContain("fontPixels: BEST_EFFORT_FONT_PIXELS");
+    expect(rotas).toContain("Object.entries(COVERED_24)");
+    expect(rotas).toContain("const KNOWN_FINDINGS_24");
     const helper = readFileSync(join(E2E, "reflow-helper.e2e.ts"), "utf8");
     expect(count(helper, REFLOW_TEST)).toBe(3);
     expect(helper).toContain("@media (pointer: coarse)");
