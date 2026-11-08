@@ -6,7 +6,11 @@ import {
   rpcErrorCode,
   rpcErrorReason,
 } from "../../lib/rpc-error";
-import type { RuntimeSnapshot } from "./offline-runtime";
+import {
+  ACCOUNT_UNAVAILABLE_REASONS,
+  PLAN_REFUSED_REASON,
+  type RuntimeSnapshot,
+} from "./offline-runtime";
 
 /**
  * The devices of the signed-in user, as the "Aparelhos" screen shows them. A
@@ -79,15 +83,25 @@ export type Recognition = "slow" | "unavailable" | "waiting";
 
 /**
  * What the screen says while it still does not know which row is this browser.
- * No runtime (null) or an unavailable one will not get better by waiting; one
- * that is still preparing is "waiting", and "slow" once the patience ran out.
+ * No runtime (null) or one unavailable because of the browser will not get
+ * better by waiting; one unavailable for the account, the store or the plan is
+ * not the browser's fault, so it gets the neutral sentence ("slow"). One that is
+ * still preparing is "waiting", and "slow" once the patience ran out.
  */
 export function recognitionState(
   slow: boolean,
-  phase: RuntimeSnapshot["phase"] | null
+  phase: RuntimeSnapshot["phase"] | null,
+  reason: string | null = null
 ): Recognition {
-  if (phase === null || phase === "unavailable") {
+  if (phase === null) {
     return "unavailable";
+  }
+  if (phase === "unavailable") {
+    return reason !== null &&
+      (reason === PLAN_REFUSED_REASON ||
+        ACCOUNT_UNAVAILABLE_REASONS.has(reason))
+      ? "slow"
+      : "unavailable";
   }
   return slow ? "slow" : "waiting";
 }

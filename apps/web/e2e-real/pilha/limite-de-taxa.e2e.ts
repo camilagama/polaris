@@ -43,7 +43,12 @@ test("uma rajada de 150 leituras numa sessão não toma 429", async ({
   const origin = String(testInfo.project.use.baseURL);
   const user = await createJourneyUser(
     origin,
-    journeyName("pilha", "limite-leitura", testInfo.retry)
+    journeyName(
+      "pilha",
+      "limite-leitura",
+      testInfo.retry,
+      testInfo.repeatEachIndex
+    )
   );
   const { organization } = await user.rpc.organization.createInitial({
     name: user.name,
@@ -75,7 +80,12 @@ test("130 escritas numa sessão tomam 429 a partir da 121ª", async ({
   const origin = String(testInfo.project.use.baseURL);
   const user = await createJourneyUser(
     origin,
-    journeyName("pilha", "limite-escrita", testInfo.retry)
+    journeyName(
+      "pilha",
+      "limite-escrita",
+      testInfo.retry,
+      testInfo.repeatEachIndex
+    )
   );
   await startOfAFreshWindow();
 

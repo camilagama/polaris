@@ -19,7 +19,10 @@ import {
   type AttentionSummary,
   discardWarning,
 } from "./attention";
-import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
+import {
+  ACCOUNT_UNAVAILABLE_REASONS,
+  PLAN_REFUSED_REASON,
+} from "./runtime/offline-runtime";
 import { type RedoLineProblem, redoProblemText } from "./sale-redo";
 
 export interface RedoProblem {
@@ -161,20 +164,11 @@ export const OFFLINE_NEUTRAL_REASON =
   "O modo offline não está disponível neste aparelho agora.";
 const HOME_HREF = "/";
 
-/** Reasons of the `unavailable` phase that come from the account or the store, not from the browser. */
-const ACCOUNT_REASONS: ReadonlySet<string> = new Set([
-  "legal_acceptance_required",
-  "organization_closed",
-  "purge_failed",
-  "session_changed",
-  "session_refused",
-]);
-
 function unavailableSentence(reason: string | null): string {
   if (reason === PLAN_REFUSED_REASON) {
     return OFFLINE_PLAN_REASON;
   }
-  return reason !== null && ACCOUNT_REASONS.has(reason)
+  return reason !== null && ACCOUNT_UNAVAILABLE_REASONS.has(reason)
     ? OFFLINE_NEUTRAL_REASON
     : OFFLINE_BROWSER_REASON;
 }
