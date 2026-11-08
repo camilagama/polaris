@@ -395,6 +395,14 @@ export const ACCOUNT_UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([
   "session_refused",
 ]);
 
+/** Whether an `unavailable` reason blames the browser: anything that is not the plan or the account/store. */
+export function isBrowserFailure(reason: string | null): boolean {
+  return (
+    reason === null ||
+    !(reason === PLAN_REFUSED_REASON || ACCOUNT_UNAVAILABLE_REASONS.has(reason))
+  );
+}
+
 function startFailureReason(
   error: unknown,
   legal: boolean,
