@@ -17,6 +17,7 @@ import {
   listedTabs,
   menuItemsOf,
   NAV_ITEMS,
+  namesTab,
   navGroups,
   openedTab,
   requestedTab,
@@ -247,6 +248,65 @@ describe("tabs", () => {
     expect(tabHref("settings", "formas-de-receber")).toBe("/configuracoes");
     expect(tabHref("products", "categorias")).toBe("/products?aba=categorias");
   });
+
+  it("writes the first tab too when asked: on a phone, Configurações with no `aba` is the list", () => {
+    expect(
+      addressWithTab("/configuracoes", "settings", "formas-de-receber", true)
+    ).toBe("/configuracoes?aba=formas-de-receber");
+    expect(addressWithTab("/dashboard", "dashboard", "resultado", true)).toBe(
+      "/dashboard?aba=resultado"
+    );
+  });
+
+  it("says whether the address names a tab of the screen", () => {
+    expect(namesTab("settings", "")).toBe(false);
+    expect(namesTab("settings", "?aba=")).toBe(false);
+    expect(namesTab("settings", "?aba=xyz")).toBe(false);
+    expect(namesTab("settings", "?aba=formas-de-receber")).toBe(true);
+    expect(namesTab("settings", "?x=1&aba=senha")).toBe(true);
+    expect(namesTab("settings", "?aba=resultado")).toBe(false);
+  });
+});
+
+describe("Configurações on a phone", () => {
+  it("is the list of its tabs, needing no connection, when the address names none", () => {
+    for (const search of ["", "?aba=xyz", "?retorno=concluida"]) {
+      expect(resolveRoute("/configuracoes", search, true)).toEqual({
+        connectionForm: true,
+        id: "settings",
+        kind: "page",
+        navId: "settings",
+        onlineOnly: false,
+        screen: "settings",
+        title: "Configurações",
+      });
+    }
+  });
+
+  it("opens the tab the address names, as it does from 760 px", () => {
+    expect(
+      resolveRoute("/configuracoes", "?aba=formas-de-receber", true)
+    ).toMatchObject({ id: "payment-profiles", onlineOnly: true });
+    expect(
+      resolveRoute("/configuracoes", "?aba=assinatura", true)
+    ).toMatchObject({ id: "subscription", title: "Assinatura" });
+  });
+
+  it("opens the first tab from 760 px with no tab named, as before", () => {
+    expect(resolveRoute("/configuracoes", "", false)).toMatchObject({
+      id: "payment-profiles",
+      onlineOnly: true,
+    });
+  });
+
+  it("changes nothing in the other screens with tabs", () => {
+    expect(resolveRoute("/dashboard", "", true)).toMatchObject({
+      id: "dashboard",
+    });
+    expect(resolveRoute("/products", "", true)).toMatchObject({
+      id: "products",
+    });
+  });
 });
 
 describe("listedTabs", () => {
@@ -303,6 +363,21 @@ describe("the addresses of the screens that became tabs (map § 6)", () => {
       "/public-catalog": "/configuracoes?aba=catalogo-publico",
       "/subscription": "/configuracoes?aba=assinatura",
     });
+  });
+
+  it("name the first tab of Configurações on a phone, where the address without a tab is its list", () => {
+    expect(legacyAddress("/payment-profiles", "", "", true)).toBe(
+      "/configuracoes?aba=formas-de-receber"
+    );
+    expect(legacyAddress("/payment-profiles", "", "", false)).toBe(
+      "/configuracoes"
+    );
+    expect(legacyAddress("/categories", "", "", true)).toBe(
+      "/products?aba=categorias"
+    );
+    expect(legacyAddress("/subscription", "", "", true)).toBe(
+      "/configuracoes?aba=assinatura"
+    );
   });
 
   it("keep the rest of the query and the hash (the return of a checkout), with or without a trailing slash", () => {
@@ -576,10 +651,25 @@ describe("the screen key of an error report", () => {
     }
   });
 
+  it("names the list of Configurações on a phone apart from its first tab, and every tab by its own name", () => {
+    expect(screenKeyOf("/configuracoes", "", true)).toBe("settings:lista");
+    expect(screenKeyOf("/configuracoes", "", false)).toBe(
+      "settings:formas-de-receber"
+    );
+    expect(screenKeyOf("/configuracoes", "?aba=formas-de-receber", true)).toBe(
+      "settings:formas-de-receber"
+    );
+    expect(screenKeyOf("/configuracoes", "?aba=senha", true)).toBe(
+      "settings:senha"
+    );
+    expect(screenKeyOf("/sales", "", true)).toBe("sale");
+  });
+
   it("reaches every key of the list from some address of the shell", () => {
     const reached = new Set<string | null>([
       ...shellPaths.map((path) => screenKeyOf(path)),
       ...tabAddresses.map(({ href }) => keyOfHref(href)),
+      screenKeyOf("/configuracoes", "", true),
     ]);
     expect([...reached].sort()).toEqual([...shellRouteIds].sort());
   });

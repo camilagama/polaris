@@ -44,6 +44,7 @@ export type RouteId =
   | "sale"
   | "sale-detail"
   | "sale-history"
+  | "settings"
   | "subscription";
 
 /** The group of the sidebar an item is in: Início and Configurações stand alone, with no label. */
@@ -262,14 +263,24 @@ export function listedTabs(
   });
 }
 
-/** The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all. */
+/** Whether the address names one of the screen's tabs (`?aba=senha`); no `aba`, or one that is no tab, names none. */
+export function namesTab(screen: TabScreenId, search: string): boolean {
+  const named = new URLSearchParams(search).get(TAB_PARAMETER);
+  return SCREEN_TABS[screen].some((tab) => tab.value === named);
+}
+
+/**
+ * The path, query and hash of `href` with the tab written in; the first tab of the screen is no `aba` at all, unless
+ * `explicit`: on a phone, Configurações with no `aba` is the list of its tabs, so its first tab has to be named.
+ */
 export function addressWithTab(
   href: string,
   screen: TabScreenId,
-  value: string
+  value: string,
+  explicit = false
 ): string {
   const url = new URL(href, "https://polaris.invalid");
-  if (SCREEN_TABS[screen][0]?.value === value) {
+  if (!explicit && SCREEN_TABS[screen][0]?.value === value) {
     url.searchParams.delete(TAB_PARAMETER);
   } else {
     url.searchParams.set(TAB_PARAMETER, value);
@@ -355,7 +366,8 @@ const LEGACY_ADDRESSES: Readonly<
 export function legacyAddress(
   pathname: string,
   search: string,
-  hash: string
+  hash: string,
+  phone = false
 ): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const target = Object.hasOwn(LEGACY_ADDRESSES, normalized)
@@ -367,7 +379,8 @@ export function legacyAddress(
   return addressWithTab(
     `${target.path}${search}${hash}`,
     target.screen,
-    target.tab
+    target.tab,
+    phone && target.screen === "settings"
   );
 }
 
@@ -428,8 +441,16 @@ function isTabScreen(screen: ScreenId): screen is TabScreenId {
   return Object.hasOwn(SCREEN_TABS, screen);
 }
 
-/** Maps a location (its pathname, and its query for the tab) to a page, or to the not-found page. */
-export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
+/**
+ * Maps a location (its pathname, and its query for the tab) to a page, or to the not-found page. On a phone,
+ * Configurações with no tab named is the list of its tabs: a screen of its own that needs no connection, not the
+ * first tab.
+ */
+export function resolveRoute(
+  pathname: string,
+  search = "",
+  phone = false
+): ResolvedRoute {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const route = Object.hasOwn(ROUTES, normalized)
     ? ROUTES[normalized]
@@ -439,7 +460,9 @@ export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
   }
   let id = route.screen as RouteId;
   let { title } = route;
-  if (isTabScreen(route.screen)) {
+  if (phone && route.screen === "settings" && !namesTab("settings", search)) {
+    id = "settings";
+  } else if (isTabScreen(route.screen)) {
     const tab = requestedTab(route.screen, search);
     id = tab.route;
     // the first tab is the screen itself; another one names the page by its own name
@@ -458,11 +481,17 @@ export function resolveRoute(pathname: string, search = ""): ResolvedRoute {
   };
 }
 
+const SETTINGS_LIST_KEY = "settings:lista";
+
 /**
  * The screen on display as the report of an error names it (`routeId` of `@polaris/contracts/client-error`): the
  * screen of `ROUTES`, and for a screen with tabs `screen:tab`, by the tab the address asks. Null outside the shell.
  */
-export function screenKeyOf(pathname: string, search = ""): string | null {
+export function screenKeyOf(
+  pathname: string,
+  search = "",
+  phone = false
+): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const route = Object.hasOwn(ROUTES, normalized)
     ? ROUTES[normalized]
@@ -470,20 +499,24 @@ export function screenKeyOf(pathname: string, search = ""): string | null {
   if (!route) {
     return null;
   }
+  if (phone && route.screen === "settings" && !namesTab("settings", search)) {
+    return SETTINGS_LIST_KEY;
+  }
   return isTabScreen(route.screen)
     ? `${route.screen}:${requestedTab(route.screen, search).value}`
     : route.screen;
 }
 
-/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, and each tab of a screen with tabs. */
+/** Every key `screenKeyOf` gives, sorted: each screen of `ROUTES`, each tab of a screen with tabs, and the list of Configurações on a phone. */
 export function screenKeys(): string[] {
-  return Object.values(ROUTES)
-    .flatMap(({ screen }) =>
+  return [
+    ...Object.values(ROUTES).flatMap(({ screen }) =>
       isTabScreen(screen)
         ? SCREEN_TABS[screen].map((tab) => `${screen}:${tab.value}`)
         : [screen]
-    )
-    .sort();
+    ),
+    SETTINGS_LIST_KEY,
+  ].sort();
 }
 
 /**

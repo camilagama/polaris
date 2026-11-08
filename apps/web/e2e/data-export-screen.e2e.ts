@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { backToList, onPhone } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -178,11 +179,15 @@ test("o dono pede uma cópia (um pedido para dois cliques), atualiza e baixa pel
     ],
   });
   await expect(title(page)).toBeVisible();
-  const tabs = page.getByRole("tablist", { name: "Configurações" });
-  await expect(tabs.getByRole("tab").last()).toHaveText("Seus dados");
-  await expect(
-    tabs.getByRole("tab", { exact: true, name: "Seus dados" })
-  ).toHaveAttribute("aria-selected", "true");
+  if (onPhone(page)) {
+    await expect(backToList(page)).toBeVisible();
+  } else {
+    const tabs = page.getByRole("tablist", { name: "Configurações" });
+    await expect(tabs.getByRole("tab").last()).toHaveText("Seus dados");
+    await expect(
+      tabs.getByRole("tab", { exact: true, name: "Seus dados" })
+    ).toHaveAttribute("aria-selected", "true");
+  }
   await expect(list(page)).toContainText("Nenhuma cópia pedida ainda.");
   await expect(format(page, "Dados em JSON")).toBeChecked();
   await expect(format(page, "Dados em planilha (CSV)")).toBeChecked();
@@ -511,13 +516,14 @@ test("quem não é dono não vê a aba; o endereço direto diz que só o dono pe
     path: "/configuracoes",
     role: "cashier",
   });
-  const tabs = page.getByRole("tablist", { name: "Configurações" });
-  await expect(
-    tabs.getByRole("tab", { exact: true, name: "Catálogo público" })
-  ).toBeVisible();
-  await expect(
-    tabs.getByRole("tab", { exact: true, name: "Seus dados" })
-  ).toHaveCount(0);
+  const entry = (name: string, value: string) =>
+    onPhone(page)
+      ? page.locator(`[data-settings-row="${value}"]`)
+      : page
+          .getByRole("tablist", { name: "Configurações" })
+          .getByRole("tab", { exact: true, name });
+  await expect(entry("Catálogo público", "catalogo-publico")).toBeVisible();
+  await expect(entry("Seus dados", "seus-dados")).toHaveCount(0);
 
   await page.goto(PATH);
   await expect(

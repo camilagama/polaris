@@ -2,6 +2,7 @@
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { mediaListBody, solidPng } from "./media-fixtures";
+import { backToList, onPhone } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -137,9 +138,16 @@ async function goToProAndBack(page: Page, link: Locator, back: RegExp) {
   await expect(page).toHaveURL(SUBSCRIPTION_ADDRESS);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // the Assinatura is drawn, and the focus starts again at the content, as on a load of the page
-  await expect(
-    page.getByRole("tab", { name: "Assinatura", selected: true })
-  ).toBeVisible();
+  if (onPhone(page)) {
+    await expect(backToList(page)).toBeVisible();
+    await expect(
+      page.getByRole("heading", { exact: true, level: 2, name: "Assinatura" })
+    ).toBeVisible();
+  } else {
+    await expect(
+      page.getByRole("tab", { name: "Assinatura", selected: true })
+    ).toBeVisible();
+  }
   await expect(page.locator("#conteudo")).toBeFocused();
   expect(await stillTheSamePage(page)).toBe(true);
   await page.goBack();

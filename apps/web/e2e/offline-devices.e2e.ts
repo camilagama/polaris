@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { buildOfflineLeaseClaims } from "@polaris/domain/offline/offline-lease";
 import { signOfflineLease } from "../src/lib/offline-lease-token";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
+import { openSettingsTab } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 const ORGANIZATION_ID = "0199c2d0-0000-7000-8000-00000000a001";
@@ -1374,7 +1375,7 @@ test("Configurações oferece a aba Aparelhos quando o runtime offline está lig
     await more.click();
   }
   await page.getByRole("link", { exact: true, name: "Configurações" }).click();
-  await page.getByRole("tab", { exact: true, name: "Aparelhos" }).click();
+  await openSettingsTab(page, "Aparelhos");
   await expect(page.getByRole("list", { name: "Aparelhos" })).toBeVisible();
 });
 

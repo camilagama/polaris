@@ -459,6 +459,29 @@ describe("the screen of the event", () => {
     expect(clientErrorRouteId(pathname, search)).toBe(expected);
   });
 
+  it("names the list of Configurações on a phone, and the first tab where there is no phone", () => {
+    expect(clientErrorRouteId("/configuracoes", "", true)).toBe(
+      "settings:lista"
+    );
+    expect(clientErrorRouteId("/configuracoes", "", false)).toBe(
+      "settings:formas-de-receber"
+    );
+    const event = clientErrorEvent(
+      new Error("x"),
+      { kind: "error" },
+      {
+        address: () => ({
+          pathname: "/configuracoes",
+          phone: true,
+          search: "",
+        }),
+        origin: () => ORIGIN,
+        release: undefined,
+      }
+    );
+    expect(event.routeId).toBe("settings:lista");
+  });
+
   it("never lets an id or a token of the address into the event", () => {
     const event = clientErrorEvent(
       new Error("x"),
@@ -535,7 +558,10 @@ describe("the sender of the browser", () => {
     vi.resetModules();
   });
 
-  async function loadWithFlag(flag: string | undefined) {
+  async function loadWithFlag(
+    flag: string | undefined,
+    where = { phone: false, pathname: "/sales" }
+  ) {
     if (flag === undefined) {
       vi.stubEnv("VITE_CLIENT_ERRORS_ENABLED", "");
     } else {
@@ -546,7 +572,8 @@ describe("the sender of the browser", () => {
     const fetchStub = vi.fn(() => Promise.resolve(new Response(null)));
     vi.stubGlobal("fetch", fetchStub);
     vi.stubGlobal("window", {
-      location: { origin: ORIGIN, pathname: "/sales", search: "" },
+      location: { origin: ORIGIN, pathname: where.pathname, search: "" },
+      matchMedia: () => ({ matches: where.phone }),
     });
     vi.stubGlobal("navigator", { onLine: true });
     const module = await import("./client-errors");
@@ -578,6 +605,28 @@ describe("the sender of the browser", () => {
       release: RELEASE,
       routeId: "sale",
       v: 1,
+    });
+  });
+
+  const postedBody = (stub: { mock: { calls: unknown[][] } }) =>
+    (stub.mock.calls[0]?.[1] as RequestInit | undefined)?.body;
+
+  it("names the list of Configurações when the window is a phone's, and the first tab when it is not", async () => {
+    const phone = await loadWithFlag("true", {
+      pathname: "/configuracoes",
+      phone: true,
+    });
+    phone.module.reportClientError(new TypeError("x"), { kind: "error" });
+    expect(JSON.parse(String(postedBody(phone.fetchStub)))).toMatchObject({
+      routeId: "settings:lista",
+    });
+    const wide = await loadWithFlag("true", {
+      pathname: "/configuracoes",
+      phone: false,
+    });
+    wide.module.reportClientError(new TypeError("x"), { kind: "error" });
+    expect(JSON.parse(String(postedBody(wide.fetchStub)))).toMatchObject({
+      routeId: "settings:formas-de-receber",
     });
   });
 

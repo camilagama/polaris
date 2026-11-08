@@ -17,6 +17,7 @@ import type { ErrorInfo } from "react";
 import { isChunkLoadError } from "../app-shell/chunk-load-error";
 import { entryPageFor, screenKeyOf } from "../app-shell/navigation-model";
 import { reportRenderError, sentryActive } from "../observability/sentry";
+import { PHONE_QUERY } from "./breakpoints";
 import { isNoAnswer } from "./connection";
 import { isLegalAcceptancePath } from "./legal-acceptance";
 
@@ -57,7 +58,7 @@ export interface ClientErrorReport {
 }
 
 export interface ClientErrorEnvironment {
-  address: () => { pathname: string; search: string };
+  address: () => { pathname: string; phone?: boolean; search: string };
   enabled: boolean;
   online: () => boolean;
   origin: () => string;
@@ -72,7 +73,8 @@ export interface ClientErrorEnvironment {
 /** The screen as the event names it: a pattern of a closed list, never the address. */
 export function clientErrorRouteId(
   pathname: string,
-  search: string
+  search: string,
+  phone = false
 ): ClientErrorRouteId {
   if (entryPageFor(pathname) !== null) {
     return "entrar";
@@ -80,7 +82,7 @@ export function clientErrorRouteId(
   if (isLegalAcceptancePath(pathname)) {
     return "aceite";
   }
-  const key = screenKeyOf(pathname, search);
+  const key = screenKeyOf(pathname, search, phone);
   return key !== null && KNOWN_ROUTES.has(key)
     ? (key as ClientErrorRouteId)
     : "outra";
@@ -146,7 +148,7 @@ export function clientErrorEvent(
   report: ClientErrorReport,
   environment: Pick<ClientErrorEnvironment, "address" | "origin" | "release">
 ): ClientErrorEvent {
-  const { pathname, search } = environment.address();
+  const { pathname, phone, search } = environment.address();
   const frames = framesOf(error, environment.origin());
   const release = environment.release?.trim().toLowerCase();
   return {
@@ -158,7 +160,7 @@ export function clientErrorEvent(
       ? { release }
       : {}),
     ...(report.boundary === undefined ? {} : { boundary: report.boundary }),
-    routeId: clientErrorRouteId(pathname, search),
+    routeId: clientErrorRouteId(pathname, search, phone),
     ...(frames.length > 0 ? { frames } : {}),
   };
 }
@@ -234,6 +236,7 @@ function sendReport(body: string): void {
 const browserReporter = createClientErrorReporter({
   address: () => ({
     pathname: window.location.pathname,
+    phone: window.matchMedia(PHONE_QUERY).matches,
     search: window.location.search,
   }),
   enabled: import.meta.env.VITE_CLIENT_ERRORS_ENABLED === "true",

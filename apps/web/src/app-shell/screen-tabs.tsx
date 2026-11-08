@@ -30,18 +30,23 @@ const TAB_LINK_PARAMETERS = ["meta", "novo", "produto", "retorno", "ver"];
  * first one, and the address says so (`replaceAddress`: no step in the history).
  * Changing tabs rewrites the address in place (no step in the history: "voltar" leaves the screen) and drops the links
  * that opened something inside the tab that was open (`?novo=1`, `?retorno=`...), so coming back does not open it again.
+ * `explicit` writes the first tab as `?aba=` too (see `addressWithTab`); `idle` leaves the address alone (the list of
+ * tabs of a phone is open, which names none).
  */
 export function useScreenTab(
   screen: TabScreenId,
-  available: readonly string[]
+  available: readonly string[],
+  { explicit = false, idle = false } = {}
 ): [string, (value: unknown) => void] {
   const { search } = useAddress();
   const { rewrite, value } = openedTab(screen, search, available);
   useEffect(() => {
-    if (rewrite) {
-      replaceAddress(addressWithTab(window.location.href, screen, value));
+    if (rewrite && !idle) {
+      replaceAddress(
+        addressWithTab(window.location.href, screen, value, explicit)
+      );
     }
-  }, [rewrite, screen, value]);
+  }, [explicit, idle, rewrite, screen, value]);
   const select = useCallback(
     (next: unknown) => {
       const url = new URL(window.location.href);
@@ -49,10 +54,15 @@ export function useScreenTab(
         url.searchParams.delete(name);
       }
       replaceAddress(
-        addressWithTab(`${url.pathname}${url.search}`, screen, String(next))
+        addressWithTab(
+          `${url.pathname}${url.search}`,
+          screen,
+          String(next),
+          explicit
+        )
       );
     },
-    [screen]
+    [explicit, screen]
   );
   return [value, select];
 }
@@ -68,6 +78,17 @@ export interface TabPanel {
 export interface TabGroup {
   label: string;
   values: readonly string[];
+}
+
+/**
+ * A phone's way into the tabs of a screen: no strip, but a `menu` of rows that opens each tab, and, with a tab open,
+ * `back` above its screen to return to the menu. `showMenu` says the menu is what is on screen; the screens kept for
+ * work typed and not sent stay drawn, hidden, while it is.
+ */
+export interface TabPhone {
+  back: ReactNode;
+  menu: ReactNode;
+  showMenu: boolean;
 }
 
 /** What the edges of the list hide: tabs to the left (already passed) and to the right (not reached yet). */
@@ -352,6 +373,7 @@ export function ScreenTabs({
   groups,
   label,
   panels,
+  phone,
   reserved = [],
   screen,
   title,
@@ -361,15 +383,21 @@ export function ScreenTabs({
   /** The name of the list of tabs, for a screen reader. */
   label: string;
   panels: readonly TabPanel[];
+  /** Replaces the strip with a menu of rows and a way back (Configurações, below 760 px). */
+  phone?: TabPhone | undefined;
   reserved?: readonly string[];
   screen: TabScreenId;
   title: string;
 }) {
   const available = panels.map((panel) => panel.value);
-  const [value, select] = useScreenTab(screen, available);
+  const [value, select] = useScreenTab(screen, available, {
+    explicit: phone !== undefined,
+    idle: phone?.showMenu === true,
+  });
   const [kept, hold] = useKeptPanels();
   const tabs = listedTabs(screen, available, reserved);
   const namesId = useId();
+  const phoneHead = phone?.showMenu ? phone.menu : phone?.back;
   const trigger = (groupNameId?: string) => (tab: (typeof tabs)[number]) => (
     <ScreenTabTrigger
       groupNameId={groupNameId}
@@ -383,31 +411,39 @@ export function ScreenTabs({
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
       <h1 className="text-title">{title}</h1>
-      <Tabs className="min-w-0 gap-5" onValueChange={select} value={value}>
-        <ScreenTabList
-          grouped={groups !== undefined}
-          label={label}
-          signature={`${groups === undefined ? "strip" : "rows"}:${tabs.map((tab) => tab.value).join()}`}
-          value={value}
-        >
-          {groups === undefined
-            ? tabs.map(trigger())
-            : groupedTabsOf(tabs, groups).map((group, index) => {
-                const nameId = `${namesId}-${index}`;
-                return (
-                  <ScreenTabGroup
-                    key={group.label}
-                    label={group.label}
-                    nameId={nameId}
-                  >
-                    {group.tabs.map(trigger(nameId))}
-                  </ScreenTabGroup>
-                );
-              })}
-        </ScreenTabList>
+      <Tabs
+        className="min-w-0 gap-5"
+        onValueChange={select}
+        value={phone?.showMenu ? "" : value}
+      >
+        {phone ? (
+          phoneHead
+        ) : (
+          <ScreenTabList
+            grouped={groups !== undefined}
+            label={label}
+            signature={`${groups === undefined ? "strip" : "rows"}:${tabs.map((tab) => tab.value).join()}`}
+            value={value}
+          >
+            {groups === undefined
+              ? tabs.map(trigger())
+              : groupedTabsOf(tabs, groups).map((group, index) => {
+                  const nameId = `${namesId}-${index}`;
+                  return (
+                    <ScreenTabGroup
+                      key={group.label}
+                      label={group.label}
+                      nameId={nameId}
+                    >
+                      {group.tabs.map(trigger(nameId))}
+                    </ScreenTabGroup>
+                  );
+                })}
+          </ScreenTabList>
+        )}
         {panels.map((panel) => (
           <ScreenTabPanel
-            active={panel.value === value}
+            active={!phone?.showMenu && panel.value === value}
             keepMounted={kept.has(panel.value)}
             key={panel.value}
             onHold={hold}

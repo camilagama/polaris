@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { backToList, openSettingsTab } from "./settings-nav";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -242,11 +243,9 @@ test("o CPF digitado para o Pix continua lá depois de olhar outra aba de Config
     .click();
   await page.getByLabel("CPF ou CNPJ").fill("529.982.247-25");
 
-  await page
-    .getByRole("tab", { exact: true, name: "Formas de receber" })
-    .click();
+  await openSettingsTab(page, "Formas de receber");
   await expect(page.getByLabel("CPF ou CNPJ")).toBeHidden();
-  await page.getByRole("tab", { exact: true, name: "Assinatura" }).click();
+  await openSettingsTab(page, "Assinatura");
 
   await expect(page.getByLabel("CPF ou CNPJ")).toHaveValue("529.982.247-25");
 });
@@ -1057,8 +1056,11 @@ test("menu: 'Assinatura' é aba de Configurações, no desktop e no celular; som
   await page.getByRole("button", { name: "Mais" }).click();
   await page.getByRole("link", { name: "Configurações" }).click();
   await page.waitForURL("**/configuracoes");
-  await tabs.getByRole("tab", { exact: true, name: "Assinatura" }).click();
+  // below 760 px Configurações opens as the list of its screens, and the screen has "Voltar" to it
+  await expect(tabs).toHaveCount(0);
+  await page.getByRole("link", { exact: true, name: "Assinatura" }).click();
   await expect(title(page)).toBeVisible();
+  await expect(backToList(page)).toBeVisible();
 
   for (const options of [
     { billingSelfService: false },

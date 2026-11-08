@@ -82,6 +82,7 @@ export const CLIENT_ERROR_ROUTE_IDS = [
   "settings:assinatura",
   "settings:catalogo-publico",
   "settings:formas-de-receber",
+  "settings:lista",
   "settings:senha",
   "settings:seus-dados",
   "aceite",
