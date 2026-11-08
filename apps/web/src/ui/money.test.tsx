@@ -14,7 +14,6 @@ const { HeroValue } = await import("./kpi-card");
 const { Money } = await import("./money");
 
 const SIZES = [undefined, "sm", "md", "lg", "xl"] as const;
-const TAGS = /<[^>]*>/g;
 const DIGIT = /\d/;
 const CURRENCY_CLASS = /data-money-currency=""/;
 const CURRENCY_TAG = /<span class="([^"]*)" data-money-currency="">/;
@@ -24,7 +23,10 @@ const NAME_ATTRIBUTES = /\b(?:aria-label|title|alt)=/;
 
 /** What a reader gets from the markup: its text, with no tags. */
 const textOf = (markup: string) =>
-  markup.replace(TAGS, "").replaceAll("&#x27;", "'");
+  markup
+    .split("<")
+    .map((piece) => piece.slice(piece.indexOf(">") + 1))
+    .join("");
 
 const AMOUNTS = [
   "0",
