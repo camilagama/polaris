@@ -1,6 +1,7 @@
 import { Suspense, useEffect } from "react";
 import type { LegalDocumentId } from "@polaris/domain/legal/legal-documents";
 import { resolveLegalRoute } from "../legal/legal-routes";
+import { PHONE_QUERY } from "../lib/breakpoints";
 import { isClosedStorePath } from "../lib/closed-store-path";
 import { OrganizationProvider } from "../lib/current-organization";
 import { useIsMobile } from "../lib/use-mobile";
@@ -280,7 +281,8 @@ export function App() {
   const tabAddress = legacyAddress(
     window.location.pathname,
     window.location.search,
-    window.location.hash
+    window.location.hash,
+    window.matchMedia(PHONE_QUERY).matches
   );
   if (tabAddress) {
     window.history.replaceState(window.history.state, "", tabAddress);

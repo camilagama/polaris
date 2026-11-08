@@ -366,7 +366,8 @@ const LEGACY_ADDRESSES: Readonly<
 export function legacyAddress(
   pathname: string,
   search: string,
-  hash: string
+  hash: string,
+  phone = false
 ): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
   const target = Object.hasOwn(LEGACY_ADDRESSES, normalized)
@@ -379,7 +380,7 @@ export function legacyAddress(
     `${target.path}${search}${hash}`,
     target.screen,
     target.tab,
-    target.screen === "settings"
+    phone && target.screen === "settings"
   );
 }
 

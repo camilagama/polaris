@@ -28,6 +28,7 @@ const rpc = (json: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
+const LIST_ADDRESS = /\/configuracoes$/;
 const PHONE_WIDTH = 760;
 const PHONE = { height: 740, width: 360 };
 
@@ -449,6 +450,22 @@ test.describe("a lista de Configurações no celular (abaixo de 760 px)", () => 
     await expect(
       page.getByRole("link", { exact: true, name: "Formas de receber" })
     ).toHaveAttribute("href", "/configuracoes?aba=formas-de-receber");
+  });
+
+  test("Ctrl e clique numa linha abre outra aba do navegador e deixa a lista onde está", async ({
+    page,
+  }) => {
+    await openSettings(page, "/configuracoes", { size: PHONE });
+    const [opened] = await Promise.all([
+      page.context().waitForEvent("page"),
+      page
+        .getByRole("link", { exact: true, name: "Senha" })
+        .click({ modifiers: ["Control"] }),
+    ]);
+    await expect(page).toHaveURL(LIST_ADDRESS);
+    await expect(rows(page)).not.toHaveCount(0);
+    await expect(voltar(page)).toHaveCount(0);
+    await opened.close();
   });
 });
 

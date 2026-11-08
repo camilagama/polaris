@@ -359,10 +359,25 @@ describe("the addresses of the screens that became tabs (map § 6)", () => {
       "/conta/seguranca": "/configuracoes?aba=senha",
       "/devices": "/configuracoes?aba=aparelhos",
       "/expenses": "/dashboard?aba=despesas",
-      "/payment-profiles": "/configuracoes?aba=formas-de-receber",
+      "/payment-profiles": "/configuracoes",
       "/public-catalog": "/configuracoes?aba=catalogo-publico",
       "/subscription": "/configuracoes?aba=assinatura",
     });
+  });
+
+  it("name the first tab of Configurações on a phone, where the address without a tab is its list", () => {
+    expect(legacyAddress("/payment-profiles", "", "", true)).toBe(
+      "/configuracoes?aba=formas-de-receber"
+    );
+    expect(legacyAddress("/payment-profiles", "", "", false)).toBe(
+      "/configuracoes"
+    );
+    expect(legacyAddress("/categories", "", "", true)).toBe(
+      "/products?aba=categorias"
+    );
+    expect(legacyAddress("/subscription", "", "", true)).toBe(
+      "/configuracoes?aba=assinatura"
+    );
   });
 
   it("keep the rest of the query and the hash (the return of a checkout), with or without a trailing slash", () => {

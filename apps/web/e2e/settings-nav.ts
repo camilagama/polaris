@@ -6,6 +6,10 @@ const PHONE_WIDTH = 760;
 export const onPhone = (page: Page) =>
   (page.viewportSize()?.width ?? PHONE_WIDTH) < PHONE_WIDTH;
 
+/** The address of the first tab: on a phone the one without a tab is the list, so the tab is named. */
+export const firstSettingsTabAddress = (page: Page) =>
+  onPhone(page) ? "/configuracoes?aba=formas-de-receber" : "/configuracoes";
+
 export const backToList = (page: Page) =>
   page.getByRole("link", { name: "Voltar para Configurações" });
 
