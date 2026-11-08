@@ -26,6 +26,7 @@ import {
   AttentionFrame,
   AttentionPanel,
   AttentionStateCard,
+  AttentionUnavailable,
   type RedoProblem,
   signInAgainButtonId,
 } from "../attention-panel";
@@ -326,17 +327,11 @@ export function AttentionPage() {
       </AttentionFrame>
     );
   }
+  if (snapshot.phase === "unavailable") {
+    return <AttentionUnavailable reason={snapshot.reason} />;
+  }
   if (snapshot.phase !== "ready") {
-    return (
-      <PageLoading
-        label={
-          snapshot.phase === "unavailable"
-            ? "O modo offline não está disponível neste aparelho agora."
-            : "Preparando o modo offline…"
-        }
-        skeleton={snapshot.phase !== "unavailable"}
-      />
-    );
+    return <PageLoading label="Preparando o modo offline…" />;
   }
   return (
     <AttentionPanel
