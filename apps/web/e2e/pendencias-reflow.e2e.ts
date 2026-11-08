@@ -279,13 +279,13 @@ for (const { maxRows, width } of ROWS_AT_16_PIXELS) {
 const UNAVAILABLE_STATES = [
   {
     motivo: "plano",
-    reason: "O modo offline faz parte do plano Pro.",
     other: "Este navegador não conseguiu preparar o acesso offline.",
+    reason: "O modo offline faz parte do plano Pro.",
   },
   {
     motivo: "navegador",
-    reason: "Este navegador não conseguiu preparar o acesso offline.",
     other: "O modo offline faz parte do plano Pro.",
+    reason: "Este navegador não conseguiu preparar o acesso offline.",
   },
 ];
 
@@ -353,7 +353,6 @@ for (const { motivo, other, reason } of UNAVAILABLE_STATES) {
     async ({ page }) => {
       await openUnavailable(page, motivo, 360, 16);
       await expectUnavailableWhole(page, 360, 16);
-    },
-    { coarse: true }
+    }
   );
 }
