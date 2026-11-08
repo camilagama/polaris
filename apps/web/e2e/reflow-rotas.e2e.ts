@@ -35,7 +35,8 @@ import { WORKER_MARK } from "./worker-mark";
  * The same cases run a second time with the font at 24 px ("Muito grande" in Chrome), as a report and not as a promise:
  * 20 px is the floor the interface guarantees, 24 px is best effort. What is cut at 24 px and fits at 20 goes in
  * `KNOWN_FINDINGS_24`, apart from `KNOWN_FINDINGS`, with the same rule: a new cut fails, and a known one that no longer
- * shows up has to leave the list. `ALREADY_AT_24` names the cases whose screen another spec already reads at 24 px.
+ * shows up has to leave the list. `ALREADY_AT_24` names the cases whose chart, chain and day table another spec already reads at 24 px (that spec does
+ * not sweep the page or the KPI cards).
  */
 skipOutsideChromium();
 test.use({ hasTouch: true, isMobile: true });
@@ -77,7 +78,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      'a página das Despesas rola 4 px para o lado: o botão só de ícone "Próximo mês" do seletor de mês (54 px de largura, sem quebra de linha) termina em 324 px; o seletor tem de encolher ou quebrar a linha',
+      'a página das Despesas rola 4 px para o lado; na medida, o elemento que mais passa é o botão só de ícone "Próximo mês" do seletor de mês (54 px, sem quebra de linha), que termina em 324 px; o seletor tem de encolher ou quebrar a linha',
     screens: [
       "despesas lista",
       "despesas grade de meses aberta",
@@ -98,7 +99,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'na aba Recorrentes, o cartão tem 272 px e o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra medem 313 px: passam 41 px da borda direita do cartão',
+      'na aba Recorrentes, o cartão tem 272 px e o conteúdo (o texto "Cada ocorrência vira uma despesa comum…", o "Mostrar pausadas", o botão "Nova despesa recorrente" e as linhas de regra) mede 331 px: passa 59 px da borda direita do cartão',
     screens: ["despesas recorrentes e o diálogo da regra"],
     scrollWidth: 331,
     selector:
@@ -116,7 +117,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'na aba Categorias, o cartão tem 272 px e o "Mostrar categorias arquivadas" e a lista de categorias (Comercial, Marketing, Renomear, Arquivar…) medem 291 px: passam 37 px da borda direita do cartão',
+      'na aba Categorias, o cartão tem 272 px e o conteúdo (o "Mostrar categorias arquivadas" e a lista de categorias, com Renomear e Arquivar) mede 309 px: passa 37 px da borda direita do cartão',
     screens: ["despesas categorias e o diálogo da categoria"],
     scrollWidth: 309,
     selector:
@@ -142,7 +143,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'na Ajuda, o cartão "Suporte" tem 272 px e o conteúdo dele (título, texto e o e-mail contato-exemplo@example.com) mede 290 px: passa 18 px da borda direita; o e-mail tem de quebrar',
+      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
     screens: ["ajuda"],
     scrollWidth: 290,
     selector: 'main#conteudo > div[data-slot="card"]',
@@ -150,7 +151,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'na Ajuda, o cartão "Dados pessoais" tem 272 px e o conteúdo dele (título, texto e o e-mail dpo-exemplo@example.com) mede 290 px: passa 18 px da borda direita; o e-mail tem de quebrar',
+      "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
     screens: ["ajuda"],
     scrollWidth: 290,
     selector: 'main#conteudo > div[data-slot="card"]',
@@ -158,7 +159,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      "a página de Categorias rola 35 px para o lado: a faixa de abas Ativas, Arquivadas e Removidas mede 331 px e empurra o título e o texto de apoio até 355 px; as abas têm de caber em 272 px ou rolar dentro da faixa",
+      "a página de Categorias rola 35 px para o lado; na medida, a faixa de abas Ativas, Arquivadas e Removidas mede 331 px e o título e o texto de apoio vão até 355 px; as abas têm de caber em 272 px ou rolar dentro da faixa",
     screens: ["categorias lista", "categorias remover"],
     scrollWidth: 355,
     selector: "html",
@@ -166,7 +167,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      "no diálogo de produto, a faixa de abas Dados, Variantes e Imagens mede 318 px e vai até 342 px, e a aba Imagens termina em 338 px: o corpo do diálogo (320 px) rola para o lado e a aba passa da janela",
+      "no diálogo de produto, o conteúdo do corpo mede 366 px em 320 px e passa 46 px: a faixa de abas Dados, Variantes e Imagens vai até 342 px e a aba Imagens termina em 338 px, além da janela",
     screens: ["produtos variantes, opções e combinação"],
     scrollWidth: 366,
     selector: 'div[data-slot="dialog-content"] > div[data-slot="dialog-body"]',
@@ -186,7 +187,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 320,
     reason:
-      'no Detalhe da venda com o cancelamento revisado, a coluna da página mede 317 px e vai até 341 px, 21 px além da janela: o título, o texto de apoio e o "Voltar ao histórico" saem da vista; a causa dentro da coluna não foi isolada',
+      "no Detalhe da venda com o cancelamento revisado, a página rola 21 px para o lado (341 px de conteúdo em 320 px); a causa dentro da coluna não foi isolada",
     screens: ["detalhe da venda cancelamento revisado"],
     scrollWidth: 341,
     selector: "html",
@@ -203,7 +204,7 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'no diálogo "Cancelar a renovação do Pro?", o diálogo tem 272 px: o título e o texto vão até 298 px e o rodapé com "Continuar no Pro" e "Cancelar a renovação" vai até 322 px, 26 px além da borda direita do diálogo (296 px)',
+      'no diálogo "Cancelar a renovação do Pro?", o diálogo tem 272 px e o conteúdo mede 298 px: passa 26 px da borda direita, e quem mais passa é o rodapé com "Continuar no Pro" e "Cancelar a renovação"',
     screens: ["assinatura cancelar a renovação"],
     scrollWidth: 298,
     selector: 'div[data-slot="dialog-content"]',
@@ -211,7 +212,17 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
 ];
 
 const FONT_TEMPLATE = ["$", "{fontPixels}"].join("");
-const AT_24_LOOP = /for \(const fontPixels of \[[^\]]*\b24\b/;
+const escapeForRegex = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Whether `source` declares `title` (with `24 px` as the font of the loop) with `reflowTest` inside a loop whose fonts include 24. */
+function readsAt24(source: string, title: string) {
+  const template = title.replace("24 px", `${FONT_TEMPLATE} px`);
+  return new RegExp(
+    `for \\(const fontPixels of \\[[^\\]]*\\b24\\b[^\\]]*\\]\\) \\{\\s*reflowTest\\(\\s*\`${escapeForRegex(template)}\``
+  ).test(source);
+}
+
 const REVOKE_OTHER = /^Revogar o aparelho Celular da Ana/;
 const MEASURE_TOLERANCE = 1;
 const REFLOW_WIDTH = 320;
@@ -377,8 +388,8 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
 };
 
 /**
- * The cases of `COVERED` whose screen another spec already reads at 320 px with 24 px, so they do not run twice: the
- * case, and the file and the test that measure it.
+ * The cases of `COVERED` whose chart, chain and day table another spec already reads at 320 px with 24 px (it does not
+ * sweep the rest of the page or the KPI cards), so they do not run twice: the case, and the file and the test.
  */
 const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
   {
@@ -399,7 +410,7 @@ const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
  */
 const UNREACHABLE_AT_24: Readonly<Record<string, string>> = {
   "aparelhos confirmação aberta":
-    'the dialog of the revocation is 1194 px tall in a window of 740 px, centered and without scroll (overflow visible), so its top and bottom are outside the window; the button "Sim, revogar e encerrar as outras sessões" starts at 761 px',
+    'the dialog of the revocation is taller than the window, centered and without scroll (overflow visible), so the button "Sim, revogar e encerrar as outras sessões" stays outside the window even after scrolling it into view',
 };
 
 /** The screens a test of its own measures at 320 px with 20 px: the file of that test. */
@@ -675,14 +686,39 @@ test.describe("a consistência da lista de telas", () => {
         : "";
       expect(source, `${name}: ${file} does not exist`).not.toBe("");
       expect(
-        source.includes(title.replace("24 px", `${FONT_TEMPLATE} px`)),
-        `${name}: ${file} has no test "${title}"`
-      ).toBe(true);
-      expect(
-        AT_24_LOOP.test(source),
-        `${file} no longer runs "${title}" with the font at 24 px`
+        readsAt24(source, title),
+        `${name}: ${file} no longer runs "${title}" with reflowTest in a loop over the font that includes 24 px`
       ).toBe(true);
     }
+    expect(at24.length).toBe(all.size - exempt.length);
+  });
+
+  test("a conferência de ALREADY_AT_24 pega o arquivo sem o título, o laço sem 24 px, o título fora do laço e o teste pulado", () => {
+    const title = "com a letra em 24 px, o valor fica inteiro";
+    const body = (loop: string, call = "reflowTest(") =>
+      `${loop} {\n    ${call}\n      \`com a letra em ${FONT_TEMPLATE} px, o valor fica inteiro\`,\n      async () => {}\n    );\n  }\n`;
+    expect(
+      readsAt24(body("for (const fontPixels of [24, 20, 16])"), title)
+    ).toBe(true);
+    expect(readsAt24(body("for (const fontPixels of [20, 16])"), title)).toBe(
+      false
+    );
+    expect(readsAt24(body("for (const fontPixels of [240, 16])"), title)).toBe(
+      false
+    );
+    expect(
+      readsAt24(
+        body("for (const fontPixels of [24, 20])", "reflowTest.skip("),
+        title
+      )
+    ).toBe(false);
+    expect(
+      readsAt24(
+        `for (const fontPixels of [24, 20]) {}\nreflowTest(\`com a letra em ${FONT_TEMPLATE} px, o valor fica inteiro\`, async () => {});\n`,
+        title
+      )
+    ).toBe(false);
+    expect(readsAt24("", title)).toBe(false);
   });
 
   test("os casos têm nome único", () => {
@@ -846,19 +882,34 @@ test.describe("a guarda de 24 px confere o que não alcança", () => {
       .getByRole("checkbox", { name: "Encerrar também as outras sessões" })
       .click();
     await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
-    const { bottom, windowHeight } = await page
-      .getByRole("button", {
-        exact: true,
-        name: "Sim, revogar e encerrar as outras sessões",
-      })
-      .evaluate((element) => ({
-        bottom: element.getBoundingClientRect().bottom,
+    const button = page.getByRole("button", {
+      exact: true,
+      name: "Sim, revogar e encerrar as outras sessões",
+    });
+    await button.scrollIntoViewIfNeeded();
+    const seen = await button.evaluate((element) => {
+      const dialog = element.closest('[role="dialog"]');
+      const box = element.getBoundingClientRect();
+      return {
+        bottom: box.bottom,
+        dialogHeight: dialog?.getBoundingClientRect().height ?? 0,
+        overflowY: dialog ? getComputedStyle(dialog).overflowY : "",
+        top: box.top,
         windowHeight: window.innerHeight,
-      }));
+      };
+    });
     expect(
-      bottom,
-      `the button is inside the window now: take "aparelhos confirmação aberta" out of UNREACHABLE_AT_24`
-    ).toBeGreaterThan(windowHeight);
+      seen.dialogHeight,
+      "the dialog fits the window now: take the case out of UNREACHABLE_AT_24"
+    ).toBeGreaterThan(seen.windowHeight);
+    expect(
+      seen.overflowY,
+      "the dialog scrolls now: take the case out of UNREACHABLE_AT_24"
+    ).toBe("visible");
+    expect(
+      seen.bottom > seen.windowHeight || seen.top < 0,
+      "the button is inside the window now: take the case out of UNREACHABLE_AT_24"
+    ).toBe(true);
   });
 });
 
