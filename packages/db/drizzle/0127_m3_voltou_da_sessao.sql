@@ -101,8 +101,14 @@ SET ROLE polaris_activation_owner;--> statement-breakpoint
 -- confirmed up to 14 days of 24 hours after its creation (as the funnel measures it, whatever the caller's zone); its
 -- oldest active owner, and only if it is that person's first store (the oldest active owner's membership of theirs, as
 -- the series has it); no billing relation (a trial, used or waived, or any state but free). "Came back": a session of
--- that person created or touched on a day of São Paulo after the day the store was created and up to 14 days after it.
--- A session lives only while signed in and its `updated_at` moves once a day at most, so this is a floor of "came back"
+-- that person touched on a day of São Paulo after the day the store was created (`updated_at` is the last touch, and
+-- the creation of a session is its first) and created no later than 14 days after it. That counts a sign-in inside the
+-- window and a session that crosses it: one signed in before the window and touched after it was kept alive by a renewal
+-- at least every 7 days (the idle lifetime, `session-policy.ts`), so some renewal fell inside the 14 days, and a
+-- renewal is never on the day of the session's own creation (it is 24 hours apart; a change of IP also stamps
+-- `updated_at`, but only on a request the session served, and the renewals alone carry the argument). Both bounds hold
+-- only while the idle lifetime is at most 14 days and the renewal at least a day: `session-policy.test.ts` fails
+-- otherwise. A session lives only while signed in and is deleted at sign-out, so this is still a floor of "came back"
 -- (D9).
 --
 -- Suppression, k = 5: both cells or neither. Each cell holds k stores or more, and so do the stores that did not sell in
@@ -172,10 +178,8 @@ BEGIN
            EXISTS (
              SELECT 1 FROM public.session AS signed_in
               WHERE signed_in.user_id = measured.user_id
-                AND (((signed_in.updated_at AT TIME ZONE 'America/Sao_Paulo')::date > measured.created_day
-                      AND (signed_in.updated_at AT TIME ZONE 'America/Sao_Paulo')::date <= measured.created_day + 14)
-                  OR ((signed_in.created_at AT TIME ZONE 'America/Sao_Paulo')::date > measured.created_day
-                      AND (signed_in.created_at AT TIME ZONE 'America/Sao_Paulo')::date <= measured.created_day + 14))
+                AND (signed_in.updated_at AT TIME ZONE 'America/Sao_Paulo')::date > measured.created_day
+                AND (signed_in.created_at AT TIME ZONE 'America/Sao_Paulo')::date <= measured.created_day + 14
            ) AS came_back
       FROM measured
   ),

@@ -25,10 +25,11 @@ import {
  *      no dynamic SQL, executed only by the billing role (a tenant login is refused); no other role reaches the table;
  *      the owner sees the stores of 41 days and not those of 43;
  *   2. the count (AC-4.2), one seeded cohort: came back on day 2, on day 14, at 00:00 of the next day, by a new
- *      sign-in inside the window with a touch after it, and a store that sold only on day 15; never came back: the same
- *      day only (also at 23:59), never, on day 15 only, an expired session already deleted, a sign-out; out of the
+ *      sign-in inside the window with a touch after it, by the session of day 0 touched after the window (it crosses
+ *      it), and a store that sold only on day 15; never came back: the same day only (also at 23:59), never, a sign-in
+ *      on day 15 (it starts after the window), an expired session already deleted, a sign-out; out of the
  *      measure but in the difference with the funnel: a trial, a waived trial, Pro, grace and a second store of a person;
- *      out of everything: an internal store and one that sold within 14 days. The week reads 5 and 6;
+ *      out of everything: an internal store and one that sold within 14 days. The week reads 7 and 7;
  *   3. the windows: a week of 14 days ago is not due yet, one of 28 days ago is frozen (here below k, both null) until its start plus 31 days and not after, one of 35 days
  *      ago is no longer frozen (a session that proved a return may be gone);
  *   4. the suppression with the complement (AC-4.4): 4 who came back, 4 who did not, or 4 left out of the measure
@@ -603,7 +604,7 @@ async function run() {
       idle?: number;
       leftOut?: number;
     }
-    /** The cohort of the count: 5 came back, 6 did not, 5 left out of the measure; `drop` takes some of a group away. */
+    /** The cohort of the count: 7 came back, 7 did not, 5 left out of the measure; `drop` takes some of a group away. */
     const seedCohort = async (
       client: Client,
       cohort: Date,
@@ -615,6 +616,14 @@ async function run() {
         { sessions: once(NEXT_MIDNIGHT) },
         // a new sign-in on day 5, its last touch on day 20: the sign-in is the return
         { sessions: [{ created: 5 * DAY, touched: 20 * DAY }] },
+        // the session of day 0 kept alive and last touched on day 20: it crosses the window, so it came back
+        { sessions: [{ created: -HOUR, touched: 20 * DAY }] },
+        // signed in at 23:59 of São Paulo on day 14 (02:59 of day 15 in UTC) and touched on day 20: inside the window
+        {
+          sessions: [
+            { created: 14 * DAY + NEXT_MIDNIGHT - MINUTE, touched: 20 * DAY },
+          ],
+        },
         // a sale only on day 15 keeps the store among those that did not activate
         { saleAfter: 15 * DAY, sessions: once(2 * DAY) },
       ];
@@ -622,7 +631,12 @@ async function run() {
         { sessions: once(HOUR) },
         { sessions: once(NEXT_MIDNIGHT - MINUTE) },
         {},
-        { sessions: once(15 * DAY) },
+        // signed in on day 15 and touched on day 20: it starts after the window, so it does not cross it
+        { sessions: [{ created: 15 * DAY, touched: 20 * DAY }] },
+        // signed in at 00:00 of São Paulo on day 15 and touched on day 20: one minute past the window
+        {
+          sessions: [{ created: 14 * DAY + NEXT_MIDNIGHT, touched: 20 * DAY }],
+        },
         // expired and already deleted, and ended by a sign-out: the trace is gone (the floor of D9)
         { sessions: [{ created: -HOUR, deleted: true, touched: 3 * DAY }] },
         { sessions: [{ created: 2 * DAY, deleted: true, touched: 2 * DAY }] },
@@ -676,8 +690,8 @@ async function run() {
       assert.deepEqual(written, [
         ...(edge.rows[0]?.open ? hidden(older) : []),
         {
-          never_returned_stores: 6,
-          returned_stores: 5,
+          never_returned_stores: 7,
+          returned_stores: 7,
           week_start: dayOf(due),
         },
       ]);
@@ -712,14 +726,18 @@ async function run() {
       assert.deepEqual(seen, [recent.organizationId]);
     });
     tests.push(
-      "the count of a seeded cohort of 21 days ago (session in UTC): came back on day 2, on day 14, at 00:00 of the next day of São Paulo, by a sign-in on day 5 touched last on day 20, and a store that sold only on day 15 (5); did not: the same day only, at 23:59 of that day, never, on day 15 only, an expired session already deleted, a sign-out (6); out of the measure: trialing, waived trial, Pro, grace and a second store of a person (5); out of everything: an internal store and one that sold on day 14. The week reads 5 and 6, the week of 28 days ago is frozen below k (both null) before its start plus 31 days (Thursday 00:00) and not after, the weeks of 14 and 35 days ago are not frozen; the owner sees a store of 41 days and not one of 43, and cannot read the ID of a session (42501)"
+      "the count of a seeded cohort of 21 days ago (session in UTC): came back on day 2, on day 14, at 00:00 of the next day of São Paulo, by a sign-in on day 5 touched last on day 20, by the session of day 0 touched last on day 20 (it crosses the window), a sign-in at 23:59 of day 14 touched on day 20, and a store that sold only on day 15 (7); did not: the same day only, at 23:59 of that day, never, a sign-in on day 15 touched on day 20 (it starts after the window), one at 00:00 of São Paulo on day 15, an expired session already deleted, a sign-out (6); out of the measure: trialing, waived trial, Pro, grace and a second store of a person (5); out of everything: an internal store and one that sold on day 14. The week reads 7 and 7, the week of 28 days ago is frozen below k (both null) before its start plus 31 days (Thursday 00:00) and not after, the weeks of 14 and 35 days ago are not frozen; the owner sees a store of 41 days and not one of 43, and cannot read the ID of a session (42501)"
     );
 
-    // the controls of the filters and of the midnights of São Paulo, on a cohort cut to 5 who came back, 4 who did not
+    // the controls of the filters and of the midnights of São Paulo, on a cohort cut to 7 who came back, 4 who did not
     // and 4 left out
     await scenario(async (client, current) => {
       const due = at(current, -21 * DAY);
-      await seedCohort(client, due, { idle: 2, leftOut: 1 });
+      await seedCohort(client, due, { idle: 3, leftOut: 1 });
+      // a session of the founder from before the store, last touched before it: no touch after the day of the store
+      await newStore(client, due, {
+        sessions: [{ created: -3 * DAY, touched: -DAY }],
+      });
       // the founder never came back and a co-owner who joined a minute later did: the founder is the one counted
       await newStore(client, due, { coOwnerSessions: once(DAY) });
       // no active owner: left out of the measure, in the difference with the funnel
@@ -740,21 +758,21 @@ async function run() {
       });
       assert.deepEqual(await freezeWeek(client, due), [
         {
-          never_returned_stores: 5,
-          returned_stores: 7,
+          never_returned_stores: 6,
+          returned_stores: 9,
           week_start: dayOf(due),
         },
       ]);
     });
     tests.push(
-      "controls, on a cohort cut to 5 who came back, 4 who did not and 4 left out: a founder who never came back with a co-owner who did counts as not back, a store with no active owner joins the difference with the funnel (5) and a purged one counts nowhere; a store created at 22:30 of São Paulo and back at 00:30 counts as back, one created at 00:00 of the Monday is of that week, one created at 23:30 of the Sunday before is not: the week reads 7 and 5"
+      "controls, on a cohort cut to 7 who came back, 4 who did not and 4 left out: a founder who never came back with a co-owner who did counts as not back, a session from before the store touched only before it counts as not back, a store with no active owner joins the difference with the funnel (5) and a purged one counts nowhere; a store created at 22:30 of São Paulo and back at 00:30 counts as back, one created at 00:00 of the Monday is of that week, one created at 23:30 of the Sunday before is not: the week reads 9 and 6"
     );
 
     // 4. the suppression with the complement, and k itself
     for (const [drop, extra, expected, label] of [
-      [{ back: 1 }, false, null, "4 who came back (6 who did not)"],
-      [{ idle: 2 }, false, null, "4 who did not (5 who came back)"],
-      [{ idle: 1 }, false, [5, 5], "exactly 5 and 5 shows"],
+      [{ back: 3 }, false, null, "4 who came back (7 who did not)"],
+      [{ idle: 3 }, false, null, "4 who did not (7 who came back)"],
+      [{ back: 2, idle: 2 }, false, [5, 5], "exactly 5 and 5 shows"],
       [
         { leftOut: 1 },
         true,
@@ -784,7 +802,7 @@ async function run() {
       });
     }
     tests.push(
-      "suppression with the complement, k = 5: 4 who came back (6 who did not), 4 who did not (5 who came back), or 4 left out of the measure (the difference with the funnel, a purged store not counted in it) each freeze the week with both cells null; exactly 5 and 5 (with 5 left out) shows"
+      "suppression with the complement, k = 5: 4 who came back (7 who did not), 4 who did not (7 who came back), or 4 left out of the measure (the difference with the funnel, a purged store not counted in it) each freeze the week with both cells null; exactly 5 and 5 (with 5 left out) shows"
     );
 
     // 5. the frozen week does not follow the sessions; 7. a sweep that fails writes nothing
@@ -806,8 +824,8 @@ async function run() {
       );
       assert.deepEqual(await freezeWeek(client, due), [
         {
-          never_returned_stores: 6,
-          returned_stores: 5,
+          never_returned_stores: 7,
+          returned_stores: 7,
           week_start: dayOf(due),
         },
       ]);
@@ -820,11 +838,11 @@ async function run() {
       );
       assert.deepEqual(await freeze(client), [], "nothing more to freeze");
       assert.deepEqual(await frozenWeek(client, due), [
-        { cohort_week: dayOf(due), never_returned: 6, returned: 5 },
+        { cohort_week: dayOf(due), never_returned: 7, returned: 7 },
       ]);
     });
     tests.push(
-      "a sweep whose transaction fails after the freezing leaves the week without a row (the reader shows it unavailable, never 0), and the next sweep freezes it; with every session of the cohort deleted afterwards, the next sweep writes nothing and the week still reads 5 and 6"
+      "a sweep whose transaction fails after the freezing leaves the week without a row (the reader shows it unavailable, never 0), and the next sweep freezes it; with every session of the cohort deleted afterwards, the next sweep writes nothing and the week still reads 7 and 7"
     );
 
     // 6. append-only and without identity

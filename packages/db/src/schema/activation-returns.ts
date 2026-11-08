@@ -15,8 +15,8 @@ export const ACTIVATION_RETURN_K = 5;
 
 /**
  * The M3 of ADR 0106 (D9), frozen once per cohort week: of the stores that did not sell in their first 14 days, how
- * many owners came back to the app (a session of theirs touched on a later day of São Paulo, up to the 14th) and how
- * many never did. Only counts already suppressed: both cells, each with k stores or more, or neither (a week frozen
+ * many owners came back to the app (a session of theirs touched on a later day of São Paulo than the store's, created
+ * up to the 14th) and how many never did. Only counts already suppressed: both cells, each with k stores or more, or neither (a week frozen
  * below k is a row with both null, so "frozen and hidden" differs from "not frozen", which the reader shows as
  * unavailable, never 0). No store, person or ID; append-only by trigger (in the migration), and the owner of the
  * measure is the only role that reaches it.
