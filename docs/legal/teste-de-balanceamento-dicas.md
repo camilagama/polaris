@@ -1,6 +1,6 @@
 # Teste de balanceamento: dicas para começar e estatística agregada de uso
 
-> **Estado: rascunho, a confirmar pelo jurídico antes de ligar em produção.** Os artigos da LGPD abaixo (7º, V e IX; 9º; 10; 12; 18; 20; 33; 37) foram citados de memória no estudo de ativação de 07/11/2026 e **não foram conferidos na lei**. Este registro não cria texto legal novo: repete a decisão do usuário (legítimo interesse, 07/11/2026) e o rascunho do estudo. O texto que a pessoa lê está na Política de Privacidade (seção 11) e o que o sistema grava e envia está em [privacy.md](../business-rules/privacy.md); o desenho está no ADR dos avisos de ativação (número provisório 0106).
+> **Estado: rascunho, a confirmar pelo jurídico antes de ligar em produção.** Os artigos da LGPD abaixo (7º, V e IX; 9º; 10; 12; 18; 20; 33; 37) foram citados de memória no estudo de ativação de 07/11/2026 e **não foram conferidos na lei**. Este registro não cria texto legal novo: repete a decisão do usuário (legítimo interesse, 07/11/2026) e o rascunho do estudo. O texto que a pessoa lê está na Política de Privacidade (seção 11) e o que o sistema grava e envia está em [privacy.md](../business-rules/privacy.md); o desenho está no [ADR 0106](../adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md).
 
 Os campos da empresa ficam abertos, e nenhum valor é inventado aqui: `[P48: razão social]`, `[P48: e-mail do encarregado]`, `[P48: caixa de suporte de produção]`, `[P48: domínio de produção]`.
 
