@@ -408,14 +408,14 @@ describe("what the funnel shows (AC-8)", () => {
     ).toEqual([
       "Semana",
       "Lojas com o teste usado ou dispensado",
-      "1ª venda até 7 dias depois do teste ou do pagamento",
+      "1ª venda até 7 dias do início do teste ou do pagamento",
     ]);
     const text = visibleText(page.root);
     expect(text).toContain(
       "lojas da semana com o teste usado ou dispensado (quem assina o Pro sem teste também entra)"
     );
     expect(text).toContain(
-      "até 7 dias depois do início do teste ou do pagamento"
+      "até 7 dias (a duração do teste) depois do início do teste ou do pagamento"
     );
     expect(text).not.toContain("começaram o teste");
     expect(text).not.toContain("dentro do teste");
