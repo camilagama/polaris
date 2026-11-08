@@ -250,6 +250,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await expect(popup.getByRole("alert")).toHaveText(
         "Essa data não existe. Confira dia, mês e ano."
       );
+      await expect(popup.getByRole("alert")).toBeInViewport({ ratio: 1 });
 
       await start.fill("");
       await start.pressSequentially("01102026");

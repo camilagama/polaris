@@ -139,6 +139,22 @@ function TypedDateField({
   text: string;
 }) {
   const errorId = `${id}-error`;
+  const box = useRef<HTMLDivElement>(null);
+  // the focus scroll brings the input into view, not the sentence that comes under it
+  const showError = useCallback(() => {
+    box.current?.scrollIntoView?.({ block: "nearest" });
+  }, []);
+  useEffect(() => {
+    const input = box.current?.querySelector("input");
+    if (error && input && document.activeElement === input) {
+      showError();
+    }
+  }, [error, showError]);
+  const focus = useCallback(() => {
+    if (error) {
+      showError();
+    }
+  }, [error, showError]);
   const blur = useCallback(() => onBlurField(field), [field, onBlurField]);
   const change = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => onType(field, event.target.value),
@@ -154,7 +170,7 @@ function TypedDateField({
     [onEnter]
   );
   return (
-    <div className="grid min-w-0 content-start gap-1.5">
+    <div className="grid min-w-0 content-start gap-1.5" ref={box}>
       <Label htmlFor={id}>{label}</Label>
       <Input
         aria-describedby={error ? errorId : undefined}
@@ -165,6 +181,7 @@ function TypedDateField({
         inputMode="numeric"
         onBlur={blur}
         onChange={change}
+        onFocus={focus}
         onKeyDown={keyDown}
         placeholder="dd/mm/aaaa"
         ref={inputRef}
