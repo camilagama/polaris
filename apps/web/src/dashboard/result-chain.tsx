@@ -39,22 +39,24 @@ function rowClass(row: ChainRow): string {
 
 /**
  * The dotted line from the end of the name to the value: it fills what is left of the cell and says nothing. Its 1 rem
- * floor holds the line apart from the name, but in a window of 22 rem or less (320 px with the font at 17 px) the floor
- * plus the longest word of a name is wider than the card, so there the line may shrink to nothing (below 16 rem of card it is hidden, with the name above the value). The limit is in rem because a media query follows the browser font,
- * what makes a window of 320 px with 17 px letters narrow in rem; in px it would not catch that case.
+ * floor holds the line apart from the name, but in a window of 22 rem or less (320 px with the font at 14.6 px or more)
+ * the floor plus the longest word of a name is wider than the card, so there the line may shrink to nothing; below
+ * 18 rem of card it is hidden, with the name above the value. The limit is in rem because a media query follows the
+ * browser font, what makes a window of 320 px with 17 px letters narrow in rem; in px it would not catch that case.
  */
 const LEADER =
-  "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted @max-[16rem]:hidden";
+  "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted @max-[18rem]:hidden";
 
 /**
- * The card measures its own box (`@container`): narrower than 16rem (320 px with the font at 18 px or more) the name of the
- * line and its value no longer fit side by side, so each row stacks them, the name above the value, and the value
- * keeps the whole width of the card instead of rolling the table sideways. The dotted line has nothing to lead to.
+ * The card measures its own box (`@container`): narrower than 18 rem (320 px with the font at 17 px or more, 360 px
+ * with 20 px or more) the name of the line and its value no longer fit side by side, so each row stacks them, the name
+ * above the value, and the value keeps the whole width of the card instead of rolling the table sideways. The dotted
+ * line has nothing to lead to.
  */
-const STACKED_TABLE = "@max-[16rem]:block @max-[16rem]:[&_tbody]:block";
-const STACKED_ROW = "@max-[16rem]:grid";
+const STACKED_TABLE = "@max-[18rem]:block @max-[18rem]:[&_tbody]:block";
+const STACKED_ROW = "@max-[18rem]:grid";
 const STACKED_VALUE =
-  "@max-[16rem]:pt-0 @max-[16rem]:pl-4 @max-[16rem]:text-left";
+  "@max-[18rem]:pt-0 @max-[18rem]:pl-4 @max-[18rem]:text-left";
 
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
 export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
@@ -93,7 +95,7 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
                 className={cn(
                   "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
                   row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                  "@max-[16rem]:pr-4 @max-[16rem]:pb-0"
+                  "@max-[18rem]:pr-4 @max-[18rem]:pb-0"
                 )}
                 scope="row"
               >

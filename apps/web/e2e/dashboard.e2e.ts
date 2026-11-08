@@ -2784,6 +2784,35 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
     );
   }
 
+  for (const width of [360, 375]) {
+    reflowTest(
+      `a ${width} px com a letra em 20 px, a cadeia do mês de milhões empilha o nome acima do valor, sem rolar de lado`,
+      async ({ page }) => {
+        const server = new FakeReportServer();
+        server.fixture = { "2026-10": MILLIONS_MONTH };
+        await openReflowViewport(page, { fontPixels: 20, width });
+        await openDashboard(page, server);
+        await expect(chainRow(page, "(=) Vendas líquidas")).toContainText(
+          "R$ 1.706.600,00"
+        );
+        await expectReflowFont(page, 20);
+        await assertNothingClipped(chain(page));
+        await assertChainInView(chain(page));
+        const row = chainRow(page, "(=) Vendas líquidas");
+        const [name, value] = await Promise.all([
+          row.locator("th").boundingBox(),
+          row.locator("td").boundingBox(),
+        ]);
+        expect(name, "the name of the line was not measured").not.toBeNull();
+        expect(value, "the value of the line was not measured").not.toBeNull();
+        expect(
+          (name?.y ?? 0) + (name?.height ?? 0),
+          "the name sits above the value"
+        ).toBeLessThanOrEqual((value?.y ?? 0) + 1);
+      }
+    );
+  }
+
   for (const fontPixels of [24, 20, 16]) {
     reflowTest(
       `com a letra em ${fontPixels} px, a cadeia de um mês comum cabe no cartão: o valor à vista, sem rolar de lado`,
