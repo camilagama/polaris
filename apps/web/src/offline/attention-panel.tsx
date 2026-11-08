@@ -19,6 +19,7 @@ import {
   type AttentionSummary,
   discardWarning,
 } from "./attention";
+import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
 import { type RedoLineProblem, redoProblemText } from "./sale-redo";
 
 export interface RedoProblem {
@@ -112,16 +113,24 @@ function buttonIdOf(
 const ATTENTION_SUBTITLE = "O que o servidor recusou e precisa da sua decisão.";
 
 /** The frame of the page of attention: the title, then what the page has to say. */
-export function AttentionFrame({ children }: { children: ReactNode }) {
+export function AttentionFrame({
+  children,
+  withSubtitle = true,
+}: {
+  children: ReactNode;
+  withSubtitle?: boolean;
+}) {
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
         <h1 className="text-title" id="attention-title">
           Pendências
         </h1>
-        <p className="text-muted-foreground" id="attention-subtitle">
-          {ATTENTION_SUBTITLE}
-        </p>
+        {withSubtitle ? (
+          <p className="text-muted-foreground" id="attention-subtitle">
+            {ATTENTION_SUBTITLE}
+          </p>
+        ) : null}
       </header>
       {children}
     </div>
@@ -150,19 +159,20 @@ export const OFFLINE_BROWSER_REASON =
   "Este navegador não conseguiu preparar o acesso offline.";
 const HOME_HREF = "/";
 
-/** Pendências on a device where the offline mode is not available: the title, why, and the way back to the app. */
-export function AttentionUnavailable({
-  planRefused,
-}: {
-  planRefused: boolean;
-}) {
+/**
+ * Pendências on a device where the offline mode is not available: the title, why, and the way back to the app. The
+ * subtitle promises a list of refused records, which this device cannot read, so it is left out.
+ */
+export function AttentionUnavailable({ reason }: { reason: string | null }) {
   return (
-    <AttentionFrame>
+    <AttentionFrame withSubtitle={false}>
       <Alert variant="warning">
         <TriangleAlertIcon aria-hidden="true" />
         <AlertTitle>{OFFLINE_UNAVAILABLE_TITLE}</AlertTitle>
         <AlertDescription>
-          {planRefused ? OFFLINE_PLAN_REASON : OFFLINE_BROWSER_REASON}
+          {reason === PLAN_REFUSED_REASON
+            ? OFFLINE_PLAN_REASON
+            : OFFLINE_BROWSER_REASON}
         </AlertDescription>
       </Alert>
       <div>

@@ -1,4 +1,5 @@
 import { SUPPORT_EMAIL } from "../lib/support-contact";
+import { PLAN_REFUSED_REASON } from "../offline/runtime/offline-runtime";
 import type { AttentionItem, AttentionSummary } from "../offline/attention";
 import {
   type AttentionError,
@@ -81,7 +82,11 @@ const FIRST_ID = "0199c2d0-0000-7000-8000-000000000101";
 export function AttentionLabPage() {
   const state = param("state");
   if (state === "unavailable") {
-    return <AttentionUnavailable planRefused={param("motivo") === "plano"} />;
+    return (
+      <AttentionUnavailable
+        reason={param("motivo") === "plano" ? PLAN_REFUSED_REASON : null}
+      />
+    );
   }
   const error: AttentionError | null =
     state === "error"

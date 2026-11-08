@@ -13,6 +13,7 @@ import {
   signInAgainButtonId,
 } from "./attention-panel";
 import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
+import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
 
 const HOME_LINK = /<a [^>]*href="\/"[^>]*>Voltar ao Início<\/a>/;
 const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
@@ -342,14 +343,15 @@ describe("the attention panel", () => {
 });
 
 describe("Pendências without the offline mode", () => {
-  const html = (planRefused: boolean) =>
-    renderToStaticMarkup(<AttentionUnavailable planRefused={planRefused} />);
+  const html = (reason: string | null) =>
+    renderToStaticMarkup(<AttentionUnavailable reason={reason} />);
 
-  it("has the title, one warning and one link back to the Início", () => {
-    for (const planRefused of [true, false]) {
-      const out = html(planRefused);
+  it("has the title, one warning and one link back to the Início, and no subtitle", () => {
+    for (const reason of [PLAN_REFUSED_REASON, null]) {
+      const out = html(reason);
       expect(out.match(/<h1[ >]/g)).toHaveLength(1);
       expect(out).toContain("Pendências</h1>");
+      expect(out).not.toContain("attention-subtitle");
       expect(out).toContain('role="status"');
       expect(out).toContain(OFFLINE_UNAVAILABLE_TITLE);
       expect(out.match(/<a /g)).toHaveLength(1);
@@ -358,16 +360,24 @@ describe("Pendências without the offline mode", () => {
   });
 
   it("says the plan when the plan refused it, and never the browser's sentence", () => {
-    const out = html(true);
+    const out = html(PLAN_REFUSED_REASON);
     expect(out).toContain(OFFLINE_PLAN_REASON);
     expect(out).not.toContain(OFFLINE_BROWSER_REASON);
   });
 
-  it("says the browser's sentence when the browser could not prepare it, and never the plan's", () => {
-    const out = html(false);
-    expect(out).toContain(OFFLINE_BROWSER_REASON);
-    expect(out).not.toContain(OFFLINE_PLAN_REASON);
-  });
+  it.each([
+    ["no reason is known", null],
+    ["the local queue does not open", "queue_open_failed"],
+    ["the session changed", "session_changed"],
+    ["the last sync failed", "sync_failed"],
+  ])(
+    "says the browser's sentence, never the plan's, when %s",
+    (_name, reason) => {
+      const out = html(reason);
+      expect(out).toContain(OFFLINE_BROWSER_REASON);
+      expect(out).not.toContain(OFFLINE_PLAN_REASON);
+    }
+  );
 
   it("uses the words of Aparelhos for the browser", () => {
     expect(

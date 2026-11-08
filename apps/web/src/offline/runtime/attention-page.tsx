@@ -49,7 +49,6 @@ import {
   startSaleRedo,
 } from "../sale-redo-storage";
 import { LogoutNotices, useLogout } from "./logout-control";
-import { PLAN_REFUSED_REASON } from "./offline-runtime";
 import { useOfflineRuntime, useRuntimeSnapshot } from "./runtime-context";
 
 /**
@@ -329,11 +328,7 @@ export function AttentionPage() {
     );
   }
   if (snapshot.phase === "unavailable") {
-    return (
-      <AttentionUnavailable
-        planRefused={snapshot.reason === PLAN_REFUSED_REASON}
-      />
-    );
+    return <AttentionUnavailable reason={snapshot.reason} />;
   }
   if (snapshot.phase !== "ready") {
     return <PageLoading label="Preparando o modo offline…" />;
