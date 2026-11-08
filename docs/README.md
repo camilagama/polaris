@@ -128,5 +128,7 @@ Cada assunto possui uma fonte de verdade, e cada documento declara sua própria 
 | [0102](adr/0102-apagamento-automatico-da-loja-encerrada.md) | Apagamento automático da loja encerrada, sem caso de privacidade | aceito |
 | [0103](adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md) | Base de componentes: shadcn na variante Base UI com Tailwind 4 | aceito |
 | [0104](adr/0104-autosservico-de-cobranca-do-dono.md) | Autosserviço de cobrança do dono: leitura do plano, cancelar, desistir e pagar a pendente | aceito |
+| [0105](adr/0105-comandos-de-provedor-pelo-operador.md) | Comandos de provedor pelo operador: cancelar a renovação e reembolsar pelo Admin | aceito |
+| [0106](adr/0106-avisos-de-ativacao-e-medida-de-comportamento.md) | Avisos de ativação e medida de comportamento (número provisório) | aceito, com pré-condições de produção |
 
 ADRs novos usam o formato Contexto, Decisão, Consequências e Alternativas consideradas.
