@@ -304,7 +304,10 @@ export function LoadError({ busy, message, onRetry }: LoadErrorProps) {
   );
 }
 
-/** "Carregando…" or an empty list: a line of muted text inside the card. */
+/**
+ * A loading line or an empty list inside the card. Loading is said only to the screen reader; the box keeps the
+ * height the visible line had, so the list that arrives does not push the screen.
+ */
 export function ListNote({
   children,
   loading,
@@ -312,13 +315,16 @@ export function ListNote({
   children: string;
   loading?: boolean | undefined;
 }) {
+  if (loading) {
+    return (
+      <div className="min-h-[5.25rem] md:min-h-[4.125rem]" role="status">
+        <span className="sr-only">{children}</span>
+      </div>
+    );
+  }
   return (
-    // two lines kept on a phone: "Carregando despesas…" and the empty list ("Nenhuma despesa neste período. Toque em…")
-    // take the same box
-    <p
-      className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0"
-      role={loading ? "status" : undefined}
-    >
+    // two lines kept on a phone: the empty list ("Nenhuma despesa neste período. Toque em…") takes this box
+    <p className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0">
       {children}
     </p>
   );
