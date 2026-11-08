@@ -105,7 +105,7 @@ for (const viewport of VIEWPORTS) {
         .getByRole("list", { name: "Vendas" })
         .locator("li")
         .first()
-        .locator("span.inline-flex.tabular-nums");
+        .locator("[data-money]");
       const totalBox = await total.boundingBox();
       const rowBox = await rowValue.boundingBox();
       expect(totalBox).not.toBeNull();

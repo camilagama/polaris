@@ -326,6 +326,29 @@ export function moneyFontFaults(path: string, text: string): string[] {
 }
 
 /**
+ * The lists (DESIGN.md "Dinheiro"): the amount is written by `Money` or `MoneyText`, which decide the "R$" and the
+ * mask, so these files have no "R$" of their own in a string or in JSX text. The list is of files that exist (a file
+ * that was renamed or deleted makes the test fail); a list screen that migrates to `Money` enters it in the same change.
+ */
+const MONEY_LIST_FILES = [
+  "src/catalog/screen-parts.tsx",
+  "src/expenses/expense-list.tsx",
+  "src/sales/sale-history-list.tsx",
+] as const;
+const HAND_TYPED_REAIS = /R\$/;
+
+export function handTypedReaisFaults(path: string, text: string): string[] {
+  if (!(MONEY_LIST_FILES as readonly string[]).includes(path)) {
+    return [];
+  }
+  return HAND_TYPED_REAIS.test(withoutComments(text))
+    ? [
+        '"R$" escrito à mão: o valor em reais passa pelo Money ou pelo MoneyText',
+      ]
+    : [];
+}
+
+/**
  * Focus (DESIGN.md "Acessibilidade"): `outline-none` takes the browser's focus ring away, so the class string that
  * has it also carries the ring of its own (`focus-visible:…`, `focus:…`, `has-[…:focus-visible]…`), or the element is a
  * programmatic target that uses the `focus-ring` utility instead. Where the ring is somewhere else, the string is here
@@ -576,6 +599,14 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     }
   );
 
+  it.each(MONEY_LIST_FILES)(
+    "%s: nenhum R$ escrito à mão, o valor passa pelo Money",
+    (path) => {
+      expect(existsSync(join(web, path)), path).toBe(true);
+      expect(handTypedReaisFaults(path, read(path))).toEqual([]);
+    }
+  );
+
   it("os arquivos de dinheiro e a lista da fração ainda existem (uma lista velha deixaria passar outra coisa)", () => {
     for (const path of [
       ...MONEY_FILES,
@@ -815,6 +846,21 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
       "3 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
     );
     expect(money('// "text-[1.75rem]" in a comment')).toEqual([]);
+  });
+
+  it("R$ escrito à mão numa lista reprova, e só nos arquivos da lista (controle plantado)", () => {
+    const list = "src/sales/sale-history-list.tsx";
+    expect(
+      handTypedReaisFaults(list, "<span>R$ {total}</span>").join()
+    ).toContain("escrito à mão");
+    expect(handTypedReaisFaults(list, 'const a = "R$ 10,00";')).not.toEqual([]);
+    expect(handTypedReaisFaults(list, "<Money text={total} />")).toEqual([]);
+    expect(handTypedReaisFaults(list, '// "R$ 10,00" in a comment')).toEqual(
+      []
+    );
+    expect(
+      handTypedReaisFaults("src/home/home-page.tsx", "<span>R$ 1</span>")
+    ).toEqual([]);
   });
 
   it("a lista exata reprova o que saiu dela e o que entrou (controle plantado)", () => {

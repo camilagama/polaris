@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/select";
+import { Skeleton } from "@/ui/skeleton";
 import { describedBy, FieldTexts } from "../sales/sale-fields";
 import { groupCategories } from "./expense-model";
 import type { Feedback } from "./use-command-runner";
@@ -304,7 +305,12 @@ export function LoadError({ busy, message, onRetry }: LoadErrorProps) {
   );
 }
 
-/** "Carregando…" or an empty list: a line of muted text inside the card. */
+const LOADING_ROW_WIDTHS = ["w-2/3", "w-1/2", "w-1/3"];
+
+/**
+ * A loading box or an empty list inside the card. Loading is said to the screen reader and drawn as three skeleton
+ * lines; the box keeps the height the visible line had, so the list that arrives does not push the screen.
+ */
 export function ListNote({
   children,
   loading,
@@ -312,13 +318,27 @@ export function ListNote({
   children: string;
   loading?: boolean | undefined;
 }) {
+  if (loading) {
+    return (
+      <div
+        aria-busy="true"
+        className="grid min-h-[5.25rem] content-center gap-2 md:min-h-[4.125rem]"
+        role="status"
+      >
+        <span className="sr-only">{children}</span>
+        {LOADING_ROW_WIDTHS.map((width) => (
+          <Skeleton
+            aria-hidden="true"
+            className={`h-3.5 ${width}`}
+            key={width}
+          />
+        ))}
+      </div>
+    );
+  }
   return (
-    // two lines kept on a phone: "Carregando despesas…" and the empty list ("Nenhuma despesa neste período. Toque em…")
-    // take the same box
-    <p
-      className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0"
-      role={loading ? "status" : undefined}
-    >
+    // two lines kept on a phone: the empty list ("Nenhuma despesa neste período. Toque em…") takes this box
+    <p className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0">
       {children}
     </p>
   );

@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Money } from "@/ui/money";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { ListTotalFooter, StatusNav } from "../catalog/screen-parts";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -98,8 +99,12 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
           Total do período
           {filters.status === "voided" ? " (anuladas)" : ""}
         </p>
-        <p className="font-semibold text-value-lg tabular-nums">
-          {showTotal ? formatBrlAmount(state.total) : "…"}
+        <p className="font-semibold">
+          {showTotal ? (
+            <Money size="lg" text={formatBrlAmount(state.total)} />
+          ) : (
+            "…"
+          )}
         </p>
       </div>
       <p className="text-muted-foreground text-support">
@@ -204,11 +209,11 @@ function ExpenseCard({
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 min-[30rem]:justify-end">
         <p
           className={cn(
-            "whitespace-nowrap font-semibold text-value-md tabular-nums",
+            "font-semibold tabular-nums",
             voided && "text-muted-foreground line-through"
           )}
         >
-          {formatBrlAmount(expense.amount)}
+          <Money size="md" text={formatBrlAmount(expense.amount)} />
         </p>
         <div
           className={cn(
