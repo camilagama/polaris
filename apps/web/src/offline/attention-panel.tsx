@@ -157,7 +157,27 @@ export const OFFLINE_PLAN_REASON = "O modo offline faz parte do plano Pro.";
 /** The first sentence of the text of Aparelhos for the same cause. */
 export const OFFLINE_BROWSER_REASON =
   "Este navegador não conseguiu preparar o acesso offline.";
+export const OFFLINE_NEUTRAL_REASON =
+  "O modo offline não está disponível neste aparelho agora.";
 const HOME_HREF = "/";
+
+/** Reasons of the `unavailable` phase that come from the account or the store, not from the browser. */
+const ACCOUNT_REASONS: ReadonlySet<string> = new Set([
+  "legal_acceptance_required",
+  "organization_closed",
+  "purge_failed",
+  "session_changed",
+  "session_refused",
+]);
+
+function unavailableSentence(reason: string | null): string {
+  if (reason === PLAN_REFUSED_REASON) {
+    return OFFLINE_PLAN_REASON;
+  }
+  return reason !== null && ACCOUNT_REASONS.has(reason)
+    ? OFFLINE_NEUTRAL_REASON
+    : OFFLINE_BROWSER_REASON;
+}
 
 /**
  * Pendências on a device where the offline mode is not available: the title, why, and the way back to the app. The
@@ -169,11 +189,7 @@ export function AttentionUnavailable({ reason }: { reason: string | null }) {
       <Alert variant="warning">
         <TriangleAlertIcon aria-hidden="true" />
         <AlertTitle>{OFFLINE_UNAVAILABLE_TITLE}</AlertTitle>
-        <AlertDescription>
-          {reason === PLAN_REFUSED_REASON
-            ? OFFLINE_PLAN_REASON
-            : OFFLINE_BROWSER_REASON}
-        </AlertDescription>
+        <AlertDescription>{unavailableSentence(reason)}</AlertDescription>
       </Alert>
       <div>
         <a className={buttonVariants()} href={HOME_HREF}>

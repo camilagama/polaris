@@ -7,6 +7,7 @@ import {
   type AttentionPanelProps,
   AttentionUnavailable,
   OFFLINE_BROWSER_REASON,
+  OFFLINE_NEUTRAL_REASON,
   OFFLINE_PLAN_REASON,
   OFFLINE_UNAVAILABLE_TITLE,
   refusedText,
@@ -368,13 +369,29 @@ describe("Pendências without the offline mode", () => {
   it.each([
     ["no reason is known", null],
     ["the local queue does not open", "queue_open_failed"],
-    ["the session changed", "session_changed"],
     ["the last sync failed", "sync_failed"],
   ])(
     "says the browser's sentence, never the plan's, when %s",
     (_name, reason) => {
       const out = html(reason);
       expect(out).toContain(OFFLINE_BROWSER_REASON);
+      expect(out).not.toContain(OFFLINE_PLAN_REASON);
+      expect(out).not.toContain(OFFLINE_NEUTRAL_REASON);
+    }
+  );
+
+  it.each([
+    "legal_acceptance_required",
+    "organization_closed",
+    "purge_failed",
+    "session_changed",
+    "session_refused",
+  ])(
+    "does not blame the browser when the reason is about the account (%s)",
+    (reason) => {
+      const out = html(reason);
+      expect(out).toContain(OFFLINE_NEUTRAL_REASON);
+      expect(out).not.toContain(OFFLINE_BROWSER_REASON);
       expect(out).not.toContain(OFFLINE_PLAN_REASON);
     }
   );
