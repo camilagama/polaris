@@ -101,7 +101,7 @@ function within<T>(run: () => T): T {
   }
 }
 
-/** The root as the counter makes it, with its `<style>` put in a constructed sheet. */
+/** The root as the counter makes it, with its style element swapped for a constructed sheet. */
 function adopt(root: ShadowRoot): ShadowRoot {
   const append = root.appendChild;
   root.appendChild = function <T extends Node>(this: ShadowRoot, node: T): T {

@@ -476,11 +476,12 @@ export function focusListFaults(
 /**
  * Só os números principais e indicativos dos cards animam (DESIGN.md "Movimento"): `@number-flow/react` é importado só
  * no contador, e o contador só é usado pelos itens da lista fechada (o valor e o chip do cartão de KPI, a Margem e o
- * percentual da Meta). Qualquer outro uso, ou outro arquivo que importe o pacote, reprova.
+ * percentual da Meta, mais a galeria que mostra o componente). Qualquer outro uso, ou outro arquivo que importe o pacote, reprova.
  */
 export const FIGURE_COUNTER = "src/ui/animated-figure.tsx";
 export const FIGURE_USERS = [
   "src/home/home-goal.tsx",
+  "src/ui-gallery/ui-gallery.tsx",
   "src/ui/kpi-card.tsx",
 ] as const;
 const COUNTER_PACKAGE = /@number-flow\//;

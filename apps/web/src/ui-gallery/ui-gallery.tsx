@@ -7,6 +7,7 @@ import MinusIcon from "lucide-react/dist/esm/icons/minus";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
+import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
@@ -1257,6 +1258,19 @@ export function UiGallery() {
                 Os últimos 30 dias, dados de exemplo.
               </TabsContent>
             </Tabs>
+          </Section>
+
+          <Section title="Contador dos números dos cartões">
+            <p className="text-support">
+              O valor, a variação em percentual e o percentual da meta e da
+              margem contam até o valor final no desktop; no celular e com
+              movimento reduzido aparecem prontos.
+            </p>
+            <p className="font-semibold text-value-lg tabular-nums tracking-[-0.035em]">
+              <AnimatedFigure text="R$ 1.234,56">
+                <Money split text="R$ 1.234,56" />
+              </AnimatedFigure>
+            </p>
           </Section>
 
           <Section title="Cartão de KPI e Esconder valores">
