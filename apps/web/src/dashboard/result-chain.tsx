@@ -27,7 +27,7 @@ const CHAIN_TITLE_ID = "dashboard-chain-title";
  * across the card), larger. The leader and the perforation are drawing: the row is still a header cell and its value.
  */
 function rowClass(row: ChainRow): string {
-  const base = "border-b-0 hover:bg-transparent";
+  const base = cn("border-b-0 hover:bg-transparent", STACKED_ROW);
   if (row.kind === "result") {
     return cn(
       base,
@@ -39,18 +39,32 @@ function rowClass(row: ChainRow): string {
 
 /**
  * The dotted line from the end of the name to the value: it fills what is left of the cell and says nothing. Its 1 rem
- * floor holds the line apart from the name, but in a window of 22 rem or less (320 px with the font at 20 px) the floor
+ * floor holds the line apart from the name, but in a window of 22 rem or less (320 px with the font at 17 px) the floor
  * plus the longest word of a name is wider than the card, so there the line may shrink to nothing. The limit is in rem because a media query follows the browser font, which is
  * what makes a window of 320 px with 20 px letters narrow in rem; in px it would not catch that case.
  */
 const LEADER =
-  "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted";
+  "min-w-4 max-[22rem]:min-w-0 flex-1 translate-y-[-0.3em] border-input border-b border-dotted @max-[16rem]:hidden";
+
+/**
+ * The card measures its own box (`@container`): narrower than 16rem (320 px with the font at 18 px or more) the name of the
+ * line and its value no longer fit side by side, so each row stacks them, the name above the value, and the value
+ * keeps the whole width of the card instead of rolling the table sideways. The dotted line has nothing to lead to.
+ */
+const STACKED_TABLE = "@max-[16rem]:block @max-[16rem]:[&_tbody]:block";
+const STACKED_ROW = "@max-[16rem]:grid";
+const STACKED_VALUE =
+  "@max-[16rem]:pt-0 @max-[16rem]:pl-4 @max-[16rem]:text-left";
 
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
 export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
   const rows = chainRows(summary.chain, summary.quality);
   return (
-    <Card aria-labelledby={CHAIN_TITLE_ID} className="gap-0 py-0" role="region">
+    <Card
+      aria-labelledby={CHAIN_TITLE_ID}
+      className="@container gap-0 py-0"
+      role="region"
+    >
       <CardHeader className="border-b py-(--card-spacing)">
         <CardTitle aria-level={2} id={CHAIN_TITLE_ID} role="heading">
           Como chegamos a este resultado
@@ -59,7 +73,7 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
           Das vendas brutas ao resultado estimado, linha a linha.
         </CardDescription>
       </CardHeader>
-      <Table>
+      <Table className={STACKED_TABLE}>
         <caption className="sr-only">
           Das vendas brutas ao resultado operacional estimado
         </caption>
@@ -78,7 +92,8 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
               <TableHead
                 className={cn(
                   "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
-                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2"
+                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
+                  "@max-[16rem]:pr-4 @max-[16rem]:pb-0"
                 )}
                 scope="row"
               >
@@ -95,6 +110,7 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
               <TableCell
                 className={cn(
                   "pl-2 text-right align-top tabular-nums",
+                  STACKED_VALUE,
                   row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
                   row.negative && row.kind !== "line" && "text-destructive"
                 )}
