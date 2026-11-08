@@ -71,3 +71,40 @@ test("a barra inferior tem cinco controles, cada um com nome, e nenhum desligado
     0
   );
 });
+
+test("a 345 px a árvore de acessibilidade lê os cinco destinos da barra inteiros, sem sílaba solta", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 740, width: 345 });
+  await serve(page);
+  await page.goto("/");
+  const bar = bottomBar(page);
+  await expect(bar).toBeVisible();
+  const links = bar.getByRole("link");
+  await expect(links).toHaveCount(BAR_CONTROLS.length - 1);
+  for (const [index, name] of [
+    "Início",
+    "Histórico",
+    "Vender",
+    "Estoque",
+  ].entries()) {
+    // biome-ignore lint/performance/noAwaitInLoops: four links
+    await expect(links.nth(index)).toHaveAttribute("aria-label", name);
+  }
+  const session = await page.context().newCDPSession(page);
+  const { nodes } = await session.send("Accessibility.getFullAXTree");
+  const spoken = nodes
+    .filter((node) => !node.ignored)
+    .map((node) => `${node.role?.value}:${node.name?.value ?? ""}`);
+  for (const name of BAR_CONTROLS) {
+    expect(spoken, name).toContainEqual(
+      expect.stringMatching(new RegExp(`^(link|button):${name}$`))
+    );
+  }
+  for (const part of ["Histó", "rico", "Esto", "que"]) {
+    expect(
+      spoken.filter((entry) => entry.endsWith(`:${part}`)),
+      `sílaba solta "${part}" na árvore`
+    ).toEqual([]);
+  }
+});
