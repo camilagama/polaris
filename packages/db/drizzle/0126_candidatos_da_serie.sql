@@ -1,7 +1,7 @@
--- The activation series, the database part, piece 2 (ADR 0106, D2 to D6 and D12): who gets which e-mail of the
--- series, once, and only inside its limits. Expand only (ADR 0096): one new table, one new function, new policies and
--- column grants; nothing existing is dropped, altered or recreated, and the previous Worker never touches any of it.
--- Nothing sends: the series stays off (D6) and the consumer comes later.
+-- The activation series in the database (ADR 0106, D2 to D6 and D12): who gets which e-mail of the series, once, and
+-- only inside its limits. Expand only (ADR 0096): one new table, one new function, new policies and column grants;
+-- nothing existing is dropped, altered or recreated, and the previous Worker never touches any of it. Nothing here
+-- sends an e-mail: the function only answers IDs, and the series stays off (D6).
 --
 -- * `activation_series_state`: one row, the instant the hourly sweep first found the switch of the series on, or null
 --   while it finds it off. Only the billing role writes it. The function answers nothing while it is null, and a step
@@ -17,7 +17,8 @@
 --   columns of each that make that link, and only for the stores it already sees (D2, amended).
 -- * The daily cap of 60 counts the notices recorded on the day of São Paulo and not skipped (owed, sent or failed): a
 --   suppressed address is skipped by the Worker when it sends, and then stops counting. One sweep at a time takes the
---   cap (a lock held until the caller's transaction ends, where it records them).
+--   cap: a lock held until the end of the caller's transaction, which records what it got in that same transaction
+--   (READ COMMITTED); a sweep that finds the lock taken gets nothing and leaves the work to the one that holds it.
 -- Each policy on an existing table takes a lock on a busy table: they are taken first, in one fixed order, and a lock
 -- not had in 10 s fails the migration instead of queueing requests.
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
@@ -63,7 +64,8 @@ SET ROLE polaris_activation_notice_owner;--> statement-breakpoint
 -- Only between 08:00 and 12:00 of São Paulo, at most 60 recorded and not skipped a day of São Paulo, and only after the
 -- switch is seen on. `outcome` says how the caller records each: `due` (owed), `expired` (3 days after the trigger
 -- went by: recorded skipped) or `series_off` (fell due before the switch went on: recorded skipped); the last two do not
--- count in the cap. `truncated` says that more were owed than this call returns. Only IDs, a step and instants.
+-- count in the cap. `truncated` says that more were owed than this call returns, by the batch or by the cap (with the
+-- cap reached and nothing but due steps, the answer is empty). Only IDs, a step and instants.
 CREATE FUNCTION public.activation_notice_candidates(p_now timestamptz, p_limit integer)
 RETURNS TABLE (organization_id text, user_id text, step text, due_at timestamptz, outcome text, truncated boolean)
 LANGUAGE plpgsql
@@ -82,8 +84,11 @@ BEGIN
   IF p_limit IS NULL OR p_limit < 1 OR p_limit > 50 THEN
     RAISE EXCEPTION 'invalid_limit' USING ERRCODE = '22023';
   END IF;
-  -- one sweep at a time reads and spends the cap: the lock lasts until the caller has recorded what this returns
-  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('activation_notice_candidates', 0));
+  -- one sweep at a time reads and spends the cap: the lock lasts until the caller has recorded what this returns, and
+  -- a second sweep does not wait for it holding a connection of the billing role
+  IF NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended('activation_notice_candidates', 0)) THEN
+    RETURN;
+  END IF;
   SELECT state.enabled_since INTO enabled FROM public.activation_series_state AS state;
   IF enabled IS NULL OR enabled > p_now THEN
     RETURN;
@@ -167,7 +172,7 @@ BEGIN
     SELECT o.*,
            pg_catalog.count(*) OVER () AS owed_count,
            CASE WHEN o.outcome = 'due' THEN pg_catalog.row_number() OVER (
-             PARTITION BY o.outcome = 'due' ORDER BY o.due_at, o.created_at, o.organization_id, o.step
+             PARTITION BY o.outcome ORDER BY o.due_at, o.created_at, o.organization_id, o.step
            ) END AS due_rank
       FROM owed AS o
   ),

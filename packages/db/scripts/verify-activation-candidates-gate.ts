@@ -35,7 +35,9 @@ import {
  *   5. the switch and the validity: nothing while the state is null or later than the clock; what fell due before the
  *      switch went on comes back `series_off`, a step 3 days past its trigger comes back `expired`, a minute less `due`;
  *   6. the daily cap of 60 (with 58 recorded today, 5 skipped that do not count): 2 `due` and `truncated`, the skipped
- *      kinds still answered; the billing role records them, and the next day the rest comes back in order;
+ *      kinds still answered; another session cannot take its lock while the sweep's transaction is open; the billing
+ *      role records them, and the next day the rest comes back in order; the day is São Paulo's from its midnight
+ *      (the session in UTC), and a failed notice counts;
  *   7. the table itself: a notice whose ID carries "@" is refused, the same person and step in two stores is refused;
  *      and the effect accepted in the ADR: the membership of the first store deleted (and its notice with it), the
  *      next store of the person becomes a candidate.
@@ -316,6 +318,8 @@ async function run() {
       as(adminUrl, async (client) => {
         await client.query("BEGIN");
         try {
+          // the function must not lean on the session's zone: a database in São Paulo would hide a day of UTC
+          await client.query("SET LOCAL TimeZone = 'UTC'");
           // the stores and notices other gates left are out of this transaction's answers
           await client.query(
             "UPDATE public.organizations SET status = 'suspended' WHERE status = 'active'"
@@ -456,12 +460,13 @@ async function run() {
       client: Client,
       store: Store,
       step: string,
-      outcome: "owed" | "sent" | "skipped",
+      outcome: "owed" | "sent" | "skipped" | "failed",
       recordedAt: Date
     ) =>
       client.query(
-        `INSERT INTO public.activation_notices (organization_id, user_id, step, due_at, recorded_at, sent_at, skipped_reason)
-         VALUES ($1, $2, $3, $4, $4, CASE WHEN $5 = 'sent' THEN $4::timestamptz END, CASE WHEN $5 = 'skipped' THEN 'expired' END)`,
+        `INSERT INTO public.activation_notices (organization_id, user_id, step, due_at, recorded_at, sent_at, skipped_reason, failed_at, failure_code)
+         VALUES ($1, $2, $3, $4, $4, CASE WHEN $5 = 'sent' THEN $4::timestamptz END, CASE WHEN $5 = 'skipped' THEN 'expired' END,
+                 CASE WHEN $5 = 'failed' THEN $4::timestamptz END, CASE WHEN $5 = 'failed' THEN 'provider_refused' END)`,
         [store.organizationId, store.userId, step, recordedAt, outcome]
       );
 
@@ -598,6 +603,9 @@ async function run() {
         createdAt: at(ten, -(24 * HOUR - MINUTE)),
       });
       const a1At = await newStore(client, { createdAt: at(ten, -24 * HOUR) });
+      const windowStore = await newStore(client, {
+        createdAt: at(ten, -30 * HOUR),
+      });
       const a2Before = await newStore(client, {
         createdAt: at(ten, -5 * DAY),
         product: { at: at(ten, -(3 * DAY - MINUTE)) },
@@ -629,11 +637,18 @@ async function run() {
         product: { at: at(ten, -9 * DAY) },
       });
       await seedNotice(client, a3Owed, "a2", "owed", at(ten, -6 * DAY));
+      // on tomorrow's clock both stays visible to the role (14 days of the database's clock), so only the function decides
+      const tomorrow = at(ten, DAY);
       const fourteen = await newStore(client, {
-        createdAt: at(ten, -14 * DAY),
-        product: { at: at(ten, -13 * DAY) },
+        createdAt: at(tomorrow, -14 * DAY),
+        product: { at: at(tomorrow, -13 * DAY) },
       });
-      await seedNotice(client, fourteen, "a2", "sent", at(ten, -10 * DAY));
+      await seedNotice(client, fourteen, "a2", "sent", at(ten, -9 * DAY));
+      const almostFourteen = await newStore(client, {
+        createdAt: at(tomorrow, -14 * DAY + MINUTE),
+        product: { at: at(tomorrow, -13 * DAY) },
+      });
+      await seedNotice(client, almostFourteen, "a2", "sent", at(ten, -9 * DAY));
       const allSent = await newStore(client, {
         createdAt: at(ten, -11 * DAY),
         product: { at: at(ten, -10 * DAY) },
@@ -657,12 +672,22 @@ async function run() {
         ["a3 on the 10th day after the a2 went out", a3WithA2, ["a3:due"]],
         ["no a3 when the a2 was skipped", a3WithoutA2, []],
         ["no a3 while the a2 is still owed", a3Owed, []],
-        ["nothing for a store of exactly 14 days", fourteen, []],
         ["never a 4th e-mail", allSent, []],
       ];
       for (const [label, store, steps] of expected) {
         assert.deepEqual(stepsOf(rows, store), steps, label);
       }
+      const nextDay = await candidates(client, tomorrow);
+      assert.deepEqual(
+        stepsOf(nextDay, fourteen),
+        [],
+        "nothing for a store of exactly 14 days"
+      );
+      assert.deepEqual(
+        stepsOf(nextDay, almostFourteen),
+        ["a3:expired"],
+        "a minute less than 14 days is still in"
+      );
       const dueOfA1 = rows.find(
         (row) => row.organization_id === a1At.organizationId
       );
@@ -674,15 +699,15 @@ async function run() {
         ["12:00", 2 * HOUR, false],
       ] as const) {
         const within = await candidates(client, at(ten, offset));
-        assert.equal(
-          within.length > 0,
-          open,
+        assert.deepEqual(
+          stepsOf(within, windowStore),
+          open ? ["a1:due"] : [],
           `${label} of São Paulo is ${open ? "inside" : "outside"} the window`
         );
       }
     });
     tests.push(
-      "the triggers on a clock fixed at 10:00 of São Paulo: a1 at 24:00 of the store and not at 23:59; a2 3 days after the oldest live product and not a minute before, on the 5th day (4 days) for a store still without one (a deleted product counts as none) and not a minute before; a3 on the 10th day only once the a2 went out (not skipped, not still owed); nothing for a store of exactly 14 days, never a 4th e-mail; the window answers at 08:00 and 11:59 and nothing at 07:59 and 12:00"
+      "the triggers on a clock fixed at 10:00 of São Paulo: a1 at 24:00 of the store and not at 23:59; a2 3 days after the oldest live product and not a minute before, on the 5th day (4 days) for a store still without one (a deleted product counts as none) and not a minute before; a3 on the 10th day only once the a2 went out (not skipped, not still owed); nothing for a store of exactly 14 days and an a3 for one a minute younger (on a clock one day ahead, where both are visible to the role), never a 4th e-mail; the window answers at 08:00 and 11:59 and nothing at 07:59 and 12:00"
     );
 
     // 5. the switch and the validity
@@ -764,6 +789,17 @@ async function run() {
         "with 58 counted, 2 due by trigger order; the expired one does not count"
       );
       assert.ok(rows.every((row) => row.truncated));
+      const lockFree = await as(billingUrl, async (other) => {
+        const probe = await other.query<{ free: boolean }>(
+          "SELECT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended('activation_notice_candidates', 0)) AS free"
+        );
+        return probe.rows[0]?.free;
+      });
+      assert.equal(
+        lockFree,
+        false,
+        "the lock of the cap is held until the end of the sweep's transaction"
+      );
       await withGateRole(client, BILLING_RUNTIME, async () => {
         for (const row of rows) {
           const recorded = await client.query<{ id: string }>(
@@ -798,7 +834,57 @@ async function run() {
       );
     });
     tests.push(
-      "the daily cap of 60: with 58 owed or sent recorded on the day of São Paulo and 5 skipped (not counted), the answer has 2 due in the order of their triggers, keeps the expired step outside the count, and says truncated; the billing role records them (owed, and the expired one skipped), the cap holds an hour later, the next day the other two come back in order, and a batch of 1 says that more wait"
+      "the daily cap of 60: with 58 owed or sent recorded on the day of São Paulo and 5 skipped (not counted), the answer has 2 due in the order of their triggers, keeps the expired step outside the count, and says truncated; another session cannot take the lock of the cap while the sweep's transaction is open; the billing role records them (owed, and the expired one skipped), the cap holds an hour later, the next day the other two come back in order, and a batch of 1 says that more wait"
+    );
+
+    // 6b. the day of the cap is São Paulo's, from its midnight, and a failed notice counts
+    await scenario(async (client) => {
+      const dayStart = (
+        await client.query<{ start: Date }>(
+          `SELECT pg_catalog.date_trunc('day', $1::timestamptz AT TIME ZONE '${ZONE}') AT TIME ZONE '${ZONE}' AS start`,
+          [ten]
+        )
+      ).rows[0]?.start;
+      assert.ok(dayStart instanceof Date);
+      const busy = await newStore(client, {
+        billing: { state: "active", trial: false },
+        createdAt: at(ten, -2 * DAY),
+      });
+      for (let index = 0; index < 60; index += 1) {
+        const person = await newPerson(client);
+        await client.query(
+          "INSERT INTO public.memberships (organization_id, user_id, role, status, created_at) VALUES ($1, $2, 'owner', 'active', $3)",
+          [busy.organizationId, person, at(ten, -DAY)]
+        );
+        const seeded = { organizationId: busy.organizationId, userId: person };
+        await seedNotice(
+          client,
+          seeded,
+          "a1",
+          index < 20 ? "failed" : "sent",
+          at(dayStart, -1000)
+        );
+      }
+      const waiting = await newStore(client, {
+        createdAt: at(ten, -25 * HOUR),
+      });
+      assert.deepEqual(
+        stepsOf(await candidates(client, ten), waiting),
+        ["a1:due"],
+        "60 recorded a second before the midnight of São Paulo (the same day in UTC) do not count"
+      );
+      await client.query(
+        "UPDATE public.activation_notices SET recorded_at = $1 WHERE organization_id = $2",
+        [dayStart, busy.organizationId]
+      );
+      assert.deepEqual(
+        await candidates(client, ten),
+        [],
+        "60 recorded from the midnight of São Paulo, 20 of them failed, reach the cap"
+      );
+    });
+    tests.push(
+      "the day of the cap is the one of São Paulo: 60 notices recorded a second before its midnight (the same day in UTC) leave the due a1 out of the count, and the same 60 from its midnight, 20 of them failed, reach the cap"
     );
 
     // 7. the table: "@" refused, one notice per person and step, and the cascade accepted in the ADR
