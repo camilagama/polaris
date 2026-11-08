@@ -589,16 +589,17 @@ const coveredNames = () =>
   Object.values(COVERED).flatMap((cases) => cases.map(({ name }) => name));
 
 /** The cases of `COVERED` that run at 24 px: all of them but the ones `ALREADY_AT_24` and `UNREACHABLE_AT_24` name. */
-const COVERED_24 = Object.fromEntries(
-  Object.entries(COVERED)
-    .map(([key, cases]) => [
-      key,
-      cases.filter(
-        ({ name }) => !(name in ALREADY_AT_24 || name in UNREACHABLE_AT_24)
-      ),
-    ])
-    .filter(([, cases]) => cases.length > 0)
-) as Readonly<Record<string, readonly Case[]>>;
+const COVERED_24: Readonly<Record<string, readonly Case[]>> =
+  Object.fromEntries(
+    Object.entries(COVERED)
+      .map(([key, cases]): [string, readonly Case[]] => [
+        key,
+        cases.filter(
+          ({ name }) => !(name in ALREADY_AT_24 || name in UNREACHABLE_AT_24)
+        ),
+      ])
+      .filter(([, cases]) => cases.length > 0)
+  );
 
 function expectKnownLines(
   list: readonly KnownFinding[],
