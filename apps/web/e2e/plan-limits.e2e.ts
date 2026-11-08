@@ -138,7 +138,9 @@ async function goToProAndBack(page: Page, link: Locator, back: RegExp) {
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // the Assinatura is drawn, and the focus starts again at the content, as on a load of the page
   await expect(
-    page.getByRole("tab", { name: "Assinatura", selected: true })
+    page
+      .getByRole("tab", { name: "Assinatura", selected: true })
+      .or(page.getByRole("link", { name: "Voltar para Configurações" }))
   ).toBeVisible();
   await expect(page.locator("#conteudo")).toBeFocused();
   expect(await stillTheSamePage(page)).toBe(true);

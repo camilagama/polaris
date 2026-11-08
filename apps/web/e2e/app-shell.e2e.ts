@@ -684,7 +684,7 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       ],
       [
         "/payment-profiles",
-        "/configuracoes",
+        "/configuracoes?aba=formas-de-receber",
         "Configurações",
         "Formas de receber",
       ],

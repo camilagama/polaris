@@ -159,3 +159,40 @@ describe("the tabs in named rows", () => {
     expect(html).not.toContain("aria-describedby");
   });
 });
+
+describe("the tabs on a phone: a menu of rows in place of the strip", () => {
+  function onPhone(search: string, showMenu: boolean) {
+    address.search = search;
+    return renderToStaticMarkup(
+      <ScreenTabs
+        label="Abas"
+        panels={PANELS}
+        phone={{
+          back: <a href="/products">Voltar</a>,
+          menu: <p>O menu de linhas</p>,
+          showMenu,
+        }}
+        screen="products"
+        title="Produtos"
+      />
+    );
+  }
+
+  it("draws the menu and no strip, and no tab is active, while the menu is open", () => {
+    const html = onPhone("", true);
+    expect(html).toContain("O menu de linhas");
+    expect(html).not.toContain("Voltar");
+    expect(html).not.toContain("<button");
+    expect(stateOf(html, "produtos")).toBe("hidden");
+    expect(stateOf(html, "categorias")).toBe("hidden");
+  });
+
+  it("draws the way back and the open tab, and no strip, once a tab is open", () => {
+    const html = onPhone("?aba=categorias", false);
+    expect(html).toContain("Voltar");
+    expect(html).not.toContain("O menu de linhas");
+    expect(html).not.toContain("<button");
+    expect(stateOf(html, "categorias")).toBe("active");
+    expect(stateOf(html, "produtos")).toBe("hidden");
+  });
+});
