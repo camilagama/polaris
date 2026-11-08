@@ -235,10 +235,7 @@ function Counter({
   const finish = useCallback(() => setCounting(false), []);
   const money = figure.kind === "money";
   return (
-    <span
-      aria-hidden="true"
-      data-figure-counting={counting ? "" : undefined}
-    >
+    <span aria-hidden="true" data-figure-counting={counting ? "" : undefined}>
       <NumberFlow
         className={cn(HOST_BOX, partsClass(figure, smallSign))}
         data-animated-figure=""
