@@ -144,9 +144,9 @@ describe("HeroValue in a column of the strip", () => {
     const markup = renderToStaticMarkup(
       <HeroValue amount="-99640.35" size="xl" strip />
     );
-    expect(markup).toContain("max-[56.24875rem]:@max-[12.5rem]:text-value-lg");
+    expect(markup).toContain("max-[56.24875rem]:@max-[12.25rem]:text-value-lg");
     const classes = CLASS_ATTRIBUTE.exec(markup)?.[1]?.split(" ") ?? [];
-    expect(classes).not.toContain("@max-[12.5rem]:text-value-lg");
+    expect(classes).not.toContain("@max-[12.25rem]:text-value-lg");
     expect(markup).toContain("min-[56.25rem]:@max-[8.999rem]:text-[1.25rem]");
   });
 });
@@ -178,10 +178,10 @@ describe("HeroValue sizes", () => {
   });
 
   it("gives a longer amount a higher limit under which the principal steps down", () => {
-    expect(principal("129.90")).toContain("@max-[8.5rem]:text-value-lg");
-    expect(principal("12345.67")).toContain("@max-[11.5rem]:text-value-lg");
-    expect(principal("-99640.35")).toContain("@max-[12.5rem]:text-value-lg");
-    expect(principal("-9999999.99")).toContain("@max-[15rem]:text-value-lg");
+    expect(principal("129.90")).toContain("@max-[8.25rem]:text-value-lg");
+    expect(principal("12345.67")).toContain("@max-[11.25rem]:text-value-lg");
+    expect(principal("-99640.35")).toContain("@max-[12.25rem]:text-value-lg");
+    expect(principal("-9999999.99")).toContain("@max-[14.75rem]:text-value-lg");
   });
 });
 

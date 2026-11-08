@@ -147,27 +147,27 @@ const SIGN = /^[+-]/;
  * What the principal card steps down to (`text-value-lg`) when its box is too narrow for the amount at `xl`, by the
  * characters of the amount ("−R$ 99.640,35" is 13): the box is the card's content, which measures itself
  * (`@container`), and the limits are in rem so they follow the letter size of the browser. Each limit is what the
- * amount takes at 36 px (measured: 4.9 em for 12 characters, 5.4 em for 13, 6 em for 14) times 2.25 rem, with room to
- * spare. The first list is for a card of its own; the second is for a column of the strip, where the step holds only
+ * amount takes at 36 px (measured: 4.9 em for 12 characters, 5.4 em for 13, 6 em for 14) times 2.25 rem, plus a tenth
+ * of a rem of room. The first list is for a card of its own; the second is for a column of the strip, where the step holds only
  * below 900 px, because from there the column has its own sizes (`stripValueSize`).
  */
 const PRINCIPAL_STEP = [
-  "@max-[8.5rem]:text-value-lg",
-  "@max-[9.25rem]:text-value-lg",
-  "@max-[10.25rem]:text-value-lg",
-  "@max-[11.5rem]:text-value-lg",
-  "@max-[12.5rem]:text-value-lg",
-  "@max-[13.75rem]:text-value-lg",
-  "@max-[15rem]:text-value-lg",
+  "@max-[8.25rem]:text-value-lg",
+  "@max-[9rem]:text-value-lg",
+  "@max-[10rem]:text-value-lg",
+  "@max-[11.25rem]:text-value-lg",
+  "@max-[12.25rem]:text-value-lg",
+  "@max-[13.5rem]:text-value-lg",
+  "@max-[14.75rem]:text-value-lg",
 ] as const;
 const PRINCIPAL_STEP_STRIP = [
-  "max-[56.24875rem]:@max-[8.5rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[9.25rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[10.25rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[11.5rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[12.5rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[13.75rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[15rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[8.25rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[9rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[10rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[11.25rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[12.25rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[13.5rem]:text-value-lg",
+  "max-[56.24875rem]:@max-[14.75rem]:text-value-lg",
 ] as const;
 const STEP_FROM = 9;
 

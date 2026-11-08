@@ -82,10 +82,6 @@ function money(cents: number): string {
   return `${cents < 0 ? "-" : ""}${Math.floor(whole / 100)}.${String(whole % 100).padStart(2, "0")}`;
 }
 
-function signedMoney(cents: number): string {
-  return money(cents);
-}
-
 interface Scenario {
   /** Net sales in cents and the count of each day that sold. */
   days: Record<string, [number, number]>;
@@ -157,7 +153,7 @@ function dayEntry(scenario: Scenario, day: string): Record<string, unknown> {
     ...entry,
     costs: result === null ? null : money(Math.max(0, cents - result)),
     operatingExpenses: "0.00",
-    operatingResult: result === null ? null : signedMoney(result),
+    operatingResult: result === null ? null : money(result),
   };
 }
 

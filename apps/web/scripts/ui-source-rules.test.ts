@@ -747,9 +747,9 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
         "src/ui/kpi-card.tsx"
       ).join()
     ).toContain("a lista diz 1");
-    expect(
-      money(`${strip}`, "src/dashboard/result-cards.tsx").join()
-    ).toContain("fora de ui/money.tsx");
+    expect(money(strip, "src/dashboard/result-cards.tsx").join()).toContain(
+      "3 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
+    );
     expect(money('// "text-[1.75rem]" in a comment')).toEqual([]);
   });
 
