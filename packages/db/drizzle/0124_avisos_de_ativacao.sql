@@ -4,17 +4,22 @@
 -- Worker never touches any of it. Nothing sends: the series stays off (D6).
 --
 -- * `activation_notices`: one row per person and step (a1, a2, a3), whatever the store; the person and the store are
---   one membership (composite foreign key in cascade), so the purge of the store, which deletes the memberships, and
---   the deletion of the account, which must delete them first, take the row with them. IDs, dates and short codes:
---   every text column refuses "@". The billing role records, reads and marks the outcome, as for `billing_notices`.
+--   one membership (composite foreign key in cascade), so the purge of the store, which deletes the memberships, takes
+--   the row with them, and an account can only go once its memberships are gone (restrictive key). The cascade takes the
+--   record of what was sent too: a person whose first store was purged is a candidate again in a new one, as for the
+--   welcome of 0101. IDs, dates and short codes: every text column refuses "@". The billing role records, reads and
+--   marks the outcome, as for `billing_notices`.
 -- * `email_opt_outs`: who asked not to receive the e-mails sent on legitimate interest, and when; it leaves with the
 --   account. The billing role and the owner of the series read it; who writes it comes with the opt-out page.
 -- * `activation_email_suppressions`: the HMAC-SHA256 of an address after a bounce or a complaint (32 bytes, never the
 --   address, no account); it outlives the account. The billing role records, reads and re-keys it (`UPDATE` of the
---   HMAC only, so `recorded_at` keeps the original date). Nobody else, the tenant included, has a policy on it.
+--   HMAC only, so `recorded_at` keeps the original date; row security cannot compare the old HMAC with the new one, so
+--   the re-keying rests on that role). Nobody else, the tenant included, has a policy on it.
 -- * `polaris_activation_notice_owner` (NOLOGIN, NOBYPASSRLS): it will own the candidates' function; here it gets only
---   the columns the stop rules read, each table bound by a policy to the stores created in the last 14 days. It never
---   reads `session` nor `"user".email` (the end-state check refuses it).
+--   the columns the stop rules read. The stores of the last 14 days, and through them their products, sales, billing
+--   record, internal marker and owners' `email_verified`; every active owner's membership (the first store of a person
+--   is the oldest one); the notices and the opt-outs. It never reads `session`, `"user".email` nor the suppressions,
+--   and writes nothing (the end-state check refuses all of it).
 -- Each policy on an existing table and each foreign key takes a lock on a busy table: they are all taken first, in one
 -- fixed order, and a lock not had in 10 s fails the migration instead of queueing requests.
 SET LOCAL lock_timeout = '10s';--> statement-breakpoint
@@ -102,7 +107,8 @@ GRANT SELECT ON TABLE public.email_opt_outs TO polaris_billing_runtime;--> state
 GRANT SELECT ON TABLE public.activation_email_suppressions TO polaris_billing_runtime;--> statement-breakpoint
 GRANT INSERT (address_hmac, reason) ON TABLE public.activation_email_suppressions TO polaris_billing_runtime;--> statement-breakpoint
 GRANT UPDATE (address_hmac) ON TABLE public.activation_email_suppressions TO polaris_billing_runtime;--> statement-breakpoint
--- the purge owner sees the notices of a store it purges; the cascade from the memberships deletes them
+-- the purge owner sees the notices of a store it purges, as it sees every table it empties (the purge gate asks it of
+-- the cascaded tables); the cascade from the memberships deletes them, so it gets no DELETE
 GRANT SELECT ON TABLE public.activation_notices TO polaris_purge_owner;--> statement-breakpoint
 -- The owner of the series: the columns the stop rules of D3 read and nothing else. The stores created in the last 14
 -- days (the series ends on day 14), and through them their products, sales, billing record and the internal marker; the
@@ -141,23 +147,53 @@ GRANT SELECT (organization_id) ON TABLE public.platform_internal_organizations T
 CREATE POLICY platform_internal_organizations_activation_notice_owner_select_recent ON public.platform_internal_organizations
   AS PERMISSIVE FOR SELECT TO polaris_activation_notice_owner
   USING (EXISTS (SELECT 1 FROM public.organizations AS o WHERE o.id = platform_internal_organizations.organization_id));--> statement-breakpoint
--- The end state (a REVOKE or an ALTER without the right is only a WARNING on Neon): the owner of the series reads
--- neither the session nor the address, writes nothing, and no tenant or other runtime reads the new tables.
+-- The end state (a REVOKE or an ALTER without the right is only a WARNING on Neon): the owner of the series holds
+-- exactly the columns above and nothing else (no table privilege, no write, no CREATE), so it reads neither the session
+-- nor the address; and of the `polaris_*` groups and owners, only the billing role, the purge owner and it reach the
+-- new tables.
 DO $end_state$
+DECLARE
+  held text[];
 BEGIN
-  IF pg_catalog.has_column_privilege('polaris_activation_notice_owner', 'public."user"', 'email', 'SELECT')
-     OR pg_catalog.has_table_privilege('polaris_activation_notice_owner', 'public.session', 'SELECT')
+  SELECT COALESCE(pg_catalog.array_agg(p.entry ORDER BY p.entry COLLATE "C"), '{}')
+    INTO held
+    FROM (SELECT c.table_name || '.' || c.column_name || ':' || c.privilege_type AS entry
+            FROM information_schema.column_privileges AS c
+           WHERE c.grantee = 'polaris_activation_notice_owner') AS p;
+  IF held IS DISTINCT FROM ARRAY(SELECT e FROM unnest(ARRAY[
+    'activation_notices.due_at:SELECT', 'activation_notices.failed_at:SELECT', 'activation_notices.id:SELECT',
+    'activation_notices.organization_id:SELECT', 'activation_notices.recorded_at:SELECT',
+    'activation_notices.sent_at:SELECT', 'activation_notices.skipped_reason:SELECT', 'activation_notices.step:SELECT',
+    'activation_notices.user_id:SELECT', 'email_opt_outs.user_id:SELECT', 'memberships.created_at:SELECT',
+    'memberships.organization_id:SELECT', 'memberships.role:SELECT', 'memberships.status:SELECT',
+    'memberships.user_id:SELECT', 'organization_billing.organization_id:SELECT', 'organization_billing.state:SELECT',
+    'organization_billing.trial_started_at:SELECT', 'organizations.created_at:SELECT', 'organizations.id:SELECT',
+    'organizations.status:SELECT', 'platform_internal_organizations.organization_id:SELECT',
+    'products.created_at:SELECT', 'products.deleted_at:SELECT', 'products.organization_id:SELECT',
+    'sales.confirmed_at:SELECT', 'sales.organization_id:SELECT', 'user.email_verified:SELECT', 'user.id:SELECT'
+  ]::text[]) AS e ORDER BY e COLLATE "C") THEN
+    RAISE EXCEPTION 'the owner of the series does not hold exactly its columns: %', held;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.table_privileges AS t WHERE t.grantee = 'polaris_activation_notice_owner')
+     OR pg_catalog.has_column_privilege('polaris_activation_notice_owner', 'public."user"', 'email', 'SELECT')
      OR pg_catalog.has_any_column_privilege('polaris_activation_notice_owner', 'public.session', 'SELECT')
-     OR pg_catalog.has_any_column_privilege('polaris_activation_notice_owner', 'public.activation_email_suppressions', 'SELECT') THEN
-    RAISE EXCEPTION 'the owner of the series reads the session, the address or the suppressions';
+     OR pg_catalog.has_schema_privilege('polaris_activation_notice_owner', 'public', 'CREATE') THEN
+    RAISE EXCEPTION 'the owner of the series reads the session or the address, or holds more than columns';
   END IF;
   IF EXISTS (
     SELECT 1 FROM unnest(ARRAY['activation_notices', 'email_opt_outs', 'activation_email_suppressions']) AS t (name)
-     CROSS JOIN unnest(ARRAY['public', 'polaris_pr11_runtime', 'polaris_catalog_runtime', 'polaris_admin_runtime',
-                             'polaris_privacy_runtime', 'polaris_outbox_runtime', 'polaris_auth_runtime']) AS r (role)
-     WHERE pg_catalog.has_any_column_privilege(r.role, 'public.' || t.name, 'SELECT')
+     CROSS JOIN (
+       SELECT 'public'::text AS role
+       UNION ALL
+       SELECT r.rolname::text FROM pg_catalog.pg_roles AS r
+        WHERE r.rolname LIKE 'polaris\_%' AND NOT r.rolcanlogin
+          AND (r.rolname LIKE '%\_runtime' OR r.rolname LIKE '%\_owner' OR r.rolname LIKE '%\_reader')
+          AND r.rolname NOT IN ('polaris_billing_runtime', 'polaris_purge_owner', 'polaris_activation_notice_owner')
+     ) AS r
+     WHERE pg_catalog.has_any_column_privilege(r.role, 'public.' || t.name, 'SELECT, INSERT, UPDATE, REFERENCES')
+        OR pg_catalog.has_table_privilege(r.role, 'public.' || t.name, 'DELETE, TRUNCATE, TRIGGER')
   ) THEN
-    RAISE EXCEPTION 'a tenant or another runtime reads the tables of the series';
+    RAISE EXCEPTION 'a tenant or another role reaches the tables of the series';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles
               WHERE rolname = 'polaris_activation_notice_owner'

@@ -1,5 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
+import { is, sql } from "drizzle-orm";
+import {
+  check,
+  getTableConfig,
+  PgDialect,
+  PgTable,
+  pgTable,
+  text,
+} from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   activationEmailSuppressions,
@@ -8,7 +16,11 @@ import {
 } from "./schema/activation-notices";
 
 const dialect = new PgDialect();
-const TABLES = [activationNotices, emailOptOuts, activationEmailSuppressions];
+const seriesSchema = await import("./schema/activation-notices");
+// every table of the module, so a table added to it is held to the same rules
+const TABLES = Object.values(seriesSchema as Record<string, unknown>).filter(
+  (value): value is PgTable => is(value, PgTable)
+);
 const MIGRATION_NAME = /^\d{4}_avisos_de_ativacao\.sql$/;
 const drizzleDirectory = new URL("../drizzle/", import.meta.url);
 // found by its name: a renumbering at the merge does not break the test
@@ -36,7 +48,9 @@ const PERSONAL = new Set([
 ]);
 /** The one column named after an address holds its HMAC, never the address. */
 const HMAC_COLUMN = "address_hmac";
-const DESTRUCTIVE = /\b(DROP|RENAME|TRUNCATE|DELETE FROM|UPDATE public)\b/;
+const STRING_LITERAL = /'[^']*'/g;
+const DESTRUCTIVE =
+  /\b(DROP|RENAME|TRUNCATE|DELETE\s+FROM|UPDATE\s+\S+\s+SET)\b/;
 const ALTER_OF_ANOTHER_TABLE =
   /\bALTER TABLE (?!"?activation_|"?email_opt_outs|public\.(activation_|email_opt_outs))/;
 const EMAIL_GRANT_TO_OWNER =
@@ -47,11 +61,15 @@ const CLOSED_LIST = String.raw`IN \('[a-z0-9_]+'`;
 const SHORT_CODE = String.raw`~ '\^\[a-z\]\[a-z0-9_\]\{0,63\}\$'`;
 const REFUSAL = String.raw`!~ '\[\[:space:\]\[:cntrl:\]@\]'`;
 
-type SeriesTable = (typeof TABLES)[number];
+type SeriesTable =
+  | PgTable
+  | typeof activationEmailSuppressions
+  | typeof activationNotices
+  | typeof emailOptOuts;
 
 function checksOf(table: SeriesTable): string[] {
   return getTableConfig(table).checks.map(
-    (check) => dialect.sqlToQuery(check.value as never).sql
+    (constraint) => dialect.sqlToQuery(constraint.value as never).sql
   );
 }
 
@@ -66,17 +84,19 @@ function textColumnsWithoutRefusal(table: SeriesTable): string[] {
   return columns
     .filter((column) => column.getSQLType() === "text")
     .filter(
-      (column) => !checks.some((check) => refusesAt(column.name).test(check))
+      (column) =>
+        !checks.some((rendered) => refusesAt(column.name).test(rendered))
     )
     .map((column) => `${name}.${column.name}`);
 }
 
-/** The statements of the migration, without their comment lines. */
+/** The statements of the migration, without their comment lines and string literals (a privilege named in a check). */
 const statements = migrationSql.split("--> statement-breakpoint").map((part) =>
   part
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("--"))
     .join("\n")
+    .replace(STRING_LITERAL, "''")
 );
 
 describe("the tables of the activation series", () => {
@@ -99,9 +119,26 @@ describe("the tables of the activation series", () => {
   });
 
   it("would catch a text column left without the refusal", () => {
-    expect(refusesAt("step").test("\"step\" IN ('a1', 'a2')")).toBe(true);
-    expect(refusesAt("step").test("\"step\" ~ '^[a-z]'")).toBe(false);
-    expect(refusesAt("user_id").test('"user_id" IS NOT NULL')).toBe(false);
+    const planted = pgTable(
+      "planted",
+      { kind: text("kind"), note: text("note"), owner: text("owner") },
+      (table) => [
+        check("planted_kind", sql`${table.kind} IN ('a', 'b')`),
+        check("planted_owner", sql`${table.owner} IS NOT NULL`),
+      ]
+    );
+    expect(textColumnsWithoutRefusal(planted)).toEqual([
+      "planted.note",
+      "planted.owner",
+    ]);
+  });
+
+  it("list the three tables of the series", () => {
+    expect(TABLES.map((table) => getTableConfig(table).name).sort()).toEqual([
+      "activation_email_suppressions",
+      "activation_notices",
+      "email_opt_outs",
+    ]);
   });
 
   it("keep the suppression as a 32-byte HMAC, never as text", () => {
