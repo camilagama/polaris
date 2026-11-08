@@ -12,9 +12,9 @@ import { useRuntimeSnapshot } from "./runtime-context";
  * The visible text is short and the whole sentence is the accessible name, so the
  * name of the link starts with what is shown ("Atenção: 2", WCAG 2.5.3). The
  * tooltip is the `title` of the short text, which is hidden from assistive
- * technology: a `title` on the chip itself is read as its name (a status takes no
- * name from its content) or as its description, and the sentence would be spoken
- * twice. On the phone, the same sentence is the first line of "Mais" (`SyncStatusMenuLine`),
+ * technology and stretched over the whole chip: a `title` on the chip itself is read
+ * as its name (a status takes no name from its content) or as its description, and
+ * the sentence would be spoken twice. On the phone, the same sentence is the first line of "Mais" (`SyncStatusMenuLine`),
  * because a tooltip does not show on touch.
  */
 export interface SyncStatusLabel {
@@ -212,7 +212,7 @@ const TONE_ICON = {
 };
 
 const CHIP =
-  "sync-status inline-flex h-5 min-w-0 max-w-full shrink items-center gap-1 whitespace-nowrap rounded-full border border-transparent pr-2 pl-1.5 font-medium text-xs leading-none no-underline [&>svg]:size-3 [&>svg]:shrink-0";
+  "sync-status relative inline-flex h-5 min-w-0 max-w-full shrink items-center gap-1 whitespace-nowrap rounded-full border border-transparent pr-2 pl-1.5 font-medium text-xs leading-none no-underline [&>svg]:size-3 [&>svg]:shrink-0";
 
 export function SyncStatusView({
   screen,
@@ -226,10 +226,12 @@ export function SyncStatusView({
   const content = (
     <>
       <Icon aria-hidden="true" />
-      {/* one line; the ellipsis is only the last resort, for a chip alone on a line that is still too narrow */}
+      {/* one line; the ellipsis is only the last resort, for a chip alone on a line that is still too narrow.
+          The ::after stretches this span over the whole chip so the tooltip also shows over the icon, the padding and
+          the border; the title cannot go on the chip, where it would become its description or name. */}
       <span
         aria-hidden="true"
-        className="sync-status-short min-w-0 overflow-hidden text-ellipsis"
+        className="sync-status-short min-w-0 overflow-hidden text-ellipsis after:absolute after:inset-0 after:content-['']"
         title={label.text}
       >
         {label.short}
