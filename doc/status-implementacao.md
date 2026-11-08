@@ -3252,3 +3252,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | `trial_started_at` (AC-3.6) | Em revisão | Nunca é zerado e também é gravado por quem assina o Pro sem teste; o M4 conta todas as coortes e `trialStarted` é "lojas com a data do teste". Gate prova o teste que acabou, a loja de volta ao Free e o registro sem a data. A tela diz "lojas com o teste usado ou dispensado" e "1ª venda até 7 dias do início do teste ou do pagamento" (ajuda da tabela incluída), sem mudar o dado. |
 | Rota (menor do Léo) | Em revisão | `trialStarted` maior que as lojas da coorte vira `activation_funnel_inconsistent`; o contrato não mudou. |
 | Ordem de deploy (AC-3.1) | Em revisão | SHA mínimo do Admin `0ddc9698`; o runbook de staging diz que reverter antes dele depois da migration dá 500 no Funil. |
+
+### Rota aberta pelo endereço com a raiz vazia: a página cujo módulo de entrada não rodou recarrega uma vez (t937; emenda de 08/11/2026 do ADR 0040; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Causa | Em revisão | Reproduzida no Chromium: o worker e a cache da origem apagados (`Storage.clearDataForOrigin`) com os arquivos da página em voo matam os fetches do worker; o módulo de entrada falha com `net::ERR_FAILED` (log de rede, não de console), o `load` dispara e `#root` fica vazio sem registration nem `controller`, com `workerStart>0`. 8 de 10 cargas ficaram vazias. |
+| Recuperação | Em revisão | `apps/web/public/boot-retry.js`, antes do módulo de entrada no `index.html`: o `error` do módulo de `/assets/` recarrega a página uma vez; a marca em `sessionStorage` só sai quando uma carga passa, e offline não recarrega. Depois da correção, 24 de 24 cargas com a limpeza montaram. |
+| Provas | Em revisão | `apps/web/e2e-pwa/boot-retry.e2e.ts` (worker apagado com a carga em voo, três rodadas; entrada abortada uma vez e sempre): os três falham com o `index.html` da `main`; `apps/web/src/pwa/boot-retry.test.ts`. O navegador do servidor e o aparelho real não foram conferidos. |
