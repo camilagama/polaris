@@ -78,11 +78,8 @@ function addDays(day: string, days: number): string {
 }
 
 function money(cents: number): string {
-  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
-}
-
-function signedMoney(cents: number): string {
-  return cents < 0 ? `-${money(-cents)}` : money(cents);
+  const whole = Math.abs(cents);
+  return `${cents < 0 ? "-" : ""}${Math.floor(whole / 100)}.${String(whole % 100).padStart(2, "0")}`;
 }
 
 interface Scenario {
@@ -156,7 +153,7 @@ function dayEntry(scenario: Scenario, day: string): Record<string, unknown> {
     ...entry,
     costs: result === null ? null : money(Math.max(0, cents - result)),
     operatingExpenses: "0.00",
-    operatingResult: result === null ? null : signedMoney(result),
+    operatingResult: result === null ? null : money(result),
   };
 }
 
@@ -4364,6 +4361,164 @@ async function rankingRows(page: Page): Promise<RankingRow[]> {
       })
     );
 }
+
+/** Today's net sales, in cents, alone in the store: the month, the result and the ticket follow from it. */
+const alone = (cents: number): Scenario => ({
+  ...SOLD,
+  days: { "2026-10-23": [cents, 3] },
+  soldWithoutCost: 0,
+});
+const BIG_SALE = 9_964_035;
+/** Below 760 px, or with a finger, the scale of money comes down a step (theme.css, "Touch … or a narrow screen"). */
+const PHONE_WIDTH = 760;
+const KPI_IDS = ["home-today", "home-month", "home-result", "home-ticket"];
+
+interface HeroRead {
+  card: string | null;
+  size: number;
+  weight: string;
+}
+
+/** The size and the weight each number of the four cards is drawn with. */
+const readHeroes = (page: Page): Promise<HeroRead[]> =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("[data-kpi-value]")].map((value) => {
+      const style = getComputedStyle(value);
+      return {
+        card:
+          value.closest("[data-kpi]")?.getAttribute("aria-labelledby") ?? null,
+        size: Number.parseFloat(style.fontSize),
+        weight: style.fontWeight,
+      };
+    })
+  );
+
+const heightOf = async (target: Locator) =>
+  (await target.boundingBox())?.height ?? Number.NaN;
+
+test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2, AC-3.6, AC-3.7)", () => {
+  test.skip(
+    ({ browserName }) => browserName !== "chromium",
+    "`Page.setFontSizes` is a Chrome DevTools command"
+  );
+
+  for (const width of [360, 1280]) {
+    test(`Vendas hoje é o principal e os outros três têm o mesmo tamanho, em peso 600, a ${width} px`, async ({
+      page,
+    }) => {
+      await openReflowViewport(page, { fontPixels: 16, height: 800, width });
+      await openHome(page, new FakeServer(SOLD));
+      await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+      const reads = await readHeroes(page);
+      expect(reads.map((read) => read.card)).toEqual(KPI_IDS);
+      const [today, ...rest] = reads;
+      const coarse = await page.evaluate(
+        () => matchMedia("(pointer: coarse)").matches
+      );
+      const [xl, lg] = width < PHONE_WIDTH || coarse ? [32, 24] : [36, 26];
+      expect(today?.size, "o principal: text-value-xl").toBe(xl);
+      expect(
+        rest.map((read) => read.size),
+        "os KPIs: text-value-lg, iguais entre si"
+      ).toEqual([lg, lg, lg]);
+      expect(reads.map((read) => read.weight)).toEqual([
+        "600",
+        "600",
+        "600",
+        "600",
+      ]);
+    });
+  }
+
+  for (const [width, fontPixels] of [
+    [360, 16],
+    [375, 16],
+    [320, 20],
+    [320, 24],
+  ] as const) {
+    for (const cents of [BIG_SALE, -BIG_SALE]) {
+      const text = `${cents < 0 ? "-" : ""}R$ 99.640,35`;
+      test(`${text} no principal não corta nem quebra a ${width} px com a letra em ${fontPixels} px`, async ({
+        page,
+      }, testInfo) => {
+        await openReflowViewport(page, { fontPixels, width });
+        await openHome(page, new FakeServer(alone(cents)));
+        await expectReflowFont(page, fontPixels);
+        const principal = region(page, "Vendas hoje");
+        await expect(principal.locator("[data-kpi-value]")).toHaveText(text, {
+          timeout: 20_000,
+        });
+        await assertNothingClipped(principal);
+        const [today, ...rest] = await readHeroes(page);
+        const lg = 1.5 * fontPixels;
+        // at 24 px the box (9.8 rem) is under what the amount takes at xl (10.8 rem): it steps down to lg
+        const fits = fontPixels < 24;
+        expect(today?.size, "o principal cai para lg só quando não cabe").toBe(
+          fits ? 2 * fontPixels : lg
+        );
+        expect(new Set(rest.map((read) => read.size))).toEqual(new Set([lg]));
+        testInfo.annotations.push({
+          description: `principal ${today?.size} px, KPIs ${rest[0]?.size} px`,
+          type: "medida",
+        });
+        const sameLine = await principal.evaluate((card) => {
+          const currency = card
+            .querySelector("[data-money-currency]")
+            ?.getBoundingClientRect();
+          const number = card
+            .querySelector("[data-money-number]")
+            ?.getBoundingClientRect();
+          return Boolean(
+            currency &&
+              number &&
+              number.top < currency.bottom &&
+              currency.top < number.bottom
+          );
+        });
+        expect(sameLine, "o R$ e o número na mesma linha").toBe(true);
+        await assertNoPageScroll(page);
+      });
+    }
+  }
+
+  for (const fontPixels of [20, 24]) {
+    test(`o cartão do principal tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, na largura mínima com a letra em ${fontPixels} px`, async ({
+      page,
+    }) => {
+      await openReflowViewport(page, { fontPixels, width: 320 });
+      const server = new FakeServer(alone(100));
+      await openHome(page, server);
+      const principal = region(page, "Vendas hoje");
+      await expect(principal.locator("[data-kpi-value]")).toHaveText(
+        "R$ 1,00",
+        {
+          timeout: 20_000,
+        }
+      );
+      const short = await heightOf(principal);
+      const hiddenKeepsTheBox = async (cents: number, text: string) => {
+        server.scenario = alone(cents);
+        await page.reload();
+        await expect(principal.locator("[data-kpi-value]")).toHaveText(text, {
+          timeout: 20_000,
+        });
+        expect(
+          Math.abs((await heightOf(principal)) - short)
+        ).toBeLessThanOrEqual(1);
+        const before = await readHeroes(page);
+        await page.getByRole("button", { name: "Esconder valores" }).click();
+        await expect(principal.locator("[data-masked-money]")).toBeVisible();
+        expect(
+          Math.abs((await heightOf(principal)) - short)
+        ).toBeLessThanOrEqual(1);
+        expect(await readHeroes(page)).toEqual(before);
+        await page.getByRole("button", { name: "Esconder valores" }).click();
+      };
+      await hiddenKeepsTheBox(BIG_SALE, "R$ 99.640,35");
+      await hiddenKeepsTheBox(-BIG_SALE, "-R$ 99.640,35");
+    });
+  }
+});
 
 async function openRanking(
   page: Page,

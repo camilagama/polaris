@@ -136,7 +136,7 @@ function TodayCard({
         />
       }
       title="Vendas hoje"
-      value={<HeroValue amount={reading.value} />}
+      value={<HeroValue amount={reading.value} size="xl" />}
     />
   );
 }
@@ -272,7 +272,7 @@ function MonthCards({
             }
           : {})}
         title="Resultado estimado"
-        value={<HeroValue amount={read.result.value} size="md" />}
+        value={<HeroValue amount={read.result.value} />}
       />
       <KpiCard
         chip={<Chip reading={read.ticket} />}
@@ -288,7 +288,7 @@ function MonthCards({
             }
           : {})}
         title="Ticket médio"
-        value={<HeroValue amount={read.ticket.value} size="md" />}
+        value={<HeroValue amount={read.ticket.value} />}
       />
     </KpiGroup>
   );
@@ -350,7 +350,7 @@ export function NoFiguresCards({ today }: { today: string }) {
         noteLines={2}
         spark={EMPTY_SPARK}
         title="Vendas hoje"
-        value={empty}
+        value={<HeroValue amount={null} size="xl" />}
       />
       <KpiGroup
         className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
@@ -379,7 +379,7 @@ export function NoFiguresCards({ today }: { today: string }) {
           note={NO_CONNECTION_NOTE}
           spark={EMPTY_SPARK}
           title="Resultado estimado"
-          value={<HeroValue amount={null} size="md" />}
+          value={<HeroValue amount={null} />}
         />
         <KpiCard
           className="lg:col-start-4 lg:row-start-2"
@@ -389,7 +389,7 @@ export function NoFiguresCards({ today }: { today: string }) {
           note={NO_CONNECTION_NOTE}
           spark={EMPTY_SPARK}
           title="Ticket médio"
-          value={<HeroValue amount={null} size="md" />}
+          value={<HeroValue amount={null} />}
         />
       </KpiGroup>
     </div>
@@ -406,6 +406,7 @@ export function KpiCardsSkeleton() {
       <KpiCardSkeleton
         className="md:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2"
         noteLines={2}
+        size="xl"
       />
       <div
         aria-hidden="true"
@@ -418,13 +419,8 @@ export function KpiCardsSkeleton() {
         action
         className="lg:col-start-3 lg:row-start-2"
         footer={1}
-        size="md"
       />
-      <KpiCardSkeleton
-        className="lg:col-start-4 lg:row-start-2"
-        footer={1}
-        size="md"
-      />
+      <KpiCardSkeleton className="lg:col-start-4 lg:row-start-2" footer={1} />
     </div>
   );
 }
