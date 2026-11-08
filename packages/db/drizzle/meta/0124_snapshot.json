@@ -1,5 +1,5 @@
 {
-  "id": "0dc9dc9c-aec8-4784-95e8-e1ad8785bd6f",
+  "id": "0306e803-ff25-4d5a-89ec-a68a00b22613",
   "prevId": "3be85e9d-2205-4058-b993-5b504799befa",
   "version": "7",
   "dialect": "postgresql",
@@ -141,6 +141,310 @@
         "auth_access_log_request_format": {
           "name": "auth_access_log_request_format",
           "value": "\"auth_access_log\".\"request_id\" ~ '^[A-Za-z0-9_-]{1,64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.activation_email_suppressions": {
+      "name": "activation_email_suppressions",
+      "schema": "",
+      "columns": {
+        "address_hmac": {
+          "name": "address_hmac",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "activation_email_suppressions_pk": {
+          "name": "activation_email_suppressions_pk",
+          "columns": ["address_hmac", "reason"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {
+        "activation_email_suppressions_billing_runtime_select": {
+          "name": "activation_email_suppressions_billing_runtime_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_billing_runtime"],
+          "using": "true"
+        },
+        "activation_email_suppressions_billing_runtime_insert": {
+          "name": "activation_email_suppressions_billing_runtime_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_billing_runtime"],
+          "withCheck": "true"
+        },
+        "activation_email_suppressions_billing_runtime_update": {
+          "name": "activation_email_suppressions_billing_runtime_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_billing_runtime"],
+          "using": "true",
+          "withCheck": "true"
+        }
+      },
+      "checkConstraints": {
+        "activation_email_suppressions_hmac_length": {
+          "name": "activation_email_suppressions_hmac_length",
+          "value": "octet_length(\"activation_email_suppressions\".\"address_hmac\") = 32"
+        },
+        "activation_email_suppressions_reason_allowed": {
+          "name": "activation_email_suppressions_reason_allowed",
+          "value": "\"activation_email_suppressions\".\"reason\" IN ('bounce', 'complaint')"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.activation_notices": {
+      "name": "activation_notices",
+      "schema": "",
+      "columns": {
+        "due_at": {
+          "name": "due_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_attempted_at": {
+          "name": "first_attempted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "last_attempted_at": {
+          "name": "last_attempted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "skipped_reason": {
+          "name": "skipped_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "step": {
+          "name": "step",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "activation_notices_organization_user_idx": {
+          "name": "activation_notices_organization_user_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "activation_notices_membership_fk": {
+          "name": "activation_notices_membership_fk",
+          "tableFrom": "activation_notices",
+          "tableTo": "memberships",
+          "columnsFrom": ["organization_id", "user_id"],
+          "columnsTo": ["organization_id", "user_id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "activation_notices_user_step_unique": {
+          "name": "activation_notices_user_step_unique",
+          "nullsNotDistinct": false,
+          "columns": ["user_id", "step"]
+        }
+      },
+      "policies": {
+        "activation_notices_billing_runtime_select": {
+          "name": "activation_notices_billing_runtime_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_billing_runtime"],
+          "using": "true"
+        },
+        "activation_notices_billing_runtime_insert": {
+          "name": "activation_notices_billing_runtime_insert",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": ["polaris_billing_runtime"],
+          "withCheck": "\"activation_notices\".\"sent_at\" IS NULL AND \"activation_notices\".\"failed_at\" IS NULL AND \"activation_notices\".\"skipped_reason\" IS NULL AND \"activation_notices\".\"first_attempted_at\" IS NULL"
+        },
+        "activation_notices_billing_runtime_update": {
+          "name": "activation_notices_billing_runtime_update",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": ["polaris_billing_runtime"],
+          "using": "\"activation_notices\".\"sent_at\" IS NULL AND \"activation_notices\".\"failed_at\" IS NULL AND \"activation_notices\".\"skipped_reason\" IS NULL",
+          "withCheck": "true"
+        },
+        "activation_notices_owner_select": {
+          "name": "activation_notices_owner_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_activation_notice_owner"],
+          "using": "true"
+        },
+        "activation_notices_purge_owner_select": {
+          "name": "activation_notices_purge_owner_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_purge_owner"],
+          "using": "EXISTS (SELECT 1 FROM public.organizations AS purge_scope WHERE purge_scope.id = \"activation_notices\".\"organization_id\" AND purge_scope.status = 'purge_pending')"
+        }
+      },
+      "checkConstraints": {
+        "activation_notices_step_allowed": {
+          "name": "activation_notices_step_allowed",
+          "value": "\"activation_notices\".\"step\" IN ('a1', 'a2', 'a3')"
+        },
+        "activation_notices_ids_format": {
+          "name": "activation_notices_ids_format",
+          "value": "\"activation_notices\".\"organization_id\" !~ '[[:space:][:cntrl:]@]' AND \"activation_notices\".\"user_id\" !~ '[[:space:][:cntrl:]@]'"
+        },
+        "activation_notices_outcome_coherent": {
+          "name": "activation_notices_outcome_coherent",
+          "value": "(CASE WHEN \"activation_notices\".\"sent_at\" IS NULL THEN 0 ELSE 1 END\n          + CASE WHEN \"activation_notices\".\"failed_at\" IS NULL THEN 0 ELSE 1 END\n          + CASE WHEN \"activation_notices\".\"skipped_reason\" IS NULL THEN 0 ELSE 1 END) <= 1\n        AND ((\"activation_notices\".\"failed_at\" IS NULL) = (\"activation_notices\".\"failure_code\" IS NULL))\n        AND ((\"activation_notices\".\"first_attempted_at\" IS NULL) = (\"activation_notices\".\"last_attempted_at\" IS NULL))"
+        },
+        "activation_notices_codes_format": {
+          "name": "activation_notices_codes_format",
+          "value": "(\"activation_notices\".\"failure_code\" IS NULL OR \"activation_notices\".\"failure_code\" ~ '^[a-z][a-z0-9_]{0,63}$')\n        AND (\"activation_notices\".\"skipped_reason\" IS NULL OR \"activation_notices\".\"skipped_reason\" ~ '^[a-z][a-z0-9_]{0,63}$')"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.email_opt_outs": {
+      "name": "email_opt_outs",
+      "schema": "",
+      "columns": {
+        "opted_out_at": {
+          "name": "opted_out_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "email_opt_outs_user_id_user_id_fk": {
+          "name": "email_opt_outs_user_id_user_id_fk",
+          "tableFrom": "email_opt_outs",
+          "tableTo": "user",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "email_opt_outs_billing_runtime_select": {
+          "name": "email_opt_outs_billing_runtime_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_billing_runtime"],
+          "using": "true"
+        },
+        "email_opt_outs_owner_select": {
+          "name": "email_opt_outs_owner_select",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": ["polaris_activation_notice_owner"],
+          "using": "true"
+        }
+      },
+      "checkConstraints": {
+        "email_opt_outs_user_format": {
+          "name": "email_opt_outs_user_format",
+          "value": "\"email_opt_outs\".\"user_id\" !~ '[[:space:][:cntrl:]@]'"
         }
       },
       "isRLSEnabled": true

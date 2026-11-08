@@ -1087,6 +1087,11 @@ async function run() {
          VALUES ($1, 'charge_receipt', $2, now(), NULL), ($1, 'welcome', $3, now(), $3)`,
         [tenant.organizationId, randomUUID(), tenant.userId]
       );
+      // a notice of the activation series (ADR 0106): it leaves with the owner's membership, by the cascade
+      await owner.pool.query(
+        "INSERT INTO public.activation_notices (organization_id, user_id, step, due_at) VALUES ($1, $2, 'a1', now())",
+        [tenant.organizationId, tenant.userId]
+      );
       // the owner's trial was used here (the trial per person, ADR 0101)
       await owner.pool.query(
         "INSERT INTO public.billing_trial_claims (user_id, organization_id, reserved_at, consumed_at) VALUES ($1, $2, '2026-08-01T12:00:00Z', '2026-08-01T12:05:00Z')",
@@ -1945,6 +1950,7 @@ async function run() {
       "queue_processing",
       "queue_dead_letters",
       "billing_notices",
+      "activation_notices",
     ]) {
       assert.ok(
         (targetBefore[table] ?? 0) > 0,

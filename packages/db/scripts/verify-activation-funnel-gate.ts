@@ -575,8 +575,13 @@ async function run() {
                      ORDER BY 1) AS reach
          FROM pg_class AS c WHERE c.oid = 'public.platform_internal_organizations'::regclass`
     );
+    // the owner of the activation series reads it too (ADR 0106, D2: an internal store gets no e-mail), by column
     assert.deepEqual(marker.rows, [
-      { forced: true, reach: ["polaris_admin_owner"], rls: true },
+      {
+        forced: true,
+        reach: ["polaris_activation_notice_owner", "polaris_admin_owner"],
+        rls: true,
+      },
     ]);
     const publicReach = await owner.pool.query<{ allowed: boolean }>(
       "SELECT has_table_privilege('public', 'public.platform_internal_organizations', 'SELECT,INSERT,UPDATE,DELETE') AS allowed"
@@ -685,7 +690,7 @@ async function run() {
       'CREATE TABLE "platform_internal_organizations"',
     ]);
     const fourteenDays = readFileSync(
-      new URL("../drizzle/0122_funil_ate_14_dias.sql", import.meta.url),
+      new URL("../drizzle/0125_funil_ate_14_dias.sql", import.meta.url),
       "utf8"
     );
     assert.deepEqual(

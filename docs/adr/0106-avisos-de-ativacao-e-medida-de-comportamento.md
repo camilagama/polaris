@@ -116,9 +116,14 @@ O A1 assume o papel do E1. **Ele não herda a base do E1** (art. 7º, V): é leg
 
 As tabelas novas **não entram na exportação do tenant** (como `billing_notices`) e **entram na do titular** (estado da série e preferência) quando a Política disser. O purge da loja e a exclusão da conta apagam a linha de aviso; **a supressão por HMAC não é apagada com a conta**, só no prazo acima, e é dito à pessoa que a pede.
 
+**Como a migration 0124 (número provisório) cumpriu D1, D2, D8 e D11** (o destinatário e o gate permanente de papéis e colunas vêm em PRs seguintes, antes do consumidor):
+- O aviso pertence à membership da pessoa na loja (chave estrangeira composta em cascata), e não a uma linha que o purge apague por conta própria: sai com o purge da loja, que apaga as memberships, e a conta só pode sair depois das memberships. A cascata leva também o registro do que já saiu: quem teve a primeira loja purgada volta a ser candidata numa loja nova (o mesmo efeito aceito para as boas-vindas).
+- O papel da série lê **todas** as memberships de dono ativo (a primeira loja da pessoa é a membership mais antiga, em qualquer loja), e só as lojas dos últimos 14 dias com o que pende delas (produtos, vendas, cobrança, marcador interno e o `email_verified` dos donos). `privacy_cases` liga à loja só por `support_cases`, fora da lista acima: o grant entra com a função de candidatos, que o usa.
+- O runtime da série é o de cobrança (`polaris_billing_runtime`), o mesmo do ciclo de avisos: grava, lê e marca o aviso, lê a preferência, e grava, lê e re-chaveia a supressão com `UPDATE` só do HMAC. A RLS não compara o HMAC antigo com o novo: o re-chaveamento depende desse papel, e a supressão não é imutável no banco.
+
 ### D12. Migrations e ordem
 
-Tudo é **expand**: só `CREATE` e `GRANT`; nada apaga dado nem função existente neste corte (ADR 0096). Números provisórios: 0122 (funil até 14 dias e M4), 0123 (M3 da sessão), 0124 (tabelas e papel da série), 0125 (candidatos), 0126 (supressão e parada, se não couber na 0124). O contrato do funil é **estrito**, e a migration roda antes do Worker: o Admin que aceita as células novas como opcionais **entra e é implantado antes** da migration que as devolve.
+Tudo é **expand**: só `CREATE` e `GRANT`; nada apaga dado nem função existente neste corte (ADR 0096). Números provisórios: 0125 (funil até 14 dias e M4, como saiu), 0123 (M3 da sessão), 0124 (tabelas e papel da série), 0126 (candidatos), 0127 (supressão e parada, se não couber na 0124). O contrato do funil é **estrito**, e a migration roda antes do Worker: o Admin que aceita as células novas como opcionais **entra e é implantado antes** da migration que as devolve.
 
 ## Consequências
 
