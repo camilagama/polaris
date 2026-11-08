@@ -58,7 +58,7 @@ export interface JourneyUser {
 }
 
 export interface Journey {
-  /** `qa-<project>-<journey>-t<attempt>` */
+  /** `qa-<project>-<journey>-t<attempt>`, with `-r<repetition>` after the first `--repeat-each` repetition */
   name: string;
   organizationId: string | undefined;
   page: Page;

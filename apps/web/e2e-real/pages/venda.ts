@@ -15,24 +15,34 @@ export interface SaleLineInput {
 }
 
 /**
- * Resolves when every finite animation and transition of the page has ended. Playwright's "stable" check (the same
- * box in two frames) can pass in a frame the busy CPU skipped, in the middle of the 200 ms of a panel opening or the
- * 100 ms of a select popup, and the press then lands where the button used to be. Infinite ones (a skeleton's pulse)
- * are not waited for.
+ * Resolves when every running animation and transition of the page that lasts at most `LONGEST_ANIMATION_MS` has
+ * ended. Playwright's "stable" check (the same box in two frames) can pass in a frame the busy CPU skipped, in the
+ * middle of the 200 ms of a panel opening or the 100 ms of a select popup, and the press then lands where the button
+ * used to be. Two frames go by first because an animation only shows in `getAnimations()` once the style that starts
+ * it was computed. The infinite ones (a skeleton's pulse) and the paused ones are not waited for.
  */
+const LONGEST_ANIMATION_MS = 3000;
+
 async function animationsEnded(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    const finite = document
+  await page.evaluate(async (longest) => {
+    const nextFrame = () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await nextFrame();
+    await nextFrame();
+    const entrance = document
       .getAnimations()
       .filter(
         (animation) =>
-          animation.effect?.getComputedTiming().iterations !==
-          Number.POSITIVE_INFINITY
+          animation.playState === "running" &&
+          Number(
+            animation.effect?.getComputedTiming().endTime ??
+              Number.POSITIVE_INFINITY
+          ) <= longest
       );
     await Promise.all(
-      finite.map((animation) => animation.finished.catch(() => undefined))
+      entrance.map((animation) => animation.finished.catch(() => undefined))
     );
-  });
+  }, LONGEST_ANIMATION_MS);
 }
 
 /**
