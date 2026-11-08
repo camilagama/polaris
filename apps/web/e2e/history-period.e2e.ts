@@ -1,7 +1,11 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { FORM_VIEWPORTS, touchDay } from "./date-pickers";
+import {
+  expectWholeMonthWhileTyping,
+  FORM_VIEWPORTS,
+  touchDay,
+} from "./date-pickers";
 import { applyEditor, onPhone } from "./filter-bar-editor";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -229,6 +233,7 @@ for (const viewport of FORM_VIEWPORTS) {
       await expect(start).toBeFocused();
       await expect(start).toHaveValue("12/10/2026");
       await expect(end).toHaveValue("");
+      await expectWholeMonthWhileTyping(popup);
 
       await start.fill("");
       await start.pressSequentially("31022026");

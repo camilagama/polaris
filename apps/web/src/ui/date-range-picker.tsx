@@ -87,6 +87,17 @@ function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
   return from && from < previous ? from : previous;
 }
 
+// the box takes the width of the month, whatever sentence an error or a status line holds: such a block adds nothing to
+// the width the popup asks for (width 0) and fills what the month gave it (min-width 100%), so a long sentence wraps
+const HOLD_WIDTH = "w-0 min-w-full";
+
+// the four shortcuts need about 16 rem in a row; where the window (in the browser's own rem, so the large letter counts)
+// is narrower than 18 rem they make two rows of two, apart by 12 px so the 44 px areas of touch stay apart
+const SHORTCUTS_CLASS =
+  "m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs max-[18rem]:grid max-[18rem]:grid-cols-2 max-[18rem]:gap-3 max-[18rem]:shadow-none";
+const SHORTCUT_CLASS =
+  "touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground max-[18rem]:not-first:ml-0 max-[18rem]:rounded-md max-[18rem]:first:rounded-md max-[18rem]:last:rounded-md dark:bg-secondary/60";
+
 const FIELD_LABELS: Record<TypedField, string> = { from: "Início", to: "Fim" };
 // taken from the keys: a string literal of that word followed by a quote is read as an import by the source scan of src/ui
 const FIELDS = Object.keys(FIELD_LABELS) as TypedField[];
@@ -185,7 +196,7 @@ function DateRangeTyping({
   const regionId = `${base}-region`;
 
   return (
-    <div className="grid shrink-0 gap-2">
+    <div className={cn("grid shrink-0 gap-2", HOLD_WIDTH)}>
       <Button
         aria-controls={open ? regionId : undefined}
         aria-expanded={open}
@@ -480,14 +491,11 @@ export function DateRangePanel({
   return (
     <>
       {/* 16 px down to the month: the 44 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
-      <fieldset
-        aria-label="Atalhos do período"
-        className="m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
-      >
+      <fieldset aria-label="Atalhos do período" className={SHORTCUTS_CLASS}>
         {RANGE_PRESETS.map((preset) => (
           <button
             aria-pressed={preset.value === pressed}
-            className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-secondary/60"
+            className={SHORTCUT_CLASS}
             data-preset={preset.value}
             key={preset.value}
             onClick={pickPreset}
@@ -498,10 +506,16 @@ export function DateRangePanel({
         ))}
       </fieldset>
       {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
-          and the line that asks for the last day stay in view (the popover itself does not scroll, so with less
-          room than the shortcuts and the footer, as a phone on its side, the month is what gives way); the 4 px
-          around keep the focus ring of a day */}
-      <div className="-m-1 min-h-0 overflow-y-auto p-1" data-range-month>
+          and the line that asks for the last day stay in view; the 4 px around keep the focus ring of a day. With the
+          typed fields open the month keeps its six weeks and the whole panel scrolls instead (the popup, or the body
+          of the Dialog), so no week is hidden in a box that scrolls on its own */}
+      <div
+        className={cn(
+          "-m-1 p-1",
+          typed.open ? "shrink-0" : "min-h-0 overflow-y-auto"
+        )}
+        data-range-month
+      >
         <OnDemandCalendar
           autoFocus
           mode="range"
@@ -518,7 +532,12 @@ export function DateRangePanel({
       <div ref={typed.anchor}>
         <DateRangeTyping {...typed.typingProps} />
       </div>
-      <div className="flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2">
+      <div
+        className={cn(
+          "flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2",
+          HOLD_WIDTH
+        )}
+      >
         <p
           aria-live={typed.open ? undefined : "polite"}
           className={cn(
@@ -613,7 +632,7 @@ export function DateRangePicker({
         <PopoverContent
           align="start"
           aria-label={label}
-          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-hidden p-2"
+          className="max-h-(--available-height) w-auto max-w-[calc(100vw-1rem)] gap-3 overflow-y-auto overflow-x-hidden p-2"
           initialFocus={false}
         >
           <DateRangePanel

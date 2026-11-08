@@ -7,6 +7,7 @@ import {
   openReflowViewport,
   skipOutsideChromium,
 } from "../e2e/reflow";
+import { expectWholeMonthWhileTyping } from "../e2e/date-pickers";
 import { axeFaults } from "./ui-guardrails";
 
 /**
@@ -25,6 +26,7 @@ const VIEWPORTS = [
 const EMPTY_PERIOD = "Período das vendas";
 const FILLED_PERIOD = "Período";
 const NOT_A_DAY = "Essa data não existe. Confira dia, mês e ano.";
+const YEAR_OUT = "O ano precisa estar entre 2000 e 2099.";
 
 async function openGallery(page: Page) {
   await page.goto("/ui-galeria");
@@ -66,6 +68,71 @@ async function typeRange(popup: Locator, start: string, end: string) {
   await from(popup).pressSequentially(start);
   await to(popup).fill("");
   await to(popup).pressSequentially(end);
+}
+
+interface Spot {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+}
+
+interface Layout {
+  apply: Spot;
+  panel: { height: number; width: number };
+  shortcuts: Spot;
+}
+
+/** Where the shortcuts and "Aplicar" sit inside the popup, and the popup's own size. */
+function layoutOf(popup: Locator): Promise<Layout> {
+  return popup.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const spot = (node: Element | undefined) => {
+      if (!node) {
+        throw new Error("the panel has no such part");
+      }
+      const rect = node.getBoundingClientRect();
+      return {
+        height: rect.height,
+        width: rect.width,
+        x: rect.x - box.x,
+        y: rect.y - box.y,
+      };
+    };
+    return {
+      apply: spot(
+        [...element.querySelectorAll("button")].find(
+          (button) => button.textContent?.trim() === "Aplicar"
+        )
+      ),
+      panel: { height: box.height, width: box.width },
+      shortcuts: spot(
+        element.querySelector('[aria-label="Atalhos do período"]') ?? undefined
+      ),
+    };
+  });
+}
+
+const SAME_PIXEL = 1;
+
+function expectSameColumns(base: Layout, other: Layout) {
+  expect(Math.abs(other.panel.width - base.panel.width)).toBeLessThanOrEqual(
+    SAME_PIXEL
+  );
+  for (const part of ["apply", "shortcuts"] as const) {
+    expect(Math.abs(other[part].x - base[part].x)).toBeLessThanOrEqual(
+      SAME_PIXEL
+    );
+    expect(Math.abs(other[part].width - base[part].width)).toBeLessThanOrEqual(
+      SAME_PIXEL
+    );
+  }
+  expect(Math.abs(other.shortcuts.y - base.shortcuts.y)).toBeLessThanOrEqual(
+    SAME_PIXEL
+  );
+  expect(
+    Math.abs(other.shortcuts.height - base.shortcuts.height)
+  ).toBeLessThanOrEqual(SAME_PIXEL);
 }
 
 for (const viewport of VIEWPORTS) {
@@ -196,6 +263,81 @@ for (const viewport of VIEWPORTS) {
       await expect(popup).toBeHidden();
     });
 
+    test("AC-2.2: ano fora de 2000 a 2099 tem frase própria, nos dois campos", async ({
+      page,
+    }) => {
+      await openGallery(page);
+      const popup = await openTyping(page, EMPTY_PERIOD);
+      await typeRange(popup, "01101999", "01100026");
+      await to(popup).press("Enter");
+      await expect(from(popup)).toBeFocused();
+      await expect(popup.getByRole("alert")).toHaveText([YEAR_OUT, YEAR_OUT]);
+      await expect(apply(popup)).toHaveAttribute("aria-disabled", "true");
+      await expect(apply(popup)).toHaveAccessibleDescription(YEAR_OUT);
+
+      await typeRange(popup, "01102026", "01102100");
+      await to(popup).press("Enter");
+      await expect(popup.getByRole("alert")).toHaveText(YEAR_OUT);
+    });
+
+    test("o painel tem a largura do calendário: atalhos e Aplicar não se mexem entre vazio, preenchido e erro", async ({
+      page,
+    }) => {
+      await openGallery(page);
+      const popup = await openPanel(page, EMPTY_PERIOD);
+      const closedWidth = (await popup.boundingBox())?.width ?? 0;
+      await popup.getByRole("button", { name: "Digitar as datas" }).click();
+      await expect(from(popup)).toBeFocused();
+
+      const empty = await layoutOf(popup);
+      expect(Math.abs(empty.panel.width - closedWidth)).toBeLessThanOrEqual(
+        SAME_PIXEL
+      );
+      await typeRange(popup, "01102026", "14102026");
+      await expect(apply(popup)).not.toHaveAttribute("aria-disabled", "true");
+      const filled = await layoutOf(popup);
+      expectSameColumns(empty, filled);
+      expect(Math.abs(filled.apply.y - empty.apply.y)).toBeLessThanOrEqual(
+        SAME_PIXEL
+      );
+
+      // the longest sentences there are, one in each field
+      await typeRange(popup, "31022026", "14");
+      await to(popup).press("Enter");
+      await expect(popup.getByRole("alert")).toHaveText([
+        NOT_A_DAY,
+        "Faltam números. Escreva dia, mês e ano, como 14/10/2026.",
+      ]);
+      expectSameColumns(empty, await layoutOf(popup));
+
+      await typeRange(popup, "14102026", "01102026");
+      await to(popup).press("Enter");
+      await expect(popup.getByRole("alert")).toHaveText(
+        "A data final vem antes da inicial."
+      );
+      expectSameColumns(empty, await layoutOf(popup));
+    });
+
+    test("com pouca altura o mês guarda as seis semanas e o painel inteiro rola", async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 480, width: viewport.width });
+      await openGallery(page);
+      const popup = await openTyping(page, EMPTY_PERIOD);
+      await expectWholeMonthWhileTyping(popup);
+      const { clientHeight, scrollHeight } = await popup.evaluate(
+        (element) => ({
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+        })
+      );
+      expect(scrollHeight).toBeGreaterThan(clientHeight);
+      await typeRange(popup, "31022026", "14102026");
+      await to(popup).press("Enter");
+      await expect(popup.getByRole("alert")).toHaveText(NOT_A_DAY);
+      await expect(from(popup)).toBeInViewport();
+    });
+
     test("AC-2.3: período invertido não existe: diz que a data final vem antes da inicial e não aplica", async ({
       page,
     }) => {
@@ -268,13 +410,36 @@ for (const viewport of VIEWPORTS) {
 test.describe("a 320 px com a letra de 20 px", () => {
   skipOutsideChromium();
 
-  test("AC-2.6: os dois campos empilham e nada é cortado, com e sem erro", async ({
+  async function expectPanelFits(popup: Locator) {
+    const shown = await popup.boundingBox();
+    expect(shown && shown.x >= 0 && shown.x + shown.width <= 320.5).toBe(true);
+    const { clientWidth, scrollWidth } = await popup.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    await assertNothingClipped(popup);
+  }
+
+  test("AC-2.6: o painel aberto cabe, com e sem os campos: atalhos em duas linhas, campos empilhados, nada é cortado", async ({
     page,
   }) => {
     await openReflowViewport(page);
     await openGallery(page);
     await expectReflowFont(page);
-    const popup = await openTyping(page, EMPTY_PERIOD);
+    const popup = await openPanel(page, EMPTY_PERIOD);
+    await expectPanelFits(popup);
+    const shortcuts = popup
+      .getByRole("group", { name: "Atalhos do período" })
+      .getByRole("button");
+    await expect(shortcuts).toHaveCount(4);
+    const rows = await shortcuts.evaluateAll((buttons) => [
+      ...new Set(buttons.map((button) => button.getBoundingClientRect().y)),
+    ]);
+    expect(rows).toHaveLength(2);
+
+    await popup.getByRole("button", { name: "Digitar as datas" }).click();
+    await expect(from(popup)).toBeFocused();
     await typeRange(popup, "31022026", "14102026");
     await to(popup).press("Enter");
     await expect(popup.getByRole("alert")).toHaveText(NOT_A_DAY);
@@ -282,12 +447,10 @@ test.describe("a 320 px com a letra de 20 px", () => {
     const first = await from(popup).boundingBox();
     const second = await to(popup).boundingBox();
     expect(first && second && second.y >= first.y + first.height).toBe(true);
-    const shown = await popup.boundingBox();
-    expect(shown && shown.x >= 0 && shown.x + shown.width <= 320.5).toBe(true);
-    const region = popup.locator('[id$="-region"]');
-    await assertNothingClipped(region);
+    await expectPanelFits(popup);
+    await assertNothingClipped(popup.locator('[id$="-region"]'));
 
     await typeRange(popup, "01102026", "14102026");
-    await assertNothingClipped(region);
+    await expectPanelFits(popup);
   });
 });

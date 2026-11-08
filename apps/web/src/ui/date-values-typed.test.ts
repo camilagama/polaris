@@ -77,24 +77,27 @@ describe("parseTypedDate, o dia que o campo guarda", () => {
   });
 
   it("recusa ano fora de 2000 a 2099, que seria erro de digitação", () => {
-    expect(parseTypedDate("01/10/0026")).toEqual({
-      ok: false,
-      reason: "invalid",
-    });
-    expect(parseTypedDate("01/10/1999")).toEqual({
-      ok: false,
-      reason: "invalid",
-    });
-    expect(parseTypedDate("01/10/2100")).toEqual({
-      ok: false,
-      reason: "invalid",
-    });
+    for (const text of ["01/10/0026", "01/10/1999", "01/10/2100"]) {
+      expect(parseTypedDate(text)).toEqual({ ok: false, reason: "year" });
+    }
     expect(parseTypedDate("31/12/2099").ok).toBe(true);
     expect(parseTypedDate("01/01/2000").ok).toBe(true);
   });
 });
 
 describe("typedProblems e typedRange, o período dos dois campos", () => {
+  it("ano fora de 2000 a 2099 tem frase própria, nos dois campos, e não a de data que não existe", () => {
+    for (const text of ["01/10/1999", "01/10/0026"]) {
+      const problems = typedProblems({ from: text, to: text });
+      expect(problems.from).toBe("O ano precisa estar entre 2000 e 2099.");
+      expect(problems.to).toBe("O ano precisa estar entre 2000 e 2099.");
+    }
+    expect(typedProblems({ from: "01/10/2026", to: "01/10/2100" }).to).toBe(
+      "O ano precisa estar entre 2000 e 2099."
+    );
+    expect(typedRange({ from: "01/10/1999", to: "14/10/2026" })).toBeNull();
+  });
+
   it("dois dias bons em ordem: sem problema e o período feito", () => {
     const texts = { from: "01/10/2026", to: "14/10/2026" };
     expect(typedProblems(texts)).toEqual({});

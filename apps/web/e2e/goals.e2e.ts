@@ -3,6 +3,7 @@ import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   datePickerButton,
+  expectWholeMonthWhileTyping,
   FORM_VIEWPORTS,
   openDatePicker,
   pickPeriod,
@@ -1129,6 +1130,7 @@ for (const viewport of FORM_VIEWPORTS) {
     await expect(start).toBeFocused();
     await expect(start).toHaveValue("01/10/2026");
     await expect(end).toHaveValue("31/10/2026");
+    await expectWholeMonthWhileTyping(popup);
 
     await start.fill("");
     await start.pressSequentially("31022026");

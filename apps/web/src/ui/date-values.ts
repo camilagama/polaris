@@ -219,11 +219,16 @@ export function maskTypedDate(text: string): string {
     .join("/");
 }
 
+type TypedReason = "empty" | "incomplete" | "invalid" | "year";
+
 type TypedDate =
   | { iso: IsoDate; ok: true }
-  | { ok: false; reason: "empty" | "incomplete" | "invalid" };
+  | { ok: false; reason: TypedReason };
 
-/** The day a text field holds: empty, not yet all there (`dd/mm/aaaa`), not a real day (`31/02/2026`) or the day. */
+/**
+ * The day a text field holds: empty, not yet all there (`dd/mm/aaaa`), a year outside 2000 to 2099 (`01/10/1999`, which
+ * a slip of the finger makes), not a real day (`31/02/2026`) or the day.
+ */
 export function parseTypedDate(text: string): TypedDate {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -235,9 +240,10 @@ export function parseTypedDate(text: string): TypedDate {
   }
   const iso = `${match[3]}-${match[2]}-${match[1]}`;
   const year = Number(match[3]);
-  return parseIsoDate(iso) &&
-    year >= FIRST_TYPED_YEAR &&
-    year <= LAST_TYPED_YEAR
+  if (year < FIRST_TYPED_YEAR || year > LAST_TYPED_YEAR) {
+    return { ok: false, reason: "year" };
+  }
+  return parseIsoDate(iso)
     ? { iso, ok: true }
     : { ok: false, reason: "invalid" };
 }
@@ -257,19 +263,20 @@ export function typedTextsOf(range: DraftRange | undefined): TypedTexts {
   };
 }
 
-const TYPED_MESSAGES: Record<
-  TypedField,
-  Record<"empty" | "incomplete" | "invalid", string>
-> = {
+const TYPED_YEAR_OUT_OF_RANGE = "O ano precisa estar entre 2000 e 2099.";
+
+const TYPED_MESSAGES: Record<TypedField, Record<TypedReason, string>> = {
   from: {
     empty: "Digite a data de início, como 01/10/2026.",
     incomplete: "Faltam números. Escreva dia, mês e ano, como 01/10/2026.",
     invalid: "Essa data não existe. Confira dia, mês e ano.",
+    year: TYPED_YEAR_OUT_OF_RANGE,
   },
   to: {
     empty: "Digite a data final, como 14/10/2026.",
     incomplete: "Faltam números. Escreva dia, mês e ano, como 14/10/2026.",
     invalid: "Essa data não existe. Confira dia, mês e ano.",
+    year: TYPED_YEAR_OUT_OF_RANGE,
   },
 };
 
