@@ -59,7 +59,7 @@ const DAY = 24 * HOUR;
 const DYNAMIC_SQL = /\bEXECUTE\b|\bformat\s*\(/i;
 
 interface Frozen {
-  idle_stores: number | null;
+  never_returned_stores: number | null;
   returned_stores: number | null;
   week_start: string;
 }
@@ -72,6 +72,8 @@ interface SessionSpec {
 
 interface StoreSpec {
   billing?: { state: string; trial: boolean };
+  /** A second owner who joins a minute later, with these sessions. */
+  coOwnerSessions?: SessionSpec[];
   /** Offset from the start of the cohort week; the stores are created on its Tuesday at noon by default. */
   createdOffset?: number;
   internal?: boolean;
@@ -79,8 +81,11 @@ interface StoreSpec {
   owner?: string;
   /** A sale this long after the creation. */
   saleAfter?: number;
+  /** A store with no owner's membership (gone, or purged with it). */
+  ownerless?: boolean;
   /** The sessions of the owner, as offsets from the creation of the store. */
   sessions?: SessionSpec[];
+  status?: string;
 }
 
 const at = (base: Date, offset: number) => new Date(base.getTime() + offset);
@@ -313,6 +318,34 @@ async function run() {
         "session.session_activation_owner_select",
       ]
     );
+    // every relation of the schema, so a grant to PUBLIC or through another role shows up too
+    const reachable = await owner.pool.query<{ relation: string }>(
+      `SELECT c.relname::text AS relation FROM pg_catalog.pg_class AS c
+        WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+          AND (pg_catalog.has_any_column_privilege($1, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES')
+               OR pg_catalog.has_table_privilege($1, c.oid, 'DELETE, TRUNCATE, TRIGGER'))
+        ORDER BY c.relname COLLATE "C"`,
+      [ACTIVATION_OWNER]
+    );
+    assert.deepEqual(
+      reachable.rows.map((row) => row.relation),
+      [
+        "activation_return_weeks",
+        "memberships",
+        "organization_billing",
+        "organizations",
+        "platform_internal_organizations",
+        "sales",
+        "session",
+      ],
+      "of every relation of public, the owner reaches only these seven"
+    );
+    const members = await owner.pool.query(
+      `SELECT m.member::regrole::text AS member FROM pg_catalog.pg_auth_members AS m
+        WHERE m.roleid = $1::regrole AND (m.set_option OR m.inherit_option)`,
+      [ACTIVATION_OWNER]
+    );
+    assert.deepEqual(members.rows, [], "no role can become or inherit it");
     const definition = await owner.pool.query<{
       config: string[];
       definer: boolean;
@@ -329,6 +362,13 @@ async function run() {
     assert.equal(fn.owner, ACTIVATION_OWNER);
     assert.deepEqual(fn.config, ["search_path=pg_catalog, public, pg_temp"]);
     assert.doesNotMatch(fn.source, DYNAMIC_SQL, "no dynamic SQL");
+    // the edges of the window, read from the body: the gate proves only one side of the upper edge on a given weekday
+    for (const edge of [
+      "week.start + interval '21 days' <= local_now",
+      "week.start + interval '31 days' > local_now",
+    ]) {
+      assert.ok(fn.source.includes(edge), `the window keeps ${edge}`);
+    }
     const owned = await owner.pool.query<{ fn: string }>(
       "SELECT p.oid::regprocedure::text AS fn FROM pg_catalog.pg_proc AS p WHERE p.proowner = $1::regrole",
       [ACTIVATION_OWNER]
@@ -436,6 +476,29 @@ async function run() {
       );
       return userId;
     };
+    const addSessions = async (
+      client: Client,
+      userId: string,
+      createdAt: Date,
+      sessions: SessionSpec[]
+    ) => {
+      for (const session of sessions) {
+        const id = randomUUID();
+        await client.query(
+          "INSERT INTO public.session (id, token, user_id, created_at, updated_at, expires_at) VALUES ($1, $1, $2, $3, $4, $5)",
+          [
+            id,
+            userId,
+            at(createdAt, session.created),
+            at(createdAt, session.touched),
+            at(createdAt, session.touched + 7 * DAY),
+          ]
+        );
+        if (session.deleted) {
+          await client.query("DELETE FROM public.session WHERE id = $1", [id]);
+        }
+      }
+    };
     const newStore = async (
       client: Client,
       cohort: Date,
@@ -445,13 +508,23 @@ async function run() {
       const createdAt = at(cohort, spec.createdOffset ?? TUESDAY_NOON);
       const userId = spec.owner ?? (await newPerson(client));
       await client.query(
-        "INSERT INTO public.organizations (id, name, timezone, status, created_at) VALUES ($1, 'Loja do gate do M3', $2, 'active', $3)",
-        [organizationId, ZONE, createdAt]
+        "INSERT INTO public.organizations (id, name, timezone, status, created_at) VALUES ($1, 'Loja do gate do M3', $2, $3, $4)",
+        [organizationId, ZONE, spec.status ?? "active", createdAt]
       );
-      await client.query(
-        "INSERT INTO public.memberships (organization_id, user_id, role, status, created_at) VALUES ($1, $2, 'owner', 'active', $3)",
-        [organizationId, userId, createdAt]
-      );
+      if (!spec.ownerless) {
+        await client.query(
+          "INSERT INTO public.memberships (organization_id, user_id, role, status, created_at) VALUES ($1, $2, 'owner', 'active', $3)",
+          [organizationId, userId, createdAt]
+        );
+      }
+      if (spec.coOwnerSessions) {
+        const coOwner = await newPerson(client);
+        await client.query(
+          "INSERT INTO public.memberships (organization_id, user_id, role, status, created_at) VALUES ($1, $2, 'owner', 'active', $3)",
+          [organizationId, coOwner, at(createdAt, MINUTE)]
+        );
+        await addSessions(client, coOwner, createdAt, spec.coOwnerSessions);
+      }
       if (spec.saleAfter !== undefined) {
         // only the header: the checks of its items are deferred to a commit this transaction never reaches
         await client.query(
@@ -481,28 +554,15 @@ async function run() {
           [organizationId]
         );
       }
-      for (const session of spec.sessions ?? []) {
-        const id = randomUUID();
-        await client.query(
-          "INSERT INTO public.session (id, token, user_id, created_at, updated_at, expires_at) VALUES ($1, $1, $2, $3, $4, $5)",
-          [
-            id,
-            userId,
-            at(createdAt, session.created),
-            at(createdAt, session.touched),
-            at(createdAt, session.touched + 7 * DAY),
-          ]
-        );
-        if (session.deleted) {
-          await client.query("DELETE FROM public.session WHERE id = $1", [id]);
-        }
+      if (!spec.ownerless) {
+        await addSessions(client, userId, createdAt, spec.sessions ?? []);
       }
       return { organizationId, userId };
     };
     const freeze = (client: Client) =>
       withGateRole(client, BILLING_RUNTIME, async () => {
         const result = await client.query<Frozen>(
-          `SELECT week_start::text AS week_start, returned_stores, idle_stores FROM ${FUNCTION}`
+          `SELECT week_start::text AS week_start, returned_stores, never_returned_stores FROM ${FUNCTION}`
         );
         return result.rows;
       });
@@ -518,13 +578,37 @@ async function run() {
       ).rows;
     const dayOf = (instant: Date) =>
       new Intl.DateTimeFormat("en-CA", { timeZone: ZONE }).format(instant);
+    // the week of 28 days ago is also due from Monday to Wednesday (its start plus 31 days is Thursday 00:00): the
+    // cases about one week read only that week
+    const freezeWeek = async (client: Client, week: Date) =>
+      (await freeze(client)).filter((row) => row.week_start === dayOf(week));
+    const frozenWeek = async (client: Client, week: Date) =>
+      (await frozenRows(client)).filter(
+        (row) => row.cohort_week === dayOf(week)
+      );
     const once = (offset: number): SessionSpec[] => [
       { created: -HOUR, touched: offset },
     ];
+    const hidden = (week: Date): Frozen[] => [
+      {
+        never_returned_stores: null,
+        returned_stores: null,
+        week_start: dayOf(week),
+      },
+    ];
 
-    type Omitted = "back" | "idle" | "left_out";
-    /** The cohort of the count: 5 came back, 6 did not, 5 left out of the measure; `omit` takes one of a group away. */
-    const seedCohort = async (client: Client, cohort: Date, omit?: Omitted) => {
+    /** How many to take away from each group of the seeded cohort. */
+    interface Drop {
+      back?: number;
+      idle?: number;
+      leftOut?: number;
+    }
+    /** The cohort of the count: 5 came back, 6 did not, 5 left out of the measure; `drop` takes some of a group away. */
+    const seedCohort = async (
+      client: Client,
+      cohort: Date,
+      drop: Drop = {}
+    ) => {
       const back: StoreSpec[] = [
         { sessions: once(DAY) },
         { sessions: once(14 * DAY) },
@@ -549,17 +633,12 @@ async function run() {
         { billing: { state: "active", trial: false }, sessions: once(DAY) },
         { billing: { state: "grace", trial: false } },
       ];
-      if (omit === "back") {
-        back.pop();
-      }
-      if (omit === "idle") {
-        idle.pop();
-        idle.pop();
-      }
-      if (omit === "left_out") {
-        leftOut.pop();
-      }
-      for (const spec of [...back, ...idle, ...leftOut]) {
+      const kept = [
+        ...back.slice(drop.back ?? 0),
+        ...idle.slice(drop.idle ?? 0),
+        ...leftOut.slice(drop.leftOut ?? 0),
+      ];
+      for (const spec of kept) {
         await newStore(client, cohort, spec);
       }
       // the second store of a person whose first store is older (in the week before): left out, though it came back
@@ -586,31 +665,27 @@ async function run() {
       await newStore(client, older, { sessions: once(DAY) });
       await newStore(client, early, { sessions: once(DAY) });
       await newStore(client, late, { sessions: once(DAY) });
-      // the week of 28 days ago is due only until its start plus 31 days, Wednesday 00:00 of this week in São Paulo:
-      // the case reads that edge from the transaction's clock, so it holds on every day of the week
+      // the week of 28 days ago is due only until its start plus 31 days, Thursday 00:00 of this week in São Paulo:
+      // the case reads that edge from the transaction's clock, so it holds on every day of the week (one side of the
+      // edge per day; the literal is checked in the body above)
       const edge = await client.query<{ open: boolean }>(
-        `SELECT now() < $1::timestamptz + interval '31 days' AS open`,
+        "SELECT now() < $1::timestamptz + interval '31 days' AS open",
         [older]
       );
-      const olderRows = edge.rows[0]?.open
-        ? [
-            {
-              idle_stores: null,
-              returned_stores: null,
-              week_start: dayOf(older),
-            },
-          ]
-        : [];
       const written = await freeze(client);
       assert.deepEqual(written, [
-        ...olderRows,
-        { idle_stores: 6, returned_stores: 5, week_start: dayOf(due) },
+        ...(edge.rows[0]?.open ? hidden(older) : []),
+        {
+          never_returned_stores: 6,
+          returned_stores: 5,
+          week_start: dayOf(due),
+        },
       ]);
       assert.deepEqual(
         await frozenRows(client),
         written.map((row) => ({
           cohort_week: row.week_start,
-          never_returned: row.idle_stores,
+          never_returned: row.never_returned_stores,
           returned: row.returned_stores,
         }))
       );
@@ -637,29 +712,79 @@ async function run() {
       assert.deepEqual(seen, [recent.organizationId]);
     });
     tests.push(
-      "the count of a seeded cohort of 21 days ago (session in UTC): came back on day 2, on day 14, at 00:00 of the next day of São Paulo, by a sign-in on day 5 touched last on day 20, and a store that sold only on day 15 (5); did not: the same day only, at 23:59 of that day, never, on day 15 only, an expired session already deleted, a sign-out (6); out of the measure: trialing, waived trial, Pro, grace and a second store of a person (5); out of everything: an internal store and one that sold on day 14. The week reads 5 and 6, the week of 28 days ago is frozen below k (both null) before its start plus 31 days and not after, the weeks of 14 and 35 days ago are not frozen; the owner sees a store of 41 days and not one of 43, and cannot read the ID of a session (42501)"
+      "the count of a seeded cohort of 21 days ago (session in UTC): came back on day 2, on day 14, at 00:00 of the next day of São Paulo, by a sign-in on day 5 touched last on day 20, and a store that sold only on day 15 (5); did not: the same day only, at 23:59 of that day, never, on day 15 only, an expired session already deleted, a sign-out (6); out of the measure: trialing, waived trial, Pro, grace and a second store of a person (5); out of everything: an internal store and one that sold on day 14. The week reads 5 and 6, the week of 28 days ago is frozen below k (both null) before its start plus 31 days (Thursday 00:00) and not after, the weeks of 14 and 35 days ago are not frozen; the owner sees a store of 41 days and not one of 43, and cannot read the ID of a session (42501)"
     );
 
-    // 4. the suppression with the complement
-    for (const omit of ["back", "idle", "left_out"] as const) {
+    // the controls of the filters and of the midnights of São Paulo, on a cohort cut to 5 who came back, 4 who did not
+    // and 4 left out
+    await scenario(async (client, current) => {
+      const due = at(current, -21 * DAY);
+      await seedCohort(client, due, { idle: 2, leftOut: 1 });
+      // the founder never came back and a co-owner who joined a minute later did: the founder is the one counted
+      await newStore(client, due, { coOwnerSessions: once(DAY) });
+      // no active owner: left out of the measure, in the difference with the funnel
+      await newStore(client, due, { ownerless: true });
+      // purged: out of everything (the funnel leaves it out too)
+      await newStore(client, due, { ownerless: true, status: "purged" });
+      // created at 22:30 of São Paulo (01:30 of the next day in UTC), back at 00:30: a return on the next local day
+      await newStore(client, due, {
+        createdOffset: DAY + 22 * HOUR + 30 * MINUTE,
+        sessions: once(2 * HOUR),
+      });
+      // created at 00:00 of the Monday of the week, back the next day: of this week
+      await newStore(client, due, { createdOffset: 0, sessions: once(DAY) });
+      // created at 23:30 of the Sunday before (02:30 of the Monday in UTC): of the week before, not of this one
+      await newStore(client, due, {
+        createdOffset: -30 * MINUTE,
+        sessions: once(DAY),
+      });
+      assert.deepEqual(await freezeWeek(client, due), [
+        {
+          never_returned_stores: 5,
+          returned_stores: 7,
+          week_start: dayOf(due),
+        },
+      ]);
+    });
+    tests.push(
+      "controls, on a cohort cut to 5 who came back, 4 who did not and 4 left out: a founder who never came back with a co-owner who did counts as not back, a store with no active owner joins the difference with the funnel (5) and a purged one counts nowhere; a store created at 22:30 of São Paulo and back at 00:30 counts as back, one created at 00:00 of the Monday is of that week, one created at 23:30 of the Sunday before is not: the week reads 7 and 5"
+    );
+
+    // 4. the suppression with the complement, and k itself
+    for (const [drop, extra, expected, label] of [
+      [{ back: 1 }, false, null, "4 who came back (6 who did not)"],
+      [{ idle: 2 }, false, null, "4 who did not (5 who came back)"],
+      [{ idle: 1 }, false, [5, 5], "exactly 5 and 5 shows"],
+      [
+        { leftOut: 1 },
+        true,
+        null,
+        "4 left out of the measure (and a purged store, which is not one of them)",
+      ],
+    ] as const) {
       await scenario(async (client, current) => {
         const due = at(current, -21 * DAY);
-        await seedCohort(client, due, omit);
+        await seedCohort(client, due, drop);
+        if (extra) {
+          await newStore(client, due, { ownerless: true, status: "purged" });
+        }
         assert.deepEqual(
-          await freeze(client),
-          [
-            {
-              idle_stores: null,
-              returned_stores: null,
-              week_start: dayOf(due),
-            },
-          ],
-          `with one less in ${omit} the week is frozen hidden`
+          await freezeWeek(client, due),
+          expected
+            ? [
+                {
+                  never_returned_stores: expected[1],
+                  returned_stores: expected[0],
+                  week_start: dayOf(due),
+                },
+              ]
+            : hidden(due),
+          label
         );
       });
     }
     tests.push(
-      "suppression with the complement, k = 5: 4 who came back (6 who did not), 4 who did not (5 who came back), or 4 left out of the measure (the difference with the funnel) each freeze the week with both cells null"
+      "suppression with the complement, k = 5: 4 who came back (6 who did not), 4 who did not (5 who came back), or 4 left out of the measure (the difference with the funnel, a purged store not counted in it) each freeze the week with both cells null; exactly 5 and 5 (with 5 left out) shows"
     );
 
     // 5. the frozen week does not follow the sessions; 7. a sweep that fails writes nothing
@@ -675,12 +800,16 @@ async function run() {
       );
       await client.query("ROLLBACK TO SAVEPOINT failing_sweep");
       assert.deepEqual(
-        await frozenRows(client),
+        await frozenWeek(client, due),
         [],
         "a failed sweep leaves the week without a row (unavailable, never 0)"
       );
-      assert.deepEqual(await freeze(client), [
-        { idle_stores: 6, returned_stores: 5, week_start: dayOf(due) },
+      assert.deepEqual(await freezeWeek(client, due), [
+        {
+          never_returned_stores: 6,
+          returned_stores: 5,
+          week_start: dayOf(due),
+        },
       ]);
       await client.query(
         `DELETE FROM public.session WHERE user_id IN (
@@ -690,7 +819,7 @@ async function run() {
         [due, at(due, 7 * DAY)]
       );
       assert.deepEqual(await freeze(client), [], "nothing more to freeze");
-      assert.deepEqual(await frozenRows(client), [
+      assert.deepEqual(await frozenWeek(client, due), [
         { cohort_week: dayOf(due), never_returned: 6, returned: 5 },
       ]);
     });

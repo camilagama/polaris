@@ -98,17 +98,18 @@ SET ROLE polaris_activation_owner;--> statement-breakpoint
 -- tries.
 --
 -- Who is counted (the population of the series, D9): a store of the week, not purged, not internal, with no sale
--- confirmed up to 14 days after its creation; its oldest active owner, and only if it is that person's first store (the
--- oldest active owner's membership of theirs, as the series has it); no billing relation (a trial, used or waived, or any
--- state but free). "Came back": a session of that person created or touched on a day of São Paulo after the day the
--- store was created and up to 14 days after it. A session lives only while signed in and its `updated_at` moves once a
--- day at most, so this is a floor of "came back" (D9).
+-- confirmed up to 14 days of 24 hours after its creation (as the funnel measures it, whatever the caller's zone); its
+-- oldest active owner, and only if it is that person's first store (the oldest active owner's membership of theirs, as
+-- the series has it); no billing relation (a trial, used or waived, or any state but free). "Came back": a session of
+-- that person created or touched on a day of São Paulo after the day the store was created and up to 14 days after it.
+-- A session lives only while signed in and its `updated_at` moves once a day at most, so this is a floor of "came back"
+-- (D9).
 --
 -- Suppression, k = 5: both cells or neither. Each cell holds k stores or more, and so do the stores that did not sell in
 -- 14 days but are left out of the measure (second stores, trial or Pro, no active owner): the funnel shows the stores of
 -- the week and those that sold within 14 days, so its difference with the measure is a set of stores too.
 CREATE FUNCTION public.activation_return_freeze()
-RETURNS TABLE (week_start date, returned_stores integer, idle_stores integer)
+RETURNS TABLE (week_start date, returned_stores integer, never_returned_stores integer)
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
@@ -141,7 +142,7 @@ BEGIN
        )
        AND NOT EXISTS (
          SELECT 1 FROM public.sales AS sale
-          WHERE sale.organization_id = store.id AND sale.confirmed_at <= store.created_at + interval '14 days'
+          WHERE sale.organization_id = store.id AND sale.confirmed_at - store.created_at <= interval '14 days'
        )
   ),
   measured AS (
@@ -210,7 +211,8 @@ REVOKE CREATE ON SCHEMA public FROM polaris_activation_owner;--> statement-break
 -- The end state (a REVOKE or an ALTER without the right is only a WARNING on Neon): the owner of the measure holds
 -- exactly the columns above and nothing else (no table privilege, no write but its INSERT, no CREATE), its only policy on
 -- `session` is its own and is the only new one there, it owns only its function, which only the billing role executes;
--- the migrator keeps no SET or INHERIT on it; and of the `polaris_*` groups and owners, only it reaches the new table.
+-- no role, the migrator included, keeps SET or INHERIT on it; and of the `polaris_*` groups and owners, only it reaches
+-- the new table.
 DO $end_state$
 DECLARE
   held text[];
@@ -287,11 +289,10 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_catalog.pg_auth_members AS m
-     WHERE m.member = (SELECT r.oid FROM pg_catalog.pg_roles AS r WHERE r.rolname = CURRENT_USER)
-       AND m.roleid = 'polaris_activation_owner'::regrole
+     WHERE m.roleid = 'polaris_activation_owner'::regrole
        AND (m.set_option OR m.inherit_option)
   ) THEN
-    RAISE EXCEPTION 'the migrator kept SET or INHERIT on polaris_activation_owner';
+    RAISE EXCEPTION 'a role (the migrator included) can become or inherit polaris_activation_owner';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles
               WHERE rolname = 'polaris_activation_owner'
