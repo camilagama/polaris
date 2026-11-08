@@ -297,6 +297,14 @@ O usuário decidiu que a regra fixa de "36 px visíveis e 48 de área de toque e
 
 A auditoria de UI de 02/11 mediu campos de 34 px e itens de 48 px que sobraram da regra antiga. O usuário manteve 44 px para a ação principal e passou o campo de texto e o seletor a 44 px no toque (`touch:h-11` no `InputGroup` e no `Select`; a caixa de texto de várias linhas segue `h-auto`). O controle comum não muda: 36 px visíveis no toque, com área de 44 px por `touch-hit`. Os itens do menu lateral, da folha "Mais", do seletor de loja, do aceite e do sumário dos textos legais passam de 48 para 44 px, e a coluna recolhida usa os mesmos 44 px. Desktop (ponteiro fino) não muda.
 
+## Emenda: o contador dos números principais dos cartões (t944, 08/11/2026)
+
+**Decisão do usuário (08/11/2026, B-07 da auditoria de polimento):** só os números principais e indicativos dos cartões animam, com o contador no estilo do Bklit; o resto aparece pronto. Isso substitui a frase da emenda de 25/10 ("`@number-flow/react`, que o código não importa: não entram") só no que o contador cobre.
+
+- **Dependência nova:** `@number-flow/react` 0.6.2 (MIT, versão exata, na lista de `ui-supply-chain.ts`; traz `number-flow` 0.6.2 e `esm-env`, os três MIT e sem script de instalação; fechamento em `ui-dependency-closure.txt`). Só `src/ui/animated-figure.tsx` o importa, e o contador só é usado pelo valor e o chip de percentual do cartão de KPI e pelo percentual da Meta e da Margem (`scripts/ui-source-rules.test.ts`).
+- **CSP.** O pacote escreve seus estilos num elemento de estilo dentro do shadow root, que `style-src 'self'` (sem nonce) recusa: os dígitos saem empilhados e sem estilo. O contador faz o shadow root adotar uma folha construída (`adoptedStyleSheets`), que não é elemento de estilo e o CSP não recusa; o elemento nunca entra na árvore. A regra de `ui-supply-chain.ts` que reprova `adoptedStyleSheets` em `src/ui/` ganha uma exceção exata (esse arquivo, essa regra, com o motivo): qualquer outra regra nele, ou a mesma regra em outro arquivo, continua reprovando. O CSP não mudou.
+- **Movimento.** 500 ms na curva do tween do eixo Y (`MOTION.number`, `src/lib/motion-level.ts`), só no nível `full`; celular e `prefers-reduced-motion` mostram o valor final no primeiro quadro; escondido, o contador não existe. A revelação da área e o tween do eixo Y ficam como o Bklit os entrega.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
