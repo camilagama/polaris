@@ -35,8 +35,10 @@ import { WORKER_MARK } from "./worker-mark";
  * The same cases run a second time with the font at 24 px ("Muito grande" in Chrome), as a report and not as a promise:
  * 20 px is the floor the interface guarantees, 24 px is best effort. What is cut at 24 px and fits at 20 goes in
  * `KNOWN_FINDINGS_24`, apart from `KNOWN_FINDINGS`, with the same rule: a new cut fails, and a known one that no longer
- * shows up has to leave the list. `ALREADY_AT_24` names the cases whose chart, chain and day table another spec already reads at 24 px (that spec does
- * not sweep the page or the KPI cards).
+ * shows up has to leave the list. `ALREADY_AT_24` names the two Resultado cases that another spec reads at 24 px, each
+ * with what that test reads (see there): the chart and the chain of a month of millions for the incomplete-month case,
+ * the chart and the day table for the chart case. Neither sweeps the page or the KPI cards of those two cases at 24 px
+ * (24 px is best effort).
  */
 skipOutsideChromium();
 test.use({ hasTouch: true, isMobile: true });
@@ -406,8 +408,15 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
 };
 
 /**
- * The cases of `COVERED` whose chart, chain and day table another spec already reads at 320 px with 24 px (it does not
- * sweep the rest of the page or the KPI cards), so they do not run twice: the case, and the file and the test.
+ * The cases of `COVERED` that do not run twice because another spec reads part of them at 320 px with 24 px: the case,
+ * and the file and the test. What each test reads at 24 px, and nothing more:
+ * - "resultado mês incompleto e gráfico de vendas": the chart totals and the chain of a month of millions (R$ and number
+ *   on one line, nothing clipped, the chain in view). The test does not open the day table and does not use the
+ *   incomplete-estimate month (warning, badges, hatched first day).
+ * - "resultado gráfico de vendas e custos e a tabela": the chart region and the day table with "Depois de hoje" (the
+ *   amounts of the rows and of the footer on one line, nothing clipped) and that the page does not roll sideways.
+ *   It does not read the chain, and the "one card per day" of its title is not measured.
+ * The page and the KPI cards of both cases are not swept at 24 px by anyone: 24 px is best effort.
  */
 const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
   {
