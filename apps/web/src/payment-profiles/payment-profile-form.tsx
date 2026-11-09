@@ -38,7 +38,7 @@ import {
 } from "./payment-profile-draft";
 
 /* The form of a payment profile on the components of src/ui (ADR 0103): the name, then one block per rule (method,
-   installments, settlement) with a bordered block for each fee; the problems are said at the field. */
+   installments, settlement) with a borderless `bg-muted` block for each fee; the problems are said at the field. */
 
 export const methods: ReadonlyArray<readonly [Method, string]> = [
   ["pix", "Pix"],
