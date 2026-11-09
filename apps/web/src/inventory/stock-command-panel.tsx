@@ -179,12 +179,7 @@ function useFocusRefusedField(
   }, [focus, refusedField]);
 }
 
-/**
- * One stock command on one variant, in two steps: fill in and review, then
- * confirm. An unknown outcome locks the attempt and a retry resends the same
- * command ID, so the server never records the movement twice.
- */
-/** Why the buttons of the list are off while this panel is open: they point at it, so it does not take a line of the page. */
+/** Why the buttons of the list are off while this panel is open: they point at it with `aria-describedby`. */
 function PanelOpenReason() {
   return (
     <p className="text-muted-foreground text-support" id={PANEL_OPEN_REASON_ID}>
@@ -193,6 +188,11 @@ function PanelOpenReason() {
   );
 }
 
+/**
+ * One stock command on one variant, in two steps: fill in and review, then
+ * confirm. An unknown outcome locks the attempt and a retry resends the same
+ * command ID, so the server never records the movement twice.
+ */
 export function StockCommandPanel({
   action,
   local,

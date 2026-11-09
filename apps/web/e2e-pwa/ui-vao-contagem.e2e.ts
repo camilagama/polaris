@@ -7,11 +7,13 @@ import { stockStates } from "./ui-stock-states";
 
 /**
  * The gap between the line that counts the list ("25 variantes") and the card of the list is the same on Estoque,
- * Produtos and Clientes: 16 px at 360 px. The Estoque used to hold a line for the notice of the open panel between
- * them, which made it look like another screen. The gap does not change with the "Precisa de ação" strip above.
+ * Produtos and Clientes: 16 px at 360 px. The notice of the open panel lives inside the panel, so nothing sits
+ * between the count and the list, and the gap does not change with the "Precisa de ação" strip above.
  */
 const GAP = 16;
 const TOLERANCE = 1;
+const OPEN_REASON = "Feche o painel aberto para usar os botões.";
+const COUNT_JEANS = /^Contar estoque de Calça jeans/;
 const RECEIVE_JEANS = /^Receber estoque de Calça jeans/;
 
 test.use({ viewport: { height: 740, width: 360 } });
@@ -45,7 +47,6 @@ function gapBelowCount(page: Page) {
     return {
       gap:
         card.getBoundingClientRect().top - line.getBoundingClientRect().bottom,
-      lineHeight: line.getBoundingClientRect().height,
     };
   });
 }
@@ -106,6 +107,12 @@ test.describe("o vão entre a contagem e a lista a 360 px", () => {
       page.getByRole("heading", { name: "Receber estoque" })
     ).toBeVisible();
     expect(Math.abs((await top()) - before)).toBeLessThanOrEqual(TOLERANCE);
+    await expect(page.locator("#stock-panel-open-reason")).toHaveText(
+      OPEN_REASON
+    );
+    await expect(
+      page.getByRole("button", { name: COUNT_JEANS })
+    ).toHaveAccessibleDescription(OPEN_REASON);
     const open = await gapBelowCount(page);
     expect(open?.gap).toBeCloseTo(GAP, 0);
   });
