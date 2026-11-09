@@ -124,8 +124,14 @@ test.describe("o ícone gira só com movimento completo", () => {
     test.use({ hasTouch: false, viewport: VIEWPORTS["1280"] });
 
     for (const { name, screen } of RESTING) {
-      test(`${screen}: parado em repouso`, async ({ page }) => {
+      test(`${screen}: sem aria-busy e sem giro em repouso`, async ({
+        page,
+      }) => {
         expect(await restingSpin(page, screen, name)).toBe("none");
+        await expect(page.locator("html")).toHaveAttribute(
+          "data-motion",
+          "full"
+        );
       });
     }
 

@@ -961,7 +961,7 @@ describe('"Atualizar" é um componente só (L1-5, AC-5.1)', () => {
     expect(code).toContain('variant="outline"');
   });
 
-  it("um 'Atualizar' escrito à mão reprova, e a exceção da lista é exata (controle plantado)", () => {
+  it("um 'Atualizar' escrito à mão reprova em qualquer tela, sem exceção (controle plantado)", () => {
     const screen = "src/dashboard/dashboard-page.tsx";
     expect(
       refreshButtonFaults(screen, "<Button>\n  Atualizar\n</Button>").join()
