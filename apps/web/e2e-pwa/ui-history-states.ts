@@ -31,7 +31,7 @@ const entry = (n: number, overrides: Record<string, unknown> = {}) => ({
 });
 
 // a customer, a long customer name, a cancelled sale, one with returns and one dated before it was confirmed,
-// so the row shows every badge and the long text
+// so the row shows every badge that is still one (the ordinary state, confirmed, has none in the list) and the long text
 const SALES = [
   entry(1, { customerId: id(90), customerName: "Ângela Souza" }),
   entry(2, {
