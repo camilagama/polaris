@@ -265,6 +265,7 @@ export function MonthPicker({
       <ButtonGroup aria-labelledby={labelId}>
         <Button
           aria-label="Mês anterior"
+          className="touch:h-11"
           disabled={previous === null}
           onClick={handlePrevious}
           size="icon"
@@ -279,7 +280,7 @@ export function MonthPicker({
             render={
               <Button
                 aria-label={`${label}, ${text}`}
-                className="min-w-32 flex-1 bg-card shadow-xs min-[30rem]:min-w-40 dark:bg-secondary/60"
+                className="touch:h-11 min-w-32 flex-1 bg-card shadow-xs min-[30rem]:min-w-40 dark:bg-secondary/60"
                 id={id}
                 type="button"
                 variant="outline"
@@ -304,6 +305,7 @@ export function MonthPicker({
         </Popover>
         <Button
           aria-label="Próximo mês"
+          className="touch:h-11"
           disabled={next === null}
           onClick={handleNext}
           size="icon"

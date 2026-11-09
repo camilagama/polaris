@@ -1119,6 +1119,26 @@ test("a leitura que falha diz o motivo e oferece 'Tentar novamente'; sem a capac
   expect(other.reads).toBe(0);
 });
 
+for (const width of [360, 1280]) {
+  test(`oferta, a ${width} px: "Começar os 7 dias grátis" tem a altura da ação principal (36 no mouse, 44 no toque)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width });
+    await openScreen(page);
+    const start = page.getByRole("button", {
+      name: "Começar os 7 dias grátis",
+    });
+    await expect(start).toBeVisible();
+    const box = await start.boundingBox();
+    expect(box).not.toBeNull();
+    const touch = await page.evaluate(
+      (viewport) => matchMedia("(pointer: coarse)").matches || viewport < 760,
+      width
+    );
+    expect(box?.height).toBe(touch ? 44 : 36);
+  });
+}
+
 test("menu: 'Assinatura' é aba de Configurações, no desktop e no celular; some sem a flag e para quem não é dono (AS-10, AS-19)", async ({
   page,
 }) => {

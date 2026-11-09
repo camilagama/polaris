@@ -166,6 +166,23 @@ describe("fields and the main action on touch", () => {
     }
   });
 
+  it("the month picker is a field and the main action of the offer keeps the floor of xl, even when it wraps", () => {
+    const picker = readFileSync(join(SRC, "expenses/month-picker.tsx"), "utf8");
+    expect(picker.match(/"touch:h-11"/g)).toHaveLength(2);
+    expect(picker).toContain("touch:h-11 min-w-32");
+    const parts = readFileSync(
+      join(SRC, "subscription/subscription-parts.tsx"),
+      "utf8"
+    );
+    expect(parts).toContain("min-h-ctl-xl");
+    const offer = readFileSync(
+      join(SRC, "subscription/subscription-offer.tsx"),
+      "utf8"
+    );
+    expect(offer).toContain("WRAPS_XL");
+    expect(offer).toContain('size="xl"');
+  });
+
   it("the plain button stays 36 px with touch and takes no minimum height", () => {
     expect(buttonVariants({ size: "default" })).toContain("h-ctl-md");
     expect(buttonVariants({ size: "default" })).not.toMatch(MIN_HEIGHT);
