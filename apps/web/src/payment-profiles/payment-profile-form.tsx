@@ -81,8 +81,8 @@ function FeeFields({ errors, id, label, onChange, value }: FeeFieldsProps) {
     [onChange, value]
   );
   return (
-    <FieldSet className="min-w-0 content-start gap-3 rounded-lg border p-3">
-      <FieldLegend className="mb-0 px-1" variant="label">
+    <FieldSet className="min-w-0 content-start gap-3 rounded-lg bg-muted p-3">
+      <FieldLegend className="float-left mb-0 w-full" variant="label">
         {label}
       </FieldLegend>
       <SelectField
