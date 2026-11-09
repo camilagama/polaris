@@ -248,7 +248,7 @@ const MONEY_FRACTION_ELSEWHERE: readonly {
   why: string;
 }[] = [
   {
-    file: "src/ui/animated-figure.tsx",
+    file: "src/ui/figure-counter.tsx",
     strings: 4,
     why: "o contador escreve o R$, o espaço, os centavos e o % nas partes do NumberFlow com a mesma fração do Money, para o valor que conta não mudar de forma",
   },
@@ -481,8 +481,11 @@ export function focusListFaults(
  * Só os números principais e indicativos dos cards animam (DESIGN.md "Movimento"): `@number-flow/react` é importado só
  * no contador, e o contador só é usado pelos itens da lista fechada (o valor e o chip do cartão de KPI, a Margem e o
  * percentual da Meta, mais a galeria que mostra o componente). Qualquer outro uso, ou outro arquivo que importe o pacote, reprova.
+ * O contador (`figure-counter.tsx`) é um pedaço que só `animated-figure.tsx` carrega, com `import()` e só no nível `full`:
+ * um import estático dele, de qualquer arquivo, o traria de volta ao pedaço do cartão e ao celular.
  */
-export const FIGURE_COUNTER = "src/ui/animated-figure.tsx";
+export const FIGURE_COUNTER = "src/ui/figure-counter.tsx";
+export const FIGURE_LOADER = "src/ui/animated-figure.tsx";
 export const FIGURE_USERS = [
   "src/home/home-goal.tsx",
   "src/ui-gallery/ui-gallery.tsx",
@@ -490,12 +493,25 @@ export const FIGURE_USERS = [
 ] as const;
 const COUNTER_PACKAGE = /@number-flow\//;
 const COUNTER_USE = /<AnimatedFigure\b/;
+const COUNTER_STATIC_IMPORT =
+  /(?:\bfrom\s*|\bimport\s+|\brequire\s*\(\s*)["'`][^"'`]*figure-counter(?:\.tsx?)?["'`]/;
+/* `typeof import("./figure-counter")` is a type, erased at build: it does not load anything */
+const COUNTER_DYNAMIC_IMPORT =
+  /(?<!typeof\s)\bimport\s*\(\s*["'`]\.\/figure-counter["'`]\s*\)/;
 
 export function figureFaults(path: string, text: string): string[] {
   const code = withoutComments(text);
   const faults: string[] = [];
   if (COUNTER_PACKAGE.test(code) && path !== FIGURE_COUNTER) {
-    faults.push("importa o pacote do contador fora de ui/animated-figure.tsx");
+    faults.push("importa o pacote do contador fora de ui/figure-counter.tsx");
+  }
+  if (COUNTER_STATIC_IMPORT.test(code)) {
+    faults.push(
+      "importa o contador de forma estática: só o import() de ui/animated-figure.tsx o carrega"
+    );
+  }
+  if (path === FIGURE_LOADER && !COUNTER_DYNAMIC_IMPORT.test(code)) {
+    faults.push("o carregador não importa o contador com import()");
   }
   if (
     COUNTER_USE.test(code) &&
@@ -512,10 +528,13 @@ describe("o contador só nos números principais e indicativos dos cartões (AC-
   it("a lista fechada e o contador existem, e cada usuário da lista usa o contador (uma lista velha deixaria passar outra coisa)", () => {
     expect(FIGURE_USERS).toEqual([...FIGURE_USERS].sort());
     expect(read(FIGURE_COUNTER)).toContain('from "@number-flow/react"');
+    expect(read(FIGURE_LOADER)).not.toContain("@number-flow");
     for (const user of FIGURE_USERS) {
       expect(read(user), user).toMatch(COUNTER_USE);
     }
-    expect(FIGURE_SCOPE).toEqual(expect.arrayContaining([FIGURE_COUNTER]));
+    expect(FIGURE_SCOPE).toEqual(
+      expect.arrayContaining([FIGURE_COUNTER, FIGURE_LOADER])
+    );
   });
 
   it.each(FIGURE_SCOPE)("%s: sem contador fora da lista", (path) => {
@@ -530,6 +549,22 @@ describe("o contador só nos números principais e indicativos dos cartões (AC-
     expect(figureFaults("src/home/home-chart.tsx", use)).toHaveLength(1);
     expect(figureFaults(FIGURE_COUNTER, pkg)).toEqual([]);
     expect(figureFaults("src/ui/kpi-card.tsx", use)).toEqual([]);
+    const staticImport = 'import { Counter } from "./figure-counter";';
+    const lazyImport = 'const module = await import("./figure-counter");';
+    expect(figureFaults("src/ui/kpi-card.tsx", staticImport)).toHaveLength(1);
+    expect(
+      figureFaults("src/home/home-goal.tsx", 'import "@/ui/figure-counter";')
+    ).toHaveLength(1);
+    expect(figureFaults(FIGURE_LOADER, staticImport)).toHaveLength(2);
+    expect(figureFaults(FIGURE_LOADER, lazyImport)).toEqual([]);
+    expect(figureFaults(FIGURE_LOADER, "const a = 1;")).toHaveLength(1);
+    expect(
+      figureFaults(
+        FIGURE_LOADER,
+        'type Counter = typeof import("./figure-counter");'
+      )
+    ).toHaveLength(1);
+    expect(figureFaults("src/ui/kpi-card.tsx", lazyImport)).toEqual([]);
     // a comment that names the package is not an import
     expect(figureFaults("src/ui/money.tsx", "// @number-flow/react")).toEqual(
       []
@@ -619,9 +654,12 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     ]) {
       expect(existsSync(join(web, path)), path).toBe(true);
     }
-    expect(MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file)).toEqual(
-      FOCUS_SCOPE.filter((path) => path !== MONEY_COMPONENT).filter((path) =>
-        read(path).includes("text-[0.56em]")
+    const sorted = (paths: string[]) => [...paths].sort();
+    expect(sorted(MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file))).toEqual(
+      sorted(
+        FOCUS_SCOPE.filter((path) => path !== MONEY_COMPONENT).filter((path) =>
+          read(path).includes("text-[0.56em]")
+        )
       )
     );
   });

@@ -410,12 +410,13 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
 /**
  * The cases of `COVERED` that do not run twice because another spec reads part of them at 320 px with 24 px: the case,
  * and the file and the test. What each test reads at 24 px, and nothing more:
- * - "resultado mês incompleto e gráfico de vendas": the chart totals and the chain of a month of millions (R$ and number
- *   on one line, nothing clipped, the chain in view). The test does not open the day table and does not use the
+ * - "resultado mês incompleto e gráfico de vendas": the amounts of the chart region (R$ and number on one line, the two
+ *   `dd` values apart, nothing clipped) and the chain of a month of millions (R$ and number on one line, nothing
+ *   clipped, the chain in view). The test does not open the day table and does not use the
  *   incomplete-estimate month (warning, badges, hatched first day).
  * - "resultado gráfico de vendas e custos e a tabela": the chart region and the day table with "Depois de hoje" (the
  *   amounts of the rows and of the footer on one line, nothing clipped) and that the page does not roll sideways.
- *   It does not read the chain, and the "one card per day" of its title is not measured.
+ *   It does not read the chain.
  * The page and the KPI cards of both cases are not swept at 24 px by anyone: 24 px is best effort.
  */
 const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
@@ -426,7 +427,7 @@ const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
     },
     "resultado gráfico de vendas e custos e a tabela": {
       file: "dashboard.e2e.ts",
-      test: 'com a letra em 24 px, a tabela dos dias é um cartão por dia e o "Depois de hoje" lê inteiro, sem rolar de lado',
+      test: 'com a letra em 24 px, o gráfico, a tabela dos dias e o "Depois de hoje" leem inteiros, sem rolagem lateral',
     },
   };
 

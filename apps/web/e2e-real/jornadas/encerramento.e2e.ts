@@ -185,6 +185,10 @@ test("encerramento: encerra pela tela com os prazos do domínio, recusa tudo no 
     deviceId: device.id,
     organizationId,
   });
+  // the server refuses a creation time too far behind its own clock (`invalid_creation_time`), and this journey starts
+  // minutes after T0: the command is dated by the server's `Date` header, not by a read of the wall clock
+  const serverNow = (await page.request.get("/health")).headers().date;
+  expect(serverNow, "the server answers with its date").toBeDefined();
   const offlineCustomer = (
     customerId: string,
     name: string,
@@ -192,7 +196,7 @@ test("encerramento: encerra pela tela com os prazos do domínio, recusa tudo no 
   ) => ({
     baseVersion: null,
     commandId: nextCommandId(),
-    createdAt: new Date(runT0()).toISOString(),
+    createdAt: new Date(serverNow as string).toISOString(),
     deviceId: device.id,
     lease,
     payload: { customerId, email: null, name, notes: null, phone },
