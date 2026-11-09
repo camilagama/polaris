@@ -498,6 +498,51 @@ for (const width of FORM_WIDTHS) {
   });
 }
 
+function boxOf(locator: ReturnType<Page["locator"]>) {
+  return locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = "var(--muted)";
+    document.body.append(probe);
+    const muted = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return {
+      background: style.backgroundColor,
+      borders: [
+        style.borderTopWidth,
+        style.borderRightWidth,
+        style.borderBottomWidth,
+        style.borderLeftWidth,
+      ],
+      muted,
+    };
+  });
+}
+
+for (const theme of THEMES) {
+  test(`tema ${theme.name}: o bloco da regra e o da taxa, dentro do cartão, não têm borda e usam o fundo --muted`, async ({
+    page,
+  }) => {
+    await page.addInitScript((stored) => {
+      window.localStorage.setItem("polaris-tema", stored);
+    }, theme.stored);
+    await openServerScreen(page, { lists: [answer([MACHINE])] });
+
+    const rule = await boxOf(page.locator("ul ul > li").first());
+    expect(rule.borders).toEqual(["0px", "0px", "0px", "0px"]);
+    expect(rule.background).toBe(rule.muted);
+
+    await page
+      .getByRole("button", { name: "Editar perfil Maquininha da loja" })
+      .click();
+    const feeBlock = await boxOf(
+      page.getByRole("group", { name: "Taxa de processamento" })
+    );
+    expect(feeBlock.borders).toEqual(["0px", "0px", "0px", "0px"]);
+    expect(feeBlock.background).toBe(feeBlock.muted);
+  });
+}
+
 test("arquivar e restaurar dizem o resultado e a lista acompanha", async ({
   page,
 }) => {
