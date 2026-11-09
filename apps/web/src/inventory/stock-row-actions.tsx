@@ -4,7 +4,7 @@ import { ButtonGroup } from "@/ui/button-group";
 import type { StockAction } from "./stock-command-model";
 import { type StockRow, stockRowActions } from "./stock-list-model";
 
-/** Names the line that says why the row buttons are off while a panel is open. */
+/** Names the line, in the open panel, that says why the row buttons are off while a panel is open. */
 export const PANEL_OPEN_REASON_ID = "stock-panel-open-reason";
 export const PANEL_OPEN_REASON = "Feche o painel aberto para usar os botões.";
 
@@ -36,7 +36,7 @@ export function RowActions({ disabled, onOpen, row }: RowActionsProps) {
       className={`w-full md:w-fit ${STACKED_GROUP}`}
     >
       {stockRowActions(row.target).map(({ action, label, name }) => (
-        // aria-disabled, not disabled: the button stays reachable and reads why it is off (the line above the list)
+        // aria-disabled, not disabled: the button stays reachable and reads why it is off (the line in the open panel)
         <Button
           aria-describedby={disabled ? PANEL_OPEN_REASON_ID : undefined}
           aria-disabled={disabled || undefined}

@@ -43,12 +43,7 @@ import {
   stockListView,
   stockMoreView,
 } from "./stock-list-model";
-import {
-  PANEL_OPEN_REASON,
-  PANEL_OPEN_REASON_ID,
-  RowActions,
-  triggerId,
-} from "./stock-row-actions";
+import { RowActions, triggerId } from "./stock-row-actions";
 import { type StockTarget, stockTarget } from "./stock-target";
 import { useStockAttention } from "./use-stock-attention";
 import { useStockEntryLink } from "./use-stock-entry-link";
@@ -60,6 +55,23 @@ interface OpenCommand {
   standalone: boolean;
   /** The balance as the row showed it when the panel opened. */
   target: StockTarget;
+}
+
+/**
+ * The buttons are only off while the panel that says why is on the page: a panel opened on a row the list no longer
+ * has (a search or a refresh took it out) is not drawn, and must not leave the other rows off with no way to close it.
+ */
+function isPanelMounted(
+  open: OpenCommand | null,
+  rows: readonly StockRow[] | null
+) {
+  if (open === null) {
+    return false;
+  }
+  return (
+    open.standalone ||
+    (rows?.some((row) => row.id === open.target.variantId) ?? false)
+  );
 }
 
 /** A link on a line of its own: it gets the 44 px touch area. */
@@ -369,6 +381,11 @@ export function InventoryPage() {
     [setFilters]
   );
 
+  const panelMounted = isPanelMounted(
+    open,
+    view.kind === "ready" ? view.rows : null
+  );
+
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
       <header className="grid gap-1">
@@ -421,16 +438,6 @@ export function InventoryPage() {
         </p>
         <RefreshButton className="shrink-0" onClick={handleReload} />
       </div>
-
-      {view.kind === "ready" ? (
-        // always there, so the list does not drop a line when a panel opens
-        <p
-          className="min-h-5 text-muted-foreground text-support"
-          id={PANEL_OPEN_REASON_ID}
-        >
-          {open === null ? null : PANEL_OPEN_REASON}
-        </p>
-      ) : null}
 
       {open?.standalone ? (
         <Card className="gap-0 py-0">
@@ -493,6 +500,7 @@ export function InventoryPage() {
                 key={row.id}
                 onOpen={handleOpen}
                 otherPanelOpen={
+                  panelMounted &&
                   open !== null &&
                   (open.standalone || open.target.variantId !== row.id)
                 }
