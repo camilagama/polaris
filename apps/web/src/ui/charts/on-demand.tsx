@@ -138,12 +138,12 @@ function Reserved({
         />
       )}
       {said ? (
-        <p
+        <div
           className="absolute inset-x-0 top-0 grid place-items-center px-4 text-center text-muted-foreground"
           style={{ bottom: floor ?? 0 }}
         >
           {message}
-        </p>
+        </div>
       ) : null}
     </div>
   );

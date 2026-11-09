@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import {
   datePickerButton,
   FORM_VIEWPORTS,
@@ -457,8 +458,11 @@ async function choose(
   await expect(page.getByRole("listbox")).toHaveCount(0);
 }
 
+/** The one in the title bar: the empty list has a button of the same name, which asks this one to open the form. */
 const newExpenseButton = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Nova despesa" });
+  page
+    .getByRole("button", { exact: true, name: "Nova despesa" })
+    .and(page.locator("[data-expense-new]"));
 const expenseForm = (page: Page) =>
   page.getByRole("dialog", { exact: true, name: "Nova despesa" });
 
@@ -1415,11 +1419,25 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   reads.fail = false;
   await retry.click();
   await expect(retry).toHaveCount(0);
-  await expect(
-    page.getByText(
-      "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
-    )
-  ).toBeVisible();
+  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+});
+
+test("o vazio do período é a frase curta com o botão Nova despesa, que abre o formulário", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+
+  const empty = page
+    .getByRole("status")
+    .filter({ hasText: "Nenhuma despesa neste período." });
+  await expect(empty).toBeVisible();
+  await expect(empty.getByText("Toque em")).toHaveCount(0);
+  expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  await empty.getByRole("button", { name: "Nova despesa" }).click();
+  await expect(expenseForm(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(newExpenseButton(page)).toBeFocused();
 });
 
 const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;

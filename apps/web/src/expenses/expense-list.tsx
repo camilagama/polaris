@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { EmptyState } from "@/ui/empty-state";
 import { Money } from "@/ui/money";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { ListTotalFooter, StatusNav } from "../catalog/screen-parts";
@@ -277,11 +278,38 @@ interface ExpenseListProps {
   state: ExpenseListState;
 }
 
-function emptyText(filters: ExpenseFilters): string {
+/** The form and the focus that returns after it belong to the page, and its origin is the title bar's button: this one asks that button to open it. */
+function openNewExpense() {
+  document.querySelector<HTMLElement>("[data-expense-new]")?.click();
+}
+
+function EmptyExpenses({
+  busyKey,
+  filters,
+}: {
+  busyKey: string | null;
+  filters: ExpenseFilters;
+}) {
   if (filters.status === "voided") {
-    return "Nenhuma despesa anulada neste período.";
+    return (
+      <EmptyState
+        afterRead
+        bare
+        title="Nenhuma despesa anulada neste período."
+      />
+    );
   }
-  return "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira.";
+  return (
+    <EmptyState afterRead bare title="Nenhuma despesa neste período.">
+      <Button
+        disabled={busyKey !== null}
+        onClick={openNewExpense}
+        type="button"
+      >
+        Nova despesa
+      </Button>
+    </EmptyState>
+  );
 }
 
 export function ExpenseList({
@@ -308,7 +336,9 @@ export function ExpenseList({
         <ListNote loading>Carregando despesas…</ListNote>
       ) : null}
       {!isLoading && expenses.length === 0 && state.error === null ? (
-        <ListNote>{emptyText(filters)}</ListNote>
+        <div className="grid min-h-[5.25rem] content-center py-4 md:min-h-[4.125rem]">
+          <EmptyExpenses busyKey={busyKey} filters={filters} />
+        </div>
       ) : null}
       {expenses.length > 0 ? (
         <ul className="divide-y">

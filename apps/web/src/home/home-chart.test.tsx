@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { EMPTY_TITLE_MAX } from "@/ui/empty-state";
 import { helpTipTextProblem } from "@/ui/help-tip-text";
 import { ChartBlock, chartHelp, NumbersTable } from "./home-chart";
 import { lastDays } from "./home-model";
@@ -79,6 +80,7 @@ const IDLE = {
   today: TODAY,
 } as unknown as HomeFigures;
 
+const EMPTY_TITLE = /data-empty-title="" id="[^"]*">([^<]*)</;
 const BOX_HEIGHT = /data-chart-(?:empty|loading)[^>]*style="height:(\d+)px"/;
 const ZERO_TOTAL = /R\$\s0,00/;
 const boxHeight = (markup: string) => Number(BOX_HEIGHT.exec(markup)?.[1]);
@@ -94,6 +96,11 @@ describe("o período sem venda", () => {
       );
       expect(empty).toContain("data-chart-empty");
       expect(empty).toContain("Sem vendas no período.");
+      expect(empty).toContain("data-empty-state");
+      expect(empty).toContain('role="status"');
+      expect(EMPTY_TITLE.exec(empty)?.[1]?.length).toBeLessThanOrEqual(
+        EMPTY_TITLE_MAX
+      );
       expect(empty).toContain("data-chart-floor");
       expect(sold).not.toContain("Sem vendas no período.");
       expect(boxHeight(empty)).toBe(240);

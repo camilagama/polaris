@@ -877,6 +877,12 @@ test("um mês sem vendas nem despesas mostra o estado vazio, sem cartões", asyn
   await expect(
     page.getByText("Sem vendas nem despesas em 1 a 31 de março")
   ).toBeVisible();
+  const empty = page
+    .getByRole("status")
+    .filter({ hasText: "Sem vendas nem despesas em 1 a 31 de março" });
+  await expect(empty).toHaveCount(1);
+  await expect(empty.getByRole("link", { name: "Nova venda" })).toBeVisible();
+  expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
   await expect(kpiCards(page)).toHaveCount(0);
   await expect(chain(page)).toHaveCount(0);
 });

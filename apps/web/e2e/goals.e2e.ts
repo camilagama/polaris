@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import {
   datePickerButton,
   expectWholeMonthWhileTyping,
@@ -457,7 +458,22 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   const server = new FakeGoalServer();
   await openGoals(page, server);
 
-  await expect(page.getByText("Nenhuma meta ainda")).toBeVisible();
+  const empty = page
+    .getByRole("status")
+    .filter({ hasText: "Nenhuma meta ainda" });
+  await expect(empty.getByText("Nenhuma meta ainda")).toBeVisible();
+  await expect(empty.getByText("Crie uma para acompanhar")).toHaveCount(0);
+  await expect(empty.getByText("Acompanhe as vendas líquidas")).toBeVisible();
+  const [title, support] = await Promise.all([
+    empty.locator("[data-empty-title]").innerText(),
+    empty.locator("p:not([data-empty-title])").innerText(),
+  ]);
+  expect(title.length).toBeLessThanOrEqual(60);
+  expect(support.length).toBeLessThanOrEqual(100);
+  // the empty list carries the one button that opens the form
+  await expect(page.getByRole("button", { name: "Nova meta" })).toHaveCount(1);
+  await expect(empty.getByRole("button", { name: "Nova meta" })).toBeVisible();
+  expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
   // no goal in progress: the tab has no count (AC-13)
   await expect(
     page.getByRole("tab", { exact: true, name: "Metas" })
