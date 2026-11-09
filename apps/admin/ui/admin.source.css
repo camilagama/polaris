@@ -127,7 +127,7 @@
   /* links in the content: the dash's link button */
   .content :where(a) {
     /* dash: apps/web/src/ui/button.tsx */
-    @apply rounded-sm text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground;
+    @apply rounded-md text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground;
   }
 
   /* the card */

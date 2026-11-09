@@ -1053,7 +1053,7 @@
     margin: 0 0 0.5rem;
   }
   .content :where(a) {
-    border-radius: 0.375rem;
+    border-radius: 0.55rem;
     color: var(--foreground);
     text-decoration-line: underline;
     text-decoration-color: var(--input);
