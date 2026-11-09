@@ -1322,8 +1322,10 @@ test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de
 }) => {
   const server = new FakeGoalServer();
   server.seed({ kind: "net_sales", name: "Lida devagar", target: "1000.00" });
-  const gate = Promise.withResolvers<void>();
-  server.listGate = gate.promise;
+  let release: (() => void) | undefined;
+  server.listGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   await openGoals(page, server);
 
   const region = page.getByRole("region", { exact: true, name: "Metas" });
@@ -1336,7 +1338,7 @@ test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de
   const whileReading = await heightOf();
   expect(whileReading).toBeGreaterThan(0);
 
-  gate.resolve();
+  release?.();
   await expect(card(page, "Lida devagar")).toContainText("Em andamento");
   await expect(newButton).toHaveCount(1);
   expect(await heightOf()).toBe(whileReading);
