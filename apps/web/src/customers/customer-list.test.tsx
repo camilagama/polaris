@@ -58,6 +58,7 @@ const base: Props = {
 const render = (overrides: Partial<Props> = {}) =>
   renderToStaticMarkup(<CustomerList {...base} {...overrides} />);
 
+const EMPTY_SENTENCE = /<p class="font-medium"[^>]*>([^<]*)<\/p>/;
 const DESCRIBED_BY = /aria-describedby="([^"]*)"/;
 /** The text of the elements a tag points to with aria-describedby, in order. */
 function describedByText(markup: string, tag = ""): string[] {
@@ -89,9 +90,11 @@ describe("the list of customers", () => {
 
   it("tells the empty list what to do next, and the archived one that there is none", () => {
     const empty = render({ customers: [], total: 0 });
-    expect(empty).toContain(
-      "Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”."
-    );
+    expect(empty).toContain("Nenhum cliente ainda.");
+    expect(empty).not.toContain("Cadastre o primeiro");
+    expect(empty).toContain('role="status"');
+    const sentence = EMPTY_SENTENCE.exec(empty)?.[1];
+    expect(sentence?.length).toBeLessThanOrEqual(60);
     // the form is not on the page: the empty list carries the button that opens it
     expect(empty).toContain("Novo cliente</button>");
     expect(render({ customers: [], status: "archived", total: 0 })).toContain(
