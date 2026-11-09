@@ -283,6 +283,7 @@ function EditorContent({
     case "date-range":
       return (
         <DateRangePanel
+          endsToday={field.endsToday}
           onCommit={onCommit}
           today={field.today}
           value={value && typeof value !== "string" ? value : null}
@@ -380,6 +381,7 @@ function DraftContent({
     case "date-range":
       return (
         <DateRangePanel
+          endsToday={field.endsToday}
           onCommit={onDraft}
           onHalfChange={onHalfChange}
           statusId={statusId}
