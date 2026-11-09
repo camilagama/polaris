@@ -943,7 +943,10 @@ export const SCREENS: UiScreen[] = [
     headingOf("Algo deu errado nesta tela")
   ),
   shellPieceScreen("carregando", "carregando", async (page) => {
-    await page.getByRole("status").getByText("Carregando…").waitFor();
+    await page
+      .getByRole("status")
+      .getByText("Carregando…")
+      .waitFor({ state: "attached" });
   }),
   shellPieceScreen("avisos de sessão e aceite", "avisos", async (page) => {
     await page.getByText("Sua sessão acabou.").first().waitFor();
