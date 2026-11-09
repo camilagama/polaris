@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import {
   expectFormDialogLayout,
@@ -653,17 +654,16 @@ for (const width of FORM_WIDTHS) {
   });
 }
 
-test("Clientes: a lista vazia diz o que fazer e traz o botão que abre o formulário, um só", async ({
+test("Clientes: a lista vazia é a frase curta e traz o botão que abre o formulário, um só", async ({
   page,
 }) => {
   await openScreen(page, "/customers", "Clientes", {
     "customer/list": reply({ customers: [] }),
   });
-  await expect(
-    page.getByText(
-      "Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”."
-    )
-  ).toBeVisible();
+  const empty = page.getByRole("status").filter({ hasText: "Nenhum cliente" });
+  await expect(empty.getByText("Nenhum cliente ainda.")).toBeVisible();
+  await expect(page.getByText("Cadastre o primeiro")).toHaveCount(0);
+  expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
   await expect(page.getByRole("button", { name: "Novo cliente" })).toHaveCount(
     1
   );
@@ -859,7 +859,7 @@ test("Clientes a 320 px: nada transborda com nome e e-mail longos, o formulário
     page.getByRole("dialog", { name: "Novo cliente" })
   ).toBeVisible();
   await expectNoSidewaysScroll(page);
-  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("button", { exact: true, name: "Cancelar" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: BRUNO_MENU }).click();
   await page.getByRole("menuitem", { exact: true, name: "Anonimizar" }).click();
