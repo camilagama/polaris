@@ -8,7 +8,7 @@ import type { HomeFigures } from "./use-home";
 
 /**
  * "Vendas por dia", closed (the static render is the first paint): the header with the (i) and the compact selector, the
- * total and the period, no line that repeats what the chart says, and the table with every day and both values. The
+ * total and the period, no line that repeats what the chart says, and the invisible table with every day and both values. The
  * drawing (peak with its date, faint dashed line, reading only while a day is read) is in the e2e.
  */
 
@@ -67,10 +67,9 @@ describe("o bloco Vendas por dia", () => {
     expect(markup).not.toContain("de 17/10 a 23/10");
   });
 
-  it("tem 'Ver os números' como link pequeno que abre a tabela", () => {
-    expect(markup).toContain("Ver os números");
-    expect(markup).toContain('aria-expanded="false"');
-    expect(markup).toContain("text-xs");
+  it("não tem 'Ver os números': os números são uma tabela invisível, fora do cabeçalho", () => {
+    expect(markup).not.toContain("Ver os números");
+    expect(markup).toContain('data-chart-data-table="hidden"');
   });
 });
 
@@ -108,27 +107,38 @@ describe("o período sem venda", () => {
     });
   }
 
-  it("o total, o período e 'Ver os números' continuam no bloco", () => {
+  it("o total e o período continuam no bloco, sem 'Ver os números'", () => {
     const empty = renderToStaticMarkup(
       <ChartBlock days="7" figures={IDLE} onDays={NO_CHANGE} />
     );
     expect(empty).toMatch(ZERO_TOTAL);
     expect(empty).toContain("17 a 23/10");
-    expect(empty).toContain("Ver os números");
+    expect(empty).not.toContain("Ver os números");
   });
 });
 
-describe("a tabela de 'Ver os números'", () => {
-  const series = lastDays(BEFORE, MONTH, TODAY, 7);
-  const earlier = lastDays(BEFORE, MONTH, "2026-10-16", 7);
+const ROWS = /<tr/g;
+const COLUMN_HEADERS = /<th[^>]*scope="col"/g;
+const FOCUSABLE_IN_TABLE = /<table[\s\S]*(?:tabindex|<button|<a )/;
+const ROW_HEADERS = /<th[^>]*scope="row"/g;
 
-  it("tem todos os dias do período e os dois valores de cada um", () => {
-    const table = renderToStaticMarkup(
-      <NumbersTable days={7} earlier={earlier} series={series} />
-    );
+describe("a tabela invisível dos números (AC-6.1)", () => {
+  const week = renderToStaticMarkup(
+    <ChartBlock days="7" figures={figures} onDays={NO_CHANGE} />
+  );
+  const month = renderToStaticMarkup(
+    <ChartBlock days="30" figures={figures} onDays={NO_CHANGE} />
+  );
+
+  it("7 dias: a tabela está no bloco, com legenda, 7 dias e os dois valores de cada um", () => {
+    expect(week).toContain("<table");
+    expect(week).toContain("<caption");
+    expect(week).toContain("dos últimos 7 dias");
+    expect(week.match(COLUMN_HEADERS)).toHaveLength(3);
+    expect(week).toContain("7 dias antes");
     // the header and one row a day
-    expect(table.match(/<tr/g)).toHaveLength(8);
-    expect(table).toContain("7 dias antes");
+    expect(week.match(ROWS)).toHaveLength(8);
+    expect(week.match(ROW_HEADERS)).toHaveLength(7);
     for (const day of [
       "17/10",
       "18/10",
@@ -138,20 +148,42 @@ describe("a tabela de 'Ver os números'", () => {
       "22/10",
       "23/10",
     ]) {
-      expect(table).toContain(day);
+      expect(week).toContain(day);
     }
-    expect(table).toContain("1.840,00");
-    expect(table).toContain("320,10");
-    // the days before, beside each day: 7 values of the column of the week before
-    expect(table.match(/R\$ 50,00/g)?.length).toBeGreaterThanOrEqual(6);
+    expect(week).toContain("1.840,00");
+    expect(week).toContain("320,10");
+    // the column of the week before: every day of it sold 50,00
+    expect(week.match(/R\$ 50,00/g)?.length).toBeGreaterThanOrEqual(6);
   });
 
-  it("sem os dias antes lidos, só a coluna do período", () => {
-    const table = renderToStaticMarkup(
-      <NumbersTable days={30} earlier={null} series={series} />
+  it("30 dias: a mesma tabela troca para 30 linhas e sem a coluna dos dias antes", () => {
+    expect(month).toContain("dos últimos 30 dias");
+    expect(month.match(COLUMN_HEADERS)).toHaveLength(2);
+    expect(month).not.toContain("30 dias antes");
+    expect(month.match(ROWS)).toHaveLength(31);
+    expect(month.match(ROW_HEADERS)).toHaveLength(30);
+    expect(month).toContain("24/09");
+    expect(month).toContain("23/10");
+  });
+
+  it("nenhuma célula da tabela entra na ordem de foco", () => {
+    expect(week).not.toMatch(FOCUSABLE_IN_TABLE);
+  });
+
+  it("é a mesma tabela, à vista, quando o gráfico não abre", () => {
+    const series = lastDays(BEFORE, MONTH, TODAY, 7);
+    const shown = renderToStaticMarkup(
+      <NumbersTable
+        days={7}
+        earlier={null}
+        id="numbers"
+        series={series}
+        visible
+      />
     );
-    expect(table).not.toContain("dias antes");
-    expect(table.match(/<tr/g)).toHaveLength(8);
+    expect(shown).toContain('data-chart-data-table="visible"');
+    expect(shown).not.toContain('data-chart-data-table="hidden"');
+    expect(shown.match(ROWS)).toHaveLength(8);
   });
 });
 

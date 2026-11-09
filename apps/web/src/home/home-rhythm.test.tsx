@@ -258,12 +258,10 @@ const SRC = fileURLToPath(new URL("../", import.meta.url));
 const PHRASE = "Ver os números";
 const SOURCE_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.tsx?$/;
-/** The files of `src` that say the phrase: the Ritmo's are not among them, the other two blocks' go with their own change. */
+/** The files of `src` that say the phrase: the Início's blocks are not among them, the Resultado's go with their own change. */
 const STILL_SAYING = [
   "dashboard/result-chart.tsx",
   "dashboard/result-series.ts",
-  "home/home-chart.tsx",
-  "ui/charts/area-chart.tsx",
 ];
 
 function sayingThePhrase(files: [string, string][]) {
@@ -273,7 +271,7 @@ function sayingThePhrase(files: [string, string][]) {
     .sort();
 }
 
-describe("no 'Ver os números' comes back to the Ritmo", () => {
+describe("no 'Ver os números' comes back to the Início", () => {
   const files = readdirSync(SRC, { encoding: "utf8", recursive: true })
     .filter((file) => SOURCE_FILE.test(file) && !TEST_FILE.test(file))
     .map((file): [string, string] => [
@@ -286,14 +284,18 @@ describe("no 'Ver os números' comes back to the Ritmo", () => {
     expect(sayingThePhrase(files)).toEqual(STILL_SAYING);
   });
 
-  it("fails on a planted copy in the files of the Ritmo, in code and in a comment", () => {
+  it("fails on a planted copy in the files of the Início, in code and in a comment", () => {
     const planted: [string, string][] = [
+      ["home/home-chart.tsx", `<Button>${PHRASE}</Button>`],
       ["home/home-rhythm.tsx", `<Button>${PHRASE}</Button>`],
       ["home/home-rhythm-model.ts", `// ${PHRASE}`],
+      ["ui/charts/area-chart.tsx", `/** ${PHRASE} */`],
     ];
     expect(sayingThePhrase(planted)).toEqual([
+      "home/home-chart.tsx",
       "home/home-rhythm-model.ts",
       "home/home-rhythm.tsx",
+      "ui/charts/area-chart.tsx",
     ]);
   });
 });

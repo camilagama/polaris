@@ -89,6 +89,8 @@ export interface AreaChartProps {
   /** The color of the series: a token of the chart palette. The ink (`--chart-5`) when absent. */
   color?: ChartColor;
   data: readonly ChartDatum[];
+  /** The id of the table of the numbers that goes with the chart: the image points at it with `aria-details`. */
+  details?: string;
   /**
    * The sentence of a period with nothing to draw ("Sem vendas no período."): the chart keeps its whole box (the line of
    * reading and the legend, unseen, and the plot with its floor), says it in the middle of the plot and draws no series, so
@@ -505,13 +507,14 @@ function Plot({
  * The pointer and the touch read it in the tooltip of the block, which is gone when the finger lifts: the line is what stays.
  * With `secondary` the chart draws a second, dashed line on the same scale (the costs against the sales of the
  * Resultado). The chart is a reinforcement and never the only source of a number: the caller writes the total and the
- * best day beside it, and "Ver os números" shows the table.
+ * best day beside it, and the table of the numbers (`details`) is the way to them for assistive technology.
  */
 export function AreaChart({
   axisUnit,
   className,
   color,
   data,
+  details,
   empty,
   formatAxis,
   formatSpoken,
@@ -635,6 +638,7 @@ export function AreaChart({
         >
           <ReadingAt place={place} reading={reading} where="over" />
           <div
+            aria-details={details}
             aria-label={label}
             className="size-full"
             data-chart-area=""
