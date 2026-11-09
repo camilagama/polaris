@@ -145,6 +145,32 @@ for (const viewport of FORM_VIEWPORTS) {
           occurredTo: "2026-10-14",
         });
 
+      // "Este mês" is the calendar month everywhere; the history has no future days, so it is cut at today
+      const month = await openPeriod(page);
+      await month
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button", { exact: true, name: "Este mês" })
+        .click();
+      await applyEditor(page, month);
+      await expect(month).toBeHidden();
+      await expect(pill(page, "Período")).toHaveAccessibleName(
+        "Período: 01/10 a 14/10, editar"
+      );
+      await expect
+        .poll(() => lastAsked(asked))
+        .toMatchObject({
+          occurredFrom: "2026-10-01",
+          occurredTo: "2026-10-14",
+        });
+      const pressed = await openPeriod(page);
+      await expect(
+        pressed
+          .getByRole("group", { name: "Atalhos do período" })
+          .getByRole("button", { exact: true, name: "Este mês" })
+      ).toHaveAttribute("aria-pressed", "true");
+      await page.keyboard.press("Escape");
+      await expect(pressed).toBeHidden();
+
       // "Limpar" empties the period: the pill goes and the list is asked for with no period
       const clearing = await openPeriod(page);
       await clearing.getByRole("button", { name: "Limpar" }).click();

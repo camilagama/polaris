@@ -167,10 +167,16 @@ function shiftDays(value: IsoDate, days: number): IsoDate {
   return toIsoDate(date);
 }
 
+function lastDayOfMonth(year: string, month: string): string {
+  const days = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+  return String(days).padStart(2, "0");
+}
+
 /**
- * The range of a shortcut, counted back to `today` (the store's day, which the screen takes from the server): the
- * 7 days are today and the six before it, the 30 days today and the 29 before, the month the 1st to today, the
- * previous month whole, the year January 1st to today.
+ * The range of a shortcut on the store's day (`today`, which the screen takes from the server): the 7 days are today
+ * and the six before it, the 30 days today and the 29 before, the year January 1st to today. A month is a calendar
+ * month and nothing else, "Este mês" included, so the shortcut means one period on every screen: the 1st
+ * to the last day of the month. A screen that has no future days cuts the end itself (`endsToday`, `cutRange`).
  */
 export function presetRange(preset: RangePreset, today: IsoDate): DateRange {
   const { month, year } = parts(today);
@@ -182,7 +188,10 @@ export function presetRange(preset: RangePreset, today: IsoDate): DateRange {
     case "30-dias":
       return { from: shiftDays(today, -29), to: today };
     case "este-mes":
-      return { from: `${year}-${month}-01`, to: today };
+      return {
+        from: `${year}-${month}-01`,
+        to: `${year}-${month}-${lastDayOfMonth(year, month)}`,
+      };
     case "este-ano":
       return { from: `${year}-01-01`, to: today };
     case "mes-passado": {
@@ -199,17 +208,33 @@ export function presetRange(preset: RangePreset, today: IsoDate): DateRange {
   }
 }
 
+/** `range` with its end no later than `last`: a screen without future days (the Histórico) cuts the month at today. */
+export function cutRange(range: DateRange, last: IsoDate): DateRange {
+  return range.to > last ? { from: range.from, to: last } : range;
+}
+
+/** The range a shortcut gives on a screen: whole, or cut at today when the screen has no future days. */
+export function shortcutRange(
+  preset: RangePreset,
+  today: IsoDate,
+  endsToday: boolean
+): DateRange {
+  const range = presetRange(preset, today);
+  return endsToday ? cutRange(range, today) : range;
+}
+
 export function matchingPreset(
   range: DateRange | null,
   today: IsoDate,
-  shown: readonly RangePreset[] = RANGE_PRESETS
+  shown: readonly RangePreset[] = RANGE_PRESETS,
+  endsToday = false
 ): RangePreset | undefined {
   if (!range) {
     return undefined;
   }
   return RANGE_PRESETS.filter((value) => shown.includes(value)).find(
     (value) => {
-      const preset = presetRange(value, today);
+      const preset = shortcutRange(value, today, endsToday);
       return preset.from === range.from && preset.to === range.to;
     }
   );
