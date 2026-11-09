@@ -79,7 +79,7 @@ describe("ActionFeedback", () => {
 });
 
 describe("ProductsHeader (T446-5)", () => {
-  it("puts Novo produto first, and the reason of the import right under Importar planilha", () => {
+  it("keeps Novo produto first in the reading order, Importar planilha beside it from 760 px, and the reason right under it", () => {
     const markup = renderToStaticMarkup(
       <ProductsHeader
         buttonRef={createRef()}

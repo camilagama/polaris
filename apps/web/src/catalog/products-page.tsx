@@ -51,6 +51,7 @@ import {
   PRODUCT_STATUS_OPTIONS,
   ProductSearch,
   ProductsHeader,
+  ProductsImportFooter,
 } from "./products-page-parts";
 import { countLineShown, shownListCount } from "./list-page-model";
 import {
@@ -894,6 +895,12 @@ export function ProductsPage() {
             shown={page.items.length}
           />
         ) : null}
+        <ProductsImportFooter
+          importButtonRef={importButtonRef}
+          isOffline={isOffline}
+          onImport={handleImport}
+          showNew={status === "active"}
+        />
       </div>
     </div>
   );

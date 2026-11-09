@@ -1,6 +1,7 @@
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import type { MouseEvent, Ref } from "react";
+import { TITLE_ACTION_CLASS, TitleLine } from "../app-shell/screen-title";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { SearchField } from "@/ui/search-field";
@@ -18,20 +19,24 @@ interface CustomersHeaderProps {
 
 export function CustomersHeader({ newButton }: CustomersHeaderProps) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+    <TitleLine
+      action={
+        newButton ? (
+          <Button
+            className={TITLE_ACTION_CLASS}
+            disabled={newButton.disabled}
+            onClick={newButton.onClick}
+            ref={newButton.ref}
+            type="button"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Novo cliente
+          </Button>
+        ) : null
+      }
+    >
       <h1 className="text-title">Clientes</h1>
-      {newButton ? (
-        <Button
-          disabled={newButton.disabled}
-          onClick={newButton.onClick}
-          ref={newButton.ref}
-          type="button"
-        >
-          <PlusIcon aria-hidden="true" data-icon="inline-start" />
-          Novo cliente
-        </Button>
-      ) : null}
-    </div>
+    </TitleLine>
   );
 }
 
