@@ -13,13 +13,16 @@ import { readMotionLevel, useMotionLevel } from "@/lib/motion-level";
  * transparent and holds the width of the final text, so the counter has its room in every frame of a figure that grows
  * and the neighbours of the figure (the chip beside the value of a card) never move.
  *
- * The counter runs only at the `full` level of motion: on a phone (under 760 px) and under `prefers-reduced-motion` the
- * static figure is all there is, final at the first frame, and the counter's code is never downloaded: it is a chunk of
- * its own, loaded by `import()` only when a figure is about to count. A tablet with touch from 760 px up has the
- * desktop's layout and counts. Until the chunk arrives the figure holds its place, transparent and with its full
- * height; if the chunk fails, or the browser cannot set the counter up, the static figure shows. It also never runs
- * while the values are hidden (the amount is written "R$ ••••" and no digit goes through the DOM) and does not count
- * when they come back: it appears finished.
+ * The final figure is on the screen from the first frame, always static: nothing waits for the counter. The counter runs
+ * only at the `full` level of motion: on a phone (under 760 px) and under `prefers-reduced-motion` the static figure is
+ * all there is and the counter's code is never requested nor run: it is a chunk of its own, loaded by `import()` only
+ * when a figure is about to count. A tablet with touch from 760 px up has the desktop's layout and counts. A figure that
+ * is built with the chunk already loaded (preloaded at the `full` level) counts as it enters; one built before the chunk
+ * arrives does not count that time, so the number is never taken away to be counted: it swaps to the counter showing the
+ * same final text and counts only on the changes after that (another period, a refresh). If the chunk fails, or the
+ * browser cannot set the counter up, the static figure stays. The counter never runs while the values are hidden (the
+ * amount is written "R$ ••••" and no digit goes through the DOM) and does not count when they come back: it appears
+ * finished.
  */
 
 const MONEY = /^([-+−]?)R\$\s?(\d[\d.]*),(\d{2})$/;
@@ -89,35 +92,23 @@ if (readMotionLevel() === "full") {
   loadCounter();
 }
 
-/** How long the figure waits for the chunk before it shows the static figure: a connection that hangs never ends the import. */
-const COUNTER_WAIT_MS = 4000;
-
 function useCounterModule(wanted: boolean) {
   const [module, setModule] = useState(loaded);
-  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!wanted || module || failed) {
+    if (!wanted || module) {
       return;
     }
     let current = true;
-    const giveUp = setTimeout(() => setFailed(true), COUNTER_WAIT_MS);
     loadCounter().then((found) => {
-      clearTimeout(giveUp);
-      if (!current) {
-        return;
-      }
-      if (found) {
+      if (current && found) {
         setModule(found);
-      } else {
-        setFailed(true);
       }
     });
     return () => {
       current = false;
-      clearTimeout(giveUp);
     };
-  }, [wanted, module, failed]);
-  return { failed, module };
+  }, [wanted, module]);
+  return module;
 }
 
 /* the figure and its counter share the one cell of a grid, aligned by their baselines */
@@ -125,8 +116,6 @@ const WRAPPER =
   "inline-grid align-baseline *:col-start-1 *:row-start-1 *:self-baseline";
 /* the static figure: it holds the width of the final text, no height (the counter sets the line), and is seen only by the reading tools */
 const TWIN = "pointer-events-none h-0 select-none whitespace-nowrap opacity-0";
-/* the same, before the counter's chunk arrives: with its height, so the line does not change when the counter takes over */
-const WAITING = "pointer-events-none select-none whitespace-nowrap opacity-0";
 
 export function AnimatedFigure({
   children,
@@ -145,23 +134,15 @@ export function AnimatedFigure({
   const figure = parseFigure(text);
   const masked = hidden && figure?.kind === "money";
   const wanted = level === "full" && figure !== null && !masked;
-  const { failed, module } = useCounterModule(wanted);
-  const moves = wanted && !failed;
-  const enter = useRef(true);
+  const module = useCounterModule(wanted);
+  const enter = useRef(module !== null);
   useEffect(() => {
-    if (!moves) {
+    if (!(wanted && module)) {
       enter.current = false;
     }
   });
-  if (!(moves && figure)) {
+  if (!(wanted && module && figure)) {
     return <>{children}</>;
-  }
-  if (!module) {
-    return (
-      <span className={WRAPPER}>
-        <span className={WAITING}>{children}</span>
-      </span>
-    );
   }
   return (
     <span className={WRAPPER}>

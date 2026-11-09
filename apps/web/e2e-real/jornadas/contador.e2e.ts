@@ -34,6 +34,10 @@ interface Figure {
   counter: boolean;
   /** Whether its animations are running. */
   counting: boolean;
+  /** The box of the counter's host, empty when it is not in the tree. */
+  counterBox: Box;
+  /** Whether some text of it is drawn transparent, itself or through an ancestor up to the card. */
+  faded: boolean;
   id: string;
   /** Every text in the tree, the shadow roots of the counters included. */
   tree: string;
@@ -130,7 +134,26 @@ function startSampler(config: {
           box: within(own),
           card: { height: box?.height ?? 0, width: box?.width ?? 0 },
           counter: element.querySelector("[data-animated-figure]") !== null,
+          counterBox: within(
+            element
+              .querySelector("[data-animated-figure]")
+              ?.getBoundingClientRect() ?? new DOMRect()
+          ),
           counting: element.querySelector("[data-figure-counting]") !== null,
+          faded: [element, ...element.querySelectorAll("*")].some((node) => {
+            if ((node.textContent ?? "").trim() === "") {
+              return false;
+            }
+            let opacity = 1;
+            for (
+              let up: Element | null = node;
+              up && up !== card?.parentElement;
+              up = up.parentElement
+            ) {
+              opacity *= Number(getComputedStyle(up).opacity);
+            }
+            return opacity < 0.05;
+          }),
           id: `${card?.getAttribute("aria-labelledby") ?? "?"}/${element.hasAttribute("data-kpi-value") ? "valor" : "chip"}`,
           tree: textOf(element, true),
         };
@@ -599,6 +622,131 @@ for (const width of [900, 1280, 1600]) {
     }
   });
 }
+
+/**
+ * A figure with digits is always painted: the static text is drawn (no transparency in it or above it up to the card) or
+ * the counter is in the tree and has a box. The frame in which the counter takes over is checked like any other.
+ */
+function expectNeverInvisible(frames: Frame[]) {
+  let staticFrames = 0;
+  for (const frame of frames) {
+    for (const figure of frame.figures) {
+      if (!AN_AMOUNT_DIGIT.test(figure.accessible)) {
+        continue;
+      }
+      if (!figure.counter) {
+        staticFrames += 1;
+      }
+      expect(
+        !figure.faded || (figure.counter && figure.counterBox.width > 0),
+        `${figure.id} a ${Math.round(frame.t)} ms`
+      ).toBe(true);
+    }
+  }
+  expect(staticFrames, "o valor estático esteve na tela").toBeGreaterThan(0);
+}
+
+function expectFiguresStayedPut(frames: Frame[]) {
+  expectStayedPut(
+    finalBoxes(frames, "valor", (figure) => figure.box),
+    "o valor"
+  );
+  const chips = finalBoxes(frames, "chip", (figure) => figure.box);
+  if (chips.size > 0) {
+    expectStayedPut(chips, "o chip");
+  }
+}
+
+async function openResultado(
+  page: Page,
+  outside: Outside[] = RESULTADO_OUTSIDE
+): Promise<Frame[]> {
+  await page.addInitScript(startSampler, sampler(outside));
+  await page.goto("/dashboard");
+  await expect(
+    page.getByRole("region", { name: SALES_OF_MONTH })
+  ).toContainText("R$ 90,00");
+  return await readFrames(page);
+}
+
+test("pedaço do contador bloqueado: o valor final está no primeiro quadro, sem contador, e a geometria não muda (≤ 1 px)", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "contador-bloqueado", {
+    device: { viewport: { height: 800, width: 1280 } },
+    organization: { timezone: ZONE },
+  });
+  await seedStore(journey, true);
+  const { page } = journey;
+  const attempts = watchCounterChunk(page);
+  await page.route(COUNTER_CHUNK, (route) => route.abort("failed"));
+  const frames = fromFigures(await openResultado(page));
+  expect(attempts, "o desktop pediu o pedaço").not.toEqual([]);
+  expectStill(frames);
+  expectNeverInvisible(frames);
+  expectNoStepsAnnounced(frames);
+  expectFiguresStayedPut(frames);
+});
+
+test("pedaço do contador lento: o valor final está no primeiro quadro, o pedaço que chega depois não apaga nem conta o número, e a troca seguinte conta (≤ 1 px)", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "contador-lento", {
+    device: { viewport: { height: 800, width: 1280 } },
+    organization: { timezone: ZONE },
+  });
+  await seedStore(journey, true);
+  const { page } = journey;
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(COUNTER_CHUNK, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.addInitScript(
+    startSampler,
+    sampler(RESULTADO_OUTSIDE, SWITCH_SAMPLE_MS)
+  );
+  await page.goto("/dashboard");
+  await expect(
+    page.getByRole("region", { name: SALES_OF_MONTH })
+  ).toContainText("R$ 90,00");
+  await expect(page.locator("[data-kpi-value]").first()).toBeVisible();
+  await expect(page.locator("[data-animated-figure]")).toHaveCount(0);
+  release();
+  await expect(page.locator("[data-animated-figure]").first()).toBeAttached();
+  const arrival = await readFrames(page);
+  const frames = fromFigures(arrival);
+  expect(
+    frames.some((frame) => frame.figures.some((figure) => figure.counter)),
+    "o contador entrou depois"
+  ).toBe(true);
+  expect(
+    frames.every((frame) => frame.running === 0),
+    "o número que já estava na tela não contou"
+  ).toBe(true);
+  expectNeverInvisible(frames);
+  expectNoStepsAnnounced(frames);
+  expectFiguresStayedPut(frames);
+
+  await page.evaluate(
+    startSampler,
+    sampler(RESULTADO_OUTSIDE, SWITCH_SAMPLE_MS)
+  );
+  await page
+    .getByRole("group", { name: "Período" })
+    .getByRole("button", { name: "Últimos 30 dias" })
+    .click();
+  await expect(page.locator("[data-kpi-delta]").first()).toContainText("%");
+  const next = await readFrames(page);
+  expect(
+    next.some((frame) => frame.running > 0),
+    "a troca seguinte contou"
+  ).toBe(true);
+  expectFiguresStayedPut(next);
+});
 
 /** Every frame has the final text in the whole tree (no digit of a step), and no counter was ever drawn. */
 function expectStill(frames: Frame[]) {
