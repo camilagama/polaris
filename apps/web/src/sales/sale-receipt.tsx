@@ -7,7 +7,7 @@ import type { ConfirmedSaleView } from "./sale-form-model";
 import { LeaderRow, Perforation } from "./sale-summary-panel";
 
 interface SaleReceiptProps {
-  /** Shown above the dates: the cancellation, when the sale was cancelled. */
+  /** Shown under the title and above the total: the cancellation, when the sale was cancelled. */
   before?: ReactNode;
   sale: ConfirmedSaleView;
   /** The states of the sale (Confirmada, Com devoluções…), at the right of the title. */
@@ -15,8 +15,10 @@ interface SaleReceiptProps {
 }
 
 /**
- * The confirmed sale exactly as stored, as a receipt (DESIGN.md v5.1): dates, items and adjustments, the
- * perforation, the total; then the payment, and the identifier at the end, in mono and without emphasis.
+ * The confirmed sale exactly as stored, as a receipt (DESIGN.md v5.1): the total right under the title, because
+ * the eye looks for it first; the perforation; then the items, the adjustments and the three dates; then the payment,
+ * and the identifier at the end, in mono and without emphasis. The order is the order of the DOM, so a screen reader
+ * reads what the eye sees.
  */
 export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
   const rows = sale.totals.filter((row) => row.tone !== "total");
@@ -34,11 +36,25 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
             </span>
           </div>
           {before}
-          <ConfirmedDetails
-            details={sale.saleDetails.filter(
-              (detail) => detail.value !== sale.saleId
-            )}
-          />
+          {total ? (
+            <dl>
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="font-medium text-muted-foreground">
+                  {total.label}
+                </dt>
+                <dd>
+                  <Money
+                    className="font-semibold tracking-[-0.035em]"
+                    size="lg"
+                    text={total.value}
+                  />
+                </dd>
+              </div>
+            </dl>
+          ) : null}
+        </CardContent>
+        {total ? <Perforation /> : null}
+        <CardContent className="grid gap-4 py-(--card-spacing)">
           <ConfirmedItems headingId="sale-detail-items" items={sale.items} />
           <dl className="grid gap-2">
             {rows.map((row) => (
@@ -50,28 +66,12 @@ export function SaleReceipt({ before, sale, status }: SaleReceiptProps) {
               />
             ))}
           </dl>
+          <ConfirmedDetails
+            details={sale.saleDetails.filter(
+              (detail) => detail.value !== sale.saleId
+            )}
+          />
         </CardContent>
-        {total ? (
-          <>
-            <Perforation />
-            <CardContent className="py-(--card-spacing)">
-              <dl>
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="font-medium text-muted-foreground">
-                    {total.label}
-                  </dt>
-                  <dd>
-                    <Money
-                      className="font-semibold tracking-[-0.035em]"
-                      size="lg"
-                      text={total.value}
-                    />
-                  </dd>
-                </div>
-              </dl>
-            </CardContent>
-          </>
-        ) : null}
         <CardContent className="grid gap-2 border-border border-t py-(--card-spacing)">
           <h3 className="font-medium">Pagamento</h3>
           <ConfirmedDetails details={sale.paymentDetails} />

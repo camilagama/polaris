@@ -59,13 +59,28 @@ describe("the sale as a receipt", () => {
     );
   });
 
-  it("shows the adjustments above the perforation and the total under it", () => {
+  it("shows the total right under the title and the perforation after it, above the items and the adjustments", () => {
     const markup = render();
     const perforation = markup.indexOf("border-dashed");
-    expect(markup.indexOf("Subtotal")).toBeLessThan(perforation);
-    expect(markup.indexOf("Desconto")).toBeLessThan(perforation);
-    expect(markup.indexOf("Total devido")).toBeGreaterThan(perforation);
+    expect(markup.indexOf("Total devido")).toBeLessThan(perforation);
+    expect(markup.indexOf("Subtotal")).toBeGreaterThan(perforation);
+    expect(markup.indexOf("Desconto")).toBeGreaterThan(perforation);
     expect(markup).toMatch(TOTAL_PARTS);
+  });
+
+  it("reads in the order: title, state, total, items, adjustments, dates, payment", () => {
+    const markup = render();
+    const order = [
+      ">Venda<",
+      "Confirmada",
+      "Total devido",
+      ">Itens<",
+      "Subtotal",
+      "Data da venda",
+      ">Pagamento<",
+    ].map((text) => markup.indexOf(text));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
   it("sets the dates and the payment back as a muted block with no border, two columns from 760 px", () => {
