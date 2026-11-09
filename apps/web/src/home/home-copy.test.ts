@@ -648,7 +648,7 @@ describe("what the Início shows without a connection (offlineHome)", () => {
       true
     );
 
-    expect(home.figures).toMatchObject({ today: "2026-10-31", stale: false });
+    expect(home.figures).toMatchObject({ stale: false, today: "2026-10-31" });
     expect(home.figures?.todayShown).toBe(false);
   });
 
@@ -691,6 +691,88 @@ describe("what the Início shows without a connection (offlineHome)", () => {
     );
 
     expect(home.goal).toMatchObject({ ended: true, kind: "active" });
+  });
+
+  describe("desvio do relógio do aparelho guardado com a cópia", () => {
+    const SKEW = 6 * 60_000;
+    const readNearMidnight = "2026-10-16T03:02:00.000Z";
+    const nearMidnight = (copy: Partial<HomeCopy>) => {
+      const { storage } = memoryStorage();
+      writePeriodSummaryCache(
+        storage,
+        ORG,
+        "2026-10",
+        october(readNearMidnight),
+        ALLOWED
+      );
+      writeHomeCopy(storage, ORG, {
+        before: september("2026-10-16T03:01:00.000Z"),
+        goal: keptGoal(activeView(), readNearMidnight),
+        ...copy,
+      });
+      return storage;
+    };
+    // the store reads 00:04 on the day after the one the device still shows; the device is 6 min behind
+    const deviceNow = Date.parse("2026-10-16T02:58:00.000Z");
+
+    it("com o desvio, abrir sem conexão logo depois da meia-noite da loja mostra o Hoje do dia da leitura", () => {
+      const home = offlineHome(
+        nearMidnight({ clockSkewMs: SKEW }),
+        ORG,
+        ZONE,
+        deviceNow,
+        true
+      );
+
+      expect(home.figures).toMatchObject({
+        stale: false,
+        today: "2026-10-16",
+        todayShown: true,
+      });
+    });
+
+    it("cópia gravada antes do campo abre como sempre (desvio 0)", () => {
+      const storage = nearMidnight({});
+
+      expect(JSON.parse(storage.getItem(KEY) ?? "{}")).not.toHaveProperty(
+        "clockSkewMs"
+      );
+      expect(readHomeCopy(storage, ORG)).not.toBeNull();
+      expect(
+        offlineHome(storage, ORG, ZONE, deviceNow, true).figures
+      ).toMatchObject({ todayShown: false });
+    });
+
+    it("o dia da loja depois da meia-noite tira o Hoje, mesmo com o aparelho ainda no dia da leitura", () => {
+      const { storage } = memoryStorage();
+      writePeriodSummaryCache(storage, ORG, "2026-10", october(), ALLOWED);
+      writeHomeCopy(storage, ORG, {
+        before: september(),
+        clockSkewMs: SKEW,
+        goal: keptGoal(),
+      });
+      const device = Date.parse("2026-10-16T02:57:00.000Z");
+
+      expect(
+        offlineHome(storage, ORG, ZONE, device, true).figures
+      ).toMatchObject({ todayShown: false });
+      writeHomeCopy(storage, ORG, { clockSkewMs: 0 });
+      expect(
+        offlineHome(storage, ORG, ZONE, device, true).figures
+      ).toMatchObject({ todayShown: true });
+    });
+
+    it("gravar de novo sem o desvio mantém o que estava; um valor que não é número torna a cópia inválida", () => {
+      const storage = nearMidnight({ clockSkewMs: SKEW });
+      writeHomeCopy(storage, ORG, { beforeStale: true });
+      expect(readHomeCopy(storage, ORG)?.clockSkewMs).toBe(SKEW);
+
+      storage.setItem(
+        KEY,
+        JSON.stringify({ before: null, clockSkewMs: "6", goal: null })
+      );
+      expect(readHomeCopy(storage, ORG)).toBeNull();
+    });
   });
 
   it("uma exceção ao montar devolve 'sem números' e a meta só com conexão", () => {
