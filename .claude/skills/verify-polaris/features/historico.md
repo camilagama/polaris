@@ -26,7 +26,7 @@ Preconditions:
 - Doctor OK, `$V seed vendas`, `VERIFY_LOJA=vendas`.
 - Provado: `drives/receitas.verify.ts --grep historico-detalhe`, `--grep venda-devolver` e `--grep venda-cancelar` (os dois últimos criam a venda que desfazem).
 
-- **Lista.** `await page.goto("/sales/history")`. `getByRole("heading", { level: 1, name: "Histórico de vendas" })`; `getByRole("list", { name: "Vendas" })` tem os 8 links semeados, com "Confirmada" e "Retroativa" nas de dias anteriores.
+- **Lista.** `await page.goto("/sales/history")`. `getByRole("heading", { level: 1, name: "Histórico de vendas" })`; `getByRole("list", { name: "Vendas" })` tem os 8 links semeados, com o selo "Retroativa" nas de dias anteriores; "Confirmada" não tem selo na lista e só aparece no nome acessível do link.
 - **Abrir o detalhe.** `getByRole("list", { name: "Vendas" }).getByRole("link").first().click()`. Aparece `getByRole("heading", { level: 1, name: "Detalhe da venda" })` e `getByRole("region", { name: "Itens" })`.
 - **Devolução.** `getByRole("region", { name: "Devolução" }).getByRole("button", { name: "Registrar devolução" }).click()`; no `region "Registrar devolução"`: `getByLabel(/^Devolvido: /).first().fill("1")` e `getByLabel(/^Volta ao estoque: /).first().fill("1")`, depois "Revisar devolução" e "Confirmar devolução". Aparece o texto `/^Devolução registrada: /`, e a região "Devoluções" lista "Caneca esmaltada: devolvidas 1 · voltaram ao estoque 1".
 - **Devolver a mais.** Quantidade acima do vendido: o painel mostra um `alert` com o limite, "Informe de 1 a <o que resta>, sem vírgula." ("Informe de 1 a 3, sem vírgula." no e2e-real, `apps/web/e2e-real/jornadas/devolucao.e2e.ts`); quando resta 1, o texto é outro ("Só resta 1…").
