@@ -202,8 +202,10 @@ export function GoalsPanel({
   // the form is a dialog: opened by the button, or by the address the Início links to
   const [creating, setCreating] = useState(link === "new");
   const newButtonRef = useRef<HTMLButtonElement>(null);
-  // the empty list has the one button that opens the form, as Clientes does: the header's would be the same twice
-  const listIsEmpty = state.goals.length === 0 && state.error === null;
+  // the empty list has the one button that opens the form, as Clientes does: the header's would be the same twice;
+  // while it is read nothing is known to be empty, and the header keeps its button so it does not jump when it arrives
+  const listIsEmpty =
+    !state.isLoading && state.goals.length === 0 && state.error === null;
 
   // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only (and kept while
   // "Conhecer o Pro" opens the Assinatura with no load of the page, for "voltar")

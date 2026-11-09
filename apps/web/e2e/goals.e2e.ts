@@ -166,6 +166,8 @@ class FakeGoalServer {
   readonly created: Record<string, unknown>[] = [];
   /** When set, `goal.list` answers this ORPC error instead of the goals. */
   listFailure: { code: string; status: number } | null = null;
+  /** When set, `goal.list` waits for it before answering: the screen is held in its first read. */
+  listGate: Promise<void> | null = null;
   /** How many of the next listings answer 503 before the server recovers (an isolate killed for CPU). */
   listUnavailable = 0;
   /** Every listing that reached the server, the failed ones included. */
@@ -397,6 +399,9 @@ async function installServer(page: Page, server: FakeGoalServer) {
     const body = route.request().postDataJSON() as {
       json?: Record<string, unknown>;
     } | null;
+    if (procedure === "goal/list" && server.listGate) {
+      await server.listGate;
+    }
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
@@ -1310,6 +1315,31 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, "Depois da falha")).toContainText("Em andamento");
+});
+
+test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de altura quando a lista chega", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.seed({ kind: "net_sales", name: "Lida devagar", target: "1000.00" });
+  const gate = Promise.withResolvers<void>();
+  server.listGate = gate.promise;
+  await openGoals(page, server);
+
+  const region = page.getByRole("region", { exact: true, name: "Metas" });
+  await expect(region.getByText("Carregando as metas…")).toBeVisible();
+  const newButton = region.getByRole("button", { name: "Nova meta" });
+  await expect(newButton).toHaveCount(1);
+  await expect(newButton).toBeVisible();
+  const header = region.locator("h2").locator("xpath=../..");
+  const heightOf = async () => (await header.boundingBox())?.height ?? 0;
+  const whileReading = await heightOf();
+  expect(whileReading).toBeGreaterThan(0);
+
+  gate.resolve();
+  await expect(card(page, "Lida devagar")).toContainText("Em andamento");
+  await expect(newButton).toHaveCount(1);
+  expect(await heightOf()).toBe(whileReading);
 });
 
 /** Remembers, in the page, whether an alert ever showed: the screen must not pass through the error. */
