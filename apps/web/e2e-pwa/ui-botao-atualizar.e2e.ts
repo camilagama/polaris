@@ -150,7 +150,7 @@ test.describe("o ícone gira só com movimento completo", () => {
     });
 
     for (const { name, screen } of RESTING) {
-      test(`${screen}: parado`, async ({ page }) => {
+      test(`${screen}: sem giro em repouso`, async ({ page }) => {
         expect(await restingSpin(page, screen, name)).toBe("none");
         await expect(page.locator("html")).toHaveAttribute(
           "data-motion",
@@ -177,7 +177,7 @@ test.describe("o ícone gira só com movimento completo", () => {
     });
 
     for (const { name, screen } of RESTING) {
-      test(`${screen}: parado`, async ({ page }) => {
+      test(`${screen}: sem giro em repouso`, async ({ page }) => {
         expect(await restingSpin(page, screen, name)).toBe("none");
         await expect(page.locator("html")).toHaveAttribute(
           "data-motion",
