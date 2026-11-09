@@ -1,7 +1,7 @@
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton } from "@/ui/hidden-values";
+import { RefreshButton } from "@/ui/refresh-button";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type ReactNode,
   useCallback,
@@ -12,7 +12,6 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Skeleton } from "@/ui/skeleton";
 import { Tabs, TabsContent } from "@/ui/tabs";
@@ -175,16 +174,11 @@ function Toolbar({
         preset={preset}
       />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-4">
-        <Button
+        <RefreshButton
+          busy={state.isLoading}
           disabled={state.isLoading}
           onClick={onRefresh}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-          Atualizar
-        </Button>
+        />
         {/* v7 § 6: the same choice as on the Início, kept on the device */}
         <HideValuesButton size="sm" />
         {/* two lines kept on a phone, where "Mostrando … até o novo período carregar." takes two */}

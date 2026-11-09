@@ -1,6 +1,5 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
 import {
   useCallback,
@@ -12,6 +11,7 @@ import {
 } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import { RefreshButton } from "@/ui/refresh-button";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
 import { focusLater } from "../lib/focus";
 import { keepForReturn, takeKept } from "../lib/kept-for-return";
@@ -305,24 +305,18 @@ export function GoalsPanel({
           </p>
         </div>
         <div className="ml-auto flex gap-2">
-          <Button
-            aria-label="Atualizar metas"
+          <RefreshButton
+            busy={state.isLoading}
             disabled={state.isLoading || busy !== null}
+            object="metas"
             onClick={handleRetry}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-            <span className="max-sm:hidden">Atualizar</span>
-          </Button>
+          />
           <Button
             disabled={busy !== null}
             onClick={handleNew}
             ref={newButtonRef}
             size="sm"
             type="button"
-            variant="outline"
           >
             <PlusIcon aria-hidden="true" data-icon="inline-start" />
             Nova meta
