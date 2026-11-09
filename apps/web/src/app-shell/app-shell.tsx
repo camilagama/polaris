@@ -1,6 +1,7 @@
 import { saoPauloDateOf } from "@polaris/domain/billing/provider-period";
 import { LEGAL_PATHS } from "@polaris/domain/legal/legal-documents";
 import BarChart3Icon from "lucide-react/dist/esm/icons/chart-column";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import CircleHelpIcon from "lucide-react/dist/esm/icons/circle-help";
 import ClockIcon from "lucide-react/dist/esm/icons/clock";
 import EllipsisIcon from "lucide-react/dist/esm/icons/ellipsis";
@@ -41,6 +42,7 @@ import {
 } from "@/ui/sidebar";
 import { MediaThumbnailScope } from "../catalog/media-thumbnail-scope";
 import { ACCEPTANCE_OPENING_SCREEN } from "../legal/acceptance/acceptance-texts";
+import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import { canManageBilling } from "../lib/billing-access";
 import { useConnectionOnline } from "../lib/browser-connection";
 import {
@@ -104,6 +106,7 @@ const NAV_ICONS: Record<NavId, ComponentType<{ "aria-hidden"?: boolean }>> = {
   attention: TriangleAlertIcon,
   customers: UsersIcon,
   dashboard: BarChart3Icon,
+  expenses: WalletIcon,
   history: ClockIcon,
   help: CircleHelpIcon,
   home: HouseIcon,
@@ -213,6 +216,8 @@ function SheetLegalLinks() {
 }
 
 interface AppSidebarProps {
+  /** Despesas is offered to who can register an expense (`expense:create`); while the store is not known it stays, so the list does not move. */
+  expenses: boolean;
   /** "dd/mm" of the first charge of the trial, for the foot of the menu. */
   chargeDay: string | null;
   /** The first steps done, for the foot of the menu; null once the store sold or while not known. */
@@ -231,6 +236,7 @@ interface AppSidebarProps {
  */
 function AppSidebar({
   chargeDay,
+  expenses,
   firstSteps,
   navId,
   onlineOnly,
@@ -239,7 +245,7 @@ function AppSidebar({
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
   // on the phone "Ajuda e contato" closes the list, in the group of Configurações
   const items = [
-    ...menuItemsOf({ attention: rejected > 0 }).filter(
+    ...menuItemsOf({ attention: rejected > 0, expenses }).filter(
       (item) => !(isMobile && inBottomBar(item.id))
     ),
     ...(isMobile ? [HELP_ITEM] : []),
@@ -327,7 +333,7 @@ function BottomBarLabel({ text }: { text: string }) {
  * The bar of destinations of the phone: Início, Histórico, Vender (a pill of ink, in the middle), Estoque and "Mais",
  * which opens the rest (the sidebar in a sheet). A destination carries the mark on its own screen (`aria-current="page"`) and on the
  * screens of its area (`aria-current="true"`): Estoque on Produtos and Clientes. "Mais" carries it on the screens of
- * no destination of the bar (Pendências, Resultado, Configurações with their tabs, and Ajuda e contato), and the number of operations of
+ * no destination of the bar (Pendências, Resultado, Despesas, Configurações with their tabs, and Ajuda e contato), and the number of operations of
  * this device that need attention on its icon (the chip says the same in words, so the number is only drawn).
  */
 function BottomBar({ navId }: { navId: NavId | null }) {
@@ -712,6 +718,10 @@ export function AppShell({
       </a>
       <AppSidebar
         chargeDay={chargeDay}
+        expenses={
+          organization === null ||
+          hasCapabilityForRole(organization.organization.role, "expense:create")
+        }
         firstSteps={firstSteps}
         navId={navId}
         onlineOnly={onlineOnly}

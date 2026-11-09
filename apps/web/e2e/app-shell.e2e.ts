@@ -45,7 +45,7 @@ const storeMenu = (page: Page) =>
 /** The store and the e-mail at the top of the open menu of the header. */
 const identity = (page: Page) => page.locator("[data-store-identity]");
 
-/** The eight destinations of the menu, in order (map of navigation, § 1). */
+/** The nine destinations of the menu, in order (map of navigation, § 1). */
 const DESTINATIONS = [
   "Início",
   "Vender",
@@ -54,6 +54,7 @@ const DESTINATIONS = [
   "Produtos",
   "Clientes",
   "Resultado",
+  "Despesas",
   "Configurações",
 ];
 
@@ -70,15 +71,16 @@ test.describe("desktop (1280 px)", () => {
     const nav = sidebar(page);
     await expect(nav).toBeVisible();
     await expect(bottomBar(page)).toBeHidden();
-    // the eight destinations (map of navigation, § 1): no Pendências with nothing refused
+    // the nine destinations (map of navigation, § 1): no Pendências with nothing refused
     await expect(nav.getByRole("link")).toHaveText(DESTINATIONS);
-    // Início and Configurações alone; Vendas and Gestão with their small label (map of navigation, § 1)
+    // Início and Configurações alone; Vendas, Gestão and Resultado with their small label (map of navigation, § 1)
     await expect(nav.locator('[data-sidebar="group-label"]')).toHaveText([
       "Vendas",
       "Gestão",
+      "Resultado",
     ]);
     const groups = nav.locator('[data-sidebar="group"]');
-    await expect(groups).toHaveCount(4);
+    await expect(groups).toHaveCount(5);
     await expect(groups.nth(0).getByRole("link")).toHaveText(["Início"]);
     await expect(groups.nth(1).getByRole("link")).toHaveText([
       "Vender",
@@ -88,9 +90,12 @@ test.describe("desktop (1280 px)", () => {
       "Estoque",
       "Produtos",
       "Clientes",
-      "Resultado",
     ]);
-    await expect(groups.nth(3).getByRole("link")).toHaveText(["Configurações"]);
+    await expect(groups.nth(3).getByRole("link")).toHaveText([
+      "Resultado",
+      "Despesas",
+    ]);
+    await expect(groups.nth(4).getByRole("link")).toHaveText(["Configurações"]);
     const current = nav.locator('[aria-current="page"]');
     await expect(current).toHaveCount(1);
     await expect(current).toHaveText("Produtos");
@@ -325,12 +330,14 @@ test.describe("celular (360 px)", () => {
       "Produtos",
       "Clientes",
       "Resultado",
+      "Despesas",
       "Configurações",
       "Ajuda e contato",
     ]);
     // the bottom bar is not regrouped: what is left of Gestão keeps its label, Vendas has nothing left here
     await expect(panel.locator('[data-sidebar="group-label"]')).toHaveText([
       "Gestão",
+      "Resultado",
     ]);
     const current = panel.locator('[aria-current="page"]');
     await expect(current).toHaveText("Produtos");
@@ -347,10 +354,11 @@ test.describe("celular (360 px)", () => {
     await page.waitForURL("**/customers");
     await expect(bar.locator('[aria-current="true"]')).toHaveText("Estoque");
 
-    // a screen of no destination of the bar marks Mais: Resultado and Configurações, with their tabs
+    // a screen of no destination of the bar marks Mais: Resultado, Despesas and Configurações, with their tabs
     for (const path of [
       "/dashboard",
-      "/dashboard?aba=despesas",
+      "/dashboard?aba=metas",
+      "/expenses",
       "/configuracoes",
       "/configuracoes?aba=catalogo-publico",
     ]) {
@@ -359,6 +367,28 @@ test.describe("celular (360 px)", () => {
       await expect(bar.locator("[aria-current]")).toHaveCount(0);
       await expect(more(page).locator("[data-bottom-mark]")).toHaveCount(1);
     }
+  });
+
+  test("Mais › Despesas são dois toques, e a tela marca Mais na barra", async ({
+    page,
+  }) => {
+    await serve(page);
+    await page.goto("/dashboard");
+    let taps = 0;
+    await more(page).click();
+    taps += 1;
+    const panel = page.getByRole("dialog", { name: "Mais" });
+    await panel.getByRole("link", { exact: true, name: "Despesas" }).click();
+    taps += 1;
+    await page.waitForURL("**/expenses");
+    expect(taps).toBe(2);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Despesas" })
+    ).toBeVisible();
+    await expect(bottomBar(page).locator("[aria-current]")).toHaveCount(0);
+    await expect(more(page).locator("[data-bottom-mark]")).toHaveCount(1);
+    await more(page).click();
+    await expect(panel.locator('[aria-current="page"]')).toHaveText("Despesas");
   });
 
   test("o menu da loja do cabeçalho cabe na tela, mostra a loja e o e-mail inteiros e troca a loja", async ({
@@ -462,7 +492,7 @@ const PENDENCIAS_WITH_COUNT = "Pendências1";
 const tabList = (page: Page, name: string) =>
   page.getByRole("tablist", { exact: true, name });
 
-test.describe("os 8 destinos e as abas (1280 px)", () => {
+test.describe("os 9 destinos e as abas (1280 px)", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
   });
@@ -479,6 +509,7 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       ["Produtos", "/products"],
       ["Clientes", "/customers"],
       ["Resultado", "/dashboard"],
+      ["Despesas", "/expenses"],
       ["Configurações", "/configuracoes"],
       ["Início", "/"],
     ] as const) {
@@ -510,12 +541,11 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       title: "Produtos",
     },
     {
-      label: "Resultado, metas e despesas",
+      label: "Resultado e metas",
       path: "/dashboard",
       tabs: [
         ["Resultado", "/dashboard"],
         ["Metas", "/dashboard?aba=metas"],
-        ["Despesas", "/dashboard?aba=despesas"],
       ],
       title: "Resultado",
     },
@@ -677,12 +707,6 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
         "Categorias",
       ],
       [
-        "/expenses",
-        "/dashboard?aba=despesas",
-        "Resultado, metas e despesas",
-        "Despesas",
-      ],
-      [
         "/payment-profiles",
         "/configuracoes",
         "Configurações",
@@ -727,7 +751,7 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       .toBe("/configuracoes?retorno=concluida&aba=assinatura");
   });
 
-  test("Despesas no Resultado: o segmento vem do endereço (?ver=), o inválido cai em Lançamentos no lugar e trocar de aba o tira", async ({
+  test("Despesas: o segmento vem do endereço (?ver=), o inválido cai em Lançamentos no lugar e trocar de segmento reescreve sem passo", async ({
     page,
   }) => {
     await serve(page);
@@ -739,40 +763,111 @@ test.describe("os 8 destinos e as abas (1280 px)", () => {
       ["categorias", "Categorias"],
     ] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: one address at a time
-      await page.goto(`/dashboard?aba=despesas&ver=${ver}`);
+      await page.goto(`/expenses?ver=${ver}`);
       await expect(
         segments.getByRole("tab", { exact: true, name: segment })
       ).toHaveAttribute("aria-selected", "true");
     }
-    // the old address keeps the part
-    await page.goto("/expenses?ver=categorias");
-    await expect
-      .poll(() => pathOf(page))
-      .toBe("/dashboard?ver=categorias&aba=despesas");
-    await expect(
-      segments.getByRole("tab", { exact: true, name: "Categorias" })
-    ).toHaveAttribute("aria-selected", "true");
 
-    await page.goto("/dashboard?aba=despesas&ver=xyz");
+    await page.goto("/expenses?ver=xyz");
     const steps = await page.evaluate(() => history.length);
-    await expect.poll(() => pathOf(page)).toBe("/dashboard?aba=despesas");
+    await expect.poll(() => pathOf(page)).toBe("/expenses");
     await expect(
       segments.getByRole("tab", { exact: true, name: "Lançamentos" })
     ).toHaveAttribute("aria-selected", "true");
     expect(await page.evaluate(() => history.length)).toBe(steps);
 
-    // the part belongs to the Despesas tab: another tab of the Resultado drops it from the address
     await segments
       .getByRole("tab", { exact: true, name: "Recorrentes" })
       .click();
-    await expect
-      .poll(() => pathOf(page))
-      .toBe("/dashboard?aba=despesas&ver=recorrentes");
-    await tabList(page, "Resultado, metas e despesas")
-      .getByRole("tab", { exact: true, name: "Metas" })
-      .click();
-    await expect.poll(() => pathOf(page)).toBe("/dashboard?aba=metas");
+    await expect.poll(() => pathOf(page)).toBe("/expenses?ver=recorrentes");
     expect(await page.evaluate(() => history.length)).toBe(steps);
+  });
+
+  test("o endereço da aba Despesas que saiu do Resultado abre a tela de Despesas no lugar, sem carga nova, e ?aba=metas segue em Metas", async ({
+    page,
+  }) => {
+    await serve(page);
+    const loads: string[] = [];
+    page.on("request", (request) => {
+      if (request.isNavigationRequest()) {
+        loads.push(new URL(request.url()).pathname);
+      }
+    });
+    for (const [old, address] of [
+      ["/dashboard?aba=despesas", "/expenses"],
+      ["/dashboard?aba=despesas&ver=categorias", "/expenses?ver=categorias"],
+      ["/dashboard?ver=recorrentes&aba=despesas", "/expenses?ver=recorrentes"],
+    ] as const) {
+      loads.length = 0;
+      // biome-ignore lint/performance/noAwaitInLoops: one address at a time
+      await page.goto(old);
+      await expect.poll(() => pathOf(page)).toBe(address);
+      await expect(
+        page.getByRole("heading", { level: 1, name: "Despesas" })
+      ).toBeVisible();
+      await expect(sidebar(page).locator('[aria-current="page"]')).toHaveText(
+        "Despesas"
+      );
+      // the one load is the one of the address typed: the rewrite to /expenses asked the network for nothing
+      expect(loads).toEqual(["/dashboard"]);
+    }
+    await page.goto("/dashboard?aba=metas");
+    await expect(
+      tabList(page, "Resultado e metas").getByRole("tab", {
+        exact: true,
+        name: "Metas",
+      })
+    ).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => pathOf(page)).toBe("/dashboard?aba=metas");
+  });
+
+  test("Despesas é um destino: marca o item atual, o Resultado leva a ela e o chip diz que a tela precisa de internet", async ({
+    context,
+    page,
+  }) => {
+    await serve(page);
+    await page.goto("/dashboard");
+    await page
+      .getByRole("link", { exact: true, name: "Despesas do período" })
+      .click();
+    await expect.poll(() => pathOf(page)).toBe("/expenses");
+    const current = sidebar(page).locator('[aria-current="page"]');
+    await expect(current).toHaveCount(1);
+    await expect(current).toHaveText("Despesas");
+    await expect(current).toHaveAttribute("href", "/expenses");
+    // the Resultado has no Despesas tab any more
+    await expect(page.getByRole("tab", { name: "Despesas" })).toHaveCount(0);
+    await expect(chip(page)).toContainText("Tudo sincronizado", {
+      timeout: 20_000,
+    });
+    await context.setOffline(true);
+    await expect(chip(page).locator(".sync-status-short")).toHaveAttribute(
+      "title",
+      NEEDS_INTERNET_TITLE
+    );
+  });
+
+  test("quem não pode registrar despesa não tem o item Despesas nem o link do Resultado; o endereço abre a tela como sempre", async ({
+    page,
+  }) => {
+    await serve(page, [{ ...ORGANIZATIONS[0], role: "cashier" }]);
+    await page.goto("/dashboard");
+    await expect(
+      sidebar(page).getByRole("link", { name: "Resultado" })
+    ).toBeVisible();
+    await expect(sidebar(page).getByRole("link")).toHaveText(
+      DESTINATIONS.filter((label) => label !== "Despesas")
+    );
+    await expect(
+      page.getByRole("link", { exact: true, name: "Despesas do período" })
+    ).toHaveCount(0);
+    await page.goto("/dashboard?aba=despesas");
+    await expect.poll(() => pathOf(page)).toBe("/expenses");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Despesas" })
+    ).toBeVisible();
+    await expect(sidebar(page).locator('[aria-current="page"]')).toHaveCount(0);
   });
 
   test("/sales/customer não existe mais: o 404 do shell leva ao Início e ao Histórico", async ({
@@ -953,6 +1048,7 @@ test.describe("barra do celular a 360 e 320 px", () => {
         "Produtos",
         "Clientes",
         "Resultado",
+        "Despesas",
         "Configurações",
         "Ajuda e contato",
       ]);
@@ -1120,10 +1216,10 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     }
   });
 
-  test("AC-4.3: no pior caso (Pendências, primeiros passos e teste grátis), Mais cabe em 360×640 sem rolar", async ({
+  test("AC-4.3: no pior caso (Pendências, primeiros passos e teste grátis), Mais cabe em 360×720 sem rolar; a 360×640 só a lista rola por dentro", async ({
     page,
   }) => {
-    await page.setViewportSize({ height: 640, width: 360 });
+    await page.setViewportSize({ height: 720, width: 360 });
     await serveFoot(page, {});
     await leaveOneRefused(page);
     await page.goto("/products");
@@ -1149,15 +1245,31 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       )
       .toBe(true);
     // nor does the list of destinations scroll inside it: Ajuda e contato is whole
+    const list = panel.locator('[data-sidebar="content"]');
     expect(
-      await panel
-        .locator('[data-sidebar="content"]')
-        .evaluate((node) => node.scrollHeight <= node.clientHeight)
+      await list.evaluate((node) => node.scrollHeight <= node.clientHeight)
     ).toBe(true);
     // the last line of the sheet, the legal pages, is on the screen
     await expect(panel.locator("[data-sheet-legal]")).toBeInViewport({
       ratio: 1,
     });
+
+    // 80 px shorter: the sheet still does not scroll as a whole, the footer stays and the list scrolls to Ajuda e contato
+    await page.setViewportSize({ height: 640, width: 360 });
+    await expect
+      .poll(() =>
+        scroller.evaluate((node) => node.scrollHeight <= node.clientHeight)
+      )
+      .toBe(true);
+    await expect(panel.locator("[data-sheet-legal]")).toBeInViewport({
+      ratio: 1,
+    });
+    await panel
+      .getByRole("link", { exact: true, name: "Ajuda e contato" })
+      .scrollIntoViewIfNeeded();
+    await expect(
+      panel.getByRole("link", { exact: true, name: "Ajuda e contato" })
+    ).toBeInViewport({ ratio: 1 });
   });
 
   test("360 px: as duas linhas ficam em Mais, antes dos links legais", async ({

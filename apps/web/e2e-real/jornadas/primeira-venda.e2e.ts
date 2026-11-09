@@ -13,7 +13,7 @@ const FIRST_STEPS_KEY = "polaris.home.firstSteps";
 const FIRST_SALE_LINE =
   "1ª venda registrada. Veja o Hoje no Início e o resultado estimado em Resultado.";
 const CANDLE = /Vela aromática/;
-const EXPENSES_TAB_URL = /\/dashboard\?aba=despesas$/;
+const EXPENSES_URL = /\/expenses$/;
 const SALE_URL = /\/sales$/;
 const EMPTY_PERIOD = /^Sem vendas nem despesas em /;
 
@@ -89,7 +89,7 @@ test("primeira venda: a linha com os dois links aparece na 1ª venda confirmada 
   await expect(page.getByRole("link", { name: "Ver o Início" })).toHaveCount(0);
 });
 
-test("resultado vazio: Nova venda leva à Venda e Nova despesa à aba Despesas", async ({
+test("resultado vazio: Nova venda leva à Venda e Nova despesa à tela de Despesas", async ({
   browser,
 }, testInfo) => {
   const journey = await openJourney(browser, testInfo, "resultado-vazio", {
@@ -100,11 +100,10 @@ test("resultado vazio: Nova venda leva à Venda e Nova despesa à aba Despesas",
   await page.goto("/dashboard");
   await expect(page.getByText(EMPTY_PERIOD)).toBeVisible();
   await page.getByRole("link", { exact: true, name: "Nova despesa" }).click();
-  await expect(page).toHaveURL(EXPENSES_TAB_URL);
-  await expect(page.getByRole("tab", { name: "Despesas" })).toHaveAttribute(
-    "aria-selected",
-    "true"
-  );
+  await expect(page).toHaveURL(EXPENSES_URL);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Despesas" })
+  ).toBeVisible();
 
   await page.goto("/dashboard");
   await page.getByRole("link", { exact: true, name: "Nova venda" }).click();

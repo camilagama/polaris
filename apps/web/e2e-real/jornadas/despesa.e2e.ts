@@ -192,11 +192,11 @@ async function settled(count: () => number): Promise<void> {
 }
 
 /**
- * Journey 7b: the Resultado is read once in front of the person, and an expense written in the Despesas tab (a
- * second tab of the same page, no reload) is in its "(−) Despesas do período" when the person comes back, to the cent,
- * with no press on "Atualizar". With nothing written, coming back reads nothing again.
+ * Journey 7b: the Resultado is read once in front of the person, and an expense written in the Despesas screen is in its
+ * "(−) Despesas do período" when the person comes back, to the cent, with no press on "Atualizar". With nothing
+ * written, going to another tab of the Resultado and back reads nothing again.
  */
-test("despesa registrada na aba Despesas aparece no Resultado ao voltar, sem Atualizar", async ({
+test("despesa registrada em Despesas aparece no Resultado ao voltar, sem Atualizar", async ({
   browser,
 }, testInfo) => {
   const zone = extremeTimeZone(runT0());
@@ -233,23 +233,20 @@ test("despesa registrada na aba Despesas aparece no Resultado ao voltar, sem Atu
       )
       .toBe(expected);
 
-  // the page opens on the Despesas tab: the Resultado was read there, with nothing in the month
   await page.goto("/expenses");
   await addCategory(page, categoryName);
   await page.getByRole("tab", { name: "Lançamentos" }).click();
   await register("1.234,56", "Conta de luz");
 
-  const tabs = page.getByRole("tablist", {
-    name: "Resultado, metas e despesas",
-  });
-  await tabs.getByRole("tab", { exact: true, name: "Resultado" }).click();
+  const tabs = page.getByRole("tablist", { name: "Resultado e metas" });
+  await page.goto("/dashboard");
   await expect(chainValue(page, EXPENSES_OF_PERIOD)).toBeVisible();
   await expectExpensesOfPeriod(123_456);
 
-  // a second expense, written from the other tab: the figure is the sum, not the one from before
-  await tabs.getByRole("tab", { exact: true, name: "Despesas" }).click();
+  // a second expense, written from the other screen: the figure is the sum, not the one from before
+  await page.goto("/expenses");
   await register("100,00", "Conta de água");
-  await tabs.getByRole("tab", { exact: true, name: "Resultado" }).click();
+  await page.goto("/dashboard");
   await expectExpensesOfPeriod(133_456);
 
   // nothing written: going to another tab and back asks the server for nothing (the reads in flight settle first)

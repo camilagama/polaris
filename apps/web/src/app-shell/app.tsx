@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from "react";
+import { type ReactNode, Suspense, useEffect } from "react";
 import type { LegalDocumentId } from "@polaris/domain/legal/legal-documents";
 import { resolveLegalRoute } from "../legal/legal-routes";
 import { PHONE_QUERY } from "../lib/breakpoints";
@@ -8,6 +8,7 @@ import { useIsMobile } from "../lib/use-mobile";
 import { isLegalAcceptancePath } from "../lib/legal-acceptance";
 import { OfflineRuntimeProvider } from "../offline/runtime/runtime-provider";
 import { legacyCheckoutReturnPath } from "../subscription/plan-notice";
+import { ExpensesLoading } from "../expenses/expenses-loading";
 import { useAddress } from "./address";
 import { AppShell } from "./app-shell";
 import { ErrorBoundary } from "./error-boundary";
@@ -43,6 +44,11 @@ const pages: Readonly<Record<ScreenId, Page>> = {
   dashboard: lazyScreen(() =>
     import("../dashboard/dashboard-page").then((module) => ({
       default: module.DashboardPage,
+    }))
+  ),
+  expenses: lazyScreen(() =>
+    import("../expenses/expenses-page").then((module) => ({
+      default: module.ExpensesPage,
     }))
   ),
   help: lazyScreen(() =>
@@ -138,6 +144,11 @@ const entryPages: Record<EntryPageId, Page> = {
   ),
 };
 
+/** What shows while a screen's chunk loads, for the screens that draw their own shape instead of the generic one. */
+const loadingOf: Readonly<Partial<Record<ScreenId, ReactNode>>> = {
+  expenses: <ExpensesLoading />,
+};
+
 function RouteContent({ route }: { route: ResolvedRoute }) {
   if (route.kind === "not-found") {
     return (
@@ -157,7 +168,7 @@ function RouteContent({ route }: { route: ResolvedRoute }) {
       routeId={route.id}
     >
       <ErrorBoundary onRetry={Page.reset}>
-        <Suspense fallback={<PageLoading />}>
+        <Suspense fallback={loadingOf[route.screen] ?? <PageLoading />}>
           <Page />
         </Suspense>
       </ErrorBoundary>

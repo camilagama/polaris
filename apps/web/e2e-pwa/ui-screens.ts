@@ -356,6 +356,7 @@ const EXPENSE_SOURCES = [
   "src/expenses/expense-list.tsx",
   "src/expenses/expense-rule-form.tsx",
   "src/expenses/expense-rules-panel.tsx",
+  "src/expenses/expenses-loading.tsx",
   "src/expenses/expenses-page.tsx",
   "src/expenses/month-picker.tsx",
 ];
