@@ -1,7 +1,6 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import UsersIcon from "lucide-react/dist/esm/icons/users";
 import { type MouseEvent, useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -13,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { EmptyState } from "@/ui/empty-state";
 import { productInitials } from "../catalog/product-search-model";
 import {
   ListNotice,
@@ -516,30 +516,20 @@ export function CustomerList({
     );
   }
   if (total === 0) {
-    return (
-      <ListNotice>
-        {status === "active" ? (
-          <>
-            <UsersIcon
-              aria-hidden="true"
-              className="size-6 text-muted-foreground"
-            />
-            <p className="text-muted-foreground">
-              Nenhum cliente ainda. Cadastre o primeiro em “Novo cliente”.
-            </p>
-            <Button
-              disabled={pendingAction !== null}
-              onClick={onNew}
-              type="button"
-            >
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              Novo cliente
-            </Button>
-          </>
-        ) : (
+    if (status !== "active") {
+      return (
+        <ListNotice>
           <p className="text-muted-foreground">Nenhum cliente arquivado.</p>
-        )}
-      </ListNotice>
+        </ListNotice>
+      );
+    }
+    return (
+      <EmptyState afterRead title="Nenhum cliente ainda.">
+        <Button disabled={pendingAction !== null} onClick={onNew} type="button">
+          <PlusIcon aria-hidden="true" data-icon="inline-start" />
+          Novo cliente
+        </Button>
+      </EmptyState>
     );
   }
   if (customers.length === 0) {
