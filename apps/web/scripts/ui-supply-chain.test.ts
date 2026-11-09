@@ -430,7 +430,7 @@ export const Box = () => <Dialog.Root />;`;
     const adopt = "root.adoptedStyleSheets = [sheet];";
     const scan = (file: string, source: string) =>
       scanUiSource(file, source, undefined, "/repo");
-    const counter = "/repo/apps/web/src/ui/animated-figure.tsx";
+    const counter = "/repo/apps/web/src/ui/figure-counter.tsx";
     expect(scan(counter, adopt)).toEqual([]);
     expect(scan(counter, `${adopt} el.innerHTML = x`)).toEqual([
       { file: counter, rule: ".innerHTML" },
@@ -443,23 +443,23 @@ export const Box = () => <Dialog.Root />;`;
       { file: other, rule: "adoptedStyleSheets" },
     ]);
     expect(
-      scan("/repo/apps/web/src/ui/not-animated-figure.tsx", adopt)
+      scan("/repo/apps/web/src/ui/not-figure-counter.tsx", adopt)
     ).toHaveLength(1);
     expect(
-      scan("/repo/apps/web/src/ui/xsrc/ui/animated-figure.tsx", adopt)
+      scan("/repo/apps/web/src/ui/xsrc/ui/figure-counter.tsx", adopt)
     ).toHaveLength(1);
     expect(SOURCE_RULE_EXCEPTIONS.map((e) => [e.file, e.rule])).toEqual([
-      ["apps/web/src/ui/animated-figure.tsx", "adoptedStyleSheets"],
+      ["apps/web/src/ui/figure-counter.tsx", "adoptedStyleSheets"],
     ]);
   });
 
   it.each([
-    "/repo/apps/admin/src/ui/animated-figure.tsx",
-    "/repo/x/src/ui/animated-figure.tsx",
-    "/repo/apps/web/x/src/ui/animated-figure.tsx",
-    "/repo/x/apps/web/src/ui/animated-figure.tsx",
-    "/repo/apps/web/src/ui/sub/animated-figure.tsx",
-    "/other/apps/web/src/ui/animated-figure.tsx",
+    "/repo/apps/admin/src/ui/figure-counter.tsx",
+    "/repo/x/src/ui/figure-counter.tsx",
+    "/repo/apps/web/x/src/ui/figure-counter.tsx",
+    "/repo/x/apps/web/src/ui/figure-counter.tsx",
+    "/repo/apps/web/src/ui/sub/figure-counter.tsx",
+    "/other/apps/web/src/ui/figure-counter.tsx",
   ])(
     "the exception does not follow the name to %s (a suffix match would)",
     (file) => {
@@ -475,7 +475,7 @@ export const Box = () => <Dialog.Root />;`;
   );
 
   it("finds the counter by its real path from the repository root", () => {
-    const counter = join(root, "apps/web/src/ui/animated-figure.tsx");
+    const counter = join(root, "apps/web/src/ui/figure-counter.tsx");
     expect(scanUiSource(counter, "root.adoptedStyleSheets = [sheet];")).toEqual(
       []
     );
