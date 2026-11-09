@@ -7,8 +7,6 @@ const BEFORE_THE_RULE =
   "anterior à checagem; ao mexer neste documento, aponte para o caminho atual ou tire a referência";
 
 export const DOC_PATHS_LIST = {
-  ".claude/skills/verify-polaris/features/outros-enderecos.md → apps/web/e2e/help.e2e.ts":
-    { count: 1, reason: BEFORE_THE_RULE },
   "doc/doc-inicial.md → apps/api": { count: 1, reason: BEFORE_THE_RULE },
   "doc/handoff-pr43.md → docs/agents/issue-tracker.md": {
     count: 1,
