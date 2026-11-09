@@ -851,7 +851,13 @@ test.describe("os 9 destinos e as abas (1280 px)", () => {
   test("quem não pode registrar despesa não tem o item Despesas nem o link do Resultado; o endereço abre a tela como sempre", async ({
     page,
   }) => {
-    await serve(page, [{ ...ORGANIZATIONS[0], role: "cashier" }]);
+    await serve(
+      page,
+      ORGANIZATIONS.map((organization) => ({
+        ...organization,
+        role: "cashier",
+      }))
+    );
     await page.goto("/dashboard");
     await expect(
       sidebar(page).getByRole("link", { name: "Resultado" })
