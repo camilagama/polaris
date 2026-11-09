@@ -45,7 +45,7 @@ const storeMenu = (page: Page) =>
 /** The store and the e-mail at the top of the open menu of the header. */
 const identity = (page: Page) => page.locator("[data-store-identity]");
 
-/** The eight destinations of the menu, in order (map of navigation, § 1). */
+/** The nine destinations of the menu, in order, Ajuda e contato last (map of navigation, § 1). */
 const DESTINATIONS = [
   "Início",
   "Vender",
@@ -55,6 +55,7 @@ const DESTINATIONS = [
   "Clientes",
   "Resultado",
   "Configurações",
+  "Ajuda e contato",
 ];
 
 test.describe("desktop (1280 px)", () => {
@@ -70,9 +71,9 @@ test.describe("desktop (1280 px)", () => {
     const nav = sidebar(page);
     await expect(nav).toBeVisible();
     await expect(bottomBar(page)).toBeHidden();
-    // the eight destinations (map of navigation, § 1): no Pendências with nothing refused
+    // the nine destinations (map of navigation, § 1): no Pendências with nothing refused
     await expect(nav.getByRole("link")).toHaveText(DESTINATIONS);
-    // Início and Configurações alone; Vendas and Gestão with their small label (map of navigation, § 1)
+    // Início alone, and Configurações with Ajuda e contato in the last group; Vendas and Gestão with their small label (map of navigation, § 1)
     await expect(nav.locator('[data-sidebar="group-label"]')).toHaveText([
       "Vendas",
       "Gestão",
@@ -90,7 +91,10 @@ test.describe("desktop (1280 px)", () => {
       "Clientes",
       "Resultado",
     ]);
-    await expect(groups.nth(3).getByRole("link")).toHaveText(["Configurações"]);
+    await expect(groups.nth(3).getByRole("link")).toHaveText([
+      "Configurações",
+      "Ajuda e contato",
+    ]);
     const current = nav.locator('[aria-current="page"]');
     await expect(current).toHaveCount(1);
     await expect(current).toHaveText("Produtos");
@@ -462,7 +466,7 @@ const PENDENCIAS_WITH_COUNT = "Pendências1";
 const tabList = (page: Page, name: string) =>
   page.getByRole("tablist", { exact: true, name });
 
-test.describe("os 8 destinos e as abas (1280 px)", () => {
+test.describe("os 9 destinos e as abas (1280 px)", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
   });
@@ -859,12 +863,14 @@ test.describe("lateral recolhível (a partir de 1024 px)", () => {
     await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
       "Clientes"
     );
-    // folded, the column has no help nor legal link, and the header does not change
+    // folded, the column keeps Ajuda e contato as an icon and has no legal link, and the header has no "?"
     await expect(
-      page.locator('[data-slot="sidebar"]').getByRole("link", { name: "Ajuda" })
-    ).toHaveCount(0);
+      page
+        .locator('[data-slot="sidebar"]')
+        .getByRole("link", { exact: true, name: "Ajuda e contato" })
+    ).toHaveCount(1);
     await expect(page.getByRole("contentinfo")).toHaveCount(0);
-    await expect(page.locator("[data-header-help]")).toBeVisible();
+    await expect(page.locator("[data-header-help]")).toHaveCount(0);
     // kept on the device: a reload opens it folded
     await page.reload();
     await expect(expand(page)).toBeVisible();
@@ -1300,36 +1306,47 @@ test.describe("Ajuda e contato", () => {
     await expect.poll(sizes).toEqual({ height: true, tall: true, width: true });
   });
 
-  test("no desktop, o ? do cabeçalho abre Ajuda em 1 toque, na lateral aberta e na recolhida", async ({
+  test("no desktop, Ajuda e contato é o item da lateral depois de Configurações, abre em 1 toque, aberta e recolhida, e o cabeçalho não tem o ?", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await serve(page);
     await page.goto("/products");
     await expect(sidebar(page).getByRole("link")).toHaveText(DESTINATIONS);
-    // the column has no help nor legal link: they are in the header
+    await expect(page.locator("[data-header-help]")).toHaveCount(0);
     await expect(
-      page.locator('[data-slot="sidebar"]').getByRole("link", {
+      page.locator("[data-app-header]").getByRole("link", {
+        exact: true,
         name: "Ajuda e contato",
       })
     ).toHaveCount(0);
-    const help = page.locator("[data-app-header]").getByRole("link", {
+    const help = sidebar(page).getByRole("link", {
       exact: true,
       name: "Ajuda e contato",
     });
-    const box = await help.boundingBox();
-    expect(box?.width).toBe(40);
-    expect(box?.height).toBe(40);
+    const settings = sidebar(page).getByRole("link", {
+      exact: true,
+      name: "Configurações",
+    });
+    const [helpBox, settingsBox] = await Promise.all([
+      help.boundingBox(),
+      settings.boundingBox(),
+    ]);
+    expect(helpBox?.height, "an ordinary item of the sidebar").toBe(
+      settingsBox?.height
+    );
+    expect(helpBox?.y ?? 0).toBeGreaterThan(settingsBox?.y ?? 0);
     await help.click();
     await expectHelpPage(page);
     await expect(help).toHaveAttribute("aria-current", "page");
-    // no destination of the sidebar is marked on Ajuda
-    await expect(sidebar(page).locator("[aria-current]")).toHaveCount(0);
+    await expect(sidebar(page).locator('[aria-current="page"]')).toHaveText(
+      "Ajuda e contato"
+    );
 
-    // folded: the same "?", and the column has no link of its own for it
     await page.keyboard.press("Control+b");
     await expect(helpLink(page)).toHaveCount(1);
     await expect(help).toBeVisible();
+    await expect(help).toHaveAttribute("aria-current", "page");
   });
 
   test("nenhuma página tem rodapé legal; no celular, Ajuda, Termos e Política ficam a 2 toques no menu da loja", async ({

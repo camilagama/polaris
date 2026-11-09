@@ -16,6 +16,7 @@ import {
  */
 
 const CLASS_ATTRIBUTE = /class="([^"]*)"/;
+const CURRENCY_SPAN = /<span class="([^"]*)" data-money-currency/;
 const TEXT_IN_REM = /text-\[[\d.]+rem\]/;
 
 const CHIP_THEN_NOTE =
@@ -139,49 +140,54 @@ describe("HeroValue in a column of the strip", () => {
     expect(markup).not.toContain("min-[56.25rem]");
     expect(markup).toContain("text-value-lg");
   });
-
-  it("steps the principal down to lg only below 900 px, so the sizes of the column rule from there", () => {
-    const markup = renderToStaticMarkup(
-      <HeroValue amount="-99640.35" size="xl" strip />
-    );
-    expect(markup).toContain("max-[56.24875rem]:@max-[12.25rem]:text-value-lg");
-    const classes = CLASS_ATTRIBUTE.exec(markup)?.[1]?.split(" ") ?? [];
-    expect(classes).not.toContain("@max-[12.25rem]:text-value-lg");
-    expect(markup).toContain("min-[56.25rem]:@max-[8.999rem]:text-[1.25rem]");
-  });
 });
 
 describe("HeroValue sizes", () => {
-  const principal = (amount: string | null) =>
-    renderToStaticMarkup(<HeroValue amount={amount} size="xl" />);
+  const AMOUNTS = ["129.90", "-99640.35", "12345.67", null] as const;
+  const classesOf = (markup: string) => CLASS_ATTRIBUTE.exec(markup)?.[1] ?? "";
+  const sizeClassesOf = (markup: string) =>
+    classesOf(markup)
+      .split(" ")
+      .filter((name) => name.includes("value-") || name.startsWith("h-("));
 
-  it("writes the principal at xl and every other value at lg, with the weight 600 and no size in rem", () => {
-    const xl = principal("129.90");
-    const lg = renderToStaticMarkup(<HeroValue amount="129.90" />);
-    expect(xl).toContain("text-value-xl");
-    expect(lg).toContain("text-value-lg");
-    expect(lg).not.toContain("text-value-xl");
-    for (const markup of [xl, lg]) {
+  it("writes every amount of every card at one size, lg, with the weight 600 and no size in rem", () => {
+    for (const amount of AMOUNTS) {
+      const markup = renderToStaticMarkup(<HeroValue amount={amount} />);
+      expect(markup).toContain("text-value-lg");
+      expect(markup).not.toContain("text-value-xl");
       expect(markup).toContain("font-semibold");
       expect(markup).not.toContain("font-[650]");
       expect(markup).not.toMatch(TEXT_IN_REM);
     }
   });
 
-  it("keeps the principal's box at the line of xl whatever it steps down to, and the others at the line of lg", () => {
-    const xl = principal("-99640.35");
-    expect(xl).toContain("h-(--text-value-xl--line-height)");
-    expect(xl).toContain("leading-(--text-value-xl--line-height)");
-    const lg = renderToStaticMarkup(<HeroValue amount="-99640.35" />);
-    expect(lg).toContain("h-(--text-value-lg--line-height)");
-    expect(lg).not.toContain("@max-");
+  it("gives the same size and line classes to a short, a long, a negative and a missing amount", () => {
+    const [first, ...rest] = AMOUNTS.map((amount) =>
+      sizeClassesOf(renderToStaticMarkup(<HeroValue amount={amount} />))
+    );
+    expect(first).toContain("text-value-lg");
+    for (const classes of rest) {
+      expect(classes).toEqual(first);
+    }
   });
 
-  it("gives a longer amount a higher limit under which the principal steps down", () => {
-    expect(principal("129.90")).toContain("@max-[8.25rem]:text-value-lg");
-    expect(principal("12345.67")).toContain("@max-[11.25rem]:text-value-lg");
-    expect(principal("-99640.35")).toContain("@max-[12.25rem]:text-value-lg");
-    expect(principal("-9999999.99")).toContain("@max-[14.75rem]:text-value-lg");
+  it("writes the R$ of every card the same: a size under the number, by the same classes, whatever the amount", () => {
+    const currency = (amount: string) =>
+      CURRENCY_SPAN.exec(
+        renderToStaticMarkup(<HeroValue amount={amount} />)
+      )?.[1];
+    expect(currency("129.90")).toContain("text-[0.56em]");
+    expect(currency("-99640.35")).toBe(currency("129.90"));
+    expect(currency("12345.67")).toBe(currency("129.90"));
+  });
+
+  it("has no size above lg and no step: nothing in a card is made to be the principal", () => {
+    const markup = renderToStaticMarkup(<HeroValue amount="-99640.35" />);
+    expect(markup).not.toContain("@max-");
+    expect(markup).not.toContain("text-value-xl");
+    const skeleton = renderToStaticMarkup(<KpiCardSkeleton />);
+    expect(skeleton).toContain("h-(--text-value-lg--line-height)");
+    expect(skeleton).not.toContain("text-value-xl");
   });
 });
 

@@ -77,7 +77,7 @@ interface Box {
   y: number;
 }
 
-/** Where the parts of the header are: the header itself, the chip, "?" and the button of the menu of the store. */
+/** Where the parts of the header are: the header itself, the chip and the button of the menu of the store. */
 function measure(page: Page) {
   return page.evaluate(() => {
     const box = (selector: string) => {
@@ -97,7 +97,6 @@ function measure(page: Page) {
       brand: box('[data-app-header] a[href="/"]'),
       chip: box("[data-app-header] .sync-status"),
       header: box("[data-app-header]"),
-      help: box("[data-header-help]"),
       menu: box("[data-store-menu]"),
       viewport: document.documentElement.clientWidth,
     };
@@ -151,12 +150,7 @@ async function openShell(page: Page, path = "/products") {
 type Measured = Awaited<ReturnType<typeof measure>>;
 
 /** One state of the chip against the first: same height, same places, on screen, left to right with no overlap. */
-function expectSamePlaces(
-  first: Measured,
-  now: Measured,
-  width: number,
-  label: string
-) {
+function expectSamePlaces(first: Measured, now: Measured, label: string) {
   expect(now.header?.height, label).toBe(first.header?.height);
   // one line: the chip keeps its height, and it shrinks (an ellipsis) instead of pushing its neighbors
   expect(now.chip?.height, label).toBe(first.chip?.height);
@@ -168,19 +162,12 @@ function expectSamePlaces(
     Math.abs((now.menu?.x ?? 0) - (first.menu?.x ?? 0)),
     label
   ).toBeLessThanOrEqual(1);
-  const after = width >= 760 ? now.help : now.menu;
-  if (width >= 760) {
-    expect(
-      Math.abs((now.help?.x ?? 0) - (first.help?.x ?? 0)),
-      label
-    ).toBeLessThanOrEqual(1);
-  }
   expect(right(now.menu), label).toBeLessThanOrEqual(now.viewport);
   expect(now.chip?.x ?? -1, label).toBeGreaterThanOrEqual(0);
   if (now.brand && now.brand.width > 0) {
     expect(right(now.brand), label).toBeLessThanOrEqual(now.chip?.x ?? 0);
   }
-  expect(right(now.chip), label).toBeLessThanOrEqual(after?.x ?? 0);
+  expect(right(now.chip), label).toBeLessThanOrEqual(now.menu?.x ?? 0);
 }
 
 const setText = (page: Page, text: string) =>
@@ -218,7 +205,6 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
           expectSamePlaces(
             first,
             await measure(page),
-            width,
             `${width} px, texto ${scale}, chip "${text}"`
           );
         }
@@ -434,7 +420,7 @@ test.describe("AC-1.1, AC-1.4 e AC-2.2: a altura do cabeçalho nos estados da ca
   });
 });
 
-/** The first tap opens the menu of the store; the second reaches any of the four; from 760 px, "?" is one tap. */
+/** The first tap opens the menu of the store; the second reaches any of the four; from 760 px, the sidebar has Ajuda in one tap and the header has no "?". */
 async function expectTwoTaps(page: Page, width: number, label: string) {
   await storeMenu(page).click();
   const menu = page.getByRole("menu");
@@ -449,9 +435,12 @@ async function expectTwoTaps(page: Page, width: number, label: string) {
   await expect(menu).toBeHidden();
   if (width >= 760) {
     await expect(
-      header(page).getByRole("link", { exact: true, name: "Ajuda e contato" }),
+      page
+        .locator('[data-slot="sidebar"]')
+        .getByRole("link", { exact: true, name: "Ajuda e contato" }),
       label
     ).toBeVisible();
+    await expect(page.locator("[data-header-help]"), label).toHaveCount(0);
   }
 }
 
@@ -763,8 +752,10 @@ test.describe("AC-1.6: nenhuma rolagem de lado, na página, na lateral e em Mais
         .map((element) => element.textContent?.trim() || element.tagName);
     });
     expect(wider).toEqual([]);
-    // no help nor legal link in the column, open or folded
-    await expect(inner.getByRole("link", { name: "Ajuda" })).toHaveCount(0);
+    // Ajuda e contato is in the column, folded too, and the legal links are not
+    await expect(
+      inner.getByRole("link", { exact: true, name: "Ajuda e contato" })
+    ).toBeVisible();
     await expect(inner.getByRole("link", { name: "Termos" })).toHaveCount(0);
   });
 });

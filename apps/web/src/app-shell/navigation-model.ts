@@ -1,4 +1,4 @@
-/** The destinations of the menu (the navigation map, § 1): eight, and Pendências while it has something. */
+/** The destinations of the menu (the navigation map, § 1): nine, with Ajuda e contato last, and a tenth, Pendências, while it has something. */
 export type NavId =
   | "attention"
   | "customers"
@@ -58,9 +58,17 @@ export interface NavItem {
 }
 
 /**
- * The eight destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
- * for what is sold, Gestão for what the store has and earns. Clientes is a register, like Produtos, as the bottom bar
- * of the phone already treats it (`BOTTOM_BAR_AREA`).
+ * "Ajuda e contato" is the last item of the sidebar, beside Configurações, on the desktop and in "Mais" on the phone. It
+ * is a page of the shell, so the offline copy opens it.
+ */
+export const HELP_HREF = "/ajuda";
+export const HELP_LABEL = "Ajuda e contato";
+
+/**
+ * The destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas for
+ * what is sold, Gestão for what the store has and earns. Clientes is a register, like Produtos, as the bottom bar of
+ * the phone already treats it (`BOTTOM_BAR_AREA`). Configurações and Ajuda e contato close the list, together in the
+ * last group, which has no label.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { group: null, href: "/", id: "home", label: "Início" },
@@ -81,16 +89,10 @@ export const NAV_ITEMS: readonly NavItem[] = [
     id: "settings",
     label: "Configurações",
   },
+  { group: null, href: HELP_HREF, id: "help", label: HELP_LABEL },
 ];
 
-/**
- * "Ajuda e contato" is no destination of the menu: the phone puts it in "Mais" after the destinations, and the desktop
- * beside the legal links at the foot of the column. It is a page of the shell, so the offline copy opens it.
- */
-export const HELP_HREF = "/ajuda";
-export const HELP_LABEL = "Ajuda e contato";
-
-/** The ninth destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
+/** The tenth destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
 export const ATTENTION_NAV_ITEM: NavItem = {
   group: "Vendas",
   href: "/attention",

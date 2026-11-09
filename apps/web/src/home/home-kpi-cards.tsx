@@ -143,7 +143,7 @@ function TodayCard({
         />
       }
       title="Vendas hoje"
-      value={<HeroValue amount={reading.value} size="xl" />}
+      value={<HeroValue amount={reading.value} />}
     />
   );
 }
@@ -357,7 +357,7 @@ export function NoFiguresCards({ today }: { today: string }) {
         noteLines={2}
         spark={EMPTY_SPARK}
         title="Vendas hoje"
-        value={<HeroValue amount={null} size="xl" />}
+        value={<HeroValue amount={null} />}
       />
       <KpiGroup
         className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
@@ -413,7 +413,6 @@ export function KpiCardsSkeleton() {
       <KpiCardSkeleton
         className="md:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2"
         noteLines={2}
-        size="xl"
       />
       <div
         aria-hidden="true"

@@ -145,62 +145,16 @@ const ENTITY_SQUARE: Record<KpiEntity, string> = {
 const SIGN = /^[+-]/;
 
 /**
- * What the principal card steps down to (`text-value-lg`) when its box is too narrow for the amount at `xl`, by the
- * characters of the amount ("−R$ 99.640,35" is 13): the box is the card's content, which measures itself
- * (`@container`), and the limits are in rem so they follow the letter size of the browser. Each limit is what the
- * amount takes at 36 px (measured: 4.9 em for 12 characters, 5.4 em for 13, 6 em for 14) times 2.25 rem, plus a tenth
- * of a rem of room. The first list is for a card of its own; the second is for a column of the strip, where the step holds only
- * below 900 px, because from there the column has its own sizes (`stripValueSize`).
- */
-const PRINCIPAL_STEP = [
-  "@max-[8.25rem]:text-value-lg",
-  "@max-[9rem]:text-value-lg",
-  "@max-[10rem]:text-value-lg",
-  "@max-[11.25rem]:text-value-lg",
-  "@max-[12.25rem]:text-value-lg",
-  "@max-[13.5rem]:text-value-lg",
-  "@max-[14.75rem]:text-value-lg",
-] as const;
-const PRINCIPAL_STEP_STRIP = [
-  "max-[56.24875rem]:@max-[8.25rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[9rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[10rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[11.25rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[12.25rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[13.5rem]:text-value-lg",
-  "max-[56.24875rem]:@max-[14.75rem]:text-value-lg",
-] as const;
-const STEP_FROM = 9;
-
-function principalStep(characters: number, strip: boolean): string {
-  const steps = strip ? PRINCIPAL_STEP_STRIP : PRINCIPAL_STEP;
-  return (
-    steps[Math.min(Math.max(characters - STEP_FROM, 0), steps.length - 1)] ?? ""
-  );
-}
-
-/**
  * The box of the number: one line of a fixed height, so "R$ 129,90" (with the "R$" and the cents smaller), "R$ ••••"
  * (whose dots may come from another font) and "—" take the same height, and nothing under them moves when the values
- * are hidden or a day is read. The height is the line of the size (`xl` 40 px, `lg` 30 px; 36 and 28 on a phone) and, in the principal, it
- * stays the line of `xl` when the number steps down to `lg`, so the card does not change height with the length of the amount.
- * The size is one of the tokens of the scale; `leading-*` sets the line whatever the size class says, and goes after
- * the size classes of its own variant, because the merge of the classes drops a `leading-*` that comes before one.
+ * are hidden or a day is read. Every card has the one size, `text-value-lg` (30 px line; 28 on a phone), with no card
+ * above the others: the "R$" and the number are the same size, weight and line in all of them. The size is one of the
+ * tokens of the scale; `leading-*` sets the line whatever the size class says, and goes after the size classes of its
+ * own variant, because the merge of the classes drops a `leading-*` that comes before one.
  */
-function heroBox(
-  size: "xl" | "lg",
-  strip = false,
-  characters = 0,
-  stripCharacters = 0
-): string {
+function heroBox(strip = false, stripCharacters = 0): string {
   return cn(
-    "whitespace-nowrap font-semibold tabular-nums tracking-[-0.035em]",
-    size === "xl"
-      ? cn(
-          "h-(--text-value-xl--line-height) text-value-xl leading-(--text-value-xl--line-height)",
-          principalStep(characters, strip)
-        )
-      : "h-(--text-value-lg--line-height) text-value-lg",
+    "h-(--text-value-lg--line-height) whitespace-nowrap font-semibold text-value-lg tabular-nums tracking-[-0.035em]",
     strip && stripValueSize(stripCharacters),
     strip && "min-[56.25rem]:h-[1.05em] min-[56.25rem]:leading-5"
   );
@@ -209,21 +163,18 @@ function heroBox(
 export function HeroValue({
   amount,
   emptyText,
-  size = "lg",
   strip = false,
 }: {
   /** The amount as the server writes money ("1234.5"), or null when there is none. */
   amount: string | null;
   /** What a missing amount says in place of the dash, in the same one-line box ("sem custo neste dia"). */
   emptyText?: string | undefined;
-  /** `xl` for the principal number of a screen (it steps down to `lg` where it does not fit), `lg` for the rest. */
-  size?: "xl" | "lg";
   /** The value of a column of `KPI_STRIP`: 24 px from 900 px. */
   strip?: boolean;
 }) {
   const [hidden] = useHiddenValues();
   const characters = amount === null ? 0 : formatBrlAmount(amount).length;
-  const box = heroBox(size, strip, characters, hidden ? 0 : characters);
+  const box = heroBox(strip, hidden ? 0 : characters);
   if (amount === null && emptyText) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
@@ -271,7 +222,7 @@ export function HeroPercent({
   /** The percent as the app writes it ("41,2%"), or null when there is none. */
   text: string | null;
 }) {
-  const box = heroBox("lg", strip);
+  const box = heroBox(strip);
   if (text === null) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
@@ -650,7 +601,6 @@ export function KpiCardSkeleton({
   className,
   footer = 0,
   noteLines = 1,
-  size = "lg",
   spark = true,
 }: {
   /** The card has a link under the support line ("Ver o resultado"). */
@@ -660,7 +610,6 @@ export function KpiCardSkeleton({
   footer?: number;
   /** The lines the note of the card keeps, as in `KpiCard`. */
   noteLines?: 1 | 2;
-  size?: "xl" | "lg";
   spark?: boolean;
 }) {
   return (
@@ -677,7 +626,7 @@ export function KpiCardSkeleton({
       <div className={TOP_ROW}>
         <Skeleton className="h-3 w-24" />
       </div>
-      <div className={cn(heroBox(size), "flex items-center")}>
+      <div className={cn(heroBox(), "flex items-center")}>
         <Skeleton className="h-[0.8em] w-32" />
       </div>
       <div className={SUPPORT_ROWS}>

@@ -163,6 +163,43 @@ describe("a coluna e o grupo do mês", () => {
   });
 });
 
+const CLASS_ATTRIBUTE = /class="([^"]*)"/;
+
+/** The classes of the element that carries `attribute` in a card: the number box, or the R$ inside it. */
+function classesWith(markup: string, attribute: string): string {
+  const at = markup.indexOf(attribute);
+  expect(at, attribute).toBeGreaterThan(-1);
+  const open = markup.lastIndexOf("<", at);
+  return CLASS_ATTRIBUTE.exec(markup.slice(open, at))?.[1] ?? "";
+}
+
+const FOUR = ["home-today", "home-month", "home-result", "home-ticket"];
+
+describe("o R$ e o valor têm um padrão só nos quatro cartões", () => {
+  it("o valor de Vendas hoje tem as mesmas classes de tamanho dos outros três", () => {
+    const rendered = render(figures());
+    const sizes = FOUR.map((id) =>
+      classesWith(card(rendered, id), "data-kpi-value")
+    );
+    for (const classes of sizes) {
+      expect(classes).toContain("text-value-lg");
+      expect(classes).not.toContain("text-value-xl");
+      expect(classes).not.toContain("@max-");
+    }
+    const sorted = sizes.map((classes) => classes.split(" ").sort().join(" "));
+    expect(new Set(sorted).size).toBe(1);
+  });
+
+  it("o R$ de cada cartão é escrito pelas mesmas classes, menor que o número", () => {
+    const rendered = render(figures());
+    const currencies = FOUR.map((id) =>
+      classesWith(card(rendered, id), "data-money-currency")
+    );
+    expect(new Set(currencies).size).toBe(1);
+    expect(currencies[0]).toContain("text-[0.56em]");
+  });
+});
+
 describe("Vendas hoje", () => {
   it("não tem data em repouso e diz numa linha só com o que compara e a contagem", () => {
     const today = card(render(figures()), "home-today");

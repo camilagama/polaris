@@ -1,9 +1,4 @@
-import {
-  EARLIEST_EXPENSE_MONTH,
-  monthBounds,
-  monthOfDay,
-  shiftMonth,
-} from "../expenses/expense-model";
+import { monthBounds, monthOfDay } from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
 import { shortcutLabel } from "../ui/date-range-shortcuts";
 import { presetRange, type RangePreset } from "../ui/date-values";
@@ -131,43 +126,6 @@ export function wholeMonthOf(period: Period | null): string | null {
     bounds.to === period.to
     ? month
     : null;
-}
-
-export interface MonthStep {
-  /** The free range to read, only when the month is neither the store's current nor the previous one. */
-  custom: Period | null;
-  /** This month and the previous one go back to their presets (the ones with a copy on the device); any other is "custom". */
-  preset: PeriodPreset;
-}
-
-/**
- * The month `delta` away from the whole month the period is, as the selection to read: this month and the previous one
- * go back to their presets (the ones with a copy on the device, AC-16), any other month is a "Período". Null when the
- * period is not a whole month, or the month is before the first the screen reads, or (going forward) is past the
- * store's current month: there is nothing to read ahead of it.
- */
-export function monthStep(
-  period: Period | null,
-  delta: -1 | 1,
-  today: string
-): MonthStep | null {
-  const month = wholeMonthOf(period);
-  const target = month === null ? null : shiftMonth(month, delta);
-  const current = monthOfDay(today);
-  if (
-    target === null ||
-    target < EARLIEST_EXPENSE_MONTH ||
-    (delta === 1 && target > current)
-  ) {
-    return null;
-  }
-  if (target === current) {
-    return { custom: null, preset: "this-month" };
-  }
-  if (target === shiftMonth(current, -1)) {
-    return { custom: null, preset: "last-month" };
-  }
-  return { custom: monthBounds(target), preset: "custom" };
 }
 
 export type RangeProblem = "missing" | "order" | "too_long";
