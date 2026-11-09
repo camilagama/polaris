@@ -18,6 +18,7 @@ import { Tabs, TabsContent } from "@/ui/tabs";
 import { replaceAddress } from "../app-shell/address";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
 import { SlowReadNote } from "../app-shell/read-wait";
+import { TITLE_ACTION_CLASS, TitleLine } from "../app-shell/screen-title";
 import {
   ScreenTabList,
   ScreenTabTrigger,
@@ -61,14 +62,32 @@ import {
 
 const RESULT_TABS = ["resultado", "metas"] as const;
 
-function Heading() {
+function Heading({ canCreateExpense }: { canCreateExpense: boolean }) {
   return (
-    <header className="flex items-center gap-1">
-      <h1 className="text-title">Resultado</h1>
-      <HelpTip about="Resultado">
-        Estimativa com as vendas confirmadas e as despesas do período. Não é
-        lucro líquido nem dinheiro recebido.
-      </HelpTip>
+    <header>
+      <TitleLine
+        action={
+          canCreateExpense ? (
+            <a
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                TITLE_ACTION_CLASS
+              )}
+              href="/expenses"
+            >
+              Despesas do período
+            </a>
+          ) : null
+        }
+      >
+        <div className="flex items-center gap-1">
+          <h1 className="text-title">Resultado</h1>
+          <HelpTip about="Resultado">
+            Estimativa com as vendas confirmadas e as despesas do período. Não é
+            lucro líquido nem dinheiro recebido.
+          </HelpTip>
+        </div>
+      </TitleLine>
     </header>
   );
 }
@@ -362,7 +381,7 @@ export function DashboardPage() {
 
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <Heading />
+      <Heading canCreateExpense={canCreateExpense} />
       <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
         <ScreenTabList label="Resultado e metas" value={tab}>
           <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>
@@ -416,17 +435,6 @@ export function DashboardPage() {
               timezone={organization.timezone}
             />
           </div>
-          {canCreateExpense ? (
-            <a
-              className={cn(
-                buttonVariants({ variant: "outline" }),
-                "w-full min-[47.5rem]:w-auto min-[47.5rem]:justify-self-start"
-              )}
-              href="/expenses"
-            >
-              Despesas do período
-            </a>
-          ) : null}
         </TabsContent>
         {/* kept mounted: a goal being typed is still there when the person comes back from the other tab */}
         <TabsContent keepMounted value="metas">
