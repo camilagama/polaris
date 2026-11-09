@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { addDays } from "./home-model";
-import { rhythmPeriod } from "./home-rhythm-model";
+import { rhythmPeriod, weekdayOf } from "./home-rhythm-model";
 import type { HomeFigures } from "./use-home";
 
 const hiddenValues = vi.hoisted(() => ({ hidden: false }));
@@ -22,14 +22,37 @@ const RANGE = /<input[^>]*type="range"[^>]*>/;
 const NO_RETRY = () => undefined;
 const READING_OF_TODAY = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
 
-function render({ sold = true }: { sold?: boolean } = {}) {
+/** The net sales and the count of a day: the best day, a Saturday of the weekly rhythm, today, or nothing. */
+function figuresOf(
+  best: boolean,
+  saturday: boolean,
+  today: boolean
+): [string, number] {
+  if (best) {
+    return ["541.19", 4];
+  }
+  if (today) {
+    return ["320.10", 2];
+  }
+  return saturday ? ["100.00", 1] : ["0.00", 0];
+}
+
+function render({
+  saturdays = false,
+  sold = true,
+}: {
+  saturdays?: boolean;
+  sold?: boolean;
+} = {}) {
   const { from, to } = rhythmPeriod(TODAY);
   const net: string[] = [];
   const count: number[] = [];
   for (let date = from; date <= to; date = addDays(date, 1)) {
+    const saturday = saturdays && weekdayOf(date) === 6;
     const best = sold && date === BEST_DAY;
-    net.push(best ? "541.19" : "0.00");
-    count.push(best ? 4 : 0);
+    const [netSales, salesCount] = figuresOf(best, saturday, false);
+    net.push(netSales);
+    count.push(salesCount);
   }
   const daily: Array<{ date: string; netSales: string; salesCount: number }> =
     [];
@@ -39,10 +62,11 @@ function render({ sold = true }: { sold?: boolean } = {}) {
     date = addDays(date, 1)
   ) {
     const today = sold && date === TODAY;
+    const saturday = saturdays && weekdayOf(date) === 6;
     daily.push({
       date,
-      netSales: today ? "320.10" : "0.00",
-      salesCount: today ? 2 : 0,
+      netSales: figuresOf(false, saturday, today)[0],
+      salesCount: figuresOf(false, saturday, today)[1],
     });
   }
   const figures = { month: { daily }, today: TODAY } as unknown as HomeFigures;
@@ -82,48 +106,44 @@ beforeEach(() => {
 });
 
 describe("Ritmo de vendas at rest", () => {
-  it("reads today, not the best day of the months before", () => {
-    const reading = textOf(render(), "data-rhythm-reading");
-    expect(reading).toBe(READING_OF_TODAY);
-    expect(reading).not.toContain("27/06");
-  });
-
-  it("reads today without a sale as 'sem venda'", () => {
-    expect(textOf(render({ sold: false }), "data-rhythm-reading")).toBe(
-      "Sexta, 23/10 · sem venda · hoje"
+  it("says what only the rhythm knows over the map, not the day of today", () => {
+    const html = render({ saturdays: true });
+    expect(html).not.toContain("data-rhythm-reading");
+    expect(textOf(html, "data-rhythm-insight")).toBe(
+      "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00."
     );
+    expect(textBetweenTags(html)).not.toContain("23/10 · R$");
   });
 
-  it("puts the keyboard control and the finger on today", () => {
+  it("keeps the few-weeks warning in the line of the insight, not in a line of its own", () => {
+    const html = render();
+    expect(textOf(html, "data-rhythm-insight")).toBe(
+      "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 1 dia com venda nas últimas 13 semanas."
+    );
+    expect(html.match(/data-rhythm-insight/g)).toHaveLength(1);
+  });
+
+  it("puts the keyboard control and the finger on today, which the control says though the line does not", () => {
     const range = render().match(RANGE)?.[0] ?? "";
     expect(range).toContain(`value="${TODAY_INDEX}"`);
     expect(range).toContain(`max="${TODAY_INDEX}"`);
     expect(range).toContain(`aria-valuetext="${READING_OF_TODAY}"`);
   });
 
-  it("says the best day on a line of its own, under the legend", () => {
-    const html = render();
-    expect(textOf(html, "data-rhythm-best")).toBe(
-      "Melhor dia: 27/06, R$ 541,19"
-    );
-    expect(html.indexOf("data-rhythm-best")).toBeGreaterThan(
-      html.indexOf("Mais</span>")
-    );
+  it("has no best-day line and no ranges in reais at rest: the ranges are in the (i) and the title of the legend", () => {
+    const html = render({ saturdays: true });
+    expect(html).not.toContain("data-rhythm-best");
+    expect(textBetweenTags(html)).not.toContain("Vazio: sem venda");
+    expect(html).toContain('title="Vazio: sem venda · até ');
+    expect(textBetweenTags(html)).toContain("Menos");
+    expect(textBetweenTags(html)).toContain("Mais");
   });
 
-  it("has no best-day line when no day sold", () => {
-    expect(render({ sold: false })).not.toContain("data-rhythm-best");
-  });
-
-  it("masks the amounts of the reading and of the best-day line with the values hidden, and keeps the summary as it is", () => {
+  it("masks the amounts of the legend title with the values hidden, and keeps the summary as it is", () => {
     hiddenValues.hidden = true;
     const html = render();
-    const best = textOf(html, "data-rhythm-best");
-    expect(best).toContain("Melhor dia: 27/06, ");
-    expect(best).not.toContain("541");
-    expect(textOf(html, "data-rhythm-reading")).not.toContain("320,10");
-    expect(textOf(html, "data-rhythm-reading")).toContain("2 vendas");
     expect(html).not.toContain("541,19");
+    expect(html).toContain('title="Vazio: sem venda · até R$ ••••');
     // the summary already says "valor escondido" for the amount
     expect(html).toContain("Melhor dia 27/06, valor escondido.");
   });
