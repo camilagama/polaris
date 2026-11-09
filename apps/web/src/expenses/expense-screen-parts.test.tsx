@@ -76,7 +76,6 @@ const list = (listState: ExpenseListState, status = filters.status) =>
       filters={{ ...filters, status }}
       onEdit={noop}
       onLoadMore={noop}
-      onNew={noop}
       onRestore={noop}
       onRetry={noop}
       onVoid={noop}
@@ -133,13 +132,13 @@ describe("ExpenseList", () => {
     expect(html).not.toContain("Nenhuma despesa");
   });
 
-  it("the empty period is a short sentence with the action as a button, never as a phrase", () => {
+  it("the empty period is a short sentence only: the button that creates is the title line's, and no phrase names it", () => {
     const html = list(state({}));
     const title = EMPTY_TITLE.exec(html)?.[1];
     expect(title).toBe("Nenhuma despesa neste período.");
     expect(title?.length).toBeLessThanOrEqual(EMPTY_TITLE_MAX);
-    expect(html).toContain("<button");
-    expect(html).toContain("Nova despesa");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("Nova despesa");
     expect(html).not.toContain("Toque em");
     expect(html).not.toContain("para registrar a primeira");
   });

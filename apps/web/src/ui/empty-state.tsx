@@ -21,9 +21,11 @@ interface EmptyStateProps {
 }
 
 /**
- * The empty state of a list or a period: a sentence, an optional line of support and the action as a button, never as
- * a phrase ("Toque em…"): a phrase that names a button is read and not pressed, and it disagrees with the title bar's
- * own button as soon as that one changes its name.
+ * The empty state of a list or a period: a sentence, an optional line of support and, where the screen has no create
+ * button on its title line, the action as a button, never as a phrase ("Toque em…"): a phrase that names a button is
+ * read and not pressed, and it disagrees with the title bar's own button as soon as that one changes its name. A
+ * screen whose title line always holds the button leaves the action out, so the button that appears with the empty
+ * list does not move the page.
  */
 export function EmptyState({
   afterRead = false,

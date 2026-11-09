@@ -16,6 +16,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import { expectSamePlaces, placesOf } from "./same-place";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
@@ -475,9 +476,9 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   ]);
   expect(title.length).toBeLessThanOrEqual(60);
   expect(support.length).toBeLessThanOrEqual(100);
-  // the empty list carries the one button that opens the form
+  // the one button that opens the form is the header's; the empty list only says what is missing
   await expect(page.getByRole("button", { name: "Nova meta" })).toHaveCount(1);
-  await expect(empty.getByRole("button", { name: "Nova meta" })).toBeVisible();
+  await expect(empty.getByRole("button")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
   // no goal in progress: the tab has no count (AC-13)
   await expect(
@@ -1367,6 +1368,58 @@ test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de
   await expect(newButton).toHaveCount(1);
   expect(await heightOf()).toBe(whileReading);
 });
+
+const GOALS_TAB = /^Metas/;
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`Metas a ${viewport.name} px: o título, a aba e o botão Nova meta ficam no mesmo lugar (até 1 px) lendo, com metas e vazio, e o botão é um só`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(viewport);
+    const server = new FakeGoalServer();
+    server.seed({ kind: "net_sales", name: "Lida devagar", target: "1000.00" });
+    let release: (() => void) | undefined;
+    server.listGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openGoals(page, server);
+    const region = page.getByRole("region", { exact: true, name: "Metas" });
+    const parts = {
+      button: region.getByRole("button", { name: "Nova meta" }),
+      heading: region.getByRole("heading", { exact: true, name: "Metas" }),
+      screenTitle: page.getByRole("heading", {
+        exact: true,
+        includeHidden: true,
+        level: 1,
+        name: "Resultado",
+      }),
+      tab: page.getByRole("tab", { name: GOALS_TAB }),
+    };
+    const newButtons = page.getByRole("button", { name: "Nova meta" });
+
+    await expect(region.getByText("Carregando as metas…")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    const reading = await placesOf(parts);
+
+    release?.();
+    await expect(card(page, "Lida devagar")).toContainText("Em andamento");
+    await expect(newButtons).toHaveCount(1);
+    expectSamePlaces("com metas", reading, await placesOf(parts));
+
+    server.goals.length = 0;
+    await page.getByRole("button", { name: "Atualizar metas" }).click();
+    await expect(page.getByText("Nenhuma meta ainda")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    await expect(
+      page.getByRole("status").filter({ hasText: "Nenhuma meta ainda" })
+    ).not.toContainText("Nova meta");
+    expectSamePlaces("vazio", reading, await placesOf(parts));
+  });
+}
 
 /** Remembers, in the page, whether an alert ever showed: the screen must not pass through the error. */
 async function watchAlerts(page: Page) {

@@ -2,6 +2,7 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { axeFaults } from "../e2e-pwa/ui-guardrails";
+import { FORM_VIEWPORTS } from "./date-pickers";
 import { activateByKeyboard, expectFocusRing } from "./focus-ring";
 import {
   expectFormDialogLayout,
@@ -9,6 +10,7 @@ import {
   FORM_WIDTHS,
   sizeFor,
 } from "./form-dialog-checks";
+import { expectSamePlaces, placesOf } from "./same-place";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveHealth, WORKER_MARK } from "./worker-mark";
 
@@ -654,7 +656,7 @@ for (const width of FORM_WIDTHS) {
   });
 }
 
-test("Clientes: a lista vazia é a frase curta e traz o botão que abre o formulário, um só", async ({
+test("Clientes: a lista vazia é só a frase curta, e o único Novo cliente é o do título, que abre o formulário", async ({
   page,
 }) => {
   await openScreen(page, "/customers", "Clientes", {
@@ -664,6 +666,7 @@ test("Clientes: a lista vazia é a frase curta e traz o botão que abre o formul
   await expect(empty.getByText("Nenhum cliente ainda.")).toBeVisible();
   await expect(page.getByText("Cadastre o primeiro")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
+  await expect(empty.getByRole("button")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Novo cliente" })).toHaveCount(
     1
   );
@@ -671,7 +674,60 @@ test("Clientes: a lista vazia é a frase curta e traz o botão que abre o formul
   await expect(
     page.getByRole("dialog", { name: "Novo cliente" })
   ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Novo cliente" })
+  ).toBeFocused();
 });
+
+for (const viewport of FORM_VIEWPORTS) {
+  test(`Clientes a ${viewport.name} px: o título, a busca, as abas e o botão ficam no mesmo lugar (até 1 px) lendo, com clientes e vazio, e o botão é um só`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(viewport);
+    let rows = [customer(1, "Ana Lima")];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openScreen(page, "/customers", "Clientes", {
+      "customer/list": async (route) => {
+        await gate;
+        await route.fulfill(rpc({ customers: rows }));
+      },
+    });
+    const parts = {
+      button: page.getByRole("button", { name: "Novo cliente" }),
+      search: page.getByLabel("Buscar cliente"),
+      tabs: page.getByRole("tablist", { name: "Estado dos clientes" }),
+      title: page.getByRole("heading", {
+        exact: true,
+        level: 1,
+        name: "Clientes",
+      }),
+    };
+
+    await expect(page.getByText("Carregando clientes…")).toBeVisible();
+    await expect(parts.button).toHaveCount(1);
+    const reading = await placesOf(parts);
+
+    release();
+    await expect(page.locator("[data-customer-id]")).toHaveCount(1);
+    await expect(parts.button).toHaveCount(1);
+    expectSamePlaces("com clientes", reading, await placesOf(parts));
+
+    rows = [];
+    await page.reload();
+    await expect(page.getByText("Nenhum cliente ainda.")).toBeVisible();
+    await expect(parts.button).toHaveCount(1);
+    expectSamePlaces("vazio", reading, await placesOf(parts));
+  });
+}
 
 test("Clientes: a linha não traz observações nem a data, e o editor traz a data e as observações", async ({
   page,

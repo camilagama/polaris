@@ -85,28 +85,24 @@ function dropPreviousWindow(organizationId: string, competences: string[]) {
 function Heading({
   busy,
   onNew,
-  showNew,
 }: {
   busy: boolean;
   onNew: (event: MouseEvent<HTMLButtonElement>) => void;
-  showNew: boolean;
 }) {
   return (
     <header className="grid gap-1">
       <TitleLine
         action={
-          showNew ? (
-            <Button
-              className={TITLE_ACTION_CLASS}
-              data-expense-new=""
-              disabled={busy}
-              onClick={onNew}
-              type="button"
-            >
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              Nova despesa
-            </Button>
-          ) : null
+          <Button
+            className={TITLE_ACTION_CLASS}
+            data-expense-new=""
+            disabled={busy}
+            onClick={onNew}
+            type="button"
+          >
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
+            Nova despesa
+          </Button>
         }
       >
         <div className="flex items-center gap-1">
@@ -298,14 +294,6 @@ export function ExpensesPage() {
     },
     [openForm, selectView, view]
   );
-  // the empty list carries the one "Nova despesa" (as Clientes does); while it is read, or when the list is on
-  // another part of the screen, the title bar's button stays
-  const emptyListHasNew =
-    view === "lancamentos" &&
-    !state.isLoading &&
-    state.error === null &&
-    state.expenses.length === 0 &&
-    filters.status !== "voided";
   const handleMonth = useCallback(
     (month: string) =>
       setChoices((current) => ({ ...current, chosenMonth: month })),
@@ -340,11 +328,7 @@ export function ExpensesPage() {
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <Heading
-        busy={busy !== null}
-        onNew={handleNew}
-        showNew={!emptyListHasNew}
-      />
+      <Heading busy={busy !== null} onNew={handleNew} />
       {categories.state.error ? (
         <LoadError
           busy={categories.state.isLoading}
@@ -426,7 +410,6 @@ export function ExpensesPage() {
                 filters={filters}
                 onEdit={openForm}
                 onLoadMore={loadMore}
-                onNew={handleNew}
                 onRestore={handleRestore}
                 onRetry={handleRetry}
                 onVoid={handleVoid}
