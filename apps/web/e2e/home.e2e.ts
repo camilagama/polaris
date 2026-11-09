@@ -3666,7 +3666,8 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       await expect(atRest(page)).toHaveText(AT_REST);
       await settled(page);
       const ready = await placeOf(rhythm(page));
-      expect(Math.abs(ready.height - reserved)).toBeLessThanOrEqual(2);
+      // a touch device draws the 44 px hit area of "Ver os números" a few pixels taller
+      expect(Math.abs(ready.height - reserved)).toBeLessThanOrEqual(4);
 
       // a day read swaps the line over the map and moves nothing
       await dataCells(page)
