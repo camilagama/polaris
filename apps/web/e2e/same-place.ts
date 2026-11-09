@@ -3,7 +3,7 @@ import type { Locator } from "@playwright/test";
 import { expect } from "@playwright/test";
 
 /** The most a fixed part of a screen may move between two states of its list, in pixels. */
-export const SAME_PLACE = 1;
+const SAME_PLACE = 1;
 
 export type Places = Record<string, { left: number; top: number }>;
 
