@@ -23,6 +23,9 @@ import {
 /* A label longer than the card at a large browser font breaks into lines instead of widening the card. */
 export const WRAPS = "h-auto min-h-ctl-md whitespace-normal py-1.5";
 
+/* The main action of the tab: the same wrapping, with the floor of the `xl` size (36 with a mouse, 44 with touch). */
+export const WRAPS_XL = "h-auto min-h-ctl-xl whitespace-normal py-1.5";
+
 /** The heading of a card that names a section of the screen (the card title is a div, as in the registry). */
 export function SectionTitle({
   children,

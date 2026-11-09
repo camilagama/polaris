@@ -1074,6 +1074,42 @@ test("pausar uma despesa recorrente a esconde, e retomar não lança os período
   await expect(listedExpense(page, "Assinatura do sistema")).toHaveCount(1);
 });
 
+for (const viewport of FORM_VIEWPORTS) {
+  test(`o passador de mês e o seletor de categoria, a ${viewport.name} px: os quatro controles da linha têm a altura de campo`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    await openExpenses(page, new FakeExpenseServer());
+
+    const heights = async (locators: Locator[]) =>
+      Promise.all(
+        locators.map(async (locator) => {
+          const box = await locator.boundingBox();
+          expect(box).not.toBeNull();
+          return Math.round((box?.height ?? 0) * 100) / 100;
+        })
+      );
+    const [previous, trigger, next, categoryField] = await heights([
+      page.getByRole("button", { name: "Mês anterior" }),
+      page.locator("#expense-month"),
+      page.getByRole("button", { name: "Próximo mês" }),
+      page.getByRole("combobox", { exact: true, name: "Categoria" }),
+    ]);
+    const touch = await page.evaluate(
+      (width) => matchMedia("(pointer: coarse)").matches || width < 760,
+      viewport.width
+    );
+    const field = touch ? 44 : 32;
+    expect([previous, trigger, next, categoryField]).toEqual([
+      field,
+      field,
+      field,
+      field,
+    ]);
+  });
+}
+
 /** Opens the screen and records the month of every list the screen asks for. */
 async function openExpensesWatchingMonths(page: Page) {
   await page.clock.setFixedTime(new Date(NOW));
