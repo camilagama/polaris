@@ -64,7 +64,7 @@ function ActionMessages({ error, notice }: ActionFeedback) {
           <p className="mt-2 flex items-start gap-1.5 font-medium text-support">
             <CircleCheckIcon
               aria-hidden="true"
-              className="mt-px size-3.5 shrink-0"
+              className="mt-px size-4 shrink-0"
             />
             {notice}
           </p>
@@ -75,7 +75,7 @@ function ActionMessages({ error, notice }: ActionFeedback) {
           <p className="mt-2 flex items-start gap-1.5 font-medium text-destructive text-support">
             <CircleAlertIcon
               aria-hidden="true"
-              className="mt-px size-3.5 shrink-0"
+              className="mt-px size-4 shrink-0"
             />
             {error}
           </p>

@@ -76,6 +76,7 @@ const list = (listState: ExpenseListState, status = filters.status) =>
       filters={{ ...filters, status }}
       onEdit={noop}
       onLoadMore={noop}
+      onNew={noop}
       onRestore={noop}
       onRetry={noop}
       onVoid={noop}

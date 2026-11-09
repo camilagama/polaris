@@ -97,9 +97,11 @@ describe("the list of customers", () => {
     expect(sentence?.length).toBeLessThanOrEqual(60);
     // the form is not on the page: the empty list carries the button that opens it
     expect(empty).toContain("Novo cliente</button>");
-    expect(render({ customers: [], status: "archived", total: 0 })).toContain(
-      "Nenhum cliente arquivado."
-    );
+    const archived = render({ customers: [], status: "archived", total: 0 });
+    expect(archived).toContain("Nenhum cliente arquivado.");
+    expect(archived).toContain("data-empty-state");
+    expect(archived).toContain('role="status"');
+    expect(archived).not.toContain("<button");
   });
 
   it("says what was searched when no customer matches, instead of saying there are none", () => {

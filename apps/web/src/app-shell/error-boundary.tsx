@@ -92,7 +92,7 @@ export class ErrorBoundary extends Component<
         icon={
           <TriangleAlertIcon
             aria-hidden="true"
-            className="size-5 shrink-0 text-destructive"
+            className="size-4 shrink-0 text-destructive"
           />
         }
         title="Algo deu errado nesta tela"

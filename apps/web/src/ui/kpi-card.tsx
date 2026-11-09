@@ -410,13 +410,7 @@ export function DeltaChip({
         )}
         data-kpi-pill=""
       >
-        {Icon ? (
-          <Icon
-            aria-hidden="true"
-            className="size-3 shrink-0"
-            strokeWidth={2.5}
-          />
-        ) : null}
+        {Icon ? <Icon aria-hidden="true" className="size-3 shrink-0" /> : null}
         {chipText(delta, name !== undefined, hidden)}
       </span>
       {delta.against ? (

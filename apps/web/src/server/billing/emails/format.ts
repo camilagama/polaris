@@ -5,7 +5,7 @@ import { formatBrlAmount } from "../../../lib/format";
 import { formatCalendarDate } from "../../privacy/closure-notice-email";
 
 /**
- * The pieces of text the e-mails of the billing cycle share (corte `emails-ciclo-cobranca`, variables of the drafts):
+ * The pieces of text the e-mails of the billing cycle share (variables of the drafts):
  * the dates in the store's calendar, the amount as the record holds it, the cycle and the method. Nothing here reads
  * a clock: the day a notice speaks of is its own (`dueAt`), so a retry renders the same message.
  */

@@ -47,7 +47,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
     <>
       <span
         aria-hidden="true"
-        className="@max-[17.9rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full bg-muted font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid"
+        className={`@max-[17.9rem]:hidden hidden size-8 shrink-0 place-items-center rounded-full font-medium text-muted-foreground text-xs md:size-9 min-[22.5rem]:grid ${row.customerInitials ? "bg-muted" : ""}`}
       >
         {row.customerInitials}
       </span>
@@ -89,7 +89,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
       {chevron ? (
         <ChevronRightIcon
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-muted-foreground md:size-4"
+          className="size-4 shrink-0 text-muted-foreground"
         />
       ) : null}
     </>
