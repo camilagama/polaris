@@ -585,38 +585,55 @@ const goalsRegion = (page: Page) =>
   page.getByRole("region", { exact: true, name: "Metas" });
 const chainRow = (page: Page, label: string) =>
   chain(page).locator("tbody tr").filter({ hasText: label });
-const preset = (page: Page, name: string) =>
-  page.getByRole("button", { exact: true, name });
+const shortcut = (page: Page, name: string) =>
+  page
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name });
 const CHART_REGION_NAME = /^Vendas × custos por (dia|mês)$/;
 const chartRegion = (page: Page) =>
   page.getByRole("region", { name: CHART_REGION_NAME });
-/** A phone (the Pixel 5 project too) has the periods in a Select; from 768 px they are a strip of buttons. */
-const compact = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
-const periodSelect = (page: Page) =>
-  page.getByRole("combobox", { name: "Período" });
-/** What is on screen to choose the period: the Select on a phone, "Este mês" of the strip otherwise. */
-const periodChoice = (page: Page) =>
-  compact(page) ? periodSelect(page) : preset(page, "Este mês");
+const PERIOD_BUTTON_NAME = /^Período: .+, editar$/;
+const periodButton = (page: Page) =>
+  page.getByRole("button", { name: PERIOD_BUTTON_NAME });
+const periodPanel = (page: Page) =>
+  page.getByRole("dialog", { name: "Período" });
+const periodChoice = periodButton;
+async function openPeriod(page: Page) {
+  await periodButton(page).click();
+  await expect(periodPanel(page)).toBeVisible();
+}
 async function choosePreset(page: Page, name: string) {
-  if (compact(page)) {
-    await periodSelect(page).click();
-    await page.getByRole("option", { exact: true, name }).click();
-    return;
-  }
-  await preset(page, name).click();
+  await openPeriod(page);
+  await shortcut(page, name).click();
+  await expect(periodPanel(page)).toHaveCount(0);
 }
 async function expectPreset(page: Page, name: string) {
-  if (compact(page)) {
-    await expect(periodSelect(page)).toContainText(name);
-    return;
+  await openPeriod(page);
+  if (name === "Período") {
+    await Promise.all(
+      ["Este mês", "Mês passado", "Últimos 30 dias", "Este ano"].map((other) =>
+        expect(shortcut(page, other)).toHaveAttribute("aria-pressed", "false")
+      )
+    );
+  } else {
+    await expect(shortcut(page, name)).toHaveAttribute("aria-pressed", "true");
   }
-  await expect(preset(page, name)).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(periodPanel(page)).toHaveCount(0);
+}
+const ptDate = (iso: string) => iso.split("-").reverse().join("/");
+/** `AAAA-MM-DD` in, `dd/mm/aaaa` typed. */
+async function typeRange(page: Page, from: string, to: string) {
+  const panel = periodPanel(page);
+  await panel.getByRole("button", { name: "Digitar as datas" }).click();
+  await panel.getByLabel("Início", { exact: true }).fill(ptDate(from));
+  await panel.getByLabel("Fim", { exact: true }).fill(ptDate(to));
 }
 const rangeFields = async (page: Page, from: string, to: string) => {
-  await choosePreset(page, "Período");
-  await page.getByLabel("De", { exact: true }).fill(from);
-  await page.getByLabel("Até", { exact: true }).fill(to);
-  await page.getByRole("button", { name: "Ver período" }).click();
+  await openPeriod(page);
+  await typeRange(page, from, to);
+  await periodPanel(page).getByRole("button", { name: "Aplicar" }).click();
+  await expect(periodPanel(page)).toHaveCount(0);
 };
 
 test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
@@ -1060,6 +1077,33 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
 
+test("sem conexão, Este ano só abre com internet, como os Últimos 30 dias, e o mês lido segue com a cópia (AC-1.3)", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+
+  server.networkDown = true;
+  await choosePreset(page, "Este ano");
+  await expectPreset(page, "Este ano");
+  await expect(page.getByRole("alert")).toContainText(
+    "Este período só abre com internet.",
+    { timeout: 15_000 }
+  );
+  await expect(page.getByRole("alert")).not.toContainText(
+    "Sem internet e sem números guardados"
+  );
+  await expect(kpiCards(page)).toHaveCount(0);
+  await expect(copyNotice(page)).toHaveCount(0);
+
+  await choosePreset(page, "Este mês");
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+});
+
 test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mostra o servidor", async ({
   page,
 }) => {
@@ -1433,30 +1477,36 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
     const asked = server.periods.length;
 
-    await choosePreset(page, "Período");
-    await page.getByLabel("De", { exact: true }).fill("2026-10-10");
-    await page.getByLabel("Até", { exact: true }).fill("2026-10-09");
-    await page.getByRole("button", { name: "Ver período" }).click();
-    await expect(page.getByRole("alert")).toContainText(
-      "A data inicial vem depois da final."
+    await openPeriod(page);
+    const panel = periodPanel(page);
+    await typeRange(page, "2026-10-10", "2026-10-09");
+    await panel.getByLabel("Início", { exact: true }).focus();
+    await expect(panel.getByRole("alert")).toContainText(
+      "A data final vem antes da inicial."
     );
 
-    await page.getByLabel("De", { exact: true }).fill("2025-10-13");
-    await page.getByLabel("Até", { exact: true }).fill("2026-10-14");
-    await page.getByRole("button", { name: "Ver período" }).click();
-    await expect(page.getByRole("alert")).toContainText("Escolha até 1 ano.");
+    await panel.getByLabel("Início", { exact: true }).fill("13/10/2025");
+    await panel.getByLabel("Fim", { exact: true }).fill("14/10/2026");
+    await panel.getByLabel("Início", { exact: true }).focus();
+    await expect(panel.getByRole("alert")).toContainText("Escolha até 1 ano.");
+    const apply = panel.getByRole("button", { name: "Aplicar" });
+    await expect(apply).toHaveAttribute("aria-disabled", "true");
+    await apply.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toBeVisible();
 
-    await page.getByLabel("De", { exact: true }).fill("");
-    await page.getByRole("button", { name: "Ver período" }).click();
-    await expect(page.getByRole("alert")).toContainText(
-      "Escolha a data inicial e a final."
+    await panel.getByLabel("Início", { exact: true }).fill("");
+    await panel.getByLabel("Fim", { exact: true }).focus();
+    await expect(panel.getByRole("alert")).toContainText(
+      "Digite a data de início, como 01/10/2026."
     );
     expect(server.periods).toHaveLength(asked);
     // and the period on screen is still the one it was
+    await page.keyboard.press("Escape");
     await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   });
 
-  test("com o formulário De/Até aberto o seletor diz Período, válido ou não, e volta ao período escolhido ao fechar", async ({
+  test("abrir o painel e errar uma data não troca o período: o atalho continua apertado e o botão diz as datas lidas", async ({
     page,
   }) => {
     const server = new FakeReportServer();
@@ -1466,28 +1516,186 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect
       .poll(() => server.periods.at(-1))
       .toEqual({ from: "2026-01-01", to: "2026-10-14" });
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 01/01 a 14/10, editar"
+    );
     const asked = server.periods.length;
 
-    await choosePreset(page, "Período");
-    await expectPreset(page, "Período");
-    await page.getByLabel("De", { exact: true }).fill("2025-10-13");
-    await page.getByLabel("Até", { exact: true }).fill("2026-10-14");
-    await page.getByRole("button", { name: "Ver período" }).click();
-    await expect(page.getByRole("alert")).toContainText("Escolha até 1 ano.");
-    await expectPreset(page, "Período");
-    if (!compact(page)) {
-      await expect(preset(page, "Este ano")).toHaveAttribute(
-        "aria-pressed",
-        "false"
-      );
-    }
+    await openPeriod(page);
+    await typeRange(page, "2025-10-13", "2026-10-14");
+    await expect(shortcut(page, "Este ano")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await page.keyboard.press("Escape");
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 01/01 a 14/10, editar"
+    );
     expect(server.periods).toHaveLength(asked);
 
     await choosePreset(page, "Este mês");
     await expectPreset(page, "Este mês");
+  });
+
+  test("o Resultado não tem campo de data do navegador nem o botão Ver período, e o painel tem os quatro atalhos", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 01/10 a 31/10, editar"
+    );
+    await openPeriod(page);
+    expect(await page.locator("input[type=date]").count()).toBe(0);
+    await expect(page.getByRole("button", { name: "Ver período" })).toHaveCount(
+      0
+    );
     await expect(
-      page.getByRole("form", { name: "Escolher o período" })
+      page
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button")
+    ).toHaveText(["Este mês", "Mês passado", "Últimos 30 dias", "Este ano"]);
+    await expect(shortcut(page, "Este mês")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(
+      periodPanel(page).getByRole("button", { name: "Limpar" })
     ).toHaveCount(0);
+  });
+
+  test("o dia além de um ano fica desligado e diz o motivo; o limite exato abre", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await openPeriod(page);
+    const panel = periodPanel(page);
+    // the first day marked: the calendar shows the month of that day, a year later it is a month the arrows reach
+    await panel.getByRole("gridcell").first().waitFor();
+    await panel.locator('button[data-day="2026-10-14"]').click();
+    const previous = panel.getByRole("button", { name: "Mês anterior" });
+    await Array.from({ length: 12 }).reduce<Promise<void>>(
+      (done) => done.then(() => previous.click()),
+      Promise.resolve()
+    );
+    const edge = panel.locator('button[data-day="2025-10-14"]');
+    const beyond = panel.locator('button[data-day="2025-10-13"]');
+    await expect(beyond).toHaveAttribute("aria-disabled", "true");
+    const reason = await beyond.getAttribute("aria-describedby");
+    expect(reason).not.toBeNull();
+    await expect(panel.locator(`[id="${reason}"]`)).toHaveText(
+      "Escolha até 1 ano."
+    );
+    await expect(edge).not.toHaveAttribute("aria-disabled", "true");
+    await edge.click();
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({
+        from: "2025-10-14",
+        to: "2026-10-14",
+      });
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 14/10/2025 a 14/10/2026, editar"
+    );
+  });
+
+  test("pelo teclado, as setas páram no último dia do limite; o dia além dele está desligado com o motivo ligado, e Enter nele não aplica", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await openPeriod(page);
+    const panel = periodPanel(page);
+    await panel.getByRole("gridcell").first().waitFor();
+    const day = (iso: string) => panel.locator(`button[data-day="${iso}"]`);
+
+    await day("2026-10-14").focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toContainText(
+      "Início 14/10/2026. Escolha o último dia."
+    );
+
+    // a year back by the keys, then one more day back: the focus stays on the last day the limit allows
+    await page.keyboard.press("Shift+PageUp");
+    const edge = day("2025-10-14");
+    await expect(edge).toBeFocused();
+    await expect(edge).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowRight");
+    await expect(day("2025-10-15")).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(edge).toBeFocused();
+
+    // the day beyond is turned off and carries the reason, which a screen reader in browse mode reads and activates
+    const beyond = day("2025-10-13");
+    await expect(beyond).toHaveAttribute("aria-disabled", "true");
+    const reason = await beyond.getAttribute("aria-describedby");
+    expect(reason).not.toBeNull();
+    await expect(panel.locator(`[id="${reason}"]`)).toHaveText(
+      "Escolha até 1 ano."
+    );
+    await expect(beyond).toHaveAccessibleDescription("Escolha até 1 ano.");
+    await beyond.focus();
+    await expect(beyond).toBeFocused();
+    const asked = server.periods.length;
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(
+      "Início 14/10/2026. Escolha o último dia."
+    );
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 01/10 a 31/10, editar"
+    );
+    expect(server.periods).toHaveLength(asked);
+
+    // the last day of the limit still applies by the keys
+    await edge.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toHaveCount(0);
+    await expect
+      .poll(() => server.periods.slice(asked))
+      .toEqual([{ from: "2025-10-14", to: "2026-10-14" }]);
+  });
+
+  test("teclado: o botão abre o painel, o foco entra nele e volta ao botão ao fechar; sem falha de axe", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await periodButton(page).focus();
+    await page.keyboard.press("Enter");
+    await expect(periodPanel(page)).toBeVisible();
+    expect(await axeFaults(page, '[role="dialog"]')).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(periodPanel(page)).toHaveCount(0);
+    await expect(periodButton(page)).toBeFocused();
+
+    await periodButton(page).press("Space");
+    await shortcut(page, "Mês passado").focus();
+    await page.keyboard.press("Enter");
+    await expect(periodPanel(page)).toHaveCount(0);
+    await expect(periodButton(page)).toBeFocused();
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 01/09 a 30/09, editar"
+    );
+    expect(await axeFaults(page, "main")).toEqual([]);
+  });
+
+  test("quem digita um período livre continua podendo: o Resultado lê as datas digitadas", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await rangeFields(page, "2026-10-05", "2026-10-12");
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2026-10-05", to: "2026-10-12" });
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 05/10 a 12/10, editar"
+    );
+    await expectPreset(page, "Período");
   });
 
   test("enquanto lê outro período, mantém os números de antes marcados como tal, e um erro nunca deixa os de antes com o nome do novo", async ({
@@ -1607,26 +1815,24 @@ test.describe("as abas Resultado e Metas e o endereço (AC-13 a AC-15)", () => {
 });
 
 test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
-  test("a 360 px, o período é um seletor e a tabela dos dias vira um cartão por dia, sem rolar de lado", async ({
+  test("a 360 px, o período é o seletor do projeto e a tabela dos dias vira um cartão por dia, sem rolar de lado", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     const server = new FakeReportServer();
     await openDashboard(page, server);
 
-    // a Select, no lugar dos botões lado a lado
-    const select = page.getByRole("combobox", { name: "Período" });
-    await expect(select).toBeVisible();
-    await expect(preset(page, "Mês passado")).toHaveCount(0);
-    await select.click();
-    await page.getByRole("option", { name: "Mês passado" }).click();
+    await expect(periodButton(page)).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Período" })).toHaveCount(
+      0
+    );
+    await choosePreset(page, "Mês passado");
     await expect(chartRegion(page)).toContainText("1 a 30 de setembro");
     expect(server.periods.at(-1)).toEqual({
       from: "2026-09-01",
       to: "2026-09-30",
     });
-    await select.click();
-    await page.getByRole("option", { name: "Este mês" }).click();
+    await choosePreset(page, "Este mês");
     await expect(chartRegion(page)).toContainText("1 a 31 de outubro");
 
     // a card for each day: the name of each column beside its value, and "Depois de hoje" in view
@@ -1682,31 +1888,24 @@ test.describe("a tela em um celular e o dia da loja (revisão do PR)", () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 
-  test("o erro do intervalo fica sob o campo Até e é lido com ele", async ({
+  test("o erro do intervalo fica sob o campo Fim e é lido com ele", async ({
     page,
   }) => {
     const server = new FakeReportServer();
     await openDashboard(page, server);
-    await choosePreset(page, "Período");
-    await page.getByLabel("De", { exact: true }).fill("2026-10-10");
-    await page.getByLabel("Até", { exact: true }).fill("2026-10-09");
-    await page.getByRole("button", { name: "Ver período" }).click();
+    await openPeriod(page);
+    await typeRange(page, "2026-10-10", "2026-10-09");
+    const panel = periodPanel(page);
+    await panel.getByLabel("Início", { exact: true }).focus();
 
-    const alert = page.getByRole("alert");
-    await expect(alert).toContainText("A data inicial vem depois da final.");
-    const until = page.getByLabel("Até", { exact: true });
+    const alert = panel.getByRole("alert");
+    await expect(alert).toContainText("A data final vem antes da inicial.");
+    const until = panel.getByLabel("Fim", { exact: true });
     const describedBy = await until.getAttribute("aria-describedby");
     expect(describedBy).toBe(await alert.getAttribute("id"));
-    // under the field, not under the button
     const alertBox = await alert.boundingBox();
     const untilBox = await until.boundingBox();
-    const buttonBox = await page
-      .getByRole("button", { name: "Ver período" })
-      .boundingBox();
     expect(alertBox?.y ?? 0).toBeGreaterThan(untilBox?.y ?? 0);
-    expect(alertBox?.x ?? 999).toBeLessThan(
-      (buttonBox?.x ?? 0) + (buttonBox?.width ?? 0)
-    );
     await expect(until).toHaveAttribute("aria-invalid", "true");
   });
 

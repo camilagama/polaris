@@ -307,6 +307,14 @@ function expectNoStepsAnnounced(frames: Frame[]) {
   }
 }
 
+const PERIOD_BUTTON_NAME = /^Período: .+, editar$/;
+
+/** The sampler starts after the panel is open, so it sees only the change. */
+async function openPeriod(page: Page): Promise<void> {
+  await page.getByRole("button", { name: PERIOD_BUTTON_NAME }).click();
+  await expect(page.getByRole("dialog", { name: "Período" })).toBeVisible();
+}
+
 function nearest(frames: Frame[], t: number): Frame {
   return frames.reduce((best, frame) =>
     Math.abs(frame.t - t) < Math.abs(best.t - t) ? frame : best
@@ -592,13 +600,14 @@ for (const width of [900, 1280, 1600]) {
     await expect(
       page.getByRole("region", { name: SALES_OF_MONTH })
     ).toContainText("R$ 90,00");
+    await openPeriod(page);
     await page.evaluate(
       startSampler,
       sampler(RESULTADO_OUTSIDE, SWITCH_SAMPLE_MS)
     );
     await page
-      .getByRole("group", { name: "Período" })
-      .getByRole("button", { name: "Últimos 30 dias" })
+      .getByRole("group", { name: "Atalhos do período" })
+      .getByRole("button", { exact: true, name: "Últimos 30 dias" })
       .click();
     await expect(page.locator("[data-kpi-delta]").first()).toContainText("%");
     const frames = await readFrames(page);
@@ -731,13 +740,14 @@ test("pedaço do contador lento: o valor final está no primeiro quadro, o peda�
   expectNoStepsAnnounced(frames);
   expectFiguresStayedPut(frames);
 
+  await openPeriod(page);
   await page.evaluate(
     startSampler,
     sampler(RESULTADO_OUTSIDE, SWITCH_SAMPLE_MS)
   );
   await page
-    .getByRole("group", { name: "Período" })
-    .getByRole("button", { name: "Últimos 30 dias" })
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "Últimos 30 dias" })
     .click();
   await expect(page.locator("[data-kpi-delta]").first()).toContainText("%");
   const next = await readFrames(page);
@@ -774,13 +784,14 @@ test("resultado: ao trocar de período o contador sai do valor anterior para o n
   await page.goto("/dashboard");
   const sales = page.getByRole("region", { name: SALES_OF_MONTH });
   await expect(sales).toContainText("R$ 90,00");
+  await openPeriod(page);
   await page.evaluate(
     startSampler,
     sampler(RESULTADO_OUTSIDE, SWITCH_SAMPLE_MS)
   );
   await page
-    .getByRole("group", { name: "Período" })
-    .getByRole("button", { name: "Mês passado" })
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "Mês passado" })
     .click();
   await expect(
     page.getByRole("region", { name: SALES_OF_PERIOD }).first()
@@ -833,10 +844,11 @@ test("valores escondidos: nenhum dígito de valor passa pelo DOM na troca de per
     page.getByRole("button", { name: "Esconder valores" })
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-kpi-value]").first()).toContainText("R$");
+  await openPeriod(page);
   await page.evaluate(startSampler, sampler([], SWITCH_SAMPLE_MS));
   await page
-    .getByRole("group", { name: "Período" })
-    .getByRole("button", { name: "Mês passado" })
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "Mês passado" })
     .click();
   const frames = await readFrames(page);
   let moneyFrames = 0;

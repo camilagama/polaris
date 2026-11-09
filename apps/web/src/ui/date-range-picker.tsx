@@ -18,6 +18,7 @@ import { OnDemandCalendar, warmCalendar } from "@/ui/calendar-on-demand";
 import {
   type DateRange,
   type DraftRange,
+  daysInRange,
   formatDate,
   formatRange,
   type IsoDate,
@@ -27,8 +28,8 @@ import {
   parseIsoDate,
   parseTypedDate,
   presetRange,
-  RANGE_PRESETS,
   type RangePreset,
+  type RangeSpan,
   todayOr,
   toIsoDate,
   type TypedField,
@@ -38,12 +39,15 @@ import {
   typedTextsOf,
   validRange,
 } from "@/ui/date-values";
+import { DEFAULT_SHORTCUTS, shortcutsOf } from "@/ui/date-range-shortcuts";
 import { FieldError } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 
 export interface DateRangePickerProps {
+  /** The verb that ends the accessible name of the button, for a screen where the period is always set: "Período: 01/10 a 24/10, editar". */
+  action?: string | undefined;
   className?: string | undefined;
   /** The id of a help text the screen shows under the button, read after the error. */
   describedBy?: string | undefined;
@@ -53,11 +57,20 @@ export interface DateRangePickerProps {
   id?: string | undefined;
   /** The name of the field, in the accessible name of the button: "Período, 01/10 a 24/10". */
   label: string;
-  onValueChange: (value: DateRange | null) => void;
+  /** The range chosen, or null for "Limpar"; `shortcut` says which one when a shortcut gave it. */
+  onValueChange: (value: DateRange | null, shortcut?: RangePreset) => void;
+  /** The shortcut shown as pressed, for a screen whose range is not exactly the one the shortcut gives (the Resultado reads the whole month); null for none. */
+  pressed?: RangePreset | null | undefined;
+  /** The shortcuts to show (`date-range-shortcuts.ts`): the four of the filters when absent. */
+  shortcuts?: readonly RangePreset[] | undefined;
+  /** The longest range the screen reads: a day that would make a longer one is off, and says why. */
+  span?: RangeSpan | undefined;
   /** The store's day (the screen takes it from the server); the device's day when absent. */
   today?: IsoDate | undefined;
   /** The chosen range, both ends `AAAA-MM-DD`, or null. */
   value: DateRange | null;
+  /** Whether the panel offers "Limpar"; a screen that always has a period turns it off. */
+  clearable?: boolean | undefined;
 }
 
 function useTwoMonths(): boolean {
@@ -272,11 +285,12 @@ interface TypedDatesOptions {
   /** The panel sits where the caller applies by a button of its own (the Dialog of a phone): no "Aplicar" here. */
   callerApplies: boolean;
   draft: DraftRange | undefined;
-  onCommit: (range: DateRange | null) => void;
+  onCommit: (range: DateRange | null, shortcut?: RangePreset) => void;
   setDraft: (draft: DraftRange | undefined) => void;
   /** Brings the calendar to the month of a draft the person typed. */
   setMonth: (draft: DraftRange) => void;
   statusId: string | undefined;
+  span: RangeSpan | undefined;
   /** The range the caller holds, both ends `AAAA-MM-DD`, or null: where the caller applies, closing the fields goes back to it. */
   value: DateRange | null;
 }
@@ -294,6 +308,7 @@ function useTypedDates({
   onCommit,
   setDraft,
   setMonth,
+  span,
   statusId: statusIdProp,
   value,
 }: TypedDatesOptions) {
@@ -305,7 +320,7 @@ function useTypedDates({
   const anchor = useRef<HTMLDivElement>(null);
   const fromRef = useRef<HTMLInputElement>(null);
   const toRef = useRef<HTMLInputElement>(null);
-  const problems = typedProblems(texts);
+  const problems = typedProblems(texts, span);
   const blank = texts.from === "" && texts.to === "";
   const hasProblem = problems.from !== undefined || problems.to !== undefined;
   const blocksCaller = open && hasProblem && !blank;
@@ -325,9 +340,9 @@ function useTypedDates({
   );
 
   const commit = useCallback(
-    (range: DateRange | null) => {
+    (range: DateRange | null, shortcut?: RangePreset) => {
       adopt(range ?? undefined);
-      onCommit(range);
+      onCommit(range, shortcut);
     },
     [adopt, onCommit]
   );
@@ -336,7 +351,7 @@ function useTypedDates({
     (field: TypedField, text: string) => {
       const next = { ...texts, [field]: maskTypedDate(text) };
       setTexts(next);
-      const range = typedRange(next);
+      const range = typedRange(next, span);
       const from = parseTypedDate(next.from);
       const nextDraft: DraftRange | undefined =
         range ?? (from.ok ? { from: from.iso, to: undefined } : undefined);
@@ -348,7 +363,7 @@ function useTypedDates({
         onCommit(range);
       }
     },
-    [callerApplies, onCommit, setDraft, setMonth, texts]
+    [callerApplies, onCommit, setDraft, setMonth, span, texts]
   );
 
   const focusFirstProblem = useCallback(() => {
@@ -357,13 +372,13 @@ function useTypedDates({
   }, [problems.from]);
 
   const onApply = useCallback(() => {
-    const range = typedRange(texts);
+    const range = typedRange(texts, span);
     if (range) {
       commit(range);
     } else {
       focusFirstProblem();
     }
-  }, [commit, focusFirstProblem, texts]);
+  }, [commit, focusFirstProblem, span, texts]);
 
   const toggle = useCallback(() => {
     // opening shows the draft as the calendar has it, a touched first day included; closing drops what was typed and
@@ -422,30 +437,39 @@ function useTypedDates({
 }
 
 /**
- * What a range editor shows inside a popover: the shortcuts (Hoje · 7 dias · Este mês · Mês passado) above the month and
- * "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
+ * What a range editor shows inside a popover: the shortcuts the screen chose (`date-range-shortcuts.ts`) above the month
+ * and "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
  * hands it to `onCommit`, with the earlier day as the start, so an inverted range ("Até" before "De") cannot be made.
  * A shortcut hands its range over at once and "Limpar" hands over null. Two months side by side from 1280 px, one
  * below. A half-chosen range lives in this component, so closing the popover drops it and every opening starts from
  * `value`. The `DateRangePicker` and the period editor of the filter bar share it.
  */
 export function DateRangePanel({
+  clearable = true,
   onCommit,
   onHalfChange,
+  pressed: pressedProp,
+  shortcuts = DEFAULT_SHORTCUTS,
+  span,
   statusId: statusIdProp,
   today: todayProp,
   value: valueProp,
 }: {
+  clearable?: boolean | undefined;
   /**
    * Called with the closed range, or null for "Limpar"; the caller closes the popover. Where the caller applies by a
    * button of its own it is also called with each typed range that is good, and with null when both fields are emptied.
+   * A shortcut says which one it was.
    */
-  onCommit: (range: DateRange | null) => void;
+  onCommit: (range: DateRange | null, shortcut?: RangePreset) => void;
   /**
    * Called with whether the range cannot be applied yet: only the start is marked, or a typed date has an error. A
    * caller that applies by a button of its own waits; its presence also takes "Aplicar" out of the typed fields.
    */
   onHalfChange?: ((half: boolean) => void) | undefined;
+  pressed?: RangePreset | null | undefined;
+  shortcuts?: readonly RangePreset[] | undefined;
+  span?: RangeSpan | undefined;
   /** The id of the line that says why the range cannot be applied (the last day, or the typed error), for a button that is off while it shows. */
   statusId?: string | undefined;
   today?: IsoDate | undefined;
@@ -459,7 +483,10 @@ export function DateRangePanel({
   const two = useTwoMonths();
   const today = todayOr(todayProp);
   const todayDate = parseIsoDate(today) as Date;
-  const pressed = matchingPreset(value, today);
+  const pressed =
+    pressedProp === undefined
+      ? matchingPreset(value, today, shortcuts)
+      : pressedProp;
   const [month, setMonth] = useState(() =>
     firstMonth(value ?? undefined, todayDate, two)
   );
@@ -469,10 +496,19 @@ export function DateRangePanel({
     onCommit,
     setDraft,
     setMonth: (next) => setMonth(firstMonth(next, todayDate, two)),
+    span,
     statusId: statusIdProp,
     value,
   });
   const { adopt, commit } = typed;
+  const far = useCallback(
+    (day: Date) =>
+      span !== undefined &&
+      draft?.from !== undefined &&
+      draft.to === undefined &&
+      daysInRange(draft.from, toIsoDate(day)) > span.days,
+    [draft, span]
+  );
 
   const half = draft?.from && !draft.to ? draft.from : undefined;
   useEffect(() => {
@@ -494,7 +530,7 @@ export function DateRangePanel({
   const pickPreset = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       const preset = event.currentTarget.dataset.preset as RangePreset;
-      commit(presetRange(preset, today));
+      commit(presetRange(preset, today), preset);
     },
     [commit, today]
   );
@@ -510,7 +546,7 @@ export function DateRangePanel({
     <>
       {/* 16 px down to the month: the 44 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
       <fieldset aria-label="Atalhos do período" className={SHORTCUTS_CLASS}>
-        {RANGE_PRESETS.map((preset) => (
+        {shortcutsOf(shortcuts).map((preset) => (
           <button
             aria-pressed={preset.value === pressed}
             className={SHORTCUT_CLASS}
@@ -536,6 +572,8 @@ export function DateRangePanel({
       >
         <OnDemandCalendar
           autoFocus
+          disabled={span ? far : undefined}
+          disabledReason={span?.reason}
           mode="range"
           month={month}
           numberOfMonths={two ? 2 : 1}
@@ -568,7 +606,7 @@ export function DateRangePanel({
             ? typed.reason
             : half && `Início ${formatDate(half)}. Escolha o último dia.`}
         </p>
-        {value || half ? (
+        {clearable && (value || half) ? (
           <Button onClick={clear} size="sm" variant="ghost">
             Limpar
           </Button>
@@ -583,13 +621,18 @@ export function DateRangePanel({
  * and opens the editor (`DateRangePanel`) in a Popover. Closing with only the start marked keeps the range there was.
  */
 export function DateRangePicker({
+  action,
   className,
+  clearable,
   describedBy,
   disabled,
   error,
   id,
   label,
   onValueChange,
+  pressed,
+  shortcuts,
+  span,
   today: todayProp,
   value: valueProp,
 }: DateRangePickerProps) {
@@ -598,12 +641,13 @@ export function DateRangePicker({
   const [openings, setOpenings] = useState(0);
   const errorId = useId();
   const today = todayOr(todayProp);
-  // the accessible name holds the text the button shows (WCAG 2.5.3): "Período, 01/10 a 24/10"
+  // the accessible name holds the text the button shows (WCAG 2.5.3): "Período, 01/10 a 24/10"; with an action,
+  // "Período: 01/10 a 24/10, editar"
   const text = value ? formatRange(value, today) : "Escolher período";
 
   const commit = useCallback(
-    (range: DateRange | null) => {
-      onValueChange(range);
+    (range: DateRange | null, shortcut?: RangePreset) => {
+      onValueChange(range, shortcut);
       setOpen(false);
     },
     [onValueChange]
@@ -630,7 +674,9 @@ export function DateRangePicker({
                   .join(" ") || undefined
               }
               aria-invalid={error ? true : undefined}
-              aria-label={`${label}, ${text}`}
+              aria-label={
+                action ? `${label}: ${text}, ${action}` : `${label}, ${text}`
+              }
               className="w-full justify-start font-normal sm:w-fit"
               disabled={disabled}
               id={id}
@@ -654,8 +700,12 @@ export function DateRangePicker({
           initialFocus={false}
         >
           <DateRangePanel
+            clearable={clearable}
             key={openings}
             onCommit={commit}
+            pressed={pressed}
+            shortcuts={shortcuts}
+            span={span}
             today={today}
             value={value}
           />
