@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
@@ -1111,6 +1112,19 @@ describe("billing in staging, against the sandboxes only", () => {
       BILLING_SELF_SERVICE_ENABLED: "false",
       WOOVI_REFUND_ENABLED: "false",
     });
+  });
+
+  it("pins the Woovi sandbox webhook key in staging, not the production one", () => {
+    const key = readConfig("web").env.staging.vars.WOOVI_WEBHOOK_PUBLIC_KEYS;
+    const identifier = createHash("sha256")
+      .update(Buffer.from(key, "base64"))
+      .digest("hex");
+    expect(identifier).toBe(
+      "7c8efa31466209cf247d23f6198a61643b8c322a0d80ea6d0a7a54073b2d6e91"
+    );
+    expect(identifier).not.toBe(
+      "9dce618794f8986c603915a51b7029126c260e5cfdb2aa47e131d837fd62311c"
+    );
   });
 
   it("refuses a production base URL of a provider in staging", () => {

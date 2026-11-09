@@ -277,7 +277,7 @@ O staging cobra como a produção, mas **só contra o sandbox** do Asaas e da Wo
 | `BILLING_SELF_SERVICE_ENABLED` | `"true"` | `"false"` |
 | `ASAAS_BASE_URL` | `https://api-sandbox.asaas.com/v3` (exato) | `https://api.asaas.com/v3` (exato) |
 | `WOOVI_BASE_URL` | `https://api.woovi-sandbox.com` (exato) | `https://api.woovi.com` (exato) |
-| `WOOVI_WEBHOOK_PUBLIC_KEYS` | a chave pública da Woovi (base64 do DER, `key_identifier` `9dce6187…311c`, a mesma do sandbox e da produção) | vazia até o go-live |
+| `WOOVI_WEBHOOK_PUBLIC_KEYS` | a chave pública do sandbox da Woovi (base64 do DER, `key_identifier` `7c8efa31…6e91`; a produção tem outra chave) | vazia até o go-live |
 | `WOOVI_REFUND_ENABLED` | `"true"`, para o Gate 7 provar o reembolso de parcela (S3.2) | `"false"` até essa prova |
 | `BILLING_SUPPORT_EMAIL` | `suporte@araute.app` (rodapé e `reply-to` dos e-mails de cobrança) | vazia até a P48 |
 
