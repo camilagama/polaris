@@ -2832,7 +2832,7 @@ test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em
 
   for (const fontPixels of [24, 20, 16]) {
     reflowTest(
-      `com a letra em ${fontPixels} px, a tabela dos dias é um cartão por dia e o "Depois de hoje" lê inteiro, sem rolar de lado`,
+      `com a letra em ${fontPixels} px, o gráfico, a tabela dos dias e o "Depois de hoje" leem inteiros, sem rolagem lateral`,
       async ({ page }) => {
         const server = new FakeReportServer();
         await openReflowViewport(page, { fontPixels });
