@@ -180,7 +180,7 @@ function Toolbar({
           onClick={onRefresh}
         />
         {/* v7 § 6: the same choice as on the Início, kept on the device */}
-        <HideValuesButton size="sm" />
+        <HideValuesButton />
         {/* two lines kept on a phone, where "Mostrando … até o novo período carregar." takes two */}
         <p
           aria-live="polite"
