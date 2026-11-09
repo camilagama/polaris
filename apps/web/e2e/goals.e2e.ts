@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { axeFaults } from "../e2e-pwa/ui-guardrails";
 import {
   datePickerButton,
   expectWholeMonthWhileTyping,
@@ -165,6 +166,8 @@ class FakeGoalServer {
   readonly created: Record<string, unknown>[] = [];
   /** When set, `goal.list` answers this ORPC error instead of the goals. */
   listFailure: { code: string; status: number } | null = null;
+  /** When set, `goal.list` waits for it before answering: the screen is held in its first read. */
+  listGate: Promise<void> | null = null;
   /** How many of the next listings answer 503 before the server recovers (an isolate killed for CPU). */
   listUnavailable = 0;
   /** Every listing that reached the server, the failed ones included. */
@@ -396,6 +399,9 @@ async function installServer(page: Page, server: FakeGoalServer) {
     const body = route.request().postDataJSON() as {
       json?: Record<string, unknown>;
     } | null;
+    if (procedure === "goal/list" && server.listGate) {
+      await server.listGate;
+    }
     const answer = server.handle(procedure, body?.json ?? {});
     await route.fulfill({
       body: JSON.stringify(answer.body),
@@ -457,7 +463,22 @@ test("cria uma meta e mostra o progresso com a barra", async ({ page }) => {
   const server = new FakeGoalServer();
   await openGoals(page, server);
 
-  await expect(page.getByText("Nenhuma meta ainda")).toBeVisible();
+  const empty = page
+    .getByRole("status")
+    .filter({ hasText: "Nenhuma meta ainda" });
+  await expect(empty.getByText("Nenhuma meta ainda")).toBeVisible();
+  await expect(empty.getByText("Crie uma para acompanhar")).toHaveCount(0);
+  await expect(empty.getByText("Acompanhe as vendas líquidas")).toBeVisible();
+  const [title, support] = await Promise.all([
+    empty.locator("[data-empty-title]").innerText(),
+    empty.locator("p:not([data-empty-title])").innerText(),
+  ]);
+  expect(title.length).toBeLessThanOrEqual(60);
+  expect(support.length).toBeLessThanOrEqual(100);
+  // the empty list carries the one button that opens the form
+  await expect(page.getByRole("button", { name: "Nova meta" })).toHaveCount(1);
+  await expect(empty.getByRole("button", { name: "Nova meta" })).toBeVisible();
+  expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
   // no goal in progress: the tab has no count (AC-13)
   await expect(
     page.getByRole("tab", { exact: true, name: "Metas" })
@@ -1294,6 +1315,33 @@ test("uma falha ao carregar mostra o erro e deixa tentar de novo", async ({
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, "Depois da falha")).toContainText("Em andamento");
+});
+
+test("durante a leitura das metas o cabeçalho já traz Nova meta e não muda de altura quando a lista chega", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  server.seed({ kind: "net_sales", name: "Lida devagar", target: "1000.00" });
+  let release: (() => void) | undefined;
+  server.listGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await openGoals(page, server);
+
+  const region = page.getByRole("region", { exact: true, name: "Metas" });
+  await expect(region.getByText("Carregando as metas…")).toBeVisible();
+  const newButton = region.getByRole("button", { name: "Nova meta" });
+  await expect(newButton).toHaveCount(1);
+  await expect(newButton).toBeVisible();
+  const header = region.locator("h2").locator("xpath=../..");
+  const heightOf = async () => (await header.boundingBox())?.height ?? 0;
+  const whileReading = await heightOf();
+  expect(whileReading).toBeGreaterThan(0);
+
+  release?.();
+  await expect(card(page, "Lida devagar")).toContainText("Em andamento");
+  await expect(newButton).toHaveCount(1);
+  expect(await heightOf()).toBe(whileReading);
 });
 
 /** Remembers, in the page, whether an alert ever showed: the screen must not pass through the error. */
