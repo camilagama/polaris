@@ -259,12 +259,12 @@ function EmptyPlot({
         data-chart-floor=""
         style={{ bottom: MARGIN.bottom }}
       />
-      <p
+      <div
         className="absolute inset-x-0 top-0 grid place-items-center px-4 text-center text-muted-foreground"
         style={{ bottom: MARGIN.bottom }}
       >
         {children}
-      </p>
+      </div>
     </div>
   );
 }

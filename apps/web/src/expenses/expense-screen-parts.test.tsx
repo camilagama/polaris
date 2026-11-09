@@ -1,6 +1,7 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { EMPTY_TITLE_MAX } from "@/ui/empty-state";
 import { ExpenseList, ExpenseSummary } from "./expense-list";
 import { MonthPicker } from "./month-picker";
 import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
@@ -102,6 +103,8 @@ const expense = (overrides: Partial<ExpenseReadModel>): ExpenseReadModel => ({
   ...overrides,
 });
 
+const EMPTY_TITLE = /data-empty-title="" id="[^"]*">([^<]*)</;
+
 describe("ExpenseList", () => {
   it("says it is loading on the first read, as a status", () => {
     const html = list(state({ isLoading: true }));
@@ -119,7 +122,7 @@ describe("ExpenseList", () => {
     expect(loading).toContain('aria-busy="true"');
     const empty = list(state({}));
     expect(empty).not.toContain("sr-only");
-    expect(empty).toContain("text-muted-foreground");
+    expect(empty).toContain("data-empty-state");
   });
 
   it("a failed read says why and offers to read again, never the empty list", () => {
@@ -129,13 +132,21 @@ describe("ExpenseList", () => {
     expect(html).not.toContain("Nenhuma despesa");
   });
 
-  it("the empty month and the empty voided tab say different things", () => {
-    expect(list(state({}))).toContain(
-      "Nenhuma despesa neste período. Toque em Nova despesa para registrar a primeira."
-    );
-    expect(list(state({}), "voided")).toContain(
-      "Nenhuma despesa anulada neste período."
-    );
+  it("the empty period is a short sentence with the action as a button, never as a phrase", () => {
+    const html = list(state({}));
+    const title = EMPTY_TITLE.exec(html)?.[1];
+    expect(title).toBe("Nenhuma despesa neste período.");
+    expect(title?.length).toBeLessThanOrEqual(EMPTY_TITLE_MAX);
+    expect(html).toContain("<button");
+    expect(html).toContain("Nova despesa");
+    expect(html).not.toContain("Toque em");
+    expect(html).not.toContain("para registrar a primeira");
+  });
+
+  it("the empty voided tab says only that, with no button to create", () => {
+    const html = list(state({}), "voided");
+    expect(html).toContain("Nenhuma despesa anulada neste período.");
+    expect(html).not.toContain("<button");
   });
 
   it("says category, date and payee on one line, with no group and no word Competência", () => {

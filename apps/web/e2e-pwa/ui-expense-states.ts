@@ -206,6 +206,7 @@ export const expenseStates = {
     await openExpensesLab(page);
     await page
       .getByRole("button", { exact: true, name: "Nova despesa" })
+      .and(page.locator("[data-expense-new]"))
       .click();
     await page.getByRole("button", { name: "Registrar despesa" }).click();
     await page.locator("#expense-description-error").waitFor();
