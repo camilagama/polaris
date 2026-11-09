@@ -1,5 +1,6 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import { cn } from "@/lib/utils";
+import { AnimatedFigure } from "@/ui/animated-figure";
 import { Badge } from "@/ui/badge";
 import { Card } from "@/ui/card";
 import { buttonVariants } from "@/ui/button";
@@ -101,7 +102,7 @@ function GoalRing({
             percent.length > 6 ? "text-base" : "text-xl"
           )}
         >
-          {percent}
+          <AnimatedFigure text={percent}>{percent}</AnimatedFigure>
         </span>
         <span className="text-muted-foreground text-xs">da meta</span>
       </span>

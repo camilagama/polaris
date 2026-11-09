@@ -23,7 +23,8 @@ export interface RingChartProps {
 
 /**
  * One progress ring (Bklit UI's `RingChart` with one `Ring`), with no center: the screen writes its own text in the
- * hole, so the `ChartStatFlow` of the block (and the `@number-flow/react` it brings) never enters. It is `aria-hidden`:
+ * hole, so the `ChartStatFlow` of the block (and the `@number-flow/react` it brings) never enters the ring: the percent in the
+ * hole is the screen's, and counts through `AnimatedFigure`. It is `aria-hidden`:
  * the screen says the same in words, in its own summary. No hover (the ring is controlled and never read: no glow and
  * no growing), and below the `full` level of motion (a phone, `prefers-reduced-motion`) it is drawn finished, with no
  * entrance (v7 § 7).

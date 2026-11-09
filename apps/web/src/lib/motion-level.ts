@@ -103,3 +103,11 @@ export function useMotionLevel(): MotionLevel {
     serverLevel
   );
 }
+
+/**
+ * The count of a main number of a card (`AnimatedFigure`): the duration and the curve of the tween of the y axis of the
+ * charts, so a number and the axis beside it move alike. Only at the `full` level.
+ */
+export const MOTION = {
+  number: { duration: 500, easing: "cubic-bezier(0.85, 0, 0.15, 1)" },
+} as const;

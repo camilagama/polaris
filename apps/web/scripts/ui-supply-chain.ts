@@ -26,6 +26,8 @@ import { dirname, resolve, sep } from "node:path";
  * the grid of cells (`HeatmapRect`) and the `<g>` around it. `@visx/group` was already in the closure under
  * `@visx/shape` and `@visx/grid` (same version); `@visx/heatmap` brings only it and `classnames`, both already there.
  * No install script. Only the heat map chunk imports `@visx/heatmap` (the guard of `pwa/precache-budget.ts`).
+ * `@number-flow/react` came with the counter of the main numbers of the cards (`src/ui/animated-figure.tsx`, the only file
+ * that imports it): MIT, no install script, two dependencies (`number-flow`, same version, and `esm-env`, no dependencies).
  * `react-day-picker` and `date-fns` came with the date pickers: the month grid of `src/ui/calendar.tsx` (the
  * shadcn `calendar`) and the Portuguese names of months and weekdays. No install script; `react-day-picker` depends
  * only on `date-fns` and `@date-fns/tz`, which have no dependencies. Only the calendar chunk imports them (the guard
@@ -35,6 +37,7 @@ export const UI_ALLOWED_PACKAGES = [
   "@base-ui/react",
   "@fontsource-variable/geist",
   "@fontsource-variable/geist-mono",
+  "@number-flow/react",
   "@tailwindcss/vite",
   "@visx/curve",
   "@visx/event",
@@ -319,6 +322,24 @@ const SOURCE_RULES: { rule: string; pattern: RegExp }[] = [
   { pattern: /\bvaul\b/, rule: "vaul" },
 ];
 
+/**
+ * What one file may hold of `SOURCE_RULES`, exactly: the file (the end of its path), the rule and why. The counter of the
+ * cards writes its styles in a `<style>` inside a shadow root, which the policy of the page (`style-src 'self'`) refuses;
+ * its root adopts a constructed sheet instead, and the element is never put in the tree. The exception is that one
+ * rule in that one file: any other rule in it, or the same rule anywhere else, still fails.
+ */
+export const SOURCE_RULE_EXCEPTIONS: readonly {
+  file: string;
+  rule: string;
+  why: string;
+}[] = [
+  {
+    file: "src/ui/animated-figure.tsx",
+    rule: "adoptedStyleSheets",
+    why: "a raiz do contador adota uma folha construída no lugar do <style> que o CSP recusa (style-src 'self', sem nonce)",
+  },
+];
+
 const IMPORT_SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|\bimport\s+)["'`]([^"'`]+)["'`]/g;
 
@@ -350,9 +371,20 @@ export function scanUiSource(
   source: string,
   srcRoot?: string
 ): SourceFinding[] {
+  const normalized = file.replaceAll("\\", "/");
   const findings: SourceFinding[] = SOURCE_RULES.filter(({ pattern }) =>
     pattern.test(source)
-  ).map(({ rule }) => ({ file, rule }));
+  )
+    .filter(
+      ({ rule }) =>
+        !SOURCE_RULE_EXCEPTIONS.some(
+          (exception) =>
+            exception.rule === rule &&
+            (normalized === exception.file ||
+              normalized.endsWith(`/${exception.file}`))
+        )
+    )
+    .map(({ rule }) => ({ file, rule }));
   const allowed = new Set<string>([
     ...UI_ALLOWED_PACKAGES,
     ...UI_SOURCE_EXTRA_PACKAGES,

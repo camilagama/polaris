@@ -17,6 +17,7 @@ import {
   parseBunLock,
   readWorkflow,
   scanUiFolderFile,
+  SOURCE_RULE_EXCEPTIONS,
   scanUiSource,
   secretsInInstallOrBuild,
   testPackagesOutsideDev,
@@ -423,6 +424,31 @@ export const Box = () => <Dialog.Root />;`;
     expect(
       scanUiSource("x.tsx", source).map((finding) => finding.rule)
     ).toContain(rule);
+  });
+
+  it("lets only the counter adopt a sheet, and only that rule (planted control)", () => {
+    const adopt = "root.adoptedStyleSheets = [sheet];";
+    const counter = "/repo/apps/web/src/ui/animated-figure.tsx";
+    expect(scanUiSource(counter, adopt)).toEqual([]);
+    expect(scanUiSource(counter, `${adopt} el.innerHTML = x`)).toEqual([
+      { file: counter, rule: ".innerHTML" },
+    ]);
+    expect(scanUiSource(counter, `${adopt} <style>a{}</style>`)).toEqual([
+      { file: counter, rule: "<style" },
+    ]);
+    const other = "/repo/apps/web/src/ui/money.tsx";
+    expect(scanUiSource(other, adopt)).toEqual([
+      { file: other, rule: "adoptedStyleSheets" },
+    ]);
+    expect(
+      scanUiSource("/repo/apps/web/src/ui/not-animated-figure.tsx", adopt)
+    ).toHaveLength(1);
+    expect(
+      scanUiSource("/repo/apps/web/src/ui/xsrc/ui/animated-figure.tsx", adopt)
+    ).toHaveLength(1);
+    expect(SOURCE_RULE_EXCEPTIONS.map((e) => [e.file, e.rule])).toEqual([
+      ["src/ui/animated-figure.tsx", "adoptedStyleSheets"],
+    ]);
   });
 
   it("takes a scoped package by its first two segments", () => {
