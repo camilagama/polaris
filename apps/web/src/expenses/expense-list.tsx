@@ -101,7 +101,7 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
       className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1"
     >
       <div className="grid gap-0.5">
-        <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+        <p className="font-medium text-muted-foreground text-support">
           Total do período
           {filters.status === "voided" ? " (anuladas)" : ""}
         </p>

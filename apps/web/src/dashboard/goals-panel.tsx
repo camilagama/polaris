@@ -60,13 +60,10 @@ interface GoalListProps {
   today: string;
 }
 
-/** The small caps label over a group of cards. */
+/** The label over a group of cards. */
 function GroupLabel({ children, id }: { children: string; id: string }) {
   return (
-    <h3
-      className="mt-1 font-medium text-muted-foreground text-xs uppercase tracking-wide"
-      id={id}
-    >
+    <h3 className="mt-1 font-medium text-muted-foreground text-support" id={id}>
       {children}
     </h3>
   );

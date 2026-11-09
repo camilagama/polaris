@@ -279,7 +279,7 @@ export function ExpenseCategoriesPanel({
               key={section.key}
             >
               <h3
-                className="font-medium text-muted-foreground text-xs uppercase tracking-wide"
+                className="font-medium text-muted-foreground text-support"
                 id={`expense-group-${section.key}`}
               >
                 {section.label}
