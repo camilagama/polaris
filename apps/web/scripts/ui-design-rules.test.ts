@@ -39,6 +39,8 @@ const MOTION_IMPORT = /from\s+"motion|import\s+"motion/;
  */
 const ON_DEMAND_LOADER: Record<string, string> = {
   calendar: "calendar-on-demand",
+  // the counter comes by `import()` from the figure, only at the full level of motion
+  "figure-counter": "animated-figure",
   // the animated layer of the bar comes by `import()` only at the full level of motion
   "filter-bar-motion": "filter-bar",
 };
