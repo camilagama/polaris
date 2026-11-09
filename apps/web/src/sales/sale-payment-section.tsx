@@ -22,6 +22,7 @@ import {
   FieldTitle,
 } from "@/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { HelpTip } from "@/ui/help-tip";
 import { Separator } from "@/ui/separator";
 import {
   CatalogNotice,
@@ -393,6 +394,10 @@ function SaleExtras({ adjustments, date, hasError, summary }: SaleExtrasProps) {
 /* Payment                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** What the (i) of "Pagamento" says: one payment for the whole total, and that the method does not prove the receipt. */
+const SINGLE_PAYMENT_HELP =
+  "Um pagamento só, no valor total. O método não comprova o recebimento.";
+
 interface PaymentSectionProps {
   disabled: boolean;
   errors: Record<string, string>;
@@ -412,7 +417,7 @@ interface PaymentSectionProps {
   onRetry: () => void;
   profileOptions: readonly ChoiceOption[];
   profilesView: CatalogView;
-  /** "Um pagamento só, no valor total…", said under the methods. */
+  /** The state line under the methods ("Igual à última venda neste aparelho."); empty when there is none. */
   singlePaymentText: string;
   /** The store's zone (null when the store has none), for the day the date field stops at. */
   timezone: string | null;
@@ -458,9 +463,14 @@ export function PaymentSection({
         disabled={disabled}
       >
         <CardHeader>
-          <CardTitle aria-level={2} id="sale-payment-title" role="heading">
-            Pagamento
-          </CardTitle>
+          <div className="flex items-center gap-1">
+            <CardTitle aria-level={2} id="sale-payment-title" role="heading">
+              Pagamento
+            </CardTitle>
+            <HelpTip about="Pagamento" className="-my-1">
+              {SINGLE_PAYMENT_HELP}
+            </HelpTip>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-5">
           <Field className="@container">
