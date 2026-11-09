@@ -1,6 +1,6 @@
 import type { ExpenseReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
@@ -82,21 +82,31 @@ function dropPreviousWindow(organizationId: string, competences: string[]) {
   }
 }
 
-function Heading({ busy, onNew }: { busy: boolean; onNew: () => void }) {
+function Heading({
+  busy,
+  onNew,
+  showNew,
+}: {
+  busy: boolean;
+  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
+  showNew: boolean;
+}) {
   return (
     <header className="grid gap-1">
       <TitleLine
         action={
-          <Button
-            className={TITLE_ACTION_CLASS}
-            data-expense-new=""
-            disabled={busy}
-            onClick={onNew}
-            type="button"
-          >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Nova despesa
-          </Button>
+          showNew ? (
+            <Button
+              className={TITLE_ACTION_CLASS}
+              data-expense-new=""
+              disabled={busy}
+              onClick={onNew}
+              type="button"
+            >
+              <PlusIcon aria-hidden="true" data-icon="inline-start" />
+              Nova despesa
+            </Button>
+          ) : null
         }
       >
         <div className="flex items-center gap-1">
@@ -279,12 +289,23 @@ export function ExpensesPage() {
     (expense: ExpenseReadModel) => handleStatusChange(expense, "restore"),
     [handleStatusChange]
   );
-  const handleNew = useCallback(() => {
-    if (view !== "lancamentos") {
-      selectView("lancamentos");
-    }
-    openForm("new");
-  }, [openForm, selectView, view]);
+  const handleNew = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      if (view !== "lancamentos") {
+        selectView("lancamentos");
+      }
+      openForm("new", event.currentTarget);
+    },
+    [openForm, selectView, view]
+  );
+  // the empty list carries the one "Nova despesa" (as Clientes does); while it is read, or when the list is on
+  // another part of the screen, the title bar's button stays
+  const emptyListHasNew =
+    view === "lancamentos" &&
+    !state.isLoading &&
+    state.error === null &&
+    state.expenses.length === 0 &&
+    filters.status !== "voided";
   const handleMonth = useCallback(
     (month: string) =>
       setChoices((current) => ({ ...current, chosenMonth: month })),
@@ -319,7 +340,11 @@ export function ExpensesPage() {
 
   return (
     <div className="grid gap-4 font-sans text-foreground text-sm antialiased">
-      <Heading busy={busy !== null} onNew={handleNew} />
+      <Heading
+        busy={busy !== null}
+        onNew={handleNew}
+        showNew={!emptyListHasNew}
+      />
       {categories.state.error ? (
         <LoadError
           busy={categories.state.isLoading}
@@ -401,6 +426,7 @@ export function ExpensesPage() {
                 filters={filters}
                 onEdit={openForm}
                 onLoadMore={loadMore}
+                onNew={handleNew}
                 onRestore={handleRestore}
                 onRetry={handleRetry}
                 onVoid={handleVoid}
