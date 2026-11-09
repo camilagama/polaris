@@ -452,7 +452,7 @@ test.describe("celular (360 px)", () => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* The eight destinations, the tabs, the old addresses, Pendências and the folding column                           */
+/* The nine destinations, the tabs, the old addresses, Pendências and the folding column                           */
 /* -------------------------------------------------------------------------- */
 
 const pathOf = (page: Page) => {
