@@ -46,7 +46,7 @@ import { type TrialStartedEmail, trialStartedContent } from "./trial-started";
 import { type WelcomeEmail, welcomeContent } from "./welcome";
 
 /**
- * The e-mails of the billing cycle and the welcome (ADR 0104, decision 7; corte `emails-ciclo-cobranca`): one model per
+ * The e-mails of the billing cycle and the welcome (ADR 0104, decision 7): one model per
  * kind, the same layout for all. React Email with no image, no pixel and no tracking parameter (AC-20); the colors of
  * `theme.css` (AC-17); the HTML and the plain text from the same element. Only the store's name, the plan, dates,
  * amounts, the kind of method and what to do (AC-10): nothing of the payer, of the card or of the provider.

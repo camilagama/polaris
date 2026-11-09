@@ -128,6 +128,8 @@ interface ToolbarProps {
   /** The year of the store's today, for the name of the period ("outubro", not "outubro de 2026"). */
   thisYear: string;
   timezone: string;
+  /** The store's day: the shortcuts of the period are counted from it. */
+  today: string;
 }
 
 /**
@@ -164,6 +166,7 @@ function Toolbar({
   state,
   thisYear,
   timezone,
+  today,
 }: ToolbarProps) {
   return (
     <div className="grid gap-4">
@@ -172,6 +175,7 @@ function Toolbar({
         onPreset={onPreset}
         period={period}
         preset={preset}
+        today={today}
       />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-4">
         <RefreshButton
@@ -427,6 +431,7 @@ export function DashboardPage() {
             preset={selection.preset}
             state={state}
             thisYear={today.slice(0, 4)}
+            today={today}
             timezone={organization.timezone}
           />
           {state.summary && state.source === "cache" ? (
