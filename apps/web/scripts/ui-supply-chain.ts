@@ -26,8 +26,8 @@ import { dirname, resolve, sep } from "node:path";
  * the grid of cells (`HeatmapRect`) and the `<g>` around it. `@visx/group` was already in the closure under
  * `@visx/shape` and `@visx/grid` (same version); `@visx/heatmap` brings only it and `classnames`, both already there.
  * No install script. Only the heat map chunk imports `@visx/heatmap` (the guard of `pwa/precache-budget.ts`).
- * `@number-flow/react` came with the counter of the main numbers of the cards (`src/ui/animated-figure.tsx`, the only file
- * that imports it): MIT, no install script, two dependencies (`number-flow`, same version, and `esm-env`, no dependencies).
+ * `@number-flow/react` came with the counter of the main numbers of the cards (`src/ui/figure-counter.tsx`, the only file
+ * that imports it, loaded on demand): MIT, no install script, two dependencies (`number-flow`, same version, and `esm-env`, no dependencies).
  * `react-day-picker` and `date-fns` came with the date pickers: the month grid of `src/ui/calendar.tsx` (the
  * shadcn `calendar`) and the Portuguese names of months and weekdays. No install script; `react-day-picker` depends
  * only on `date-fns` and `@date-fns/tz`, which have no dependencies. Only the calendar chunk imports them (the guard
@@ -334,7 +334,7 @@ export const SOURCE_RULE_EXCEPTIONS: readonly {
   why: string;
 }[] = [
   {
-    file: "src/ui/animated-figure.tsx",
+    file: "src/ui/figure-counter.tsx",
     rule: "adoptedStyleSheets",
     why: "a raiz do contador adota uma folha construída no lugar do <style> que o CSP recusa (style-src 'self', sem nonce)",
   },

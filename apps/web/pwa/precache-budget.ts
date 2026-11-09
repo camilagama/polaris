@@ -151,6 +151,14 @@ const CALENDAR_CHUNK = /(^|\/)assets\/calendar-[\w-]+\.js$/;
  */
 const CALENDAR_MODULE =
   /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]calendar\.tsx$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:react-day-picker|date-fns|@date-fns[\\/]tz)[\\/])/;
+/** The chunk of the counter of the main numbers: the one the `import()` of `src/ui/figure-counter.tsx` makes. */
+const COUNTER_CHUNK = /(^|\/)assets\/figure-counter-[\w-]+\.js$/;
+/**
+ * What belongs to the counter chunk and to nothing else: `src/ui/figure-counter.tsx` (not `animated-figure.tsx`, the
+ * loader every card imports) and the libraries only it brings (`@number-flow/react`, `number-flow`, `esm-env`).
+ */
+const COUNTER_MODULE =
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/]figure-counter\.tsx$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@number-flow[\\/]react|number-flow|esm-env)[\\/])/;
 /**
  * The chunks that exist for the browser checks only (main.tsx opens them in the `pwa-e2e` build and in the
  * offline PoC): the gallery of the primitives and the lab of the screens (route `/offline-screens-lab`, which
@@ -424,6 +432,26 @@ export function calendarPlacementProblems(
         .map(
           (id) =>
             `calendar module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the calendar chunk`
+        )
+    );
+}
+
+/**
+ * The same guard for the counter of the main numbers: `@number-flow/react` loads on demand, only at the `full` level of
+ * motion, so a phone and a window with reduced motion never download it. A static import of the counter from a card
+ * would fold it into the chunk of that card, and the package would come back to every screen that has a figure.
+ */
+export function counterPlacementProblems(
+  chunks: readonly ChunkModules[]
+): string[] {
+  return chunks
+    .filter((chunk) => !COUNTER_CHUNK.test(chunk.fileName))
+    .flatMap((chunk) =>
+      Object.keys(chunk.modules)
+        .filter((id) => COUNTER_MODULE.test(id))
+        .map(
+          (id) =>
+            `counter module ${id.replace(NODE_MODULES_PREFIX, "")} is in ${chunk.fileName}, outside the counter chunk`
         )
     );
 }
@@ -727,6 +755,7 @@ export function precacheBudgetPlugin(
         ...chartsPlacementProblems(chunks),
         ...motionLoadProblems(chunks),
         ...calendarPlacementProblems(chunks),
+        ...counterPlacementProblems(chunks),
         ...onlineOnlyPlacementProblems(chunks),
       ];
     },

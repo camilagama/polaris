@@ -428,7 +428,7 @@ export const Box = () => <Dialog.Root />;`;
 
   it("lets only the counter adopt a sheet, and only that rule (planted control)", () => {
     const adopt = "root.adoptedStyleSheets = [sheet];";
-    const counter = "/repo/apps/web/src/ui/animated-figure.tsx";
+    const counter = "/repo/apps/web/src/ui/figure-counter.tsx";
     expect(scanUiSource(counter, adopt)).toEqual([]);
     expect(scanUiSource(counter, `${adopt} el.innerHTML = x`)).toEqual([
       { file: counter, rule: ".innerHTML" },
@@ -441,13 +441,13 @@ export const Box = () => <Dialog.Root />;`;
       { file: other, rule: "adoptedStyleSheets" },
     ]);
     expect(
-      scanUiSource("/repo/apps/web/src/ui/not-animated-figure.tsx", adopt)
+      scanUiSource("/repo/apps/web/src/ui/not-figure-counter.tsx", adopt)
     ).toHaveLength(1);
     expect(
-      scanUiSource("/repo/apps/web/src/ui/xsrc/ui/animated-figure.tsx", adopt)
+      scanUiSource("/repo/apps/web/src/ui/xsrc/ui/figure-counter.tsx", adopt)
     ).toHaveLength(1);
     expect(SOURCE_RULE_EXCEPTIONS.map((e) => [e.file, e.rule])).toEqual([
-      ["src/ui/animated-figure.tsx", "adoptedStyleSheets"],
+      ["src/ui/figure-counter.tsx", "adoptedStyleSheets"],
     ]);
   });
 

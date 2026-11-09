@@ -15,9 +15,20 @@ const SAMPLE_MS = 3000;
 /** The period switch is slower than the first paint on a loaded machine: it samples longer after it. */
 const SWITCH_SAMPLE_MS = 8000;
 
+interface Box {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+}
+
 interface Figure {
   /** What a screen reader gets: the text outside any `aria-hidden` subtree. */
   accessible: string;
+  /** The text of a chip beside its figure ("vs. setembro"), inside the card: the one that slides. */
+  against: Box | null;
+  /** Where the figure is inside its card, as the frame saw it: a reflow of the page around the card is not its move. */
+  box: Box;
   card: { height: number; width: number };
   /** Whether the counter (the element that draws the digits) is in the tree. */
   counter: boolean;
@@ -103,8 +114,20 @@ function startSampler(config: {
       (element) => {
         const card = element.closest("[data-kpi]");
         const box = card?.getBoundingClientRect();
+        const own = element.getBoundingClientRect();
+        const aside = element
+          .querySelector("[data-kpi-delta-against]")
+          ?.getBoundingClientRect();
+        const within = (rect: DOMRect) => ({
+          height: rect.height,
+          left: rect.left - (box?.left ?? 0),
+          top: rect.top - (box?.top ?? 0),
+          width: rect.width,
+        });
         return {
           accessible: textOf(element, false),
+          against: aside ? within(aside) : null,
+          box: within(own),
           card: { height: box?.height ?? 0, width: box?.width ?? 0 },
           counter: element.querySelector("[data-animated-figure]") !== null,
           counting: element.querySelector("[data-figure-counting]") !== null,
@@ -145,6 +168,19 @@ function startSampler(config: {
   requestAnimationFrame(tick);
 }
 
+const COUNTER_CHUNK = /\/assets\/figure-counter-[\w-]+\.js/;
+
+/** The requests of the page for the chunk of the counter: the package that draws the digits. */
+function watchCounterChunk(page: Page): string[] {
+  const requested: string[] = [];
+  page.on("request", (request) => {
+    if (COUNTER_CHUNK.test(request.url())) {
+      requested.push(request.url());
+    }
+  });
+  return requested;
+}
+
 const sampler = (outside: Outside[], limit = SAMPLE_MS) => ({
   limit,
   outside,
@@ -166,12 +202,17 @@ const RESULTADO_OUTSIDE: Outside[] = [
   { name: "cadeia", region: "Como chegamos a este resultado" },
 ];
 
-/** A shop with a sale of 2 candles today (R$ 90,00) and one of a candle on the last day of the previous month (R$ 45,00). */
-async function seedStore(journey: Journey): Promise<void> {
+/**
+ * A shop with a sale of 2 candles today (R$ 90,00) and one of a candle on the last day of the previous month (R$ 45,00).
+ * With `comparable`, one more 30 days ago, the oldest day a sale can be dated: it is in the 30 days before "Últimos 30
+ * dias", the period those chips compare with, and the month's own comparison range has no sale in it on most days.
+ */
+async function seedStore(journey: Journey, comparable = false): Promise<void> {
   const organizationId = journey.organizationId as string;
   const { rpc } = journey.user;
   const today = localDate(runT0(), ZONE);
   const lastMonthDay = addDays(monthStart(today), -1);
+  const oldest = addDays(today, -30);
   const candle = await seedProduct(
     rpc,
     organizationId,
@@ -184,8 +225,16 @@ async function seedStore(journey: Journey): Promise<void> {
     candle.variantId,
     10,
     "12.00",
-    lastMonthDay
+    comparable && oldest < lastMonthDay ? oldest : lastMonthDay
   );
+  if (comparable) {
+    await seedCashSale(
+      rpc,
+      organizationId,
+      [{ price: "45.00", quantity: 1, variantId: candle.variantId }],
+      `${oldest}T15:00:00.000Z`
+    );
+  }
   await seedCashSale(
     rpc,
     organizationId,
@@ -267,12 +316,14 @@ test("início, no desktop: o valor final chega ao leitor de tela de uma vez, o c
   });
   await seedStore(journey);
   const { page } = journey;
+  const counterChunk = watchCounterChunk(page);
   const frames = await openWith(page, "/", INICIO_OUTSIDE, async () => {
     await expect(
       page.getByRole("region", { name: "Vendas hoje" })
     ).toContainText("R$ 90,00");
   });
   const shown = fromFigures(frames);
+  expect(counterChunk, "o desktop baixa o pedaço do contador").not.toEqual([]);
 
   // the page's policy refuses a style element: the counter is styled by a constructed sheet, so nothing is refused, its
   // root is closed (its digits are not text of the card) and it is the width of a figure, not of a stack of digits
@@ -387,7 +438,7 @@ test("início: os números fora da lista já estão prontos nos primeiros 300 ms
   }
 });
 
-test("celular com toque: o valor final no primeiro quadro, sem contador (AC-8.2)", async ({
+test("celular (< 760 px): o valor final no primeiro quadro, sem contador e sem baixar o pedaço dele (AC-8.2)", async ({
   browser,
 }, testInfo) => {
   const journey = await openJourney(browser, testInfo, "contador-toque", {
@@ -401,15 +452,17 @@ test("celular com toque: o valor final no primeiro quadro, sem contador (AC-8.2)
   });
   await seedStore(journey);
   const { page } = journey;
+  const counterChunk = watchCounterChunk(page);
   const frames = await openWith(page, "/", INICIO_OUTSIDE, async () => {
     await expect(
       page.getByRole("region", { name: "Vendas hoje" })
     ).toContainText("R$ 90,00");
   });
   expectStill(fromFigures(frames));
+  expect(counterChunk, "o celular não baixa o pedaço do contador").toEqual([]);
 });
 
-test("movimento reduzido: o valor final no primeiro quadro, sem contador (AC-8.2)", async ({
+test("movimento reduzido: o valor final no primeiro quadro, sem contador e sem baixar o pedaço dele (AC-8.2)", async ({
   browser,
 }, testInfo) => {
   const journey = await openJourney(browser, testInfo, "contador-reduzido", {
@@ -418,13 +471,134 @@ test("movimento reduzido: o valor final no primeiro quadro, sem contador (AC-8.2
   await seedStore(journey);
   const { page } = journey;
   await page.emulateMedia({ reducedMotion: "reduce" });
+  const counterChunk = watchCounterChunk(page);
   const frames = await openWith(page, "/", INICIO_OUTSIDE, async () => {
     await expect(
       page.getByRole("region", { name: "Vendas hoje" })
     ).toContainText("R$ 90,00");
   });
   expectStill(fromFigures(frames));
+  expect(counterChunk, "o movimento reduzido não baixa o pedaço").toEqual([]);
 });
+
+test("tablet com toque de 1024 px: usa o layout de computador e anima (AC-8.2)", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "contador-tablet", {
+    device: {
+      deviceScaleFactor: 2,
+      hasTouch: true,
+      isMobile: true,
+      viewport: { height: 768, width: 1024 },
+    },
+    organization: { timezone: ZONE },
+  });
+  await seedStore(journey);
+  const { page } = journey;
+  const frames = await openWith(page, "/", INICIO_OUTSIDE, async () => {
+    await expect(
+      page.getByRole("region", { name: "Vendas hoje" })
+    ).toContainText("R$ 90,00");
+  });
+  const shown = fromFigures(frames);
+  expect(
+    shown.some((frame) => frame.running > 0),
+    "o contador animou no tablet"
+  ).toBe(true);
+});
+
+const SIDES = ["left", "top", "width", "height"] as const;
+
+/** What the figures that end with `kind` ("valor" or "chip") measure in the frames that already say their final text. */
+function finalBoxes(
+  frames: Frame[],
+  kind: string,
+  part: (figure: Figure) => Box | null
+): Map<string, Box[]> {
+  const final = finalAccessible(frames);
+  const boxes = new Map<string, Box[]>();
+  for (const frame of frames) {
+    for (const figure of frame.figures) {
+      const box = part(figure);
+      if (
+        box &&
+        figure.id.endsWith(`/${kind}`) &&
+        AN_AMOUNT_DIGIT.test(figure.accessible) &&
+        figure.accessible === final.get(figure.id)
+      ) {
+        boxes.set(figure.id, [...(boxes.get(figure.id) ?? []), box]);
+      }
+    }
+  }
+  return boxes;
+}
+
+function expectStayedPut(boxes: Map<string, Box[]>, what: string) {
+  expect(boxes.size, `há ${what}`).toBeGreaterThan(0);
+  for (const [id, list] of boxes) {
+    const end = list.at(-1) as Box;
+    for (const [index, box] of list.entries()) {
+      for (const side of SIDES) {
+        expect(
+          Math.abs(box[side] - end[side]),
+          `${what} de ${id}: ${side} no quadro ${index} de ${list.length}`
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+  }
+}
+
+// 900 px: the narrowest strip; 1280 px: the cards of the Resultado at the desktop of the e2e; 1600 px: wide enough for the
+// chip to lay its comparison beside the figure (the card is 14 rem or more)
+for (const width of [900, 1280, 1600]) {
+  test(`resultado a ${width} px, com comparação: o valor e o chip, com o que vem ao lado dele, não se movem em nenhum quadro da contagem (≤ 1 px)`, async ({
+    browser,
+  }, testInfo) => {
+    const journey = await openJourney(
+      browser,
+      testInfo,
+      `contador-geometria-${width}`,
+      {
+        device: { viewport: { height: 800, width } },
+        organization: { timezone: ZONE },
+      }
+    );
+    await seedStore(journey, true);
+    const { page } = journey;
+    await page.goto("/dashboard");
+    await expect(
+      page.getByRole("region", { name: SALES_OF_MONTH })
+    ).toContainText("R$ 90,00");
+    await page.evaluate(
+      startSampler,
+      sampler(RESULTADO_OUTSIDE, SWITCH_SAMPLE_MS)
+    );
+    await page
+      .getByRole("group", { name: "Período" })
+      .getByRole("button", { name: "Últimos 30 dias" })
+      .click();
+    await expect(page.locator("[data-kpi-delta]").first()).toContainText("%");
+    const frames = await readFrames(page);
+    expect(
+      frames.some((frame) => frame.running > 0),
+      "o contador animou"
+    ).toBe(true);
+    expectStayedPut(
+      finalBoxes(frames, "valor", (figure) => figure.box),
+      "o valor"
+    );
+    expectStayedPut(
+      finalBoxes(frames, "chip", (figure) => figure.box),
+      "o chip"
+    );
+    if (width >= 1600) {
+      expectStayedPut(
+        finalBoxes(frames, "chip", (figure) => figure.against),
+        "o texto ao lado do chip"
+      );
+    }
+  });
+}
 
 /** Every frame has the final text in the whole tree (no digit of a step), and no counter was ever drawn. */
 function expectStill(frames: Frame[]) {
