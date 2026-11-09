@@ -151,7 +151,7 @@ function FieldError({
       role={live === "polite" ? "status" : "alert"}
       {...props}
     >
-      <CircleAlertIcon aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+      <CircleAlertIcon aria-hidden="true" className="mt-px size-4 shrink-0" />
       <div>{children}</div>
     </div>
   );
