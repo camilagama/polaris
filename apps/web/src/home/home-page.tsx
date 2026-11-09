@@ -517,16 +517,16 @@ function useCopyAllowed(
 }
 
 /** The clock of the page without a connection: once a minute, so the day of the store and the copy's age move on. */
-function useOfflineClock(online: boolean, serverNow: () => number): number {
-  const [now, setNow] = useState(serverNow);
+function useOfflineClock(online: boolean): number {
+  const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (online) {
       return;
     }
-    setNow(serverNow());
-    const timer = window.setInterval(() => setNow(serverNow()), 60_000);
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
-  }, [online, serverNow]);
+  }, [online]);
   return now;
 }
 
@@ -541,7 +541,6 @@ function useOfflineView({
   organizationId,
   readsReport,
   refused,
-  serverNow,
   timezone,
 }: {
   /** Every try of the figures failed, and trying again may help (not a refusal). */
@@ -551,7 +550,6 @@ function useOfflineView({
   organizationId: string;
   readsReport: boolean;
   refused: boolean;
-  serverNow: () => number;
   timezone: string | null;
 }): {
   failed: OfflineHome | null;
@@ -559,7 +557,7 @@ function useOfflineView({
   view: OfflineHome | null;
 } {
   const copyAllowed = useCopyAllowed(organizationId, readsReport, refused);
-  const clock = useOfflineClock(online, serverNow);
+  const clock = useOfflineClock(online);
   const offline = useMemo(
     () =>
       online
@@ -568,11 +566,12 @@ function useOfflineView({
             browserStorage(),
             organizationId,
             timezone,
-            // the state of the clock may be of before the connection went: never earlier than now
-            Math.max(clock, serverNow()),
+            // the device's clock (the copy's skew makes it the store's); the state of the clock may be of before the
+            // connection went: never earlier than now
+            Math.max(clock, Date.now()),
             copyAllowed
           ),
-    [clock, copyAllowed, online, organizationId, serverNow, timezone]
+    [clock, copyAllowed, online, organizationId, timezone]
   );
   // the connection is back: the copy stays on the screen until the new read is whole, figures and what hangs on them
   // (the stock is not read when the page opens without a connection), so no skeleton takes the cards and no block leaves
@@ -592,11 +591,11 @@ function useOfflineView({
             browserStorage(),
             organizationId,
             timezone,
-            serverNow(),
+            Date.now(),
             copyAllowed
           )
         : null,
-    [copyAllowed, figuresFailed, online, organizationId, serverNow, timezone]
+    [copyAllowed, figuresFailed, online, organizationId, timezone]
   );
   return { failed: failed?.figures ? failed : null, offline, view };
 }
@@ -795,13 +794,12 @@ export function HomePage() {
   } = useHome(organizationId, organization.role, timezone);
   const snapshot = useRuntimeSnapshot();
   const { failed, offline, view } = useOfflineView({
-    figuresFailed: state.figures.status === "error" && state.figures.retryable,
     cardsPending: figuresPending(state),
+    figuresFailed: state.figures.status === "error" && state.figures.retryable,
     online,
     organizationId,
     readsReport: reads.report,
     refused: state.sessionRefused || state.copyRefused,
-    serverNow,
     timezone,
   });
   const canSellOffline = useLocalWorkspace(organizationId) !== null;

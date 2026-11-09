@@ -37,6 +37,11 @@ export interface HomeCopy {
    * connection, but is never taken in place of a read (`previous-window-copy.ts`). Absent is not stale.
    */
   beforeStale?: boolean;
+  /**
+   * The server's clock minus the device's (ms) at the read of the figures: opened without a connection, the store's
+   * now is the device's plus this. Absent in a copy kept before it existed (taken as 0).
+   */
+  clockSkewMs?: number;
   /** The goal the card showed and when (the server's clock as the device estimated it), null when not read. */
   goal: { at: string; view: GoalView } | null;
 }
@@ -117,6 +122,9 @@ function isHomeCopy(value: unknown): value is HomeCopy {
     (value.before === null || isPeriodSummary(value.before)) &&
     (value.beforeStale === undefined ||
       typeof value.beforeStale === "boolean") &&
+    (value.clockSkewMs === undefined ||
+      (typeof value.clockSkewMs === "number" &&
+        Number.isFinite(value.clockSkewMs))) &&
     (value.goal === null || isKeptGoal(value.goal))
   );
 }
@@ -159,9 +167,11 @@ export function writeHomeCopy(
   const stale =
     change.beforeStale ??
     (change.before === undefined ? kept.beforeStale === true : false);
+  const clockSkewMs = change.clockSkewMs ?? kept.clockSkewMs;
   const next: HomeCopy = {
     before: change.before === undefined ? kept.before : change.before,
     ...(stale ? { beforeStale: true } : {}),
+    ...(clockSkewMs === undefined ? {} : { clockSkewMs }),
     goal: change.goal === undefined ? kept.goal : change.goal,
   };
   if (!isHomeCopy(next)) {
@@ -238,7 +248,7 @@ export interface OfflineHome {
 
 /**
  * Reads the copy when `allowed` (runtime on, `report:read`, the user's lease in force, no refusal of the session)
- * and says what each block takes from it at `now` (the server's clock as the device estimates it). The goal is
+ * and says what each block takes from it at `now` (the device's clock; the copy's own skew turns it into the store's). The goal is
  * taken only beside the figures: the line of the last confirmed read vouches for both.
  */
 const NOTHING: OfflineHome = {
@@ -271,11 +281,15 @@ export function offlineHome(
       confirmedAt,
       figures.month.generatedAt,
       now,
-      timezone
+      timezone,
+      copy.clockSkewMs
     );
     // the day of the store now: never before the day of the read, so a device clock behind it does not keep a goal
     // that ended "em andamento"
-    const deviceDay = calendarDayInTimezone(new Date(now), timezone);
+    const deviceDay = calendarDayInTimezone(
+      new Date(now + (copy.clockSkewMs ?? 0)),
+      timezone
+    );
     const readDay = storeToday(figures.month.generatedAt, timezone);
     const day = deviceDay > readDay ? deviceDay : readDay;
     const goal = copy.goal

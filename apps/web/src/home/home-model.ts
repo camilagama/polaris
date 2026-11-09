@@ -657,21 +657,26 @@ const CLOCK_BEHIND_MS = 5 * 60_000;
  * How the copy stands now (§ 7.2): out of date after 24 h of its read, and today's only on the store's day of the
  * read. Both from the server's clock (`generatedAt`); a device clock before it is wrong, so the copy is neither today's
  * nor vouched for (the "Hoje" and the age use the server's read, never the device's date alone).
+ * `clockSkewMs` is the server's clock minus the device's at that read (0 for a copy kept without it): the device's `now`
+ * plus it is the store's now, so a clock a few minutes off does not move the store's day. Whether the device's clock is
+ * wrong stays a question of the device's own `now` against the read, skew or not.
  */
 export function copyStanding(
   confirmedAt: string,
   readAt: string,
   now: number,
-  timezone: string | null
+  timezone: string | null,
+  clockSkewMs = 0
 ): { stale: boolean; todayShown: boolean } {
-  const age = now - Date.parse(confirmedAt);
+  const storeNow = now + clockSkewMs;
+  const age = storeNow - Date.parse(confirmedAt);
   const clockBehind = now < Date.parse(readAt) - CLOCK_BEHIND_MS;
   return {
     stale: clockBehind || age > COPY_FRESH_MS,
     todayShown:
       !clockBehind &&
       storeToday(readAt, timezone) ===
-        calendarDayInTimezone(new Date(now), timezone),
+        calendarDayInTimezone(new Date(storeNow), timezone),
   };
 }
 
