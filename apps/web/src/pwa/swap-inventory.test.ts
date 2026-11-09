@@ -36,9 +36,6 @@ const WITHOUT_OWN_HOLD: Readonly<Record<string, Exemption>> = {
   "catalog/public-catalog-panels.tsx": {
     holdIn: ["catalog/public-catalog-page.tsx"],
   },
-  "dashboard/period-picker.tsx": {
-    ignored: "o período escolhido fica no endereço",
-  },
   "legal/acceptance/acceptance-page.tsx": {
     noWork: "a caixa do aceite se marca de novo com um toque",
   },
