@@ -297,7 +297,7 @@ function EmptyExpenses({ filters }: { filters: ExpenseFilters }) {
   );
 }
 
-/** The empty list and the loading line share this height (the sentence), so the list that arrives empty does not push the screen. */
+/** The empty list reserves the loading box's height, so the list that arrives empty does not push the screen. */
 const EMPTY_BOX_CLASS = `grid ${LIST_NOTE_MIN_HEIGHT_CLASS} content-center`;
 
 export function ExpenseList({
