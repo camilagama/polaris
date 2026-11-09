@@ -1,7 +1,7 @@
 /**
- * What one e-mail of the billing cycle says (corte `emails-ciclo-cobranca`, drafts of the texts):
+ * What one e-mail of the billing cycle says (drafts of the texts):
  * the subject, the preview, the paragraphs and the one button, to the app's own screens with an absolute address and
- * no tracking parameter (AC-16). The texts are the corte's; each kind has its file next to this one.
+ * no tracking parameter (AC-16). The texts are the approved ones; each kind has its file next to this one.
  */
 
 export interface BillingEmailLink {
