@@ -3468,7 +3468,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, R$ 1.840,00. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
     );
     // a cell per day of the 26 weeks; 175 known days with no sale are outlined (181 days read, 6 sold); Saturday
     // `24/10`, to come, has no outline and no fill
@@ -3496,8 +3496,11 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
       (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
     );
-    // "Ver os números": the days read, newest first
-    await map.getByRole("button", { name: "Ver os números" }).click();
+    // no button: the days read, newest first, are a table for assistive technology, tied to the map
+    await expect(
+      map.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
+    await expectInvisibleTable(map);
     await expect(map.getByRole("row")).toHaveCount(182);
     await expect(map.getByRole("row").nth(1)).toContainText(
       "23/10/2026R$ 320,102 vendas"
@@ -3615,7 +3618,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
     await expect(map.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Meses anteriores atualizados até ontem. Os números estão em Ver os números."
+      "Vendas por dia nas últimas 26 semanas: 6 dias com venda. Melhor dia 18/10, valor escondido. Meses anteriores atualizados até ontem. A tabela dia a dia está no fim deste bloco."
     );
     await page.mouse.move(5, 5);
     await expect(
@@ -3632,9 +3635,60 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       )
     ).toBeVisible();
     await page.keyboard.press("Escape");
-    await map.getByRole("button", { name: "Ver os números" }).click();
     await expect(map).not.toContainText(AN_AMOUNT);
     await expect(map.getByRole("row").nth(1)).toContainText("2 vendas");
+    // the invisible table is read by a screen reader and found by a search: no digit of an amount in any of its texts
+    const table = map.getByRole("table");
+    expect(await table.evaluate((node) => node.textContent)).not.toMatch(
+      AN_AMOUNT
+    );
+    expect(
+      await table.evaluate((node) => (node as HTMLElement).innerText)
+    ).not.toMatch(AN_AMOUNT);
+    await expect(table.getByText("R$ ••••").first()).toBeAttached();
+    expect(
+      await map.evaluate((node) =>
+        [...node.querySelectorAll("[aria-label],[aria-valuetext]")].map(
+          (element) =>
+            `${element.getAttribute("aria-label")} ${element.getAttribute("aria-valuetext")}`
+        )
+      )
+    ).not.toContainEqual(expect.stringMatching(AN_AMOUNT));
+  });
+
+  test("o gráfico não abriu: a tabela aparece à vista com o erro e Tentar novamente, e o resto do bloco fica", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await page.route(HEATMAP_CHUNK, (route) => route.abort());
+    await openHome(page, new FakeServer(SOLD));
+    const map = rhythm(page);
+    await expect(map.getByText("O gráfico não abriu.")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(
+      map.getByRole("button", { name: "Tentar novamente" })
+    ).toBeVisible();
+    await expect(atRest(page)).toHaveText(AT_REST);
+    // the numbers are on the screen, not an option: the table, newest day first, with the values
+    await expect(map.getByRole("table")).toBeVisible();
+    await expect(map.locator("[data-chart-data-table]")).toHaveAttribute(
+      "data-chart-data-table",
+      "visible"
+    );
+    await expect(map.getByRole("row")).toHaveCount(182);
+    await expect(map.getByRole("row").nth(1)).toContainText(
+      "23/10/2026R$ 320,102 vendas"
+    );
+    await expect(
+      map.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
+    await page
+      .locator("main")
+      .getByRole("button", { name: "Esconder valores" })
+      .click();
+    await expect(map.getByRole("table")).toBeVisible();
+    await expect(map.getByRole("table")).not.toContainText(AN_AMOUNT);
   });
 
   for (const size of [
@@ -3765,6 +3819,26 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await page.getByRole("button", { name: "Tentar novamente" }).click();
     await expect(atRest(page)).toHaveText(AT_REST);
     expect(periodCalls(server).length).toBe(summaries);
+  });
+
+  test("sem conexão e sem o pedaço do mapa: a tabela da cópia aparece à vista, com o aviso de internet", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    await page.route(HEATMAP_CHUNK, (route) => route.abort());
+    await reopenWithoutNetwork(page, server);
+    const map = rhythm(page);
+    await expect(map).toContainText(
+      "O gráfico abre quando a internet voltar. Os números estão abaixo.",
+      { timeout: 20_000 }
+    );
+    await expect(map.getByRole("table")).toBeVisible();
+    await expect(map.getByRole("row")).toHaveCount(182);
+    await expect(map.getByRole("row").nth(1)).toContainText(
+      "23/10/2026R$ 320,102 vendas"
+    );
   });
 
   test("sem conexão: com a cópia da série, o mapa da cópia; sem ela, 'O mapa abre com internet.'", async ({
@@ -3991,6 +4065,27 @@ const SIZES = [
   { height: 800, width: 1280 },
 ] as const;
 const CHARTS_CHUNK = "**/assets/charts-*.js";
+const HEATMAP_CHUNK = "**/assets/heatmap-*.js";
+
+/** The table of the days of a chart: in the page for a screen reader, one pixel on the screen and out of the tab order. */
+async function expectInvisibleTable(block: Locator) {
+  const table = block.getByRole("table");
+  await expect(table).toHaveCount(1);
+  await expect(table.locator("caption")).not.toHaveText("");
+  await expect(table.locator("th[scope=col]")).toHaveCount(3);
+  await expect(block.locator("[data-chart-data-table]")).toHaveAttribute(
+    "data-chart-data-table",
+    "hidden"
+  );
+  const box = await block.locator("[data-chart-data-table]").boundingBox();
+  expect(box?.width ?? 99).toBeLessThanOrEqual(1);
+  expect(box?.height ?? 99).toBeLessThanOrEqual(1);
+  await expect(table.locator("a, button, input, [tabindex]")).toHaveCount(0);
+  const id = await table.getAttribute("id");
+  await expect(block.locator(`[role="img"][aria-details="${id}"]`)).toHaveCount(
+    1
+  );
+}
 
 /** Where a box is on the page, whatever the scroll: the height and the top in document coordinates. */
 interface Place {
