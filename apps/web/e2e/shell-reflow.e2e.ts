@@ -22,7 +22,7 @@ const ANY_ID = /.+/;
 const EXPENSES_CHUNK = /expenses-page[^/]*\.js/;
 const EXPENSE_TABS = "Lançamentos, recorrentes e categorias";
 const SEARCHES = [
-  { hint: "Produto, variante ou SKU", narrowBelowRem: 14, path: "/inventory" },
+  { hint: "Produto, variante ou SKU", narrowBelowRem: 15, path: "/inventory" },
   { hint: "Nome, telefone ou e-mail", narrowBelowRem: 15, path: "/customers" },
   { hint: "Nome do produto", narrowBelowRem: 14, path: "/products" },
 ] as const;
