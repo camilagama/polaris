@@ -45,8 +45,10 @@ async function readingResult(page: Page) {
     await route.fallback();
   });
   const button = page.getByRole("button", { exact: true, name: "Atualizar" });
+  const before = await button.boundingBox();
   await button.click();
-  return { button, release };
+  await expect(button).toHaveAttribute("aria-busy", "true");
+  return { before, button, release };
 }
 
 const heightOf = async (page: Page, name: string) => {
@@ -84,8 +86,11 @@ for (const context of CONTEXTS) {
       page,
     }) => {
       const read = await readingResult(page);
-      await expect(read.button).toHaveAttribute("aria-busy", "true");
       expect(await heightOf(page, "Atualizar")).toBeCloseTo(context.height, 0);
+      const during = await read.button.boundingBox();
+      expect(during, "o botão lendo não muda de lugar nem de tamanho").toEqual(
+        read.before
+      );
       read.release();
       await expect(read.button).not.toHaveAttribute("aria-busy", "true");
     });

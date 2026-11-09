@@ -894,9 +894,8 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
 /**
  * "Atualizar" (DESIGN.md "A mesma ação é o mesmo componente"): the button that reads a screen again is
  * `RefreshButton` (`ui/refresh-button.tsx`), the only file with that text as the name of a button. The screens that
- * already use it (Início, Resultado, Metas) and the two still to come (Estoque and Vender) are scanned for JSX text that
- * starts with "Atualizar" and for an `aria-label` that does; the exceptions are listed by file, with the text they
- * still hold and why, and the list is exact.
+ * read again are scanned for JSX text that starts with "Atualizar" and for an `aria-label` that does; a screen that
+ * still writes its own is an exception listed by file, with how many texts it holds and why, and the list is exact.
  */
 const REFRESH_COMPONENT = "src/ui/refresh-button.tsx";
 const REFRESH_SCOPE = [
@@ -992,6 +991,16 @@ describe('"Atualizar" é um componente só (L1-5a, AC-5.1)', () => {
     expect(refreshButtonFaults(screen, '// "Atualizar" in a comment')).toEqual(
       []
     );
+    const stock = "src/inventory/inventory-page.tsx";
+    expect(
+      refreshButtonFaults(stock, "<Button>\n  Atualizar\n</Button>")
+    ).toEqual([]);
+    expect(
+      refreshButtonFaults(
+        stock,
+        "<Button>Atualizar</Button><Button>Atualizar</Button>"
+      )
+    ).not.toEqual([]);
     const sale = "src/sales/sale-page.tsx";
     expect(
       refreshButtonFaults(sale, "<Button>Atualizar estoque e perfis</Button>")

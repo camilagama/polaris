@@ -5,7 +5,7 @@ import { Button } from "./button";
 
 type RefreshButtonProps = Omit<
   ComponentProps<typeof Button>,
-  "children" | "size" | "variant"
+  "aria-label" | "children" | "size" | "type" | "variant"
 > & {
   /** The read is running: the icon turns (only with full motion) and the button says `aria-busy`. */
   busy?: boolean;
@@ -28,13 +28,12 @@ export function RefreshButton({
 }: RefreshButtonProps) {
   return (
     <Button
+      {...props}
       aria-busy={busy || undefined}
       aria-label={object ? `Atualizar ${object}` : undefined}
       className={cn("max-md:size-ctl-lg max-md:px-0", className)}
-      data-refresh-button=""
       type="button"
       variant="outline"
-      {...props}
     >
       <RefreshCwIcon
         aria-hidden="true"
