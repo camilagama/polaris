@@ -180,6 +180,52 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(NOW);
 });
 
+test("as três contagens são linhas sem caixa: sem borda nem fundo próprio, com o número à direita da barra", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await openScreen(page);
+  await expect(planTitle(page)).toHaveText("Plano Free");
+  const bar = page.getByRole("progressbar", { name: "Variantes: 38 de 50" });
+  await expect(bar).toBeVisible();
+  const lines = page.locator("[data-usage-lines] > div");
+  await expect(lines).toHaveCount(3);
+  const styles = await lines.evaluateAll((elements) =>
+    elements.map((element) => {
+      const computed = getComputedStyle(element);
+      return {
+        background: computed.backgroundColor,
+        borders: [
+          computed.borderTopWidth,
+          computed.borderRightWidth,
+          computed.borderBottomWidth,
+          computed.borderLeftWidth,
+        ],
+        radius: computed.borderTopLeftRadius,
+      };
+    })
+  );
+  for (const style of styles) {
+    expect(style.borders).toEqual(["0px", "0px", "0px", "0px"]);
+    expect(style.background).toBe("rgba(0, 0, 0, 0)");
+    expect(style.radius).toBe("0px");
+  }
+  const barBox = await bar.boundingBox();
+  const number = await page
+    .locator("[data-usage-lines] > div")
+    .first()
+    .getByText("de 50")
+    .boundingBox();
+  const label = await page
+    .getByText("Variantes", { exact: true })
+    .boundingBox();
+  if (!(barBox && number && label)) {
+    throw new Error("the first line has no box");
+  }
+  expect(label.x + label.width).toBeLessThanOrEqual(barBox.x + 1);
+  expect(number.x).toBeGreaterThanOrEqual(barBox.x + barBox.width - 1);
+});
+
 test("Free com o teste: plano, uso, oferta com o mensal marcado e o anual em destaque, e o preço antes do botão (AS-9, AS-11, AS-12, AS-14)", async ({
   page,
 }) => {
@@ -405,6 +451,47 @@ test("uso acima do limite, também no Pro: selo e barra cheia; sem limite, só o
   await expect(page.getByText("acima do limite")).toHaveCount(1);
   await expect(page.getByText("sem limite")).toHaveCount(0);
   await expect(page.getByRole("progressbar")).toHaveCount(2);
+});
+
+test("a 320 px com letra de 20 px, o selo 'acima do limite' não aperta o rótulo nem sobrepõe a barra", async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 640, width: 320 });
+  await openScreen(page, {
+    plans: [
+      {
+        ...ACTIVE,
+        limits: { goals: 3, images: 50, variants: 2000 },
+        usage: { goals: 4, images: 12, variants: 38 },
+      },
+    ],
+  });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "20px";
+  });
+  const bar = page.getByRole("progressbar", {
+    name: "Metas em andamento: 4 de 3, acima do limite",
+  });
+  await expect(bar).toBeVisible();
+  const line = page.locator("[data-usage-lines] > div").nth(2);
+  const label = line.getByText("Metas em andamento", { exact: true });
+  const labelBox = await label.boundingBox();
+  const badgeBox = await line.getByText("acima do limite").boundingBox();
+  const barBox = await bar.boundingBox();
+  const lineBox = await line.boundingBox();
+  if (!(labelBox && badgeBox && barBox && lineBox)) {
+    throw new Error("the line has no box");
+  }
+  expect(await label.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true
+  );
+  expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(badgeBox.x + 1);
+  expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(
+    lineBox.x + lineBox.width + 1
+  );
+  const barTop = barBox.y;
+  expect(barTop).toBeGreaterThanOrEqual(badgeBox.y + badgeBox.height - 1);
+  expect(barTop).toBeGreaterThanOrEqual(labelBox.y + labelBox.height - 1);
 });
 
 test("reembolso pedido e não concluído: dentro das 72 h, o texto do AS-42; depois, o suporte, sem tentar de novo (E-RP)", async ({
