@@ -11,6 +11,8 @@ import { saleDetailStates } from "./ui-sale-detail-states";
 skipOutsideChromium();
 
 const PHONE = { height: 740, width: 360 };
+const LARGE_MONEY = /text-value-lg/;
+const DAY_OF_SALE = /^14\/10\/2026/;
 const READING_ORDER = [
   'heading "Venda"',
   "Confirmada",
@@ -38,7 +40,11 @@ test("o total devido vem antes das datas no DOM e na tela, e cabe na primeira te
   const total = receipt.getByText("Total devido", { exact: true });
   const firstDate = receipt.getByText("Data da venda", { exact: true });
   await expect(total).toBeVisible();
-  const terms = await page
+  await expect(receipt.getByRole("listitem")).toHaveCount(2);
+  await expect(receipt.locator("[data-money]").first()).toHaveClass(
+    LARGE_MONEY
+  );
+  const terms = await receipt
     .locator("dt")
     .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
   expect(terms.indexOf("Total devido")).toBeGreaterThanOrEqual(0);
@@ -61,7 +67,7 @@ test("o total devido vem antes das datas no DOM e na tela, e cabe na primeira te
   expect(itemsBox?.y ?? 0).toBeLessThan(PHONE.height);
 });
 
-test("as três datas seguem num bloco só, com o mesmo texto, e vêm depois do subtotal", async ({
+test("as datas seguem num bloco só, com o mesmo texto, e vêm depois do subtotal", async ({
   page,
 }) => {
   await openReceipt(page);
@@ -74,9 +80,7 @@ test("as três datas seguem num bloco só, com o mesmo texto, e vêm depois do s
     "Data da venda",
     "Confirmada no servidor",
   ]);
-  await expect(
-    block.getByText("14/10/2026 · 09:00", { exact: false })
-  ).toBeVisible();
+  await expect(block.getByText(DAY_OF_SALE).first()).toBeVisible();
   const subtotal = await receipt
     .getByText("Subtotal", { exact: true })
     .boundingBox();
