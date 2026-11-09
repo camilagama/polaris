@@ -1,0 +1,54 @@
+name: Staging Asaas webhook token (next)
+
+# Writes the repository secret STAGING_ASAAS_WEBHOOK_TOKEN_NEXT into the staging Worker as
+# ASAAS_WEBHOOK_TOKEN_NEXT (the second token the Asaas webhook accepts during a rotation). Manual only, no inputs:
+# the value never travels as an input, an argument or an output. Staging only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  put-secret:
+    if: github.repository == 'camilagama/polaris' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: staging
+    permissions:
+      contents: read
+    concurrency:
+      group: staging-asaas-webhook-token-next
+      cancel-in-progress: false
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Write ASAAS_WEBHOOK_TOKEN_NEXT to polaris-web-staging
+        env:
+          TOKEN_NEXT: ${{ secrets.STAGING_ASAAS_WEBHOOK_TOKEN_NEXT }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          length=${#TOKEN_NEXT}
+          if [ "$length" -lt 32 ] || [ "$length" -gt 255 ]; then
+            echo "::error::STAGING_ASAAS_WEBHOOK_TOKEN_NEXT is empty or not 32 to 255 characters long (length $length)"
+            exit 1
+          fi
+          if [[ "$TOKEN_NEXT" =~ [[:space:]] ]]; then
+            echo "::error::STAGING_ASAAS_WEBHOOK_TOKEN_NEXT has a space or a line break"
+            exit 1
+          fi
+          cd apps/web
+          printf '%s' "$TOKEN_NEXT" | bunx --no-install wrangler secret put ASAAS_WEBHOOK_TOKEN_NEXT --env staging > /dev/null
+          echo "gravado ($length caracteres)"
