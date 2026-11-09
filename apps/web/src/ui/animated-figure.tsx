@@ -89,6 +89,9 @@ if (readMotionLevel() === "full") {
   loadCounter();
 }
 
+/** How long the figure waits for the chunk before it shows the static figure: a connection that hangs never ends the import. */
+const COUNTER_WAIT_MS = 4000;
+
 function useCounterModule(wanted: boolean) {
   const [module, setModule] = useState(loaded);
   const [failed, setFailed] = useState(false);
@@ -97,7 +100,9 @@ function useCounterModule(wanted: boolean) {
       return;
     }
     let current = true;
+    const giveUp = setTimeout(() => setFailed(true), COUNTER_WAIT_MS);
     loadCounter().then((found) => {
+      clearTimeout(giveUp);
       if (!current) {
         return;
       }
@@ -109,6 +114,7 @@ function useCounterModule(wanted: boolean) {
     });
     return () => {
       current = false;
+      clearTimeout(giveUp);
     };
   }, [wanted, module, failed]);
   return { failed, module };

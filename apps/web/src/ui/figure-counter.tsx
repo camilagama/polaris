@@ -8,7 +8,7 @@ import type { Figure } from "./animated-figure";
  * The count itself, `@number-flow/react` as Bklit UI's `ChartStatFlow` uses it, which only this file imports (the rule
  * is in `scripts/ui-source-rules.test.ts`). `animated-figure.tsx` loads this module with a dynamic `import()` and only
  * at the `full` level of motion, so the package is a chunk of its own that a phone, or a window under
- * `prefers-reduced-motion`, never asks for, and no other chunk carries it (`counterLoadProblems` in
+ * `prefers-reduced-motion`, never asks for, and no other chunk carries it (`counterPlacementProblems` in
  * `pwa/precache-budget.ts`). Nothing else may import this file statically, or the package comes back into that chunk.
  */
 

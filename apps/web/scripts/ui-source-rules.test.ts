@@ -495,8 +495,9 @@ const COUNTER_PACKAGE = /@number-flow\//;
 const COUNTER_USE = /<AnimatedFigure\b/;
 const COUNTER_STATIC_IMPORT =
   /(?:\bfrom\s*|\bimport\s+|\brequire\s*\(\s*)["'`][^"'`]*figure-counter(?:\.tsx?)?["'`]/;
+/* `typeof import("./figure-counter")` is a type, erased at build: it does not load anything */
 const COUNTER_DYNAMIC_IMPORT =
-  /\bimport\s*\(\s*["'`]\.\/figure-counter["'`]\s*\)/;
+  /(?<!typeof\s)\bimport\s*\(\s*["'`]\.\/figure-counter["'`]\s*\)/;
 
 export function figureFaults(path: string, text: string): string[] {
   const code = withoutComments(text);
@@ -557,6 +558,12 @@ describe("o contador só nos números principais e indicativos dos cartões (AC-
     expect(figureFaults(FIGURE_LOADER, staticImport)).toHaveLength(2);
     expect(figureFaults(FIGURE_LOADER, lazyImport)).toEqual([]);
     expect(figureFaults(FIGURE_LOADER, "const a = 1;")).toHaveLength(1);
+    expect(
+      figureFaults(
+        FIGURE_LOADER,
+        'type Counter = typeof import("./figure-counter");'
+      )
+    ).toHaveLength(1);
     expect(figureFaults("src/ui/kpi-card.tsx", lazyImport)).toEqual([]);
     // a comment that names the package is not an import
     expect(figureFaults("src/ui/money.tsx", "// @number-flow/react")).toEqual(
