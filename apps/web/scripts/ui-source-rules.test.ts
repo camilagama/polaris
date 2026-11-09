@@ -1037,3 +1037,89 @@ describe('"Atualizar" é um componente só (L1-5, AC-5.1)', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * "Mesmo botão, mesmo nome" (DESIGN.md "Sublinhado só em link dentro de texto corrido"): "Esconder valores" has one
+ * size, so no screen passes `size` to it; `variant="link"` has the radius of a control, not `rounded-sm`; and the
+ * action of a card that is a secondary link ("Ver o que falta") is a text-only button, not `variant="link"`.
+ */
+const HIDE_VALUES_SIZE = /<HideValuesButton\b[^>]*\bsize=/;
+const LINK_VARIANT_LINE = /^\s*link:\s*"[^"]*"/m;
+const SMALL_RADIUS = /\brounded-(?:sm|xs|none)\b/;
+const LINK_AS_CARD_ACTION = /variant=["{]+["']?link\b/;
+const CARD_ACTION_SCREENS = [
+  "src/dashboard/quality-banner.tsx",
+  "src/home/home-kpi-cards.tsx",
+];
+
+export function sameButtonFaults(path: string, text: string): string[] {
+  const code = withoutComments(text);
+  const faults: string[] = [];
+  if (HIDE_VALUES_SIZE.test(code)) {
+    faults.push("HideValuesButton recebe `size`: é um tamanho só");
+  }
+  if (path === "src/ui/button.tsx") {
+    const line = LINK_VARIANT_LINE.exec(code)?.[0] ?? "";
+    if (line === "" || SMALL_RADIUS.test(line)) {
+      faults.push('`variant="link"` sem o raio de controle (rounded-md)');
+    }
+  }
+  if (CARD_ACTION_SCREENS.includes(path) && LINK_AS_CARD_ACTION.test(code)) {
+    faults.push("ação de cartão com variant=link: é botão só texto (ghost)");
+  }
+  return faults;
+}
+
+describe("mesmo botão, mesmo nome (L1-6, AC-6.1, AC-6.2, AC-6.5)", () => {
+  const files = [
+    "src/ui/button.tsx",
+    "src/ui/hidden-values.tsx",
+    "src/home/home-page.tsx",
+    "src/dashboard/dashboard-page.tsx",
+    ...CARD_ACTION_SCREENS,
+  ];
+
+  it.each(files)("%s: passa", (path) => {
+    expect(sameButtonFaults(path, read(path))).toEqual([]);
+  });
+
+  it("o botão de verdade existe onde a regra olha (ninguém passa nesta por não ter o que ler)", () => {
+    expect(read("src/ui/button.tsx")).toMatch(LINK_VARIANT_LINE);
+    expect(read("src/dashboard/quality-banner.tsx")).toContain(
+      'variant="ghost"'
+    );
+  });
+
+  it("a volta de cada uma reprova (controle plantado)", () => {
+    expect(
+      sameButtonFaults(
+        "src/dashboard/dashboard-page.tsx",
+        '<HideValuesButton size="sm" />'
+      )
+    ).toHaveLength(1);
+    expect(
+      sameButtonFaults("src/home/home-page.tsx", "<HideValuesButton />")
+    ).toEqual([]);
+    expect(
+      sameButtonFaults(
+        "src/ui/button.tsx",
+        '  link: "h-auto rounded-sm px-0 underline",'
+      )
+    ).toHaveLength(1);
+    expect(
+      sameButtonFaults("src/ui/button.tsx", '  link: "h-auto px-0 underline",')
+    ).toEqual([]);
+    expect(
+      sameButtonFaults(
+        "src/dashboard/quality-banner.tsx",
+        '<Button size="sm" variant="link" />'
+      )
+    ).toHaveLength(1);
+    expect(
+      sameButtonFaults(
+        "src/dashboard/quality-banner.tsx",
+        '<Button size="sm" variant="ghost" />'
+      )
+    ).toEqual([]);
+  });
+});

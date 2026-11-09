@@ -31,7 +31,7 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/15 dark:bg-destructive/15 dark:hover:bg-destructive/20",
         ghost: "text-foreground hover:bg-accent aria-expanded:bg-accent",
-        link: "h-auto rounded-sm px-0 text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground",
+        link: "h-auto px-0 text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground",
         outline:
           "border-border bg-card text-foreground shadow-xs hover:bg-accent aria-expanded:bg-accent dark:bg-secondary/60 dark:hover:bg-accent",
         secondary:
