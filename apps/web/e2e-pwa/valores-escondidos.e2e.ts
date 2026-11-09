@@ -154,3 +154,36 @@ for (const theme of THEMES) {
     });
   }
 }
+
+for (const viewport of VIEWPORTS) {
+  test(`Venda: escondidos, a prévia de taxas e o total do formulário seguem escritos (${viewport.name})`, async ({
+    page,
+  }) => {
+    await useDevice(page, viewport, "claro", true);
+    await saleStates.payment(page);
+    const preview = page.getByRole("region", {
+      name: "Prévia de taxas e prazo",
+    });
+    await expect(preview).toBeVisible();
+    await expect(
+      preview.getByText("R$ 7,08 (R$ 0,50 + 2,99% do total devido)")
+    ).toBeVisible();
+    await expect(page.locator("[data-masked-money]")).toHaveCount(0);
+    await expect(page.getByText("valor escondido")).toHaveCount(0);
+    const total = viewport.width < 760 ? "[data-submit-bar]" : "main";
+    await expect(page.locator(total).getByText("219,90").first()).toBeVisible();
+  });
+
+  test(`Detalhe da venda: escondidos, a taxa do pagamento sai mascarada (${viewport.name})`, async ({
+    page,
+  }) => {
+    await useDevice(page, viewport, "claro", true);
+    await saleDetailStates.detailWithFee(page);
+    const fee = page
+      .locator("dt", { hasText: "Taxa de processamento" })
+      .locator("xpath=following-sibling::dd");
+    await expect(fee.locator("[data-masked-money]")).toHaveCount(2);
+    await expect(fee).not.toContainText("7,08");
+    expect(await amountsWritten(page)).toEqual([]);
+  });
+}

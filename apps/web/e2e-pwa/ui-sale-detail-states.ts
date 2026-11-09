@@ -13,8 +13,13 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const RPC_PREFIX = /^.*\/rpc\//;
 
-async function serveSale(page: Page, withReturn: boolean, hold = false) {
-  const answers = saleDetailAnswers({ withReturn });
+async function serveSale(
+  page: Page,
+  withReturn: boolean,
+  hold = false,
+  withFee = false
+) {
+  const answers = saleDetailAnswers({ withFee, withReturn });
   await page.route("**/rpc/{sale,customer}/**", (route: Route) => {
     const procedure = new URL(route.request().url()).pathname.replace(
       RPC_PREFIX,
@@ -41,9 +46,10 @@ async function openSaleLab(
   screen: "sale-detail",
   heading: string,
   withReturn = true,
-  hold = false
+  hold = false,
+  withFee = false
 ) {
-  await serveSale(page, withReturn, hold);
+  await serveSale(page, withReturn, hold, withFee);
   await serveLabWorker(page);
   await page.goto(
     `/offline-screens-lab?screen=${screen}&saleId=${DETAIL_SALE_ID}`
@@ -76,8 +82,15 @@ async function showScreenAlone(page: Page) {
   await page.waitForTimeout(300);
 }
 
-const openDetail = (page: Page, withReturn = true) =>
-  openSaleLab(page, "sale-detail", "Detalhe da venda", withReturn);
+const openDetail = (page: Page, withReturn = true, withFee = false) =>
+  openSaleLab(
+    page,
+    "sale-detail",
+    "Detalhe da venda",
+    withReturn,
+    false,
+    withFee
+  );
 
 export const saleDetailStates = {
   /** The cancellation reviewed: the reason, the effect in a neutral notice and the one destructive button. */
@@ -110,6 +123,13 @@ export const saleDetailStates = {
     await page.getByRole("dialog", { name: "Trocar cliente" }).waitFor();
     await showScreenAlone(page);
   },
+  /** The detail with a processing fee recorded on the payment, to read the amount of the fee on screen. */
+  async detailWithFee(page: Page) {
+    await openDetail(page, true, true);
+    await page.getByRole("button", { name: "Registrar devolução" }).waitFor();
+    await showScreenAlone(page);
+  },
+
   /** The detail as it opens: the receipt, the return made, the return and customer cards closed and the note on why the sale cannot be cancelled. */
   async detail(page: Page) {
     await openDetail(page);

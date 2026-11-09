@@ -157,13 +157,39 @@ const SALE_DETAIL_WITHOUT_RETURNS = {
   returns: [],
 };
 
+/** The same sale with a processing fee of R$ 7,08 recorded: the detail writes an amount in the payment block. */
+const SALE_DETAIL_WITH_FEE = {
+  ...SALE_DETAIL,
+  sale: {
+    ...SALE_DETAIL.sale,
+    payment: {
+      ...SALE_DETAIL.sale.payment,
+      processingFee: {
+        amount: "7.08",
+        fixedAmount: "0.50",
+        mode: "fixed_and_percentage",
+        percentage: "2.99",
+      },
+    },
+  },
+};
+
+function saleDetailRead(withReturn: boolean, withFee: boolean) {
+  if (withFee) {
+    return SALE_DETAIL_WITH_FEE;
+  }
+  return withReturn ? SALE_DETAIL : SALE_DETAIL_WITHOUT_RETURNS;
+}
+
 /** The answers of the detail and of the customer page, by procedure (`/rpc/<procedure>`). */
 export const saleDetailAnswers = ({
+  withFee = false,
   withReturn,
 }: {
+  withFee?: boolean;
   withReturn: boolean;
 }): Readonly<Record<string, unknown>> => ({
   "customer/list": SALE_CUSTOMERS,
-  "sale/get": withReturn ? SALE_DETAIL : SALE_DETAIL_WITHOUT_RETURNS,
+  "sale/get": saleDetailRead(withReturn, withFee),
   "sale/getCustomerLink": SALE_CUSTOMER_LINK,
 });

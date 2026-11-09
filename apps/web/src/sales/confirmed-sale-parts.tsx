@@ -1,6 +1,21 @@
 import { MoneyText } from "@/ui/hidden-values";
-import type { ConfirmedSaleView } from "./sale-form-model";
+import { cn } from "@/lib/utils";
+import type { ConfirmedSaleView, FeeLine } from "./sale-form-model";
 import { FeeValue } from "./sale-summary-panel";
+
+/** The fee of a confirmed sale: the amount masks with "Esconder valores"; the sale form's preview keeps `FeeValue`. */
+function ConfirmedFee({ line }: { line: FeeLine }) {
+  if (line.tone === "unknown") {
+    return <FeeValue line={line} />;
+  }
+  return (
+    <span
+      className={cn(line.tone === "not_applicable" && "text-muted-foreground")}
+    >
+      <MoneyText text={line.text} />
+    </span>
+  );
+}
 
 /**
  * The dates or the payment of a confirmed sale: label above, value below, in a block set back into the card (the
@@ -23,7 +38,7 @@ export function ConfirmedDetails({
             {detail.tone === "plain" ? (
               <MoneyText text={detail.value} />
             ) : (
-              <FeeValue line={{ text: detail.value, tone: detail.tone }} />
+              <ConfirmedFee line={{ text: detail.value, tone: detail.tone }} />
             )}
           </dd>
         </div>
