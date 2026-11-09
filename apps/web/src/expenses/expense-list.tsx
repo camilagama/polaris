@@ -2,7 +2,8 @@ import type {
   ExpenseCategoryReadModel,
   ExpenseReadModel,
 } from "@polaris/contracts";
-import { useCallback } from "react";
+import PlusIcon from "lucide-react/dist/esm/icons/plus";
+import { type MouseEvent, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -100,7 +101,7 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
           Total do período
           {filters.status === "voided" ? " (anuladas)" : ""}
         </p>
-        <p className="font-semibold">
+        <p className="min-h-[2.125rem] touch:min-h-[1.9375rem] font-semibold">
           {showTotal ? (
             <Money size="lg" text={formatBrlAmount(state.total)} />
           ) : (
@@ -272,23 +273,22 @@ interface ExpenseListProps {
   filters: ExpenseFilters;
   onEdit: (expense: ExpenseReadModel) => void;
   onLoadMore: () => void;
+  /** Opens the form of a new expense; it receives the click, so the focus goes back to the button that was pressed. */
+  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
   onRestore: (expense: ExpenseReadModel) => void;
   onRetry: () => void;
   onVoid: (expense: ExpenseReadModel) => void;
   state: ExpenseListState;
 }
 
-/** The form and the focus that returns after it belong to the page, and its origin is the title bar's button: this one asks that button to open it. */
-function openNewExpense() {
-  document.querySelector<HTMLElement>("[data-expense-new]")?.click();
-}
-
 function EmptyExpenses({
   busyKey,
   filters,
+  onNew,
 }: {
   busyKey: string | null;
   filters: ExpenseFilters;
+  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   if (filters.status === "voided") {
     return (
@@ -302,21 +302,27 @@ function EmptyExpenses({
   return (
     <EmptyState afterRead bare title="Nenhuma despesa neste período.">
       <Button
+        data-expense-new=""
         disabled={busyKey !== null}
-        onClick={openNewExpense}
+        onClick={onNew}
         type="button"
       >
+        <PlusIcon aria-hidden="true" data-icon="inline-start" />
         Nova despesa
       </Button>
     </EmptyState>
   );
 }
 
+/** The empty list and the loading line share this height (the sentence and its button), so the list that arrives empty does not push the screen. */
+const EMPTY_BOX_CLASS = "grid min-h-[6.9375rem] content-center";
+
 export function ExpenseList({
   busyKey,
   filters,
   onEdit,
   onLoadMore,
+  onNew,
   onRestore,
   onRetry,
   onVoid,
@@ -333,11 +339,13 @@ export function ExpenseList({
         />
       ) : null}
       {isLoading && expenses.length === 0 ? (
-        <ListNote loading>Carregando despesas…</ListNote>
+        <div className={EMPTY_BOX_CLASS}>
+          <ListNote loading>Carregando despesas…</ListNote>
+        </div>
       ) : null}
       {!isLoading && expenses.length === 0 && state.error === null ? (
-        <div className="grid min-h-[5.25rem] content-center py-4 md:min-h-[4.125rem]">
-          <EmptyExpenses busyKey={busyKey} filters={filters} />
+        <div className={`${EMPTY_BOX_CLASS} py-4`}>
+          <EmptyExpenses busyKey={busyKey} filters={filters} onNew={onNew} />
         </div>
       ) : null}
       {expenses.length > 0 ? (

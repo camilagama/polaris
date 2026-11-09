@@ -496,7 +496,7 @@ function OrganizationGate({ children }: { children: ReactNode }) {
         icon={
           <TriangleAlertIcon
             aria-hidden="true"
-            className="size-5 shrink-0 text-destructive"
+            className="size-4 shrink-0 text-destructive"
           />
         }
         title="Não foi possível abrir o Polaris"

@@ -218,7 +218,7 @@ export function historyListRequest(
 export interface HistoryRow {
   /** The sale was dated before the day it was confirmed on the server. */
   backdated: boolean;
-  /** The two letters of the circle of the row, or a dash when the sale has no customer name. */
+  /** The two letters of the circle of the row, empty when the sale has no customer name (the circle is left blank). */
   customerInitials: string;
   customerText: string;
   /** The commercial date (the organization's calendar day), dd/mm/aaaa. */
@@ -256,7 +256,7 @@ function rowCustomerInitials(sale: SaleListEntryReadModel): string {
   const [first] = words;
   const last = words.length > 1 ? words.at(-1) : undefined;
   const letters = [first, last].map((word) => Array.from(word ?? "")[0] ?? "");
-  return letters.join("").toLocaleUpperCase("pt-BR") || "—";
+  return letters.join("").toLocaleUpperCase("pt-BR");
 }
 
 export function historyRows(state: HistoryState): HistoryRow[] {

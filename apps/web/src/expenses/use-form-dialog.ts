@@ -45,9 +45,10 @@ export function useFormDialog<T extends Versioned, D>({
     setOpen(false);
   }, []);
   const openForm = useCallback(
-    (next: T | "new") => {
+    (next: T | "new", pressed?: HTMLElement | null) => {
       onOpen();
-      originRef.current = originOf(next);
+      const fallback = originOf(next);
+      originRef.current = () => (pressed?.isConnected ? pressed : fallback());
       setTarget(next);
       setOpen(true);
     },

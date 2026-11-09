@@ -14,6 +14,7 @@ const LONG_NAME =
   "Maria Aparecida da Conceição Albuquerque de Oliveira Santos Filho";
 const DATE_AND_TIME = /^\d\d\/\d\d\/\d{4} · \d\d:\d\d$/;
 const WIDTHS = [320, 359, 360];
+const DASH_ALONE = /(?:^|\s)[–—-](?:\s|$)/u;
 
 test.use({ hasTouch: true, isMobile: true });
 
@@ -170,3 +171,56 @@ test.describe("em 360 px", () => {
     ).toHaveCount(0);
   });
 });
+
+for (const [width, height] of [
+  [360, 740],
+  [1280, 800],
+] as const) {
+  test.describe(`avatar vazio em ${width} px`, () => {
+    test.use({ viewport: { height, width } });
+
+    test("sem cliente não há círculo com traço, o nome é 'Sem cliente' e o texto começa no mesmo x das linhas com avatar", async ({
+      page,
+    }) => {
+      await historyStates.list(page);
+      const links = page
+        .getByRole("list", { name: "Vendas" })
+        .getByRole("link");
+      const withCustomer = links.filter({ hasText: "Ângela Souza" });
+      const without = links.filter({ hasText: "Sem cliente" });
+      await expect(withCustomer).toHaveCount(1);
+      expect(await without.count()).toBeGreaterThan(1);
+      const startOf = async (row: typeof withCustomer) => {
+        const box = await row.getByText(DATE_AND_TIME).boundingBox();
+        expect(box).not.toBeNull();
+        return box?.x ?? Number.NaN;
+      };
+      const reference = await startOf(withCustomer);
+      const rows = await without.all();
+      const starts = await Promise.all(rows.map(startOf));
+      for (const start of starts) {
+        expect(Math.abs(start - reference)).toBeLessThanOrEqual(1);
+      }
+      const circles = await Promise.all(
+        rows.map(async (row) => {
+          const circle = row.locator("span[aria-hidden='true']").first();
+          return {
+            filled: await circle.evaluate(
+              (el) =>
+                getComputedStyle(el).backgroundColor !== "rgba(0, 0, 0, 0)"
+            ),
+            text: (await circle.innerText()).trim(),
+            width: (await circle.boundingBox())?.width ?? 0,
+            whole: await row.innerText(),
+          };
+        })
+      );
+      for (const circle of circles) {
+        expect(circle.width).toBeGreaterThan(0);
+        expect(circle.text).toBe("");
+        expect(circle.filled).toBe(false);
+        expect(circle.whole).not.toMatch(DASH_ALONE);
+      }
+    });
+  });
+}
