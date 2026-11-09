@@ -619,9 +619,12 @@ describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
     ]) {
       expect(existsSync(join(web, path)), path).toBe(true);
     }
-    expect(MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file)).toEqual(
-      FOCUS_SCOPE.filter((path) => path !== MONEY_COMPONENT).filter((path) =>
-        read(path).includes("text-[0.56em]")
+    const sorted = (paths: string[]) => [...paths].sort();
+    expect(sorted(MONEY_FRACTION_ELSEWHERE.map((entry) => entry.file))).toEqual(
+      sorted(
+        FOCUS_SCOPE.filter((path) => path !== MONEY_COMPONENT).filter((path) =>
+          read(path).includes("text-[0.56em]")
+        )
       )
     );
   });
