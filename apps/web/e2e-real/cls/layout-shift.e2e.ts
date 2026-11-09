@@ -543,10 +543,6 @@ test("layout shift no celular: o Início aberto sem rede, na cópia, quando a re
   await makePro(sql, journey.organizationId as string);
   const { page } = journey;
   await page.context().addInitScript(recordLayoutShifts);
-  page.on("console", (m) => console.log("DIAG console", m.type(), m.text()));
-  page.on("pageerror", (e) => console.log("DIAG pageerror", e.message));
-  page.on("requestfailed", (r) => console.log("DIAG requestfailed", r.url(), r.failure()?.errorText));
-  page.on("response", (r) => r.status() >= 400 && console.log("DIAG response", r.status(), r.url()));
   await page.goto("/");
   await settle(page, SCREENS["/"](page));
   // the runtime is up and the device holds the copy: only then does the Início have a copy to open on
@@ -561,11 +557,7 @@ test("layout shift no celular: o Início aberto sem rede, na cópia, quando a re
   await expect(
     page.getByRole("status").filter({ hasText: "Sem conexão" })
   ).toBeVisible({ timeout: SETTLE_MS });
-  await warm(page, "/").catch(async (error) => {
-    console.log("DIAG body", (await page.locator("body").innerText()).slice(0, 1500));
-    console.log("DIAG url", page.url());
-    throw error;
-  });
+  await warm(page, "/");
   const onTheCopy = [
     ...home(page),
     page.getByRole("region", { name: "Vendas hoje" }).getByText("R$").first(),
