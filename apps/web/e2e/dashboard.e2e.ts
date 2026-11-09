@@ -1077,6 +1077,33 @@ test("sem conexão, um mês que nunca foi lido diz que não há números guardad
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
 
+test("sem conexão, Este ano só abre com internet, como os Últimos 30 dias, e o mês lido segue com a cópia (AC-1.3)", async ({
+  page,
+}) => {
+  const server = new FakeReportServer();
+  await openDashboard(page, server);
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+
+  server.networkDown = true;
+  await choosePreset(page, "Este ano");
+  await expectPreset(page, "Este ano");
+  await expect(page.getByRole("alert")).toContainText(
+    "Este período só abre com internet.",
+    { timeout: 15_000 }
+  );
+  await expect(page.getByRole("alert")).not.toContainText(
+    "Sem internet e sem números guardados"
+  );
+  await expect(kpiCards(page)).toHaveCount(0);
+  await expect(copyNotice(page)).toHaveCount(0);
+
+  await choosePreset(page, "Este mês");
+  await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
+    timeout: 15_000,
+  });
+  await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
+});
+
 test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mostra o servidor", async ({
   page,
 }) => {
@@ -1571,6 +1598,62 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(periodButton(page)).toHaveAccessibleName(
       "Período: 14/10/2025 a 14/10/2026, editar"
     );
+  });
+
+  test("pelo teclado, as setas páram no último dia do limite; o dia além dele está desligado com o motivo ligado, e Enter nele não aplica", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await openPeriod(page);
+    const panel = periodPanel(page);
+    await panel.getByRole("gridcell").first().waitFor();
+    const day = (iso: string) => panel.locator(`button[data-day="${iso}"]`);
+
+    await day("2026-10-14").focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toContainText(
+      "Início 14/10/2026. Escolha o último dia."
+    );
+
+    // a year back by the keys, then one more day back: the focus stays on the last day the limit allows
+    await page.keyboard.press("Shift+PageUp");
+    const edge = day("2025-10-14");
+    await expect(edge).toBeFocused();
+    await expect(edge).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("ArrowLeft");
+    await expect(edge).toBeFocused();
+
+    // the day beyond is turned off and carries the reason, which a screen reader in browse mode reads and activates
+    const beyond = day("2025-10-13");
+    await expect(beyond).toHaveAttribute("aria-disabled", "true");
+    const reason = await beyond.getAttribute("aria-describedby");
+    expect(reason).not.toBeNull();
+    await expect(panel.locator(`[id="${reason}"]`)).toHaveText(
+      "Escolha até 1 ano."
+    );
+    await expect(beyond).toHaveAccessibleDescription("Escolha até 1 ano.");
+    await beyond.focus();
+    await expect(beyond).toBeFocused();
+    const asked = server.periods.length;
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(
+      "Início 14/10/2026. Escolha o último dia."
+    );
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 01/10 a 31/10, editar"
+    );
+    expect(server.periods).toHaveLength(asked);
+
+    // the last day of the limit still applies by the keys
+    await edge.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toHaveCount(0);
+    await expect
+      .poll(() => server.periods.at(-1))
+      .toEqual({ from: "2025-10-14", to: "2026-10-14" });
   });
 
   test("teclado: o botão abre o painel, o foco entra nele e volta ao botão ao fechar; sem falha de axe", async ({

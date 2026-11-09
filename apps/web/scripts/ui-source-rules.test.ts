@@ -1159,6 +1159,14 @@ export function shortcutNameFaults(path: string, text: string): string[] {
   ).map((name) => `"${name}" escrito fora de ${SHORTCUT_LIST}`);
 }
 
+export function shortcutFaultsOver(
+  sources: ReadonlyArray<{ path: string; text: string }>
+): string[] {
+  return sources.flatMap(({ path, text }) =>
+    shortcutNameFaults(path, text).map((fault) => `${path}: ${fault}`)
+  );
+}
+
 describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
   const files = sourcesUnder("src");
 
@@ -1169,10 +1177,9 @@ describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
   });
 
   it("nenhum arquivo de src escreve o nome de um atalho", () => {
-    const faults = files.flatMap((path) =>
-      shortcutNameFaults(path, read(path)).map((fault) => `${path}: ${fault}`)
-    );
-    expect(faults).toEqual([]);
+    expect(
+      shortcutFaultsOver(files.map((path) => ({ path, text: read(path) })))
+    ).toEqual([]);
   });
 
   it("a lista tem os seis atalhos e a exceção é exata: o arquivo dela ainda escreve o nome", () => {
@@ -1194,6 +1201,35 @@ describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
     expect(read("src/dashboard/result-period.ts")).toContain("shortcutLabel(");
     expect(read("src/dashboard/period-picker.tsx")).toContain("shortcuts=");
     expect(read("src/ui/date-range-picker.tsx")).toContain("shortcutsOf(");
+  });
+
+  it("a varredura da árvore reprova uma lista própria plantada numa tela e nomeia o arquivo (controle plantado)", () => {
+    const planted = [
+      { path: SHORTCUT_LIST, text: '{ label: "Este mês" }' },
+      {
+        path: "src/expenses/month-picker.tsx",
+        text: "<button>Este mês</button>",
+      },
+      {
+        path: "src/dashboard/period-picker.tsx",
+        text: 'const shortcuts = ["Este mês", "Este ano"];',
+      },
+      {
+        path: "src/sales/sale-history-filters.tsx",
+        text: "const own = `Últimos 30 dias`;",
+      },
+      { path: "src/goals/goals-page.tsx", text: "// Mês passado" },
+    ];
+    expect(shortcutFaultsOver(planted)).toEqual([
+      `src/dashboard/period-picker.tsx: "Este mês" escrito fora de ${SHORTCUT_LIST}`,
+      `src/dashboard/period-picker.tsx: "Este ano" escrito fora de ${SHORTCUT_LIST}`,
+      `src/sales/sale-history-filters.tsx: "Últimos 30 dias" escrito fora de ${SHORTCUT_LIST}`,
+    ]);
+    expect(
+      shortcutFaultsOver(
+        planted.filter(({ path }) => path !== "src/dashboard/period-picker.tsx")
+      )
+    ).toHaveLength(1);
   });
 
   it("um nome escrito à mão reprova, e a lista e a exceção não (controle plantado)", () => {
