@@ -517,11 +517,7 @@ export function CustomerList({
   }
   if (total === 0) {
     if (status !== "active") {
-      return (
-        <ListNotice>
-          <p className="text-muted-foreground">Nenhum cliente arquivado.</p>
-        </ListNotice>
-      );
+      return <EmptyState afterRead title="Nenhum cliente arquivado." />;
     }
     return (
       <EmptyState afterRead title="Nenhum cliente ainda.">

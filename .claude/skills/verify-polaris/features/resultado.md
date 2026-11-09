@@ -7,7 +7,7 @@ Resultado (`/dashboard`) é a estimativa do período com as vendas confirmadas e
 - `resultado-periodo` aba Resultado: `group "Período"` (no celular, o combobox "Período") ("Este mês", "Mês passado", "Últimos 30 dias", "Este ano", "Período"; acima de 62 dias o gráfico e "Ver os números" agrupam por mês), "Atualizar", "Esconder valores", "Qualidade dos dados" e as regiões "Resultado estimado", "Vendas em <mês>", "Ticket médio", "Margem". A partir de 900 px as quatro regiões são colunas de uma faixa só (`[data-kpi-row]`); abaixo, cartões.
 - `resultado-vazio` período sem venda nem despesa: "Sem vendas nem despesas em <período>" com os links "Nova venda" (leva a `/sales`) e, só com `expense:create`, "Nova despesa" (leva a `/dashboard?aba=despesas`); loja `vazia`.
 - `metas` aba Metas: `region "Metas"`, "Nova meta"; vazio: "Nenhuma meta ainda" com a linha de apoio e o botão "Nova meta" (o único: o do cabeçalho sai enquanto a lista está vazia).
-- `despesas` aba Despesas: "Lançamentos", "Recorrentes" e "Categorias"; "Nova despesa"; vazio: "Nenhuma despesa neste período." e o botão "Nova despesa" (um segundo, além do botão do título; só na aba Ativas)
+- `despesas` aba Despesas: "Lançamentos", "Recorrentes" e "Categorias"; "Nova despesa"; vazio: "Nenhuma despesa neste período." e o botão "Nova despesa", que é o único: com a lista de ativas vazia o do título sai e o do vazio abre o formulário (nas anuladas e nas outras partes o do título fica)
 
 ## How to get to it (user POV)
 

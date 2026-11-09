@@ -458,7 +458,7 @@ async function choose(
   await expect(page.getByRole("listbox")).toHaveCount(0);
 }
 
-/** The one in the title bar: the empty list has a button of the same name, which asks this one to open the form. */
+/** "Nova despesa" wherever it is: in the title bar, or in the empty list, which then takes the title bar's place (never both). */
 const newExpenseButton = (page: Page) =>
   page
     .getByRole("button", { exact: true, name: "Nova despesa" })
@@ -1458,7 +1458,7 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
 });
 
-test("o vazio do período é a frase curta com o botão Nova despesa, que abre o formulário", async ({
+test("o vazio do período tem o único Nova despesa, que abre o formulário, e o Esc devolve o foco a ele", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
@@ -1470,10 +1470,94 @@ test("o vazio do período é a frase curta com o botão Nova despesa, que abre o
   await expect(empty).toBeVisible();
   await expect(empty.getByText("Toque em")).toHaveCount(0);
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
-  await empty.getByRole("button", { name: "Nova despesa" }).click();
+  const only = page.getByRole("button", { exact: true, name: "Nova despesa" });
+  await expect(only).toHaveCount(1);
+  await expect(
+    empty.getByRole("button", { name: "Nova despesa" })
+  ).toBeVisible();
+  await only.click();
   await expect(expenseForm(page)).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(newExpenseButton(page)).toBeFocused();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(only).toBeFocused();
+  await expect(only).toHaveCount(1);
+});
+
+test("o botão Nova despesa do título fica nas outras partes e na aba das anuladas, e volta quando a lista ganha uma despesa", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  await openExpenses(page, server);
+  const newButtons = page.getByRole("button", {
+    exact: true,
+    name: "Nova despesa",
+  });
+  await expect(newButtons).toHaveCount(1);
+  await expect(
+    page.getByRole("status").getByRole("button", { name: "Nova despesa" })
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "Recorrentes" }).click();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
+  await page.getByRole("tab", { name: "Lançamentos" }).click();
+  await expect(
+    page.getByRole("status").getByRole("button", { name: "Nova despesa" })
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "Anuladas" }).click();
+  await expect(
+    page.getByText("Nenhuma despesa anulada neste período.")
+  ).toBeVisible();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
+  await page.getByRole("tab", { name: "Ativas" }).click();
+
+  await newButtons.click();
+  await fillExpense(page, {
+    amount: "80",
+    category: "Marketing",
+    description: "Panfletos",
+  });
+  await expenseForm(page)
+    .getByRole("button", { name: "Registrar despesa" })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row(page, "Panfletos")).toBeVisible();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
+});
+
+test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura (até 1 px) e, na linha do título, no mesmo lugar", async ({
+  page,
+}) => {
+  const server = new FakeExpenseServer();
+  let release: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await openExpenses(page, server, (target) =>
+    target.route("**/rpc/expense/list", async (route) => {
+      await held;
+      await route.fallback();
+    })
+  );
+  const card = page.getByRole("region", { name: "Despesas do período" });
+  await expect(page.getByText("Carregando despesas…")).toBeVisible();
+  const measure = async () => {
+    const box = await card.boundingBox();
+    return { height: box?.height ?? 0, top: box?.y ?? 0 };
+  };
+  const reading = await measure();
+  release?.();
+  await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
+  const empty = await measure();
+  expect(Math.abs(empty.height - reading.height)).toBeLessThanOrEqual(1);
+  // from 760 px the title's button sits on the title line, so it leaving does not move the card; on a phone it is a row of its own
+  const wide = (page.viewportSize()?.width ?? 0) >= 760;
+  if (wide) {
+    expect(Math.abs(empty.top - reading.top)).toBeLessThanOrEqual(1);
+  }
 });
 
 const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;
