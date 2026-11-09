@@ -17,6 +17,7 @@ import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
 import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
+import { MoneyText } from "@/ui/hidden-values";
 import { Skeleton } from "@/ui/skeleton";
 import {
   ProductThumbnail,
@@ -184,7 +185,7 @@ function StockItem({
                 row.costUnknown && "text-warning italic"
               )}
             >
-              {row.costText}
+              <MoneyText text={row.costText} />
             </span>
           </Figure>
         </dl>

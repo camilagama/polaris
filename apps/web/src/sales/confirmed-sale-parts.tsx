@@ -1,6 +1,21 @@
-import { NoBreakMoney } from "@/ui/hidden-values";
-import type { ConfirmedSaleView } from "./sale-form-model";
+import { MoneyText } from "@/ui/hidden-values";
+import { cn } from "@/lib/utils";
+import type { ConfirmedSaleView, FeeLine } from "./sale-form-model";
 import { FeeValue } from "./sale-summary-panel";
+
+/** The fee of a confirmed sale: the amount masks with "Esconder valores"; the sale form's preview keeps `FeeValue`. */
+function ConfirmedFee({ line }: { line: FeeLine }) {
+  if (line.tone === "unknown") {
+    return <FeeValue line={line} />;
+  }
+  return (
+    <span
+      className={cn(line.tone === "not_applicable" && "text-muted-foreground")}
+    >
+      <MoneyText text={line.text} />
+    </span>
+  );
+}
 
 /**
  * The dates or the payment of a confirmed sale: label above, value below, in a block set back into the card (the
@@ -21,9 +36,9 @@ export function ConfirmedDetails({
           <dt className="text-muted-foreground text-xs">{detail.label}</dt>
           <dd className="text-sm [overflow-wrap:anywhere]">
             {detail.tone === "plain" ? (
-              <NoBreakMoney text={detail.value} />
+              <MoneyText text={detail.value} />
             ) : (
-              <FeeValue line={{ text: detail.value, tone: detail.tone }} />
+              <ConfirmedFee line={{ text: detail.value, tone: detail.tone }} />
             )}
           </dd>
         </div>
@@ -52,10 +67,10 @@ export function ConfirmedItems({
               {item.label}
             </span>
             <span className="tabular-nums">
-              <NoBreakMoney text={item.detail} />
+              <MoneyText text={item.detail} />
             </span>
             <span className="text-muted-foreground text-support">
-              <NoBreakMoney text={item.costText} />
+              <MoneyText text={item.costText} />
             </span>
           </li>
         ))}
