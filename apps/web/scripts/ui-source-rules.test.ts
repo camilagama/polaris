@@ -1273,7 +1273,9 @@ describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
 
 const UPPERCASE_CLASS = /^!?(?:uppercase|\[text-transform:uppercase\])!?$/;
 const UPPERCASE_STYLE =
-  /text-transform\s*:\s*uppercase|textTransform\s*:\s*["'`]uppercase/;
+  /text-transform\s*:\s*uppercase|textTransform\s*:\s*["'`]uppercase|@apply\b[^;]*\buppercase\b/;
+// `cn({ uppercase: flag })`: the key of the object has no quotes, so no string holds it
+const UPPERCASE_KEY = /\b(?:cn|clsx|cva|twMerge)\([^)]*?\{[^}]*\buppercase\s*:/;
 
 // a word of a sentence: capitalized, or closed by punctuation; no class is written like that
 const SENTENCE_WORD = /^[A-ZÀ-Ý][a-zà-ÿ]+$|[a-zà-ÿ][.,?;]$/;
@@ -1290,8 +1292,12 @@ const classTokensOutsideProse = (text: string) =>
 /** Capital letters set by the style: the `uppercase` class (with or without a variant) and `text-transform: uppercase`. */
 export function uppercaseStyleFaults(path: string, text: string): string[] {
   const faults: string[] = [];
-  if (UPPERCASE_STYLE.test(withoutComments(text))) {
+  const code = withoutComments(text);
+  if (UPPERCASE_STYLE.test(code)) {
     faults.push("text-transform: uppercase");
+  }
+  if (UPPERCASE_KEY.test(code)) {
+    faults.push("classe uppercase como chave de objeto");
   }
   if (!TS_OR_TSX.test(path)) {
     return faults;
@@ -1361,6 +1367,9 @@ describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
     ["<p style={{ textTransform: 'uppercase' }}>", 1],
     [".label { text-transform: uppercase; }", 1],
     [".label{text-transform:uppercase}", 1],
+    [".label { @apply font-medium uppercase; }", 1],
+    ["cn({ uppercase: dense })", 1],
+    ["cn('grid', { uppercase: dense, 'p-2': true })", 1],
   ])("%s reprova (controle plantado)", (text, count) => {
     const path = text.startsWith(".") ? "src/x.css" : "src/x.tsx";
     expect(uppercaseStyleFaults(path, text).length).toBeGreaterThanOrEqual(
@@ -1375,6 +1384,8 @@ describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
     "// uppercase tracking-wide",
     "/* text-transform: uppercase */",
     "const name = text.toUpperCase();",
+    "const errors = { uppercase: 'password_missing_uppercase' };",
+    ".label { @apply font-medium; }",
     'const message = "Password needs an uppercase letter.";',
     ".label { text-transform: none; }",
   ])("%s passa (controle plantado)", (text) => {
