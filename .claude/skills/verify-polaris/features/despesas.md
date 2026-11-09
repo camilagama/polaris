@@ -1,6 +1,6 @@
 # Despesas
 
-Despesas (`/expenses`) é a tela das despesas da loja, um destino do menu no grupo "Resultado", ao lado do Resultado: o título "Despesas", o botão "Nova despesa" na linha dele e o segmentado "Lançamentos", "Recorrentes" e "Categorias" (`?ver=recorrentes`, `?ver=categorias`; sem `ver`, Lançamentos). Só lê e grava com conexão. O endereço antigo `/dashboard?aba=despesas` abre esta tela no lugar.
+Despesas (`/expenses`) é a tela das despesas da loja, um destino do menu no grupo "Financeiro", ao lado do Resultado: o título "Despesas", o botão "Nova despesa" na linha dele e o segmentado "Lançamentos", "Recorrentes" e "Categorias" (`?ver=recorrentes`, `?ver=categorias`; sem `ver`, Lançamentos). Só lê e grava com conexão. O endereço antigo `/dashboard?aba=despesas` abre esta tela no lugar.
 
 ## Sub-features
 
@@ -9,7 +9,7 @@ Despesas (`/expenses`) é a tela das despesas da loja, um destino do menu no gru
 
 ## How to get to it (user POV)
 
-- Desktop: link `Despesas` do menu "Principal" (grupo "Resultado"), 1 clique; só existe para quem tem `expense:create`.
+- Desktop: link `Despesas` do menu "Principal" (grupo "Financeiro"), 1 clique; só existe para quem tem `expense:create`.
 - Celular: "Mais" e o link `Despesas` (2 toques).
 - Resultado: o link "Despesas do período", na linha do título do Resultado (só com `expense:create`).
 - Resultado vazio: o link "Nova despesa" (só com `expense:create`).

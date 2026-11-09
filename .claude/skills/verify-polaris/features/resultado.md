@@ -11,7 +11,7 @@ Resultado (`/dashboard`) é a estimativa do período com as vendas confirmadas e
 
 ## How to get to it (user POV)
 
-- Desktop: link `Resultado` do menu "Principal" (grupo "Resultado", com Despesas).
+- Desktop: link `Resultado` do menu "Principal" (grupo "Financeiro", com Despesas).
 - Celular: "Mais" e o link `Resultado`.
 - Início: "Ver o resultado" (região "Resultado estimado") e "Definir meta" (`/dashboard?meta=nova`; `/dashboard?meta=lista` também abre Metas).
 - Abas: `tablist "Resultado e metas"`; a primeira, `/dashboard?aba=resultado`, é o mesmo que `/dashboard`. `/dashboard?aba=despesas` não é aba: abre a tela [Despesas](despesas.md).
