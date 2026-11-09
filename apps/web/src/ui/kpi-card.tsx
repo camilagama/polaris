@@ -4,6 +4,7 @@ import { type ChangeEvent, type ReactNode, useCallback } from "react";
 import { formatBrlAmount } from "@/lib/format";
 import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
+import { AnimatedFigure } from "./animated-figure";
 import { Card } from "./card";
 import { HelpTip } from "./help-tip";
 import { MoneyText } from "./hidden-values";
@@ -238,7 +239,12 @@ export function HeroValue({
     );
   }
   const negative = amount.trim().startsWith("-");
-  const money = <Money split text={formatBrlAmount(amount)} />;
+  const written = formatBrlAmount(amount);
+  const money = (
+    <AnimatedFigure text={written}>
+      <Money split text={written} />
+    </AnimatedFigure>
+  );
   if (hidden) {
     return (
       <p className={box} data-kpi-value="">
@@ -279,8 +285,10 @@ export function HeroPercent({
       className={cn(box, text.trim().startsWith("-") && "text-destructive")}
       data-kpi-value=""
     >
-      {text.replace("%", "")}
-      <span className="font-medium text-[0.56em] tracking-normal">%</span>
+      <AnimatedFigure smallSign text={text}>
+        {text.replace("%", "")}
+        <span className="font-medium text-[0.56em] tracking-normal">%</span>
+      </AnimatedFigure>
     </p>
   );
 }
@@ -318,7 +326,11 @@ function MoneyChipText({ text }: { text: string }) {
 function chipText(delta: KpiDelta, named: boolean, hidden: boolean): ReactNode {
   const seen = (
     <span aria-hidden="true" data-kpi-delta-text="">
-      {delta.money ? <MoneyChipText text={delta.text} /> : delta.text}
+      {delta.money ? (
+        <MoneyChipText text={delta.text} />
+      ) : (
+        <AnimatedFigure text={delta.text}>{delta.text}</AnimatedFigure>
+      )}
     </span>
   );
   if (named) {

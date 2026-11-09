@@ -248,6 +248,11 @@ const MONEY_FRACTION_ELSEWHERE: readonly {
   why: string;
 }[] = [
   {
+    file: "src/ui/animated-figure.tsx",
+    strings: 4,
+    why: "o contador escreve o R$, o espaço, os centavos e o % nas partes do NumberFlow com a mesma fração do Money, para o valor que conta não mudar de forma",
+  },
+  {
     file: "src/ui/kpi-card.tsx",
     strings: 1,
     why: "o sufixo % da Margem (HeroPercent) usa a mesma fração do R$ na caixa do valor do cartão",
@@ -471,6 +476,66 @@ export function focusListFaults(
     ? []
     : [`${found} string(s) sem anel de foco, e a lista diz ${listed}`];
 }
+
+/**
+ * Só os números principais e indicativos dos cards animam (DESIGN.md "Movimento"): `@number-flow/react` é importado só
+ * no contador, e o contador só é usado pelos itens da lista fechada (o valor e o chip do cartão de KPI, a Margem e o
+ * percentual da Meta, mais a galeria que mostra o componente). Qualquer outro uso, ou outro arquivo que importe o pacote, reprova.
+ */
+export const FIGURE_COUNTER = "src/ui/animated-figure.tsx";
+export const FIGURE_USERS = [
+  "src/home/home-goal.tsx",
+  "src/ui-gallery/ui-gallery.tsx",
+  "src/ui/kpi-card.tsx",
+] as const;
+const COUNTER_PACKAGE = /@number-flow\//;
+const COUNTER_USE = /<AnimatedFigure\b/;
+
+export function figureFaults(path: string, text: string): string[] {
+  const code = withoutComments(text);
+  const faults: string[] = [];
+  if (COUNTER_PACKAGE.test(code) && path !== FIGURE_COUNTER) {
+    faults.push("importa o pacote do contador fora de ui/animated-figure.tsx");
+  }
+  if (
+    COUNTER_USE.test(code) &&
+    !(FIGURE_USERS as readonly string[]).includes(path)
+  ) {
+    faults.push("usa o AnimatedFigure fora da lista fechada dos cartões");
+  }
+  return faults;
+}
+
+const FIGURE_SCOPE = sourcesUnder("src").filter((path) => TS_OR_TSX.test(path));
+
+describe("o contador só nos números principais e indicativos dos cartões (AC-8.1)", () => {
+  it("a lista fechada e o contador existem, e cada usuário da lista usa o contador (uma lista velha deixaria passar outra coisa)", () => {
+    expect(FIGURE_USERS).toEqual([...FIGURE_USERS].sort());
+    expect(read(FIGURE_COUNTER)).toContain('from "@number-flow/react"');
+    for (const user of FIGURE_USERS) {
+      expect(read(user), user).toMatch(COUNTER_USE);
+    }
+    expect(FIGURE_SCOPE).toEqual(expect.arrayContaining([FIGURE_COUNTER]));
+  });
+
+  it.each(FIGURE_SCOPE)("%s: sem contador fora da lista", (path) => {
+    expect(figureFaults(path, read(path))).toEqual([]);
+  });
+
+  it("reprova o pacote fora do contador e o contador fora da lista (controle plantado)", () => {
+    const pkg = 'import NumberFlow from "@number-flow/react";';
+    const use = "const a = <AnimatedFigure text={x}>{x}</AnimatedFigure>;";
+    expect(figureFaults("src/ui/money.tsx", pkg)).toHaveLength(1);
+    expect(figureFaults("src/dashboard/result-chart.tsx", use)).toHaveLength(1);
+    expect(figureFaults("src/home/home-chart.tsx", use)).toHaveLength(1);
+    expect(figureFaults(FIGURE_COUNTER, pkg)).toEqual([]);
+    expect(figureFaults("src/ui/kpi-card.tsx", use)).toEqual([]);
+    // a comment that names the package is not an import
+    expect(figureFaults("src/ui/money.tsx", "// @number-flow/react")).toEqual(
+      []
+    );
+  });
+});
 
 describe("regras de fonte da interface (t180, itens 4 e 5)", () => {
   it("cobre a base, os estilos e as pastas das telas", () => {
