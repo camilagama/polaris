@@ -1,6 +1,5 @@
 import type { GoalReadModel } from "@polaris/contracts";
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import TargetIcon from "lucide-react/dist/esm/icons/target";
 import {
   useCallback,
   useEffect,
@@ -8,9 +7,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import { EmptyState } from "@/ui/empty-state";
 import { RefreshButton } from "@/ui/refresh-button";
 import { ActionNotice, ListNote, LoadError } from "../expenses/expense-fields";
 import { focusLater } from "../lib/focus";
@@ -50,6 +51,8 @@ interface GoalListProps {
   busyKey: string | null;
   goals: readonly GoalReadModel[];
   onCancel: (goal: GoalReadModel) => Promise<GoalOutcome>;
+  /** The button that opens the form, which the empty list carries in the header's place. */
+  newButton: { onClick: () => void; ref: RefObject<HTMLButtonElement | null> };
   onRetry: () => void;
   /** What goes with a goal paused by the plan: the way to the Pro (corte 1.6). */
   pausedHelp: LimitHelpView | null;
@@ -75,6 +78,7 @@ function GroupLabel({ children, id }: { children: string; id: string }) {
 function GoalList({
   busyKey,
   goals,
+  newButton,
   onCancel,
   onRetry,
   onSave,
@@ -102,19 +106,20 @@ function GoalList({
         </Card>
       ) : null}
       {!state.isLoading && goals.length === 0 && state.error === null ? (
-        <Card>
-          <CardContent className="grid justify-items-center gap-1 text-center">
-            <TargetIcon
-              aria-hidden="true"
-              className="size-5 text-muted-foreground"
-            />
-            <p className="font-medium">Nenhuma meta ainda</p>
-            <p className="text-muted-foreground text-support">
-              Crie uma para acompanhar as vendas líquidas, o resultado estimado
-              ou o número de vendas de um período.
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          afterRead
+          support="Acompanhe as vendas líquidas, o resultado estimado ou o número de vendas de um período."
+          title="Nenhuma meta ainda"
+        >
+          <Button
+            disabled={busyKey !== null}
+            onClick={newButton.onClick}
+            ref={newButton.ref}
+            type="button"
+          >
+            Nova meta
+          </Button>
+        </EmptyState>
       ) : null}
       {groups.active.length > 0 ? (
         <>
@@ -197,6 +202,10 @@ export function GoalsPanel({
   // the form is a dialog: opened by the button, or by the address the Início links to
   const [creating, setCreating] = useState(link === "new");
   const newButtonRef = useRef<HTMLButtonElement>(null);
+  // the empty list has the one button that opens the form, as Clientes does: the header's would be the same twice;
+  // while it is read nothing is known to be empty, and the header keeps its button so it does not jump when it arrives
+  const listIsEmpty =
+    !state.isLoading && state.goals.length === 0 && state.error === null;
 
   // what was typed when the form was closed by Esc or "Fechar", for the next opening; in memory only (and kept while
   // "Conhecer o Pro" opens the Assinatura with no load of the page, for "voltar")
@@ -311,16 +320,18 @@ export function GoalsPanel({
             object="metas"
             onClick={handleRetry}
           />
-          <Button
-            disabled={busy !== null}
-            onClick={handleNew}
-            ref={newButtonRef}
-            size="sm"
-            type="button"
-          >
-            <PlusIcon aria-hidden="true" data-icon="inline-start" />
-            Nova meta
-          </Button>
+          {listIsEmpty ? null : (
+            <Button
+              disabled={busy !== null}
+              onClick={handleNew}
+              ref={newButtonRef}
+              size="sm"
+              type="button"
+            >
+              <PlusIcon aria-hidden="true" data-icon="inline-start" />
+              Nova meta
+            </Button>
+          )}
         </div>
       </div>
       {/* while the form is open it covers this part of the screen: what the commands say is said inside it */}
@@ -347,6 +358,7 @@ export function GoalsPanel({
       <GoalList
         busyKey={busy}
         goals={state.goals}
+        newButton={{ onClick: handleNew, ref: newButtonRef }}
         onCancel={handleCancel}
         onRetry={handleRetry}
         onSave={update}

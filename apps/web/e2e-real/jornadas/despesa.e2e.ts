@@ -57,6 +57,7 @@ test("despesa avulsa: entra na lista e no Resultado do mês; a de outro mês nã
   ) => {
     await page
       .getByRole("button", { exact: true, name: "Nova despesa" })
+      .and(page.locator("[data-expense-new]"))
       .click();
     await form.getByLabel("Valor (R$)").fill(amount);
     await choose(page, form, "Categoria", categoryName);
@@ -214,6 +215,7 @@ test("despesa registrada na aba Despesas aparece no Resultado ao voltar, sem Atu
   const register = async (amount: string, description: string) => {
     await page
       .getByRole("button", { exact: true, name: "Nova despesa" })
+      .and(page.locator("[data-expense-new]"))
       .click();
     const form = page.getByRole("dialog", { name: "Nova despesa" });
     await form.getByLabel("Valor (R$)").fill(amount);

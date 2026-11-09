@@ -6,6 +6,7 @@ import {
   CollapsiblePanel,
   CollapsibleTrigger,
 } from "@/ui/collapsible";
+import { EmptyState } from "@/ui/empty-state";
 import {
   Table,
   TableBody,
@@ -78,7 +79,7 @@ function moneyText(value: number): string {
 const maskedValue = () => MASKED_MONEY;
 const spokenMasked = () => MASKED_SPOKEN;
 const noAxis = () => "";
-const NO_SALE = "Sem vendas no período.";
+const NO_SALE = <EmptyState afterRead bare title="Sem vendas no período." />;
 
 /** The Início has no form: loading the page again is the way to ask for the chunk once more. */
 function reloadPage() {

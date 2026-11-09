@@ -337,7 +337,7 @@ export function ListNote({
     );
   }
   return (
-    // two lines kept on a phone: the empty list ("Nenhuma despesa neste período. Toque em…") takes this box
+    // two lines kept on a phone: the empty list of the recurring rules ("Nenhuma despesa recorrente. Crie uma para…") takes this box
     <p className="min-h-[5.25rem] py-6 text-center text-muted-foreground text-support md:min-h-0">
       {children}
     </p>
