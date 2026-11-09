@@ -1046,7 +1046,7 @@ describe('"Atualizar" é um componente só (L1-5, AC-5.1)', () => {
 const HIDE_VALUES_SIZE = /<HideValuesButton\b[^>]*\bsize=/;
 const LINK_VARIANT_LINE = /^\s*link:\s*"[^"]*"/m;
 const SMALL_RADIUS = /\brounded-(?:sm|xs|none)\b/;
-const LINK_AS_CARD_ACTION = /variant=["{]+["']?link\b/;
+const LINK_AS_CARD_ACTION = /variant(?:=["{]+["']?|:\s*["'])link\b/;
 const CARD_ACTION_SCREENS = [
   "src/dashboard/quality-banner.tsx",
   "src/home/home-kpi-cards.tsx",
@@ -1088,6 +1088,7 @@ describe("mesmo botão, mesmo nome (L1-6, AC-6.1, AC-6.2, AC-6.5)", () => {
     expect(read("src/dashboard/quality-banner.tsx")).toContain(
       'variant="ghost"'
     );
+    expect(read("src/home/home-kpi-cards.tsx")).toContain('variant: "ghost"');
   });
 
   it("a volta de cada uma reprova (controle plantado)", () => {
@@ -1113,6 +1114,12 @@ describe("mesmo botão, mesmo nome (L1-6, AC-6.1, AC-6.2, AC-6.5)", () => {
       sameButtonFaults(
         "src/dashboard/quality-banner.tsx",
         '<Button size="sm" variant="link" />'
+      )
+    ).toHaveLength(1);
+    expect(
+      sameButtonFaults(
+        "src/home/home-kpi-cards.tsx",
+        'buttonVariants({ size: "sm", variant: "link" })'
       )
     ).toHaveLength(1);
     expect(

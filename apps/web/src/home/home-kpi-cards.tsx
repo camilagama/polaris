@@ -50,7 +50,7 @@ const LINK =
  * "Ver o resultado" is a text-only button with an arrow, not an underlined link: the margins take back the height the
  * 28 px button (32 with touch) has over the 16 px line the card reserves, so the card keeps its height.
  */
-const RESULT_LINK = `${buttonVariants({ size: "sm", variant: "ghost" })} -my-1.5 touch:-my-2 -ml-2.5 w-fit`;
+const RESULT_LINK = `${buttonVariants({ size: "sm", variant: "ghost" })} -my-1.5 touch:-my-2 -ml-2 w-fit`;
 
 /** What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. */
 function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {

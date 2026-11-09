@@ -17,6 +17,7 @@ const CONTEXTS = [
 ] as const;
 
 const CONTROL_RADIUS_PX = 8.8;
+const CARD_ACTION_ROW_PX = 16;
 
 const openScreen = async (page: Page, name: string) => {
   const screen = SCREENS.find((candidate) => candidate.name === name);
@@ -29,6 +30,10 @@ const styleOf = (locator: Locator) =>
     const style = getComputedStyle(element);
     return {
       height: element.getBoundingClientRect().height,
+      layoutHeight:
+        element.getBoundingClientRect().height +
+        Number.parseFloat(style.marginTop) +
+        Number.parseFloat(style.marginBottom),
       radius: Number.parseFloat(style.borderTopLeftRadius),
       underline: style.textDecorationLine,
     };
@@ -81,6 +86,10 @@ for (const context of CONTEXTS) {
       expect(style.underline).toBe("none");
       expect(style.height).toBeCloseTo(context.textHeight, 0);
       expect(style.radius).toBeCloseTo(CONTROL_RADIUS_PX, 1);
+      expect(
+        style.layoutHeight,
+        "o cartão guarda 16 px para a ação: o botão não o alarga"
+      ).toBeCloseTo(CARD_ACTION_ROW_PX, 0);
     });
 
     test('"Ver o que falta" é botão só texto, sem sublinhado, e mantém aria-expanded', async ({
