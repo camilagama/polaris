@@ -456,22 +456,23 @@ export function PaymentSection({
     [onAnticipationChange]
   );
   return (
-    <Card>
+    <Card className="gap-4">
+      {/* outside the fieldset: a locked sale disables its controls, not the (i) that explains them */}
+      <CardHeader>
+        <div className="flex items-center gap-1">
+          <CardTitle aria-level={2} id="sale-payment-title" role="heading">
+            Pagamento
+          </CardTitle>
+          <HelpTip about="Pagamento" className="-my-1">
+            {SINGLE_PAYMENT_HELP}
+          </HelpTip>
+        </div>
+      </CardHeader>
       <fieldset
         aria-labelledby="sale-payment-title"
         className="grid min-w-0 gap-4"
         disabled={disabled}
       >
-        <CardHeader>
-          <div className="flex items-center gap-1">
-            <CardTitle aria-level={2} id="sale-payment-title" role="heading">
-              Pagamento
-            </CardTitle>
-            <HelpTip about="Pagamento" className="-my-1">
-              {SINGLE_PAYMENT_HELP}
-            </HelpTip>
-          </div>
-        </CardHeader>
         <CardContent className="grid gap-5">
           <Field className="@container">
             <RadioGroup
