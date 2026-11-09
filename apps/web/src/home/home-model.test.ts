@@ -531,10 +531,33 @@ describe("copyStanding com o desvio do relógio do aparelho (§ 7.2)", () => {
     }
   });
 
-  it("um relógio do aparelho 1 h antes da leitura continua errado, com ou sem desvio guardado", () => {
+  it("um relógio do aparelho 1 h antes da leitura continua errado quando o desvio guardado não o explica", () => {
     const read = "2026-10-15T20:00:00.000Z";
     const device = at("2026-10-15T19:00:00.000Z");
-    expect(copyStanding(read, read, device, ZONE, 3_600_000)).toEqual({
+    expect(copyStanding(read, read, device, ZONE, SKEW)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
+
+  it("aparelho 10 min atrás, rede caindo 2 min depois da leitura: a cópia vale, com o Hoje", () => {
+    const skew = 10 * 60_000;
+    const read = "2026-10-15T17:00:00.000Z";
+    const device = at("2026-10-15T16:52:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, skew)).toEqual({
+      stale: false,
+      todayShown: true,
+    });
+    expect(copyStanding(read, read, device, ZONE)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
+
+  it("um relógio que o desvio guardado deixa mais de 5 min antes da leitura continua errado", () => {
+    const read = "2026-10-15T17:00:00.000Z";
+    const device = at("2026-10-15T16:40:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, 10 * 60_000)).toEqual({
       stale: true,
       todayShown: false,
     });
