@@ -650,28 +650,33 @@ export function homeReads(role: string): HomeReads {
 
 /** After this long from the server's read, the copy says its numbers may be out of date (AC-31 emendado: 24 h). */
 const COPY_FRESH_MS = 24 * 3_600_000;
-/** A device clock this far before the server's read is wrong: nothing of the copy is taken as of today. */
+/** A store's now (device clock plus skew) this far before the server's read means a wrong device clock: nothing of the copy is taken as of today. */
 const CLOCK_BEHIND_MS = 5 * 60_000;
 
 /**
  * How the copy stands now (§ 7.2): out of date after 24 h of its read, and today's only on the store's day of the
- * read. Both from the server's clock (`generatedAt`); a device clock before it is wrong, so the copy is neither today's
+ * read. Both from the server's clock (`generatedAt`); a store's now before it means a wrong device clock, so the copy is neither today's
  * nor vouched for (the "Hoje" and the age use the server's read, never the device's date alone).
+ * `clockSkewMs` is the server's clock minus the device's at that read (0 for a copy kept without it): the device's `now`
+ * plus it is the store's now, so a clock a few minutes off does not move the store's day, nor make a copy read a moment
+ * ago look as if it came from the future. The clock is wrong only when the store's now is before the read.
  */
 export function copyStanding(
   confirmedAt: string,
   readAt: string,
   now: number,
-  timezone: string | null
+  timezone: string | null,
+  clockSkewMs = 0
 ): { stale: boolean; todayShown: boolean } {
-  const age = now - Date.parse(confirmedAt);
-  const clockBehind = now < Date.parse(readAt) - CLOCK_BEHIND_MS;
+  const storeNow = now + clockSkewMs;
+  const age = storeNow - Date.parse(confirmedAt);
+  const clockBehind = storeNow < Date.parse(readAt) - CLOCK_BEHIND_MS;
   return {
     stale: clockBehind || age > COPY_FRESH_MS,
     todayShown:
       !clockBehind &&
       storeToday(readAt, timezone) ===
-        calendarDayInTimezone(new Date(now), timezone),
+        calendarDayInTimezone(new Date(storeNow), timezone),
   };
 }
 

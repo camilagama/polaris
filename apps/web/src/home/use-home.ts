@@ -518,9 +518,12 @@ export function useHome(
               }
             );
             // a B taken from the copy is not written again: it keeps the stamp of the read it came from
+            const clockSkewMs = Number.isFinite(skew.current)
+              ? { clockSkewMs: skew.current }
+              : {};
             const change: Partial<HomeCopy> = reusedBefore
-              ? {}
-              : { before: ready.before };
+              ? clockSkewMs
+              : { before: ready.before, ...clockSkewMs };
             writeHomeCopy(storage, organizationId, change);
           });
           setMidnightAt(

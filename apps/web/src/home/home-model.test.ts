@@ -5,12 +5,11 @@ import {
   bestDay,
   checklistLink,
   checklistNext,
+  copyLine,
   copyStanding,
   endedInPastMonth,
   goalDaysLeftText,
-  copyLine,
   goalPeriodShort,
-  periodShort,
   goalProjection,
   homePeriods,
   homeReads,
@@ -21,6 +20,7 @@ import {
   noCopyText,
   offlineGoal,
   pastGoalSummary,
+  periodShort,
   pickGoal,
   shouldRefreshOnReturn,
   storeToday,
@@ -483,6 +483,85 @@ describe("copyStanding (§ 7.2, AC-31)", () => {
       );
     }
   );
+});
+
+describe("copyStanding com o desvio do relógio do aparelho (§ 7.2)", () => {
+  const ZONE = "America/Sao_Paulo";
+  const SKEW = 6 * 60_000;
+  const at = (iso: string) => Date.parse(iso);
+
+  it("relógio 6 min atrás, ainda antes da meia-noite da loja: o Hoje da cópia fica", () => {
+    // store: 23:58 (02:58Z); device: 23:52
+    const read = "2026-10-15T20:00:00.000Z";
+    const device = at("2026-10-16T02:52:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, SKEW).todayShown).toBe(true);
+  });
+
+  it("relógio 6 min atrás, já na meia-noite da loja: o Hoje da cópia some, que o aparelho ainda mostre o dia anterior", () => {
+    // store: 00:03 of the next day (03:03Z); device: 23:57 of the day before
+    const read = "2026-10-15T20:00:00.000Z";
+    const device = at("2026-10-16T02:57:00.000Z");
+    expect(copyStanding(read, read, device, ZONE).todayShown).toBe(true);
+    expect(copyStanding(read, read, device, ZONE, SKEW).todayShown).toBe(false);
+  });
+
+  it("relógio 6 min atrás, leitura já no dia novo da loja: o Hoje da cópia aparece", () => {
+    // read at 00:02 of the next day on the store; the device, 6 min behind, still says 23:58 of the day before
+    const read = "2026-10-16T03:02:00.000Z";
+    const device = at("2026-10-16T02:58:00.000Z");
+    expect(copyStanding(read, read, device, ZONE).todayShown).toBe(false);
+    expect(copyStanding(read, read, device, ZONE, SKEW)).toEqual({
+      stale: false,
+      todayShown: true,
+    });
+  });
+
+  it("sem desvio guardado a cópia se comporta como antes (desvio 0)", () => {
+    const read = "2026-10-15T20:00:00.000Z";
+    for (const iso of [
+      "2026-10-15T21:00:00.000Z",
+      "2026-10-16T02:59:00.000Z",
+      "2026-10-16T03:00:00.000Z",
+      "2026-10-17T03:00:00.000Z",
+      "2026-10-15T19:00:00.000Z",
+    ]) {
+      expect(copyStanding(read, read, at(iso), ZONE, 0)).toEqual(
+        copyStanding(read, read, at(iso), ZONE)
+      );
+    }
+  });
+
+  it("um relógio do aparelho 1 h antes da leitura continua errado quando o desvio guardado não o explica", () => {
+    const read = "2026-10-15T20:00:00.000Z";
+    const device = at("2026-10-15T19:00:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, SKEW)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
+
+  it("aparelho 10 min atrás, rede caindo 2 min depois da leitura: a cópia vale, com o Hoje", () => {
+    const skew = 10 * 60_000;
+    const read = "2026-10-15T17:00:00.000Z";
+    const device = at("2026-10-15T16:52:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, skew)).toEqual({
+      stale: false,
+      todayShown: true,
+    });
+    expect(copyStanding(read, read, device, ZONE)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
+
+  it("um relógio que o desvio guardado deixa mais de 5 min antes da leitura continua errado", () => {
+    const read = "2026-10-15T17:00:00.000Z";
+    const device = at("2026-10-15T16:40:00.000Z");
+    expect(copyStanding(read, read, device, ZONE, 10 * 60_000)).toEqual({
+      stale: true,
+      todayShown: false,
+    });
+  });
 });
 
 describe("offlineGoal (§ 7.3)", () => {
