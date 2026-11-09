@@ -420,7 +420,7 @@ export function DashboardPage() {
             <a
               className={cn(
                 buttonVariants({ variant: "outline" }),
-                "justify-self-start"
+                "w-full min-[47.5rem]:w-auto min-[47.5rem]:justify-self-start"
               )}
               href="/expenses"
             >
