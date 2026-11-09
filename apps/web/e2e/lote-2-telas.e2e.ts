@@ -654,7 +654,7 @@ for (const width of FORM_WIDTHS) {
   });
 }
 
-test("Clientes: a lista vazia diz o que fazer e traz o botão que abre o formulário, um só", async ({
+test("Clientes: a lista vazia é a frase curta e traz o botão que abre o formulário, um só", async ({
   page,
 }) => {
   await openScreen(page, "/customers", "Clientes", {

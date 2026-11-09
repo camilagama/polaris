@@ -67,6 +67,21 @@ describe("the empty state of the Resultado (AC-11.1)", () => {
     }
   );
 
+  it("moves the period to the support exactly when the named sentence passes the limit", () => {
+    const room = EMPTY_TITLE_MAX - "Sem vendas nem despesas em ".length;
+    const fits = renderToStaticMarkup(
+      <EmptyResult canCreateExpense period={"x".repeat(room)} />
+    );
+    const over = renderToStaticMarkup(
+      <EmptyResult canCreateExpense period={"x".repeat(room + 1)} />
+    );
+    expect(text(fits, "p")[0]).toBe(
+      `Sem vendas nem despesas em ${"x".repeat(room)}`
+    );
+    expect(text(over, "p")[0]).toBe("Sem vendas nem despesas no período");
+    expect(text(over, "p")[1]).toContain("x".repeat(room + 1));
+  });
+
   it("keeps the whole sentence when it fits", () => {
     const html = renderToStaticMarkup(
       <EmptyResult canCreateExpense period="1 a 31 de outubro" />

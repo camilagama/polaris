@@ -37,7 +37,7 @@ export function EmptyState({
     <Card {...region} data-empty-state="">
       <CardContent className="grid justify-items-center gap-3 text-center">
         <div className="grid gap-1">
-          <p className="font-medium" id={titleId}>
+          <p className="font-medium" data-empty-title="" id={titleId}>
             {title}
           </p>
           {support ? (

@@ -58,7 +58,7 @@ const base: Props = {
 const render = (overrides: Partial<Props> = {}) =>
   renderToStaticMarkup(<CustomerList {...base} {...overrides} />);
 
-const EMPTY_SENTENCE = /<p class="font-medium"[^>]*>([^<]*)<\/p>/;
+const EMPTY_SENTENCE = /data-empty-title=""[^>]*>([^<]*)</;
 const DESCRIBED_BY = /aria-describedby="([^"]*)"/;
 /** The text of the elements a tag points to with aria-describedby, in order. */
 function describedByText(markup: string, tag = ""): string[] {
