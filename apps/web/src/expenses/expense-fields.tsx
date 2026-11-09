@@ -307,6 +307,9 @@ export function LoadError({ busy, message, onRetry }: LoadErrorProps) {
 
 const LOADING_ROW_WIDTHS = ["w-2/3", "w-1/2", "w-1/3"];
 
+/** The height of the loading box; a list that arrives empty reserves the same one, at every width. */
+export const LIST_NOTE_MIN_HEIGHT_CLASS = "min-h-[5.25rem] md:min-h-[4.125rem]";
+
 /**
  * A loading box or an empty list inside the card. Loading is said to the screen reader and drawn as three skeleton
  * lines; the box keeps the height the visible line had, so the list that arrives does not push the screen.
@@ -322,7 +325,7 @@ export function ListNote({
     return (
       <div
         aria-busy="true"
-        className="grid min-h-[5.25rem] content-center gap-2 md:min-h-[4.125rem]"
+        className={`grid ${LIST_NOTE_MIN_HEIGHT_CLASS} content-center gap-2`}
         role="status"
       >
         <span className="sr-only">{children}</span>

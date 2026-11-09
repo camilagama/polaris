@@ -24,6 +24,7 @@ import {
   reflowTest,
   skipOutsideChromium,
 } from "./reflow";
+import { expectSamePlaces, placesOf } from "./same-place";
 import { expectTabsKeyboard } from "./tabs-keyboard";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
@@ -458,7 +459,7 @@ async function choose(
   await expect(page.getByRole("listbox")).toHaveCount(0);
 }
 
-/** "Nova despesa" wherever it is: in the title bar, or in the empty list, which then takes the title bar's place (never both). */
+/** The "Nova despesa" of the title line: it is always there, and the only one on the screen. */
 const newExpenseButton = (page: Page) =>
   page
     .getByRole("button", { exact: true, name: "Nova despesa" })
@@ -1458,12 +1459,11 @@ test("a lista que não pôde ser lida diz o motivo e oferece tentar de novo, nun
   await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
 });
 
-test("o vazio do período tem o único Nova despesa, que abre o formulário, e o Esc devolve o foco a ele", async ({
+test("o vazio do período é só a frase: o Nova despesa único é o do título, e o Esc devolve o foco a ele", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
   await openExpenses(page, server);
-
   const empty = page
     .getByRole("status")
     .filter({ hasText: "Nenhuma despesa neste período." });
@@ -1472,9 +1472,8 @@ test("o vazio do período tem o único Nova despesa, que abre o formulário, e o
   expect(await axeFaults(page, "[data-empty-state]")).toEqual([]);
   const only = page.getByRole("button", { exact: true, name: "Nova despesa" });
   await expect(only).toHaveCount(1);
-  await expect(
-    empty.getByRole("button", { name: "Nova despesa" })
-  ).toBeVisible();
+  await expect(empty.getByRole("button")).toHaveCount(0);
+  await expect(newExpenseButton(page)).toBeVisible();
   await only.click();
   await expect(expenseForm(page)).toBeVisible();
   await page.keyboard.press("Escape");
@@ -1483,7 +1482,7 @@ test("o vazio do período tem o único Nova despesa, que abre o formulário, e o
   await expect(only).toHaveCount(1);
 });
 
-test("o botão Nova despesa do título fica nas outras partes e na aba das anuladas, e volta quando a lista ganha uma despesa", async ({
+test("o botão Nova despesa do título é o único em todas as partes e abas, e continua um só quando a lista ganha uma despesa", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
@@ -1493,17 +1492,17 @@ test("o botão Nova despesa do título fica nas outras partes e na aba das anula
     name: "Nova despesa",
   });
   await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
   await expect(
     page.getByRole("status").getByRole("button", { name: "Nova despesa" })
-  ).toBeVisible();
+  ).toHaveCount(0);
 
   await page.getByRole("tab", { name: "Recorrentes" }).click();
   await expect(newButtons).toHaveCount(1);
   await expect(newExpenseButton(page)).toBeVisible();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
-  await expect(
-    page.getByRole("status").getByRole("button", { name: "Nova despesa" })
-  ).toBeVisible();
+  await expect(newButtons).toHaveCount(1);
+  await expect(newExpenseButton(page)).toBeVisible();
 
   await page.getByRole("tab", { name: "Anuladas" }).click();
   await expect(
@@ -1528,7 +1527,73 @@ test("o botão Nova despesa do título fica nas outras partes e na aba das anula
   await expect(newExpenseButton(page)).toBeVisible();
 });
 
-test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura (até 1 px) e, a partir de 760 px, no mesmo lugar", async ({
+for (const viewport of FORM_VIEWPORTS) {
+  test(`Despesas a ${viewport.name} px: o título, as abas, o seletor de mês e o botão ficam no mesmo lugar (até 1 px) lendo, com despesas e vazio, inclusive ao paginar para um mês vazio e voltar`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium-desktop",
+      "a largura é a do teste"
+    );
+    await page.setViewportSize(viewport);
+    await page.clock.setFixedTime(new Date(NOW));
+    const server = new FakeExpenseServer();
+    seedExpense(server, 1, "20.00");
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await openExpenses(page, server, (target) =>
+      target.route("**/rpc/expense/list", async (route) => {
+        await held;
+        await route.fallback();
+      })
+    );
+    const parts = {
+      button: page.locator("[data-expense-new]"),
+      month: page.locator("#expense-month"),
+      tabs: page.getByRole("tablist", {
+        name: "Lançamentos, recorrentes e categorias",
+      }),
+      title: page.getByRole("heading", {
+        exact: true,
+        level: 1,
+        name: "Despesas",
+      }),
+    };
+    const newButtons = page.getByRole("button", {
+      exact: true,
+      name: "Nova despesa",
+    });
+
+    await expect(page.getByText("Carregando despesas…")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    const reading = await placesOf(parts);
+
+    release?.();
+    await expect(row(page, "Despesa 1")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    expectSamePlaces("com despesas", reading, await placesOf(parts));
+
+    await page.getByRole("button", { name: "Próximo mês" }).click();
+    await expect(
+      page.getByText("Nenhuma despesa neste período.")
+    ).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    expectSamePlaces("no mês vazio", reading, await placesOf(parts));
+
+    await page.getByRole("button", { name: "Mês anterior" }).click();
+    await expect(row(page, "Despesa 1")).toBeVisible();
+    await expect(newButtons).toHaveCount(1);
+    expectSamePlaces(
+      "de volta ao mês com despesas",
+      reading,
+      await placesOf(parts)
+    );
+  });
+}
+
+test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura e no mesmo lugar (até 1 px), no celular e no desktop", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
@@ -1553,11 +1618,8 @@ test("a troca de carregando para vazio deixa o cartão da lista com a mesma altu
   await expect(page.getByText("Nenhuma despesa neste período.")).toBeVisible();
   const empty = await measure();
   expect(Math.abs(empty.height - reading.height)).toBeLessThanOrEqual(1);
-  // from 760 px the title's button sits on the title line, so it leaving does not move the card; on a phone it is a row of its own
-  const wide = (page.viewportSize()?.width ?? 0) >= 760;
-  if (wide) {
-    expect(Math.abs(empty.top - reading.top)).toBeLessThanOrEqual(1);
-  }
+  // the title's button is there in both states, so the card does not move
+  expect(Math.abs(empty.top - reading.top)).toBeLessThanOrEqual(1);
 });
 
 const VER_RECURRING = /[?&]ver=recorrentes(&|$)/;
