@@ -27,6 +27,16 @@ const sale: ConfirmedSaleView = {
   saleDetails: [
     { label: "Venda", tone: "plain", value: SALE_ID },
     { label: "Data da venda", tone: "plain", value: "15/10/2026" },
+    {
+      label: "Registrada no dispositivo",
+      tone: "plain",
+      value: "15/10/2026, 09:01",
+    },
+    {
+      label: "Confirmada no servidor",
+      tone: "plain",
+      value: "15/10/2026, 09:02",
+    },
   ],
   saleId: SALE_ID,
   totals: [
@@ -59,13 +69,28 @@ describe("the sale as a receipt", () => {
     );
   });
 
-  it("shows the adjustments above the perforation and the total under it", () => {
+  it("shows the total right under the title and the perforation after it, above the items and the adjustments", () => {
     const markup = render();
     const perforation = markup.indexOf("border-dashed");
-    expect(markup.indexOf("Subtotal")).toBeLessThan(perforation);
-    expect(markup.indexOf("Desconto")).toBeLessThan(perforation);
-    expect(markup.indexOf("Total devido")).toBeGreaterThan(perforation);
+    expect(markup.indexOf("Total devido")).toBeLessThan(perforation);
+    expect(markup.indexOf("Subtotal")).toBeGreaterThan(perforation);
+    expect(markup.indexOf("Desconto")).toBeGreaterThan(perforation);
     expect(markup).toMatch(TOTAL_PARTS);
+  });
+
+  it("reads in the order: title, state, total, items, adjustments, dates, payment", () => {
+    const markup = render();
+    const order = [
+      ">Venda<",
+      "Confirmada",
+      "Total devido",
+      ">Itens<",
+      "Subtotal",
+      "Data da venda",
+      ">Pagamento<",
+    ].map((text) => markup.indexOf(text));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
   it("sets the dates and the payment back as a muted block with no border, two columns from 760 px", () => {
@@ -79,6 +104,17 @@ describe("the sale as a receipt", () => {
       expect(block).not.toMatch(FRAME);
     }
     expect(markup).toContain('class="text-muted-foreground text-xs">Método<');
+  });
+
+  it("keeps the three dates in one block, after the items and the adjustments", () => {
+    const markup = render();
+    const start = markup.indexOf('<dl class="grid gap-3 rounded-lg bg-muted');
+    const dateBlock = markup.slice(start, markup.indexOf("</dl>", start));
+    expect(dateBlock).toContain("Data da venda");
+    expect(dateBlock).toContain("Registrada no dispositivo");
+    expect(dateBlock).toContain("Confirmada no servidor");
+    expect(markup.indexOf("Desconto")).toBeLessThan(start);
+    expect(start).toBeLessThan(markup.indexOf("Pagamento"));
   });
 
   it("has no ink button: the receipt only reads", () => {
