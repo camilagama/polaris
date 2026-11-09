@@ -3666,8 +3666,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       await expect(atRest(page)).toHaveText(AT_REST);
       await settled(page);
       const ready = await placeOf(rhythm(page));
-      // the emulated touch device measures a few pixels taller than the desktop one
-      expect(Math.abs(ready.height - reserved)).toBeLessThanOrEqual(4);
+      expect(Math.abs(ready.height - reserved)).toBeLessThanOrEqual(1);
 
       // a day read swaps the line over the map and moves nothing
       await dataCells(page)

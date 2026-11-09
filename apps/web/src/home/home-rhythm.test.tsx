@@ -20,6 +20,7 @@ const BEST_DAY = "2026-06-27";
 const TODAY_INDEX = 180;
 const RANGE = /<input[^>]*type="range"[^>]*>/;
 const NO_RETRY = () => undefined;
+const MONEY_WITH_DIGIT = /R\$ \d/;
 const READING_OF_TODAY = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
 
 /** The net sales and the count of a day: the best day, a Saturday of the weekly rhythm, today, or nothing. */
@@ -130,6 +131,14 @@ describe("Ritmo de vendas at rest", () => {
     expect(range).toContain(`aria-valuetext="${READING_OF_TODAY}"`);
   });
 
+  it("says 'sem venda · hoje' in the control when today has no sale, though the line does not read it", () => {
+    const html = render({ sold: false });
+    expect(html).not.toContain("data-rhythm-reading");
+    expect(html.match(RANGE)?.[0]).toContain(
+      'aria-valuetext="Sexta, 23/10 · sem venda · hoje"'
+    );
+  });
+
   it("has no best-day line and no ranges in reais at rest: the ranges are in the (i) and the title of the legend", () => {
     const html = render({ saturdays: true });
     expect(html).not.toContain("data-rhythm-best");
@@ -146,5 +155,19 @@ describe("Ritmo de vendas at rest", () => {
     expect(html).toContain('title="Vazio: sem venda · até R$ ••••');
     // the summary already says "valor escondido" for the amount
     expect(html).toContain("Melhor dia 27/06, valor escondido.");
+  });
+
+  it("masks the amount of the weekday insight with the values hidden, and the value of today in the control", () => {
+    hiddenValues.hidden = true;
+    const html = render({ saturdays: true });
+    const insight = textOf(html, "data-rhythm-insight") ?? "";
+    expect(insight).toBe(
+      "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ ••••valor escondido."
+    );
+    expect(insight).not.toMatch(MONEY_WITH_DIGIT);
+    expect(html).not.toContain("100,00");
+    const range = html.match(RANGE)?.[0] ?? "";
+    expect(range).toContain("valor escondido");
+    expect(range).not.toContain("320,10");
   });
 });
