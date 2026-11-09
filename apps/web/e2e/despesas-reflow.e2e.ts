@@ -186,15 +186,39 @@ async function expectTitleAndButtonApart(page: Page) {
   await assertNoPageScroll(page);
 }
 
+const scrollTop = (page: Page) =>
+  page.evaluate(
+    () => (document.scrollingElement ?? document.documentElement).scrollTop
+  );
+
+/** Scrolls the page to its end for real and returns where it stopped, once it stopped. */
+async function scrollToBottom(page: Page) {
+  await page.evaluate(() => {
+    const scroller = document.scrollingElement ?? document.documentElement;
+    scroller.scrollTo(0, scroller.scrollHeight);
+  });
+  const first = await scrollTop(page);
+  await expect.poll(() => scrollTop(page)).toBe(first);
+  return first;
+}
+
 test.describe("a 320 px com letra de 20 px", () => {
+  // the button sits under the title, outside the card, so scrolling does not carry it: the end of the list is what is checked
   reflowTest(
-    "o título lê inteiro e o botão Nova despesa, fora do cartão, não cobre nada",
+    "o título lê inteiro e o botão Nova despesa, fora do cartão, não cobre nada, e o total da lista chega à vista ao rolar até o fim",
     async ({ page }) => {
       await openReflowViewport(page);
       await openExpenses(page);
       await expectReflowFont(page);
       await expect(newButton(page)).toBeVisible();
 
+      await expectTitleAndButtonApart(page);
+
+      expect(
+        await scrollToBottom(page),
+        "the page did not scroll"
+      ).toBeGreaterThan(0);
+      await expect(page.locator("[data-list-total]")).toBeInViewport();
       await expectTitleAndButtonApart(page);
     }
   );

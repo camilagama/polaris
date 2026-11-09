@@ -636,36 +636,41 @@ test("a data de competência a 360×600: 'Hoje' fica à vista sem rolar e tocar 
   ).toHaveAccessibleName(`Data de competência, ${TODAY_BR}`);
 });
 
-test("a data de competência com pouca altura (celular deitado): o mês rola dentro do popover e 'Hoje' continua à vista", async ({
-  page,
-}) => {
-  await page.clock.setFixedTime(new Date(NOW));
-  await page.setViewportSize({ height: 300, width: 360 });
-  const server = new FakeExpenseServer();
-  await openExpenses(page, server);
-  await openNewExpense(page);
-  await datePickerButton(page, "Data de competência").evaluate((button) =>
-    button.scrollIntoView({ block: "center" })
-  );
-  const popup = await openDatePicker(page, "Data de competência");
-  await expect
-    .poll(async () => {
-      const box = await popup.boundingBox();
-      return box && box.y >= 0 && box.y + box.height <= 300;
-    })
-    .toBe(true);
-  // less room than the month needs: the month gives way, the footer stays
-  await expect
-    .poll(() =>
-      popup
-        .locator("[data-date-month]")
-        .evaluate((element) => element.scrollHeight > element.clientHeight)
-    )
-    .toBe(true);
-  // the edge of the popover lands on a fractional pixel of the window: 0.999 is the whole button
-  await expect(
-    popup.getByRole("button", { exact: true, name: "Hoje" })
-  ).toBeInViewport({ ratio: 0.999 });
+// the popover is placed on a multiple of a device pixel: a scale such as 2.75 (the phone profile) makes that a repeating
+// fraction of a CSS pixel and the intersection ratio of a button wholly in the window reads 0.9999996; a scale of 2 is exact
+test.describe("com pouca altura, em escala 2", () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  test("a data de competência com pouca altura (celular deitado): o mês rola dentro do popover e 'Hoje' continua à vista", async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date(NOW));
+    await page.setViewportSize({ height: 300, width: 360 });
+    const server = new FakeExpenseServer();
+    await openExpenses(page, server);
+    await openNewExpense(page);
+    await datePickerButton(page, "Data de competência").evaluate((button) =>
+      button.scrollIntoView({ block: "center" })
+    );
+    const popup = await openDatePicker(page, "Data de competência");
+    await expect
+      .poll(async () => {
+        const box = await popup.boundingBox();
+        return box && box.y >= 0 && box.y + box.height <= 300;
+      })
+      .toBe(true);
+    // less room than the month needs: the month gives way, the footer stays
+    await expect
+      .poll(() =>
+        popup
+          .locator("[data-date-month]")
+          .evaluate((element) => element.scrollHeight > element.clientHeight)
+      )
+      .toBe(true);
+    await expect(
+      popup.getByRole("button", { exact: true, name: "Hoje" })
+    ).toBeInViewport({ ratio: 1 });
+  });
 });
 
 test("o calendário da data de competência: o teclado abre, as setas andam, Enter escolhe e o foco volta ao botão", async ({

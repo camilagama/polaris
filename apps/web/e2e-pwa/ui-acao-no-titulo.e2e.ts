@@ -108,6 +108,12 @@ for (const { action, heading, screen: screenName } of ACTIONS) {
         expect(shape.afterTitleInTabOrder, "logo depois do título no Tab").toBe(
           true
         );
+        await page.getByRole("heading", { level: 1, name: heading }).click();
+        await page.keyboard.press("Tab");
+        await expect(
+          page.getByRole("button", { exact: true, name: action }),
+          "o primeiro Tab depois do título"
+        ).toBeFocused();
         expect(shape.button.top).toBeLessThanOrEqual(
           shape.title.bottom + LINE_GAP
         );
