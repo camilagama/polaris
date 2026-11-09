@@ -4,10 +4,12 @@ import { expect, test } from "@playwright/test";
 import { SCREENS, VIEWPORTS } from "./ui-screens";
 
 /**
- * "Atualizar" is one component on Início, Resultado and Metas: the same height in every one (32 with a mouse,
+ * "Atualizar" is one component on Início, Resultado, Metas, Estoque and Vender: the same height in every one (32 with a mouse,
  * 36 with touch from 760 px, the icon of `ctl-lg` below it, as "Esconder valores"), a name that starts with
- * "Atualizar" and keeps the object ("Atualizar metas"), and a turning icon only with full motion: a phone and
- * `prefers-reduced-motion` keep it still, and the button keeps its size while it reads.
+ * "Atualizar" and keeps the object ("Atualizar metas", "Atualizar estoque e perfis"), and a turning icon only with
+ * full motion: a phone and `prefers-reduced-motion` keep it still, and the button keeps its size while it reads.
+ * Estoque and Vender have no state of their own for reading (the first draws its loading card, the second keeps what
+ * is ready), so on them the icon is still at rest in every context.
  */
 const RESULT_SCREEN = "resultado mês incompleto e gráfico de vendas";
 
@@ -15,6 +17,8 @@ const REFRESHES = [
   { name: "Atualizar", screen: "início com vendas" },
   { name: "Atualizar", screen: RESULT_SCREEN },
   { name: "Atualizar metas", screen: "resultado metas" },
+  { name: "Atualizar", screen: "estoque lista" },
+  { name: "Atualizar estoque e perfis", screen: "venda com itens" },
 ] as const;
 
 const CONTEXTS = [
@@ -102,9 +106,28 @@ const spinOf = (read: { button: Locator }) =>
     .locator("svg")
     .evaluate((icon) => getComputedStyle(icon).animationName);
 
+const RESTING = [
+  { name: "Atualizar", screen: "estoque lista" },
+  { name: "Atualizar estoque e perfis", screen: "venda com itens" },
+] as const;
+
+const restingSpin = async (page: Page, screen: string, name: string) => {
+  await openScreen(page, screen);
+  const button = page.getByRole("button", { exact: true, name });
+  await expect(button).toBeVisible();
+  await expect(button).not.toHaveAttribute("aria-busy", "true");
+  return spinOf({ button });
+};
+
 test.describe("o ícone gira só com movimento completo", () => {
   test.describe("mouse e movimento padrão", () => {
     test.use({ hasTouch: false, viewport: VIEWPORTS["1280"] });
+
+    for (const { name, screen } of RESTING) {
+      test(`${screen}: parado em repouso`, async ({ page }) => {
+        expect(await restingSpin(page, screen, name)).toBe("none");
+      });
+    }
 
     test("gira enquanto lê (controle)", async ({ page }) => {
       const read = await readingResult(page);
@@ -119,6 +142,16 @@ test.describe("o ícone gira só com movimento completo", () => {
       reducedMotion: "reduce",
       viewport: VIEWPORTS["1280"],
     });
+
+    for (const { name, screen } of RESTING) {
+      test(`${screen}: parado`, async ({ page }) => {
+        expect(await restingSpin(page, screen, name)).toBe("none");
+        await expect(page.locator("html")).toHaveAttribute(
+          "data-motion",
+          "none"
+        );
+      });
+    }
 
     test("fica parado, e continua com aria-busy", async ({ page }) => {
       const read = await readingResult(page);
@@ -136,6 +169,16 @@ test.describe("o ícone gira só com movimento completo", () => {
       isMobile: true,
       viewport: VIEWPORTS["360"],
     });
+
+    for (const { name, screen } of RESTING) {
+      test(`${screen}: parado`, async ({ page }) => {
+        expect(await restingSpin(page, screen, name)).toBe("none");
+        await expect(page.locator("html")).toHaveAttribute(
+          "data-motion",
+          "essential"
+        );
+      });
+    }
 
     test("fica parado, e continua com aria-busy", async ({ page }) => {
       const read = await readingResult(page);

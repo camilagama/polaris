@@ -3,7 +3,6 @@ import type {
   PaymentProfileReadModel,
 } from "@polaris/contracts";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import {
   type FormEvent,
   useCallback,
@@ -12,8 +11,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { RefreshButton } from "@/ui/refresh-button";
 import { deviceSaleKept } from "../app-shell/first-steps";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
@@ -86,9 +85,9 @@ import {
 import {
   type AdjustmentDraft,
   acknowledgeProfileReview,
-  applySalePreset,
   addAdjustment,
   addItem,
+  applySalePreset,
   type CatalogView,
   type ChoiceOption,
   cancelDiscard,
@@ -103,9 +102,9 @@ import {
   formForOfflineSale,
   type ItemDraft,
   idleSubmission,
-  type Loadable,
   isFormLocked,
   isSaleFormDirty,
+  type Loadable,
   type PreparedConfirmation,
   prepareConfirmation,
   profilesView,
@@ -1020,16 +1019,11 @@ export function SalePage() {
                 <CardTitle aria-level={2} id="sale-items-title" role="heading">
                   Itens
                 </CardTitle>
-                <Button
+                <RefreshButton
                   className="row-span-2"
+                  object="estoque e perfis"
                   onClick={handleRefresh}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-                  Atualizar estoque e perfis
-                </Button>
+                />
                 <ItemsCount chosen={chosenCount} />
               </CardHeader>
               <CardContent className="grid gap-4">

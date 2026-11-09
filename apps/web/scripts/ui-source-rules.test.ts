@@ -894,8 +894,8 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
 /**
  * "Atualizar" (DESIGN.md "A mesma ação é o mesmo componente"): the button that reads a screen again is
  * `RefreshButton` (`ui/refresh-button.tsx`), the only file with that text as the name of a button. The screens that
- * read again are scanned for JSX text that starts with "Atualizar" and for an `aria-label` that does; a screen that
- * still writes its own is an exception listed by file, with how many texts it holds and why, and the list is exact.
+ * read again are scanned for JSX text that starts with "Atualizar" and for an `aria-label` that does, with no
+ * exception.
  */
 const REFRESH_COMPONENT = "src/ui/refresh-button.tsx";
 const REFRESH_SCOPE = [
@@ -907,23 +907,6 @@ const REFRESH_SCOPE = [
 const REFRESH_TEXT = />\s*Atualizar\b[^<>{}]*</g;
 const SPIN_OUTSIDE_MOTION_LEVEL = /(?<!motion-full:)animate-spin/;
 const REFRESH_LABEL = /aria-label=["{`'\s]*Atualizar/g;
-const REFRESH_ELSEWHERE: readonly {
-  file: string;
-  texts: number;
-  why: string;
-}[] = [
-  {
-    file: "src/inventory/inventory-page.tsx",
-    texts: 1,
-    why: "o 'Atualizar' do Estoque é um link sublinhado de 22 px que migra para o RefreshButton na segunda parte da L1-5a, porque a primeira já usa os 8 arquivos do RC-6",
-  },
-  {
-    file: "src/sales/sale-page.tsx",
-    texts: 1,
-    why: "L1-5b: o 'Atualizar estoque e perfis' de Vender migra para o RefreshButton depois do bloco de Pagamento",
-  },
-];
-
 export function refreshButtonFaults(path: string, text: string): string[] {
   if (path === REFRESH_COMPONENT) {
     return [];
@@ -932,20 +915,22 @@ export function refreshButtonFaults(path: string, text: string): string[] {
   const found =
     (code.match(REFRESH_TEXT)?.length ?? 0) +
     (code.match(REFRESH_LABEL)?.length ?? 0);
-  const allowed = REFRESH_ELSEWHERE.find((entry) => entry.file === path)?.texts;
-  return found === (allowed ?? 0)
+  return found === 0
     ? []
-    : [
-        `${found} "Atualizar" escrito(s) fora do RefreshButton, e a lista diz ${allowed ?? 0}`,
-      ];
+    : [`${found} "Atualizar" escrito(s) fora do RefreshButton`];
 }
 
-describe('"Atualizar" é um componente só (L1-5a, AC-5.1)', () => {
-  it("a lista de exceções e o escopo apontam para arquivos que existem", () => {
-    for (const entry of REFRESH_ELSEWHERE.map((item) => item.file)) {
-      expect(REFRESH_SCOPE, entry).toContain(entry);
+describe('"Atualizar" é um componente só (L1-5, AC-5.1)', () => {
+  it("o escopo cobre as cinco telas que releem", () => {
+    for (const screen of [
+      "src/home/home-page.tsx",
+      "src/dashboard/dashboard-page.tsx",
+      "src/dashboard/goals-panel.tsx",
+      "src/inventory/inventory-page.tsx",
+      "src/sales/sale-page.tsx",
+    ]) {
+      expect(REFRESH_SCOPE, screen).toContain(screen);
     }
-    expect(REFRESH_SCOPE.length).toBeGreaterThan(10);
   });
 
   it.each(REFRESH_SCOPE)(
@@ -961,6 +946,8 @@ describe('"Atualizar" é um componente só (L1-5a, AC-5.1)', () => {
       "src/home/home-page.tsx",
       "src/dashboard/dashboard-page.tsx",
       "src/dashboard/goals-panel.tsx",
+      "src/inventory/inventory-page.tsx",
+      "src/sales/sale-page.tsx",
     ]) {
       expect(read(screen), screen).toContain("<RefreshButton");
     }
@@ -991,27 +978,22 @@ describe('"Atualizar" é um componente só (L1-5a, AC-5.1)', () => {
     expect(refreshButtonFaults(screen, '// "Atualizar" in a comment')).toEqual(
       []
     );
-    const stock = "src/inventory/inventory-page.tsx";
-    expect(
-      refreshButtonFaults(stock, "<Button>\n  Atualizar\n</Button>")
-    ).toEqual([]);
-    expect(
-      refreshButtonFaults(
-        stock,
-        "<Button>Atualizar</Button><Button>Atualizar</Button>"
-      )
-    ).not.toEqual([]);
-    const sale = "src/sales/sale-page.tsx";
-    expect(
-      refreshButtonFaults(sale, "<Button>Atualizar estoque e perfis</Button>")
-    ).toEqual([]);
-    expect(
-      refreshButtonFaults(
-        sale,
-        "<a>Atualizar um</a><a>Atualizar outro</a>"
-      ).join()
-    ).toContain("lista diz 1");
-    expect(refreshButtonFaults(sale, "<Button>Outro</Button>")).not.toEqual([]);
+    for (const file of [
+      "src/inventory/inventory-page.tsx",
+      "src/sales/sale-page.tsx",
+    ]) {
+      expect(
+        refreshButtonFaults(file, "<Button>\n  Atualizar\n</Button>").join(),
+        file
+      ).toContain('1 "Atualizar"');
+      expect(
+        refreshButtonFaults(
+          file,
+          "<Button>Atualizar estoque e perfis</Button>"
+        ),
+        file
+      ).not.toEqual([]);
+    }
     expect(
       refreshButtonFaults(REFRESH_COMPONENT, "<span>Atualizar</span>")
     ).toEqual([]);
