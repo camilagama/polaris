@@ -166,7 +166,7 @@ describe("fields and the main action on touch", () => {
     }
   });
 
-  it("the month picker is a field and the main action of the offer keeps the floor of xl, even when it wraps", () => {
+  it("the month picker is a field and the main action of the offer has the floor of xl", () => {
     const picker = readFileSync(join(SRC, "expenses/month-picker.tsx"), "utf8");
     expect(picker.match(/"touch:h-11"/g)).toHaveLength(2);
     expect(picker).toContain("touch:h-11 min-w-32");
