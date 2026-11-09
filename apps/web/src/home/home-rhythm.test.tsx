@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { addDays } from "./home-model";
@@ -169,5 +172,128 @@ describe("Ritmo de vendas at rest", () => {
     const range = html.match(RANGE)?.[0] ?? "";
     expect(range).toContain("valor escondido");
     expect(range).not.toContain("320,10");
+  });
+});
+
+const TABLE = /<table[^>]*id="([^"]*)"[^>]*>[\s\S]*?<\/table>/;
+const ROWS = /<tr[ >]/g;
+const HIDDEN_WRAPPER =
+  /<div class="[^"]*overflow-hidden[^"]*" data-chart-data-table="hidden">/;
+const CAPTION =
+  /<caption[^>]*>Vendas por dia, do mais novo ao mais antigo\. Meses anteriores atualizados até ontem\.<\/caption>/;
+const HEADERS = /<th[^>]*scope="col"/g;
+const ATTRIBUTES = /(?:aria-label|aria-valuetext|title)="[^"]*"/g;
+const HEAD = /<thead[^>]*>[\s\S]*<\/thead>/;
+const NEWEST_ROW = /<tbody[^>]*><tr[^>]*>([\s\S]*?)<\/tr>/;
+
+describe("the numbers of the Ritmo, for assistive technology", () => {
+  it("has no 'Ver os números' button: the days are an invisible table tied to the map", () => {
+    const html = render({ saturdays: true });
+    expect(textBetweenTags(html)).not.toContain("Ver os números");
+    const table = html.match(TABLE);
+    expect(table).not.toBeNull();
+    const id = table?.[1] ?? "";
+    expect(html).toContain(`data-chart-data-table="hidden"`);
+    expect(html).toContain(`aria-details="${id}"`);
+    expect(html).toMatch(HIDDEN_WRAPPER);
+  });
+
+  it("is a real table: a caption, a header per column and one row per day read, newest first", () => {
+    const html = render({ saturdays: true });
+    const table = html.match(TABLE)?.[0] ?? "";
+    expect(table).toMatch(CAPTION);
+    expect(table.match(HEADERS)).toHaveLength(3);
+    expect(textBetweenTags(table.match(HEAD)?.[0] ?? "")).toBe(
+      "DiaVendas líquidasVendas"
+    );
+    // the days read (the one to come is not a row), plus the header row
+    expect(table.match(ROWS)).toHaveLength(182);
+    const newest = textBetweenTags(table.match(NEWEST_ROW)?.[1] ?? "");
+    expect(newest).toBe("23/10/2026R$ 320,102 vendas");
+  });
+
+  it("says the same numbers the map reads: today, and a day with sales", () => {
+    const html = render({ saturdays: true });
+    const table = html.match(TABLE)?.[0] ?? "";
+    expect(textBetweenTags(table)).toContain("27/06/2026R$ 541,194 vendas");
+  });
+
+  it("holds no digit of an amount while the values are hidden, in the table, its text or the summary", () => {
+    hiddenValues.hidden = true;
+    const html = render({ saturdays: true });
+    const table = html.match(TABLE)?.[0] ?? "";
+    expect(textBetweenTags(table)).not.toMatch(MONEY_WITH_DIGIT);
+    expect(table).not.toContain("541,19");
+    expect(table).toContain("R$ ••••");
+    expect(table).toContain("valor escondido");
+  });
+
+  it("keeps every text the block said before, in the page or in the table: only the visible list went", () => {
+    const html = render({ saturdays: true });
+    const text = textBetweenTags(html);
+    const attributes = html.match(ATTRIBUTES)?.join(" ") ?? "";
+    const everywhere = `${text} ${attributes}`;
+    for (const said of [
+      "Ritmo de vendas",
+      "Últimas 26 semanas",
+      "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00.",
+      "Menos",
+      "Mais",
+      "Média por dia da semana",
+      "Vazio: sem venda · até R$",
+      "Vendas por dia nas últimas 26 semanas: 26 dias com venda. Melhor dia 27/06, R$ 541,19.",
+      "Meses anteriores atualizados até ontem.",
+      "Dia",
+      "Vendas líquidas",
+      "27/06/2026",
+      "sem venda",
+      "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje",
+    ]) {
+      expect(everywhere, said).toContain(said);
+    }
+  });
+});
+
+const SRC = fileURLToPath(new URL("../", import.meta.url));
+const PHRASE = "Ver os números";
+const SOURCE_FILE = /\.tsx?$/;
+const TEST_FILE = /\.test\.tsx?$/;
+/** The files of `src` that say the phrase: the Ritmo's are not among them, the other two blocks' go with their own change. */
+const STILL_SAYING = [
+  "dashboard/result-chart.tsx",
+  "dashboard/result-series.ts",
+  "home/home-chart.tsx",
+  "ui/charts/area-chart.tsx",
+];
+
+function sayingThePhrase(files: [string, string][]) {
+  return files
+    .filter(([, source]) => source.includes(PHRASE))
+    .map(([file]) => file)
+    .sort();
+}
+
+describe("no 'Ver os números' comes back to the Ritmo", () => {
+  const files = readdirSync(SRC, { encoding: "utf8", recursive: true })
+    .filter((file) => SOURCE_FILE.test(file) && !TEST_FILE.test(file))
+    .map((file): [string, string] => [
+      file.split(sep).join("/"),
+      readFileSync(`${SRC}${file}`, "utf8"),
+    ]);
+
+  it("lists exactly the files that still say it, so one more is a failure and one less lowers the list", () => {
+    expect(files.length).toBeGreaterThan(300);
+    expect(sayingThePhrase(files)).toEqual(STILL_SAYING);
+  });
+
+  it("fails on a planted copy in the files of the Ritmo, in code and in a comment", () => {
+    const planted: [string, string][] = [
+      ["home/home-rhythm.tsx", `<Button>${PHRASE}</Button>`],
+      ["home/home-rhythm-model.ts", `// ${PHRASE}`],
+    ];
+    expect(sayingThePhrase(planted)).toEqual([
+      "home/home-rhythm-model.ts",
+      "home/home-rhythm.tsx",
+    ]);
   });
 });

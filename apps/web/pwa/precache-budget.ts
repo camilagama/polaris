@@ -127,10 +127,11 @@ export const HEATMAP_MODULE =
   /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?:heatmap|sales-heatmap|weekday-bars)|bklit[\\/]charts[\\/](?:heatmap[\\/][^\\/]+|patterns[\\/][^\\/]+|pattern-preset|visx-pattern|chart-scale))\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?@visx[\\/]heatmap[\\/])/;
 /**
  * What belongs to the charts chunk and to nothing else: the modules of `src/ui/charts/` (not `on-demand.tsx`, the
- * loader that every screen imports), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
+ * loader that every screen imports, nor `chart-data-table.tsx`, the plain table of a chart's numbers, which a screen
+ * renders itself), the blocks of Bklit UI in `src/ui/bklit/` and the libraries only they bring.
  */
 const CHARTS_MODULE =
-  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!on-demand\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|classnames)[\\/])/;
+  /(?:[\\/]apps[\\/]web[\\/]src[\\/]ui[\\/](?:charts[\\/](?!(?:on-demand|chart-data-table)\.tsx$)[^\\/]+|bklit[\\/].+)\.tsx?$|[\\/]node_modules[\\/](?:\.bun[\\/][^\\/]+[\\/]node_modules[\\/])?(?:@visx|d3-[a-z-]+|internmap|classnames)[\\/])/;
 /**
  * The animation library and what only it brings (`motion`, `framer-motion`, `motion-dom`, `motion-utils`). The charts draw
  * with it and so does the filter bar (`src/ui/filter-bar.tsx`), so it cannot sit in the charts chunk alone: it has
