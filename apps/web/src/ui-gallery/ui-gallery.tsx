@@ -65,6 +65,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
+import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
 import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
@@ -1336,6 +1337,25 @@ export function UiGallery() {
                 value={<HeroValue amount="-48.30" />}
               />
             </div>
+          </Section>
+
+          <Section title="Estado vazio">
+            <EmptyState afterRead title="Nenhum cliente ainda.">
+              <Button type="button">
+                <PlusIcon aria-hidden="true" data-icon="inline-start" />
+                Novo cliente
+              </Button>
+            </EmptyState>
+            <EmptyState
+              afterRead
+              support="Escolha outro período ou registre vendas e despesas."
+              title="Sem vendas nem despesas em 1 a 31 de outubro"
+            >
+              <Button type="button">Nova venda</Button>
+              <Button type="button" variant="outline">
+                Nova despesa
+              </Button>
+            </EmptyState>
           </Section>
 
           <Section title="Dinheiro">

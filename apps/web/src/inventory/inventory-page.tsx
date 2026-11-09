@@ -15,39 +15,40 @@ import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
-import { SearchField } from "@/ui/search-field";
 import { HelpTip } from "@/ui/help-tip";
 import { MoneyText } from "@/ui/hidden-values";
+import { RefreshButton } from "@/ui/refresh-button";
+import { SearchField } from "@/ui/search-field";
 import { Skeleton } from "@/ui/skeleton";
 import {
   ProductThumbnail,
   useThumbnailSequence,
 } from "../catalog/product-thumbnail";
-import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
-import { useStoreToday } from "../lib/use-store-today";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
+import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
+import { useStoreToday } from "../lib/use-store-today";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { LINK, StockActionStrip } from "./stock-action-strip";
 import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
+import { StockFiltersButton } from "./stock-filters";
 import {
-  PANEL_OPEN_REASON,
-  PANEL_OPEN_REASON_ID,
-  RowActions,
-  triggerId,
-} from "./stock-row-actions";
-import {
+  readStockLinkFilters,
+  type StockAttentionLink,
   type StockFilter,
   type StockRow,
   stockCountText,
   stockCoverIds,
   stockListView,
   stockMoreView,
-  readStockLinkFilters,
-  type StockAttentionLink,
 } from "./stock-list-model";
-import { LINK, StockActionStrip } from "./stock-action-strip";
-import { StockFiltersButton } from "./stock-filters";
+import {
+  PANEL_OPEN_REASON,
+  PANEL_OPEN_REASON_ID,
+  RowActions,
+  triggerId,
+} from "./stock-row-actions";
 import { type StockTarget, stockTarget } from "./stock-target";
 import { useStockAttention } from "./use-stock-attention";
 import { useStockEntryLink } from "./use-stock-entry-link";
@@ -418,16 +419,7 @@ export function InventoryPage() {
         >
           {countText ?? " "}
         </p>
-        <Button
-          className="shrink-0"
-          onClick={handleReload}
-          size="sm"
-          type="button"
-          variant="link"
-        >
-          <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-          Atualizar
-        </Button>
+        <RefreshButton className="shrink-0" onClick={handleReload} />
       </div>
 
       {view.kind === "ready" ? (
