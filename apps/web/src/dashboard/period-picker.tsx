@@ -12,6 +12,7 @@ import {
   type Period,
   type PeriodPreset,
   PRESET_SHORTCUTS,
+  periodText,
   presetOfShortcut,
   rangeMessage,
   rangeProblem,
@@ -151,7 +152,18 @@ export function PeriodPicker({
         value={period}
       />
       {wholeMonth ? (
-        <MonthArrows onStep={step} period={period} today={today} />
+        <>
+          <MonthArrows onStep={step} period={period} today={today} />
+          {/* the arrows keep the focus and their names, so the new month is said here, once per step */}
+          <p
+            aria-atomic="true"
+            aria-live="polite"
+            className="sr-only"
+            data-month-live
+          >
+            {`Período: ${periodText(period, today.slice(0, 4))}`}
+          </p>
+        </>
       ) : null}
     </div>
   );

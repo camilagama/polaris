@@ -2908,6 +2908,7 @@ const monthBack = (page: Page) =>
 const monthForward = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Próximo mês" });
 const periodRow = (page: Page) => page.locator("[data-period-row]");
+const monthLive = (page: Page) => page.locator("[data-month-live]");
 
 async function expectPeriodText(page: Page, text: string) {
   await expect(periodButton(page)).toHaveAccessibleName(
@@ -2931,6 +2932,7 @@ test.describe("‹ e › de mês ao lado do período (L2-1b)", () => {
 
     await monthBack(page).click();
     await expectPeriodText(page, "01/09 a 30/09");
+    await expect(monthLive(page)).toHaveText("Período: 1 a 30 de setembro");
     await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
     await expectPreset(page, "Mês passado");
     await expect(monthForward(page)).not.toHaveAttribute("aria-disabled");
@@ -2944,10 +2946,55 @@ test.describe("‹ e › de mês ao lado do período (L2-1b)", () => {
     });
 
     await monthForward(page).click();
+    await expect(monthLive(page)).toHaveText("Período: 1 a 30 de setembro");
     await monthForward(page).click();
     await expectPeriodText(page, "01/10 a 31/10");
+    await expect(monthLive(page)).toHaveText("Período: 1 a 31 de outubro");
     await expectPreset(page, "Este mês");
     await expect(monthForward(page)).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("pelo teclado, Enter e Espaço trocam de mês, a região viva diz o mês novo e › desligado não muda nada nem tira o foco", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    const live = monthLive(page);
+    await expect(live).toHaveAttribute("aria-live", "polite");
+    await expect(live).toHaveText("Período: 1 a 31 de outubro");
+
+    await periodButton(page).focus();
+    await page.keyboard.press("Tab");
+    await expect(monthBack(page)).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expectPeriodText(page, "01/09 a 30/09");
+    await expect(live).toHaveText("Período: 1 a 30 de setembro");
+    await expect(monthBack(page)).toBeFocused();
+
+    await page.keyboard.press("Space");
+    await expectPeriodText(page, "01/08 a 31/08");
+    await expect(live).toHaveText("Período: 1 a 31 de agosto");
+
+    await page.keyboard.press("Tab");
+    await expect(monthForward(page)).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expectPeriodText(page, "01/09 a 30/09");
+    await expect(live).toHaveText("Período: 1 a 30 de setembro");
+    await page.keyboard.press("Space");
+    await expectPeriodText(page, "01/10 a 31/10");
+    await expect(live).toHaveText("Período: 1 a 31 de outubro");
+    await expect(monthForward(page)).toHaveAttribute("aria-disabled", "true");
+    await expect(monthForward(page)).toBeFocused();
+
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    await expectPeriodText(page, "01/10 a 31/10");
+    await expect(live).toHaveText("Período: 1 a 31 de outubro");
+    await expect(monthForward(page)).toBeFocused();
+    await expect(monthBack(page)).not.toHaveAttribute("aria-disabled");
+    await expect(periodButton(page)).toHaveAccessibleName(
+      "Período: 01/10 a 31/10, editar"
+    );
   });
 
   test("atravessa o ano e mostra o ano quando o mês não é o de hoje", async ({
