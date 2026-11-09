@@ -50,7 +50,7 @@ export type RouteId =
   | "subscription";
 
 /** The group of the sidebar an item is in: Início and Configurações stand alone, with no label. */
-export type NavGroup = "Gestão" | "Resultado" | "Vendas" | null;
+export type NavGroup = "Financeiro" | "Gestão" | "Vendas" | null;
 
 export interface NavItem {
   group: NavGroup;
@@ -61,7 +61,7 @@ export interface NavItem {
 
 /**
  * The nine destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
- * for what is sold, Gestão for what the store has, Resultado for what it earns and spends. Clientes is a register, like
+ * for what is sold, Gestão for what the store has, Financeiro for what it earns and spends. Clientes is a register, like
  * Produtos, as the bottom bar of the phone already treats it (`BOTTOM_BAR_AREA`).
  */
 export const NAV_ITEMS: readonly NavItem[] = [
@@ -77,12 +77,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { group: "Gestão", href: "/products", id: "products", label: "Produtos" },
   { group: "Gestão", href: "/customers", id: "customers", label: "Clientes" },
   {
-    group: "Resultado",
+    group: "Financeiro",
     href: "/dashboard",
     id: "dashboard",
     label: "Resultado",
   },
-  { group: "Resultado", href: "/expenses", id: "expenses", label: "Despesas" },
+  { group: "Financeiro", href: "/expenses", id: "expenses", label: "Despesas" },
   {
     group: null,
     href: "/configuracoes",

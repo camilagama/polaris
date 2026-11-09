@@ -226,6 +226,12 @@ test("despesa registrada em Despesas aparece no Resultado ao voltar, sem Atualiz
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByText("Despesa registrada.")).toBeVisible();
   };
+  const openFromSidebar = async (name: "Despesas" | "Resultado") => {
+    await page
+      .getByRole("navigation", { exact: true, name: "Principal" })
+      .getByRole("link", { exact: true, name })
+      .click();
+  };
   const expectExpensesOfPeriod = (expected: number) =>
     expect
       .poll(async () =>
@@ -239,15 +245,18 @@ test("despesa registrada em Despesas aparece no Resultado ao voltar, sem Atualiz
   await register("1.234,56", "Conta de luz");
 
   const tabs = page.getByRole("tablist", { name: "Resultado e metas" });
-  await page.goto("/dashboard");
+  await openFromSidebar("Resultado");
   await expect(chainValue(page, EXPENSES_OF_PERIOD)).toBeVisible();
   await expectExpensesOfPeriod(123_456);
 
   // a second expense, written from the other screen: the figure is the sum, not the one from before
-  await page.goto("/expenses");
+  await openFromSidebar("Despesas");
   await register("100,00", "Conta de água");
-  await page.goto("/dashboard");
+  await settled(() => summaryReads);
+  const readsBeforeReturn = summaryReads;
+  await openFromSidebar("Resultado");
   await expectExpensesOfPeriod(133_456);
+  expect(summaryReads).toBeGreaterThan(readsBeforeReturn);
 
   // nothing written: going to another tab and back asks the server for nothing (the reads in flight settle first)
   await settled(() => summaryReads);

@@ -73,11 +73,11 @@ test.describe("desktop (1280 px)", () => {
     await expect(bottomBar(page)).toBeHidden();
     // the nine destinations (map of navigation, § 1): no Pendências with nothing refused
     await expect(nav.getByRole("link")).toHaveText(DESTINATIONS);
-    // Início and Configurações alone; Vendas, Gestão and Resultado with their small label (map of navigation, § 1)
+    // Início and Configurações alone; Vendas, Gestão and Financeiro with their small label (map of navigation, § 1)
     await expect(nav.locator('[data-sidebar="group-label"]')).toHaveText([
       "Vendas",
       "Gestão",
-      "Resultado",
+      "Financeiro",
     ]);
     const groups = nav.locator('[data-sidebar="group"]');
     await expect(groups).toHaveCount(5);
@@ -337,7 +337,7 @@ test.describe("celular (360 px)", () => {
     // the bottom bar is not regrouped: what is left of Gestão keeps its label, Vendas has nothing left here
     await expect(panel.locator('[data-sidebar="group-label"]')).toHaveText([
       "Gestão",
-      "Resultado",
+      "Financeiro",
     ]);
     const current = panel.locator('[aria-current="page"]');
     await expect(current).toHaveText("Produtos");

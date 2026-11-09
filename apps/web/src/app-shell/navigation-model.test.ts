@@ -45,7 +45,7 @@ describe("main menu", () => {
     expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(9);
   });
 
-  it("groups the sidebar: Início alone, Vendas, Gestão, Resultado and Configurações alone", () => {
+  it("groups the sidebar: Início alone, Vendas, Gestão, Financeiro and Configurações alone", () => {
     const groups = navGroups(NAV_ITEMS).map((group) => [
       group.label,
       group.items.map((item) => item.label),
@@ -54,7 +54,7 @@ describe("main menu", () => {
       [null, ["Início"]],
       ["Vendas", ["Vender", "Histórico"]],
       ["Gestão", ["Estoque", "Produtos", "Clientes"]],
-      ["Resultado", ["Resultado", "Despesas"]],
+      ["Financeiro", ["Resultado", "Despesas"]],
       [null, ["Configurações"]],
     ]);
   });
@@ -82,7 +82,7 @@ describe("main menu", () => {
     ).toEqual([
       ["Vendas", ["Pendências"]],
       ["Gestão", ["Produtos", "Clientes"]],
-      ["Resultado", ["Resultado", "Despesas"]],
+      ["Financeiro", ["Resultado", "Despesas"]],
       [null, ["Configurações"]],
     ]);
   });
@@ -118,7 +118,7 @@ describe("main menu", () => {
     );
     expect(
       navGroups(without)
-        .find((group) => group.label === "Resultado")
+        .find((group) => group.label === "Financeiro")
         ?.items.map((item) => item.label)
     ).toEqual(["Resultado"]);
   });
