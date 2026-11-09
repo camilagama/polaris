@@ -1528,7 +1528,7 @@ test("o botão Nova despesa do título fica nas outras partes e na aba das anula
   await expect(newExpenseButton(page)).toBeVisible();
 });
 
-test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura (até 1 px) e, na linha do título, no mesmo lugar", async ({
+test("a troca de carregando para vazio deixa o cartão da lista com a mesma altura (até 1 px) e, a partir de 760 px, no mesmo lugar", async ({
   page,
 }) => {
   const server = new FakeExpenseServer();
