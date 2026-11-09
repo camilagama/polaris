@@ -34,7 +34,7 @@ async function iconFaults(
   page: Page,
   sizes: readonly number[] = ICON_SIZES,
   stroke: number = ICON_STROKE
-): Promise<string[]> {
+): Promise<{ faults: string[]; measured: number }> {
   const found = await page.evaluate(() =>
     [...document.querySelectorAll("svg.lucide")]
       .map((svg): IconFault | null => {
@@ -56,10 +56,21 @@ async function iconFaults(
       })
       .filter((fault): fault is IconFault => fault !== null)
   );
-  return found
-    .filter((icon) => !sizes.includes(icon.width) || icon.stroke !== stroke)
-    .map((icon) => `${icon.at}: ${icon.width}px, traço ${icon.stroke}`);
+  return {
+    faults: found
+      .filter((icon) => !sizes.includes(icon.width) || icon.stroke !== stroke)
+      .map((icon) => `${icon.at}: ${icon.width}px, traço ${icon.stroke}`),
+    measured: found.length,
+  };
 }
+
+// screens that draw icons for sure: a sweep that measured none of them would be green for nothing
+const DRAWS_ICONS = [
+  "início com vendas",
+  "histórico lista",
+  "estoque lista",
+  "resultado metas",
+];
 
 const CONTEXTS = [
   { theme: "claro", touch: true, viewport: "360" },
@@ -98,7 +109,9 @@ test("o controle reprova um ícone de 14 px, um de 20 px e um traço de 2,5", as
      <svg class="lucide lucide-c" width="12" height="12" stroke-width="2.5"></svg>
      <svg class="lucide lucide-d" width="16" height="16" stroke-width="2"></svg>`
   );
-  expect(await iconFaults(page)).toEqual([
+  const { faults, measured } = await iconFaults(page);
+  expect(measured).toBe(4);
+  expect(faults).toEqual([
     "lucide-a em : 14px, traço 2",
     "lucide-b em : 20px, traço 2",
     "lucide-c em : 12px, traço 2.5",
@@ -117,7 +130,11 @@ for (const screen of swept) {
 
       test("todo ícone tem 12, 16 ou 18 px e traço 2", async ({ page }) => {
         await screen.open(page, page.context());
-        expect(await iconFaults(page)).toEqual([]);
+        const { faults, measured } = await iconFaults(page);
+        expect(faults).toEqual([]);
+        if (DRAWS_ICONS.includes(screen.name)) {
+          expect(measured).toBeGreaterThan(0);
+        }
       });
     });
   }

@@ -52,9 +52,9 @@ function LoadingCard({ message }: { message: string }) {
   );
 }
 
-/** With the chevron on the rows (14 px and a gap of 8, 16 and 12 from 760 px), the total ends where their figures end. */
+/** With the chevron on the rows (16 px and a gap of 8, 12 from 760 px), the total ends where their figures end. */
 const TOTAL_UNDER_VALUES =
-  "border-t pr-[calc(0.625rem+1.375rem)] md:pr-[calc(1rem+1.75rem)]";
+  "border-t pr-[calc(0.625rem+1.5rem)] md:pr-[calc(1rem+1.75rem)]";
 
 /** The total of the sales on the screen; while the first page loads it is a dash, in a box of the same height. */
 function HistoryTotalFooter({
