@@ -888,7 +888,7 @@ export function FilterBar({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             aria-label="Filtrar por"
-            className="w-64"
+            className="w-64 max-w-[calc(100vw-1rem)]"
             finalFocus={menuClosed}
           >
             {fields.map((field) => (

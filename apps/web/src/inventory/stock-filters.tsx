@@ -1,95 +1,116 @@
-import FunnelIcon from "lucide-react/dist/esm/icons/funnel";
-import { Badge } from "@/ui/badge";
-import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
-import { Field, FieldLabel } from "@/ui/field";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
-import { StatusNav } from "../catalog/screen-parts";
+import { useCallback, useMemo } from "react";
+import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
 import {
   STOCK_FILTERS,
   type StockFilter,
   type StockFilters,
 } from "./stock-list-model";
 
-/** The filters that narrow the list; the search box is not one of them, it has its own field. */
-export function activeStockFilters(filters: StockFilters): number {
-  return (
-    (filters.stock === "all" ? 0 : 1) +
-    (filters.unknownCost ? 1 : 0) +
-    (filters.includeArchived ? 1 : 0)
-  );
+/** "Todas" is no filter: the choice lists only what narrows the balance. */
+const BALANCE_OPTIONS = STOCK_FILTERS.filter(([value]) => value !== "all").map(
+  ([value, label]) => ({ label, value })
+);
+
+const FIELD_BALANCE = "balance";
+const FIELD_UNKNOWN_COST = "unknown-cost";
+const FIELD_ARCHIVED = "archived";
+
+const UNKNOWN_COST_ONLY = "only";
+const ARCHIVED_INCLUDED = "include";
+
+type StockBarFilters = Pick<
+  StockFilters,
+  "includeArchived" | "stock" | "unknownCost"
+>;
+
+function isNarrowingBalance(value: string): value is StockFilter {
+  return BALANCE_OPTIONS.some((option) => option.value === value);
 }
 
-interface StockFiltersButtonProps {
+/** The filters of the list as the bar's rules, in the order the fields are listed; the search is not one of them. */
+export function stockRules(filters: StockBarFilters): FilterRule[] {
+  const rules: FilterRule[] = [];
+  if (filters.stock !== "all") {
+    rules.push({ fieldId: FIELD_BALANCE, value: filters.stock });
+  }
+  if (filters.unknownCost) {
+    rules.push({ fieldId: FIELD_UNKNOWN_COST, value: UNKNOWN_COST_ONLY });
+  }
+  if (filters.includeArchived) {
+    rules.push({ fieldId: FIELD_ARCHIVED, value: ARCHIVED_INCLUDED });
+  }
+  return rules;
+}
+
+function chosen(rules: readonly FilterRule[], fieldId: string): string {
+  const value = rules.find((rule) => rule.fieldId === fieldId)?.value;
+  return typeof value === "string" ? value : "";
+}
+
+/** The bar's next list as the three filters the page keeps, every one written (a pill taken out is a filter turned off). */
+export function stockFilters(rules: readonly FilterRule[]): StockBarFilters {
+  const balance = chosen(rules, FIELD_BALANCE);
+  return {
+    includeArchived: chosen(rules, FIELD_ARCHIVED) === ARCHIVED_INCLUDED,
+    stock: isNarrowingBalance(balance) ? balance : "all",
+    unknownCost: chosen(rules, FIELD_UNKNOWN_COST) === UNKNOWN_COST_ONLY,
+  };
+}
+
+/** The fields of the bar, in the order the "Filtrar" menu lists them. The average cost is only known with a connection. */
+export function stockFields(offline: boolean): FilterField[] {
+  return [
+    {
+      id: FIELD_BALANCE,
+      label: "Saldo",
+      options: BALANCE_OPTIONS,
+      type: "select",
+    },
+    {
+      disabledReason: offline ? "Só com conexão" : undefined,
+      id: FIELD_UNKNOWN_COST,
+      label: "Custo",
+      options: [{ label: "Desconhecido", value: UNKNOWN_COST_ONLY }],
+      type: "select",
+    },
+    {
+      id: FIELD_ARCHIVED,
+      label: "Arquivados",
+      options: [{ label: "Incluir", value: ARCHIVED_INCLUDED }],
+      type: "select",
+    },
+  ];
+}
+
+interface StockFiltersBarProps {
   filters: StockFilters;
-  onArchived: (checked: boolean) => void;
-  onStock: (stock: StockFilter) => void;
-  onUnknownCost: (checked: boolean) => void;
+  /** Without a connection the filter by cost is not available. */
+  offline: boolean;
+  onChange: (changes: Partial<StockFilters>) => void;
 }
 
-/**
- * One button for the criteria besides the search: balance tabs, "Sem custo" and "Incluir arquivados" are inside it, so
- * the first row of the list stays on the first screen of a phone. The button says how many filters narrow the list.
- */
-export function StockFiltersButton({
+/** The criteria besides the search, on the bar of the project: the Histórico filters the same way. */
+export function StockFiltersBar({
   filters,
-  onArchived,
-  onStock,
-  onUnknownCost,
-}: StockFiltersButtonProps) {
-  const active = activeStockFilters(filters);
+  offline,
+  onChange,
+}: StockFiltersBarProps) {
+  const fields = useMemo(() => stockFields(offline), [offline]);
+  const { includeArchived, stock, unknownCost } = filters;
+  const rules = useMemo(
+    () => stockRules({ includeArchived, stock, unknownCost }),
+    [includeArchived, stock, unknownCost]
+  );
+  const handleChange = useCallback(
+    (next: FilterRule[]) => onChange(stockFilters(next)),
+    [onChange]
+  );
   return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button
-            aria-label={
-              active === 0
-                ? "Filtros"
-                : `Filtros, ${active} ${active === 1 ? "ativo" : "ativos"}`
-            }
-            className="shrink-0"
-            type="button"
-            variant="outline"
-          />
-        }
-      >
-        <FunnelIcon aria-hidden="true" data-icon="inline-start" />
-        Filtros
-        {active === 0 ? null : (
-          <Badge aria-hidden="true" variant="secondary">
-            {active}
-          </Badge>
-        )}
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        aria-label="Filtros"
-        className="w-80 max-w-[calc(100vw-2rem)] gap-3 p-3"
-      >
-        <StatusNav
-          label="Filtrar por saldo"
-          onSelect={onStock}
-          options={STOCK_FILTERS}
-          value={filters.stock}
-        />
-        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
-          <Checkbox
-            checked={filters.unknownCost}
-            id="stock-unknown-cost"
-            onCheckedChange={onUnknownCost}
-          />
-          <FieldLabel htmlFor="stock-unknown-cost">Sem custo</FieldLabel>
-        </Field>
-        <Field className="min-h-ctl-md w-auto" orientation="horizontal">
-          <Checkbox
-            checked={filters.includeArchived}
-            id="stock-archived"
-            onCheckedChange={onArchived}
-          />
-          <FieldLabel htmlFor="stock-archived">Incluir arquivados</FieldLabel>
-        </Field>
-      </PopoverContent>
-    </Popover>
+    <FilterBar
+      fields={fields}
+      label="Filtrar estoque"
+      onChange={handleChange}
+      value={rules}
+    />
   );
 }
