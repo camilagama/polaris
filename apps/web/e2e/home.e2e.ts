@@ -4369,6 +4369,23 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
       await expect(chart.getByRole("table")).not.toContainText(AN_AMOUNT);
     });
   }
+
+  test("o gráfico não abriu e o período não tem venda: a frase de sem vendas, e a tabela de zeros continua invisível", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await page.route(CHARTS_CHUNK, (route) => route.abort());
+    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_WEEK));
+    const chart = region(page, "Vendas por dia");
+    await expect(chart).toContainText("Sem vendas no período.", {
+      timeout: 20_000,
+    });
+    await expect(chart.locator("[data-chart-data-table]")).toHaveAttribute(
+      "data-chart-data-table",
+      "hidden"
+    );
+    await expect(chart).not.toContainText("O gráfico não abriu.");
+  });
 });
 
 /** What each KPI card lays out, in document coordinates: the card, its support text and its sparkline. */

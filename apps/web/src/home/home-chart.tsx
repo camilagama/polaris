@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo } from "react";
+import { useCallback, useId } from "react";
 import { Button } from "@/ui/button";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import { OnDemandAreaChart, useChartsFailed } from "@/ui/charts/on-demand";
@@ -192,28 +192,19 @@ export function NumbersTable({
   series: Series;
   visible: boolean;
 }) {
-  const columns = useMemo(
-    () => [
-      { header: "Dia" },
-      { header: "Vendas líquidas", numeric: true },
-      ...(earlier ? [{ header: `${days} dias antes`, numeric: true }] : []),
+  const columns = [
+    { header: "Dia" },
+    { header: "Vendas líquidas", numeric: true },
+    ...(earlier ? [{ header: `${days} dias antes`, numeric: true }] : []),
+  ];
+  const rows = series.map((day, index) => ({
+    cells: [
+      formatCalendarDate(day.date),
+      formatBrlAmount(day.netSales),
+      ...(earlier ? [formatBrlAmount(earlier[index]?.netSales ?? "0")] : []),
     ],
-    [days, earlier]
-  );
-  const rows = useMemo(
-    () =>
-      series.map((day, index) => ({
-        cells: [
-          formatCalendarDate(day.date),
-          formatBrlAmount(day.netSales),
-          ...(earlier
-            ? [formatBrlAmount(earlier[index]?.netSales ?? "0")]
-            : []),
-        ],
-        key: day.date,
-      })),
-    [earlier, series]
-  );
+    key: day.date,
+  }));
   return (
     <ChartDataTable
       caption={`Vendas líquidas por dia, dos últimos ${days} dias, do mais antigo ao mais novo.`}
