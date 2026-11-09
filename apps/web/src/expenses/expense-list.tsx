@@ -13,7 +13,12 @@ import { ListTotalFooter, StatusNav } from "../catalog/screen-parts";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import { sumBrlAmounts } from "../lib/sum-brl";
-import { ExpenseCategorySelect, ListNote, LoadError } from "./expense-fields";
+import {
+  ExpenseCategorySelect,
+  LIST_NOTE_MIN_HEIGHT_CLASS,
+  ListNote,
+  LoadError,
+} from "./expense-fields";
 import { formatMonthLabel } from "./expense-model";
 import type {
   ExpenseFilters,
@@ -293,7 +298,7 @@ function EmptyExpenses({ filters }: { filters: ExpenseFilters }) {
 }
 
 /** The empty list and the loading line share this height (the sentence), so the list that arrives empty does not push the screen. */
-const EMPTY_BOX_CLASS = "grid min-h-[4.5rem] content-center";
+const EMPTY_BOX_CLASS = `grid ${LIST_NOTE_MIN_HEIGHT_CLASS} content-center`;
 
 export function ExpenseList({
   busyKey,
