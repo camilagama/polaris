@@ -1130,3 +1130,96 @@ describe("mesmo botão, mesmo nome (L1-6, AC-6.1, AC-6.2, AC-6.5)", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * "Uma lista de atalhos de período" (DESIGN.md "Período (`DateRangePicker`)", L2-1, AC-1.6): the names of the shortcuts
+ * live in `src/ui/date-range-shortcuts.ts` and a screen only chooses which ones it shows. A name written anywhere else
+ * in `src/` is a second list that drifts. The one exception is the "Este mês" button of the month picker of the
+ * Despesas: it chooses the competence month, not a range, and the list says so by name.
+ */
+const SHORTCUT_LIST = "src/ui/date-range-shortcuts.ts";
+const SHORTCUT_NAMES = [
+  "Este mês",
+  "Mês passado",
+  "Últimos 30 dias",
+  "Este ano",
+] as const;
+const OWN_SHORTCUT_NAME: Readonly<Record<string, readonly string[]>> = {
+  "src/expenses/month-picker.tsx": ["Este mês"],
+};
+
+export function shortcutNameFaults(path: string, text: string): string[] {
+  if (path === SHORTCUT_LIST) {
+    return [];
+  }
+  const code = withoutComments(text);
+  const own = OWN_SHORTCUT_NAME[path] ?? [];
+  return SHORTCUT_NAMES.filter(
+    (name) => code.includes(name) && !own.includes(name)
+  ).map((name) => `"${name}" escrito fora de ${SHORTCUT_LIST}`);
+}
+
+describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
+  const files = sourcesUnder("src");
+
+  it("a árvore foi lida e a lista está nela", () => {
+    expect(files.length).toBeGreaterThan(500);
+    expect(files).toContain(SHORTCUT_LIST);
+    expect(files).toContain("src/dashboard/period-picker.tsx");
+  });
+
+  it("nenhum arquivo de src escreve o nome de um atalho", () => {
+    const faults = files.flatMap((path) =>
+      shortcutNameFaults(path, read(path)).map((fault) => `${path}: ${fault}`)
+    );
+    expect(faults).toEqual([]);
+  });
+
+  it("a lista tem os seis atalhos e a exceção é exata: o arquivo dela ainda escreve o nome", () => {
+    const listed = withoutComments(read(SHORTCUT_LIST));
+    for (const name of [...SHORTCUT_NAMES, "Hoje", "7 dias"]) {
+      expect(listed, name).toContain(name);
+    }
+    expect(Object.keys(OWN_SHORTCUT_NAME)).toEqual([
+      "src/expenses/month-picker.tsx",
+    ]);
+    for (const [path, names] of Object.entries(OWN_SHORTCUT_NAME)) {
+      for (const name of names) {
+        expect(withoutComments(read(path)), `${path}: ${name}`).toContain(name);
+      }
+    }
+  });
+
+  it("o Resultado, o Histórico e as Metas escolhem da lista, sem lista própria (controle)", () => {
+    expect(read("src/dashboard/result-period.ts")).toContain("shortcutLabel(");
+    expect(read("src/dashboard/period-picker.tsx")).toContain("shortcuts=");
+    expect(read("src/ui/date-range-picker.tsx")).toContain("shortcutsOf(");
+  });
+
+  it("um nome escrito à mão reprova, e a lista e a exceção não (controle plantado)", () => {
+    expect(
+      shortcutNameFaults(
+        "src/dashboard/period-picker.tsx",
+        '<button>Este mês</button> const a = "Últimos 30 dias";'
+      )
+    ).toHaveLength(2);
+    expect(
+      shortcutNameFaults(
+        "src/sales/sale-history-filters.tsx",
+        'const labels = ["Mês passado"];'
+      )
+    ).toHaveLength(1);
+    expect(
+      shortcutNameFaults("src/dashboard/x.ts", "// Este mês e Este ano")
+    ).toEqual([]);
+    expect(shortcutNameFaults(SHORTCUT_LIST, '{ label: "Este mês" }')).toEqual(
+      []
+    );
+    expect(
+      shortcutNameFaults("src/expenses/month-picker.tsx", ">Este mês<")
+    ).toEqual([]);
+    expect(
+      shortcutNameFaults("src/expenses/month-picker.tsx", ">Este ano<")
+    ).toHaveLength(1);
+  });
+});

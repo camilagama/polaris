@@ -1,5 +1,7 @@
 import { monthBounds, monthOfDay, shiftMonth } from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
+import { shortcutLabel } from "../ui/date-range-shortcuts";
+import type { RangePreset } from "../ui/date-values";
 
 /**
  * The periods of the Resultado (corte resultado-v2, AC-1 and AC-2): the presets, the free range, what each one reads,
@@ -31,12 +33,29 @@ export const PRESETS: readonly PeriodPreset[] = [
   "custom",
 ];
 
+export const PRESET_SHORTCUTS: Readonly<
+  Record<Exclude<PeriodPreset, "custom">, RangePreset>
+> = {
+  "last-30": "30-dias",
+  "last-month": "mes-passado",
+  "this-month": "este-mes",
+  year: "este-ano",
+};
+
+export function presetOfShortcut(shortcut: RangePreset): PeriodPreset | null {
+  return (
+    (Object.entries(PRESET_SHORTCUTS).find(
+      ([, value]) => value === shortcut
+    )?.[0] as PeriodPreset | undefined) ?? null
+  );
+}
+
 export const PRESET_LABELS: Readonly<Record<PeriodPreset, string>> = {
   custom: "Período",
-  "last-30": "Últimos 30 dias",
-  "last-month": "Mês passado",
-  "this-month": "Este mês",
-  year: "Este ano",
+  "last-30": shortcutLabel(PRESET_SHORTCUTS["last-30"]),
+  "last-month": shortcutLabel(PRESET_SHORTCUTS["last-month"]),
+  "this-month": shortcutLabel(PRESET_SHORTCUTS["this-month"]),
+  year: shortcutLabel(PRESET_SHORTCUTS.year),
 };
 
 const DAY_MS = 86_400_000;
