@@ -252,7 +252,7 @@ describe("rows", () => {
     expect(JSON.stringify(rows)).not.toContain("example.com");
   });
 
-  it("draws the circle of the row with the customer's first and last initials, or a dash", () => {
+  it("draws the circle of the row with the customer's first and last initials, or nothing without a name", () => {
     const rows = historyRows(
       loaded([
         entry(1),
@@ -262,10 +262,10 @@ describe("rows", () => {
       ])
     );
     expect(rows.map((row) => row.customerInitials)).toEqual([
-      "—",
+      "",
       "AS",
       "M",
-      "—",
+      "",
     ]);
   });
 

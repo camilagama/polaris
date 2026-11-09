@@ -110,7 +110,7 @@ export function ImportResultStep({
       offline={offline}
     >
       <div className="flex gap-2.5" role="status">
-        <Icon aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+        <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
         <div className="grid gap-0.5">
           <p className="font-medium text-title">{texts.title}</p>
           {texts.notEntered ? <p>{texts.notEntered}</p> : null}
