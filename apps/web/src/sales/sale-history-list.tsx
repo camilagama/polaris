@@ -5,23 +5,35 @@ import { Card } from "@/ui/card";
 import { Money } from "@/ui/money";
 import type { HistoryRow } from "./sale-history-model";
 
-/** The status of a sale, as the badges of the history and of the detail write it. */
+/**
+ * The status of a sale, as the badges of the history and of the detail write it. With `commonStateAsText` (the list)
+ * the ordinary state, confirmed, is not a badge: nearly every row is confirmed, so the same badge on all of them hides
+ * the few that are not. It stays in the row's accessible name as text for the screen reader only, in the same place
+ * the badge was.
+ */
 export function SaleStatusBadges({
   backdated = false,
+  commonStateAsText = false,
   returnsBadge,
   statusLabel,
   statusTone,
 }: {
   backdated?: boolean;
+  commonStateAsText?: boolean;
   returnsBadge: string | null;
   statusLabel: string;
   statusTone: "cancelled" | "confirmed";
 }) {
+  const common = commonStateAsText && statusTone === "confirmed";
   return (
     <>
-      <Badge variant={statusTone === "cancelled" ? "destructive" : "outline"}>
-        {statusLabel}
-      </Badge>
+      {common ? (
+        <span className="sr-only">{statusLabel}</span>
+      ) : (
+        <Badge variant={statusTone === "cancelled" ? "destructive" : "outline"}>
+          {statusLabel}
+        </Badge>
+      )}
       {returnsBadge ? <Badge variant="warning">{returnsBadge}</Badge> : null}
       {backdated ? <Badge variant="outline">Retroativa</Badge> : null}
     </>
@@ -66,6 +78,7 @@ function RowBody({ chevron, row }: { chevron: boolean; row: HistoryRow }) {
           </p>
           <SaleStatusBadges
             backdated={row.backdated}
+            commonStateAsText
             returnsBadge={row.returnsBadge}
             statusLabel={row.statusLabel}
             statusTone={row.statusTone}
