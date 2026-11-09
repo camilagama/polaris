@@ -1174,6 +1174,8 @@ describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
     expect(files.length).toBeGreaterThan(500);
     expect(files).toContain(SHORTCUT_LIST);
     expect(files).toContain("src/dashboard/period-picker.tsx");
+    expect(files).toContain("src/dashboard/result-period.ts");
+    expect(files.filter((path) => path.includes(".test."))).toEqual([]);
   });
 
   it("nenhum arquivo de src escreve o nome de um atalho", () => {
@@ -1226,10 +1228,19 @@ describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
       `src/sales/sale-history-filters.tsx: "Últimos 30 dias" escrito fora de ${SHORTCUT_LIST}`,
     ]);
     expect(
-      shortcutFaultsOver(
-        planted.filter(({ path }) => path !== "src/dashboard/period-picker.tsx")
-      )
-    ).toHaveLength(1);
+      shortcutFaultsOver([
+        ...planted.filter(
+          ({ path }) => path !== "src/dashboard/period-picker.tsx"
+        ),
+        {
+          path: "src/expenses/month-picker.tsx",
+          text: "<button>Mês passado</button>",
+        },
+      ])
+    ).toEqual([
+      `src/sales/sale-history-filters.tsx: "Últimos 30 dias" escrito fora de ${SHORTCUT_LIST}`,
+      `src/expenses/month-picker.tsx: "Mês passado" escrito fora de ${SHORTCUT_LIST}`,
+    ]);
   });
 
   it("um nome escrito à mão reprova, e a lista e a exceção não (controle plantado)", () => {

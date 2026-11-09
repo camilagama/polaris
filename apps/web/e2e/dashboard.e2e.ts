@@ -1622,6 +1622,9 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await expect(edge).toBeFocused();
     await expect(edge).not.toHaveAttribute("aria-disabled", "true");
     await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowRight");
+    await expect(day("2025-10-15")).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
     await expect(edge).toBeFocused();
 
     // the day beyond is turned off and carries the reason, which a screen reader in browse mode reads and activates
@@ -1652,8 +1655,8 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await page.keyboard.press("Enter");
     await expect(panel).toHaveCount(0);
     await expect
-      .poll(() => server.periods.at(-1))
-      .toEqual({ from: "2025-10-14", to: "2026-10-14" });
+      .poll(() => server.periods.slice(asked))
+      .toEqual([{ from: "2025-10-14", to: "2026-10-14" }]);
   });
 
   test("teclado: o botão abre o painel, o foco entra nele e volta ao botão ao fechar; sem falha de axe", async ({
