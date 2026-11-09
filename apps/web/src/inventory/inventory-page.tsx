@@ -43,12 +43,7 @@ import {
   stockListView,
   stockMoreView,
 } from "./stock-list-model";
-import {
-  PANEL_OPEN_REASON,
-  PANEL_OPEN_REASON_ID,
-  RowActions,
-  triggerId,
-} from "./stock-row-actions";
+import { RowActions, triggerId } from "./stock-row-actions";
 import { type StockTarget, stockTarget } from "./stock-target";
 import { useStockAttention } from "./use-stock-attention";
 import { useStockEntryLink } from "./use-stock-entry-link";
@@ -421,16 +416,6 @@ export function InventoryPage() {
         </p>
         <RefreshButton className="shrink-0" onClick={handleReload} />
       </div>
-
-      {view.kind === "ready" ? (
-        // always there, so the list does not drop a line when a panel opens
-        <p
-          className="min-h-5 text-muted-foreground text-support"
-          id={PANEL_OPEN_REASON_ID}
-        >
-          {open === null ? null : PANEL_OPEN_REASON}
-        </p>
-      ) : null}
 
       {open?.standalone ? (
         <Card className="gap-0 py-0">

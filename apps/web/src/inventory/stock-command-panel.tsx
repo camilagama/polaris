@@ -16,6 +16,7 @@ import { orpcClient } from "../lib/orpc";
 import { useHoldSwap } from "../lib/unsent-work";
 import type { LocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { queueOfflineStock } from "./queue-offline-stock";
+import { PANEL_OPEN_REASON, PANEL_OPEN_REASON_ID } from "./stock-row-actions";
 import {
   backToStockEditing,
   canCloseStock,
@@ -183,6 +184,15 @@ function useFocusRefusedField(
  * confirm. An unknown outcome locks the attempt and a retry resends the same
  * command ID, so the server never records the movement twice.
  */
+/** Why the buttons of the list are off while this panel is open: they point at it, so it does not take a line of the page. */
+function PanelOpenReason() {
+  return (
+    <p className="text-muted-foreground text-support" id={PANEL_OPEN_REASON_ID}>
+      {PANEL_OPEN_REASON}
+    </p>
+  );
+}
+
 export function StockCommandPanel({
   action,
   local,
@@ -437,6 +447,7 @@ export function StockCommandPanel({
             </p>
           )}
         </div>
+        <PanelOpenReason />
         <div>
           <Button onClick={onClose} type="button">
             Fechar
@@ -462,6 +473,7 @@ export function StockCommandPanel({
             {`${state.target.productName} · ${state.target.variantText}. ${balanceText}`}
           </p>
         ) : null}
+        <PanelOpenReason />
       </div>
       {state.target.archived ? (
         <Alert role="note" variant="warning">
