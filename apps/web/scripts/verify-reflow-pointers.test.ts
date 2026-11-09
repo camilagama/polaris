@@ -87,6 +87,11 @@ const SPECS: Readonly<Record<string, SpecRule>> = {
     coarse: 2,
     why: "the window of 1280 px is not a phone; the font of 24 px is a best effort, not a promise",
   },
+  "subtitulos-no-i.e2e.ts": {
+    bare: 0,
+    coarse: 1,
+    why: "the window of 1280 px is not a phone",
+  },
 };
 
 /** Files that name "reflow" or import it and are not specs of a screen. */

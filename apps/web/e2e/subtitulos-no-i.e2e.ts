@@ -1,11 +1,12 @@
 /// <reference lib="dom" />
 import type { Locator, Page, Route } from "@playwright/test";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import {
   assertNoPageScroll,
   assertNothingClipped,
   expectReflowFont,
   openReflowViewport,
+  reflowTest,
   skipOutsideChromium,
 } from "./reflow";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
@@ -24,6 +25,7 @@ const SALE_ID = "0199c2d0-0000-7000-8000-0000000000c1";
 const PRODUCT = "0199c2d0-0000-7000-8000-0000000000b1";
 const VARIANT = "0199c2d0-0000-7000-8000-0000000000c2";
 const RPC_PREFIX = /^\/rpc\//;
+const DESKTOP_WIDTH = 1280;
 
 const SALE_DETAIL_TEXT =
   "A venda confirmada é um registro que não muda. Cancelamento e cliente são registros à parte.";
@@ -270,28 +272,30 @@ async function openTip(page: Page, about: string): Promise<Locator> {
 
 for (const screen of SCREENS) {
   for (const viewport of VIEWPORTS) {
-    test(`${screen.about} a ${viewport.name}: a frase que explica a tela está inteira no (i) do título e não sobra linha sob ele`, async ({
-      page,
-    }) => {
-      await openReflowViewport(page, viewport);
-      await screen.open(page);
-      await expectReflowFont(page, viewport.fontPixels);
+    reflowTest(
+      `${screen.about} a ${viewport.name}: a frase que explica a tela está inteira no (i) do título e não sobra linha sob ele`,
+      async ({ page }) => {
+        await openReflowViewport(page, viewport);
+        await screen.open(page);
+        await expectReflowFont(page, viewport.fontPixels);
 
-      const header = headerOf(page, screen.about);
-      await expect(header.locator("p")).toHaveCount(0);
-      await expect(header).not.toContainText(screen.text);
-      await expect(page.getByText(screen.text)).toHaveCount(0);
+        const header = headerOf(page, screen.about);
+        await expect(header.locator("p")).toHaveCount(0);
+        await expect(header).not.toContainText(screen.text);
+        await expect(page.getByText(screen.text)).toHaveCount(0);
 
-      const popup = await openTip(page, screen.about);
-      await expect(popup).toContainText(screen.text);
-      expect((await popup.innerText()).replace(/\s+/g, " ")).toBe(
-        `${screen.about} ${screen.text}`
-      );
-      await page.keyboard.press("Escape");
-      await expect(popup).toHaveCount(0);
+        const popup = await openTip(page, screen.about);
+        await expect(popup).toContainText(screen.text);
+        expect((await popup.innerText()).replace(/\s+/g, " ")).toBe(
+          `${screen.about} ${screen.text}`
+        );
+        await page.keyboard.press("Escape");
+        await expect(popup).toHaveCount(0);
 
-      await assertNothingClipped(header);
-      await assertNoPageScroll(page);
-    });
+        await assertNothingClipped(header);
+        await assertNoPageScroll(page);
+      },
+      { coarse: viewport.width < DESKTOP_WIDTH }
+    );
   }
 }
