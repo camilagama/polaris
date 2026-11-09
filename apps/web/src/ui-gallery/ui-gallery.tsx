@@ -99,6 +99,7 @@ import {
 } from "@/ui/popover";
 import { Progress, ProgressLabel, ProgressValue } from "@/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { RefreshButton } from "@/ui/refresh-button";
 import { SearchField } from "@/ui/search-field";
 import { ScrollArea } from "@/ui/scroll-area";
 import {
@@ -1276,6 +1277,7 @@ export function UiGallery() {
           <Section title="Cartão de KPI e Esconder valores">
             <div className="flex flex-wrap items-center gap-3">
               <HideValuesButton />
+              <RefreshButton />
               <span className="text-support">
                 <MoneyText text="18/10 · R$ 1.840,00" />
               </span>
