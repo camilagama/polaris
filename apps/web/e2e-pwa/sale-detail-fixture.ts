@@ -157,7 +157,7 @@ const SALE_DETAIL_WITHOUT_RETURNS = {
   returns: [],
 };
 
-/** The same sale with a processing fee of R$ 7,08 recorded: the detail writes an amount in the payment block. */
+/** The same sale with a processing fee of R$ 12,75 recorded: the detail writes an amount in the payment block. */
 const SALE_DETAIL_WITH_FEE = {
   ...SALE_DETAIL,
   sale: {
@@ -165,7 +165,7 @@ const SALE_DETAIL_WITH_FEE = {
     payment: {
       ...SALE_DETAIL.sale.payment,
       processingFee: {
-        amount: "7.08",
+        amount: "12.75",
         fixedAmount: "0.50",
         mode: "fixed_and_percentage",
         percentage: "2.99",

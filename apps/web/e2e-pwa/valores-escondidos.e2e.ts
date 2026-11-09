@@ -183,7 +183,7 @@ for (const viewport of VIEWPORTS) {
       .locator("dt", { hasText: "Taxa de processamento" })
       .locator("xpath=following-sibling::dd");
     await expect(fee.locator("[data-masked-money]")).toHaveCount(2);
-    await expect(fee).not.toContainText("7,08");
+    await expect(fee).not.toContainText("12,75");
     expect(await amountsWritten(page)).toEqual([]);
   });
 }
