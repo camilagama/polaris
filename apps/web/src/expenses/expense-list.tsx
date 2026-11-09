@@ -101,7 +101,7 @@ export function ExpenseSummary({ filters, state }: ExpenseSummaryProps) {
           Total do período
           {filters.status === "voided" ? " (anuladas)" : ""}
         </p>
-        <p className="min-h-[2.125rem] font-semibold touch:min-h-[1.9375rem]">
+        <p className="min-h-[2.125rem] touch:min-h-[1.9375rem] font-semibold">
           {showTotal ? (
             <Money size="lg" text={formatBrlAmount(state.total)} />
           ) : (
