@@ -272,9 +272,9 @@
         // ASAAS_WEBHOOK_TOKEN, WOOVI_APP_ID, BILLING_PAYER_KEY) are Worker secrets (runbook staging.md).
         "ASAAS_BASE_URL": "https://api-sandbox.asaas.com/v3",
         "WOOVI_BASE_URL": "https://api.woovi-sandbox.com",
-        // Woovi's public key that signs every webhook (public, the same in the sandbox and in production; runbook
-        // billing-providers.md): base64 of the DER, key_identifier 9dce618794f8986c603915a51b7029126c260e5cfdb2aa47e131d837fd62311c
-        "WOOVI_WEBHOOK_PUBLIC_KEYS": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC/+NtIkjzevvqD+I3MMv3bLXDtpvxBjY4BsRrSdca3rtAwMcRYYvxSnd7jagVLpctMiOxQO8ieUCKLSWHpsMAjO/zZWMKbqoG8MNpi/u3fp6zz0mcHCOSqYsPUUG19buW8bis5ZZ2IZgBObWSpTvJ0cnj6HKBAA82Jln+lGwS1MwIDAQAB",
+        // Public key of the Woovi sandbox that signs the sandbox webhooks (the sandbox and production keys differ;
+        // runbook billing-providers.md): base64 of the DER, key_identifier 7c8efa31466209cf247d23f6198a61643b8c322a0d80ea6d0a7a54073b2d6e91
+        "WOOVI_WEBHOOK_PUBLIC_KEYS": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoZwBaFwmstKqy9VAqqxiSbCWgJR3dd5CTtDi6Fwthtd2owFkZIMqTqKg3Bq5ExjuOxE+v/1gIWFqR9jNjbtYumwPq+wXQhvx9TrQgrrFMVZ6tMPcwzj8Nknw182N/HMIQsV6B+8JWWzf/cN4ZZVSsRZfQvoVgFM7PSvSvc/h6v0X2Lkzjypvw7ZRkfxoc+z7B0p3vdQmLSKxPRpLzdLLVlJ+CJA2aATKVQR5feiuWHKdOlvCT7IRhal0hxUAjc7rxho5eHgaxWO5rITke8wSIjYIpuw38vMobYSxXb6iuj5Zrjpe2GV8vwuGud8H2dngYhkqbGuY5f4j1kfcN7gC8QIDAQAB",
         // on in the sandbox, so the refund of a Pix installment can be proven there (S3.2, Gate 7)
         "WOOVI_REFUND_ENABLED": "true",
         "CLOSURE_AUTO_PURGE_ENABLED": "false",
