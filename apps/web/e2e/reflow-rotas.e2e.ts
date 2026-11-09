@@ -119,9 +119,9 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
     clientWidth: 272,
     reason:
-      'na aba Categorias, o cartão tem 272 px e o conteúdo (o "Mostrar categorias arquivadas" e a lista de categorias, com Renomear e Arquivar) mede 309 px: passa 37 px da borda direita do cartão',
+      'na aba Categorias, o cartão tem 272 px e o conteúdo (o "Mostrar categorias arquivadas" e a lista de categorias, com Renomear e Arquivar) mede 291 px: passa 19 px da borda direita do cartão',
     screens: ["despesas categorias e o diálogo da categoria"],
-    scrollWidth: 309,
+    scrollWidth: 291,
     selector:
       'div[data-slot="tabs"] > div[data-slot="tabs-content"] > div[data-slot="card"]',
   },
