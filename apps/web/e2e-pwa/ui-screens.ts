@@ -444,7 +444,7 @@ const homeScreen = (
   sourceDirs: HOME_SOURCES,
 });
 
-/** The "Mais" panel of the phone and the numbers under the chart and the map: open each and close it, waiting for the exit. */
+/** The "Mais" panel of the phone: open it and close it, waiting for the exit. */
 async function exerciseHomePanels(page: Page) {
   const more = page.getByRole("button", { exact: true, name: "Mais" });
   const sheet = page.getByRole("dialog", { name: "Mais" });
@@ -453,16 +453,6 @@ async function exerciseHomePanels(page: Page) {
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await sheet.waitFor({ state: "hidden" });
-  // under the chart and under the map
-  for (const numbers of await page
-    .getByRole("button", { name: "Ver os números" })
-    .all()) {
-    // biome-ignore lint/performance/noAwaitInLoops: one panel at a time
-    await numbers.click();
-    await page.waitForTimeout(300);
-    await numbers.click();
-    await page.waitForTimeout(300);
-  }
 }
 
 /** The files of the sales history on the new interface. */

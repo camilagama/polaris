@@ -98,6 +98,11 @@ function useChunk<T>(downloaded: T | null, load: () => Promise<T>): State<T> {
 const useCharts = () => useChunk(loaded, loadCharts);
 const useHeatmapChunk = () => useChunk(loadedHeatmap, loadHeatmap);
 
+/** Whether the charts chunk could not be downloaded: the screen then shows the numbers the drawing would have shown. */
+export function useChartsFailed(): boolean {
+  return useCharts().status === "failed";
+}
+
 /** Whether the map's chunk could not be downloaded: the screen then shows the numbers the drawing would have shown. */
 export function useHeatmapFailed(): boolean {
   return useHeatmapChunk().status === "failed";

@@ -89,10 +89,11 @@ test("sem o pedaço no Cache Storage e sem rede: os números ficam e o gráfico 
   await expect(
     chart.getByRole("button", { name: "Tentar novamente" })
   ).toHaveCount(0);
-  // the figures stay: the total, the period and "Ver os números"
+  // the figures stay: the total, the period and the table of the days, shown in the place of the drawing
   await expect(chart).toContainText("R$");
+  await expect(chart.getByRole("table")).toBeVisible();
   await expect(
     chart.getByRole("button", { name: "Ver os números" })
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Hoje" })).toContainText("R$");
 });

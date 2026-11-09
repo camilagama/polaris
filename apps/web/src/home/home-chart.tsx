@@ -1,20 +1,8 @@
-import { useCallback } from "react";
+import { useCallback, useId } from "react";
 import { Button } from "@/ui/button";
-import { OnDemandAreaChart } from "@/ui/charts/on-demand";
-import {
-  Collapsible,
-  CollapsiblePanel,
-  CollapsibleTrigger,
-} from "@/ui/collapsible";
+import { ChartDataTable } from "@/ui/charts/chart-data-table";
+import { OnDemandAreaChart, useChartsFailed } from "@/ui/charts/on-demand";
 import { EmptyState } from "@/ui/empty-state";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { MoneyText } from "@/ui/hidden-values";
 import { useConnectionOnline } from "../lib/browser-connection";
@@ -40,12 +28,13 @@ import type { HomeFigures } from "./use-home";
 
 /**
  * The chart of net sales by day, 7 days open by default or 30 (AC-17, AC-18, AC-21, § 6): in the header the title with
- * its (i) and the compact 7 / 30 selector; under it the total and the period it adds up, the area chart of the charts
- * chunk with only the peak written (with its date) and, in the foot, "Ver os números" with the table of every day and
- * of the days before, which is the proof that the drawing hides nothing. The days before are a faint dashed line, named
- * by the (i) and by the reading of a day, which shows only while a day is read.
+ * its (i) and the compact 7 / 30 selector; under it the total and the period it adds up and the area chart of the
+ * charts chunk with only the peak written (with its date). The table of every day and of the days before is invisible
+ * on the screen and tied to the chart by `aria-details`, so the drawing hides nothing from assistive technology; it
+ * changes with the period. The days before are a faint dashed line, named by the (i) and by the reading of a day, which
+ * shows only while a day is read.
  * A period with no sale keeps the box of the chart, with its floor, and says so in the middle of it. When the chunk
- * does not open the numbers stay, and the sentence of § 5.5 says why.
+ * does not open the table is shown in the place of the drawing, and the sentence of § 5.5 says why.
  */
 
 const GROUP_OF_THREE = /\B(?=(\d{3})+(?!\d))/g;
@@ -134,12 +123,15 @@ const points = (series: Series) =>
  */
 function DayChart({
   days,
+  details,
   earlier,
   empty,
   series,
   summary,
 }: {
   days: 7 | 30;
+  /** The id of the table of the numbers the drawing points at. */
+  details: string;
   earlier: Series | null;
   /** A period with no sale: the chart keeps its box and says this in the middle of it. */
   empty: boolean;
@@ -152,6 +144,7 @@ function DayChart({
     <OnDemandAreaChart
       color="var(--chart-sales)"
       data={points(series)}
+      details={details}
       failed={<ChartFailed />}
       {...(empty ? { empty: NO_SALE } : {})}
       formatAxis={hidden ? noAxis : axisMoney}
@@ -182,59 +175,50 @@ function DayChart({
 }
 
 /**
- * The table of "Ver os números": every day of the period with its net sales and, when the days before were read, theirs
- * beside it. It is the way to the numbers for a screen reader and without the chart, so it holds both values of every day.
+ * The table of the numbers: every day of the period with its net sales and, when the days before were read, theirs
+ * beside it. Invisible, it is the way to the numbers for a screen reader; shown, it is what stays when the chart does
+ * not open. It holds both values of every day.
  */
 export function NumbersTable({
   days,
   earlier,
+  id,
   series,
+  visible,
 }: {
   days: 7 | 30;
   earlier: Series | null;
+  id: string;
   series: Series;
+  visible: boolean;
 }) {
+  const columns = [
+    { header: "Dia" },
+    { header: "Vendas líquidas", numeric: true },
+    ...(earlier ? [{ header: `${days} dias antes`, numeric: true }] : []),
+  ];
+  const rows = series.map((day, index) => ({
+    cells: [
+      formatCalendarDate(day.date),
+      formatBrlAmount(day.netSales),
+      ...(earlier ? [formatBrlAmount(earlier[index]?.netSales ?? "0")] : []),
+    ],
+    key: day.date,
+  }));
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead scope="col">Dia</TableHead>
-          <TableHead className="text-right" scope="col">
-            Vendas líquidas
-          </TableHead>
-          {earlier ? (
-            <TableHead className="text-right" scope="col">
-              {`${days} dias antes`}
-            </TableHead>
-          ) : null}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {series.map((day, index) => (
-          <TableRow key={day.date}>
-            <TableCell>{formatCalendarDate(day.date)}</TableCell>
-            <TableCell className="text-right tabular-nums">
-              <MoneyText text={formatBrlAmount(day.netSales)} />
-            </TableCell>
-            {earlier ? (
-              <TableCell className="text-right text-muted-foreground tabular-nums">
-                <MoneyText
-                  text={formatBrlAmount(earlier[index]?.netSales ?? "0")}
-                />
-              </TableCell>
-            ) : null}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <ChartDataTable
+      caption={`Vendas líquidas por dia, dos últimos ${days} dias, do mais antigo ao mais novo.`}
+      columns={columns}
+      id={id}
+      rows={rows}
+      visible={visible}
+    />
   );
 }
 
-/** The link of "Ver os números": small, underlined, at the right of the foot of the block. */
-const NUMBERS_LINK =
-  "touch-hit focus-ring ml-auto w-fit rounded-sm text-muted-foreground text-xs underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground";
-
 function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
+  const numbersId = useId();
+  const drawingFailed = useChartsFailed();
   const series = lastDays(
     figures.before.daily ?? [],
     figures.month.daily ?? [],
@@ -261,20 +245,19 @@ function Period({ days, figures }: { days: 7 | 30; figures: HomeFigures }) {
       </p>
       <DayChart
         days={days}
+        details={numbersId}
         earlier={earlier}
         empty={!sold}
         series={series}
         summary={summary}
       />
-      {/* the table of the other period opens closed, as it did with a panel for each period */}
-      <Collapsible key={days}>
-        <CollapsibleTrigger className={NUMBERS_LINK}>
-          Ver os números
-        </CollapsibleTrigger>
-        <CollapsiblePanel className="pt-1">
-          <NumbersTable days={days} earlier={earlier} series={series} />
-        </CollapsiblePanel>
-      </Collapsible>
+      <NumbersTable
+        days={days}
+        earlier={earlier}
+        id={numbersId}
+        series={series}
+        visible={drawingFailed && sold}
+      />
     </div>
   );
 }

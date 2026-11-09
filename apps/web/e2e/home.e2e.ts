@@ -914,7 +914,9 @@ test.describe("loja com venda", () => {
       "aria-label",
       "Vendas líquidas por dia, de 17/10 a 23/10: R$ 2.580,60 no total"
     );
-    await chart.getByRole("button", { name: "Ver os números" }).click();
+    await expect(
+      chart.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
     await expect(chart.getByRole("row")).toHaveCount(8);
     await expect(chart.getByRole("row").nth(2)).toContainText(
       "18/10/2026R$ 1.840,00"
@@ -1088,7 +1090,7 @@ test.describe("loja com venda", () => {
     expect(above).not.toContain("none");
   });
 
-  test("a troca 7 → 30 dias mantém o mesmo gráfico (sem nova revelação) e a tabela do outro período abre fechada", async ({
+  test("a troca 7 → 30 dias mantém o mesmo gráfico (sem nova revelação) e a tabela invisível troca de período", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -1104,7 +1106,6 @@ test.describe("loja com venda", () => {
 
     // the drawing (not only the box around it) is the same element after the change of period: it was not mounted again
     await drawing.evaluate((node) => node.setAttribute("data-first-mount", ""));
-    await chart.getByRole("button", { name: "Ver os números" }).click();
     await expect(chart.getByRole("row")).toHaveCount(8);
 
     await chart.getByRole("tab", { name: "30 dias" }).click();
@@ -1113,7 +1114,7 @@ test.describe("loja com venda", () => {
       "29"
     );
     await expect(drawing).toHaveAttribute("data-first-mount", "");
-    await expect(chart.getByRole("row")).toHaveCount(0);
+    await expect(chart.getByRole("row")).toHaveCount(31);
   });
 });
 
@@ -1996,7 +1997,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       await openHome(page, new FakeServer(SOLD));
       const chart = region(page, "Vendas por dia");
       const area = chart.locator("[data-chart-area]");
-      const numbers = chart.getByRole("button", { name: "Ver os números" });
+      const total = chart.locator("p.grid > span").first();
       const box = async (locator: Locator) => {
         const found = await locator.boundingBox();
         if (!found) {
@@ -2006,8 +2007,8 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       };
       const at = async () => ({
         area: await box(area),
-        numbers: await box(numbers),
         region: await box(chart),
+        total: await box(total),
       });
       await expect(area).toBeVisible();
       await chart.getByRole("slider").focus();
@@ -4068,11 +4069,11 @@ const CHARTS_CHUNK = "**/assets/charts-*.js";
 const HEATMAP_CHUNK = "**/assets/heatmap-*.js";
 
 /** The table of the days of a chart: in the page for a screen reader, one pixel tall on the screen and out of the tab order. */
-async function expectInvisibleTable(block: Locator) {
+async function expectInvisibleTable(block: Locator, columns = 3) {
   const table = block.getByRole("table");
   await expect(table).toHaveCount(1);
   await expect(table.locator("caption")).not.toHaveText("");
-  await expect(table.locator("th[scope=col]")).toHaveCount(3);
+  await expect(table.locator("th[scope=col]")).toHaveCount(columns);
   await expect(block.locator("[data-chart-data-table]")).toHaveAttribute(
     "data-chart-data-table",
     "hidden"
@@ -4114,18 +4115,15 @@ async function chartPlaces(page: Page) {
   return {
     card: await placeOf(chart),
     next: await placeOf(region(page, "Ritmo de vendas")),
-    numbers: await placeOf(
-      chart.getByRole("button", { name: "Ver os números" })
-    ),
     total: await placeOf(chart.locator("p.grid > span").first()),
   };
 }
 
 type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
 
-/** Every place of the block within a pixel of the one before: the height, the total, "Ver os números" and the block below. */
+/** Every place of the block within a pixel of the one before: the height, the total and the block below. */
 function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
-  for (const key of ["card", "next", "numbers", "total"] as const) {
+  for (const key of ["card", "next", "total"] as const) {
     expect(
       Math.abs(after[key].height - before[key].height),
       `altura de ${key}`
@@ -4254,6 +4252,139 @@ test.describe("Vendas por dia: trocar de período não muda a altura do bloco ne
         sentenceBox.x + sentenceBox.width / 2 - (plotBox.x + plotBox.width / 2)
       )
     ).toBeLessThanOrEqual(1);
+  });
+});
+
+const HIDE_VALUES = { name: "Esconder valores" } as const;
+
+test.describe("Vendas por dia: só o gráfico, com os números numa tabela invisível (L2-6)", () => {
+  test("a tabela invisível está ligada ao gráfico e troca com 7 e 30 dias; o botão não existe", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[0]);
+    await openHome(page, new FakeServer(SOLD));
+    await expectPeriodShown(page, false);
+    const chart = region(page, "Vendas por dia");
+    await expect(
+      chart.getByRole("button", { name: "Ver os números" })
+    ).toHaveCount(0);
+    await expect(chart).not.toContainText("Os números estão abaixo");
+    await expectInvisibleTable(chart, 3);
+    await expect(chart.getByRole("columnheader").nth(2)).toHaveText(
+      "7 dias antes"
+    );
+    await expect(chart.getByRole("row")).toHaveCount(8);
+    await expect(chart.getByRole("row").nth(1)).toContainText(
+      "17/10/2026R$ 0,00R$ 0,00"
+    );
+    await expect(chart.getByRole("row").nth(2)).toContainText(
+      "18/10/2026R$ 1.840,00"
+    );
+    await expect(chart.getByRole("row").nth(7)).toContainText(
+      "23/10/2026R$ 320,10"
+    );
+    await expect(chart.getByRole("slider")).toHaveAttribute("max", "6");
+
+    await chooseDays(page, "30");
+    await expectInvisibleTable(chart, 2);
+    await expect(chart.getByRole("row")).toHaveCount(31);
+    await expect(chart.getByRole("row").nth(1)).toContainText("24/09/2026");
+    await expect(chart.getByRole("row").nth(30)).toContainText(
+      "23/10/2026R$ 320,10"
+    );
+    await expect(chart.getByRole("slider")).toHaveAttribute("max", "29");
+    // the keyboard control and the summary of the image stay
+    await expect(chart.getByRole("slider")).toBeVisible();
+    await expect(chart.locator('[role="img"][aria-label]')).toHaveCount(1);
+    await chart.getByRole("slider").focus();
+    await page.keyboard.press("Tab");
+    await expect(chart.getByRole("table").locator(":focus")).toHaveCount(0);
+  });
+
+  for (const size of SIZES) {
+    test(`com Esconder valores a tabela invisível também mascara, e a altura do cartão não muda entre 7 e 30 dias (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openHome(page, new FakeServer(SOLD));
+      await expectPeriodShown(page, false);
+      const chart = region(page, "Vendas por dia");
+      const visible = await chartPlaces(page);
+
+      await page.locator("main").getByRole("button", HIDE_VALUES).click();
+      await expect(chart).not.toContainText(AN_AMOUNT);
+      for (const days of ["7", "30"] as const) {
+        // biome-ignore lint/performance/noAwaitInLoops: one period after the other
+        await chooseDays(page, days);
+        const table = chart.getByRole("table");
+        expect(await table.evaluate((node) => node.textContent)).not.toMatch(
+          AN_AMOUNT
+        );
+        expect(
+          await table.evaluate((node) => (node as HTMLElement).innerText)
+        ).not.toMatch(AN_AMOUNT);
+        await expect(table.getByText("R$ ••••").first()).toBeAttached();
+        expect(
+          await chart.evaluate((node) =>
+            [...node.querySelectorAll("[aria-label],[aria-valuetext]")].map(
+              (element) =>
+                `${element.getAttribute("aria-label")} ${element.getAttribute("aria-valuetext")}`
+            )
+          )
+        ).not.toContainEqual(expect.stringMatching(AN_AMOUNT));
+        expectSamePlaces(await chartPlaces(page), visible);
+      }
+    });
+  }
+
+  for (const size of SIZES) {
+    test(`o gráfico não abriu: a tabela aparece à vista, com o erro e Tentar novamente (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await page.route(CHARTS_CHUNK, (route) => route.abort());
+      await openHome(page, new FakeServer(SOLD));
+      const chart = region(page, "Vendas por dia");
+      await expect(chart.getByText("O gráfico não abriu.")).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(
+        chart.getByRole("button", { name: "Tentar novamente" })
+      ).toBeVisible();
+      await expect(chart.getByRole("table")).toBeVisible();
+      await expect(chart.locator("[data-chart-data-table]")).toHaveAttribute(
+        "data-chart-data-table",
+        "visible"
+      );
+      await expect(chart.getByRole("row")).toHaveCount(8);
+      await expect(chart.getByRole("row").nth(2)).toContainText(
+        "18/10/2026R$ 1.840,00"
+      );
+      await expect(
+        chart.getByRole("button", { name: "Ver os números" })
+      ).toHaveCount(0);
+      await chooseDays(page, "30");
+      await expect(chart.getByRole("row")).toHaveCount(31);
+      await page.locator("main").getByRole("button", HIDE_VALUES).click();
+      await expect(chart.getByRole("table")).not.toContainText(AN_AMOUNT);
+    });
+  }
+
+  test("o gráfico não abriu e o período não tem venda: a frase de sem vendas, e a tabela de zeros continua invisível", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await page.route(CHARTS_CHUNK, (route) => route.abort());
+    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_WEEK));
+    const chart = region(page, "Vendas por dia");
+    await expect(chart).toContainText("Sem vendas no período.", {
+      timeout: 20_000,
+    });
+    await expect(chart.locator("[data-chart-data-table]")).toHaveAttribute(
+      "data-chart-data-table",
+      "hidden"
+    );
+    await expect(chart).not.toContainText("O gráfico não abriu.");
   });
 });
 
