@@ -1,34 +1,22 @@
-import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
 import {
   type ChangeEvent,
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/ui/button";
+import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import {
   type HeatmapDay,
   OnDemandHeatmap,
   OnDemandWeekdayBars,
+  useHeatmapFailed,
 } from "@/ui/charts/on-demand";
-import {
-  Collapsible,
-  CollapsiblePanel,
-  CollapsibleTrigger,
-} from "@/ui/collapsible";
 import { MoneyText } from "@/ui/hidden-values";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
 import {
   MASKED_SPOKEN,
@@ -64,8 +52,9 @@ import type { Block, HomeFigures } from "./use-home";
  * the legend in one line ("Menos" to "Mais"; the ranges in reais are in the (i) of the block and in the `title` of the
  * legend) and, beside the map when it fits, the mean by weekday. The drawing (Bklit UI, its own chunk) is `aria-hidden`:
  * the summary (`role="img"`), the reading, the keyboard control (a transparent `input type="range"` over the map, as
- * the charts have) and "Ver os números" are ours. With the values hidden every amount is "R$ ••••"; the counts and the
- * shape stay.
+ * the charts have) and the table of the days are ours. The table is invisible on the screen and tied to the map by
+ * `aria-details` (a description would read its 182 rows in one go); if the drawing does not open it is shown in its
+ * place. With the values hidden every amount is "R$ ••••"; the counts and the shape stay.
  */
 
 /** The width of the initials of the weekdays and the contours around the map, in pixels (`MARGIN` of the drawing). */
@@ -217,55 +206,50 @@ function WeekdayMeans({ still, view }: { still: boolean; view: RhythmView }) {
   );
 }
 
-function NumbersTable({ view }: { view: RhythmView }) {
-  const rows = view.cells.filter((cell) => cell.netSales !== null).reverse();
+const NUMBERS_COLUMNS = [
+  { header: "Dia" },
+  { header: "Vendas líquidas", numeric: true },
+  { header: "Vendas", numeric: true },
+] as const;
+
+/** The caption of the table: what it is, and the note that the months before this one are read once a day. */
+const NUMBERS_CAPTION = `Vendas por dia, do mais novo ao mais antigo. ${PAST_UNTIL_YESTERDAY}`;
+
+/** The days read, newest first, as the table the map is tied to (shown only when the drawing does not open). */
+function RhythmNumbers({
+  id,
+  view,
+  visible,
+}: {
+  id: string;
+  view: RhythmView;
+  visible: boolean;
+}) {
+  const rows = useMemo(
+    () =>
+      view.cells
+        .filter((cell) => cell.netSales !== null)
+        .reverse()
+        .map((cell) => ({
+          cells: [
+            formatCalendarDate(cell.date),
+            formatBrlAmount(cell.netSales ?? "0.00"),
+            cell.salesCount === 0
+              ? "sem venda"
+              : salesCountText(cell.salesCount),
+          ],
+          key: cell.date,
+        })),
+    [view]
+  );
   return (
-    <Collapsible>
-      <CollapsibleTrigger
-        className="group/numbers w-fit"
-        render={<Button size="sm" variant="ghost" />}
-      >
-        Ver os números
-        <ChevronDownIcon
-          aria-hidden="true"
-          className="motion-full:transition-transform group-data-[panel-open]/numbers:rotate-180"
-          data-icon="inline-end"
-        />
-      </CollapsibleTrigger>
-      <CollapsiblePanel className="grid gap-2 pt-1">
-        <p className="text-muted-foreground text-support">
-          {PAST_UNTIL_YESTERDAY}
-        </p>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col">Dia</TableHead>
-              <TableHead className="text-right" scope="col">
-                Vendas líquidas
-              </TableHead>
-              <TableHead className="text-right" scope="col">
-                Vendas
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((cell) => (
-              <TableRow key={cell.date}>
-                <TableCell>{formatCalendarDate(cell.date)}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  <MoneyText text={formatBrlAmount(cell.netSales ?? "0.00")} />
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {cell.salesCount === 0
-                    ? "sem venda"
-                    : salesCountText(cell.salesCount)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CollapsiblePanel>
-    </Collapsible>
+    <ChartDataTable
+      caption={NUMBERS_CAPTION}
+      columns={NUMBERS_COLUMNS}
+      id={id}
+      rows={rows}
+      visible={visible}
+    />
   );
 }
 
@@ -342,6 +326,8 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
   const rangesText = rhythmRangesText(view);
   const help = `${RHYTHM_HELP} ${hidden ? maskMoney(rangesText) : rangesText}`;
   const mapPx = mapWidth({ cell, gap, weeks }, phone);
+  const numbersId = useId();
+  const drawingFailed = useHeatmapFailed();
   return (
     <HomeBlock
       action={
@@ -377,6 +363,7 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
           >
             <div className="relative min-w-0">
               <div
+                aria-details={numbersId}
                 aria-label={
                   hidden ? maskMoney(summary, MASKED_SPOKEN) : summary
                 }
@@ -415,7 +402,7 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
           </div>
           <WeekdayMeans still={phone} view={view} />
         </div>
-        <NumbersTable view={view} />
+        <RhythmNumbers id={numbersId} view={view} visible={drawingFailed} />
       </div>
     </HomeBlock>
   );
@@ -471,7 +458,7 @@ export function RhythmBlock({
     ) : (
       // the height of the block read, so the blocks under it stay
       <BlockSkeleton
-        className="h-[24.625rem] md:h-[26rem] touch:md:h-[26.25rem]"
+        className="h-[22.125rem] md:h-[23.75rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />
