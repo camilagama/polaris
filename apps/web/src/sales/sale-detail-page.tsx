@@ -10,6 +10,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
+import { HelpTip } from "@/ui/help-tip";
 import { Skeleton } from "@/ui/skeleton";
 import { invalidatePreviousWindow } from "../home/previous-window-copy";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -330,12 +331,12 @@ export function SaleDetailPage() {
   return (
     <div className="grid gap-4">
       <div className={UI_ROOT}>
-        <header className="grid gap-1">
+        <header className="flex items-center gap-1">
           <h1 className="text-title">Detalhe da venda</h1>
-          <p className="text-muted-foreground text-support">
+          <HelpTip about="Detalhe da venda">
             A venda confirmada é um registro que não muda. Cancelamento e
             cliente são registros à parte.
-          </p>
+          </HelpTip>
         </header>
         <p>
           <a className={LINK} href="/sales/history">

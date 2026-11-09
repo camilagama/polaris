@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { HelpTip } from "@/ui/help-tip";
 import { Tabs, TabsContent, TabsTrigger } from "@/ui/tabs";
 import {
   ScreenTitle,
@@ -98,11 +99,13 @@ function Heading({ busy, onNew }: { busy: boolean; onNew: () => void }) {
           </Button>
         }
       >
-        <ScreenTitle>Despesas</ScreenTitle>
+        <div className="flex items-center gap-1">
+          <ScreenTitle>Despesas</ScreenTitle>
+          <HelpTip about="Despesas">
+            Cada despesa conta no mês de competência, não no dia do pagamento.
+          </HelpTip>
+        </div>
       </TitleLine>
-      <p className="text-muted-foreground text-support">
-        Cada despesa conta no mês de competência, não no dia do pagamento.
-      </p>
     </header>
   );
 }

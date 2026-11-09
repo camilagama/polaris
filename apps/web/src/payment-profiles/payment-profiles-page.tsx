@@ -13,6 +13,7 @@ import {
 } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
+import { HelpTip } from "@/ui/help-tip";
 import { useConnectionReturn, workerAnswers } from "../lib/browser-connection";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
@@ -594,12 +595,14 @@ export function PaymentProfilesPage() {
               </Button>
             }
           >
-            <ScreenTitle>Formas de receber</ScreenTitle>
+            <div className="flex items-center gap-1">
+              <ScreenTitle>Formas de receber</ScreenTitle>
+              <HelpTip about="Formas de receber">
+                Organize métodos, parcelamento, prazo de recebimento e taxas por
+                perfil.
+              </HelpTip>
+            </div>
           </TitleLine>
-          <p className="text-muted-foreground text-support">
-            Organize métodos, parcelamento, prazo de recebimento e taxas por
-            perfil.
-          </p>
         </header>
         {/* while the form is open it covers this part of the screen: what the actions say is said inside it */}
         {formOpen ? null : (

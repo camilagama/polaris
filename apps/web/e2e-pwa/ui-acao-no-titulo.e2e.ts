@@ -6,17 +6,34 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
 /**
  * The main action of a screen sits on the line of its title: at the right of it with a mouse (760 px and more), right
  * under it and as wide as the screen on a phone, before any card and never inside one. It is the first control after
- * the title in the tab order. "Importar planilha" is the outline button beside "Novo produto" on the wide screen and,
- * on a phone, comes after the list instead of stacking a second 44 px button under the first.
+ * the title (and after the "Sobre {título}" (i) of it, when there is one) in the tab order. "Importar planilha" is the
+ * outline button beside "Novo produto" on the wide screen and, on a phone, comes after the list instead of stacking a
+ * second 44 px button under the first.
  */
 const LINE_GAP = 16;
 
 const ACTIONS = [
-  { action: "Novo cliente", heading: "Clientes", screen: "clientes lista" },
-  { action: "Novo produto", heading: "Produtos", screen: "produtos lista" },
-  { action: "Nova despesa", heading: "Despesas", screen: "despesas lista" },
+  {
+    action: "Novo cliente",
+    hasAbout: false,
+    heading: "Clientes",
+    screen: "clientes lista",
+  },
+  {
+    action: "Novo produto",
+    hasAbout: false,
+    heading: "Produtos",
+    screen: "produtos lista",
+  },
+  {
+    action: "Nova despesa",
+    hasAbout: true,
+    heading: "Despesas",
+    screen: "despesas lista",
+  },
   {
     action: "Novo perfil",
+    hasAbout: true,
     heading: "Formas de receber",
     screen: "perfis de pagamento lista",
   },
@@ -61,11 +78,12 @@ function geometryOf(
         ...document.querySelectorAll<HTMLElement>("button, a[href], input"),
       ].find(
         (control) =>
-          !control.hasAttribute("disabled") && precedes(title, control)
+          !control.hasAttribute("disabled") &&
+          control.getAttribute("aria-label") !== `Sobre ${headingText}` &&
+          precedes(title, control)
       );
       return {
-        afterTitleInTabOrder:
-          next !== undefined && (title.parentElement?.contains(next) ?? false),
+        afterTitleInTabOrder: next === button,
         beforeAnyCard: card === null || precedes(button, card),
         button: box(button),
         inCard: button.closest('[data-slot="card"]') !== null,
@@ -84,7 +102,7 @@ test.beforeEach(({ browserName }, testInfo) => {
   );
 });
 
-for (const { action, heading, screen: screenName } of ACTIONS) {
+for (const { action, hasAbout, heading, screen: screenName } of ACTIONS) {
   const screen = SCREENS.find((candidate) => candidate.name === screenName);
   for (const context of CONTEXTS) {
     test.describe(`${screenName} · ${context.name}`, () => {
@@ -109,10 +127,24 @@ for (const { action, heading, screen: screenName } of ACTIONS) {
           true
         );
         await page.getByRole("heading", { level: 1, name: heading }).click();
+        const aboutButton = page.getByRole("button", {
+          exact: true,
+          name: `Sobre ${heading}`,
+        });
+        if (hasAbout) {
+          await expect(aboutButton, "o (i) do título").toBeVisible();
+          await page.keyboard.press("Tab");
+          await expect(
+            aboutButton,
+            "o primeiro Tab depois do título vai ao (i) dele"
+          ).toBeFocused();
+        } else {
+          await expect(aboutButton, "sem (i) no título").toHaveCount(0);
+        }
         await page.keyboard.press("Tab");
         await expect(
           page.getByRole("button", { exact: true, name: action }),
-          "o primeiro Tab depois do título"
+          "o primeiro Tab depois do título (e do (i) dele)"
         ).toBeFocused();
         expect(shape.button.top).toBeLessThanOrEqual(
           shape.title.bottom + LINE_GAP

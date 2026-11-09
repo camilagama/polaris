@@ -165,7 +165,7 @@ function activeCount(
     : null;
 }
 
-/** Under the methods: the single payment, and that the method came from the last sale while it is unchanged. */
+/** Under the methods: that the method came from the last sale while it is unchanged, and nothing otherwise. */
 function methodHint(
   remembered: RememberedPayment | null,
   form: SaleFormState,
@@ -175,14 +175,8 @@ function methodHint(
     remembered !== null &&
     form.payment.method !== "" &&
     form.payment.method === preset.method;
-  return same
-    ? `Igual à última venda neste aparelho. ${SINGLE_PAYMENT_TEXT}`
-    : SINGLE_PAYMENT_TEXT;
+  return same ? "Igual à última venda neste aparelho." : "";
 }
-
-/** The single payment of the sale, said under the methods. */
-const SINGLE_PAYMENT_TEXT =
-  "Um pagamento só, no valor total. O método não comprova o recebimento.";
 
 /** Focuses the first invalid control; a group of choice cards gives the focus to its first card. */
 function focusFirstInvalidField() {
