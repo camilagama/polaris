@@ -76,15 +76,14 @@ const MAP_TOP = 20;
 const BARS_PHONE = 16;
 const BARS_DESKTOP = 48;
 
-/** The size of the cells: fixed from 760 px (16 + 3, as many weeks as fit up to 26), and on a phone 13 weeks of up to 18 + 4. */
+/** The size of the cells: fixed from 760 px (16 + 3, as many weeks as fit up to 26), and on a phone 13 weeks of up to 16 + 3 (the block stays short). */
 function mapLayout(width: number, phone: boolean) {
   if (phone) {
     const step =
       width > 0
         ? Math.max(14, Math.min(19, Math.floor((width - MAP_SIDES) / 13)))
         : 19;
-    const gap = step >= 20 ? 4 : 3;
-    return { cell: step - gap, gap, weeks: RHYTHM_WEEKS_PHONE };
+    return { cell: step - 3, gap: 3, weeks: RHYTHM_WEEKS_PHONE };
   }
   const fit = width > 0 ? Math.floor((width - MAP_SIDES) / 19) : RHYTHM_WEEKS;
   return {
@@ -472,7 +471,7 @@ export function RhythmBlock({
     ) : (
       // the height of the block read, so the blocks under it stay
       <BlockSkeleton
-        className="h-[24.5rem] lg:h-[26rem]"
+        className="h-[24.5rem] md:h-[26rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />

@@ -3566,7 +3566,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(atRest(page)).toHaveText(AT_REST);
   });
 
-  test("a 360 px: 13 semanas depois de Vendas por dia, células de até 18 px, nada passa da largura", async ({
+  test("a 360 px: 13 semanas depois de Vendas por dia, células de 16 px, nada passa da largura", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -3639,6 +3639,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
 
   for (const size of [
     { height: 740, width: 360 },
+    { height: 900, width: 900 },
     { height: 800, width: 1280 },
   ]) {
     test(`lugar reservado: a caixa do carregando tem a altura do bloco pronto e ler um dia não a muda (${size.width} px)`, async ({

@@ -381,7 +381,7 @@ export function rhythmSummary(view: RhythmView): string {
   return `${head}: ${soldDaysCount(view.soldDays)}. Melhor dia ${shortDate(best.date)}, ${formatBrlAmount(best.netSales)}. ${PAST_UNTIL_YESTERDAY} Os números estão em Ver os números.`;
 }
 
-/** Under the legend: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */
+/** The ranges of the four levels, for the (i) of the block and the legend title: "Vazio: sem venda · até R$ 57,98 · até R$ 83,64 · até R$ 142,73 · acima". */
 export function rhythmRangesText(view: RhythmView): string {
   if (view.thresholds === null) {
     return "Vazio: sem venda";
