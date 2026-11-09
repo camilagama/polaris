@@ -27,9 +27,9 @@ import {
   nextRange,
   parseIsoDate,
   parseTypedDate,
-  presetRange,
   type RangePreset,
   type RangeSpan,
+  shortcutRange,
   todayOr,
   toIsoDate,
   type TypedField,
@@ -52,6 +52,8 @@ export interface DateRangePickerProps {
   /** The id of a help text the screen shows under the button, read after the error. */
   describedBy?: string | undefined;
   disabled?: boolean | undefined;
+  /** The screen has no future days: "Este mês" ends today, not on the last day of the month. */
+  endsToday?: boolean | undefined;
   /** The error under the button (the screen's text). */
   error?: string | undefined;
   id?: string | undefined;
@@ -446,6 +448,7 @@ function useTypedDates({
  */
 export function DateRangePanel({
   clearable = true,
+  endsToday = false,
   onCommit,
   onHalfChange,
   pressed: pressedProp,
@@ -456,6 +459,8 @@ export function DateRangePanel({
   value: valueProp,
 }: {
   clearable?: boolean | undefined;
+  /** The screen has no future days: "Este mês" ends today, not on the last day of the month. */
+  endsToday?: boolean | undefined;
   /**
    * Called with the closed range, or null for "Limpar"; the caller closes the popover. Where the caller applies by a
    * button of its own it is also called with each typed range that is good, and with null when both fields are emptied.
@@ -485,7 +490,7 @@ export function DateRangePanel({
   const todayDate = parseIsoDate(today) as Date;
   const pressed =
     pressedProp === undefined
-      ? matchingPreset(value, today, shortcuts)
+      ? matchingPreset(value, today, shortcuts, endsToday)
       : pressedProp;
   const [month, setMonth] = useState(() =>
     firstMonth(value ?? undefined, todayDate, two)
@@ -530,9 +535,9 @@ export function DateRangePanel({
   const pickPreset = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       const preset = event.currentTarget.dataset.preset as RangePreset;
-      commit(presetRange(preset, today), preset);
+      commit(shortcutRange(preset, today, endsToday), preset);
     },
-    [commit, today]
+    [commit, endsToday, today]
   );
 
   const clear = useCallback(() => commit(null), [commit]);
@@ -626,6 +631,7 @@ export function DateRangePicker({
   clearable,
   describedBy,
   disabled,
+  endsToday,
   error,
   id,
   label,
@@ -701,6 +707,7 @@ export function DateRangePicker({
         >
           <DateRangePanel
             clearable={clearable}
+            endsToday={endsToday}
             key={openings}
             onCommit={commit}
             pressed={pressed}

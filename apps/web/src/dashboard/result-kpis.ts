@@ -23,9 +23,9 @@ import {
 import {
   addDays,
   dayCount,
-  lastOfMonth,
   monthName,
   type Period,
+  wholeMonthOf,
 } from "./result-period";
 
 /**
@@ -56,7 +56,7 @@ const LONGEST_COMPARED = 62;
 
 /** True when the period is one whole calendar month ("Este mês", "Mês passado", or a range given as one). */
 function isWholeMonth(period: Period): boolean {
-  return period.from.endsWith("-01") && period.to === lastOfMonth(period.from);
+  return wholeMonthOf(period) !== null;
 }
 
 /**

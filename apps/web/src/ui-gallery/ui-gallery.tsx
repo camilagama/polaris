@@ -499,6 +499,7 @@ function DatePickerStates() {
           <Field>
             <FieldLabel htmlFor="galeria-periodo">Período</FieldLabel>
             <DateRangePicker
+              endsToday
               id="galeria-periodo"
               label="Período"
               onValueChange={setPeriod}
@@ -530,7 +531,13 @@ function DatePickerStates() {
  * screen's own, inside the bar's `<search>`.
  */
 const FILTER_FIELDS: FilterField[] = [
-  { id: "periodo", label: "Período", today: TODAY, type: "date-range" },
+  {
+    endsToday: true,
+    id: "periodo",
+    label: "Período",
+    today: TODAY,
+    type: "date-range",
+  },
   {
     id: "situacao",
     label: "Situação",

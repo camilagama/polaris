@@ -1135,6 +1135,30 @@ for (const viewport of FORM_VIEWPORTS) {
   });
 }
 
+test("o atalho Este mês do período da meta é o mês inteiro, do dia 1 ao último dia, e não até hoje", async ({
+  page,
+}) => {
+  const server = new FakeGoalServer();
+  await openGoals(page, server);
+  await page.getByRole("button", { name: "Nova meta" }).click();
+  await page.locator("#goal-create-target").fill("100");
+  const popup = await openDatePicker(page, "Período da meta");
+  await popup
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "Este mês" })
+    .click();
+  await expect(popup).toBeHidden();
+  await expect(datePickerButton(page, "Período da meta")).toHaveAccessibleName(
+    "Período da meta, 01/10 a 31/10"
+  );
+  await page.getByRole("button", { name: "Criar meta" }).click();
+  await expect(page.getByText("Meta criada.")).toBeVisible();
+  expect(server.created[0]).toMatchObject({
+    endsOn: "2026-10-31",
+    startsOn: "2026-10-01",
+  });
+});
+
 for (const viewport of FORM_VIEWPORTS) {
   test(`o período da meta, a ${viewport.name} px: digitar as datas faz o mesmo período, a data que não existe não aplica e o calendário acompanha`, async ({
     page,

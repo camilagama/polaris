@@ -73,7 +73,12 @@ export function historyFilters(rules: readonly FilterRule[]): HistoryFilters {
 /** The fields of the bar, in the order the "Filtrar" menu lists them. */
 export function historyFields(offline: boolean): FilterField[] {
   return [
-    { id: FIELD_PERIOD, label: "Período", type: "date-range" },
+    {
+      endsToday: true,
+      id: FIELD_PERIOD,
+      label: "Período",
+      type: "date-range",
+    },
     {
       id: FIELD_STATUS,
       label: "Situação",

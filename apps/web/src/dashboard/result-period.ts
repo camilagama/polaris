@@ -1,7 +1,12 @@
-import { monthBounds, monthOfDay, shiftMonth } from "../expenses/expense-model";
+import {
+  EARLIEST_EXPENSE_MONTH,
+  monthBounds,
+  monthOfDay,
+  shiftMonth,
+} from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
 import { shortcutLabel } from "../ui/date-range-shortcuts";
-import type { RangePreset } from "../ui/date-values";
+import { presetRange, type RangePreset } from "../ui/date-values";
 
 /**
  * The periods of the Resultado (corte resultado-v2, AC-1 and AC-2): the presets, the free range, what each one reads,
@@ -80,9 +85,9 @@ export function dayCount(period: Period): number {
 }
 
 /**
- * What a preset reads on a day. The month is read whole (its last day is the month's, so an expense of the competence
- * after today is in it, AC-10); the 30 days end today; the year goes from January 1st to today. `custom` is the range
- * the person gave, which the caller validated.
+ * What a preset reads on a day. "Este mês" is the calendar month, whole like everywhere else (its last day is the
+ * month's, so an expense of the competence after today is in it, AC-10); the 30 days end today; the year goes from
+ * January 1st to today. `custom` is the range the person gave, which the caller validated.
  */
 export function presetPeriod(
   preset: PeriodPreset,
@@ -91,11 +96,9 @@ export function presetPeriod(
 ): Period | null {
   switch (preset) {
     case "this-month":
-      return monthBounds(monthOfDay(today));
-    case "last-month": {
-      const previous = shiftMonth(monthOfDay(today), -1);
-      return previous === null ? null : monthBounds(previous);
-    }
+      return presetRange(PRESET_SHORTCUTS["this-month"], today);
+    case "last-month":
+      return presetRange(PRESET_SHORTCUTS["last-month"], today);
     case "last-30":
       return { from: addDays(today, -29), to: today };
     case "year":
@@ -114,6 +117,57 @@ export function copyMonthOf(
     return monthOfDay(period.from);
   }
   return null;
+}
+
+/** The month ("YYYY-MM") when the period is exactly one calendar month, from the 1st to the last day; null otherwise. */
+export function wholeMonthOf(period: Period | null): string | null {
+  if (period === null) {
+    return null;
+  }
+  const month = monthOfDay(period.from);
+  const bounds = monthBounds(month);
+  return bounds !== null &&
+    bounds.from === period.from &&
+    bounds.to === period.to
+    ? month
+    : null;
+}
+
+export interface MonthStep {
+  /** The free range to read, only when the month is neither the store's current nor the previous one. */
+  custom: Period | null;
+  /** This month and the previous one go back to their presets (the ones with a copy on the device); any other is "custom". */
+  preset: PeriodPreset;
+}
+
+/**
+ * The month `delta` away from the whole month the period is, as the selection to read: this month and the previous one
+ * go back to their presets (the ones with a copy on the device, AC-16), any other month is a "Período". Null when the
+ * period is not a whole month, or the month is before the first the screen reads, or (going forward) is past the
+ * store's current month: there is nothing to read ahead of it.
+ */
+export function monthStep(
+  period: Period | null,
+  delta: -1 | 1,
+  today: string
+): MonthStep | null {
+  const month = wholeMonthOf(period);
+  const target = month === null ? null : shiftMonth(month, delta);
+  const current = monthOfDay(today);
+  if (
+    target === null ||
+    target < EARLIEST_EXPENSE_MONTH ||
+    (delta === 1 && target > current)
+  ) {
+    return null;
+  }
+  if (target === current) {
+    return { custom: null, preset: "this-month" };
+  }
+  if (target === shiftMonth(current, -1)) {
+    return { custom: null, preset: "last-month" };
+  }
+  return { custom: monthBounds(target), preset: "custom" };
 }
 
 export type RangeProblem = "missing" | "order" | "too_long";
