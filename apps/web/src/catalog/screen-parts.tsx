@@ -245,7 +245,7 @@ export function ListTotalFooter({
       >
         <div className="flex @max-[18.999rem]:grid @max-[18.999rem]:grid-cols-[minmax(0,1fr)] items-end justify-between gap-x-4 @max-[18.999rem]:gap-y-1">
           <div className="grid min-w-0 gap-0.5">
-            <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            <p className="font-medium text-muted-foreground text-support">
               Total na tela
             </p>
             <p className="min-h-5 @max-[18.999rem]:whitespace-normal whitespace-nowrap text-muted-foreground text-support">

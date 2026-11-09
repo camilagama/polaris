@@ -1270,3 +1270,115 @@ describe("a lista de atalhos mora num arquivo só (L2-1, AC-1.6)", () => {
     ).toHaveLength(1);
   });
 });
+
+const UPPERCASE_CLASS = /^!?(?:uppercase|\[text-transform:uppercase\])!?$/;
+const UPPERCASE_STYLE =
+  /text-transform\s*:\s*uppercase|textTransform\s*:\s*["'`]uppercase/;
+
+// a word of a sentence: capitalized, or closed by punctuation; no class is written like that
+const SENTENCE_WORD = /^[A-ZÀ-Ý][a-zà-ÿ]+$|[a-zà-ÿ][.,?;]$/;
+
+/** The words of the strings of a source that are class lists: a sentence that says "uppercase" is not one. */
+const classTokensOutsideProse = (text: string) =>
+  [...withoutComments(text).matchAll(STRING)].flatMap((match) => {
+    const words = (match[1] ?? match[2] ?? match[3] ?? "")
+      .split(SPACES)
+      .filter(Boolean);
+    return words.some((word) => SENTENCE_WORD.test(word)) ? [] : words;
+  });
+
+/** Capital letters set by the style: the `uppercase` class (with or without a variant) and `text-transform: uppercase`. */
+export function uppercaseStyleFaults(path: string, text: string): string[] {
+  const faults: string[] = [];
+  if (UPPERCASE_STYLE.test(withoutComments(text))) {
+    faults.push("text-transform: uppercase");
+  }
+  if (!TS_OR_TSX.test(path)) {
+    return faults;
+  }
+  for (const token of classTokensOutsideProse(text)) {
+    // the utility is what follows the last variant; a `:` inside brackets is part of an arbitrary value
+    const masked = token.replace(/\[[^\]]*\]/g, (part) =>
+      part.replaceAll(":", "_")
+    );
+    const utility = masked.slice(masked.lastIndexOf(":") + 1);
+    if (UPPERCASE_CLASS.test(utility) || UPPERCASE_CLASS.test(token)) {
+      faults.push(`classe ${token}`);
+    }
+  }
+  return faults;
+}
+
+/** The one place that keeps capital letters, with the reason: the POC of the offline persistence is a lab, not the app. */
+const UPPERCASE_ELSEWHERE: readonly { file: string; why: string }[] = [
+  {
+    file: "src/offline-poc/offline-poc.css",
+    why: "prova de conceito da persistência offline: folha própria, fora do app e das telas do lojista",
+  },
+];
+
+describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
+  const files = sourcesUnder("src");
+
+  it("a árvore de src foi lida, com o POC dentro", () => {
+    expect(files.length).toBeGreaterThan(500);
+    expect(files).toContain("src/expenses/expense-list.tsx");
+    expect(files).toContain("src/offline-poc/offline-poc.css");
+  });
+
+  it("nenhum arquivo de src põe texto em caixa alta pelo estilo, fora da exceção", () => {
+    const listed = UPPERCASE_ELSEWHERE.map((entry) => entry.file);
+    const faults = files
+      .filter((path) => !listed.includes(path))
+      .flatMap((path) =>
+        uppercaseStyleFaults(path, read(path)).map(
+          (fault) => `${path}: ${fault}`
+        )
+      );
+    expect(faults).toEqual([]);
+  });
+
+  it("a exceção é exata: o arquivo dela ainda tem caixa alta e a razão está escrita", () => {
+    expect(UPPERCASE_ELSEWHERE.map((entry) => entry.file)).toEqual([
+      "src/offline-poc/offline-poc.css",
+    ]);
+    for (const entry of UPPERCASE_ELSEWHERE) {
+      expect(entry.why.length, entry.file).toBeGreaterThan(20);
+      expect(
+        uppercaseStyleFaults(entry.file, read(entry.file)),
+        entry.file
+      ).not.toEqual([]);
+    }
+  });
+
+  it.each([
+    ['<p className="font-medium text-xs uppercase tracking-wide">', 1],
+    ['<p className="md:uppercase">', 1],
+    ['<p className="!uppercase">', 1],
+    ['<p className="uppercase!">', 1],
+    ['<p className="[text-transform:uppercase]">', 1],
+    ['cn("grid", open && "uppercase")', 1],
+    ["<p style={{ textTransform: 'uppercase' }}>", 1],
+    [".label { text-transform: uppercase; }", 1],
+    [".label{text-transform:uppercase}", 1],
+  ])("%s reprova (controle plantado)", (text, count) => {
+    const path = text.startsWith(".") ? "src/x.css" : "src/x.tsx";
+    expect(uppercaseStyleFaults(path, text).length).toBeGreaterThanOrEqual(
+      count
+    );
+  });
+
+  it.each([
+    '<p className="font-medium text-muted-foreground text-support">',
+    '<p className="normal-case">',
+    '<p className="not-uppercase-ish lowercase capitalize">',
+    "// uppercase tracking-wide",
+    "/* text-transform: uppercase */",
+    "const name = text.toUpperCase();",
+    'const message = "Password needs an uppercase letter.";',
+    ".label { text-transform: none; }",
+  ])("%s passa (controle plantado)", (text) => {
+    const path = text.startsWith(".") ? "src/x.css" : "src/x.tsx";
+    expect(uppercaseStyleFaults(path, text)).toEqual([]);
+  });
+});
