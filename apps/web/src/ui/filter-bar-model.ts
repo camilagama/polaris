@@ -42,6 +42,8 @@ export interface SelectFilterField extends FilterFieldBase {
 }
 
 interface DateRangeFilterField extends FilterFieldBase {
+  /** The screen has no future days: "Este mês" ends today (the Histórico); otherwise it is the whole month. */
+  endsToday?: boolean | undefined;
   /** The store's day, as in the `DateRangePicker`; the device's day when absent. */
   today?: IsoDate | undefined;
   type: "date-range";
