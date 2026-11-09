@@ -527,15 +527,18 @@ reflowTest(
     const [fieldBox, hintBox, filtersBox] = await Promise.all([
       field.locator("xpath=..").boundingBox(),
       hint.boundingBox(),
-      page.getByRole("button", { name: "Filtros" }).boundingBox(),
+      page
+        .getByRole("search", { exact: true, name: "Filtrar estoque" })
+        .getByRole("button", { exact: true, name: "Filtrar" })
+        .boundingBox(),
     ]);
     expect(hintBox?.y ?? 0).toBeGreaterThanOrEqual(
       (fieldBox?.y ?? 0) + (fieldBox?.height ?? 0)
     );
     expect(
-      Math.abs((filtersBox?.y ?? 0) - (fieldBox?.y ?? 99)),
-      "o botão Filtros fica na linha do campo"
-    ).toBeLessThanOrEqual(8);
+      filtersBox?.y ?? 0,
+      "o botão Filtrar fica abaixo da dica, na barra"
+    ).toBeGreaterThanOrEqual((hintBox?.y ?? 0) + (hintBox?.height ?? 0));
     await field.fill("camiseta");
     await expect(field).toHaveValue("camiseta");
     await expect(hint).toBeVisible();

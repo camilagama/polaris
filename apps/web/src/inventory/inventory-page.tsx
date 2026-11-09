@@ -400,6 +400,7 @@ export function InventoryPage() {
         <SearchField
           className="min-w-0 md:max-w-md"
           label="Buscar no estoque"
+          narrowBelowRem={15}
           onValueChange={handleQuery}
           placeholder="Produto, variante ou SKU"
           value={filters.query}
