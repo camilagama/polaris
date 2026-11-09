@@ -1,9 +1,9 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import RefreshCwIcon from "lucide-react/dist/esm/icons/refresh-cw";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Button, buttonVariants } from "@/ui/button";
+import { buttonVariants } from "@/ui/button";
 import { HideValuesButton } from "@/ui/hidden-values";
+import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
@@ -58,11 +58,11 @@ import { type HomeFigures, type HomeState, useHome } from "./use-home";
 const REFRESHING_TEXT = "Atualizando…";
 
 /**
- * "Atualizar": reads every block again, past the copy of the day. An icon on a phone, as the eye beside it. While it
- * reads, and without a connection, the button is `aria-disabled` and ignores the click, so the focus stays on it (a
- * native `disabled` would drop it on the body) and the row of actions keeps its place when the connection comes back.
+ * "Atualizar" of the Início: reads every block again, past the copy of the day. While it reads, and without a
+ * connection, the button is `aria-disabled` and ignores the click, so the focus stays on it (a native `disabled` would
+ * drop it on the body) and the row of actions keeps its place when the connection comes back.
  */
-function RefreshButton({
+function HomeRefresh({
   busy,
   className,
   offline,
@@ -78,17 +78,13 @@ function RefreshButton({
 }) {
   const off = busy || offline;
   return (
-    <Button
+    <RefreshButton
       aria-describedby={busy ? undefined : offlineReasonId}
       aria-disabled={off || undefined}
-      className={cn("max-md:size-ctl-lg max-md:px-0", className)}
+      busy={busy}
+      className={className}
       onClick={off ? undefined : onClick}
-      type="button"
-      variant="outline"
-    >
-      <RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-      <span className="max-md:sr-only">Atualizar</span>
-    </Button>
+    />
   );
 }
 
@@ -410,7 +406,7 @@ function HomeHeader({
         </div>
         <div className="flex items-start gap-2 md:hidden">
           {refresh ? (
-            <RefreshButton
+            <HomeRefresh
               busy={refresh.busy}
               offline={refresh.offline}
               offlineReasonId={offlineReasonId}
@@ -422,7 +418,7 @@ function HomeHeader({
       </div>
       <div className="flex w-full items-start gap-2 sm:w-auto">
         {refresh ? (
-          <RefreshButton
+          <HomeRefresh
             busy={refresh.busy}
             className="max-md:hidden"
             offline={refresh.offline}
