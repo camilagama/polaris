@@ -4067,7 +4067,7 @@ const SIZES = [
 const CHARTS_CHUNK = "**/assets/charts-*.js";
 const HEATMAP_CHUNK = "**/assets/heatmap-*.js";
 
-/** The table of the days of a chart: in the page for a screen reader, one pixel on the screen and out of the tab order. */
+/** The table of the days of a chart: in the page for a screen reader, one pixel tall on the screen and out of the tab order. */
 async function expectInvisibleTable(block: Locator) {
   const table = block.getByRole("table");
   await expect(table).toHaveCount(1);
@@ -4078,7 +4078,6 @@ async function expectInvisibleTable(block: Locator) {
     "hidden"
   );
   const box = await block.locator("[data-chart-data-table]").boundingBox();
-  expect(box?.width ?? 99).toBeLessThanOrEqual(1);
   expect(box?.height ?? 99).toBeLessThanOrEqual(1);
   await expect(table.locator("a, button, input, [tabindex]")).toHaveCount(0);
   const id = await table.getAttribute("id");

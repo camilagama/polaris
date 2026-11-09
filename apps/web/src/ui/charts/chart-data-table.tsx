@@ -26,8 +26,13 @@ export interface ChartDataTableProps {
 
 const align = (numeric: boolean | undefined) => numeric && "text-right";
 
+/* one pixel tall and clipped, as `sr-only` is, but as wide as the page instead of one pixel: the table inside keeps
+   its columns and its text wraps, so nothing in it is wider than the screen; it is out of the flow, so it adds no gap */
+const HIDDEN =
+  "absolute left-0 h-px w-full overflow-hidden [clip-path:inset(50%)]";
+
 /**
- * The day-by-day numbers of a chart as a real table: invisible on the screen (`sr-only`, out of the tab order) and
+ * The day-by-day numbers of a chart as a real table: invisible on the screen (clipped to one pixel, out of the tab order) and
  * tied to the chart by the chart's `aria-details`, so the drawing is never the only source of a number for assistive
  * technology. When the chart does not open it is shown (`visible`) in its place. Every cell goes through the mask of
  * "Esconder valores": an amount is "R$ ••••" on the screen and "valor escondido" to a screen reader, never a digit.
@@ -43,7 +48,7 @@ export function ChartDataTable({
 }: ChartDataTableProps) {
   return (
     <div
-      className={cn(visible ? "w-full overflow-x-auto" : "sr-only")}
+      className={cn(visible ? "w-full overflow-x-auto" : HIDDEN)}
       data-chart-data-table={visible ? "visible" : "hidden"}
     >
       <table className="w-full caption-top text-sm" id={id}>

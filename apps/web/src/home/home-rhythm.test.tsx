@@ -177,6 +177,8 @@ describe("Ritmo de vendas at rest", () => {
 
 const TABLE = /<table[^>]*id="([^"]*)"[^>]*>[\s\S]*?<\/table>/;
 const ROWS = /<tr[ >]/g;
+const HIDDEN_WRAPPER =
+  /<div class="[^"]*overflow-hidden[^"]*" data-chart-data-table="hidden">/;
 const CAPTION =
   /<caption[^>]*>Vendas por dia, do mais novo ao mais antigo\. Meses anteriores atualizados até ontem\.<\/caption>/;
 const HEADERS = /<th[^>]*scope="col"/g;
@@ -193,7 +195,7 @@ describe("the numbers of the Ritmo, for assistive technology", () => {
     const id = table?.[1] ?? "";
     expect(html).toContain(`data-chart-data-table="hidden"`);
     expect(html).toContain(`aria-details="${id}"`);
-    expect(html).toContain('class="sr-only"');
+    expect(html).toMatch(HIDDEN_WRAPPER);
   });
 
   it("is a real table: a caption, a header per column and one row per day read, newest first", () => {

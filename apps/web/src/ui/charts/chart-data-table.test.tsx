@@ -20,7 +20,8 @@ const ROWS = [
 ];
 const SCOPE_COL = /<th[^>]*scope="col"/g;
 const FOCUSABLE = /tabindex|<a |<button|<input/;
-const HIDDEN_WRAPPER = /<div class="sr-only" data-chart-data-table="hidden">/;
+const HIDDEN_WRAPPER =
+  /<div class="[^"]*overflow-hidden[^"]*" data-chart-data-table="hidden">/;
 const DIGIT_OF_AMOUNT = /R\$ \d/;
 
 function render(visible?: boolean) {
@@ -57,7 +58,7 @@ describe("ChartDataTable", () => {
     expect(render()).not.toMatch(FOCUSABLE);
     const visible = render(true);
     expect(visible).toContain('data-chart-data-table="visible"');
-    expect(visible).not.toContain("sr-only");
+    expect(visible).not.toContain("overflow-hidden");
     expect(visible).not.toMatch(FOCUSABLE);
   });
 
