@@ -2,8 +2,7 @@ import type {
   ExpenseCategoryReadModel,
   ExpenseReadModel,
 } from "@polaris/contracts";
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { type MouseEvent, useCallback } from "react";
+import { useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -273,56 +272,34 @@ interface ExpenseListProps {
   filters: ExpenseFilters;
   onEdit: (expense: ExpenseReadModel) => void;
   onLoadMore: () => void;
-  /** Opens the form of a new expense; it receives the click, so the focus goes back to the button that was pressed. */
-  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
   onRestore: (expense: ExpenseReadModel) => void;
   onRetry: () => void;
   onVoid: (expense: ExpenseReadModel) => void;
   state: ExpenseListState;
 }
 
-function EmptyExpenses({
-  busyKey,
-  filters,
-  onNew,
-}: {
-  busyKey: string | null;
-  filters: ExpenseFilters;
-  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
-}) {
-  if (filters.status === "voided") {
-    return (
-      <EmptyState
-        afterRead
-        bare
-        title="Nenhuma despesa anulada neste período."
-      />
-    );
-  }
+function EmptyExpenses({ filters }: { filters: ExpenseFilters }) {
   return (
-    <EmptyState afterRead bare title="Nenhuma despesa neste período.">
-      <Button
-        data-expense-new=""
-        disabled={busyKey !== null}
-        onClick={onNew}
-        type="button"
-      >
-        <PlusIcon aria-hidden="true" data-icon="inline-start" />
-        Nova despesa
-      </Button>
-    </EmptyState>
+    <EmptyState
+      afterRead
+      bare
+      title={
+        filters.status === "voided"
+          ? "Nenhuma despesa anulada neste período."
+          : "Nenhuma despesa neste período."
+      }
+    />
   );
 }
 
-/** The empty list and the loading line share this height (the sentence and its button), so the list that arrives empty does not push the screen. */
-const EMPTY_BOX_CLASS = "grid min-h-[6.9375rem] content-center";
+/** The empty list and the loading line share this height (the sentence), so the list that arrives empty does not push the screen. */
+const EMPTY_BOX_CLASS = "grid min-h-[4.5rem] content-center";
 
 export function ExpenseList({
   busyKey,
   filters,
   onEdit,
   onLoadMore,
-  onNew,
   onRestore,
   onRetry,
   onVoid,
@@ -345,7 +322,7 @@ export function ExpenseList({
       ) : null}
       {!isLoading && expenses.length === 0 && state.error === null ? (
         <div className={`${EMPTY_BOX_CLASS} py-4`}>
-          <EmptyExpenses busyKey={busyKey} filters={filters} onNew={onNew} />
+          <EmptyExpenses filters={filters} />
         </div>
       ) : null}
       {expenses.length > 0 ? (

@@ -1,7 +1,6 @@
 import type { CustomerReadModel } from "@polaris/contracts";
 import MoreHorizontalIcon from "lucide-react/dist/esm/icons/ellipsis";
-import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { type MouseEvent, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Card } from "@/ui/card";
@@ -479,8 +478,6 @@ interface CustomerListProps extends RowActions {
   isLoading: boolean;
   /** Working from this device's collections while the connection is down. */
   isOffline: boolean;
-  /** The button of the empty list: the form is not on the page, it opens from here. */
-  onNew: (event: MouseEvent<HTMLButtonElement>) => void;
   pendingAction: string | null;
   /** The typed search; empty when none. */
   query: string;
@@ -497,7 +494,6 @@ export function CustomerList({
   customers,
   isLoading,
   isOffline,
-  onNew,
   pendingAction,
   query,
   status,
@@ -519,14 +515,7 @@ export function CustomerList({
     if (status !== "active") {
       return <EmptyState afterRead title="Nenhum cliente arquivado." />;
     }
-    return (
-      <EmptyState afterRead title="Nenhum cliente ainda.">
-        <Button disabled={pendingAction !== null} onClick={onNew} type="button">
-          <PlusIcon aria-hidden="true" data-icon="inline-start" />
-          Novo cliente
-        </Button>
-      </EmptyState>
-    );
+    return <EmptyState afterRead title="Nenhum cliente ainda." />;
   }
   if (customers.length === 0) {
     return (

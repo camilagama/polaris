@@ -46,7 +46,6 @@ const base: Props = {
   onAnonymize: noop,
   onArchive: noop,
   onEdit: noop,
-  onNew: noop,
   onRestore: noop,
   pendingAction: null,
   query: "",
@@ -88,15 +87,16 @@ describe("the list of customers", () => {
     expect(html).not.toContain("Ana Lima");
   });
 
-  it("tells the empty list what to do next, and the archived one that there is none", () => {
+  it("says only what is missing in the empty list (no button), and that the archived one is empty", () => {
     const empty = render({ customers: [], total: 0 });
     expect(empty).toContain("Nenhum cliente ainda.");
     expect(empty).not.toContain("Cadastre o primeiro");
     expect(empty).toContain('role="status"');
     const sentence = EMPTY_SENTENCE.exec(empty)?.[1];
     expect(sentence?.length).toBeLessThanOrEqual(60);
-    // the form is not on the page: the empty list carries the button that opens it
-    expect(empty).toContain("Novo cliente</button>");
+    // the button that creates is the title line's: the empty list only says what is missing
+    expect(empty).not.toContain("<button");
+    expect(empty).not.toContain("Novo cliente");
     const archived = render({ customers: [], status: "archived", total: 0 });
     expect(archived).toContain("Nenhum cliente arquivado.");
     expect(archived).toContain("data-empty-state");
