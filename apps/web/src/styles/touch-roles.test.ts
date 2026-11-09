@@ -9,6 +9,8 @@ import { buttonVariants } from "@/ui/button";
  * The size of a control by its role (DESIGN.md, "Tamanho de controle por papel"): the tokens and utilities of
  * `theme.css` and the `xl` step of the button. The browser measures the same on the gallery
  * (`e2e-pwa/ui-components.e2e.ts`); this reads the source so a change of a number fails here first.
+ * The height of the month picker in Despesas is measured by `e2e/expenses.e2e.ts` and the floor of `xl` on the
+ * offer button of the Assinatura by `e2e/subscription-screen.e2e.ts`.
  */
 const theme = readFileSync(
   fileURLToPath(
@@ -164,23 +166,6 @@ describe("fields and the main action on touch", () => {
         "h-auto touch:h-auto items-stretch"
       );
     }
-  });
-
-  it("the month picker is a field and the main action of the offer has the floor of xl", () => {
-    const picker = readFileSync(join(SRC, "expenses/month-picker.tsx"), "utf8");
-    expect(picker.match(/"touch:h-11"/g)).toHaveLength(2);
-    expect(picker).toContain("touch:h-11 min-w-32");
-    const parts = readFileSync(
-      join(SRC, "subscription/subscription-parts.tsx"),
-      "utf8"
-    );
-    expect(parts).toContain("min-h-ctl-xl");
-    const offer = readFileSync(
-      join(SRC, "subscription/subscription-offer.tsx"),
-      "utf8"
-    );
-    expect(offer).toContain("WRAPS_XL");
-    expect(offer).toContain('size="xl"');
   });
 
   it("the plain button stays 36 px with touch and takes no minimum height", () => {
