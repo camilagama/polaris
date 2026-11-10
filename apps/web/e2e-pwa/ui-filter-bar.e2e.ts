@@ -301,7 +301,6 @@ for (const viewport of VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { name: "7 dias" })
         .click();
-      await applyEditor(page, open);
       await expect(open).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 18/10 a 24/10, editar"

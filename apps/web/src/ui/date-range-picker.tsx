@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type Ref,
+  type RefObject,
   useCallback,
   useEffect,
   useId,
@@ -84,12 +85,13 @@ function firstMonth(range: DraftRange | undefined, today: Date) {
 const HOLD_WIDTH = "w-0 min-w-full";
 
 // at 760 px and up the shortcuts are a column beside the month, the one in use marked; below it they are the segmented row
-// above the month: the four need about 16 rem in a row, and where the window (in the browser's own rem, so the large
-// letter counts) is narrower than 18 rem they make two rows of two, apart by 12 px so the 44 px areas of touch stay apart
+// above the month, and where the four do not fit (the window in the browser's own rem, so the large letter counts) the
+// row scrolls sideways: the 6 px of padding on every side keep the 3 px focus ring (2 px off) and the 44 px touch area
+// inside the box that scrolls, and the negative margin gives the space back
 const SHORTCUTS_CLASS =
-  "m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs max-[18rem]:grid max-[18rem]:grid-cols-2 max-[18rem]:gap-3 max-[18rem]:shadow-none md:mb-0 md:w-36 md:flex-col md:gap-0.5 md:self-start md:shadow-none";
+  "-mx-1.5 -mt-1.5 -mb-0.5 flex min-w-0 shrink-0 snap-x overflow-x-auto overscroll-x-contain rounded-md border-0 p-1.5 [scrollbar-width:thin] md:m-0 md:w-36 md:flex-col md:gap-0.5 md:self-start md:overflow-visible md:p-0";
 const SHORTCUT_CLASS =
-  "touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground max-[18rem]:not-first:ml-0 max-[18rem]:rounded-md max-[18rem]:first:rounded-md max-[18rem]:last:rounded-md dark:bg-secondary/60 md:h-ctl-md md:flex-none md:justify-start md:rounded-md md:border-transparent md:bg-transparent md:px-3 md:text-sm md:not-first:ml-0 md:first:rounded-md md:last:rounded-md dark:md:bg-transparent";
+  "touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto snap-start items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs shadow-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-transparent dark:hover:bg-accent dark:aria-pressed:bg-accent md:h-ctl-md md:flex-none md:justify-start md:rounded-md md:border-transparent md:bg-transparent md:px-3 md:text-sm md:shadow-none md:not-first:ml-0 md:first:rounded-md md:last:rounded-md md:aria-pressed:bg-accent";
 
 const FIELD_LABELS: Record<TypedField, string> = { from: "Início", to: "Fim" };
 // taken from the keys: a string literal of that word followed by a quote is read as an import by the source scan of src/ui
@@ -101,6 +103,8 @@ interface DateRangeTypingProps {
   /** What is wrong with each field, shown under it, only for a field the person already left or tried to apply. */
   errors: Record<TypedField, string | undefined>;
   inputRefs: Record<TypedField, Ref<HTMLInputElement>>;
+  /** What the button of the fields writes: the range the draft holds ("01/11 a 30/11"), or the name of the action. */
+  label: string | undefined;
   onBlurField: (field: TypedField) => void;
   onToggle: () => void;
   onType: (field: TypedField, text: string) => void;
@@ -187,7 +191,8 @@ function TypedDateField({
 }
 
 /**
- * "Digitar as datas" inside the panel of a period: a button that opens two text fields (Início, Fim) in `dd/mm/aaaa`,
+ * "Digitar as datas" inside the panel of a period: a button under the month that writes the range of the draft and opens
+ * two text fields (Início, Fim) in `dd/mm/aaaa`,
  * never `type="date"` (the browser's own field differs from one to the other and has no mask on a phone). The fields
  * show and edit the draft the calendar shows. Where the panel closes on its own commit "Aplicar" sits under the fields,
  * `aria-disabled` (still focusable, so it reads why) until both days are good; the toggle is a disclosure button.
@@ -196,6 +201,7 @@ function DateRangeTyping({
   apply,
   errors,
   inputRefs,
+  label,
   onBlurField,
   onToggle,
   onType,
@@ -211,13 +217,14 @@ function DateRangeTyping({
       <Button
         aria-controls={open ? regionId : undefined}
         aria-expanded={open}
-        className="w-fit justify-self-start"
+        aria-label={label ? `Digitar as datas: ${label}` : undefined}
+        className="w-fit justify-self-start tabular-nums"
         onClick={onToggle}
         size="sm"
         type="button"
         variant="ghost"
       >
-        Digitar as datas
+        {label ?? "Digitar as datas"}
         <ChevronDownIcon
           aria-hidden="true"
           className={open ? "rotate-180" : undefined}
@@ -412,8 +419,79 @@ function useTypedDates({
       open,
       statusId,
       texts,
-    } satisfies DateRangeTypingProps,
+    } satisfies Omit<DateRangeTypingProps, "label">,
   };
+}
+
+/**
+ * The line under the panel: why the range cannot be applied yet (the first day waits for the last, or the typed error)
+ * and "Limpar". It stays in the tree when there is nothing to say, so the screen reader hears it when it fills; then it
+ * is out of the flow, and no empty row (a rule and a blank line) closes the panel. With the fields open the row keeps its
+ * height, so the panel does not shrink under the pointer when the last error goes away.
+ */
+function DateRangeFooter({
+  clearable,
+  half,
+  onClear,
+  typed,
+}: {
+  clearable: boolean;
+  half: IsoDate | undefined;
+  onClear: () => void;
+  typed: Pick<
+    ReturnType<typeof useTypedDates>,
+    "open" | "reason" | "statusId" | "statusQuiet"
+  >;
+}) {
+  const status = typed.open
+    ? typed.reason
+    : half && `Início ${formatDate(half)}. Escolha o último dia.`;
+  const showStatus = Boolean(status) && !typed.statusQuiet;
+  const said = showStatus || clearable;
+  return (
+    <div
+      className={cn(
+        said || typed.open
+          ? "flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 pt-2"
+          : "contents",
+        said && "border-border border-t",
+        HOLD_WIDTH
+      )}
+    >
+      <p
+        aria-live={typed.open ? undefined : "polite"}
+        className={cn(
+          "min-w-0 text-muted-foreground text-support",
+          !showStatus && "sr-only"
+        )}
+        id={typed.statusId}
+      >
+        {status}
+      </p>
+      {clearable ? (
+        <Button onClick={onClear} size="sm" variant="ghost">
+          Limpar
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Brings the shortcut in use into the sideways row where the four do not fit, so the one marked is not off the edge. */
+function useRevealPressed(
+  group: RefObject<HTMLFieldSetElement | null>,
+  pressed: RangePreset | null | undefined
+) {
+  useEffect(() => {
+    const row = group.current;
+    const button = row?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!(row && button) || row.scrollWidth <= row.clientWidth) {
+      return;
+    }
+    const at = button.getBoundingClientRect();
+    const box = row.getBoundingClientRect();
+    row.scrollLeft += at.left - box.left - (row.clientWidth - at.width) / 2;
+  }, [group, pressed]);
 }
 
 /**
@@ -484,6 +562,8 @@ export function DateRangePanel({
     value,
   });
   const { adopt, commit } = typed;
+  const shortcutRow = useRef<HTMLFieldSetElement>(null);
+  useRevealPressed(shortcutRow, pressed);
   const far = useCallback(
     (day: Date) =>
       span !== undefined &&
@@ -520,6 +600,10 @@ export function DateRangePanel({
 
   const clear = useCallback(() => commit(null), [commit]);
 
+  const rangeLabel =
+    draft?.from && draft.to
+      ? formatRange({ from: draft.from, to: draft.to }, today)
+      : half && `${formatDate(half)} a …`;
   const selected = {
     from: parseIsoDate(draft?.from),
     to: parseIsoDate(draft?.to),
@@ -527,7 +611,11 @@ export function DateRangePanel({
 
   return (
     <div className="contents md:flex md:min-h-0 md:gap-4">
-      <fieldset aria-label="Atalhos do período" className={SHORTCUTS_CLASS}>
+      <fieldset
+        aria-label="Atalhos do período"
+        className={SHORTCUTS_CLASS}
+        ref={shortcutRow}
+      >
         {shortcutsOf(shortcuts).map((preset) => (
           <button
             aria-pressed={preset.value === pressed}
@@ -566,32 +654,17 @@ export function DateRangePanel({
           />
         </div>
         <div ref={typed.anchor}>
-          <DateRangeTyping {...typed.typingProps} />
+          <DateRangeTyping
+            {...typed.typingProps}
+            label={rangeLabel || undefined}
+          />
         </div>
-        <div
-          className={cn(
-            "flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2",
-            HOLD_WIDTH
-          )}
-        >
-          <p
-            aria-live={typed.open ? undefined : "polite"}
-            className={cn(
-              "min-w-0 text-muted-foreground text-support",
-              typed.statusQuiet && "sr-only"
-            )}
-            id={typed.statusId}
-          >
-            {typed.open
-              ? typed.reason
-              : half && `Início ${formatDate(half)}. Escolha o último dia.`}
-          </p>
-          {clearable && (value || half) ? (
-            <Button onClick={clear} size="sm" variant="ghost">
-              Limpar
-            </Button>
-          ) : null}
-        </div>
+        <DateRangeFooter
+          clearable={clearable && Boolean(value || half)}
+          half={half}
+          onClear={clear}
+          typed={typed}
+        />
       </div>
     </div>
   );
