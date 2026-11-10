@@ -7,10 +7,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card } from "@/ui/card";
+import { MoneyText } from "@/ui/hidden-values";
 import { ActionStrip } from "../app-shell/action-strip";
 import { tabHref } from "../app-shell/navigation-model";
 import {
@@ -258,6 +260,7 @@ function ItemCard({
   const [confirming, setConfirming] = useState(false);
   const confirmRef = useRef<HTMLDivElement>(null);
   const focusDiscardAgain = useRef<boolean>(false);
+  const [hidden] = useHiddenValues();
   const account = ACCOUNT_CAUSES.has(item.cause);
   const Icon = account ? CircleAlertIcon : TriangleAlertIcon;
   // the confirmation takes the place of the buttons: focus goes to it, and back to "Descartar…" when it is kept
@@ -303,7 +306,7 @@ function ItemCard({
             )}
           />
           <h2 className="text-section [overflow-wrap:anywhere]">
-            {item.title}
+            <MoneyText text={item.title} />
           </h2>
         </div>
         {item.blocksQueue ? (
@@ -317,7 +320,7 @@ function ItemCard({
         </p>
         {confirming ? (
           <div
-            aria-label={`Descartar ${item.title}`}
+            aria-label={`Descartar ${hidden ? maskMoney(item.title, MASKED_SPOKEN) : item.title}`}
             className="grid gap-3 rounded-lg bg-muted/50 p-3 outline-none ring-1 ring-destructive/30 focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-2"
             ref={confirmRef}
             role="alertdialog"
@@ -369,7 +372,7 @@ function ItemCard({
                       className="[overflow-wrap:anywhere]"
                       key={`${line.kind}:${line.label}`}
                     >
-                      {redoProblemText(line)}
+                      <MoneyText text={redoProblemText(line)} />
                     </li>
                   ))}
                 </ul>

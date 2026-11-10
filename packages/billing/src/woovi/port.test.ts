@@ -21,6 +21,7 @@ import {
   INSTALLMENT_ID,
   installmentJson,
   OTHER_INSTALLMENT_ID,
+  OTHER_SUBSCRIPTION_ID,
   PERSONAL_VALUES,
   SUBSCRIPTION_ID,
   subscriptionJson,
@@ -787,6 +788,40 @@ describe("readState", () => {
         ),
       })
     );
+  });
+
+  describe("an approval the subscription read back does not show (sandbox shape)", () => {
+    const liveInstallmentOf = (subscriptionId: string) =>
+      installmentJson({
+        cobr: {
+          ...(installmentJson().cobr as Record<string, unknown>),
+          status: "ACTIVE",
+        },
+        paymentSubscriptionGlobalID: subscriptionId,
+        status: "ACTIVE",
+      });
+
+    it("is not inferred from a live installment of ANOTHER subscription", async () => {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentOf(OTHER_SUBSCRIPTION_ID))
+      );
+
+      expect(await portWith(fetch).readState(SUBSCRIPTION_ID, NOW)).toEqual([]);
+    });
+
+    it("is inferred from the same live installment of THIS subscription", async () => {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentOf(SUBSCRIPTION_ID))
+      );
+
+      const events = await portWith(fetch).readState(SUBSCRIPTION_ID, NOW);
+
+      expect(events.map((event) => event.fact.type)).toEqual([
+        "trial_method_ready",
+      ]);
+    });
   });
 
   it("carries nothing personal", async () => {

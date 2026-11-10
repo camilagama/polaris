@@ -11,6 +11,7 @@ import { Button } from "@/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Field, FieldLabel } from "@/ui/field";
+import { MoneyText } from "@/ui/hidden-values";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { describeFee, settlementText } from "./payment-fee-model";
 import { methods } from "./payment-profile-form";
@@ -49,7 +50,7 @@ function FeeFigure({
             "rounded-sm border border-warning/50 border-dashed px-1 text-warning italic"
         )}
       >
-        {text}
+        <MoneyText text={text} />
       </span>
     </Figure>
   );
