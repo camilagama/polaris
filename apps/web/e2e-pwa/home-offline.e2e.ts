@@ -57,7 +57,7 @@ test("o pedaço do gráfico está no precache: aberto sem rede, o gráfico da c�
   await expect(map.locator("[data-rhythm-insight]")).toContainText(
     "nas últimas 13 semanas"
   );
-  await expect(map.locator("[data-rhythm-reading]")).toHaveCount(0);
+  await expect(map.locator("[data-heatmap-tooltip]")).toHaveCount(0);
   await expect(map.getByRole("img")).toHaveAttribute(
     "aria-label",
     expect.stringContaining("Melhor dia 18/10, R$ 1.840,00")
