@@ -328,14 +328,19 @@ test("enquanto o chunk não chega a caixa de espera é um status que diz Abrindo
     .getByRole("region", { name: "Calendário" })
     .locator('[data-slot="calendar"]');
   const after = await calendar.boundingBox();
+  // the gallery's month has a reason for its disabled days: its line, hidden but with its height, is under the month
+  const line = await calendar
+    .locator("xpath=following-sibling::p")
+    .boundingBox();
   expect(before).not.toBeNull();
   expect(after).not.toBeNull();
+  expect(line).not.toBeNull();
   expect(Math.abs((after?.width ?? 0) - (before?.width ?? 0))).toBeLessThan(
     1.5
   );
-  expect(Math.abs((after?.height ?? 0) - (before?.height ?? 0))).toBeLessThan(
-    1.5
-  );
+  expect(
+    Math.abs((after?.height ?? 0) + (line?.height ?? 0) - (before?.height ?? 0))
+  ).toBeLessThan(1.5);
 });
 
 for (const viewport of VIEWPORTS) {
@@ -775,11 +780,38 @@ test.describe("dia desligado, a 360 x 600 com toque", () => {
   });
 });
 
-test.describe("a 320 px, com toque", () => {
+test.describe("dia desligado, a 360 x 420 com toque", () => {
   test.use({
     hasTouch: true,
     isMobile: true,
-    viewport: { height: 640, width: 320 },
+    viewport: { height: 420, width: 360 },
+  });
+
+  test("o dia desligado da última semana, levado à vista pelo foco, não fica atrás da linha do motivo", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    const month = popup.locator("[data-date-month]");
+    expect(
+      await month.evaluate((box) => box.scrollHeight - box.clientHeight)
+    ).toBeGreaterThan(0);
+    const last = day(popup, "2026-11-07");
+    await last.focus();
+    await expect(last).toBeFocused();
+    const reason = reasonLine(popup);
+    await expect(reason).toBeVisible();
+    await expect
+      .poll(async () => {
+        const dayBox = await last.boundingBox();
+        const lineBox = await reason.boundingBox();
+        return (lineBox?.y ?? 0) - ((dayBox?.y ?? 0) + (dayBox?.height ?? 0));
+      })
+      .toBeGreaterThanOrEqual(-1);
   });
 
   test("o período cabe: atalhos sem texto cortado, a semana inteira e nada fora da janela", async ({

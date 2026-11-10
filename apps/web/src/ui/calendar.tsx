@@ -29,15 +29,16 @@ import { buttonVariants } from "@/ui/button";
  * tokens and rules. Days are 36 px with a mouse and 44 px with touch (shrinking below 360 px so the week fits at
  * 320), the cell itself is the touch area (days touch each other and never overlap), focus is the 3 px outline of
  * the other controls, the arrows move the focus between days (DayPicker's own
- * keyboard grid), the text is Brazilian Portuguese. A day outside the allowed ones is `aria-disabled` and says why
- * through `aria-describedby` (the project's rule for a disabled control with a reason), so a screen reader that
- * reaches it hears the reason instead of a silent dimmed number.
+ * keyboard grid), the text is Brazilian Portuguese. A day outside the allowed ones is `aria-disabled`, keeps the
+ * focus of the arrows, the click and the touch, and says why through `aria-describedby` (the project's rule for a
+ * disabled control with a reason): a screen reader hears the reason once, and a line under the month shows it as
+ * text while such a day has the focus.
  *
  * Heavy (it brings react-day-picker and date-fns): screens never import it. They use the pickers, which load it
  * on demand through `calendar-on-demand.tsx`; a guard of `pwa/precache-budget.ts` fails the build otherwise.
  */
 export type CalendarProps = DayPickerProps & {
-  /** Why the disabled days cannot be chosen ("Só até hoje"); read by the screen reader on each one. */
+  /** Why the disabled days cannot be chosen ("Só até hoje"); described on each one and shown under the month on focus. */
   disabledReason?: string | undefined;
 };
 
@@ -88,7 +89,7 @@ function CalendarDayButton({
         "data-[range-end=true]:bg-primary data-[range-start=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-start=true]:text-primary-foreground data-[range-end=true]:hover:bg-primary/88 data-[range-start=true]:hover:bg-primary/88",
         // only the number fades (never the button's opacity, which would fade the focus outline too); no hover fill and no
         // press scale: a day that cannot be chosen must not light up or sink like a valid one
-        "aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:text-foreground/40 aria-disabled:line-through aria-disabled:opacity-100 aria-disabled:active:not-aria-[haspopup]:scale-100 aria-disabled:hover:bg-transparent!",
+        "aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:text-foreground/40 aria-disabled:line-through aria-disabled:opacity-100 aria-disabled:active:not-aria-[haspopup]:scale-100 aria-disabled:not-data-[selected-single=true]:hover:bg-transparent! aria-disabled:data-[outside=true]:text-muted-foreground/40!",
         className
       )}
       data-day={day.isoDate}
@@ -266,7 +267,7 @@ export function Calendar({
       {disabledReason ? (
         <p
           className={cn(
-            "sticky bottom-0 min-h-5 bg-popover pt-1 text-center text-muted-foreground text-support",
+            "sticky bottom-0 min-h-[1.375rem] bg-popover pt-1 text-center text-muted-foreground text-support",
             !onDisabledDay && "invisible"
           )}
           id={reasonId}

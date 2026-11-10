@@ -113,7 +113,7 @@ describe("Calendar, a linha do motivo", () => {
 
   it("reserva altura mínima, fica presa ao pé da caixa que rola e em cor cheia", () => {
     const classes = attribute(line, "class") ?? "";
-    expect(classes).toContain("min-h-5");
+    expect(classes).toContain("min-h-[1.375rem]");
     expect(classes).toContain("sticky bottom-0");
     expect(classes).toContain("bg-popover");
     expect(classes).toContain("text-muted-foreground");
@@ -138,6 +138,29 @@ describe("Calendar, a linha do motivo", () => {
     expect(
       attribute(dayButton(quiet, "2026-10-25"), "aria-describedby")
     ).toBeUndefined();
+  });
+});
+
+describe("Calendar, o foco no dia", () => {
+  it("os onDayFocus e onDayBlur do chamador continuam sendo chamados", () => {
+    const focused = vi.fn();
+    const blurred = vi.fn();
+    html(
+      <Calendar
+        defaultMonth={OCTOBER_24}
+        disabled={LIMIT}
+        disabledReason="Só até hoje"
+        mode="single"
+        onDayBlur={blurred}
+        onDayFocus={focused}
+      />
+    );
+    const props = received.props.at(-1);
+    const event = {} as React.FocusEvent<HTMLButtonElement>;
+    props?.onDayFocus?.(OCTOBER_24, { disabled: true }, event);
+    props?.onDayBlur?.(OCTOBER_24, { disabled: true }, event);
+    expect(focused).toHaveBeenCalledWith(OCTOBER_24, { disabled: true }, event);
+    expect(blurred).toHaveBeenCalledWith(OCTOBER_24, { disabled: true }, event);
   });
 });
 
@@ -167,7 +190,9 @@ describe("Calendar, o dia desligado", () => {
   });
 
   it("não acende no hover nem afunda ao apertar", () => {
-    expect(off).toContain("aria-disabled:hover:bg-transparent!");
+    expect(off).toContain(
+      "aria-disabled:not-data-[selected-single=true]:hover:bg-transparent!"
+    );
     expect(off).toContain("aria-disabled:active:not-aria-[haspopup]:scale-100");
   });
 
