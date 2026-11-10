@@ -516,6 +516,11 @@ for (const viewport of VIEWPORTS) {
       const box = await day(popup, "2026-10-15").boundingBox();
       expect(box?.width).toBeCloseTo(size, 0);
       expect(box?.height).toBeCloseTo(size, 0);
+      expect(
+        await day(popup, "2026-10-15").evaluate(
+          (element) => getComputedStyle(element, "::before").content
+        )
+      ).toBe("none");
       const popupBox = await popup.boundingBox();
       expect(popupBox?.x).toBeGreaterThanOrEqual(0);
       expect((popupBox?.x ?? 0) + (popupBox?.width ?? 0)).toBeLessThanOrEqual(

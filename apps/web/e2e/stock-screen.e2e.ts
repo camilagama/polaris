@@ -239,6 +239,11 @@ async function useEveryControl(page: Page) {
   await expect(
     page.getByLabel("Observação (obrigatória para “Outro”)")
   ).toBeVisible();
+  const noteGroup = page
+    .locator("[data-slot=input-group]")
+    .filter({ has: page.getByLabel("Observação (obrigatória para “Outro”)") });
+  await expect(noteGroup).toBeVisible();
+  expect((await noteGroup.boundingBox())?.height ?? 0).toBeGreaterThan(60);
   await page
     .getByLabel("Observação (obrigatória para “Outro”)")
     .fill("Caiu da prateleira");

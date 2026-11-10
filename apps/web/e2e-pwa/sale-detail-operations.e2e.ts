@@ -123,6 +123,20 @@ test.describe("the focus when the step changes", () => {
       page.getByRole("combobox", { name: "Motivo (opcional)" })
     ).toBeFocused();
   });
+
+  test("the note of a cancellation is a multi-line field: taller than the 44 px of a one-line one", async ({
+    page,
+  }) => {
+    await openDetail(page);
+    await page.getByRole("button", { name: "Cancelar venda" }).click();
+    await page.getByRole("combobox", { name: "Motivo (opcional)" }).click();
+    await page.getByRole("option", { exact: true, name: "Outro" }).click();
+    const group = page.locator("[data-slot=input-group]").filter({
+      has: page.getByLabel("Observação (obrigatória para “Outro”)"),
+    });
+    await expect(group).toBeVisible();
+    expect((await group.boundingBox())?.height ?? 0).toBeGreaterThan(60);
+  });
 });
 
 async function openCustomer(
