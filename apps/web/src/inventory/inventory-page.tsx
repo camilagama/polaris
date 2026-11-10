@@ -32,11 +32,10 @@ import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { LINK, StockActionStrip } from "./stock-action-strip";
 import { isStockAction, type StockAction } from "./stock-command-model";
 import { StockCommandPanel } from "./stock-command-panel";
-import { StockFiltersButton } from "./stock-filters";
+import { StockFiltersBar } from "./stock-filters";
 import {
   readStockLinkFilters,
   type StockAttentionLink,
-  type StockFilter,
   type StockRow,
   stockCountText,
   stockCoverIds,
@@ -307,18 +306,6 @@ export function InventoryPage() {
     (query: string) => setFilters({ query }),
     [setFilters]
   );
-  const handleArchived = useCallback(
-    (checked: boolean) => setFilters({ includeArchived: checked }),
-    [setFilters]
-  );
-  const handleUnknownCost = useCallback(
-    (checked: boolean) => setFilters({ unknownCost: checked }),
-    [setFilters]
-  );
-  const handleFilter = useCallback(
-    (stock: StockFilter) => setFilters({ stock }),
-    [setFilters]
-  );
   const handleOpen = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       const { stockAction, variantId } = event.currentTarget.dataset;
@@ -409,24 +396,21 @@ export function InventoryPage() {
         <EntryNotFoundNotice unavailable={entryLink.status === "unavailable"} />
       ) : null}
 
-      <search aria-label="Filtrar estoque" className="grid gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <StockFiltersBar
+        filters={filters}
+        leading={
           <SearchField
-            className="min-w-0 flex-1 md:max-w-md"
+            className="min-w-0 flex-1 basis-[calc(100%-7rem)] md:max-w-md"
             hintClassName="order-last basis-full"
             label="Buscar no estoque"
             onValueChange={handleQuery}
             placeholder="Produto, variante ou SKU"
             value={filters.query}
           />
-          <StockFiltersButton
-            filters={filters}
-            onArchived={handleArchived}
-            onStock={handleFilter}
-            onUnknownCost={handleUnknownCost}
-          />
-        </div>
-      </search>
+        }
+        offline={offline}
+        onChange={setFilters}
+      />
 
       <div className="flex min-h-ctl-sm items-center justify-between gap-3">
         <p
