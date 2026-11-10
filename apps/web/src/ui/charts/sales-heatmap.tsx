@@ -1,6 +1,14 @@
 /* Polaris adaptation of the Bklit UI heatmap chart (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
 import { MotionConfig } from "motion/react";
-import { type PointerEvent, useCallback, useEffect, useMemo } from "react";
+import {
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { HeatmapCells } from "../bklit/charts/heatmap/heatmap-cells";
@@ -234,6 +242,39 @@ function ReadBridge({
   return null;
 }
 
+const TOOLTIP_OFFSET = 12;
+/** The width `TooltipBox` assumes for a panel it has not measured yet. */
+const TOOLTIP_UNMEASURED_WIDTH = 180;
+
+/**
+ * Where the panel goes in the map, from the width it was measured at: beside the cell on the side with room (what
+ * `TooltipBox` does on its own), and, when neither side has room (a middle column on a phone), over the map with its
+ * edges inside it, centered on the cell as far as the edges allow. `TooltipBox` only picks a side and never limits the
+ * left, so this is done by the position it is given: with `flipX` out of reach the panel opens to the right of `x`. The
+ * width is the panel's own (`w-max` on the content): a panel placed near the right edge would be measured shrunk to the
+ * room it has there, and the next day's panel placed by that width.
+ */
+export function panelPlacement({
+  containerWidth,
+  panelWidth,
+  x,
+}: {
+  containerWidth: number;
+  panelWidth: number;
+  x: number;
+}): { flipX?: number; x: number } {
+  const fitsRight = x + TOOLTIP_OFFSET + panelWidth <= containerWidth;
+  const fitsLeft = x - TOOLTIP_OFFSET - panelWidth >= 0;
+  if (fitsRight || fitsLeft) {
+    return { x };
+  }
+  const left = Math.max(
+    0,
+    Math.min(x - panelWidth / 2, containerWidth - panelWidth)
+  );
+  return { flipX: Number.NEGATIVE_INFINITY, x: left - TOOLTIP_OFFSET };
+}
+
 /**
  * The tooltip of the day read, from the pointer, the finger or the keyboard alike: the panel of Bklit UI's `TooltipBox`
  * over the cell of `focus`, opening on the side with room. It sits inside the drawing, which is `aria-hidden`: the same
@@ -256,6 +297,22 @@ function DayTooltip({
     [focus, tip, x, y]
   );
   const shown = useDelayedTooltipData(target, 0, instant ? 0 : undefined);
+  const content = useRef<HTMLDivElement>(null);
+  const [panelWidth, setPanelWidth] = useState(TOOLTIP_UNMEASURED_WIDTH);
+  useLayoutEffect(() => {
+    const panel = content.current?.closest<HTMLElement>(
+      ".pointer-events-none.absolute"
+    );
+    const measured = panel?.offsetWidth ?? 0;
+    if (measured > 0) {
+      setPanelWidth(measured);
+    }
+  }, [shown]);
+  const placement = panelPlacement({
+    containerWidth: width,
+    panelWidth,
+    x: shown?.x ?? 0,
+  });
   return (
     <TooltipBox
       animate={!instant}
@@ -264,13 +321,14 @@ function DayTooltip({
       containerWidth={width}
       entrance={!instant}
       exit={!instant}
-      offset={12}
+      flipX={placement.flipX}
+      offset={TOOLTIP_OFFSET}
       visible={shown !== null}
-      x={shown?.x ?? 0}
+      x={placement.x}
       y={shown?.y ?? 0}
     >
       {shown && (
-        <div data-heatmap-tooltip="">
+        <div className="w-max" data-heatmap-tooltip="" ref={content}>
           <TooltipHeader>{shown.tip.title}</TooltipHeader>
           <div className="grid gap-1 px-3.5 py-3 text-sm">
             <dl className="grid gap-1">

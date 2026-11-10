@@ -3762,6 +3762,55 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     });
   }
 
+  for (const size of [
+    { height: 740, width: 360 },
+    { height: 568, width: 320 },
+  ]) {
+    test(`o tooltip de um dia fica inteiro dentro da tela em toda coluna do mapa (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openHome(page, new FakeServer(SOLD));
+      await expect(atRest(page)).toHaveText(AT_REST);
+      await settled(page);
+      const columns = Math.floor((await dataCells(page).count()) / 7);
+      expect(columns).toBeGreaterThanOrEqual(16);
+      const panelBox = () =>
+        tooltip(page).evaluate((content) => {
+          const panel = content.closest(".pointer-events-none.absolute");
+          const box = panel?.getBoundingClientRect();
+          const map = content
+            .closest("[data-heatmap]")
+            ?.getBoundingClientRect();
+          return box && map
+            ? {
+                left: box.left,
+                mapLeft: map.left,
+                mapRight: map.right,
+                right: box.right,
+                width: window.innerWidth,
+              }
+            : null;
+        });
+      for (let column = 0; column < columns; column += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: one pointer, one column after the other
+        await dataCells(page)
+          .nth(column * 7 + 3)
+          .hover();
+        await expect(tooltip(page)).toBeVisible();
+        await settled(page);
+        const box = await panelBox();
+        expect(box, `coluna ${column}`).not.toBeNull();
+        expect(box?.left, `coluna ${column}`).toBeGreaterThanOrEqual(
+          Math.max(0, (box?.mapLeft ?? 0) - 0.5)
+        );
+        expect(box?.right, `coluna ${column}`).toBeLessThanOrEqual(
+          Math.min(box?.width ?? 0, (box?.mapRight ?? 0) + 0.5)
+        );
+      }
+    });
+  }
+
   test("cache diário (CPU-1e): duas aberturas no mesmo dia leem a série uma vez; no dia seguinte, de novo", async ({
     page,
   }) => {
