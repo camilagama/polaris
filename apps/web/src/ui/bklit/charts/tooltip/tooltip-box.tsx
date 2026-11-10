@@ -102,7 +102,7 @@ const DEFAULT_TOOLTIP_HEIGHT = 80;
 
 /** Panel position beside the cursor: flips left near the right edge and is
  * clamped vertically inside the container. */
-function resolveTooltipTarget({
+export function resolveTooltipTarget({
   x,
   flipX = x,
   y,
