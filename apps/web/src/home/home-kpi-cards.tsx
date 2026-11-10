@@ -179,8 +179,8 @@ interface MonthModel {
   groupTitle: string | null;
   kpis: Pick<MonthKpis, "days" | "read" | "series" | "result">;
   labels: { result: string; sales: string; ticket: string };
-  /** "outubro", or "o período" in the sentence read for "Vendas": what the card is of. */
-  name: string;
+  /** "em outubro", or "do período": what the card of Vendas is of, in the words read after its title. */
+  of: string;
   noCost: boolean;
   /** The result has days with no cost informed: the month of today says it by its quality line, a period by its days. */
   partialDays: boolean;
@@ -206,8 +206,8 @@ function monthModel(figures: HomeFigures): MonthModel {
       sales: `Vendas em ${name}, acumulado por dia`,
       ticket: "Ticket médio, por dia do mês",
     },
-    name,
     noCost: kpis.result.kind === "noCost",
+    of: `em ${name}`,
     partialDays: false,
     quality,
     until: (read) => `Até ${read.date.replace("1 a ", "")}`,
@@ -235,8 +235,8 @@ function periodModel(source: PeriodSource) {
       sales: `Vendas do período, acumulado por ${unit}`,
       ticket: `Ticket médio, por ${unit} do período`,
     },
-    name: kpis.month ?? "o período",
     noCost: cogsCoverageOf(quality) === "none",
+    of: kpis.month ? `em ${kpis.month}` : "do período",
     partialDays: kpis.result.kind === "incomplete",
     quality,
     until: (_read, index) =>
@@ -249,25 +249,22 @@ function periodModel(source: PeriodSource) {
   } satisfies MonthModel;
 }
 
-/** The three cards of the month, reading the same day together, under the line that names the month and its period. */
+/** The three cards of the month, reading the same day together (the line that names the period is the group's, apart). */
 function MonthCards({
-  source,
+  clear,
+  index,
+  model,
+  setIndex,
   still,
 }: {
-  source: MonthSource;
+  clear: () => void;
+  index: number | null;
+  model: MonthModel;
+  setIndex: (index: number | null) => void;
   still: boolean;
 }) {
   const [hidden] = useHiddenValues();
-  const control = usePeriodControl();
-  const model = useMemo<MonthModel>(
-    () =>
-      source.kind === "month"
-        ? monthModel(source.figures)
-        : periodModel(source),
-    [source]
-  );
   const { cards, kpis, noCost, quality } = model;
-  const [index, setIndex, clear] = useReading();
   const last = kpis.days.length - 1;
   const read = kpis.read(index);
   const until = model.until(read.sales, index);
@@ -298,7 +295,6 @@ function MonthCards({
       values={values}
     />
   );
-  const { name } = model;
   // a month with no sale says so; a copy kept before the series existed has the totals only, nothing drawn
   const noSale = cards.salesCount === 0;
   const drawn = !noSale && kpis.days.length > 0;
@@ -313,12 +309,7 @@ function MonthCards({
   const rest = kpis.read(null);
   const resultDateAtRest = ownDate(rest);
   return (
-    <KpiGroup
-      className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
-      control={control}
-      period={read.sales.date}
-      title={model.groupTitle}
-    >
+    <>
       <KpiCard
         action={
           noSale ? (
@@ -341,7 +332,7 @@ function MonthCards({
           : {})}
         title={
           <>
-            Vendas<span className="sr-only"> em {name}</span>
+            Vendas<span className="sr-only"> {model.of}</span>
           </>
         }
         value={<HeroValue amount={read.sales.value} />}
@@ -397,22 +388,14 @@ function MonthCards({
         title="Ticket médio"
         value={<HeroValue amount={read.ticket.value} />}
       />
-    </KpiGroup>
+    </>
   );
 }
 
-/** The cards of the month while the period the person chose is read (the group keeps its place and its three cards). */
+/** The three cards of the month while the period the person chose is read (the group keeps its place and its three cards). */
 function PeriodCardsSkeleton() {
-  const control = usePeriodControl();
   return (
     <>
-      <div
-        className="flex min-h-9 items-center justify-between gap-3 md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
-        data-kpi-group-skeleton=""
-      >
-        <Skeleton aria-hidden="true" className="h-3 w-28" />
-        {control}
-      </div>
       <KpiCardSkeleton className="md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-2" />
       <KpiCardSkeleton
         action
@@ -424,22 +407,6 @@ function PeriodCardsSkeleton() {
   );
 }
 
-/** The place of the three cards when the period failed: the line with the picker, and the error under it. */
-function PeriodCardsError({ children }: { children: React.ReactNode }) {
-  const control = usePeriodControl();
-  return (
-    <div className="grid content-start gap-3 md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-      <div
-        className="flex min-h-9 items-center justify-end"
-        data-kpi-group-line=""
-      >
-        {control}
-      </div>
-      {children}
-    </div>
-  );
-}
-
 /** What the three cards of the month show: the month of the figures, or the period chosen (loading, failed, read). */
 export type MonthPart =
   | { kind: "figures" }
@@ -447,28 +414,101 @@ export type MonthPart =
   | { error: React.ReactNode; kind: "error" }
   | { kind: "period"; source: PeriodSource };
 
-function monthPart(month: MonthPart, own: MonthSource, still: boolean) {
-  switch (month.kind) {
-    case "loading":
-      return (
-        <div className="contents" role="status">
-          <span className="sr-only">Carregando o período…</span>
-          <PeriodCardsSkeleton />
-        </div>
-      );
-    case "error":
-      return <PeriodCardsError>{month.error}</PeriodCardsError>;
-    case "period":
-      return (
-        <MonthCards
-          key={`${month.source.summary.period.from}/${month.source.summary.period.to}`}
-          source={month.source}
-          still={still}
-        />
-      );
-    default:
-      return <MonthCards source={own} still={still} />;
+/** Which period the group shows: what is read apart from the reading of a day, which starts over when it changes. */
+function partKey(month: MonthPart): string {
+  if (month.kind !== "period") {
+    return month.kind;
   }
+  const { from, to } = month.source.summary.period;
+  return `${from}/${to}`;
+}
+
+function monthSource(month: MonthPart, own: MonthSource): MonthSource | null {
+  if (month.kind === "period") {
+    return month.source;
+  }
+  return month.kind === "figures" ? own : null;
+}
+
+/**
+ * The group of the month: the line that names the period, with the picker at its end, and what is under it (the three
+ * cards, their skeletons or the error). It is one component in one place whatever the period is doing, so the picker
+ * is never taken down and put up again by a change of period: the focus it had stays on it.
+ */
+function MonthGroup({
+  month,
+  own,
+  still,
+}: {
+  month: MonthPart;
+  own: MonthSource;
+  still: boolean;
+}) {
+  const control = usePeriodControl();
+  const source = monthSource(month, own);
+  const model = useMemo<MonthModel | null>(() => {
+    if (source === null) {
+      return null;
+    }
+    return source.kind === "month"
+      ? monthModel(source.figures)
+      : periodModel(source);
+  }, [source]);
+  const [index, setIndex, clear] = useReading();
+  const key = partKey(month);
+  const [shown, setShown] = useState(key);
+  if (shown !== key) {
+    setShown(key);
+    clear();
+  }
+  return (
+    <KpiGroup
+      className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+      control={control}
+      period={model ? model.kpis.read(index).sales.date : null}
+      placeholder={
+        month.kind === "loading" ? (
+          <Skeleton aria-hidden="true" className="h-3 w-28" />
+        ) : undefined
+      }
+      title={model?.groupTitle ?? null}
+    >
+      {monthBody(month, model, { clear, index, key, setIndex, still })}
+    </KpiGroup>
+  );
+}
+
+function monthBody(
+  month: MonthPart,
+  model: MonthModel | null,
+  reading: {
+    clear: () => void;
+    index: number | null;
+    key: string;
+    setIndex: (index: number | null) => void;
+    still: boolean;
+  }
+) {
+  if (month.kind === "loading") {
+    return (
+      <div className="contents" role="status">
+        <span className="sr-only">Carregando o período…</span>
+        <PeriodCardsSkeleton />
+      </div>
+    );
+  }
+  if (month.kind === "error") {
+    return (
+      <div className="self-start md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-2">
+        {month.error}
+      </div>
+    );
+  }
+  if (model === null) {
+    return null;
+  }
+  const { key, ...rest } = reading;
+  return <MonthCards key={key} model={model} {...rest} />;
 }
 
 /** The four cards, in a row from 1024 px; up to 759 px one column, and from there Hoje and Vendas take the row each. */
@@ -501,7 +541,7 @@ export function KpiCards({
           value={<p className="text-muted-foreground">Sem números de hoje</p>}
         />
       )}
-      {monthPart(month, own, still)}
+      <MonthGroup month={month} own={own} still={still} />
     </div>
   );
 }

@@ -1203,6 +1203,52 @@ test.describe("o período do Início (cartões do mês, Vendas por dia e Mais ve
     await expect(region(page, "Mais vendidos do período")).toBeVisible();
   });
 
+  test("escolher o período pelo teclado deixa o foco no botão do período, ao carregar e ao voltar a Este mês", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    const shortcut = (name: string) =>
+      page
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button", { exact: true, name });
+    for (const [name, text] of [
+      ["Mês passado", "01/09 a 30/09"],
+      ["Este mês", "01/10 a 31/10"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one choice after the other
+      await periodButton(page).focus();
+      await page.keyboard.press("Enter");
+      await shortcut(name).focus();
+      await page.keyboard.press("Enter");
+      await expect(periodButton(page)).toContainText(text);
+      await expect(
+        region(
+          page,
+          name === "Este mês" ? "Vendas em outubro" : "Vendas em setembro"
+        )
+      ).toContainText("R$");
+      await expect(periodButton(page)).toBeFocused();
+    }
+  });
+
+  test("o cartão de Vendas diz 'do período' quando o período não é um mês inteiro, e o mês inteiro diz 'em setembro'", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    await choosePeriod(page, "Este ano");
+    await expect(periodButton(page)).toContainText("01/01 a 23/10");
+    await expect(region(page, "Vendas do período")).toBeVisible();
+    await choosePeriod(page, "Últimos 30 dias");
+    await expect(periodButton(page)).not.toContainText("01/01");
+    await expect(region(page, "Vendas do período")).toBeVisible();
+    await expect(region(page, "Vendas em o período")).toHaveCount(0);
+    await choosePeriod(page, "Mês passado");
+    await expect(region(page, "Vendas em setembro")).toBeVisible();
+    await expect(region(page, "Vendas do período")).toHaveCount(0);
+  });
+
   test("um período que falha diz o erro no lugar dos cartões do mês e Tentar novamente lê de novo; Hoje segue", async ({
     page,
   }) => {
@@ -3156,6 +3202,38 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     );
     await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
+  });
+
+  test("sem cópia e sem conexão o botão do período está desligado e a frase dos dois meses não aparece nem para o leitor de tela; com a cópia ela aparece", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    const sentence = page
+      .locator("[data-home-period]")
+      .getByText("Sem conexão: só este mês e o anterior.");
+    await page.context().setOffline(true);
+    await expect(sentence).toBeVisible();
+    await expect(sentence).not.toHaveAttribute("aria-hidden", "true");
+    await page.context().setOffline(false);
+    await page.evaluate((pattern) => {
+      for (const key of Object.keys(localStorage)) {
+        if (new RegExp(pattern).test(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+    }, OFFLINE_KEYS.source);
+    await reopenWithoutNetwork(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION, {
+      timeout: 20_000,
+    });
+    await expect(periodButton(page)).toBeDisabled();
+    const hidden = page
+      .locator("[data-home-period] p")
+      .filter({ hasText: "Sem conexão: só este mês e o anterior." });
+    await expect(hidden).toHaveAttribute("aria-hidden", "true");
+    await expect(hidden).toBeHidden();
   });
 
   test("loja que já vendeu, sem venda no mês nem antes: aberta sem rede a partir da cópia, o checklist não aparece", async ({
