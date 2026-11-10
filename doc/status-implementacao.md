@@ -3321,3 +3321,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Motivo em texto | Em revisão | Linha sob o mês, `invisible` (com a altura) enquanto nenhum dia desligado tem o foco, visível quando tem (foco por seta ou toque), altura mínima só com `disabledReason`, presa ao pé da caixa que rola (360 x 600) e sem `aria-live`. |
 | Aparência do dia | Em revisão | Só o número apaga (texto a 40%, riscado); sem `opacity` no botão, então o contorno de foco de 3 px fica inteiro; o toque chega ao dia (`cursor-not-allowed`), sem fundo de hover e sem escala ao apertar. |
 | Provas | Em revisão | Unidade: `calendar-limit.test.tsx`, `date-pickers.test.tsx`. e2e: `ui-date-pickers.e2e.ts` (teclado, mouse, toque, 360 x 600, axe com o dia focado), `ui-date-pickers-leitor-de-tela.e2e.ts`, `dashboard.e2e.ts` (a seta chega a 2025-10-13 desligado). Controle: sem a correção os testes novos reprovam. O motivo dos quatro campos de data mudos é do PR-A1 (t1009). |
+
+### UI de 10/11: Despesas organizada (t1022; corte L2-9; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Barra "Filtrar despesas" | Em revisão | `expenses/expense-filters.tsx` põe Categoria e Situação (Ativas, Anuladas) na `FilterBar` do projeto, com o botão do mês como `leading`; a lista abre em Ativas, que é o estado sem pílula, e Anuladas é a pílula de Situação. O select de categoria e as abas Ativas/Anuladas do cartão saíram. |
+| Total no alto do cartão | Em revisão | "Total do período" (com " (anuladas)" quando for o caso), `Money` `lg` e a contagem abrem o cartão, num `role="status"`; o número é o mesmo do servidor. |
+| Vazio com filtros | Em revisão | "Nenhuma despesa encontrada com estes filtros." com "Limpar filtros", que devolve o foco ao "Filtrar"; sem filtro segue "Nenhuma despesa neste período.". |
+| Primeira tela | Em revisão | A primeira despesa fica a 391 px do topo a 360 px com 3 despesas (468 px na main), medido em `e2e/despesas-primeira-tela.e2e.ts`. |
+| Provas | Em revisão | Unidade: `expense-filters.test.tsx`, `expense-screen-parts.test.tsx`. e2e (Chromium): `expenses.e2e.ts` (barra, filtro entre segmentos, vazio, alturas), `despesas-reflow.e2e.ts` (320 px com letra de 20 px), `despesas-primeira-tela.e2e.ts`; varredura de valores escondidos sem mudar a lista `known`. As baselines de `despesas-lista` da regressão visual dependem do CI. |

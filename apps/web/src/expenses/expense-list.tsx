@@ -224,7 +224,7 @@ interface ExpenseListProps {
   state: ExpenseListState;
 }
 
-/** With a filter on, the way out is the button: the sentence alone made the person find the pills and take them out. */
+/** With a filter on, "Limpar filtros" takes every pill out at once, so the person need not find them one by one. */
 function EmptyExpenses({
   filters,
   onClearFilters,
