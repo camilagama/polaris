@@ -3435,6 +3435,13 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       parts.map((part) => expect(tooltip(page)).toContainText(part))
     );
   };
+  const expectTooltipRow = (page: Page, label: string, value: string) =>
+    expect(
+      tooltip(page)
+        .locator("dl > div")
+        .filter({ has: page.getByText(label, { exact: true }) })
+        .locator("dd")
+    ).toHaveText(value);
   const atRest = (page: Page) => rhythm(page).locator("[data-rhythm-insight]");
   const dataCells = (page: Page) =>
     rhythm(page).locator(
@@ -3562,7 +3569,8 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(slider).toHaveValue("180");
     await expect(tooltip(page)).toHaveCount(0);
     await slider.focus();
-    await expectTooltip(page, "Sexta, 23/10", "R$ 320,10", "2", "hoje");
+    await expectTooltip(page, "Sexta, 23/10", "R$ 320,10", "hoje");
+    await expectTooltipRow(page, "Vendas", "2");
     // the keyboard starts on today: down is Saturday `24/10`, to come, so it stays; up is the day before
     await page.keyboard.press("ArrowDown");
     await expectTooltip(page, "Sexta, 23/10", "R$ 320,10");

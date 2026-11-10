@@ -8,11 +8,17 @@ import { rhythmPeriod, weekdayOf } from "./home-rhythm-model";
 import type { HomeFigures } from "./use-home";
 
 const hiddenValues = vi.hoisted(() => ({ hidden: false }));
+const heatmap = vi.hoisted(() => ({ failed: false }));
 
 // the server snapshot of the hook says "shown": the choice of the device is set here
 vi.mock("../lib/hidden-values", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/hidden-values")>()),
   useHiddenValues: () => [hiddenValues.hidden, () => undefined],
+}));
+
+vi.mock("@/ui/charts/on-demand", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/ui/charts/on-demand")>()),
+  useHeatmapFailed: () => heatmap.failed,
 }));
 
 const { RhythmBlock } = await import("./home-rhythm");
@@ -107,6 +113,7 @@ function textOf(html: string, attribute: string) {
 
 beforeEach(() => {
   hiddenValues.hidden = false;
+  heatmap.failed = false;
 });
 
 describe("Ritmo de vendas at rest", () => {
@@ -192,6 +199,21 @@ const HEADERS = /<th[^>]*scope="col"/g;
 const ATTRIBUTES = /(?:aria-label|aria-valuetext|title)="[^"]*"/g;
 const HEAD = /<thead[^>]*>[\s\S]*<\/thead>/;
 const NEWEST_ROW = /<tbody[^>]*><tr[^>]*>([\s\S]*?)<\/tr>/;
+
+describe("the legend of the Ritmo", () => {
+  it("is there with the map", () => {
+    expect(render()).toContain("data-rhythm-legend");
+  });
+
+  it("is gone when the map's chunk fails: it would describe a map that is not on the screen", () => {
+    heatmap.failed = true;
+    const html = render();
+    expect(html).not.toContain("data-rhythm-legend");
+    expect(html).not.toContain("Menos");
+    expect(html).toContain("min-h-20");
+    expect(html).toContain("md:min-h-13.5");
+  });
+});
 
 describe("the numbers of the Ritmo, for assistive technology", () => {
   it("has no 'Ver os números' button: the days are an invisible table tied to the map", () => {
