@@ -50,7 +50,7 @@ import type { Block, HomeFigures } from "./use-home";
  * tooltip over its square, opened by the pointer, by the finger (the square nearest to it, following it as it drags)
  * and by the keyboard; under the map one fixed sentence (the best weekday and its mean, or that the map is still
  * filling up) and the legend in one line ("Menos" to "Mais"; the ranges in reais are in the (i) of the block and in the
- * `title` of the legend). The drawing (Bklit UI, its own chunk) is `aria-hidden`: the summary (`role="img"`), the
+ * `title` of the legend; the legend goes when the drawing does not open). The drawing (Bklit UI, its own chunk) is `aria-hidden`: the summary (`role="img"`), the
  * keyboard control (a transparent `input type="range"` over the map, as the charts have) and the table of the days are
  * ours. The table is invisible on the screen and tied to the map by `aria-details` (a description would read its 182
  * rows in one go); if the drawing does not open it is shown in its place. With the values hidden every amount is
@@ -387,7 +387,7 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
         {/* the sentence takes two or three lines by width: the row keeps the room of the longest, so the card never changes height */}
         <div className="flex min-h-20 flex-wrap items-start justify-between gap-x-6 gap-y-2 md:min-h-13.5">
           <Insight view={view} />
-          <Legend view={view} />
+          {drawingFailed ? null : <Legend view={view} />}
         </div>
         <RhythmNumbers id={numbersId} view={view} visible={drawingFailed} />
       </div>
