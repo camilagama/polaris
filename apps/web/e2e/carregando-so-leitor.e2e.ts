@@ -74,7 +74,7 @@ for (const viewport of VIEWPORTS) {
         await route.abort("internetdisconnected");
       });
       await serve(page);
-      await page.goto("/dashboard?aba=despesas");
+      await page.goto("/expenses");
       const status = page
         .getByRole("status")
         .filter({ hasText: "Carregando despesas…" });
