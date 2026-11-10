@@ -244,6 +244,25 @@ test.describe("AC-1.1 e AC-1.2: a mesma altura e o mesmo lugar em todos os estad
     });
   }
 
+  test("a 320 px com o texto a 200 %, a palavra Polaris só se lê e o link segue com o nome", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 320 });
+    await serve(page);
+    await openShell(page);
+    const home = page.getByRole("link", { exact: true, name: "Polaris" });
+    const word = home.locator("span");
+    await expect(word).toBeVisible();
+    expect((await word.boundingBox())?.width).toBeGreaterThan(8);
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "200%";
+    });
+    await expect(home).toHaveCount(1);
+    await expect
+      .poll(async () => (await word.boundingBox())?.width ?? 0)
+      .toBeLessThanOrEqual(1);
+  });
+
   test("o chip encolhe com reticências a 320 px e a frase inteira fica no nome acessível", async ({
     page,
   }) => {

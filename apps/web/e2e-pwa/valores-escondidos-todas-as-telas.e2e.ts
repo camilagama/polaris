@@ -424,6 +424,23 @@ test.describe("os controles da varredura: um valor plantado em cada lugar é ach
     ).toBeGreaterThan(0);
   });
 
+  test("script, style e noscript ficam fora, o texto ao lado deles não", async ({
+    page,
+  }) => {
+    expect(
+      await plant(
+        "<script>var a = 'R$ 3,00'</script><style>/* R$ 3,00 */</style><noscript>R$ 3,00</noscript>"
+      )(page)
+    ).toEqual([]);
+    expect(
+      (
+        await plant(
+          "<noscript>R$ 3,00</noscript><div><span>R$ 3,00</span></div>"
+        )(page)
+      ).length
+    ).toBeGreaterThan(0);
+  });
+
   test("o preço do plano só some do texto onde a lista o permite", async ({
     page,
   }) => {

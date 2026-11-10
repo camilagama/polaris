@@ -9,35 +9,23 @@ import { Money } from "./money";
 /**
  * "Esconder valores" (revisão de UI v7, § 6): the toggle (`aria-pressed`) and the text whose amounts it hides. The
  * name of the button stays "Esconder valores" in both states, as a toggle's name does, and the pressed state says
- * whether they are hidden; the eye changes with it. Below 760 px it is an icon button (36 px) with a 44 px touch area;
- * `iconOnly` keeps it so at every width, as the header does, where a label would take the room of the sync chip.
+ * whether they are hidden; the eye changes with it. It is an icon button at every width (36 px with a 44 px touch
+ * area): the header, its one place, has no room for a label beside the sync chip.
  */
-export function HideValuesButton({
-  className,
-  iconOnly = false,
-}: {
-  className?: string;
-  iconOnly?: boolean;
-}) {
+export function HideValuesButton({ className }: { className?: string }) {
   const [hidden, setHidden] = useHiddenValues();
   const Icon = hidden ? EyeOffIcon : EyeIcon;
   const toggle = useCallback(() => setHidden(!hidden), [hidden, setHidden]);
   return (
     <Button
       aria-pressed={hidden}
-      className={cn(
-        "aria-pressed:bg-accent",
-        iconOnly ? "size-ctl-lg px-0" : "max-md:size-ctl-lg max-md:px-0",
-        className
-      )}
+      className={cn("size-ctl-lg px-0 aria-pressed:bg-accent", className)}
       onClick={toggle}
       type="button"
       variant="outline"
     >
       <Icon aria-hidden="true" data-icon="inline-start" />
-      <span className={iconOnly ? "sr-only" : "max-md:sr-only"}>
-        Esconder valores
-      </span>
+      <span className="sr-only">Esconder valores</span>
     </Button>
   );
 }

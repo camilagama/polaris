@@ -12,8 +12,8 @@ import { StoreMenu } from "./store-card";
  * its height), opaque in the color of the sidebar, so the two read as one frame. It carries what belongs to the
  * session and nothing that changes its height: the state chip (it shrinks to an ellipsis, the whole sentence in its
  * accessible name), "Esconder valores" (the choice is of the device and holds on every screen, so its button is
- * here, as an icon at every width) and the menu of the store and of the account (Ajuda e contato is in the sidebar). The title of the
- * screen stays the `h1` of the page, and the notices stay at the top of `main`.
+ * here, as an icon at every width) and the menu of the store and of the account (Ajuda e contato is in the sidebar).
+ * The title of the screen stays the `h1` of the page, and the notices stay at the top of `main`.
  */
 export function ShellHeader({
   email,
@@ -48,7 +48,7 @@ export function ShellHeader({
         </a>
         <div className="ml-auto flex min-w-0 items-center gap-2 md:@max-[30rem]/header:gap-1 md:gap-3">
           <SyncStatus onlineOnly={onlineOnly} />
-          <HideValuesButton iconOnly />
+          <HideValuesButton />
           <StoreMenu
             email={email}
             logout={logout}
