@@ -242,7 +242,7 @@ function ReadBridge({
   return null;
 }
 
-const TOOLTIP_OFFSET = 12;
+export const TOOLTIP_OFFSET = 12;
 /** The width `TooltipBox` assumes for a panel it has not measured yet. */
 const TOOLTIP_UNMEASURED_WIDTH = 180;
 

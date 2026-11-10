@@ -1,19 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { panelPlacement } from "./sales-heatmap";
+import { resolveTooltipTarget } from "../bklit/charts/tooltip/tooltip-box";
+import { panelPlacement, TOOLTIP_OFFSET } from "./sales-heatmap";
 
 const WIDTH = 292;
 const PANEL = 164;
-const OFFSET = 12;
+const OFFSET = TOOLTIP_OFFSET;
 
-/** Where `TooltipBox` ends up putting the panel for the `x` and `flipX` it is given (its own side rule). */
+/** Where `TooltipBox` puts the panel for the `x` and `flipX` it is given: its own rule, not a copy of it. */
 function panelLeft(
   placed: { flipX?: number; x: number },
   panelWidth: number,
   containerWidth: number
 ) {
-  const flipped =
-    (placed.flipX ?? placed.x) + panelWidth + OFFSET > containerWidth;
-  return flipped ? placed.x - OFFSET - panelWidth : placed.x + OFFSET;
+  return resolveTooltipTarget({
+    containerHeight: 1000,
+    containerWidth,
+    flipX: placed.flipX,
+    height: 80,
+    offset: OFFSET,
+    width: panelWidth,
+    x: placed.x,
+    y: 40,
+  }).left;
 }
 
 describe("panelPlacement", () => {
