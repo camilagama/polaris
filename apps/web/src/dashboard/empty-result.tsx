@@ -2,7 +2,7 @@ import { buttonVariants } from "@/ui/button";
 import { EMPTY_TITLE_MAX, EmptyState } from "@/ui/empty-state";
 
 interface EmptyResultProps {
-  /** `expense:create`: the Despesas tab has this button only for who can use it, under the name of its own. */
+  /** `expense:create`: the Despesas screen has this button only for who can use it, under the name of its own. */
   canCreateExpense: boolean;
   period: string;
 }
@@ -33,10 +33,7 @@ export function EmptyResult({ canCreateExpense, period }: EmptyResultProps) {
         Nova venda
       </a>
       {canCreateExpense ? (
-        <a
-          className={buttonVariants({ variant: "outline" })}
-          href="/dashboard?aba=despesas"
-        >
+        <a className={buttonVariants({ variant: "outline" })} href="/expenses">
           Nova despesa
         </a>
       ) : null}

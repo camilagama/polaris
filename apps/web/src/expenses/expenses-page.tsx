@@ -136,7 +136,7 @@ function focusNewWhenLost() {
 }
 
 /**
- * The expenses screen, the Despesas tab of the Resultado: online only, every figure comes from the server. Three parts
+ * The expenses screen, a destination of its own (`/expenses`): online only, every figure comes from the server. Three parts
  * in a segmented list, named in the address (`?ver=`): the expenses of the month, the recurring rules and the
  * categories. Every form is a dialog; the three parts stay mounted, so a filter or a ticked box survives a change of part.
  */

@@ -67,9 +67,9 @@ export type ClientErrorBoundary = (typeof CLIENT_ERROR_BOUNDARIES)[number];
 export const CLIENT_ERROR_ROUTE_IDS = [
   "attention",
   "customers",
-  "dashboard:despesas",
   "dashboard:metas",
   "dashboard:resultado",
+  "expenses",
   "help",
   "home",
   "inventory",

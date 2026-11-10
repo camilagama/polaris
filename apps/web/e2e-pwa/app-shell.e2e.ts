@@ -72,14 +72,20 @@ test("Ajuda e contato fica no pré-cache como os Termos e abre sem rede, com o t
   await expect(page.locator("#root")).not.toBeEmpty();
 });
 
-test("sem rede, o endereço de uma tela que virou aba abre a aba no próprio navegador (t417)", async ({
+test("sem rede, o endereço de uma tela que virou aba, e o da aba Despesas que saiu do Resultado, abrem a tela certa no próprio navegador", async ({
   context,
   page,
 }) => {
   await installAndControl(page);
   await context.setOffline(true);
   for (const [old, address, title] of [
-    ["/expenses", "/dashboard?aba=despesas", "Despesas · Polaris"],
+    ["/dashboard?aba=despesas", "/expenses", "Despesas · Polaris"],
+    [
+      "/dashboard?aba=despesas&ver=categorias",
+      "/expenses?ver=categorias",
+      "Despesas · Polaris",
+    ],
+    ["/expenses", "/expenses", "Despesas · Polaris"],
     ["/categories", "/products?aba=categorias", "Categorias · Polaris"],
     ["/devices", "/configuracoes?aba=aparelhos", "Aparelhos · Polaris"],
   ] as const) {

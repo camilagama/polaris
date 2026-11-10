@@ -12,18 +12,16 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
+import { buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
-import { Skeleton } from "@/ui/skeleton";
 import { Tabs, TabsContent } from "@/ui/tabs";
 import { replaceAddress } from "../app-shell/address";
-import { lazyScreen } from "../app-shell/lazy-screen";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
 import { SlowReadNote } from "../app-shell/read-wait";
+import { TITLE_ACTION_CLASS, TitleLine } from "../app-shell/screen-title";
 import {
   ScreenTabList,
-  ScreenTabPanel,
   ScreenTabTrigger,
-  type TabPanel,
   useScreenTab,
 } from "../app-shell/screen-tabs";
 import { LoadError } from "../expenses/expense-fields";
@@ -62,58 +60,34 @@ import {
   usePeriodSummary,
 } from "./use-period-summary";
 
-const RESULT_TABS = ["resultado", "metas", "despesas"] as const;
+const RESULT_TABS = ["resultado", "metas"] as const;
 
-/**
- * The expenses while their chunk loads: the shape of the screen of an empty month (the heading, the parts, the month
- * and the card of the list), so the screen that comes takes the place of the skeleton instead of growing out of a
- * short "Carregando…".
- */
-function ExpensesLoading() {
+function Heading({ canCreateExpense }: { canCreateExpense: boolean }) {
   return (
-    <div className="grid grid-cols-1 gap-4" role="status">
-      <span className="sr-only">Carregando as despesas…</span>
-      <div aria-hidden="true" className="grid gap-1">
-        <div className="flex h-5 items-center">
-          <Skeleton className="h-4 w-20" />
+    <header>
+      <TitleLine
+        action={
+          canCreateExpense ? (
+            <a
+              className={cn(
+                buttonVariants({ variant: "outline" }),
+                TITLE_ACTION_CLASS
+              )}
+              href="/expenses"
+            >
+              Despesas do período
+            </a>
+          ) : null
+        }
+      >
+        <div className="flex items-center gap-1">
+          <h1 className="text-title">Resultado</h1>
+          <HelpTip about="Resultado">
+            Estimativa com as vendas confirmadas e as despesas do período. Não é
+            lucro líquido nem dinheiro recebido.
+          </HelpTip>
         </div>
-        <Skeleton className="h-9 w-full max-w-xl md:h-[1.125rem]" />
-      </div>
-      <Skeleton
-        aria-hidden="true"
-        className="h-ctl-md w-72 max-w-full rounded-lg"
-      />
-      <Skeleton
-        aria-hidden="true"
-        className="h-[6.8125rem] w-full md:h-[3.5625rem]"
-      />
-      <Skeleton
-        aria-hidden="true"
-        className="h-[23.9375rem] w-full rounded-xl md:h-[21.3125rem]"
-      />
-    </div>
-  );
-}
-
-/** The expenses, the third tab (map of navigation, § 1; `/expenses` opens it): their own chunk, as their screen was. */
-const EXPENSES_PANEL: TabPanel = {
-  fallback: <ExpensesLoading />,
-  Screen: lazyScreen(() =>
-    import("../expenses/expenses-page").then((module) => ({
-      default: module.ExpensesPage,
-    }))
-  ),
-  value: "despesas",
-};
-
-function Heading() {
-  return (
-    <header className="flex items-center gap-1">
-      <h1 className="text-title">Resultado</h1>
-      <HelpTip about="Resultado">
-        Estimativa com as vendas confirmadas e as despesas do período. Não é
-        lucro líquido nem dinheiro recebido.
-      </HelpTip>
+      </TitleLine>
     </header>
   );
 }
@@ -343,7 +317,7 @@ export function DashboardPage() {
   );
   const copyMonth = copyMonthOf(selection.preset, period);
   const [tab, handleTab] = useScreenTab("dashboard", RESULT_TABS);
-  // an expense written in the Despesas tab makes the read old: the Resultado reads it again when it is back in front
+  // an expense written in Despesas makes the read old: the Resultado reads it again when it is back in front
   const { refresh, state } = usePeriodSummary(
     organizationId,
     period,
@@ -407,9 +381,9 @@ export function DashboardPage() {
 
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <Heading />
+      <Heading canCreateExpense={canCreateExpense} />
       <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
-        <ScreenTabList label="Resultado, metas e despesas" value={tab}>
+        <ScreenTabList label="Resultado e metas" value={tab}>
           <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>
           <ScreenTabTrigger value="metas">
             Metas
@@ -420,7 +394,6 @@ export function DashboardPage() {
               </Badge>
             ) : null}
           </ScreenTabTrigger>
-          <ScreenTabTrigger value="despesas">Despesas</ScreenTabTrigger>
         </ScreenTabList>
         <TabsContent className="grid gap-5" value="resultado">
           <Toolbar
@@ -473,8 +446,6 @@ export function DashboardPage() {
             today={today}
           />
         </TabsContent>
-        {/* the expenses, a screen of their own (UI-H changes their inside): loaded when the tab opens */}
-        <ScreenTabPanel panel={EXPENSES_PANEL} />
       </Tabs>
     </div>
   );
