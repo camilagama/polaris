@@ -224,6 +224,49 @@ test.describe("a 320 px com letra de 20 px", () => {
   );
 
   reflowTest(
+    "a barra Filtrar despesas, com as duas pílulas, não corta nada nem rola a página, e fechar o editor devolve o foco à pílula",
+    async ({ page }) => {
+      await openReflowViewport(page);
+      await openExpenses(page);
+      await expectReflowFont(page);
+      const bar = page.getByRole("search", {
+        exact: true,
+        name: "Filtrar despesas",
+      });
+      const choose = async (field: string, option: string) => {
+        await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+        await page
+          .getByRole("menu", { name: "Filtrar por" })
+          .getByRole("menuitem", { name: new RegExp(`^${field}`) })
+          .click();
+        const editor = page.getByRole("dialog", { name: field });
+        await editor.getByRole("button", { exact: true, name: option }).click();
+        await editor
+          .getByRole("button", { exact: true, name: "Aplicar" })
+          .click();
+        await expect(editor).toHaveCount(0);
+      };
+      await choose("Situação", "Anuladas");
+      await choose("Categoria", "Marketing");
+      await expect(bar.locator('[data-slot="filter-pill"]')).toHaveCount(2);
+      await assertNothingClipped(bar);
+      await assertNoPageScroll(page);
+
+      const pill = page.locator(
+        'search[aria-label="Filtrar despesas"] button[aria-label^="Categoria: "]'
+      );
+      await pill.click();
+      const editor = page.getByRole("dialog", { name: "Categoria" });
+      await expect(editor).toBeVisible();
+      await editor
+        .getByRole("button", { exact: true, name: "Cancelar" })
+        .click();
+      await expect(editor).toHaveCount(0);
+      await expect(pill).toBeFocused();
+    }
+  );
+
+  reflowTest(
     "com a mensagem de erro de carga das categorias na tela o título e o botão seguem inteiros e separados",
     async ({ page }) => {
       await openReflowViewport(page);

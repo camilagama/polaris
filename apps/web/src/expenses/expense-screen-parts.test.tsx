@@ -63,11 +63,16 @@ const state = (overrides: Partial<ExpenseListState>): ExpenseListState => ({
   total: "0.00",
   ...overrides,
 });
-const list = (listState: ExpenseListState, status = filters.status) =>
+const list = (
+  listState: ExpenseListState,
+  status = filters.status,
+  categoryId = filters.categoryId
+) =>
   renderToStaticMarkup(
     <ExpenseList
       busyKey={null}
-      filters={{ ...filters, status }}
+      filters={{ ...filters, categoryId, status }}
+      onClearFilters={noop}
       onEdit={noop}
       onLoadMore={noop}
       onRestore={noop}
@@ -137,10 +142,18 @@ describe("ExpenseList", () => {
     expect(html).not.toContain("para registrar a primeira");
   });
 
-  it("the empty voided tab says only that, with no button to create", () => {
-    const html = list(state({}), "voided");
-    expect(html).toContain("Nenhuma despesa anulada neste período.");
-    expect(html).not.toContain("<button");
+  it("the empty list under a filter (voided or one category) says so and offers Limpar filtros, never a button to create", () => {
+    for (const html of [
+      list(state({}), "voided"),
+      list(state({}), "active", "c1"),
+    ]) {
+      expect(EMPTY_TITLE.exec(html)?.[1]).toBe(
+        "Nenhuma despesa encontrada com estes filtros."
+      );
+      expect(html).toContain("Limpar filtros");
+      expect(html).not.toContain("Nova despesa");
+    }
+    expect(list(state({}))).not.toContain("Limpar filtros");
   });
 
   it("says category, date and payee on one line, with no group and no word Competência", () => {
@@ -199,6 +212,7 @@ describe("ExpenseSummary", () => {
       />
     );
     expect(html).toContain("Total do período");
+    expect(html).toContain('role="status"');
     expect(html).toContain("3 despesas");
     expect(html).toContain('<span class="sr-only"> em outubro de 2026</span>');
   });

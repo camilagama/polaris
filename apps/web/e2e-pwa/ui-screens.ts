@@ -352,6 +352,7 @@ const EXPENSE_SOURCES = [
   "src/expenses/expense-categories-panel.tsx",
   "src/expenses/expense-category-form.tsx",
   "src/expenses/expense-fields.tsx",
+  "src/expenses/expense-filters.tsx",
   "src/expenses/expense-form.tsx",
   "src/expenses/expense-list.tsx",
   "src/expenses/expense-rule-form.tsx",
@@ -373,12 +374,12 @@ const expenseScreen = (
   sourceDirs: EXPENSE_SOURCES,
 });
 
-/** The category filter and the grid of months (the popover of the month picker), each opened and closed. */
-async function exerciseExpenseCategoryFilter(page: Page) {
+/** The menu of "Filtrar" and the grid of months (the popover of the month picker), each opened and closed. */
+async function exerciseExpenseFilters(page: Page) {
   await openAndClose(
     page,
-    { name: "Categoria", role: "combobox" },
-    { role: "listbox" }
+    { name: "Filtrar", role: "button" },
+    { name: "Filtrar por", role: "menu" }
   );
   await openAndClose(
     page,
@@ -883,7 +884,7 @@ export const SCREENS: UiScreen[] = [
   stockScreen("baixa recusada", stockStates.writeOffRefused),
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
-  expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
+  expenseScreen("lista", expenseStates.list, exerciseExpenseFilters),
   expenseScreen("grade de meses aberta", expenseStates.monthGrid),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e o diálogo da regra", expenseStates.rules),

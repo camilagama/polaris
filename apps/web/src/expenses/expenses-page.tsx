@@ -23,12 +23,8 @@ import { markPeriodSummaryStale } from "../lib/period-summary-stale";
 import { ExpenseCategoriesPanel } from "./expense-categories-panel";
 import { ActionNotice, LoadError } from "./expense-fields";
 import { ExpenseForm } from "./expense-form";
-import {
-  ExpenseCategoryFilter,
-  ExpenseList,
-  ExpenseStatusTabs,
-  ExpenseSummary,
-} from "./expense-list";
+import { ExpenseFiltersBar, focusFilterAfterClear } from "./expense-filters";
+import { ExpenseList, ExpenseSummary } from "./expense-list";
 import {
   type ExpenseDraft,
   type ExpenseInput,
@@ -300,7 +296,7 @@ export function ExpensesPage() {
     []
   );
   const handleFilters = useCallback(
-    (next: ExpenseFilters) =>
+    (next: Pick<ExpenseFilters, "categoryId" | "status">) =>
       setChoices((current) => ({
         ...current,
         categoryId: next.categoryId,
@@ -308,6 +304,10 @@ export function ExpensesPage() {
       })),
     []
   );
+  const handleClearFilters = useCallback(() => {
+    handleFilters({ categoryId: "", status: "active" });
+    focusFilterAfterClear();
+  }, [handleFilters]);
 
   // The server generates the occurrences that fell due when the list is read,
   // so a changed rule means the list (and the month total) must be read again.
@@ -355,21 +355,22 @@ export function ExpensesPage() {
         </ScreenTabList>
 
         <TabsContent className="grid gap-4" keepMounted value="lancamentos">
-          {/* the month and the category on one line: the list and its first expense come in the first screen */}
-          <div className="grid grid-cols-1 items-start gap-x-3 gap-y-3 min-[30rem]:flex min-[22.5rem]:grid-cols-[auto_minmax(0,1fr)] min-[30rem]:flex-wrap">
-            <MonthPicker
-              currentMonth={monthOfDay(today)}
-              id="expense-month"
-              label="Mês de competência"
-              month={filters.month}
-              onChange={handleMonth}
-            />
-            <ExpenseCategoryFilter
-              categories={categories.state.categories}
-              filters={filters}
-              onChange={handleFilters}
-            />
-          </div>
+          {/* the month, "Filtrar" and its pills share the line: the list and its first expense come in the first screen */}
+          <ExpenseFiltersBar
+            categories={categories.state.categories}
+            filters={filters}
+            leading={
+              <MonthPicker
+                className="[&>label]:sr-only"
+                currentMonth={monthOfDay(today)}
+                id="expense-month"
+                label="Mês de competência"
+                month={filters.month}
+                onChange={handleMonth}
+              />
+            }
+            onChange={handleFilters}
+          />
           {/* while the form is open it covers the screen: what the commands say is said inside it */}
           <ActionNotice
             errorRef={noticeRef}
@@ -404,10 +405,10 @@ export function ExpensesPage() {
               <ExpenseSummary filters={filters} state={state} />
             </CardHeader>
             <CardContent className="grid gap-4">
-              <ExpenseStatusTabs filters={filters} onChange={handleFilters} />
               <ExpenseList
                 busyKey={busy}
                 filters={filters}
+                onClearFilters={handleClearFilters}
                 onEdit={openForm}
                 onLoadMore={loadMore}
                 onRestore={handleRestore}
