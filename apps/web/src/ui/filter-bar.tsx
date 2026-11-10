@@ -71,6 +71,8 @@ export interface FilterBarProps {
   fields: readonly FilterField[];
   /** The name of the `<search>`: "Filtrar vendas". */
   label: string;
+  /** A search box that shares the first line with "Filtrar": the bar wraps the pills under it, so the screen needs no line of its own for either. */
+  leading?: ReactNode;
   /** Called with the next list of filters (the order they were added in). */
   onChange: (rules: FilterRule[]) => void;
   /** The filters there are. */
@@ -726,6 +728,7 @@ export function FilterBar({
   className,
   fields,
   label,
+  leading,
   onChange,
   value,
 }: FilterBarProps) {
@@ -873,6 +876,7 @@ export function FilterBar({
       ref={searchRef}
     >
       <div className="flex flex-wrap items-center gap-2 touch:gap-y-3">
+        {leading}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={

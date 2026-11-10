@@ -588,7 +588,7 @@ for (const value of [
 }
 
 for (const width of [360, 320]) {
-  test(`a busca fica acima da barra, a barra e o menu cabem em ${width} px, e o painel aberto também`, async ({
+  test(`a busca divide a linha com o Filtrar, a barra e o menu cabem em ${width} px, e o painel aberto também`, async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width });
@@ -600,11 +600,21 @@ for (const width of [360, 320]) {
     const button = await filterButton(page).boundingBox();
     expect(search).not.toBeNull();
     expect(button).not.toBeNull();
-    expect((search?.y ?? 0) + (search?.height ?? 0)).toBeLessThanOrEqual(
-      button?.y ?? 0
+    expect((search?.x ?? 0) + (search?.width ?? 0)).toBeLessThanOrEqual(
+      button?.x ?? 0
     );
+    expect(
+      Math.abs(
+        (search?.y ?? 0) +
+          (search?.height ?? 0) / 2 -
+          ((button?.y ?? 0) + (button?.height ?? 0) / 2)
+      )
+    ).toBeLessThanOrEqual(8);
     expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(width);
     const pillBox = await pill(page, "Custo").boundingBox();
+    expect(pillBox?.y ?? 0).toBeGreaterThanOrEqual(
+      (button?.y ?? 0) + (button?.height ?? 0)
+    );
     expect(
       (pillBox?.x ?? 0) + (pillBox?.width ?? Number.POSITIVE_INFINITY)
     ).toBeLessThanOrEqual(width);

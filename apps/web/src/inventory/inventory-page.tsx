@@ -396,21 +396,21 @@ export function InventoryPage() {
         <EntryNotFoundNotice unavailable={entryLink.status === "unavailable"} />
       ) : null}
 
-      <div className="grid gap-3">
-        <SearchField
-          className="min-w-0 md:max-w-md"
-          label="Buscar no estoque"
-          narrowBelowRem={15}
-          onValueChange={handleQuery}
-          placeholder="Produto, variante ou SKU"
-          value={filters.query}
-        />
-        <StockFiltersBar
-          filters={filters}
-          offline={offline}
-          onChange={setFilters}
-        />
-      </div>
+      <StockFiltersBar
+        filters={filters}
+        leading={
+          <SearchField
+            className="min-w-0 flex-1 basis-[calc(100%-7rem)] md:max-w-md"
+            hintClassName="order-last basis-full"
+            label="Buscar no estoque"
+            onValueChange={handleQuery}
+            placeholder="Produto, variante ou SKU"
+            value={filters.query}
+          />
+        }
+        offline={offline}
+        onChange={setFilters}
+      />
 
       <div className="flex min-h-ctl-sm items-center justify-between gap-3">
         <p

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { type ReactNode, useCallback, useMemo } from "react";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
 import {
   STOCK_FILTERS,
@@ -84,6 +84,8 @@ export function stockFields(offline: boolean): FilterField[] {
 
 interface StockFiltersBarProps {
   filters: StockFilters;
+  /** The search box of the list, on the line of "Filtrar". */
+  leading: ReactNode;
   /** Without a connection the filter by cost is not available. */
   offline: boolean;
   onChange: (changes: Partial<StockFilters>) => void;
@@ -92,6 +94,7 @@ interface StockFiltersBarProps {
 /** The criteria besides the search, on the bar of the project: the Histórico filters the same way. */
 export function StockFiltersBar({
   filters,
+  leading,
   offline,
   onChange,
 }: StockFiltersBarProps) {
@@ -109,6 +112,7 @@ export function StockFiltersBar({
     <FilterBar
       fields={fields}
       label="Filtrar estoque"
+      leading={leading}
       onChange={handleChange}
       value={rules}
     />

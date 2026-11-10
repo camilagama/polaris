@@ -25,7 +25,12 @@ const apply = (
 
 const render = (filters: StockFilters, offline = false) =>
   renderToStaticMarkup(
-    <StockFiltersBar filters={filters} offline={offline} onChange={noop} />
+    <StockFiltersBar
+      filters={filters}
+      leading={<input aria-label="Buscar" type="search" />}
+      offline={offline}
+      onChange={noop}
+    />
   );
 
 const everything: StockFilters = {
@@ -36,6 +41,16 @@ const everything: StockFilters = {
 };
 
 describe("os filtros do Estoque na barra", () => {
+  it("a busca fica na barra, antes do 'Filtrar', na mesma linha", () => {
+    const html = render(defaultStockFilters);
+    expect(html.indexOf('aria-label="Buscar"')).toBeGreaterThan(
+      html.indexOf('aria-label="Filtrar estoque"')
+    );
+    expect(html.indexOf('aria-label="Buscar"')).toBeLessThan(
+      html.indexOf(">Filtrar</button>")
+    );
+  });
+
   it("sem filtro: só o 'Filtrar', sem pílula e sem 'Limpar tudo'", () => {
     const html = render(defaultStockFilters);
     expect(html).toContain('aria-label="Filtrar estoque"');
