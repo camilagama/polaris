@@ -136,6 +136,12 @@ describe("createAsaasClient environment lock", () => {
     );
     expect(calls[0]?.url).toBe(`${SANDBOX_URL}/payments/pay_abc123`);
   });
+
+  it("sends a charge ID with an underscore in its suffix as it is", async () => {
+    const { calls, fetch } = recorder(() => ok());
+    await clientWith(fetch).getPayment("pay_1_abcd2efgh3i4jk");
+    expect(calls[0]?.url).toBe(`${SANDBOX_URL}/payments/pay_1_abcd2efgh3i4jk`);
+  });
 });
 
 describe("createAsaasClient errors", () => {
