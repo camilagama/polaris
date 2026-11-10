@@ -68,7 +68,7 @@ import {
 import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
-import { DeltaChip, HeroValue, KpiCard } from "@/ui/kpi-card";
+import { DeltaChip, HeroValue, KpiCard, KpiTile } from "@/ui/kpi-card";
 import { Money } from "@/ui/money";
 import {
   Field,
@@ -1271,9 +1271,10 @@ export function UiGallery() {
 
           <Section title="Contador dos números dos cartões">
             <p className="text-support">
-              O valor, a variação em percentual e o percentual da meta e da
-              margem contam até o valor final no desktop; no celular e com
-              movimento reduzido aparecem prontos.
+              O valor do cartão aparece pronto e só rola quando muda (outro dia
+              lido, outro período) no desktop; no celular e com movimento
+              reduzido troca sem animação. A variação, a meta e a margem nunca
+              rolam.
             </p>
             <p className="font-semibold text-value-lg tabular-nums tracking-[-0.035em]">
               <AnimatedFigure text="R$ 1.234,56">
@@ -1291,7 +1292,7 @@ export function UiGallery() {
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <KpiCard
+              <KpiTile
                 chip={
                   <DeltaChip
                     delta={{
@@ -1314,7 +1315,7 @@ export function UiGallery() {
                   <OnDemandSparkline
                     color="var(--chart-sales)"
                     domain="zero"
-                    height={64}
+                    height={36}
                     values={GALLERY_KPI_SERIES}
                   />
                 }

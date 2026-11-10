@@ -5,8 +5,7 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
 
 /**
  * The same action is the same button: "Esconder valores" has one size on Início and Resultado, and the secondary
- * actions of a card ("Ver o resultado", "Ver o que falta") are text-only buttons with an arrow, never an underlined
- * link, with the height of a text-only button (28 with a mouse, 32 with touch) and the radius of a control (0,55 rem).
+ * action of a card ("Ver o que falta") is a text-only button with an arrow, never an underlined link, with the height of a text-only button (28 with a mouse, 32 with touch) and the radius of a control (0,55 rem).
  */
 const HOME_SCREEN = "início com vendas";
 const RESULT_SCREEN = "resultado mês incompleto e gráfico de vendas";
@@ -17,7 +16,6 @@ const CONTEXTS = [
 ] as const;
 
 const CONTROL_RADIUS_PX = 8.8;
-const CARD_ACTION_ROW_PX = 16;
 
 const openScreen = async (page: Page, name: string) => {
   const screen = SCREENS.find((candidate) => candidate.name === name);
@@ -30,10 +28,6 @@ const styleOf = (locator: Locator) =>
     const style = getComputedStyle(element);
     return {
       height: element.getBoundingClientRect().height,
-      layoutHeight:
-        element.getBoundingClientRect().height +
-        Number.parseFloat(style.marginTop) +
-        Number.parseFloat(style.marginBottom),
       radius: Number.parseFloat(style.borderTopLeftRadius),
       underline: style.textDecorationLine,
     };
@@ -71,25 +65,6 @@ for (const context of CONTEXTS) {
       const result = await hideValuesHeight(page, RESULT_SCREEN);
       expect(home).toBeGreaterThan(0);
       expect(result).toBe(home);
-    });
-
-    test('"Ver o resultado" é botão só texto, sem sublinhado, com o raio de controle', async ({
-      page,
-    }) => {
-      await openScreen(page, HOME_SCREEN);
-      const link = page.getByRole("link", {
-        exact: true,
-        name: "Ver o resultado",
-      });
-      await expect(link).toHaveAttribute("href", "/dashboard");
-      const style = await styleOf(link);
-      expect(style.underline).toBe("none");
-      expect(style.height).toBeCloseTo(context.textHeight, 0);
-      expect(style.radius).toBeCloseTo(CONTROL_RADIUS_PX, 1);
-      expect(
-        style.layoutHeight,
-        "o cartão guarda 16 px para a ação: o botão não o alarga"
-      ).toBeCloseTo(CARD_ACTION_ROW_PX, 0);
     });
 
     test('"Ver o que falta" é botão só texto, sem sublinhado, e mantém aria-expanded', async ({

@@ -6,7 +6,8 @@ import {
   HeroValue,
   type KpiDelta,
   KpiCard,
-  KpiCardSkeleton,
+  KpiTile,
+  KpiTileSkeleton,
 } from "./kpi-card";
 
 /**
@@ -19,8 +20,8 @@ const CLASS_ATTRIBUTE = /class="([^"]*)"/;
 const CURRENCY_SPAN = /<span class="([^"]*)" data-money-currency/;
 const TEXT_IN_REM = /text-\[[\d.]+rem\]/;
 
-const CHIP_THEN_NOTE =
-  /data-kpi-chip-row=""[^>]*><span data-kpi-delta="down">[^<]*<\/span><\/div><\/div><div[^>]*data-kpi-note-row="">2 vendas/;
+const TILE_CHIP_THEN_NOTE =
+  /data-kpi-note-row=""><span data-kpi-chip-row=""><span data-kpi-delta="down">[^<]*<\/span><\/span>2 vendas/;
 
 const PILL_THEN_AGAINST =
   /data-kpi-pill=""[^>]*>.*\+30,0%<\/span>.*<\/span><span[^>]*data-kpi-delta-against=""[^>]*>vs\. 07\/10 a 05\/11<\/span>/;
@@ -36,22 +37,69 @@ const card = (props: Partial<Parameters<typeof KpiCard>[0]>) =>
     />
   );
 
-describe("KpiCard", () => {
-  it("keeps the row of the chip and the row of the note without a chip or a note, with no text for a screen reader", () => {
-    const bare = card({});
-    expect(bare).toContain('data-kpi-chip-row=""');
-    expect(bare).toContain('data-kpi-note-row=""');
-    expect(bare).toContain("min-h-5");
+const tile = (props: Partial<Parameters<typeof KpiTile>[0]>) =>
+  renderToStaticMarkup(
+    <KpiTile
+      entity="sales"
+      id="kpi"
+      title="Vendas"
+      value={<HeroValue amount="129.90" />}
+      {...props}
+    />
+  );
+
+describe("KpiTile", () => {
+  it("is a region named by its title, with no chip and no note when it has none", () => {
+    const bare = tile({});
+    expect(bare).toContain('role="region"');
+    expect(bare).toContain('aria-labelledby="kpi"');
     expect(bare).not.toContain("data-kpi-delta");
-    expect(card({ note: "2 vendas" })).toContain("2 vendas");
+    expect(bare).not.toContain("data-kpi-chip-row");
+    expect(tile({ note: "2 vendas" })).toContain("2 vendas");
   });
 
-  it("puts the chip in its own row, apart from the note", () => {
-    const markup = card({
+  it("puts the chip and the note on the one support line, under the number", () => {
+    const markup = tile({
       chip: <span data-kpi-delta="down">↓ -100,0%</span>,
       note: "2 vendas",
     });
-    expect(markup).toMatch(CHIP_THEN_NOTE);
+    expect(markup).toMatch(TILE_CHIP_THEN_NOTE);
+    expect(markup.indexOf("data-kpi-value")).toBeLessThan(
+      markup.indexOf("data-kpi-note-row")
+    );
+  });
+
+  it("puts the sparkline beside the number, and the date of a day read at the top right", () => {
+    const markup = tile({
+      date: "Até 17/10",
+      spark: <i data-spark="" />,
+    });
+    expect(markup).toContain('data-kpi-date="">Até 17/10');
+    expect(markup).toContain('data-kpi-spark=""');
+    expect(markup.indexOf("data-kpi-headline")).toBeLessThan(
+      markup.indexOf("data-kpi-spark")
+    );
+    expect(tile({})).not.toContain("data-kpi-date");
+    expect(tile({})).not.toContain("data-kpi-spark");
+  });
+
+  it("is 92 px tall at 3 lines, with no height kept for a foot or an action; a warning has a row only when it exists", () => {
+    const markup = tile({ note: "2 vendas" });
+    expect(markup).not.toContain("data-kpi-foot");
+    expect(markup).not.toContain("data-kpi-warning");
+    expect(markup).toContain("py-3");
+    expect(tile({ warning: "estimativa incompleta" })).toContain(
+      'data-kpi-warning=""'
+    );
+  });
+});
+
+describe("KpiCard", () => {
+  it("keeps the row of the chip without a chip, with no text for a screen reader", () => {
+    const bare = card({});
+    expect(bare).toContain('data-kpi-chip-row=""');
+    expect(bare).toContain("min-h-5");
+    expect(bare).not.toContain("data-kpi-delta");
   });
 
   it("keeps the foot's line when the foot is null, and draws none without one", () => {
@@ -185,7 +233,7 @@ describe("HeroValue sizes", () => {
     const markup = renderToStaticMarkup(<HeroValue amount="-99640.35" />);
     expect(markup).not.toContain("@max-");
     expect(markup).not.toContain("text-value-xl");
-    const skeleton = renderToStaticMarkup(<KpiCardSkeleton />);
+    const skeleton = renderToStaticMarkup(<KpiTileSkeleton />);
     expect(skeleton).toContain("h-(--text-value-lg--line-height)");
     expect(skeleton).not.toContain("text-value-xl");
   });
@@ -213,24 +261,19 @@ describe("HeroPercent", () => {
 });
 
 const TEXT_BETWEEN_TAGS = />[^<]+</;
-const SKELETON_FOOT = /data-kpi-skeleton-foot=""/g;
 
-describe("KpiCardSkeleton", () => {
-  it("draws the rows of the card it stands for, out of the accessibility tree", () => {
-    const markup = renderToStaticMarkup(<KpiCardSkeleton action footer={1} />);
+describe("KpiTileSkeleton", () => {
+  it("draws the rows of the tile it stands for, out of the accessibility tree", () => {
+    const markup = renderToStaticMarkup(<KpiTileSkeleton />);
     expect(markup).toContain('aria-hidden="true"');
-    expect(markup).toContain('data-kpi-chip-row=""');
-    expect(markup).toContain('data-kpi-note-row=""');
     expect(markup).toContain("h-(--text-value-lg--line-height)");
-    expect(markup).toContain("h-[3.25rem]");
-    expect(markup.match(SKELETON_FOOT)).toHaveLength(1);
+    expect(markup).toContain("py-3");
   });
 
   it("has no text for a screen reader: the box is hidden and holds no words", () => {
-    const markup = renderToStaticMarkup(<KpiCardSkeleton action footer={2} />);
+    const markup = renderToStaticMarkup(<KpiTileSkeleton />);
     expect(markup.startsWith('<div aria-hidden="true"')).toBe(true);
     expect(markup.match(TEXT_BETWEEN_TAGS)).toBeNull();
-    expect(markup.match(SKELETON_FOOT)).toHaveLength(2);
   });
 });
 

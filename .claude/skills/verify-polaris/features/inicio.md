@@ -6,7 +6,7 @@ O Início (`/`) é a primeira tela depois de entrar: a data de hoje, o atalho "N
 
 - `inicio-abrir` abre o Início com o `h1` "Início" e a data de hoje.
 - `inicio-primeiros-passos` loja nova: a lista "Primeiros passos" com os atalhos para cadastrar e importar produto.
-- `inicio-numeros` loja com vendas: as regiões "Vendas hoje", "Vendas em outubro" (o mês corrente, com o período dito uma vez na linha "Outubro · 1 a 23/10"), "Resultado estimado" e "Ticket médio", cada uma com o seu (i).
+- `inicio-numeros` loja com vendas: quatro cartões de cerca de 92 px, as regiões "Vendas hoje", "Vendas em novembro" (o mês corrente, no nome), "Resultado estimado" (o cartão inteiro é o link para `/dashboard`) e "Ticket médio", cada uma com o seu (i) e um minigráfico à direita do número. Passar o mouse no minigráfico lê um dia: a data ("Até 06/11") toma o lugar do chip (`[data-kpi-date]`).
 - `inicio-atencao` a região "Precisa de ação", logo abaixo de "Nova venda" (sem item, ela não aparece).
 - `inicio-meta` a região "Meta" e o link "Definir meta". Com a meta de um mês que já acabou ainda dentro dos 7 dias de exibição (o Início de 2 de novembro com a de outubro liquidada), o título é "Meta de novembro", com "Sem meta ainda", o link e a linha "Outubro: R$ X de R$ Y (não atingida)"; a loja `vendas` não tem esse estado (não há meta de mês anterior).
 - `inicio-grafico` "Vendas por dia" com as abas "7 dias" e "30 dias".
@@ -38,7 +38,7 @@ Preconditions:
 
 ## Gotchas
 
-- Loja com poucos dias de venda: "Vendas hoje" diz "vs. média das terças: sem dados para comparar" (sem as 4 terças anteriores na série); com hoje sem venda e base, não há chip, só "Nenhuma venda ainda"; com só devolução de venda anterior (líquido negativo, nenhuma venda nova), o cartão mostra o negativo e "Só devoluções até agora"; um dia passado lido no cartão com a mesma situação diz "Só devoluções", e com líquido zero segue "Nenhuma venda". Cancelar as vendas de hoje pelo Histórico não zerou "Vendas hoje" no Início (R$ 129,90 e "2 vendas" continuaram; a causa não foi investigada): não conte com o cancelamento para fabricar o dia sem venda.
+- Loja com poucos dias de venda: "Vendas hoje" fica sem chip (sem as 4 terças anteriores na série; o (i) diz "Sem dados para comparar com a média das 4 terças-feiras anteriores."); com hoje sem venda e base, não há chip, só "Nenhuma venda ainda"; com só devolução de venda anterior (líquido negativo, nenhuma venda nova), o cartão mostra o negativo e "Só devoluções até agora"; um dia passado lido no cartão com a mesma situação diz "Só devoluções", e com líquido zero segue "Nenhuma venda". Cancelar as vendas de hoje pelo Histórico não zerou "Vendas hoje" no Início (R$ 129,90 e "2 vendas" continuaram; a causa não foi investigada): não conte com o cancelamento para fabricar o dia sem venda.
 - Os números dependem do relógio de verdade e do fuso da loja (`America/Sao_Paulo`): o nome da região do mês muda ("Vendas em outubro") e "Vendas hoje" só conta as 2 vendas de hoje enquanto o dia não vira. Não assuma valores fixos; compare com `$V sql` quando o valor importar.
 - "Resultado estimado" diz "estimativa incompleta" na loja `vendas`: as vendas não têm perfil de pagamento (taxa desconhecida). Não é defeito.
 - O e2e com a tela simulada (`apps/web/e2e/home.e2e.ts`) usa textos de uma data fixa ("Sexta-feira, 23 de outubro"): não copie esses textos para a pilha real.

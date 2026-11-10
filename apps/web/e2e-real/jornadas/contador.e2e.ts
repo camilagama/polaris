@@ -339,7 +339,7 @@ async function openWith(
   return await readFrames(page);
 }
 
-test("início, no desktop: o valor final chega ao leitor de tela de uma vez, o cartão não muda de tamanho e a contagem dura 500 ms (AC-8.3, AC-8.4, AC-8.6)", async ({
+test("início, no desktop: o valor final chega ao leitor de tela de uma vez, o cartão não muda de tamanho e nada conta do zero na entrada (AC-8.3, AC-8.4, AC-8.6)", async ({
   browser,
 }, testInfo) => {
   const journey = await openJourney(browser, testInfo, "contador", {
@@ -389,28 +389,14 @@ test("início, no desktop: o valor final chega ao leitor de tela de uma vez, o c
     ).toEqual(shown.at(-1)?.figures.map((figure) => figure.accessible));
   }
 
-  // the counter counts: it is in the tree and animations run inside it, for 500 ms (±100 ms)
   expect(
-    shown.some((frame) => frame.running > 0),
-    "o contador animou"
+    shown.some((frame) => frame.figures.some((figure) => figure.counter)),
+    "o contador está na árvore"
   ).toBe(true);
-  const ids = new Set(shown.flatMap((frame) => frame.figures.map((f) => f.id)));
-  let counted = 0;
-  for (const id of ids) {
-    const times = shown
-      .filter((frame) =>
-        frame.figures.some((figure) => figure.id === id && figure.counting)
-      )
-      .map((frame) => frame.t);
-    if (times.length === 0) {
-      continue;
-    }
-    counted += 1;
-    const span = (times.at(-1) as number) - (times[0] as number);
-    expect(span, `duração da contagem de ${id}`).toBeGreaterThanOrEqual(400);
-    expect(span, `duração da contagem de ${id}`).toBeLessThanOrEqual(700);
-  }
-  expect(counted, "os valores dos cartões contaram").toBeGreaterThanOrEqual(3);
+  expect(
+    shown.every((frame) => frame.running === 0),
+    "nada contou do zero na entrada"
+  ).toBe(true);
 
   // the card has the same width and height in every frame, counting or not
   const last = shown.at(-1) as Frame;
@@ -512,7 +498,7 @@ test("movimento reduzido: o valor final no primeiro quadro, sem contador e sem b
   expect(counterChunk, "o movimento reduzido não baixa o pedaço").toEqual([]);
 });
 
-test("tablet com toque de 1024 px: usa o layout de computador e anima (AC-8.2)", async ({
+test("tablet com toque de 1024 px: usa o layout de computador e tem o contador (AC-8.2)", async ({
   browser,
 }, testInfo) => {
   const journey = await openJourney(browser, testInfo, "contador-tablet", {
@@ -533,8 +519,8 @@ test("tablet com toque de 1024 px: usa o layout de computador e anima (AC-8.2)",
   });
   const shown = fromFigures(frames);
   expect(
-    shown.some((frame) => frame.running > 0),
-    "o contador animou no tablet"
+    shown.some((frame) => frame.figures.some((figure) => figure.counter)),
+    "o contador está na árvore no tablet"
   ).toBe(true);
 });
 
