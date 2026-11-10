@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -159,12 +160,14 @@ function copyFor(
  * A write that changes the figures (`markPeriodSummaryStale`) makes the read old: when `active` (the Resultado is in
  * front) and the connection is there, it is read again, once per write (a read that fails spends the mark: "Atualizar"
  * is the way to try again); with no connection or another tab in front it waits, and reads when both are met. With nothing written there is no read beyond the one of the period.
+ * `enabled` false reads nothing (the Início asks for a period only when the person chose one other than "Este mês").
  */
 export function usePeriodSummary(
   organizationId: string,
   period: Period,
   copyMonth: string | null,
-  active = true
+  active = true,
+  enabled = true
 ) {
   const { from, to } = period;
   const [state, setState] = useState<PeriodSummaryState>(initialState);
@@ -244,18 +247,21 @@ export function usePeriodSummary(
   }, [copyMonth, from, organizationId, to]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     load();
     return () => {
       sequence.current += 1;
     };
-  }, [load]);
+  }, [enabled, load]);
 
   // a read the effect above just started has already taken the version, so it is not asked twice
   useEffect(() => {
-    if (active && online && staleVersion !== readVersion.current) {
+    if (enabled && active && online && staleVersion !== readVersion.current) {
       load();
     }
-  }, [active, load, online, staleVersion]);
+  }, [active, enabled, load, online, staleVersion]);
 
   return { refresh: load, state };
 }
@@ -325,7 +331,10 @@ function useComparisonRead<Day>(
     };
   }, [from, organizationId, read, to, wanted]);
 
-  return wanted ? { days: kept.days, period: kept.period } : null;
+  return useMemo(
+    () => (wanted ? { days: kept.days, period: kept.period } : null),
+    [kept, wanted]
+  );
 }
 
 // one try in each: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)

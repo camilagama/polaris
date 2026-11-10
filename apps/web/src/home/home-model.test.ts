@@ -13,7 +13,6 @@ import {
   goalProjection,
   homePeriods,
   homeReads,
-  lastDays,
   monthTitle,
   msUntilNextMidnight,
   newSaleOfflineText,
@@ -144,10 +143,7 @@ describe("the store's today and the turn of the day (§ 5.1)", () => {
   });
 });
 
-describe("the chart comes from the series of A and B (AC-17)", () => {
-  const before = series("2026-09-01", "2026-09-30", (date) =>
-    date >= "2026-09-25" ? ["10.00", 1] : undefined
-  );
+describe("the chart's totals come from the series of the period (AC-17)", () => {
   const month = series("2026-10-01", "2026-10-31", (date) => {
     if (date === "2026-10-02") {
       return ["25.50", 2];
@@ -155,32 +151,12 @@ describe("the chart comes from the series of A and B (AC-17)", () => {
     return date === "2026-10-23" ? ["100.10", 3] : undefined;
   });
 
-  it("the last 7 or 30 days end today and cross into B at the start of the month", () => {
-    const week = lastDays(before, month, "2026-10-03", 7);
-    expect(week.map((day) => day.date)).toEqual([
-      "2026-09-27",
-      "2026-09-28",
-      "2026-09-29",
-      "2026-09-30",
-      "2026-10-01",
-      "2026-10-02",
-      "2026-10-03",
-    ]);
-    expect(sumNetSales(week)).toBe("65.50");
-    const thirty = lastDays(before, month, "2026-10-23", 30);
-    expect(thirty).toHaveLength(30);
-    expect(thirty[0]?.date).toBe("2026-09-24");
-    expect(sumNetSales(thirty)).toBe("185.60");
-  });
-
   it("the series adds up to the month's figure", () => {
     expect(sumNetSales(month)).toBe("125.60");
   });
 
   it("finds the best day of a period, and none when nothing sold", () => {
-    expect(bestDay(lastDays(before, month, "2026-10-23", 7))?.date).toBe(
-      "2026-10-23"
-    );
+    expect(bestDay(month)?.date).toBe("2026-10-23");
     expect(bestDay(series("2026-10-01", "2026-10-07"))).toBeNull();
   });
 });

@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { KpiCards, NoFiguresCards } from "./home-kpi-cards";
+import { KpiCards, KpiCardsSkeleton, NoFiguresCards } from "./home-kpi-cards";
+import { PeriodControlProvider } from "./period-control";
+import { HomePeriodRow } from "./home-period-row";
+import { THIS_MONTH } from "./home-period";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -311,5 +314,165 @@ describe("the cards without a connection and without a copy", () => {
   it("keep the sparkline's place, so they are as tall as with figures", () => {
     const markup = renderToStaticMarkup(<NoFiguresCards today={TODAY} />);
     expect(markup.match(/data-kpi-spark=""/g)).toHaveLength(4);
+  });
+});
+
+const PLAIN_LINE = /^<p class="[^"]*" $/;
+const MONTH_LINE_WITH_CONTROL = /Outubro · 1 a 23\/10 ?Seletor/;
+
+describe("o seletor de período na linha do mês", () => {
+  const control = <button type="button">Seletor</button>;
+  const withControl = (node: React.ReactNode) =>
+    renderToStaticMarkup(
+      <PeriodControlProvider value={control}>{node}</PeriodControlProvider>
+    );
+
+  it("fica no fim da linha que nomeia o mês, e o texto da linha segue o mesmo", () => {
+    const markup = withControl(<KpiCards figures={figures()} />);
+    const line = markup.slice(markup.indexOf("data-kpi-group-line"));
+    expect(words(line.slice(0, line.indexOf("</div>")))).toMatch(
+      MONTH_LINE_WITH_CONTROL
+    );
+    expect(markup).toContain("min-h-9");
+  });
+
+  it("o esqueleto e o sem conexão guardam a mesma linha, com o seletor no mesmo lugar", () => {
+    for (const markup of [
+      withControl(<KpiCardsSkeleton />),
+      withControl(<NoFiguresCards today={TODAY} />),
+    ]) {
+      expect(markup).toContain("Seletor");
+      expect(markup).toContain("min-h-9");
+      expect(markup.match(/Seletor/g)).toHaveLength(1);
+    }
+  });
+
+  it("sem o seletor a linha é a de sempre, só o texto", () => {
+    const markup = render(figures());
+    expect(markup).not.toContain("Seletor");
+    const at = markup.indexOf("data-kpi-group");
+    expect(markup.slice(markup.lastIndexOf("<", at), at)).toMatch(PLAIN_LINE);
+  });
+});
+
+const SALES_IN_SEPTEMBER = /^Vendas em setembro/;
+const SALES_OF_PERIOD = /^Vendas do período/;
+const CARD_ID = /^id="[^"]*"/;
+const SENTENCE = /<p([^>]*)>Sem conexão: só este mês e o anterior\./;
+const noop = () => undefined;
+
+describe("o nome do cartão de Vendas em cada período", () => {
+  const periodOf = (from: string, to: string) =>
+    renderToStaticMarkup(
+      <PeriodControlProvider value={<button type="button">Seletor</button>}>
+        <KpiCards
+          figures={figures()}
+          month={{
+            kind: "period",
+            source: {
+              comparison: null,
+              kind: "period",
+              salesComparison: null,
+              summary: { ...figures().month, period: { from, to } },
+              today: TODAY,
+            },
+          }}
+        />
+      </PeriodControlProvider>
+    );
+  const sales = (markup: string) =>
+    words(card(markup, "home-month")).replace(CARD_ID, "").slice(0, 40);
+
+  it("mês inteiro diz 'em setembro'", () => {
+    expect(sales(periodOf("2026-09-01", "2026-09-30"))).toMatch(
+      SALES_IN_SEPTEMBER
+    );
+  });
+
+  it("um período que não é um mês diz 'do período', nunca 'em o período'", () => {
+    for (const [from, to] of [
+      ["2026-01-01", "2026-10-23"],
+      ["2026-09-24", "2026-10-23"],
+      ["2026-10-05", "2026-10-12"],
+    ] as const) {
+      const markup = periodOf(from, to);
+      expect(sales(markup)).toMatch(SALES_OF_PERIOD);
+      expect(markup).not.toContain("em o período");
+    }
+  });
+});
+
+describe("o seletor fica no mesmo lugar em cada estado dos cartões do mês", () => {
+  const control = <button type="button">Seletor</button>;
+  const states = [
+    { kind: "figures" },
+    { kind: "loading" },
+    { error: <p role="alert">Falhou</p>, kind: "error" },
+  ] as const;
+
+  it("há um seletor só, no fim da linha do grupo, no pronto, lendo e com erro", () => {
+    for (const month of states) {
+      const markup = renderToStaticMarkup(
+        <PeriodControlProvider value={control}>
+          <KpiCards figures={figures()} month={month} />
+        </PeriodControlProvider>
+      );
+      expect(markup.match(/Seletor/g)).toHaveLength(1);
+      const line = markup.slice(markup.indexOf("data-kpi-group-line"));
+      expect(line.indexOf("Seletor")).toBeGreaterThan(-1);
+      expect(line.slice(0, line.indexOf("Seletor"))).not.toContain('id="home-');
+    }
+  });
+
+  it("lendo, a linha guarda o lugar do texto; o aviso de leitura fica fora da linha", () => {
+    const markup = renderToStaticMarkup(
+      <PeriodControlProvider value={control}>
+        <KpiCards figures={figures()} month={{ kind: "loading" }} />
+      </PeriodControlProvider>
+    );
+    const line = markup.slice(markup.indexOf("data-kpi-group-line"));
+    expect(line.slice(0, line.indexOf("Seletor"))).not.toContain(
+      "Carregando o período"
+    );
+    expect(markup).toContain("Carregando o período");
+  });
+});
+
+describe("a frase de sem conexão ao lado do seletor", () => {
+  const row = (disabled: boolean, offline: boolean) =>
+    renderToStaticMarkup(
+      <HomePeriodRow
+        disabled={disabled}
+        note={null}
+        offline={offline}
+        onCustom={noop}
+        onPreset={noop}
+        period={{ from: "2026-10-01", to: "2026-10-31" }}
+        selection={THIS_MONTH}
+        today={TODAY}
+      />
+    );
+  const attributes = (markup: string) => markup.match(SENTENCE)?.[1] ?? "";
+
+  it("com o seletor ativo e sem conexão a frase é dita (leitor de tela e, de 640 px, a vista)", () => {
+    const attrs = attributes(row(false, true));
+    expect(attrs).not.toContain("aria-hidden");
+    expect(attrs).toContain("max-sm:sr-only");
+    expect(attrs).not.toContain("invisible");
+  });
+
+  it("com o seletor desligado e sem conexão a frase fica invisível e fora do leitor, com o lugar guardado", () => {
+    const attrs = attributes(row(true, true));
+    expect(attrs).toContain('aria-hidden="true"');
+    expect(attrs).toContain("invisible");
+    expect(attrs).not.toContain("sr-only");
+  });
+
+  it("com conexão a frase segue invisível, com o seletor ativo ou não", () => {
+    for (const disabled of [false, true]) {
+      const attrs = attributes(row(disabled, false));
+      expect(attrs).toContain('aria-hidden="true"');
+      expect(attrs).toContain("invisible");
+    }
   });
 });

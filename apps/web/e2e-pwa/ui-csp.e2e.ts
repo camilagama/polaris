@@ -5,6 +5,7 @@ import { productionPolicy, watchCspViolations } from "../e2e/csp-fixture";
 import { PWA_ORIGIN } from "../e2e/run-settings";
 import { serveHome } from "./ui-home-states";
 
+const PERIOD_BUTTON = /^Período: /;
 const DARK = /\bdark\b/;
 const NOT_DARK = /^(?!.*\bdark\b).*$/;
 const APPEARANCE = /^Aparência:/;
@@ -233,7 +234,11 @@ test("o Início abre com o gráfico sob a CSP do _headers, sem nenhuma violaçã
   expect(response?.headers()["content-security-policy"]).toBe(productionPolicy);
   const chart = page.getByRole("region", { name: "Vendas por dia" });
   await expect(chart.getByRole("img")).toBeVisible({ timeout: 20_000 });
-  await chart.getByRole("tab", { name: "30 dias" }).click();
+  await page.getByRole("button", { name: PERIOD_BUTTON }).click();
+  await page
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "Mês passado" })
+    .click();
   await expect(chart.getByRole("img")).toBeVisible();
   await expect(
     page

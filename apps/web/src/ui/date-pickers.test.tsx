@@ -192,6 +192,8 @@ const SHORTCUT_GROUP = /<fieldset[^>]*aria-label="Atalhos do período"[^>]*>/;
 const PRESSED_SHORTCUT = /<button[^>]*aria-pressed="true"[^>]*>/;
 const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
 
+const PRESET_OFF = /data-preset="[^"]*"[^>]*aria-disabled/;
+
 describe("DateRangePanel", () => {
   const panel = (props: Partial<Parameters<typeof DateRangePanel>[0]> = {}) =>
     html(
@@ -230,6 +232,46 @@ describe("DateRangePanel", () => {
   it("com Limpar a linha do rodapé volta", () => {
     expect(panel()).toContain("border-border border-t");
     expect(panel()).toContain("Limpar");
+  });
+
+  it("com `only`, os atalhos de fora ficam no lugar, apagados e ligados ao motivo; os dois de dentro seguem ativos", () => {
+    const markup = panel({
+      only: {
+        reason: "Sem conexão: só este mês e o anterior.",
+        shortcuts: ["este-mes", "mes-passado"],
+      },
+      shortcuts: ["30-dias", "mes-passado", "este-mes", "este-ano"],
+    });
+    const buttons =
+      markup.match(/<button[^>]*data-preset="[^"]*"[^>]*>/g) ?? [];
+    expect(buttons).toHaveLength(4);
+    const off = buttons.filter((tag) => tag.includes('aria-disabled="true"'));
+    expect(off.map((tag) => attribute(tag, "data-preset"))).toEqual([
+      "30-dias",
+      "este-ano",
+    ]);
+    for (const tag of off) {
+      expect(attribute(tag, "aria-describedby")).toBeDefined();
+      expect(tag).not.toContain(" disabled");
+    }
+    const reasonId = attribute(off[0] ?? "", "aria-describedby") ?? "";
+    expect(markup).toContain(`id="${reasonId}"`);
+    expect(markup).toContain("Sem conexão: só este mês e o anterior.");
+  });
+
+  it("com `only` não há campos para digitar nem Limpar (os dias desligados do calendário, que abre sob demanda, são provados no navegador)", () => {
+    const markup = panel({
+      only: { reason: "Sem conexão.", shortcuts: ["este-mes"] },
+    });
+    expect(markup).not.toContain("Digitar as datas");
+    expect(markup).not.toContain("Limpar");
+  });
+
+  it("sem `only` nenhum atalho fica apagado e há campos para digitar", () => {
+    const markup = panel();
+    expect(markup).not.toContain('data-preset="este-mes" aria-disabled');
+    expect(markup).not.toMatch(PRESET_OFF);
+    expect(markup).toContain("Digitar as datas");
   });
 
   it("os atalhos pressionados têm fundo próprio no escuro, na coluna e no segmentado, e o segmentado rola de lado em vez de quebrar", () => {

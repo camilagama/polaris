@@ -121,30 +121,6 @@ export function shouldRefreshOnReturn(
   return now - lastReadAt >= FOCUS_REFRESH_MS;
 }
 
-/** The day of a series, or a day with nothing in it (the series of the server has every date of its period). */
-function dayOf(series: Daily, date: string) {
-  return (
-    series.find((entry) => entry.date === date) ?? {
-      date,
-      netSales: "0.00",
-      salesCount: 0,
-    }
-  );
-}
-
-/** The `days` days that end on `today`, from B and A together: the miniature of Hoje (7) and the chart (7 or 30). */
-export function lastDays(
-  before: Daily,
-  month: Daily,
-  today: string,
-  days: number
-): Daily {
-  const all = [...before, ...month];
-  return Array.from({ length: days }, (_, index) =>
-    dayOf(all, addDays(today, index - days + 1))
-  );
-}
-
 /** The exact sum of the net sales of some days, as BRL text. */
 export function sumNetSales(series: Daily): string {
   return series

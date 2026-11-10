@@ -91,6 +91,9 @@ function stripValueSize(characters: number): string {
   return "min-[56.25rem]:text-[1.5rem]";
 }
 
+/** The name of the group while it has no period to say. */
+const PENDING_LABEL = "Cartões do período";
+
 /**
  * The group of the cards of one period: a line that says the period once ("Outubro · 1 a 23/10"), which is also the name
  * of the group, so the cards do not repeat it. The cards stay items of the grid of the row (`contents`): the line
@@ -99,27 +102,27 @@ function stripValueSize(characters: number): string {
 export function KpiGroup({
   children,
   className,
+  control,
   period,
+  placeholder,
   title,
 }: {
   children: ReactNode;
   className?: string;
-  /** The period, "1 a 23/10". */
-  period: string;
+  /** A control for the period, at the end of the line (the Início's picker): the line is then a box with room for it. */
+  control?: ReactNode;
+  /** The period, "1 a 23/10"; null while there is none to say (the period is being read, or failed). */
+  period: string | null;
+  /** What stands where the period's text would, while there is none: the line and its control keep the same place. */
+  placeholder?: ReactNode;
   /** The month, "Outubro", when the period is one. */
   title?: string | null;
 }) {
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset has a box of its own, and the cards must stay items of the grid
-    <div
-      aria-label={title ? `${title}, ${period}` : period}
-      className="contents"
-      role="group"
-    >
-      <p
-        className={cn("text-muted-foreground text-support", className)}
-        data-kpi-group=""
-      >
+  const text =
+    period === null ? (
+      (placeholder ?? <span aria-hidden="true" />)
+    ) : (
+      <>
         {title ? (
           <>
             <span className="font-medium text-foreground">{title}</span>
@@ -127,7 +130,34 @@ export function KpiGroup({
           </>
         ) : null}
         <span className="tabular-nums">{period}</span>
-      </p>
+      </>
+    );
+  const label =
+    period !== null && title
+      ? `${title}, ${period}`
+      : (period ?? PENDING_LABEL);
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset has a box of its own, and the cards must stay items of the grid
+    <div aria-label={label} className="contents" role="group">
+      {control ? (
+        <div
+          className={cn(
+            "flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-muted-foreground text-support",
+            className
+          )}
+          data-kpi-group-line=""
+        >
+          {period === null ? text : <p data-kpi-group="">{text}</p>}
+          {control}
+        </div>
+      ) : (
+        <p
+          className={cn("text-muted-foreground text-support", className)}
+          data-kpi-group=""
+        >
+          {text}
+        </p>
+      )}
       {children}
     </div>
   );

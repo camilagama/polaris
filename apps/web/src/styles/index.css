@@ -57,7 +57,7 @@
 /* Resultado and Metas (v5.1): the page, the cards, the chain and the goals; the month picker is Despesas'. */
 @source "../dashboard/{dashboard-page,quality-banner,offline-copy-notice,empty-result,parts-bar,period-picker,result-cards,result-chain,result-chart,goals-panel,goal-card,goal-form,goal-history}.tsx";
 /* The Início (F2): the page and its blocks. */
-@source "../home/{home-page,closed-store-line,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-rhythm}.tsx";
+@source "../home/{home-page,closed-store-line,home-parts,home-figures,home-goal,home-attention,home-chart,home-kpi-cards,home-period-row,home-rhythm}.tsx";
 /* the Assinatura (t268, PR E) */
 @source "../subscription/{subscription-commands,subscription-page,subscription-parts,subscription-offer,subscription-waiting,limit-help}.tsx";
 /* Seus dados in Configurações: the request and the list of copies, which the closed store's panel uses too. */
