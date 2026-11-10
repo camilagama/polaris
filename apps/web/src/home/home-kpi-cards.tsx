@@ -181,6 +181,8 @@ interface MonthModel {
   /** "outubro", or "o período" in the sentence read for "Vendas": what the card is of. */
   name: string;
   noCost: boolean;
+  /** The result has days with no cost informed: the month of today says it by its quality line, a period by its days. */
+  partialDays: boolean;
   quality: StoredPeriodSummary["quality"];
   until: (read: KpiReading, index: number | null) => string;
 }
@@ -205,6 +207,7 @@ function monthModel(figures: HomeFigures): MonthModel {
     },
     name,
     noCost: kpis.result.kind === "noCost",
+    partialDays: false,
     quality,
     until: (read) => `Até ${read.date.replace("1 a ", "")}`,
   };
@@ -233,6 +236,7 @@ function periodModel(source: PeriodSource) {
     },
     name: kpis.month ?? "o período",
     noCost: cogsCoverageOf(quality) === "none",
+    partialDays: kpis.result.kind === "incomplete",
     quality,
     until: (_read, index) =>
       untilText(
@@ -301,9 +305,7 @@ function MonthCards({
     .trim()
     .startsWith("-");
   const incomplete =
-    noCost ||
-    isIncompleteEstimate(quality) ||
-    kpis.result.kind === "incomplete";
+    noCost || isIncompleteEstimate(quality) || model.partialDays;
   // the result card has a date of its own only when it is not the period of the group ("outubro inteiro")
   const resultDate = ownDate(read);
   const rest = kpis.read(null);
@@ -440,7 +442,13 @@ function monthPart(month: MonthPart, own: MonthSource, still: boolean) {
         </div>
       );
     case "period":
-      return <MonthCards source={month.source} still={still} />;
+      return (
+        <MonthCards
+          key={`${month.source.summary.period.from}/${month.source.summary.period.to}`}
+          source={month.source}
+          still={still}
+        />
+      );
     default:
       return <MonthCards source={own} still={still} />;
   }

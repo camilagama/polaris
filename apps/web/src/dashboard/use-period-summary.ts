@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -330,7 +331,10 @@ function useComparisonRead<Day>(
     };
   }, [from, organizationId, read, to, wanted]);
 
-  return wanted ? { days: kept.days, period: kept.period } : null;
+  return useMemo(
+    () => (wanted ? { days: kept.days, period: kept.period } : null),
+    [kept, wanted]
+  );
 }
 
 // one try in each: a retry would spend the brakes of the tab that the read of the screen needs (paliativo dos 1102)

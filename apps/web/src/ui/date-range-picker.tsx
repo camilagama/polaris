@@ -602,6 +602,9 @@ export function DateRangePanel({
 
   const pickDay = useCallback(
     (_range: unknown, day: Date) => {
+      if (only) {
+        return;
+      }
       const next = nextRange(draft, toIsoDate(day));
       if (next.complete) {
         commit(next.range);
@@ -609,7 +612,7 @@ export function DateRangePanel({
         adopt(next.draft);
       }
     },
-    [adopt, commit, draft]
+    [adopt, commit, draft, only]
   );
 
   const pickPreset = useCallback(

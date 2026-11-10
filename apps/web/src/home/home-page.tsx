@@ -1,7 +1,7 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/ui/button";
+import { Button, buttonVariants } from "@/ui/button";
 import { HideValuesButton } from "@/ui/hidden-values";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
@@ -147,12 +147,55 @@ interface ChosenView {
   today: string;
 }
 
+/**
+ * The line beside the picker about the figures on screen: that a refresh failed (the figures are the last read) or that
+ * they are the device's copy, with "Tentar novamente" when there is a connection and the server is what failed.
+ */
+function periodNote(
+  picked: ReturnType<typeof useHomePeriod>,
+  timezone: string,
+  now: number,
+  online: boolean
+): React.ReactNode {
+  const { state } = picked;
+  let failed: string | null = null;
+  if (state.error && !state.isLoading) {
+    failed = state.error;
+  } else if (state.source === "cache" && picked.source) {
+    failed = copyShownText(
+      picked.source.summary.generatedAt,
+      timezone,
+      new Date(now)
+    );
+  }
+  if (failed === null) {
+    return null;
+  }
+  const retry = state.error ? !state.isLoading : online && state.serverFailed;
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-muted-foreground text-support">
+      {failed}
+      {retry ? (
+        <Button
+          onClick={picked.refresh}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Tentar novamente
+        </Button>
+      ) : null}
+    </p>
+  );
+}
+
 /** The chosen period as the blocks draw it: the cards' part, the ranking's title, the summary and the line about it. */
 function chosenView(
   picked: ReturnType<typeof useHomePeriod>,
   selection: HomeSelection,
   timezone: string,
-  now: number
+  now: number,
+  online: boolean
 ): ChosenView | null {
   if (!picked.chosen) {
     return null;
@@ -166,12 +209,7 @@ function chosenView(
     return {
       ...base,
       month: { kind: "period", source: picked.source },
-      note:
-        picked.state.source === "cache" ? (
-          <p className="text-muted-foreground text-support">
-            {copyShownText(summary.generatedAt, timezone, new Date(now))}
-          </p>
-        ) : null,
+      note: periodNote(picked, timezone, now, online),
       summary,
     };
   }
@@ -194,9 +232,42 @@ function chosenView(
   return { ...base, month: { kind: "loading" }, note: null, summary: null };
 }
 
+/**
+ * Whether the period chosen has figures to apply to: "yes" where the cards of the month are drawn (from the server or
+ * from the copy), "loading" while they are read, "no" for the error, the checklist of a store that never sold and a
+ * device with no copy.
+ */
+function periodApplies({
+  failed,
+  readsReport,
+  state,
+  view,
+}: {
+  failed: OfflineHome | null;
+  readsReport: boolean;
+  state: HomeState;
+  view: OfflineHome | null;
+}): "loading" | "no" | "yes" {
+  if (!readsReport || state.sessionRefused) {
+    return "no";
+  }
+  if (view) {
+    return view.figures ? "yes" : "no";
+  }
+  if (failed?.figures) {
+    return "yes";
+  }
+  const { checklist, figures } = state;
+  if (figures.status === "loading" || figuresPending(state)) {
+    return "loading";
+  }
+  const stores = checklist.status === "ready" && checklist.data;
+  return figures.status === "ready" && !stores ? "yes" : "no";
+}
+
 /** The selection of the period, its read, and what the blocks draw from it. */
 function useChosenPeriod({
-  enabled,
+  applies,
   now,
   online,
   organizationId,
@@ -204,7 +275,7 @@ function useChosenPeriod({
   timezone,
   today,
 }: {
-  enabled: boolean;
+  applies: "loading" | "no" | "yes";
   now: number;
   online: boolean;
   organizationId: string;
@@ -221,13 +292,13 @@ function useChosenPeriod({
     setSelection({ custom, preset: "custom" });
   }, []);
   const picked = useHomePeriod({
-    enabled,
+    enabled: applies === "yes",
     organizationId,
     selection,
     timezone,
     today,
   });
-  const chosen = chosenView(picked, selection, timezone, now);
+  const chosen = chosenView(picked, selection, timezone, now, online);
   const { chosen: reading, refresh } = picked;
   // "Atualizar" reads the period chosen again too, when there is one
   const reloadAll = useCallback(() => {
@@ -236,18 +307,39 @@ function useChosenPeriod({
       refresh();
     }
   }, [reading, refresh, reload]);
-  const periodRow = enabled ? (
-    <HomePeriodRow
-      note={chosen?.note ?? null}
-      offline={!online}
-      onCustom={handleCustom}
-      onPreset={handlePreset}
-      period={picked.period}
-      selection={selection}
-      today={today}
-    />
-  ) : null;
+  const periodRow =
+    applies === "no" ? null : (
+      <HomePeriodRow
+        disabled={applies === "loading"}
+        note={chosen?.note ?? null}
+        offline={!online}
+        onCustom={handleCustom}
+        onPreset={handlePreset}
+        period={picked.period}
+        selection={selection}
+        today={today}
+      />
+    );
   return { chosen, periodRow, reloadAll };
+}
+
+/** Mais vendidos of the period shown: a skeleton while the period is read, nothing when no product sold. */
+function rankingBlock(
+  top: NonNullable<StoredPeriodSummary["topProducts"]>,
+  chosen: ChosenView | null
+): React.ReactNode {
+  if (chosen?.month.kind === "loading") {
+    return <BlockSkeleton label="Carregando os mais vendidos…" lines={3} />;
+  }
+  if (top.length === 0) {
+    return null;
+  }
+  return (
+    <TopProductsBlock
+      products={top}
+      title={chosen?.rankingTitle ?? "Mais vendidos do mês"}
+    />
+  );
 }
 
 /** The KPI cards, the ranking and the chart of figures that were read (from the server or from the copy). */
@@ -278,13 +370,7 @@ function readBlocks(
         todayShown={todayShown && series}
       />
     ),
-    ranking:
-      top.length > 0 ? (
-        <TopProductsBlock
-          products={top}
-          title={chosen?.rankingTitle ?? "Mais vendidos do mês"}
-        />
-      ) : null,
+    ranking: rankingBlock(top, chosen),
     // the days of the month are the figures': a copy without the series of the month draws no map either
     rhythm:
       figures.month.daily === undefined ? null : (
@@ -963,7 +1049,12 @@ export function HomePage() {
   );
   const firstSteps = useFirstStepsMemory(organizationId);
   const { chosen, periodRow, reloadAll } = useChosenPeriod({
-    enabled: reads.report && !state.sessionRefused,
+    applies: periodApplies({
+      failed,
+      readsReport: reads.report,
+      state,
+      view,
+    }),
     now: serverNow(),
     online,
     organizationId,

@@ -192,6 +192,8 @@ const SHORTCUT_GROUP = /<fieldset[^>]*aria-label="Atalhos do período"[^>]*>/;
 const PRESSED_SHORTCUT = /<button[^>]*aria-pressed="true"[^>]*>/;
 const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
 
+const PRESET_OFF = /data-preset="[^"]*"[^>]*aria-disabled/;
+
 describe("DateRangePanel", () => {
   const panel = (props: Partial<Parameters<typeof DateRangePanel>[0]> = {}) =>
     html(
@@ -268,7 +270,7 @@ describe("DateRangePanel", () => {
   it("sem `only` nenhum atalho fica apagado e há campos para digitar", () => {
     const markup = panel();
     expect(markup).not.toContain('data-preset="este-mes" aria-disabled');
-    expect(markup).not.toMatch(/data-preset="[^"]*"[^>]*aria-disabled/);
+    expect(markup).not.toMatch(PRESET_OFF);
     expect(markup).toContain("Digitar as datas");
   });
 

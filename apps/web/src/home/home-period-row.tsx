@@ -8,6 +8,7 @@ import { type HomeSelection, OFFLINE_ONLY } from "./home-period";
  * says why the others are off; `note` is the line about what is on screen (a copy, a failure).
  */
 export function HomePeriodRow({
+  disabled,
   note,
   offline,
   onCustom,
@@ -16,6 +17,8 @@ export function HomePeriodRow({
   selection,
   today,
 }: {
+  /** The figures the period applies to are still being read. */
+  disabled: boolean;
   note: React.ReactNode;
   offline: boolean;
   onCustom: (period: Period) => void;
@@ -30,6 +33,7 @@ export function HomePeriodRow({
       data-home-period=""
     >
       <PeriodPicker
+        disabled={disabled}
         onCustom={onCustom}
         onPreset={onPreset}
         only={offline ? OFFLINE_ONLY : undefined}

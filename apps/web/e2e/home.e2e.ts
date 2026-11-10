@@ -1224,6 +1224,42 @@ test.describe("o período do Início (cartões do mês, Vendas por dia e Mais ve
     await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
   });
 
+  test("loja que nunca vendeu (primeiros passos) não tem o seletor: não há números do período a mostrar", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(
+      page,
+      new FakeServer({ ...SOLD, days: {}, everSold: false })
+    );
+    await expect(region(page, "Primeiros passos")).toBeVisible();
+    await expect(periodButton(page)).toHaveCount(0);
+  });
+
+  test("a releitura do período que falha deixa os números na tela e diz que não atualizou, com Tentar novamente", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await choosePeriod(page, "Mês passado");
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+    server.broken.set("report/periodSummary", "500");
+    await page.getByRole("button", { name: "Atualizar" }).first().click();
+    const retry = page.locator("[data-home-period]").getByRole("button", {
+      name: "Tentar novamente",
+    });
+    await expect(retry).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-home-period]")).toContainText(
+      "Mostrando os números de"
+    );
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+    server.broken.delete("report/periodSummary");
+    await retry.click();
+    await expect(retry).toHaveCount(0);
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+  });
+
   test("sem conexão só Este mês e Mês passado abrem: os outros atalhos ficam apagados com o motivo, e o calendário e os campos não valem", async ({
     page,
   }) => {
