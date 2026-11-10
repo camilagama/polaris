@@ -65,8 +65,8 @@ function loadCounter(): Promise<CounterModule | null> {
   return loading;
 }
 
-/* a screen with figures is on its way here: ask for the chunk now, so it is evaluated before the data arrives and the first
-   count does not start in the frame that also builds the cards; a phone and reduced motion never get here */
+/* a screen with figures is on its way here: ask for the chunk now, so it is evaluated before the data arrives and the cards are built
+   with the counter already in place; a phone and reduced motion never get here */
 if (readMotionLevel() === "full") {
   loadCounter();
 }

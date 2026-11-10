@@ -35,8 +35,8 @@ import type { HomeFigures } from "./use-home";
 /**
  * The tiles of the Início: Vendas hoje, and the three of the month, Vendas, Resultado estimado and Ticket médio. Each is
  * about 92 px: the name with the (i), the number with the sparkline to its right, and one line of support. Passing the
- * pointer or dragging the finger over a sparkline, or the arrows on its keyboard control, reads one day: the number, the
- * chip and the count follow it, and the date takes the place of the chip. The three tiles of the month read the same
+ * pointer or dragging the finger over a sparkline, or the arrows on its keyboard control, reads one day: the number and the
+ * count follow it, and the date takes the place of the chip. The three tiles of the month read the same
  * day together; "Vendas hoje" reads alone (its series is another). Leaving, everything goes back to today. On a phone
  * the tiles are one column, up to 759 px, and the sparklines are drawn finished, with no entrance; the reading by the
  * finger stays.
