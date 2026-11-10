@@ -1,3 +1,4 @@
+import CalendarDaysIcon from "lucide-react/dist/esm/icons/calendar-days";
 import ChevronLeftIcon from "lucide-react/dist/esm/icons/chevron-left";
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
 import {
@@ -9,24 +10,23 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import { ButtonGroup } from "@/ui/button-group";
 import { Field, FieldLabel } from "@/ui/field";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import {
   EARLIEST_EXPENSE_MONTH,
   formatMonthLabel,
   moveMonthCursor,
-  shiftMonth,
 } from "./expense-model";
 
-/* The month picker of Despesas (v5.1): "‹ Outubro de 2026 ›" glued in one ButtonGroup.
-   The month in the middle opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months and, in the footer,
+/* The month picker of Despesas: one button, written like the period button of the other screens (calendar icon and
+   the month in words), and no arrows of its own beside it.
+   The button opens a Popover with the year ("‹ 2026 ›") over a grid of 3 x 4 months and, in the footer,
    "Este mês" (the store's current month, like the "Hoje" of the DatePicker); a touch or a click on a month chooses it
    and closes. The month is written by the screen, never by the browser's locale, so there is no native month field
    and no fallback for the browsers that lack one. The phone uses the same Popover; the full-screen Dialog comes
    later. The grid goes back to January 2000 (the same floor as the Data de competência) and forward to any year: the
-   list of the expenses reads any month, future ones included. The arrows beside the month keep reaching every month
-   from 0000-01 to 9999-12, as before. */
+   list of the expenses reads any month, future ones included. The arrows of the year inside the grid are the panel's
+   own navigation, like the ones inside the calendar of a period. */
 
 const MONTH_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 const FIRST_YEAR = Number(EARLIEST_EXPENSE_MONTH.slice(0, 4));
@@ -227,21 +227,9 @@ export function MonthPicker({
 }: MonthPickerProps) {
   const [open, setOpen] = useState(false);
   const [openings, setOpenings] = useState(0);
-  const previous = shiftMonth(month, -1);
-  const next = shiftMonth(month, 1);
   const labelId = `${id}-label`;
   const text = capitalized(formatMonthLabel(month));
 
-  const handlePrevious = useCallback(() => {
-    if (previous) {
-      onChange(previous);
-    }
-  }, [onChange, previous]);
-  const handleNext = useCallback(() => {
-    if (next) {
-      onChange(next);
-    }
-  }, [next, onChange]);
   // a popup reopened while it is still leaving keeps its grid mounted: a new key gives each opening a fresh cursor
   const handleOpenChange = useCallback((opening: boolean) => {
     if (opening) {
@@ -262,59 +250,36 @@ export function MonthPicker({
   return (
     <Field className={cn("w-auto min-w-0", className)}>
       <FieldLabel id={labelId}>{label}</FieldLabel>
-      <ButtonGroup aria-labelledby={labelId}>
-        <Button
-          aria-label="Mês anterior"
-          className="touch:h-11"
-          disabled={previous === null}
-          onClick={handlePrevious}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          <ChevronLeftIcon aria-hidden="true" />
-        </Button>
-        <Popover onOpenChange={handleOpenChange} open={open}>
-          {/* the accessible name holds the text the button shows (WCAG 2.5.3): "Mês de competência, Outubro de 2026" */}
-          <PopoverTrigger
-            render={
-              <Button
-                aria-label={`${label}, ${text}`}
-                className="touch:h-11 min-w-32 flex-1 bg-card shadow-xs min-[30rem]:min-w-40 dark:bg-secondary/60"
-                id={id}
-                type="button"
-                variant="outline"
-              />
-            }
-          >
-            {text}
-          </PopoverTrigger>
-          <PopoverContent
-            align="center"
-            aria-label={label}
-            className="w-72 max-w-(--available-width) gap-2 p-2"
-            initialFocus={false}
-          >
-            <MonthGrid
-              currentMonth={currentMonth}
-              key={openings}
-              month={month}
-              onChoose={choose}
+      <Popover onOpenChange={handleOpenChange} open={open}>
+        {/* the accessible name holds the text the button shows (WCAG 2.5.3): "Mês de competência, Outubro de 2026" */}
+        <PopoverTrigger
+          render={
+            <Button
+              aria-label={`${label}, ${text}`}
+              className="w-full justify-start font-normal sm:w-fit sm:min-w-40"
+              id={id}
+              type="button"
+              variant="outline"
             />
-          </PopoverContent>
-        </Popover>
-        <Button
-          aria-label="Próximo mês"
-          className="touch:h-11"
-          disabled={next === null}
-          onClick={handleNext}
-          size="icon"
-          type="button"
-          variant="outline"
+          }
         >
-          <ChevronRightIcon aria-hidden="true" />
-        </Button>
-      </ButtonGroup>
+          <CalendarDaysIcon aria-hidden="true" data-icon="inline-start" />
+          {text}
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          aria-label={label}
+          className="w-72 max-w-(--available-width) gap-2 p-2"
+          initialFocus={false}
+        >
+          <MonthGrid
+            currentMonth={currentMonth}
+            key={openings}
+            month={month}
+            onChoose={choose}
+          />
+        </PopoverContent>
+      </Popover>
     </Field>
   );
 }

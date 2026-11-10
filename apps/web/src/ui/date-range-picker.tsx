@@ -11,7 +11,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { TWO_MONTHS_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { OnDemandCalendar, warmCalendar } from "@/ui/calendar-on-demand";
@@ -75,43 +74,21 @@ export interface DateRangePickerProps {
   clearable?: boolean | undefined;
 }
 
-function useTwoMonths(): boolean {
-  const [wide, setWide] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia(TWO_MONTHS_QUERY).matches
-  );
-  useEffect(() => {
-    const query = window.matchMedia(TWO_MONTHS_QUERY);
-    const update = () => setWide(query.matches);
-    query.addEventListener("change", update);
-    update();
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return wide;
-}
-
-/** The first month shown: the start of the range; with two months, the month before the end when that fits it all. */
-function firstMonth(range: DraftRange | undefined, today: Date, two: boolean) {
-  const from = parseIsoDate(range?.from);
-  if (!two) {
-    return from ?? today;
-  }
-  const end = parseIsoDate(range?.to) ?? from ?? today;
-  const previous = new Date(end.getFullYear(), end.getMonth() - 1, 1, 12);
-  return from && from < previous ? from : previous;
+/** The month shown first: the one where the range starts, or today's. */
+function firstMonth(range: DraftRange | undefined, today: Date) {
+  return parseIsoDate(range?.from) ?? today;
 }
 
 // the box takes the width of the month, whatever sentence an error or a status line holds: such a block adds nothing to
 // the width the popup asks for (width 0) and fills what the month gave it (min-width 100%), so a long sentence wraps
 const HOLD_WIDTH = "w-0 min-w-full";
 
-// the four shortcuts need about 16 rem in a row; where the window (in the browser's own rem, so the large letter counts)
-// is narrower than 18 rem they make two rows of two, apart by 12 px so the 44 px areas of touch stay apart
+// from 760 px the shortcuts are a column beside the month (the one in use marked); below it they are a row that scrolls
+// sideways above the month, each one apart by 12 px so the 44 px areas of touch stay apart
 const SHORTCUTS_CLASS =
-  "m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs max-[18rem]:grid max-[18rem]:grid-cols-2 max-[18rem]:gap-3 max-[18rem]:shadow-none";
+  "m-0 -mx-1 flex w-0 min-w-full shrink-0 gap-3 overflow-x-auto border-0 p-1 md:mx-0 md:w-36 md:min-w-36 md:flex-col md:gap-0.5 md:overflow-visible md:p-0";
 const SHORTCUT_CLASS =
-  "touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground max-[18rem]:not-first:ml-0 max-[18rem]:rounded-md max-[18rem]:first:rounded-md max-[18rem]:last:rounded-md dark:bg-secondary/60";
+  "touch-hit focus-ring inline-flex h-ctl-sm shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-border bg-card px-3 font-medium text-foreground text-xs shadow-xs motion-full:transition-colors hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground md:h-ctl-md md:justify-start md:border-transparent md:bg-transparent md:text-sm md:shadow-none dark:bg-secondary/60 dark:md:bg-transparent";
 
 const FIELD_LABELS: Record<TypedField, string> = { from: "Início", to: "Fim" };
 // taken from the keys: a string literal of that word followed by a quote is read as an import by the source scan of src/ui
@@ -442,8 +419,8 @@ function useTypedDates({
  * What a range editor shows inside a popover: the shortcuts the screen chose (`date-range-shortcuts.ts`) above the month
  * and "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
  * hands it to `onCommit`, with the earlier day as the start, so an inverted range ("Até" before "De") cannot be made.
- * A shortcut hands its range over at once and "Limpar" hands over null. Two months side by side from 1280 px, one
- * below. A half-chosen range lives in this component, so closing the popover drops it and every opening starts from
+ * A shortcut hands its range over at once and "Limpar" hands over null. One month at a time at every width, the
+ * shortcuts in a column beside it from 760 px and in a row above it below. A half-chosen range lives in this component, so closing the popover drops it and every opening starts from
  * `value`. The `DateRangePicker` and the period editor of the filter bar share it.
  */
 export function DateRangePanel({
@@ -485,7 +462,6 @@ export function DateRangePanel({
   const [draft, setDraft] = useState<DraftRange | undefined>(
     value ?? undefined
   );
-  const two = useTwoMonths();
   const today = todayOr(todayProp);
   const todayDate = parseIsoDate(today) as Date;
   const pressed =
@@ -493,14 +469,14 @@ export function DateRangePanel({
       ? matchingPreset(value, today, shortcuts, endsToday)
       : pressedProp;
   const [month, setMonth] = useState(() =>
-    firstMonth(value ?? undefined, todayDate, two)
+    firstMonth(value ?? undefined, todayDate)
   );
   const typed = useTypedDates({
     callerApplies: onHalfChange !== undefined,
     draft,
     onCommit,
     setDraft,
-    setMonth: (next) => setMonth(firstMonth(next, todayDate, two)),
+    setMonth: (next) => setMonth(firstMonth(next, todayDate)),
     span,
     statusId: statusIdProp,
     value,
@@ -548,8 +524,7 @@ export function DateRangePanel({
   };
 
   return (
-    <>
-      {/* 16 px down to the month: the 44 px areas of the shortcuts and of the month arrows stay apart at 320 px */}
+    <div className="contents md:flex md:gap-4">
       <fieldset aria-label="Atalhos do período" className={SHORTCUTS_CLASS}>
         {shortcutsOf(shortcuts).map((preset) => (
           <button
@@ -564,60 +539,59 @@ export function DateRangePanel({
           </button>
         ))}
       </fieldset>
-      {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
+      <div className="contents md:flex md:min-w-0 md:flex-col md:gap-3">
+        {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
           and the line that asks for the last day stay in view; the 4 px around keep the focus ring of a day. With the
           typed fields open the month keeps its six weeks and the whole panel scrolls instead (the popup, or the body
           of the Dialog), so no week is hidden in a box that scrolls on its own */}
-      <div
-        className={cn(
-          "-m-1 p-1",
-          typed.open ? "shrink-0" : "min-h-0 overflow-y-auto"
-        )}
-        data-range-month
-      >
-        <OnDemandCalendar
-          autoFocus
-          disabled={span ? far : undefined}
-          disabledReason={span?.reason}
-          mode="range"
-          month={month}
-          numberOfMonths={two ? 2 : 1}
-          onMonthChange={setMonth}
-          onSelect={pickDay}
-          selected={selected}
-          // with two months a day of the neighbour would show twice, once in each
-          showOutsideDays={!two}
-          today={todayDate}
-        />
-      </div>
-      <div ref={typed.anchor}>
-        <DateRangeTyping {...typed.typingProps} />
-      </div>
-      <div
-        className={cn(
-          "flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2",
-          HOLD_WIDTH
-        )}
-      >
-        <p
-          aria-live={typed.open ? undefined : "polite"}
+        <div
           className={cn(
-            "min-w-0 text-muted-foreground text-support",
-            typed.statusQuiet && "sr-only"
+            "-m-1 p-1",
+            typed.open ? "shrink-0" : "min-h-0 overflow-y-auto"
           )}
-          id={typed.statusId}
+          data-range-month
         >
-          {typed.open
-            ? typed.reason
-            : half && `Início ${formatDate(half)}. Escolha o último dia.`}
-        </p>
-        {clearable && (value || half) ? (
-          <Button onClick={clear} size="sm" variant="ghost">
-            Limpar
-          </Button>
-        ) : null}
+          <OnDemandCalendar
+            autoFocus
+            disabled={span ? far : undefined}
+            disabledReason={span?.reason}
+            mode="range"
+            month={month}
+            onMonthChange={setMonth}
+            onSelect={pickDay}
+            selected={selected}
+            today={todayDate}
+          />
+        </div>
+        <div ref={typed.anchor}>
+          <DateRangeTyping {...typed.typingProps} />
+        </div>
+        <div
+          className={cn(
+            "flex min-h-ctl-sm shrink-0 items-center justify-between gap-2 border-border border-t pt-2",
+            HOLD_WIDTH
+          )}
+        >
+          <p
+            aria-live={typed.open ? undefined : "polite"}
+            className={cn(
+              "min-w-0 text-muted-foreground text-support",
+              typed.statusQuiet && "sr-only"
+            )}
+            id={typed.statusId}
+          >
+            {typed.open
+              ? typed.reason
+              : half && `Início ${formatDate(half)}. Escolha o último dia.`}
+          </p>
+          {clearable && (value || half) ? (
+            <Button onClick={clear} size="sm" variant="ghost">
+              Limpar
+            </Button>
+          ) : null}
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 

@@ -10,6 +10,3 @@ export const PHONE_QUERY = "not all and (min-width: 47.5rem)";
 
 /** 1024 px: from here the sidebar may fold to its icons (map of navigation, § 5). */
 export const COLLAPSIBLE_QUERY = "(min-width: 64rem)";
-
-/** 1280 px, `xl` of Tailwind: the calendar shows two months side by side. */
-export const TWO_MONTHS_QUERY = "(min-width: 80rem)";

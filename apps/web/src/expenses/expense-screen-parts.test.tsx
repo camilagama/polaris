@@ -13,11 +13,11 @@ import type { ExpenseFilters, ExpenseListState } from "./use-expense-list";
  */
 const noop = () => undefined;
 const MONTH_BUTTON =
-  /<button[^>]*aria-label="Mês de competência, Outubro de 2026"[^>]*aria-haspopup="dialog"[^>]*>Outubro de 2026<\/button>/;
+  /<button[^>]*aria-label="Mês de competência, Outubro de 2026"[^>]*aria-haspopup="dialog"[^>]*><svg.*<\/svg>Outubro de 2026<\/button>/;
 const AMOUNT = /R\$\s1\.500,50/;
 
 describe("MonthPicker", () => {
-  it("says the month in words in a button that opens the grid, between the two arrows, with no native month field", () => {
+  it("says the month in words in a button that opens the grid, with no arrows beside it and no native month field", () => {
     const html = renderToStaticMarkup(
       <MonthPicker
         currentMonth="2026-10"
@@ -28,14 +28,13 @@ describe("MonthPicker", () => {
       />
     );
     expect(html).toMatch(MONTH_BUTTON);
-    expect(html).toContain('aria-label="Mês anterior"');
-    expect(html).toContain('aria-label="Próximo mês"');
+    expect(html).not.toContain('aria-label="Mês anterior"');
+    expect(html).not.toContain('aria-label="Próximo mês"');
     expect(html).not.toContain('type="month"');
-    // the group is named by the label of the field
-    expect(html).toContain('aria-labelledby="m-label"');
+    expect(html).toContain('id="m-label"');
   });
 
-  it("turns off the arrow past the first month there is", () => {
+  it("writes any month the list can read, the first one there is included", () => {
     const html = renderToStaticMarkup(
       <MonthPicker
         currentMonth="2026-10"
@@ -45,12 +44,7 @@ describe("MonthPicker", () => {
         onChange={noop}
       />
     );
-    const buttons = html.match(/<button[^>]*>/g) ?? [];
-    const previous = buttons.find((tag) => tag.includes("Mês anterior"));
-    const next = buttons.find((tag) => tag.includes("Próximo mês"));
-    expect(previous).toContain('disabled=""');
-    expect(next).toBeDefined();
-    expect(next).not.toContain('disabled=""');
+    expect(html).toContain("Janeiro de 0");
   });
 });
 

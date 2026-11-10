@@ -3293,3 +3293,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Sem setas de mês (item 5) | Em revisão | `dashboard/period-picker.tsx` volta a ser só o `DateRangePicker`; `monthStep`, a região viva e os testes que só existiam para as setas saem. "Este mês" com sentido único (AC-A) e `wholeMonthOf` ficam. O seletor de mês das Despesas e o calendário do painel não mudam. As baselines do Resultado a 360 px voltam às de antes das setas. |
 | Ajuda na lateral (item 8) | Em revisão | `NAV_ITEMS` ganha "Ajuda e contato" depois de Configurações, no mesmo grupo sem rótulo; `HELP_ITEM` do `app-shell.tsx` e o "?" do `shell-header.tsx` saem. No celular segue no "Mais", na mesma ordem. O menu da loja mantém o seu item "Ajuda e contato". |
 | Provas | Em revisão | Unidade: `home-kpi-cards.test.tsx` (as mesmas classes de tamanho e de "R$" nos quatro cartões), `kpi-card.test.tsx`, `result-period.test.ts`, `navigation-model.test.ts`. e2e (Chromium): `home.e2e.ts` mede o tamanho do valor e do "R$" dos quatro cartões; `dashboard.e2e.ts` prova que não há setas; `app-shell.e2e.ts` e `shell-header.e2e.ts` provam a Ajuda na lateral aberta e recolhida e o cabeçalho sem "?". |
+
+### UI de 09/11: seletor de período com um mês e Despesas sem setas (t992; item 4a e 4b, resposta 2; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Um mês por vez (4a) | Em revisão | `ui/date-range-picker.tsx` mostra um mês em qualquer largura: `useTwoMonths`, `TWO_MONTHS_QUERY` (`lib/breakpoints.ts`) e o `xl:flex-row` do `ui/calendar.tsx` saem. Vale para Resultado, Histórico e Metas. |
+| Atalhos em coluna (4b) | Em revisão | A partir de 760 px os atalhos ficam numa coluna à esquerda do mês, o atual marcado; abaixo, uma fileira que rola para o lado. Aplicam na hora e fecham, como antes. Não feito: trocar "Digitar as datas" por uma linha com o intervalo escolhido. |
+| Despesas sem ‹ › | Em revisão | `expenses/month-picker.tsx` é um botão só, com o desenho do botão de período, e abre a grade de meses; as setas do ano dentro da grade ficam. |
+| Provas | Em revisão | Unidade: `expense-screen-parts.test.tsx`, `breakpoints.test.ts`. e2e: `expenses.e2e.ts`, `goals.e2e.ts`, `ui-date-pickers.e2e.ts`, `reflow-rotas.e2e.ts`. |
