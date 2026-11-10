@@ -14,7 +14,7 @@ Registro retroativo das decisões tomadas nos PR13 a PR18 e confirmadas na revis
 
 - **Duração da sessão.** A sessão expira após 7 dias sem renovação (TTL por inatividade), com renovação no máximo a cada 24 horas de uso, e tem um **teto absoluto de 30 dias** desde a criação, imposto pelo Worker e por um trigger do banco que limita `expires_at` e mantém `created_at` imutável. O cache de sessão em cookie fica desativado, para que revogação e validade absoluta sejam sempre verificadas no servidor.
 - **Sem vínculo implícito de contas.** Um login social nunca associa contas automaticamente. O vínculo Google exige sessão existente e verificada, iniciada por ação explícita do usuário, com e-mail verificado e igual nos dois lados; `trustedProviders` fica vazio e `idToken` enviado pelo cliente não cria vínculo.
-- **Senhas.** Fator único com 15 a 128 pontos de código Unicode após NFC, sem regras de composição nem expiração periódica, e consulta ao corpus de senhas comprometidas (HIBP, k-anonymity com padding) ao criar ou alterar. A consulta é **fail-closed**: se não puder ser concluída, a senha não é aceita nem armazenada. Reset de senha revoga todas as sessões. *Substituído pela emenda de 4/11/2026 do [ADR 0100](0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md): de 8 a 128, com número, maiúscula e minúscula, sem a consulta HIBP, e o hash em bcrypt no PostgreSQL sobre o HMAC com pepper.*
+- **Senhas.** Fator único com 8 a 128 pontos de código Unicode após NFC, com pelo menos 1 número, 1 letra maiúscula e 1 minúscula (caractere especial só como dica, nunca exigido), sem expiração periódica e sem consulta a corpus de senhas vazadas. A regra é uma só, em `@polaris/domain/auth/password-rules`, conferida no servidor e repetida na tela. O hash é bcrypt no PostgreSQL sobre o HMAC da senha com pepper. Reset de senha revoga todas as sessões. *Esta parte foi substituída pela emenda de 4/11/2026 do [ADR 0100](0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md); a decisão original era de 15 a 128, sem regras de composição, com consulta HIBP (k-anonymity com padding) fail-closed ao criar ou alterar a senha. O risco aceito de ficar abaixo do NIST SP 800-63B-4 está no ADR 0100.*
 - **Tokens OAuth cifrados.** Os tokens do provider são cifrados pelo Better Auth em repouso e o `id_token` não é persistido.
 - **Abuso.** Rotas públicas de autenticação exigem Turnstile validado no servidor e limites por IP (contadores aproximados por localidade, uma camada de contenção e não uma quota global). E-mail/senha fica desligado por padrão e na produção e ligado no staging (`apps/web/wrangler.jsonc`); na produção só liga com Turnstile, bindings, e-mail transacional e domínio de envio configurados.
 - **Auditoria de segurança** registra o ID interno do usuário e o tipo do evento, sem token, payload ou dados pessoais.
@@ -23,15 +23,15 @@ Registro retroativo das decisões tomadas nos PR13 a PR18 e confirmadas na revis
 
 - Perder o dispositivo ou a senha tem janela de exposição limitada: no pior caso 30 dias, e a revogação é efetiva na próxima requisição.
 - Usuários que dependem de um único provider não ganham vínculo automático; recuperar acesso passa por fluxos explícitos e verificados.
-- Falha do serviço HIBP bloqueia criação e troca de senha, mas não o login; é um custo de disponibilidade aceito em favor da segurança. *A consulta saiu na emenda de 4/11/2026 do ADR 0100.*
+- Sem consulta a corpus de senhas vazadas, a criação e a troca de senha não dependem de serviço externo; uma senha conhecida que cumpra a regra passa, e o freio é o bloqueio por e-mail, o limite por IP e o Turnstile (risco aceito no ADR 0100). *A decisão original (consulta HIBP fail-closed, que bloqueava criação e troca de senha, mas não o login, quando o serviço falhava) saiu na emenda de 4/11/2026 do ADR 0100.*
 - Pendências conhecidas antes de ligar e-mail/senha em produção: o Worker deve usar o IP da borda (`cf-connecting-ip`) em vez de `X-Forwarded-For`, o contexto autenticado de `/rpc` deve conferir o teto absoluto da sessão e rate limits cobrem `change-password` e `verify-password`. Elas estão no checklist de go-live dos [runbooks](../runbooks/README.md).
 
 ## Alternativas consideradas
 
 - **Sessão longa e deslizante sem teto.** Melhor ergonomia, mas uma sessão roubada nunca expira se continuar sendo usada.
 - **Vínculo automático por e-mail verificado.** Reduz atrito, mas permite tomada de conta quando um provider reporta e-mail verificado de forma permissiva.
-- **Regras de composição e troca periódica de senha.** Contrariam a orientação do NIST SP 800-63B-4 e pioram a qualidade das senhas.
-- **HIBP fail-open.** Mantém o cadastro no ar durante a falha do serviço, mas aceitaria senhas comprometidas justamente quando a verificação não funciona.
+- **Regras de composição e troca periódica de senha.** Contrariam a orientação do NIST SP 800-63B-4 e pioram a qualidade das senhas. *A troca periódica segue descartada; a composição (número, maiúscula e minúscula) entrou na emenda de 4/11/2026 do [ADR 0100](0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md), por decisão do usuário.*
+- **HIBP fail-open.** Mantém o cadastro no ar durante a falha do serviço, mas aceitaria senhas comprometidas justamente quando a verificação não funciona. *Sem objeto desde a emenda de 4/11/2026 do ADR 0100, que removeu a consulta.*
 
 ## Emenda (19/10/2026, [ADR 0100](0100-tela-de-entrada-senha-atras-de-flag-bloqueio-e-aceite-legal.md))
 
