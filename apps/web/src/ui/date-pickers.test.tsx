@@ -10,7 +10,6 @@ import {
 import { DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
-import { DateField } from "../sales/sale-fields";
 
 /**
  * The markup of the date pickers: the accessible names and the error of the buttons, and the month grid of
@@ -498,63 +497,3 @@ function failureMarkup(props: { offline: boolean; unsent?: boolean }) {
     />
   );
 }
-
-describe("o motivo dos dias desligados (tipo)", () => {
-  it("min ou max sem disabledReason não compila", () => {
-    const elements = [
-      // @ts-expect-error min without a reason leaves a disabled day mute
-      <DatePicker
-        label="Data"
-        min="2026-10-01"
-        onValueChange={noop}
-        value={null}
-      />,
-      // @ts-expect-error max without a reason leaves a disabled day mute
-      <DatePicker
-        label="Data"
-        max="2026-10-24"
-        onValueChange={noop}
-        value={null}
-      />,
-      // @ts-expect-error the same on the DateField that wraps it
-      <DateField
-        id="data"
-        label="Data"
-        max="2026-10-24"
-        onChange={noop}
-        value=""
-      />,
-      // @ts-expect-error a limit that may be absent still asks for the reason
-      <DateField
-        id="data"
-        label="Data"
-        min={"2026-10-01" as string | undefined}
-        onChange={noop}
-        value=""
-      />,
-    ];
-    expect(elements).toHaveLength(4);
-  });
-
-  it("sem limite, o motivo é opcional; com limite, vale", () => {
-    const elements = [
-      <DatePicker label="Data" onValueChange={noop} value={null} />,
-      <DatePicker
-        disabledReason="Só até hoje"
-        label="Data"
-        max="2026-10-24"
-        onValueChange={noop}
-        value={null}
-      />,
-      <DateField
-        disabledReason="Só a partir do início"
-        id="data"
-        label="Data"
-        min={"2026-10-01" as string | undefined}
-        onChange={noop}
-        value=""
-      />,
-    ];
-    expect(elements).toHaveLength(3);
-  });
-});

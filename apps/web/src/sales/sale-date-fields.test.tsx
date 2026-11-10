@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { DatePicker } from "@/ui/date-picker";
 import { DateField, DateRangeField } from "./sale-fields";
 
 /** The markup of the date fields of the forms: label, button name, help and error ties, and the "Limpar". */
@@ -100,5 +101,72 @@ describe("DateRangeField", () => {
     expect(attribute(half, "aria-label")).toBe(
       "Período da meta, Escolher período"
     );
+  });
+});
+
+describe("DatePicker e DateField: o motivo dos dias desligados (tipo)", () => {
+  it("DatePicker com min ou max sem disabledReason não compila", () => {
+    const elements = [
+      // @ts-expect-error min without a reason leaves a disabled day mute
+      <DatePicker
+        label="Data"
+        min="2026-10-01"
+        onValueChange={noop}
+        value={null}
+      />,
+      // @ts-expect-error max without a reason leaves a disabled day mute
+      <DatePicker
+        label="Data"
+        max="2026-10-24"
+        onValueChange={noop}
+        value={null}
+      />,
+      <DatePicker label="Data" onValueChange={noop} value={null} />,
+      <DatePicker
+        disabledReason="Só até hoje"
+        label="Data"
+        max="2026-10-24"
+        onValueChange={noop}
+        value={null}
+      />,
+    ];
+    expect(elements).toHaveLength(4);
+  });
+
+  it("DateField com min ou max sem disabledReason não compila", () => {
+    const elements = [
+      // @ts-expect-error max without a reason leaves a disabled day mute
+      <DateField
+        id="data"
+        label="Data"
+        max="2026-10-24"
+        onChange={noop}
+        value=""
+      />,
+      // @ts-expect-error a limit that may be absent still asks for the reason
+      <DateField
+        id="data"
+        label="Data"
+        min={"2026-10-01" as string | undefined}
+        onChange={noop}
+        value=""
+      />,
+    ];
+    expect(elements).toHaveLength(2);
+  });
+
+  it("com limite e motivo, compila", () => {
+    const elements = [
+      <DateField
+        disabledReason="Só a partir do início"
+        id="data"
+        label="Data"
+        min={"2026-10-01" as string | undefined}
+        onChange={noop}
+        value=""
+      />,
+      <DateField id="data" label="Data" onChange={noop} value="" />,
+    ];
+    expect(elements).toHaveLength(2);
   });
 });
