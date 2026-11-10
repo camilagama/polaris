@@ -2,7 +2,6 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
-import { HideValuesButton } from "@/ui/hidden-values";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -603,9 +602,9 @@ function figuresLine(
 }
 
 /**
- * The title, "Atualizar", "Esconder valores" and "Nova venda" with the line that says what the sale can do without a
- * connection: the part of the page that depends on no read (and on no connection). On a phone the two buttons are
- * icons in the corner of the title and "Nova venda" takes the whole width (v7 § 3).
+ * The title, "Atualizar" and "Nova venda" with the line that says what the sale can do without a connection: the part
+ * of the page that depends on no read (and on no connection). On a phone "Atualizar" is an icon in the corner of the
+ * title and "Nova venda" takes the whole width (v7 § 3).
  */
 function HomeHeader({
   explained,
@@ -649,7 +648,6 @@ function HomeHeader({
               onClick={refresh.onClick}
             />
           ) : null}
-          <HideValuesButton />
         </div>
       </div>
       <div className="flex w-full items-start gap-2 sm:w-auto">
@@ -662,7 +660,6 @@ function HomeHeader({
             onClick={refresh.onClick}
           />
         ) : null}
-        <HideValuesButton className="max-md:hidden" />
         <NewSale
           describedBy={
             [

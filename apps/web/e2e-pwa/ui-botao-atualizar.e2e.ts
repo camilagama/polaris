@@ -5,7 +5,7 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
 
 /**
  * "Atualizar" is one component on Início, Resultado, Metas, Estoque and Vender: the same height in every one (32 with a mouse,
- * 36 with touch from 760 px, the icon of `ctl-lg` below it, as "Esconder valores"), a name that starts with
+ * 36 with touch from 760 px, the icon of `ctl-lg` below it), a name that starts with
  * "Atualizar" and keeps the object ("Atualizar metas", "Atualizar estoque e perfis"), and a turning icon only with
  * full motion: a phone and `prefers-reduced-motion` keep it still, and the button keeps its size while it reads.
  * Estoque and Vender have no state of their own for reading (the first draws its loading card, the second keeps what
