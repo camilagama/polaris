@@ -99,16 +99,30 @@ function stripValueSize(characters: number): string {
 export function KpiGroup({
   children,
   className,
+  control,
   period,
   title,
 }: {
   children: ReactNode;
   className?: string;
+  /** A control for the period, at the end of the line (the Início's picker): the line is then a box with room for it. */
+  control?: ReactNode;
   /** The period, "1 a 23/10". */
   period: string;
   /** The month, "Outubro", when the period is one. */
   title?: string | null;
 }) {
+  const text = (
+    <>
+      {title ? (
+        <>
+          <span className="font-medium text-foreground">{title}</span>
+          {" · "}
+        </>
+      ) : null}
+      <span className="tabular-nums">{period}</span>
+    </>
+  );
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset has a box of its own, and the cards must stay items of the grid
     <div
@@ -116,18 +130,25 @@ export function KpiGroup({
       className="contents"
       role="group"
     >
-      <p
-        className={cn("text-muted-foreground text-support", className)}
-        data-kpi-group=""
-      >
-        {title ? (
-          <>
-            <span className="font-medium text-foreground">{title}</span>
-            {" · "}
-          </>
-        ) : null}
-        <span className="tabular-nums">{period}</span>
-      </p>
+      {control ? (
+        <div
+          className={cn(
+            "flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-muted-foreground text-support",
+            className
+          )}
+          data-kpi-group-line=""
+        >
+          <p data-kpi-group="">{text}</p>
+          {control}
+        </div>
+      ) : (
+        <p
+          className={cn("text-muted-foreground text-support", className)}
+          data-kpi-group=""
+        >
+          {text}
+        </p>
+      )}
       {children}
     </div>
   );

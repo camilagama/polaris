@@ -5,8 +5,11 @@ import { type HomeSelection, OFFLINE_ONLY } from "./home-period";
 
 /**
  * The period of the cards of the month, of Vendas por dia and of Mais vendidos: the Resultado's picker (one month at a
- * time), under the title. Without a connection only this month and the last one open, and the line beside the button
- * says why the others are off; `note` is the line about what is on screen (a copy, a failure).
+ * time), at the end of the line that names the month. Without a connection only this month and the last one open: the
+ * others are off in the panel, with the reason, and from 640 px the line says it beside the button too (on a phone it is
+ * for the screen reader, the panel has it in words). The sentence is always in the line, invisible with a connection, so
+ * the line does not change height when the connection goes or comes back. `note` is the line about what is on screen (a
+ * copy, a failure).
  */
 export function HomePeriodRow({
   disabled,
@@ -18,7 +21,7 @@ export function HomePeriodRow({
   selection,
   today,
 }: {
-  /** The figures the period applies to are still being read. */
+  /** The figures the period applies to are not on screen (still being read, or none). */
   disabled: boolean;
   note: React.ReactNode;
   offline: boolean;
@@ -30,9 +33,18 @@ export function HomePeriodRow({
 }) {
   return (
     <div
-      className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-1.5"
+      className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1"
       data-home-period=""
     >
+      <p
+        aria-hidden={offline ? undefined : true}
+        className={cn(
+          "text-muted-foreground text-support",
+          offline ? "max-sm:sr-only" : "invisible max-sm:hidden"
+        )}
+      >
+        {OFFLINE_ONLY.reason}
+      </p>
       <PeriodPicker
         disabled={disabled}
         onCustom={onCustom}
@@ -42,18 +54,7 @@ export function HomePeriodRow({
         preset={selection.preset}
         today={today}
       />
-      {/* always in the line, hidden with a connection: the line it takes on a phone is kept, so the page does not move
-          when the connection goes or comes back */}
-      <p
-        aria-hidden={offline ? undefined : true}
-        className={cn(
-          "text-muted-foreground text-support",
-          !offline && "invisible"
-        )}
-      >
-        {OFFLINE_ONLY.reason}
-      </p>
-      {note}
+      {note ? <div className="basis-full text-right">{note}</div> : null}
     </div>
   );
 }

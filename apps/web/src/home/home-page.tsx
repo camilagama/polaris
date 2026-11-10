@@ -46,6 +46,7 @@ import {
   topProductsTitle,
 } from "./home-period";
 import { HomePeriodRow } from "./home-period-row";
+import { PeriodControlProvider } from "./period-control";
 import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import {
@@ -1125,7 +1126,6 @@ export function HomePage() {
         refresh={refresh}
         updated={refreshing ? REFRESHING_TEXT : updated}
       />
-      {periodRow}
       <ReopenedNotice />
       <ClosedStoreLine activeIds={activeIds} />
       <div
@@ -1134,14 +1134,16 @@ export function HomePage() {
         }
         className="grid gap-4"
       >
-        <FigureArea
-          attention={attention}
-          attentionNotes={attentionNotes}
-          blocks={blocks}
-          goal={goalBlock}
-          keep={explained}
-          measure={offline === null && figures !== null && !blocks.pending}
-        />
+        <PeriodControlProvider value={periodRow}>
+          <FigureArea
+            attention={attention}
+            attentionNotes={attentionNotes}
+            blocks={blocks}
+            goal={goalBlock}
+            keep={explained}
+            measure={offline === null && figures !== null && !blocks.pending}
+          />
+        </PeriodControlProvider>
       </div>
     </div>
   );

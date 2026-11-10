@@ -1224,7 +1224,7 @@ test.describe("o período do Início (cartões do mês, Vendas por dia e Mais ve
     await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
   });
 
-  test("loja que nunca vendeu (primeiros passos): o seletor fica no lugar, desligado: não há números do período a mostrar", async ({
+  test("loja que nunca vendeu (primeiros passos) não tem o seletor: não há números do período a mostrar", async ({
     page,
   }) => {
     await page.setViewportSize(SIZES[1]);
@@ -1233,7 +1233,7 @@ test.describe("o período do Início (cartões do mês, Vendas por dia e Mais ve
       new FakeServer({ ...SOLD, days: {}, everSold: false })
     );
     await expect(region(page, "Primeiros passos")).toBeVisible();
-    await expect(periodButton(page)).toBeDisabled();
+    await expect(periodButton(page)).toHaveCount(0);
   });
 
   test("a releitura do período que falha deixa os números na tela e diz que não atualizou, com Tentar novamente", async ({

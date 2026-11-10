@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { KpiCards, NoFiguresCards } from "./home-kpi-cards";
+import { KpiCards, KpiCardsSkeleton, NoFiguresCards } from "./home-kpi-cards";
+import { PeriodControlProvider } from "./period-control";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -311,5 +312,43 @@ describe("the cards without a connection and without a copy", () => {
   it("keep the sparkline's place, so they are as tall as with figures", () => {
     const markup = renderToStaticMarkup(<NoFiguresCards today={TODAY} />);
     expect(markup.match(/data-kpi-spark=""/g)).toHaveLength(4);
+  });
+});
+
+const PLAIN_LINE = /^<p class="[^"]*" $/;
+const MONTH_LINE_WITH_CONTROL = /Outubro · 1 a 23\/10 ?Seletor/;
+
+describe("o seletor de período na linha do mês", () => {
+  const control = <button type="button">Seletor</button>;
+  const withControl = (node: React.ReactNode) =>
+    renderToStaticMarkup(
+      <PeriodControlProvider value={control}>{node}</PeriodControlProvider>
+    );
+
+  it("fica no fim da linha que nomeia o mês, e o texto da linha segue o mesmo", () => {
+    const markup = withControl(<KpiCards figures={figures()} />);
+    const line = markup.slice(markup.indexOf("data-kpi-group-line"));
+    expect(words(line.slice(0, line.indexOf("</div>")))).toMatch(
+      MONTH_LINE_WITH_CONTROL
+    );
+    expect(markup).toContain("min-h-9");
+  });
+
+  it("o esqueleto e o sem conexão guardam a mesma linha, com o seletor no mesmo lugar", () => {
+    for (const markup of [
+      withControl(<KpiCardsSkeleton />),
+      withControl(<NoFiguresCards today={TODAY} />),
+    ]) {
+      expect(markup).toContain("Seletor");
+      expect(markup).toContain("min-h-9");
+      expect(markup.match(/Seletor/g)).toHaveLength(1);
+    }
+  });
+
+  it("sem o seletor a linha é a de sempre, só o texto", () => {
+    const markup = render(figures());
+    expect(markup).not.toContain("Seletor");
+    const at = markup.indexOf("data-kpi-group");
+    expect(markup.slice(markup.lastIndexOf("<", at), at)).toMatch(PLAIN_LINE);
   });
 });

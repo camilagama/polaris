@@ -39,6 +39,7 @@ import {
   todaySeries,
 } from "./home-kpis";
 import { chartValue, firstOfMonth, monthTitle } from "./home-model";
+import { usePeriodControl } from "./period-control";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -257,6 +258,7 @@ function MonthCards({
   still: boolean;
 }) {
   const [hidden] = useHiddenValues();
+  const control = usePeriodControl();
   const model = useMemo<MonthModel>(
     () =>
       source.kind === "month"
@@ -313,6 +315,7 @@ function MonthCards({
   return (
     <KpiGroup
       className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+      control={control}
       period={read.sales.date}
       title={model.groupTitle}
     >
@@ -400,13 +403,15 @@ function MonthCards({
 
 /** The cards of the month while the period the person chose is read (the group keeps its place and its three cards). */
 function PeriodCardsSkeleton() {
+  const control = usePeriodControl();
   return (
     <>
       <div
-        aria-hidden="true"
-        className="flex h-[1.125rem] items-center md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+        className="flex min-h-9 items-center justify-between gap-3 md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+        data-kpi-group-skeleton=""
       >
-        <Skeleton className="h-3 w-28" />
+        <Skeleton aria-hidden="true" className="h-3 w-28" />
+        {control}
       </div>
       <KpiCardSkeleton className="md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-2" />
       <KpiCardSkeleton
@@ -416,6 +421,22 @@ function PeriodCardsSkeleton() {
       />
       <KpiCardSkeleton className="lg:col-start-4 lg:row-start-2" footer={1} />
     </>
+  );
+}
+
+/** The place of the three cards when the period failed: the line with the picker, and the error under it. */
+function PeriodCardsError({ children }: { children: React.ReactNode }) {
+  const control = usePeriodControl();
+  return (
+    <div className="grid content-start gap-3 md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+      <div
+        className="flex min-h-9 items-center justify-end"
+        data-kpi-group-line=""
+      >
+        {control}
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -436,11 +457,7 @@ function monthPart(month: MonthPart, own: MonthSource, still: boolean) {
         </div>
       );
     case "error":
-      return (
-        <div className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-          {month.error}
-        </div>
-      );
+      return <PeriodCardsError>{month.error}</PeriodCardsError>;
     case "period":
       return (
         <MonthCards
@@ -503,6 +520,7 @@ const EMPTY_ACTION = <span aria-hidden="true" className="block h-4" />;
  * (an unknown value is never a zero) and "Sem conexão". Nothing moves when the connection goes or comes back.
  */
 export function NoFiguresCards({ today }: { today: string }) {
+  const control = usePeriodControl();
   const title = monthTitle(today);
   const name = title.toLowerCase();
   const empty = <HeroValue amount={null} />;
@@ -520,6 +538,7 @@ export function NoFiguresCards({ today }: { today: string }) {
       />
       <KpiGroup
         className="md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+        control={control}
         period={rangeText(firstOfMonth(today), today)}
         title={title}
       >
@@ -567,6 +586,7 @@ export function NoFiguresCards({ today }: { today: string }) {
  * each with the rows it has with figures), so the cards that come take the same places.
  */
 export function KpiCardsSkeleton() {
+  const control = usePeriodControl();
   return (
     <div className={KPI_GRID} data-kpi-row="">
       <KpiCardSkeleton
@@ -574,10 +594,11 @@ export function KpiCardsSkeleton() {
         noteLines={2}
       />
       <div
-        aria-hidden="true"
-        className="flex h-[1.125rem] items-center md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+        className="flex min-h-9 items-center justify-between gap-3 md:col-span-2 lg:col-span-3 lg:col-start-2 lg:row-start-1"
+        data-kpi-group-skeleton=""
       >
-        <Skeleton className="h-3 w-28" />
+        <Skeleton aria-hidden="true" className="h-3 w-28" />
+        {control}
       </div>
       <KpiCardSkeleton className="md:col-span-2 lg:col-span-1 lg:col-start-2 lg:row-start-2" />
       <KpiCardSkeleton
