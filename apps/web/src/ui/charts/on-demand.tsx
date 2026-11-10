@@ -4,7 +4,6 @@ import type { AreaChartProps } from "./area-chart";
 import type { RingChartProps } from "./ring-chart";
 import type { SalesHeatmapProps } from "./sales-heatmap";
 import type { SparklineProps } from "./sparkline";
-import type { WeekdayBarsProps } from "./weekday-bars";
 
 /**
  * How a screen draws a chart: the charts chunk is downloaded when the first one is asked for (`import()` of
@@ -19,9 +18,12 @@ import type { WeekdayBarsProps } from "./weekday-bars";
 export type { AreaChartProps } from "./area-chart";
 export type { ChartDatum } from "./chart-data";
 export type { RingChartProps } from "./ring-chart";
-export type { HeatmapDay, SalesHeatmapProps } from "./sales-heatmap";
+export type {
+  HeatmapDay,
+  HeatmapTip,
+  SalesHeatmapProps,
+} from "./sales-heatmap";
 export type { SparklineProps } from "./sparkline";
-export type { WeekdayBarsProps } from "./weekday-bars";
 
 /** The margins of the blocks added to the plot: the same number as `EXTRA_HEIGHT` of chart-data.ts. */
 const EXTRA_HEIGHT = 40;
@@ -288,19 +290,4 @@ export function OnDemandHeatmap({
     return failed ?? null;
   }
   return <Reserved className={props.className} height={height} />;
-}
-
-/** The bars of the mean by weekday, in the same chunk as the map. */
-export function OnDemandWeekdayBars({
-  failed,
-  ...props
-}: OnDemandProps & WeekdayBarsProps) {
-  const state = useHeatmapChunk();
-  if (state.status === "ready") {
-    return <state.charts.WeekdayBars {...props} />;
-  }
-  if (state.status === "failed") {
-    return failed ?? null;
-  }
-  return <Reserved className={props.className} height={props.height ?? 64} />;
 }

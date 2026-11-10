@@ -311,6 +311,15 @@ O pacote do contador (+7,7 kB gzip) ia no pedaço `result-cards` e era baixado n
 
 **Decisão do Arrascaeta (08/11/2026):** tablet com toque e a partir de 760 px usa o layout de computador e anima; o corte é a largura (menos de 760 px, ou até 500 px de altura), não o toque. É o que `motionLevel` já fazia. O valor final aparece na hora, estático, no primeiro quadro, e nunca fica transparente à espera do pedaço (sem teto de espera): com o pedaço já carregado (pré-carregado no nível `full`) o contador começa de zero ao entrar; se o pedaço chega depois, o número que já está na tela não conta essa vez, passa ao contador com o mesmo texto e conta só nas trocas seguintes (período, atualizar); se o pedaço falha ou o navegador não monta o contador, o valor estático fica. O service worker ainda baixa o pedaço (6,78 kB) na instalação, para o precache; o celular não o pede nem o executa. O valor e o chip com o texto ao lado dele não se movem em nenhum quadro (até 1 px, `e2e-real/jornadas/contador.e2e.ts`).
 
+## Emenda: o Ritmo de vendas só com o mapa (t991)
+
+Pedido do usuário de 09/11: no Início, tirar a média por dia da semana e deixar só o mapa, compacto, com o valor do dia num tooltip.
+
+- **O que saiu.** `src/ui/charts/weekday-bars.tsx` (as duas `BarSparkline`), o `OnDemandWeekdayBars`, a linha de leitura que trocava de texto e a reserva de três linhas dela no celular, e `WEEKDAY_SHORT`. O `BarSparkline` do Bklit continua em `src/ui/bklit/charts/sparkline.tsx`, sem uso no Polaris.
+- **O que entrou.** Quadrados de 12 px com 3 de vão em qualquer largura (tantas semanas quanto cabem, de 13 a 26), e o tooltip do dia no `sales-heatmap.tsx`: o `TooltipBox` do Bklit (o mesmo do `ChartTooltip`) posto sobre o quadrado do dia lido, e não o `HeatmapTooltip` do bloco, que só abre com o ponteiro do mouse. O painel acompanha o `focus` do cartão, então o mouse, o dedo (o quadrado mais próximo do toque, acompanhando o arrasto horizontal com `touch-action: pan-y`) e o foco do teclado abrem o mesmo painel. A frase do melhor dia da semana fica fixa sob o mapa, com a legenda ao lado. Nenhuma dependência nova; `BKLIT-UI.md` registra a diferença.
+- **Bytes** (build de produção local, Node 24, gzip nível 9, contra a `c579a11d` medida do mesmo jeito): `PRECACHE-GROWTH` de +238 162 B para **+238 003 B** (−159 B); `CHARTS` de 57 255 B para **57 357 B** (+102 B, o `TooltipBox` passa a ser usado pelo mapa e o que ele traz fica no chunk dos gráficos), `HEATMAP` de 10 189 B para **10 299 B** (+110 B). As linhas só avisam, sob `BUDGET_MODE`.
+- **Altura do cartão** (loja `vendas`, verify-polaris): de 354 px (celular de 360) e 380 px (1280) para 267 e 253 px.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.

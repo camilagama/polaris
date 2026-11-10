@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
 import { ChartDataTable } from "@/ui/charts/chart-data-table";
 import {
   type HeatmapDay,
+  type HeatmapTip,
   OnDemandHeatmap,
-  OnDemandWeekdayBars,
   useHeatmapFailed,
 } from "@/ui/charts/on-demand";
 import { MoneyText } from "@/ui/hidden-values";
@@ -25,7 +25,7 @@ import {
 } from "../lib/hidden-values";
 import { useIsMobile } from "../lib/use-mobile";
 import { ChartFailed } from "./home-chart";
-import { chartValue, salesCountText } from "./home-model";
+import { salesCountText } from "./home-model";
 import { BlockError, BlockSkeleton, HomeBlock } from "./home-parts";
 import {
   type DailySeries,
@@ -41,50 +41,43 @@ import {
   rhythmReadingText,
   rhythmSummary,
   rhythmView,
-  WEEKDAY_SHORT,
 } from "./home-rhythm-model";
 import type { Block, HomeFigures } from "./use-home";
 
 /**
- * "Ritmo de vendas" (revisão de UI v7, § 3 item 10): the map of the store's days, 26 weeks from 760 px and 13 on a
- * phone, Sunday on top. Over it one line: at rest what only the rhythm knows (the best weekday and its mean, or that
- * the map is still filling up), and once a day is read by the pointer, the finger or the keyboard, that day. Under it
- * the legend in one line ("Menos" to "Mais"; the ranges in reais are in the (i) of the block and in the `title` of the
- * legend) and, beside the map when it fits, the mean by weekday. The drawing (Bklit UI, its own chunk) is `aria-hidden`:
- * the summary (`role="img"`), the reading, the keyboard control (a transparent `input type="range"` over the map, as
- * the charts have) and the table of the days are ours. The table is invisible on the screen and tied to the map by
- * `aria-details` (a description would read its 182 rows in one go); if the drawing does not open it is shown in its
- * place. With the values hidden every amount is "R$ ••••"; the counts and the shape stay.
+ * "Ritmo de vendas" (revisão de UI v7, § 3 item 10; compact): the map of the store's days and
+ * nothing else, as many weeks as fit up to 26 (13 at least), Sunday on top, cells of 12 px. The value of a day is in a
+ * tooltip over its square, opened by the pointer, by the finger (the square nearest to it, following it as it drags)
+ * and by the keyboard; under the map one fixed sentence (the best weekday and its mean, or that the map is still
+ * filling up) and the legend in one line ("Menos" to "Mais"; the ranges in reais are in the (i) of the block and in the
+ * `title` of the legend). The drawing (Bklit UI, its own chunk) is `aria-hidden`: the summary (`role="img"`), the
+ * keyboard control (a transparent `input type="range"` over the map, as the charts have) and the table of the days are
+ * ours. The table is invisible on the screen and tied to the map by `aria-details` (a description would read its 182
+ * rows in one go); if the drawing does not open it is shown in its place. With the values hidden every amount is
+ * "R$ ••••", in the tooltip too; the counts and the shape stay.
  */
 
 /** The width of the initials of the weekdays and the contours around the map, in pixels (`MARGIN` of the drawing). */
 const MAP_SIDES = 22;
-const MAP_TOP = 20;
+const MAP_TOP = 18;
 
-/** The height of the bars of the mean by weekday: a phone keeps them short so the whole block stays near one screen. */
-const BARS_PHONE = 16;
-const BARS_DESKTOP = 48;
+/** The cell and its gap: 12 + 3 on every width, and as many weeks as fit (a phone shows about 15 to 20). */
+const CELL = 12;
+const GAP = 3;
 
-/** The size of the cells: fixed from 760 px (16 + 3, as many weeks as fit up to 26), and on a phone 13 weeks of up to 16 + 3 (the block stays short). */
-function mapLayout(width: number, phone: boolean) {
-  if (phone) {
-    const step =
-      width > 0
-        ? Math.max(14, Math.min(19, Math.floor((width - MAP_SIDES) / 13)))
-        : 19;
-    return { cell: step - 3, gap: 3, weeks: RHYTHM_WEEKS_PHONE };
-  }
-  const fit = width > 0 ? Math.floor((width - MAP_SIDES) / 19) : RHYTHM_WEEKS;
+function mapLayout(width: number) {
+  const fit =
+    width > 0 ? Math.floor((width - MAP_SIDES) / (CELL + GAP)) : RHYTHM_WEEKS;
   return {
-    cell: 16,
-    gap: 3,
+    cell: CELL,
+    gap: GAP,
     weeks: Math.max(RHYTHM_WEEKS_PHONE, Math.min(RHYTHM_WEEKS, fit)),
   };
 }
 
-/** The width the map takes: its weeks of cells plus the sides (a phone takes the whole box). */
-function mapWidth(layout: ReturnType<typeof mapLayout>, phone: boolean) {
-  return phone ? null : layout.weeks * (layout.cell + layout.gap) + MAP_SIDES;
+/** The width the map takes: its weeks of cells plus the sides. */
+function mapWidth(layout: ReturnType<typeof mapLayout>) {
+  return layout.weeks * (layout.cell + layout.gap) + MAP_SIDES;
 }
 
 /** The width of the box the map is drawn in, followed as the window changes. */
@@ -141,7 +134,7 @@ function Legend({ view }: { view: RhythmView }) {
   const ranges = rhythmRangesText(view);
   return (
     <p
-      className="flex items-center gap-2 text-muted-foreground text-xs"
+      className="flex shrink-0 items-center gap-2 text-muted-foreground text-xs"
       data-rhythm-legend=""
       title={hidden ? maskMoney(ranges) : ranges}
     >
@@ -149,7 +142,7 @@ function Legend({ view }: { view: RhythmView }) {
       <span aria-hidden="true" className="inline-flex gap-0.75">
         {SWATCHES.map((swatch) => (
           <span
-            className={cn("size-3.5 rounded-[0.1875rem]", swatch)}
+            className={cn("size-3 rounded-[0.1875rem]", swatch)}
             key={swatch}
           />
         ))}
@@ -159,11 +152,11 @@ function Legend({ view }: { view: RhythmView }) {
   );
 }
 
-/** The one line at rest: the best weekday and its mean, or that the map is still filling up. */
+/** The fixed sentence under the map: the best weekday and its mean, or that the map is still filling up. */
 function Insight({ view }: { view: RhythmView }) {
   const insight = rhythmInsight(view);
   return (
-    <p className="text-support" data-rhythm-insight="">
+    <p className="min-w-0 flex-1 basis-60 text-support" data-rhythm-insight="">
       {insight.kind === "few" ? (
         <>
           {insight.text}{" "}
@@ -173,36 +166,6 @@ function Insight({ view }: { view: RhythmView }) {
         <MoneyText text={insight.text} />
       )}
     </p>
-  );
-}
-
-function WeekdayMeans({ still, view }: { still: boolean; view: RhythmView }) {
-  const { best, means } = view.weekdays;
-  return (
-    <div className="grid min-w-44 flex-[1_1_11rem] content-start gap-1">
-      <p className="text-muted-foreground text-xs leading-4">
-        Média por dia da semana
-      </p>
-      <OnDemandWeekdayBars
-        best={best}
-        height={still ? BARS_PHONE : BARS_DESKTOP}
-        still={still}
-        values={means.map(chartValue)}
-      />
-      <div aria-hidden="true" className="grid grid-cols-7 gap-1.5 text-center">
-        {WEEKDAY_SHORT.map((label, weekday) => (
-          <span
-            className={cn(
-              "text-[0.6875rem] text-muted-foreground leading-none",
-              weekday === best && "font-semibold text-foreground"
-            )}
-            key={label}
-          >
-            {label}
-          </span>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -253,11 +216,11 @@ function RhythmNumbers({
   );
 }
 
-/** The map, its reading, its keyboard, its legend and its numbers, for the days read. */
+/** The map, its tooltip, its keyboard, its legend and its numbers, for the days read. */
 function RhythmMap({ days }: { days: RhythmDay[] }) {
   const phone = useIsMobile();
   const { ref, width } = useWidth();
-  const { cell, gap, weeks } = mapLayout(width, phone);
+  const { cell, gap, weeks } = mapLayout(width);
   const view = useMemo(() => rhythmView(days, weeks), [days, weeks]);
   const [hidden] = useHiddenValues();
   const [hovered, setHovered] = useState<number | null>(null);
@@ -280,6 +243,25 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
     touched.current = null;
     setHovered(index);
   }, []);
+  const mapBox = useRef<HTMLDivElement>(null);
+  // a day a finger touched stays read after it lifts; touching anywhere outside the map puts the tooltip away (checked
+  // when the touch comes, since a finger can touch the very day the mouse already reads)
+  useEffect(() => {
+    if (hovered === null) {
+      return;
+    }
+    const away = (event: Event) => {
+      if (
+        touched.current !== null &&
+        !mapBox.current?.contains(event.target as Node)
+      ) {
+        touched.current = null;
+        setHovered(null);
+      }
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [hovered]);
   const [keyed, setKeyed] = useState<number | null>(null);
   // the days are indices of the grid: when it changes (the phone turned, the window resized) the day read is forgotten,
   // not left on whatever day now sits at its index
@@ -288,13 +270,11 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
     setHovered(null);
     setKeyed(null);
   }, [weeks]);
-  // the keyboard and the finger start on today; the line over the map says the day only once one is read, and at rest
-  // it says what only the rhythm knows (the best weekday)
+  // the keyboard control starts on today; the tooltip opens only once a day is read
   const rest = view.today;
   const read = hovered ?? keyed ?? rest;
   const reading = rhythmReading(view, read) ?? rhythmReading(view, view.today);
   const readingText = reading ? rhythmReadingText(reading) : "";
-  const dayRead = hovered !== null || keyed !== null;
   const heatmapDays: HeatmapDay[] = useMemo(
     () =>
       view.cells.map((entry) => ({
@@ -306,6 +286,10 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
   );
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Escape") {
+        setKeyed(null);
+        return;
+      }
       const next = keyMove(event.key, keyed ?? rest, view.today);
       if (next !== null) {
         event.preventDefault();
@@ -320,12 +304,29 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
     []
   );
   const onBlur = useCallback(() => setKeyed(null), []);
+  const onFocus = useCallback(() => setKeyed((day) => day ?? rest), [rest]);
   const summary = rhythmSummary(view);
   const height = MAP_TOP + 7 * (cell + gap);
   const focus = hovered ?? keyed;
+  const tip = useMemo<HeatmapTip | null>(() => {
+    const focused = focus === null ? null : rhythmReading(view, focus);
+    return focused
+      ? {
+          note: focused.note,
+          rows: [
+            {
+              label: "Vendido",
+              value: hidden ? maskMoney(focused.amount) : focused.amount,
+            },
+            { label: "Vendas", value: focused.count },
+          ],
+          title: focused.day,
+        }
+      : null;
+  }, [focus, hidden, view]);
   const rangesText = rhythmRangesText(view);
   const help = `${RHYTHM_HELP} ${hidden ? maskMoney(rangesText) : rangesText}`;
-  const mapPx = mapWidth({ cell, gap, weeks }, phone);
+  const mapPx = mapWidth({ cell, gap, weeks });
   const numbersId = useId();
   const drawingFailed = useHeatmapFailed();
   return (
@@ -340,67 +341,53 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
       title="Ritmo de vendas"
     >
       <div className="grid gap-2">
-        <div className="min-h-13.5 md:min-h-9">
-          {reading && dayRead ? (
-            <p className="text-support" data-rhythm-reading="">
-              <span className="font-semibold">{reading.day}</span>
-              {" · "}
-              <span className="tabular-nums">
-                <MoneyText text={reading.value} />
-              </span>
-              {reading.note ? (
-                <span className="text-muted-foreground">{` · ${reading.note}`}</span>
-              ) : null}
-            </p>
-          ) : (
-            <Insight view={view} />
-          )}
-        </div>
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-2" ref={ref}>
+        <div className="min-w-0" ref={ref}>
           <div
-            className="grid min-w-0 max-w-full gap-2"
-            style={mapPx === null ? { width: "100%" } : { width: mapPx }}
+            className="relative max-w-full"
+            ref={mapBox}
+            style={{ width: mapPx }}
           >
-            <div className="relative min-w-0">
-              <div
-                aria-details={numbersId}
-                aria-label={
-                  hidden ? maskMoney(summary, MASKED_SPOKEN) : summary
-                }
-                role="img"
-              >
-                <OnDemandHeatmap
-                  best={view.best}
-                  cell={cell}
-                  days={heatmapDays}
-                  failed={<ChartFailed />}
-                  focus={focus}
-                  gap={gap}
-                  height={height}
-                  onRead={onRead}
-                  still={phone}
-                  today={view.today}
-                />
-              </div>
-              <input
-                aria-label="Dia do mapa de vendas"
-                aria-valuetext={
-                  hidden ? maskMoney(readingText, MASKED_SPOKEN) : readingText
-                }
-                className={RANGE_CLASS}
-                max={view.today}
-                min={0}
-                onBlur={onBlur}
-                onChange={onChange}
-                onKeyDown={onKeyDown}
-                step={1}
-                type="range"
-                value={keyed ?? read}
+            <div
+              aria-details={numbersId}
+              aria-label={hidden ? maskMoney(summary, MASKED_SPOKEN) : summary}
+              role="img"
+            >
+              <OnDemandHeatmap
+                best={view.best}
+                cell={cell}
+                days={heatmapDays}
+                failed={<ChartFailed />}
+                focus={focus}
+                gap={gap}
+                height={height}
+                onRead={onRead}
+                still={phone}
+                tip={tip}
+                today={view.today}
               />
             </div>
-            <Legend view={view} />
+            <input
+              aria-label="Dia do mapa de vendas"
+              aria-valuetext={
+                hidden ? maskMoney(readingText, MASKED_SPOKEN) : readingText
+              }
+              className={RANGE_CLASS}
+              max={view.today}
+              min={0}
+              onBlur={onBlur}
+              onChange={onChange}
+              onFocus={onFocus}
+              onKeyDown={onKeyDown}
+              step={1}
+              type="range"
+              value={keyed ?? read}
+            />
           </div>
-          <WeekdayMeans still={phone} view={view} />
+        </div>
+        {/* the sentence takes two or three lines by width: the row keeps the room of the longest, so the card never changes height */}
+        <div className="flex min-h-20 flex-wrap items-start justify-between gap-x-6 gap-y-2 md:min-h-13.5">
+          <Insight view={view} />
+          <Legend view={view} />
         </div>
         <RhythmNumbers id={numbersId} view={view} visible={drawingFailed} />
       </div>
@@ -458,7 +445,7 @@ export function RhythmBlock({
     ) : (
       // the height of the block read, so the blocks under it stay
       <BlockSkeleton
-        className="h-[22.125rem] md:h-[23.75rem]"
+        className="h-[16.6875rem] max-[21.25rem]:h-[18.0625rem] md:h-[15.8125rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />
