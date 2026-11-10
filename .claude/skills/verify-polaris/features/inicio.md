@@ -9,7 +9,8 @@ O Início (`/`) é a primeira tela depois de entrar: a data de hoje, o atalho "N
 - `inicio-numeros` loja com vendas: as regiões "Vendas hoje", "Vendas em outubro" (o mês corrente, com o período dito uma vez na linha "Outubro · 1 a 23/10"), "Resultado estimado" e "Ticket médio", cada uma com o seu (i).
 - `inicio-atencao` a região "Precisa de ação", logo abaixo de "Nova venda" (sem item, ela não aparece).
 - `inicio-meta` a região "Meta" e o link "Definir meta". Com a meta de um mês que já acabou ainda dentro dos 7 dias de exibição (o Início de 2 de novembro com a de outubro liquidada), o título é "Meta de novembro", com "Sem meta ainda", o link e a linha "Outubro: R$ X de R$ Y (não atingida)"; a loja `vendas` não tem esse estado (não há meta de mês anterior).
-- `inicio-grafico` "Vendas por dia" com as abas "7 dias" e "30 dias".
+- `inicio-grafico` "Vendas por dia" do período escolhido (o mês até hoje por padrão; "Vendas por mês" acima de 62 dias), sem abas.
+- `inicio-periodo` o botão "Período: 01/10 a 31/10, editar" sob o cabeçalho abre o seletor do Resultado (atalhos em coluna, um mês por vez); muda os cartões do mês, "Vendas por dia" e "Mais vendidos" (o título vira "Mais vendidos de setembro"); Vendas hoje, Meta e Ritmo não mudam. Sem conexão só "Este mês" e "Mês passado" abrem, com a frase "Sem conexão: só este mês e o anterior.".
 - `inicio-ritmo` a região "Ritmo de vendas": o mapa de quadrados de 12 px (um por dia, tantas semanas quanto cabem, de 13 a 26), a frase fixa sob ele, a legenda "Menos" a "Mais" e o tooltip do dia ("Vendido" e "Vendas"), que abre com o mouse, o toque ou o foco do `slider` "Dia do mapa de vendas"; não há gráfico de média por dia da semana. Seletor do tooltip: `[data-heatmap-tooltip]`; dos quadrados: `[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])`. Com a loja `vendas` a frase é a de poucas semanas de venda.
 - `inicio-esconder` o botão "Esconder valores".
 - `inicio-atualizar` o botão "Atualizar" (só o ícone no celular) relê todos os blocos, as duas janelas dos números incluídas; só com internet.
@@ -32,7 +33,8 @@ Preconditions:
 - **Primeiros passos (loja vazia).** `getByRole("region", { name: "Primeiros passos" })` lista "Loja criada (feito)", "Cadastrar o 1º produto" com os links "Cadastrar à mão" (`/products?novo=1`) e "Importar planilha" (`/products?importar=1`), e "Fazer a 1ª venda". Visto no `snap` da loja `vazia`.
 - **Números (loja vendas).** `getByRole("region", { name: "Vendas hoje" })` mostra um valor em reais e "2 vendas" logo depois da semeadura; `region "Vendas em <mês>"` (o mês corrente) conta as vendas semeadas que caem no mês: as 8 a partir do dia 7; nos primeiros dias do mês, só as do mês. Visto no passeio da loja `vendas`.
 - **Meta.** Na região "Meta", o link "Definir meta" leva a `/dashboard?meta=nova` (abre a aba Metas do Resultado).
-- **Gráfico.** `getByRole("tablist", { name: "Período do gráfico" })` com `tab "7 dias"` (selecionada) e `tab "30 dias"`.
+- **Gráfico.** `getByRole("region", { name: "Vendas por dia" })` com o `img` do gráfico e o `slider` "Dia do período"; não há abas.
+- **Período.** `getByRole("button", { name: /^Período: / })` abre o painel; `getByRole("group", { name: "Atalhos do período" }).getByRole("button", { name: "Mês passado" })` aplica e fecha (a região do mês passa a se chamar "Vendas em setembro").
 - **Nova venda.** `getByRole("link", { name: "Nova venda" }).click()` abre `getByRole("heading", { level: 1, name: "Nova venda" })`.
 - **Prova.** `await evidence.shot("inicio", "Início da loja <loja>")` no desktop e no celular.
 

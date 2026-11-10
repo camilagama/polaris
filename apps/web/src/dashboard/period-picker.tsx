@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { DateRangePicker } from "@/ui/date-range-picker";
+import { DateRangePicker, type RangeOnly } from "@/ui/date-range-picker";
 import type { DateRange, IsoDate, RangePreset } from "@/ui/date-values";
 import {
   MAX_PERIOD_DAYS,
@@ -14,6 +14,8 @@ import {
 interface PeriodPickerProps {
   onCustom: (period: Period) => void;
   onPreset: (preset: PeriodPreset) => void;
+  /** Without a connection: only these shortcuts open (the Início reads a period only from the server or a kept month). */
+  only?: RangeOnly | undefined;
   period: Period;
   preset: PeriodPreset;
   today: IsoDate;
@@ -29,6 +31,7 @@ const SPAN = { days: MAX_PERIOD_DAYS, reason: rangeMessage("too_long") };
 export function PeriodPicker({
   onCustom,
   onPreset,
+  only,
   period,
   preset,
   today,
@@ -55,6 +58,7 @@ export function PeriodPicker({
       clearable={false}
       label="Período"
       onValueChange={change}
+      only={only}
       pressed={preset === "custom" ? null : PRESET_SHORTCUTS[preset]}
       shortcuts={SHORTCUTS}
       span={SPAN}

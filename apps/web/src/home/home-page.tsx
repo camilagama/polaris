@@ -1,5 +1,5 @@
 import PlusIcon from "lucide-react/dist/esm/icons/plus";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
 import { HideValuesButton } from "@/ui/hidden-values";
@@ -8,6 +8,8 @@ import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { browserStorage } from "../lib/current-organization-model";
 import { calendarDayInTimezone } from "../lib/dates";
+import type { Period, PeriodPreset } from "../dashboard/result-period";
+import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { copyShownText } from "../lib/read-wait-text";
 import { OFFLINE_RUNTIME_ENABLED } from "../offline/runtime/enabled";
 import {
@@ -18,13 +20,14 @@ import { useSessionOver } from "../offline/runtime/session-ended";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
 import { ClosedStoreLine, ReopenedNotice } from "./closed-store-line";
 import { AttentionBlock, AttentionNotes } from "./home-attention";
-import { ChartBlock, type ChartDays } from "./home-chart";
+import { ChartBlock } from "./home-chart";
 import { type OfflineHome, offlineHome } from "./home-copy";
 import { ChecklistBlock, TopProductsBlock } from "./home-figures";
 import { GoalBlock, OfflineGoalBlock } from "./home-goal";
 import {
   KpiCards,
   KpiCardsSkeleton,
+  type MonthPart,
   NO_CONNECTION_NOTE,
   NoFiguresCards,
 } from "./home-kpi-cards";
@@ -38,6 +41,12 @@ import {
   noSaleCounted,
   pickGoal,
 } from "./home-model";
+import {
+  type HomeSelection,
+  THIS_MONTH,
+  topProductsTitle,
+} from "./home-period";
+import { HomePeriodRow } from "./home-period-row";
 import { BlockError, BlockSkeleton, HomeBlock, KeptHeight } from "./home-parts";
 import { RhythmBlock, type RhythmSource } from "./home-rhythm";
 import {
@@ -45,6 +54,7 @@ import {
   useFirstStepsMemory,
 } from "./use-first-steps-memory";
 import { type HomeFigures, type HomeState, useHome } from "./use-home";
+import { useHomePeriod } from "./use-home-period";
 
 /**
  * The Início (`/`): "Nova venda" at once, at the top, depending on no read; then "Precisa de ação" (only when there is
@@ -124,23 +134,157 @@ interface Rhythm {
   source: RhythmSource;
 }
 
+/**
+ * The period the person chose on the Início, when it is not "Este mês": what the cards of the month, Vendas por dia and
+ * Mais vendidos show in its place (the figures of the month stay for Hoje, the goal and the map).
+ */
+interface ChosenView {
+  month: MonthPart;
+  /** The line beside the picker about what is on screen (a copy of the device). */
+  note: React.ReactNode;
+  rankingTitle: string;
+  summary: StoredPeriodSummary | null;
+  today: string;
+}
+
+/** The chosen period as the blocks draw it: the cards' part, the ranking's title, the summary and the line about it. */
+function chosenView(
+  picked: ReturnType<typeof useHomePeriod>,
+  selection: HomeSelection,
+  timezone: string,
+  now: number
+): ChosenView | null {
+  if (!picked.chosen) {
+    return null;
+  }
+  const base = {
+    rankingTitle: topProductsTitle(selection, picked.period),
+    today: picked.today,
+  };
+  if (picked.source) {
+    const { summary } = picked.source;
+    return {
+      ...base,
+      month: { kind: "period", source: picked.source },
+      note:
+        picked.state.source === "cache" ? (
+          <p className="text-muted-foreground text-support">
+            {copyShownText(summary.generatedAt, timezone, new Date(now))}
+          </p>
+        ) : null,
+      summary,
+    };
+  }
+  if (picked.state.error) {
+    return {
+      ...base,
+      month: {
+        error: (
+          <BlockError
+            message={picked.state.error}
+            onRetry={picked.state.isLoading ? null : picked.refresh}
+          />
+        ),
+        kind: "error",
+      },
+      note: null,
+      summary: null,
+    };
+  }
+  return { ...base, month: { kind: "loading" }, note: null, summary: null };
+}
+
+/** The selection of the period, its read, and what the blocks draw from it. */
+function useChosenPeriod({
+  enabled,
+  now,
+  online,
+  organizationId,
+  reload,
+  timezone,
+  today,
+}: {
+  enabled: boolean;
+  now: number;
+  online: boolean;
+  organizationId: string;
+  /** "Atualizar" of the page's own reads. */
+  reload: () => void;
+  timezone: string;
+  today: string;
+}) {
+  const [selection, setSelection] = useState<HomeSelection>(THIS_MONTH);
+  const handlePreset = useCallback((preset: PeriodPreset) => {
+    setSelection({ custom: null, preset });
+  }, []);
+  const handleCustom = useCallback((custom: Period) => {
+    setSelection({ custom, preset: "custom" });
+  }, []);
+  const picked = useHomePeriod({
+    enabled,
+    organizationId,
+    selection,
+    timezone,
+    today,
+  });
+  const chosen = chosenView(picked, selection, timezone, now);
+  const { chosen: reading, refresh } = picked;
+  // "Atualizar" reads the period chosen again too, when there is one
+  const reloadAll = useCallback(() => {
+    reload();
+    if (reading) {
+      refresh();
+    }
+  }, [reading, refresh, reload]);
+  const periodRow = enabled ? (
+    <HomePeriodRow
+      note={chosen?.note ?? null}
+      offline={!online}
+      onCustom={handleCustom}
+      onPreset={handlePreset}
+      period={picked.period}
+      selection={selection}
+      today={today}
+    />
+  ) : null;
+  return { chosen, periodRow, reloadAll };
+}
+
 /** The KPI cards, the ranking and the chart of figures that were read (from the server or from the copy). */
 function readBlocks(
   figures: HomeFigures,
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  chosen: ChosenView | null,
   rhythm: Rhythm,
   todayShown = true
 ): Blocks {
-  const top = figures.month.topProducts ?? [];
+  const shown = chosen ? chosen.summary : figures.month;
+  const top = shown?.topProducts ?? [];
   // a copy kept before the daily series existed: the totals stand, nothing of the series is drawn (ADR 0056, D2)
   const series =
     figures.month.daily !== undefined && figures.before.daily !== undefined;
+  const chartToday = chosen ? chosen.today : figures.today;
+  let chart: React.ReactNode = null;
+  if (chosen?.month.kind === "loading") {
+    chart = <BlockSkeleton label="Carregando o gráfico…" lines={5} />;
+  } else if (shown?.daily !== undefined && (chosen !== null || series)) {
+    chart = <ChartBlock summary={shown} today={chartToday} />;
+  }
   return {
-    chart: series ? (
-      <ChartBlock days={chart.days} figures={figures} onDays={chart.onDays} />
-    ) : null,
-    main: <KpiCards figures={figures} todayShown={todayShown && series} />,
-    ranking: top.length > 0 ? <TopProductsBlock products={top} /> : null,
+    chart,
+    main: (
+      <KpiCards
+        figures={figures}
+        month={chosen?.month ?? { kind: "figures" }}
+        todayShown={todayShown && series}
+      />
+    ),
+    ranking:
+      top.length > 0 ? (
+        <TopProductsBlock
+          products={top}
+          title={chosen?.rankingTitle ?? "Mais vendidos do mês"}
+        />
+      ) : null,
     // the days of the month are the figures': a copy without the series of the month draws no map either
     rhythm:
       figures.month.daily === undefined ? null : (
@@ -174,7 +318,7 @@ function figuresPending({ checklist, figures, stock }: HomeState): boolean {
 function figureBlocks(
   state: HomeState,
   onRetry: () => void,
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  chosen: ChosenView | null,
   onRetryRhythm: () => void,
   firstSteps: FirstStepsMemory
 ): Blocks {
@@ -225,7 +369,7 @@ function figureBlocks(
       main: <ChecklistBlock checklist={checklist.data} />,
     };
   }
-  return readBlocks(figures.data, chart, {
+  return readBlocks(figures.data, chosen, {
     onRetry: onRetryRhythm,
     source: state.rhythm,
   });
@@ -244,7 +388,7 @@ const NO_BLOCKS: Blocks = {
  */
 function staleCopyBlocks(
   failed: OfflineHome & { figures: NonNullable<OfflineHome["figures"]> },
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void },
+  chosen: ChosenView | null,
   retry: { figures: () => void; rhythm: () => void },
   timezone: string | null,
   now: Date
@@ -252,7 +396,7 @@ function staleCopyBlocks(
   const { figures } = failed;
   const blocks = readBlocks(
     figures,
-    chart,
+    chosen,
     { onRetry: retry.rhythm, source: { data: failed.rhythm, status: "copy" } },
     figures.todayShown
   );
@@ -276,7 +420,7 @@ function staleCopyBlocks(
 /** The figures' blocks and the line under the title: the server's, or without a connection the copy's (§ 7.4). */
 function pageBlocks({
   canSellOffline,
-  chart,
+  chosen,
   failed,
   firstSteps,
   now,
@@ -289,7 +433,7 @@ function pageBlocks({
   today,
 }: {
   canSellOffline: boolean;
-  chart: { days: ChartDays; onDays: (days: ChartDays) => void };
+  chosen: ChosenView | null;
   /** The copy, when every try of the figures failed with a connection (null when there is none). */
   failed: OfflineHome | null;
   firstSteps: FirstStepsMemory;
@@ -306,14 +450,20 @@ function pageBlocks({
     if (failed?.figures) {
       return staleCopyBlocks(
         { ...failed, figures: failed.figures },
-        chart,
+        chosen,
         { figures: retryFigures, rhythm: retryRhythm },
         timezone,
         now
       );
     }
     return {
-      blocks: figureBlocks(state, retryFigures, chart, retryRhythm, firstSteps),
+      blocks: figureBlocks(
+        state,
+        retryFigures,
+        chosen,
+        retryRhythm,
+        firstSteps
+      ),
       updated: figuresLine(state, timezone),
     };
   }
@@ -338,7 +488,7 @@ function pageBlocks({
   return {
     blocks: readBlocks(
       offline.figures,
-      chart,
+      chosen,
       {
         onRetry: retryRhythm,
         source: { data: offline.rhythm, status: "copy" },
@@ -803,8 +953,6 @@ export function HomePage() {
     timezone,
   });
   const canSellOffline = useLocalWorkspace(organizationId) !== null;
-  const [days, setDays] = useState<ChartDays>("7");
-  const chart = { days, onDays: setDays };
   const refused = snapshot?.counts.rejected ?? 0;
   const figures = state.figures.status === "ready" ? state.figures.data : null;
   const goals = state.goals.status === "ready" ? state.goals.data : null;
@@ -814,11 +962,20 @@ export function HomePage() {
     [goals, today, timezone]
   );
   const firstSteps = useFirstStepsMemory(organizationId);
+  const { chosen, periodRow, reloadAll } = useChosenPeriod({
+    enabled: reads.report && !state.sessionRefused,
+    now: serverNow(),
+    online,
+    organizationId,
+    reload,
+    timezone,
+    today,
+  });
   const { blocks, updated } = state.sessionRefused
     ? { blocks: NO_BLOCKS, updated: null }
     : pageBlocks({
         canSellOffline,
-        chart,
+        chosen,
         failed,
         firstSteps,
         now: new Date(serverNow()),
@@ -834,7 +991,7 @@ export function HomePage() {
     online,
     state.sessionRefused,
     reloading,
-    reload
+    reloadAll
   );
   const goalBlock = pickGoalBlock({
     goal,
@@ -877,6 +1034,7 @@ export function HomePage() {
         refresh={refresh}
         updated={refreshing ? REFRESHING_TEXT : updated}
       />
+      {periodRow}
       <ReopenedNotice />
       <ClosedStoreLine activeIds={activeIds} />
       <div
