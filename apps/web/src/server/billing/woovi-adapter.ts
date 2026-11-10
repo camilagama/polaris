@@ -77,6 +77,11 @@ async function readBack(client: WooviClient, envelope: WooviWebhookEnvelope) {
         // the read back does not show it (yet): never a 503, a forged body would
         // become a loop of redeliveries; the reconciliation reads the state
         logger.error("billing_webhook_state_not_shown", { ...ids, ...shown });
+      },
+      () => {
+        // the subscription read back shows no authorization status (only the
+        // webhook body does): the approval is proven by its live installment
+        logger.info("billing_webhook_approval_inferred", ids);
       }
     );
     return Array.isArray(resolved) ? resolved : [resolved];

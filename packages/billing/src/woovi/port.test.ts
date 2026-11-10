@@ -23,7 +23,6 @@ import {
   OTHER_INSTALLMENT_ID,
   PERSONAL_VALUES,
   SUBSCRIPTION_ID,
-  subscriptionBeforeApprovalJson,
   subscriptionJson,
 } from "./test-fixtures";
 
@@ -99,6 +98,11 @@ const getSubscription = (overrides: Record<string, unknown> = {}) =>
     SUBSCRIPTION_PATH,
     json({ subscription: subscriptionJson(overrides) })
   );
+const approvedPix = {
+  emv: FAKE_EMV,
+  journey: "ONLY_RECURRENCY",
+  status: "APPROVED",
+};
 const getInstallments = (...installments: Record<string, unknown>[]) =>
   on("GET", INSTALLMENTS_PATH, json({ installments }));
 const cancelRoute = () =>
@@ -174,7 +178,7 @@ describe("prepareSubscription", () => {
     on(
       "POST",
       "/api/v1/subscriptions",
-      answer ?? json({ subscription: subscriptionBeforeApprovalJson() })
+      answer ?? json({ subscription: subscriptionJson() })
     );
   const patchRoute = () =>
     on("PATCH", CUSTOMER_PATH, json({ customer: storedCustomer() }));
@@ -251,7 +255,7 @@ describe("prepareSubscription", () => {
       findCustomer(),
       createRoute(
         json({
-          subscription: subscriptionBeforeApprovalJson({
+          subscription: subscriptionJson({
             paymentLink: "https://woovi-sandbox.com/pay/fake-link-0001",
           }),
         })
@@ -286,9 +290,7 @@ describe("prepareSubscription", () => {
   ])("the paymentLink %j becomes the url %j", async (paymentLink, url) => {
     const { fetch } = woovi(
       findCustomer(),
-      createRoute(
-        json({ subscription: subscriptionBeforeApprovalJson({ paymentLink }) })
-      )
+      createRoute(json({ subscription: subscriptionJson({ paymentLink }) }))
     );
 
     const prepared = await portWith(fetch).prepareSubscription(input());
@@ -297,7 +299,7 @@ describe("prepareSubscription", () => {
   });
 
   it("a response without paymentLink has no url", async () => {
-    const { paymentLink: _link, ...bare } = subscriptionBeforeApprovalJson();
+    const { paymentLink: _link, ...bare } = subscriptionJson();
     const { fetch } = woovi(
       findCustomer(),
       createRoute(json({ subscription: bare }))
@@ -585,9 +587,7 @@ describe("prepareSubscription", () => {
   ])("a creation answer with %s is malformed", async (_name, overrides) => {
     const { fetch } = woovi(
       findCustomer(),
-      createRoute(
-        json({ subscription: subscriptionBeforeApprovalJson(overrides) })
-      )
+      createRoute(json({ subscription: subscriptionJson(overrides) }))
     );
 
     const error = await failureOf(() =>
@@ -646,11 +646,7 @@ describe("cancelRenewal", () => {
 describe("discardCheckout", () => {
   it("a subscription the payer has not approved is cancelled and discarded", async () => {
     const { calls, fetch } = fakeWoovi(
-      on(
-        "GET",
-        SUBSCRIPTION_PATH,
-        json({ subscription: subscriptionBeforeApprovalJson() })
-      ),
+      on("GET", SUBSCRIPTION_PATH, json({ subscription: subscriptionJson() })),
       cancelRoute()
     );
 
@@ -681,7 +677,7 @@ describe("discardCheckout", () => {
         "GET",
         SUBSCRIPTION_PATH,
         json({
-          subscription: subscriptionBeforeApprovalJson({ status: "INACTIVE" }),
+          subscription: subscriptionJson({ status: "INACTIVE" }),
         })
       ),
       cancelRoute()
@@ -710,14 +706,12 @@ describe("discardCheckout", () => {
 
 describe("hasSubscription", () => {
   const notApproved = () =>
-    on(
-      "GET",
-      SUBSCRIPTION_PATH,
-      json({ subscription: subscriptionBeforeApprovalJson() })
-    );
+    on("GET", SUBSCRIPTION_PATH, json({ subscription: subscriptionJson() }));
 
   it("an approved authorization is a subscription, without reading installments", async () => {
-    const { calls, fetch } = fakeWoovi(getSubscription());
+    const { calls, fetch } = fakeWoovi(
+      getSubscription({ pixRecurring: approvedPix })
+    );
 
     expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
     expect(calls).toHaveLength(1);
@@ -750,7 +744,7 @@ const parsed = (value: unknown) => parseProviderJson(JSON.stringify(value));
 describe("readState", () => {
   it("gives the same facts as the reconciliation, tied to the globalID", async () => {
     const { fetch } = fakeWoovi(
-      getSubscription(),
+      getSubscription({ pixRecurring: approvedPix }),
       getInstallments(
         installmentJson(),
         installmentJson({
@@ -788,7 +782,9 @@ describe("readState", () => {
           ),
         ],
         now: NOW,
-        subscription: pickWooviSubscription(parsed(subscriptionJson())),
+        subscription: pickWooviSubscription(
+          parsed(subscriptionJson({ pixRecurring: approvedPix }))
+        ),
       })
     );
   });
