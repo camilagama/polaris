@@ -863,6 +863,108 @@ test.describe("a 320 px, com toque", () => {
   });
 });
 
+const FUTURE_REASON = "Só depois de hoje";
+
+const footerReason = (popup: Locator) =>
+  popup.locator("[data-date-footer]").getByText(FUTURE_REASON, { exact: true });
+
+async function openFuturePicker(page: Page) {
+  await openGallery(page);
+  return openPicker(page, "Data de entrega,", "Data de entrega");
+}
+
+async function expectTodayFooterFits(page: Page, popup: Locator) {
+  const reason = footerReason(popup);
+  const today = popup.getByRole("button", { exact: true, name: "Hoje" });
+  await expect(reason).toBeVisible();
+  const [popupBox, reasonBox, todayBox] = await Promise.all([
+    popup.boundingBox(),
+    reason.boundingBox(),
+    today.boundingBox(),
+  ]);
+  expect(popupBox).not.toBeNull();
+  expect(reasonBox).not.toBeNull();
+  expect(todayBox).not.toBeNull();
+  const right = (box: { width: number; x: number } | null) =>
+    (box?.x ?? 0) + (box?.width ?? 0);
+  expect(reasonBox?.x).toBeGreaterThanOrEqual((popupBox?.x ?? 0) - 0.5);
+  expect(right(reasonBox)).toBeLessThanOrEqual((todayBox?.x ?? 0) + 0.5);
+  expect(right(todayBox)).toBeLessThanOrEqual(right(popupBox) + 0.5);
+  const cut = await popup.evaluate(
+    (element) => element.scrollWidth - element.clientWidth
+  );
+  expect(cut).toBeLessThanOrEqual(0);
+  const viewport = page.viewportSize();
+  expect(popupBox?.x).toBeGreaterThanOrEqual(0);
+  expect(right(popupBox)).toBeLessThanOrEqual(viewport?.width ?? 0);
+}
+
+test.describe("Hoje desligado, com o motivo à vista", () => {
+  test.use({ viewport: { height: 740, width: 360 } });
+
+  test("o rodapé escreve o motivo, o botão o descreve, segue focável e não escolhe nem fecha", async ({
+    page,
+  }) => {
+    const popup = await openFuturePicker(page);
+    const today = popup.getByRole("button", { exact: true, name: "Hoje" });
+    await expect(footerReason(popup)).toBeVisible();
+    await expect(today).toHaveAttribute("aria-disabled", "true");
+    await expect(today).not.toHaveAttribute("disabled");
+    await expect(today).toHaveAccessibleDescription(FUTURE_REASON);
+    await today.focus();
+    await expect(today).toBeFocused();
+    await today.click({ force: true });
+    await page.keyboard.press("Enter");
+    await expect(popup).toBeVisible();
+    await expect(trigger(page, "Data de entrega,")).toHaveText("Escolher data");
+    await expectTodayFooterFits(page, popup);
+  });
+
+  test("com Hoje permitido o rodapé não escreve motivo nenhum", async ({
+    page,
+  }) => {
+    await openGallery(page);
+    const popup = await openPicker(
+      page,
+      "Data do pagamento,",
+      "Data do pagamento"
+    );
+    await expect(
+      popup.getByRole("button", { exact: true, name: "Hoje" })
+    ).not.toHaveAttribute("aria-disabled");
+    await expect(popup.locator("[data-date-footer] p")).toHaveCount(0);
+  });
+});
+
+test.describe("Hoje desligado, a 360 x 600 e a 320 px com fonte de 20 px", () => {
+  for (const viewport of [
+    { height: 600, width: 360 },
+    { height: 640, width: 320 },
+  ]) {
+    test(`o rodapé cabe a ${viewport.width} x ${viewport.height}, com a fonte em 20 px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openGallery(page);
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = "20px";
+      });
+      const popup = await openPicker(
+        page,
+        "Data de entrega,",
+        "Data de entrega"
+      );
+      await expectTodayFooterFits(page, popup);
+      const today = popup.getByRole("button", { exact: true, name: "Hoje" });
+      await expect(today).toBeInViewport();
+      const bottom =
+        ((await popup.boundingBox())?.y ?? 0) +
+        ((await popup.boundingBox())?.height ?? 0);
+      expect(bottom).toBeLessThanOrEqual(viewport.height);
+    });
+  }
+});
+
 for (const theme of ["claro", "escuro"] as const) {
   test(`axe não acha nada com cada seletor aberto (tema ${theme})`, async ({
     page,
@@ -873,6 +975,7 @@ for (const theme of ["claro", "escuro"] as const) {
     expect(await axeWithOpen(page, "Data do pagamento", "2026-10-25")).toEqual(
       []
     );
+    expect(await axeWithOpen(page, "Data de entrega")).toEqual([]);
     expect(await axeWithOpen(page, "Período")).toEqual([]);
   });
 }

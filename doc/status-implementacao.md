@@ -2798,7 +2798,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Medida | Concluído (PR 572, 75c606aa) | CPU do `report.periodSummary` (com o ranking) no `wrangler dev`, contra as respostas gravadas do PostgreSQL 18 de uma loja de 45 vendas por dia (1.368 por mês, 16.150 em 366 dias), p50 de 40 chamadas: mês 32,1 ms, ano (1º de janeiro a 4 de novembro) 35,4 ms, 366 dias 36,6–36,9 ms; a mesma janela de 366 dias numa loja de 3 vendas por dia, 37,5 ms; o `get-session` sozinho, 16,9 ms. O custo não cresce com as vendas (a agregação é do PostgreSQL desde a t479, uma linha por data) e o ano custa ~4,5 ms a mais que o mês, que já roda no staging. Sem mudança de forma. |
-| Períodos longos | Concluído (PR 572, 75c606aa) | `result-period.ts`: os períodos longos já não dependem de chave; "Este ano" entre "Últimos 30 dias" e "Período", e o intervalo livre até 366 dias ("Escolha até 1 ano."). A série por mês acima de 62 dias vem do servidor (`granularity: "month"`, t751; o cliente não reagrupa), com os rótulos "mês" no título, na coluna, nas frases e nos cartões; os cartões sem comparação já existiam. O e2e de geometria de "Este ano" e de 63 dias roda sem chave de teste no navegador. Prova: `result-period.test.ts` e `e2e/dashboard.e2e.ts` ("Este ano lê de 1º de janeiro até hoje e o gráfico mostra os meses do servidor"). |
+| Períodos longos | Concluído (PR 572, 75c606aa) | `result-period.ts`: os períodos longos já não dependem de chave; "Este ano" entre "Últimos 30 dias" e "Período", e o intervalo livre até 366 dias ("Escolha até 1 ano"). A série por mês acima de 62 dias vem do servidor (`granularity: "month"`, t751; o cliente não reagrupa), com os rótulos "mês" no título, na coluna, nas frases e nos cartões; os cartões sem comparação já existiam. O e2e de geometria de "Este ano" e de 63 dias roda sem chave de teste no navegador. Prova: `result-period.test.ts` e `e2e/dashboard.e2e.ts` ("Este ano lê de 1º de janeiro até hoje e o gráfico mostra os meses do servidor"). |
 
 ### Resultado: ano nas datas curtas e altura estável do cartão do gráfico (t762; RES-E1 e RES-E2; sem migration)
 
@@ -3050,7 +3050,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Estado | Detalhe |
 | --- | --- | --- |
 | Seletor | Concluído (PR 594, 37256291) | `PeriodPicker` passa `open ? "custom" : preset` ao `PresetChoice`: com os campos "De" e "Até" abertos, válidos ou não, o `Select` do celular diz "Período" e a faixa pressiona "Período"; ao escolher outro período os campos fecham e o seletor volta a ele. O período aplicado, o endereço e a consulta ao servidor não mudam. |
-| Provas | Concluído (PR 594, 37256291) | `e2e/dashboard.e2e.ts` (desktop e celular emulado): de "Este ano" abre "Período", aplica 367 dias, o seletor segue em "Período" com "Escolha até 1 ano." e sem consulta nova; "Este mês" fecha o formulário e o seletor volta; falha sem a correção nos dois projetos (rodado local, Chromium). O web não tem ambiente DOM para teste de componente. |
+| Provas | Concluído (PR 594, 37256291) | `e2e/dashboard.e2e.ts` (desktop e celular emulado): de "Este ano" abre "Período", aplica 367 dias, o seletor segue em "Período" com "Escolha até 1 ano" e sem consulta nova; "Este mês" fecha o formulário e o seletor volta; falha sem a correção nos dois projetos (rodado local, Chromium). O web não tem ambiente DOM para teste de componente. |
 
 ### Admin, filtro por tipo na lista de casos (t765; migration 0115)
 
@@ -3321,3 +3321,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Motivo em texto | Em revisão | Linha sob o mês, `invisible` (com a altura) enquanto nenhum dia desligado tem o foco, visível quando tem (foco por seta ou toque), altura mínima só com `disabledReason`, presa ao pé da caixa que rola (360 x 600) e sem `aria-live`. |
 | Aparência do dia | Em revisão | Só o número apaga (texto a 40%, riscado); sem `opacity` no botão, então o contorno de foco de 3 px fica inteiro; o toque chega ao dia (`cursor-not-allowed`), sem fundo de hover e sem escala ao apertar. |
 | Provas | Em revisão | Unidade: `calendar-limit.test.tsx`, `date-pickers.test.tsx`. e2e: `ui-date-pickers.e2e.ts` (teclado, mouse, toque, 360 x 600, axe com o dia focado), `ui-date-pickers-leitor-de-tela.e2e.ts`, `dashboard.e2e.ts` (a seta chega a 2025-10-13 desligado). Controle: sem a correção os testes novos reprovam. O motivo dos quatro campos de data mudos é do PR-A1 (t1009). |
+
+### UI de 10/11: "Hoje" desligado do DatePicker com o motivo à vista, e "Escolha até 1 ano" sem ponto final (t1024; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Motivo do "Hoje" | Em revisão | `ui/date-picker.tsx` (`TodayFooter`): com "Hoje" fora de `min`..`max`, o rodapé escreve o `disabledReason` ao lado do botão, no texto pequeno e secundário da linha de motivo do calendário (`text-support`, `text-muted-foreground`), ligado ao botão por `aria-describedby`; o botão segue `aria-disabled` e focável e não escolhe. Substitui o `sr-only`. O motivo ocupa o espaço à esquerda e quebra de linha em vez de alargar o popover. |
+| Texto do período longo | Em revisão | `dashboard/result-period.ts`: "Escolha até 1 ano" (sem ponto, como os outros motivos); testes e e2e que o citam atualizados. |
+| Provas | Em revisão | Unidade: `date-pickers.test.tsx` (`TodayFooter`). e2e: `ui-date-pickers.e2e.ts` (motivo à vista, descrição acessível, sem escolher, 360 x 600 e 320 px com fonte de 20 px, axe nos dois temas) sobre o novo seletor "Data de entrega" da galeria. |

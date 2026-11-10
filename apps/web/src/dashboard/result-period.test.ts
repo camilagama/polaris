@@ -144,7 +144,7 @@ describe("the range of Período (AC-2)", () => {
   it("refuses 367 days, with the limit in the text", () => {
     expect(rangeProblem("2025-11-03", "2026-11-04")).toBe("too_long");
     expect(rangeProblem("2026-01-01", "2027-01-02")).toBe("too_long");
-    expect(rangeMessage("too_long")).toBe("Escolha até 1 ano.");
+    expect(rangeMessage("too_long")).toBe("Escolha até 1 ano");
   });
 
   it("says what is wrong when an end is missing or is not a date, and when they are in the wrong order", () => {
