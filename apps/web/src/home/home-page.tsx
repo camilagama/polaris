@@ -366,9 +366,9 @@ function figuresLine(
 }
 
 /**
- * The title, "Atualizar", "Esconder valores" and "Nova venda" with the line that says what the sale can do without a
- * connection: the part of the page that depends on no read (and on no connection). On a phone the two buttons are
- * icons in the corner of the title and "Nova venda" takes the whole width (v7 § 3).
+ * The title, "Atualizar" and "Nova venda" with the line that says what the sale can do without a connection: the part
+ * of the page that depends on no read (and on no connection). On a phone "Atualizar" is an icon in the corner of the
+ * title and "Nova venda" takes the whole width (v7 § 3).
  */
 function HomeHeader({
   explained,
