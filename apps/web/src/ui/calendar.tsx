@@ -1,7 +1,15 @@
 import { format } from "date-fns";
 import ChevronLeftIcon from "lucide-react/dist/esm/icons/chevron-left";
 import ChevronRightIcon from "lucide-react/dist/esm/icons/chevron-right";
-import { createContext, useContext, useEffect, useId, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   type ChevronProps,
   DateLib,
@@ -78,7 +86,9 @@ function CalendarDayButton({
         "data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-transparent data-[range-middle=true]:text-foreground",
         "data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[selected-single=true]:hover:bg-primary/88",
         "data-[range-end=true]:bg-primary data-[range-start=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-start=true]:text-primary-foreground data-[range-end=true]:hover:bg-primary/88 data-[range-start=true]:hover:bg-primary/88",
-        "aria-disabled:line-through aria-disabled:opacity-40",
+        // only the number fades (never the button's opacity, which would fade the focus outline too); no hover fill and no
+        // press scale: a day that cannot be chosen must not light up or sink like a valid one
+        "aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:text-foreground/40 aria-disabled:line-through aria-disabled:opacity-100 aria-disabled:active:not-aria-[haspopup]:scale-100 aria-disabled:hover:bg-transparent!",
         className
       )}
       data-day={day.isoDate}
@@ -153,14 +163,33 @@ export function Calendar({
   classNames,
   components,
   disabledReason,
+  disabled,
   formatters,
   labels,
   fixedWeeks = true,
+  modifiers,
+  onDayBlur,
+  onDayFocus,
   showOutsideDays = true,
   ...props
 }: CalendarProps) {
   const defaults = getDefaultClassNames();
   const reasonId = useId();
+  const [onDisabledDay, setOnDisabledDay] = useState(false);
+  const handleDayFocus = useCallback<NonNullable<CalendarProps["onDayFocus"]>>(
+    (day, dayModifiers, event) => {
+      setOnDisabledDay(Boolean(dayModifiers.disabled));
+      onDayFocus?.(day, dayModifiers, event);
+    },
+    [onDayFocus]
+  );
+  const handleDayBlur = useCallback<NonNullable<CalendarProps["onDayBlur"]>>(
+    (day, dayModifiers, event) => {
+      setOnDisabledDay(false);
+      onDayBlur?.(day, dayModifiers, event);
+    },
+    [onDayBlur]
+  );
   return (
     <ReasonContext.Provider value={disabledReason ? reasonId : undefined}>
       <DayPicker
@@ -226,13 +255,24 @@ export function Calendar({
           ...labels,
         }}
         locale={ptBR}
+        // the limit goes in as a modifier, not as DayPicker's `disabled` prop: the arrows skip the days of the prop
+        // but stop on a day that is only a modifier, and the click and Enter still refuse it
+        modifiers={disabled ? { ...modifiers, disabled } : modifiers}
+        onDayBlur={handleDayBlur}
+        onDayFocus={handleDayFocus}
         showOutsideDays={showOutsideDays}
         {...props}
       />
       {disabledReason ? (
-        <span className="sr-only" id={reasonId}>
+        <p
+          className={cn(
+            "sticky bottom-0 min-h-5 bg-popover pt-1 text-center text-muted-foreground text-support",
+            !onDisabledDay && "invisible"
+          )}
+          id={reasonId}
+        >
           {disabledReason}
-        </span>
+        </p>
       ) : null}
     </ReasonContext.Provider>
   );

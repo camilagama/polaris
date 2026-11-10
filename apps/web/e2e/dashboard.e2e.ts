@@ -1610,7 +1610,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     );
   });
 
-  test("pelo teclado, as setas páram no último dia do limite; o dia além dele está desligado com o motivo ligado, e Enter nele não aplica", async ({
+  test("pelo teclado, a seta chega ao dia além do limite, desligado e com o motivo; Enter e Space nele não aplicam, e o último dia permitido aplica", async ({
     page,
   }) => {
     const server = new FakeReportServer();
@@ -1626,32 +1626,26 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       "Início 14/10/2026. Escolha o último dia."
     );
 
-    // a year back by the keys, then one more day back: the focus stays on the last day the limit allows
+    // a year back by the keys: the last day the limit allows
     await page.keyboard.press("Shift+PageUp");
     const edge = day("2025-10-14");
     await expect(edge).toBeFocused();
     await expect(edge).not.toHaveAttribute("aria-disabled", "true");
-    await page.keyboard.press("ArrowLeft");
-    await page.keyboard.press("ArrowRight");
-    await expect(day("2025-10-15")).toBeFocused();
-    await page.keyboard.press("ArrowLeft");
-    await expect(edge).toBeFocused();
+    const reason = panel.getByText("Escolha até 1 ano.", { exact: true });
+    await expect(reason).toBeHidden();
 
-    // the day beyond is turned off and carries the reason, which a screen reader in browse mode reads and activates
+    // one more day back: the arrow reaches the day beyond, turned off, and the reason shows as text
+    await page.keyboard.press("ArrowLeft");
     const beyond = day("2025-10-13");
-    await expect(beyond).toHaveAttribute("aria-disabled", "true");
-    const reason = await beyond.getAttribute("aria-describedby");
-    expect(reason).not.toBeNull();
-    await expect(panel.locator(`[id="${reason}"]`)).toHaveText(
-      "Escolha até 1 ano."
-    );
-    await expect(beyond).toHaveAccessibleDescription("Escolha até 1 ano.");
-    await beyond.focus();
     await expect(beyond).toBeFocused();
+    await expect(beyond).toHaveAttribute("aria-disabled", "true");
+    await expect(beyond).toHaveAccessibleDescription("Escolha até 1 ano.");
+    await expect(reason).toBeVisible();
     const asked = server.periods.length;
     await page.keyboard.press("Enter");
     await page.keyboard.press("Space");
     await expect(panel).toBeVisible();
+    await expect(beyond).toBeFocused();
     await expect(panel).toContainText(
       "Início 14/10/2026. Escolha o último dia."
     );
@@ -1660,8 +1654,12 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     );
     expect(server.periods).toHaveLength(asked);
 
+    // the arrow back leaves the turned-off day: the reason hides again
+    await page.keyboard.press("ArrowRight");
+    await expect(edge).toBeFocused();
+    await expect(reason).toBeHidden();
+
     // the last day of the limit still applies by the keys
-    await edge.focus();
     await page.keyboard.press("Enter");
     await expect(panel).toHaveCount(0);
     await expect

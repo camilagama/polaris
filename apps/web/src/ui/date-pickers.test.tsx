@@ -277,8 +277,8 @@ describe("Calendar", () => {
     expect(off).not.toMatch(DISABLED_ATTRIBUTE);
     const reasonId = attribute(off, "aria-describedby");
     expect(reasonId).toBeTruthy();
-    expect(markup).toContain(
-      `<span class="sr-only" id="${reasonId}">Só até hoje</span>`
+    expect(markup).toMatch(
+      new RegExp(`<p[^>]*id="${reasonId}"[^>]*>Só até hoje</p>`)
     );
     const allowed = dayButton(markup, "2026-10-23");
     expect(attribute(allowed, "aria-disabled")).toBeUndefined();
