@@ -4,7 +4,8 @@
  * then encoded (`encodeURIComponent`): a forged `../` or `?` never reaches the URL.
  */
 
-const asaasIdPattern = /^(pay|sub)_[A-Za-z\d]{1,64}$/;
+/** The sandbox writes a charge ID with an underscore after its first character, so `_` belongs to the suffix; it is still safe in a path. */
+const asaasIdPattern = /^(pay|sub)_[A-Za-z\d_]{1,64}$/;
 /** `evt_<hex>&<digits>` in the documentation; kept loose but bounded (the column holds 160). */
 const asaasEventIdPattern = /^evt_[A-Za-z\d&_-]{1,150}$/;
 /**
