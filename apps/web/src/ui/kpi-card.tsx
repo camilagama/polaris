@@ -710,7 +710,9 @@ export function KpiTileSkeleton({ className }: { className?: string }) {
       <div className={cn(TOP_ROW, "h-5 touch:h-11")}>
         <Skeleton className="h-3 w-24" />
       </div>
-      <div className={cn(heroBox(), "touch:mt-1.5 flex items-center")}>
+      <div
+        className={cn(heroBox(), "touch:mt-1.5 flex min-h-7.5 items-center")}
+      >
         <Skeleton className="h-[0.8em] w-32" />
       </div>
       <div className={TILE_SUPPORT}>
