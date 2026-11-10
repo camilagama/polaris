@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { ButtonGroup } from "@/ui/button-group";
-import { DatePicker } from "@/ui/date-picker";
+import { type DateLimits, DatePicker } from "@/ui/date-picker";
 import { DateRangePicker } from "@/ui/date-range-picker";
 import type { DateRange, IsoDate } from "@/ui/date-values";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/ui/field";
@@ -124,18 +124,14 @@ export function TextField({
   );
 }
 
-interface DateFieldProps {
+type DateFieldProps = DateLimits & {
   className?: string | undefined;
   disabled?: boolean | undefined;
-  /** Why the days after `max` or before `min` cannot be chosen ("Só até hoje"). */
-  disabledReason?: string | undefined;
   /** The error under the button; `true` is "Escolha uma data". */
   error?: boolean | string | undefined;
   hint?: string | undefined;
   id: string;
   label: string;
-  max?: IsoDate | undefined;
-  min?: IsoDate | undefined;
   /** The name of the "Limpar" button of an optional field ("Limpar data de término"). */
   clearLabel?: string | undefined;
   /** "Opcional" beside the label, with a "Limpar" beside the button once a day is chosen. */
@@ -145,24 +141,22 @@ interface DateFieldProps {
   /** The organization's day (the screen has it from the server); the device's day when absent. */
   today?: string | undefined;
   value: string;
-}
+};
 
 /** One date on the DatePicker of src/ui: label, button, help and error, in the shape of the other fields. */
 export function DateField({
   className,
   clearLabel,
   disabled,
-  disabledReason,
   error,
   hint,
   id,
   label,
-  max,
-  min,
   onChange,
   optional,
   today,
   value,
+  ...limits
 }: DateFieldProps) {
   const handleChange = useCallback(
     (next: IsoDate | null) => onChange(next ?? ""),
@@ -186,15 +180,13 @@ export function DateField({
           className="min-w-0 flex-1 sm:flex-none"
           describedBy={hint ? `${id}-hint` : undefined}
           disabled={disabled}
-          disabledReason={disabledReason}
           error={error}
           id={id}
           label={label}
-          max={max}
-          min={min}
           onValueChange={handleChange}
           today={today}
           value={value === "" ? null : value}
+          {...limits}
         />
         {optional && value !== "" ? (
           <Button

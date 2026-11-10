@@ -39,7 +39,7 @@ import {
   ExpenseCategorySelect,
   ExpenseTextField,
 } from "./expense-fields";
-import { moneyInputText } from "./expense-model";
+import { EARLIEST_COMPETENCE_REASON, moneyInputText } from "./expense-model";
 import type { Feedback } from "./use-command-runner";
 import {
   isRuleFrequency,
@@ -279,6 +279,7 @@ export function ExpenseRuleForm({
             />
             <DateField
               disabled={disabled}
+              disabledReason={EARLIEST_COMPETENCE_REASON}
               error={errors.startsOn}
               hint="Se a data já passou, as ocorrências atrasadas são lançadas de uma vez."
               id={fieldId("startsOn")}
@@ -294,6 +295,7 @@ export function ExpenseRuleForm({
         <DateField
           clearLabel="Limpar data de término"
           disabled={disabled}
+          disabledReason="Só a partir do início"
           error={errors.endsOn}
           hint="Em branco, repete sem data de término."
           id={fieldId("endsOn")}

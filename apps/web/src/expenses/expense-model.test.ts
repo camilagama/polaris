@@ -1,5 +1,8 @@
+import { EARLIEST_EXPENSE_COMPETENCE } from "@polaris/domain/expenses/expense";
 import { describe, expect, it } from "vitest";
+import { formatDate } from "@/ui/date-values";
 import {
+  EARLIEST_COMPETENCE_REASON,
   EARLIEST_EXPENSE_MONTH,
   EXPENSE_GROUP_ORDER,
   type ExpenseDraft,
@@ -372,5 +375,14 @@ describe("isExpenseDraftChanged (the sign that the session notice warns about)",
     expect(isExpenseDraftChanged({ ...opened, amount: "13,00" }, opened)).toBe(
       true
     );
+  });
+});
+
+describe("EARLIEST_COMPETENCE_REASON", () => {
+  it("diz o piso da competência a partir da constante do domínio", () => {
+    expect(EARLIEST_COMPETENCE_REASON).toBe(
+      `Só a partir de ${formatDate(EARLIEST_EXPENSE_COMPETENCE)}`
+    );
+    expect(EARLIEST_COMPETENCE_REASON).toBe("Só a partir de 01/01/2000");
   });
 });
