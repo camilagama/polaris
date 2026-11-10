@@ -227,7 +227,6 @@ export function MonthPicker({
 }: MonthPickerProps) {
   const [open, setOpen] = useState(false);
   const [openings, setOpenings] = useState(0);
-  const labelId = `${id}-label`;
   const text = capitalized(formatMonthLabel(month));
 
   // a popup reopened while it is still leaving keeps its grid mounted: a new key gives each opening a fresh cursor
@@ -249,7 +248,7 @@ export function MonthPicker({
 
   return (
     <Field className={cn("w-auto min-w-0", className)}>
-      <FieldLabel id={labelId}>{label}</FieldLabel>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Popover onOpenChange={handleOpenChange} open={open}>
         {/* the accessible name holds the text the button shows (WCAG 2.5.3): "Mês de competência, Outubro de 2026" */}
         <PopoverTrigger

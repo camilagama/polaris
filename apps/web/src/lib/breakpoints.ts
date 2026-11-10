@@ -1,8 +1,8 @@
 /**
- * The lines where the app changes layout, in `rem` like the CSS (`--breakpoint-md` of `theme.css`, `xl:` of Tailwind).
+ * The lines where the app changes layout, in `rem` like the CSS (`--breakpoint-md` of `theme.css`, `lg:` of Tailwind).
  * In a media query `rem` is the browser's default font size, not the `font-size` of `<html>`: with the text size of
  * the system raised, the CSS and these queries cross the line at the same width, which a `px` query would not.
- * With the default 16 px the lines are 760, 1024 and 1280 px.
+ * With the default 16 px the lines are 760 and 1024 px.
  */
 
 /** 760 px, `md` of Tailwind and the `touch` variant: the exact complement of `md:`, so no width is in neither. */

@@ -421,8 +421,8 @@ function useTypedDates({
  * and "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
  * hands it to `onCommit`, with the earlier day as the start, so an inverted range ("Até" before "De") cannot be made.
  * A shortcut hands its range over at once and "Limpar" hands over null. One month at a time at every width, the
- * shortcuts in a column beside it from 760 px and in a segmented row above it below. A half-chosen range lives in this component, so closing the popover drops it and every opening starts from
- * `value`. The `DateRangePicker` and the period editor of the filter bar share it.
+ * shortcuts in a column beside it from 760 px and in a segmented row above it below. A half-chosen range lives in this
+ * component, so closing the popover drops it and every opening starts from `value`. The `DateRangePicker` and the period editor of the filter bar share it.
  */
 export function DateRangePanel({
   clearable = true,
@@ -525,7 +525,7 @@ export function DateRangePanel({
   };
 
   return (
-    <div className="contents md:flex md:gap-4">
+    <div className="contents md:flex md:min-h-0 md:gap-4">
       <fieldset aria-label="Atalhos do período" className={SHORTCUTS_CLASS}>
         {shortcutsOf(shortcuts).map((preset) => (
           <button
@@ -540,7 +540,7 @@ export function DateRangePanel({
           </button>
         ))}
       </fieldset>
-      <div className="contents md:flex md:min-w-0 md:flex-col md:gap-3">
+      <div className="contents md:flex md:min-h-0 md:min-w-0 md:flex-col md:gap-3">
         {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
           and the line that asks for the last day stay in view; the 4 px around keep the focus ring of a day. With the
           typed fields open the month keeps its six weeks and the whole panel scrolls instead (the popup, or the body

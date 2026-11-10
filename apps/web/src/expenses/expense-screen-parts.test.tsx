@@ -31,7 +31,7 @@ describe("MonthPicker", () => {
     expect(html).not.toContain('aria-label="Mês anterior"');
     expect(html).not.toContain('aria-label="Próximo mês"');
     expect(html).not.toContain('type="month"');
-    expect(html).toContain('id="m-label"');
+    expect(html).toContain('for="m"');
   });
 
   it("writes any month the list can read, the first one there is included", () => {

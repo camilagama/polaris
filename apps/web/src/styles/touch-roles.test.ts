@@ -146,7 +146,7 @@ describe("no 48 px with touch", () => {
 /**
  * Heights of the fields on touch are measured in the browser by `e2e-pwa/ui-components.e2e.ts` ("campo de texto e
  * seletor"): the text field and the select at 32/44, the multi-line group taller than that. The month grid day
- * drops the touch area in `e2e-pwa/ui-date-pickers.e2e.ts` ("período: um mês abaixo de 1280 px").
+ * drops the touch area in `e2e-pwa/ui-date-pickers.e2e.ts` ("período: um mês em qualquer largura").
  * The class merger and `buttonVariants` are called as they are, not read from source.
  */
 describe("the class merger and the plain button", () => {
