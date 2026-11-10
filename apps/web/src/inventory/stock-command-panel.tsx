@@ -11,6 +11,7 @@ import {
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { FieldLegend, FieldSet } from "@/ui/field";
+import { MoneyText } from "@/ui/hidden-values";
 import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { useHoldSwap } from "../lib/unsent-work";
@@ -439,11 +440,15 @@ export function StockCommandPanel({
             <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
             {labels.title}
           </h3>
-          <p>{submission.message}</p>
+          <p>
+            <MoneyText text={submission.message} />
+          </p>
           {submission.queued ? null : (
             <p className="text-muted-foreground text-support">
               Saldo: {unitsText(submission.balance.quantity)} · custo médio:{" "}
-              {costText(submission.balance.movingAverageCost)}
+              <MoneyText
+                text={costText(submission.balance.movingAverageCost)}
+              />
             </p>
           )}
         </div>
@@ -486,7 +491,9 @@ export function StockCommandPanel({
       {block ? (
         <Alert id={`${prefix}-block`} role="note" variant="warning">
           <AlertDescription className="grid justify-items-start">
-            <p>{block}</p>
+            <p>
+              <MoneyText text={block} />
+            </p>
             {informCost ? (
               <Button
                 aria-label={`Informar custo de ${state.target.productName}, ${state.target.variantText}`}

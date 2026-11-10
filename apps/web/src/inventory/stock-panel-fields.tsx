@@ -3,6 +3,7 @@ import { type ChangeEvent, useCallback } from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
 import { Field, FieldLabel } from "@/ui/field";
+import { MoneyText } from "@/ui/hidden-values";
 import { InputGroup, InputGroupTextarea } from "@/ui/input-group";
 import {
   DateField,
@@ -324,7 +325,9 @@ export function Confirmation({ state }: { state: StockCommandState }) {
     return (
       <Alert variant="warning">
         <TriangleAlertIcon aria-hidden="true" />
-        <AlertDescription>{costSummaryText(body)}</AlertDescription>
+        <AlertDescription>
+          <MoneyText text={costSummaryText(body)} />
+        </AlertDescription>
       </Alert>
     );
   }
@@ -335,7 +338,7 @@ export function Confirmation({ state }: { state: StockCommandState }) {
           <div className="grid gap-0.5" key={line.label}>
             <dt className="text-muted-foreground">{line.label}</dt>
             <dd className="font-medium [overflow-wrap:anywhere]">
-              {line.value}
+              <MoneyText text={line.value} />
             </dd>
           </div>
         ))}

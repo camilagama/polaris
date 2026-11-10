@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/ui/card";
 import { Checkbox } from "@/ui/checkbox";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Field, FieldLabel } from "@/ui/field";
+import { Money } from "@/ui/money";
 import { connectionControlProps } from "../app-shell/connection-required-notice";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { formatBrlAmount, formatCalendarDate } from "../lib/format";
@@ -100,7 +101,7 @@ function RuleCard({ busyKey, onEdit, onToggle, rule }: RuleCardProps) {
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 min-[30rem]:justify-end">
         <p className="whitespace-nowrap font-semibold text-value-md tabular-nums">
-          {formatBrlAmount(rule.amount)}
+          <Money text={formatBrlAmount(rule.amount)} />
         </p>
         <div className="flex gap-2">
           <Button

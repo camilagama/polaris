@@ -1,7 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeePreview } from "./sale-form-model";
-import { FeePreviewDetails } from "./sale-summary-panel";
+
+const state = vi.hoisted(() => ({ hidden: false }));
+
+vi.mock("@/lib/hidden-values", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/hidden-values")>()),
+  useHiddenValues: () => [state.hidden, () => undefined],
+}));
+
+const { FeePreviewDetails, Money } = await import("./sale-summary-panel");
 
 const PREVIEW: FeePreview = {
   anticipation: { text: "não solicitada", tone: "not_applicable" },
@@ -36,5 +44,36 @@ describe("FeePreviewDetails (P-4)", () => {
     expect(html).not.toContain("Prévia de taxas e prazo");
     expect(html).not.toContain("O servidor recalcula");
     expect(html).not.toContain("aria-labelledby");
+  });
+});
+
+describe("the amounts of the Resumo, with Esconder valores", () => {
+  const AMOUNT = /R\$\s?\d/;
+
+  beforeEach(() => {
+    state.hidden = false;
+  });
+
+  it("writes the fee and the total as they are while the values show", () => {
+    const fees = renderToStaticMarkup(<FeePreviewDetails preview={PREVIEW} />);
+    expect(fees).toContain("R$ 2,50");
+    const total = renderToStaticMarkup(<Money text="R$ 229,90" />);
+    expect(total).toContain("229,90");
+  });
+
+  it("masks the amount of the fee and keeps its percent", () => {
+    state.hidden = true;
+    const html = renderToStaticMarkup(<FeePreviewDetails preview={PREVIEW} />);
+    expect(html).not.toMatch(AMOUNT);
+    expect(html).toContain("2,5%");
+    expect(html).toContain("valor escondido");
+  });
+
+  it("masks the total of the receipt and says 'valor escondido' to a screen reader", () => {
+    state.hidden = true;
+    const html = renderToStaticMarkup(<Money text="R$ 229,90" />);
+    expect(html).not.toContain("229");
+    expect(html).toContain("R$ ••••");
+    expect(html).toContain("valor escondido");
   });
 });
