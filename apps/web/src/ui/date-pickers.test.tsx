@@ -319,8 +319,8 @@ describe("Calendar", () => {
     expect(off).not.toMatch(DISABLED_ATTRIBUTE);
     const reasonId = attribute(off, "aria-describedby");
     expect(reasonId).toBeTruthy();
-    expect(markup).toContain(
-      `<span class="sr-only" id="${reasonId}">Só até hoje</span>`
+    expect(markup).toMatch(
+      new RegExp(`<p[^>]*id="${reasonId}"[^>]*>Só até hoje</p>`)
     );
     const allowed = dayButton(markup, "2026-10-23");
     expect(attribute(allowed, "aria-disabled")).toBeUndefined();
@@ -416,6 +416,16 @@ describe("OnDemandCalendar, a espera do chunk", () => {
   it("e tem o tamanho de um mês, o mesmo que o calendário ocupa", () => {
     expect(markup).toContain("h-[calc(var(--cell-size)*7+3.1875rem)]");
     expect(markup).toContain("w-[calc(var(--cell-size)*7)]");
+    expect(markup).not.toContain("+1.375rem");
+  });
+
+  it("com o motivo dos dias desligados a caixa reserva também a linha dele, para o popover não crescer quando o calendário chega", () => {
+    const withReason = html(
+      <OnDemandCalendar disabledReason="Só até hoje" mode="single" />
+    );
+    expect(withReason).toContain(
+      "h-[calc(var(--cell-size)*7+3.1875rem+1.375rem)]"
+    );
   });
 });
 

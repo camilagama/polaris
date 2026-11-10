@@ -38,6 +38,7 @@ import {
   ExpenseTextField,
 } from "./expense-fields";
 import {
+  EARLIEST_COMPETENCE_REASON,
   EXPENSE_DRAFT_FIELDS,
   type ExpenseDraft,
   type ExpenseDraftErrors,
@@ -223,6 +224,7 @@ export function ExpenseForm({
         />
         <DateField
           disabled={disabled}
+          disabledReason={EARLIEST_COMPETENCE_REASON}
           error={errors.competenceOn}
           hint="O mês a que a despesa se refere, não o dia do pagamento."
           id={fieldId("competenceOn")}

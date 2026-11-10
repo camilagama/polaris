@@ -3312,3 +3312,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | "7 dias \| 30 dias" | Removido | O segmentado e a linha tracejada dos 7 dias anteriores saíram do "Vendas por dia" (o período da tela manda). |
 | Sem conexão (D1) | Em revisão | `DateRangePicker`/`DateRangePanel` ganham `only`: só Este mês e Mês passado abrem; os outros atalhos ficam `aria-disabled` ligados ao motivo, os dias do calendário ficam desligados e os campos de digitar não aparecem; a frase "Sem conexão: só este mês e o anterior." fica ao lado do botão. O mês passado vem da cópia do aparelho quando ela existe (a mesma chave do Resultado). |
 | Provas | Em revisão | Unidade: `home-period.test.ts`, `home-chart.test.tsx`, `date-pickers.test.tsx` (`only`). e2e (Chromium): `home.e2e.ts` (período, Este ano por mês, erro do período, sem conexão, alturas do bloco entre os meses), `motion-level.e2e.ts`, `ui-csp.e2e.ts`. **Não verificado:** aparelho real (BrowserStack), leitor de tela; baselines da regressão visual do Início (o CI as despeja). |
+
+### UI de 10/11: o dia desligado do calendário recebe o foco das setas e mostra o motivo (t1010, PR-A2 do desenho t1007; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Limite como modificador | Em revisão | `ui/calendar.tsx` passa o limite ao DayPicker como `modifiers.disabled` e não como a prop `disabled`, que a navegação por seta salta; sem limite, o `modifiers.disabled` do chamador não é sobrescrito. As setas chegam ao dia desligado; clique, toque, Enter e Space nele não escolhem nem fecham. |
+| Motivo em texto | Em revisão | Linha sob o mês, `invisible` (com a altura) enquanto nenhum dia desligado tem o foco, visível quando tem (foco por seta ou toque), altura mínima só com `disabledReason`, presa ao pé da caixa que rola (360 x 600) e sem `aria-live`. |
+| Aparência do dia | Em revisão | Só o número apaga (texto a 40%, riscado); sem `opacity` no botão, então o contorno de foco de 3 px fica inteiro; o toque chega ao dia (`cursor-not-allowed`), sem fundo de hover e sem escala ao apertar. |
+| Provas | Em revisão | Unidade: `calendar-limit.test.tsx`, `date-pickers.test.tsx`. e2e: `ui-date-pickers.e2e.ts` (teclado, mouse, toque, 360 x 600, axe com o dia focado), `ui-date-pickers-leitor-de-tela.e2e.ts`, `dashboard.e2e.ts` (a seta chega a 2025-10-13 desligado). Controle: sem a correção os testes novos reprovam. O motivo dos quatro campos de data mudos é do PR-A1 (t1009). |

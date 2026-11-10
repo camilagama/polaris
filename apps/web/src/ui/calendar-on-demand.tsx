@@ -259,7 +259,11 @@ export function OnDemandCalendar(props: CalendarProps) {
   return (
     <div
       className={cn(
-        "grid h-[calc(var(--cell-size)*7+3.1875rem)] w-[calc(var(--cell-size)*7)] place-items-center content-center justify-items-center gap-3 p-2 text-center text-muted-foreground text-support [--cell-size:2.25rem] touch:[--cell-size:min(2.75rem,calc((100vw_-_3rem)/7))]",
+        "grid w-[calc(var(--cell-size)*7)] place-items-center content-center justify-items-center gap-3 p-2 text-center text-muted-foreground text-support [--cell-size:2.25rem] touch:[--cell-size:min(2.75rem,calc((100vw_-_3rem)/7))]",
+        // the month, plus the line of the reason that the calendar reserves under it when it has one
+        props.disabledReason
+          ? "h-[calc(var(--cell-size)*7+3.1875rem+1.375rem)]"
+          : "h-[calc(var(--cell-size)*7+3.1875rem)]",
         // the calendar's own class (the gallery narrows the cells to fit its frame): the box takes it too, same size
         props.className
       )}
