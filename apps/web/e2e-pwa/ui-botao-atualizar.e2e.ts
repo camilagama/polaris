@@ -106,6 +106,9 @@ const spinOf = (read: { button: Locator }) =>
     .locator("svg")
     .evaluate((icon) => getComputedStyle(icon).animationName);
 
+// Sem aria-busy o ícone nunca gira, em qualquer nível de movimento: estes testes
+// provam o repouso. Quem prova o nível é a leitura ("gira enquanto lê" e os
+// "fica parado, e continua com aria-busy").
 const RESTING = [
   { name: "Atualizar", screen: "estoque lista" },
   { name: "Atualizar estoque e perfis", screen: "venda com itens" },
@@ -124,7 +127,7 @@ test.describe("o ícone gira só com movimento completo", () => {
     test.use({ hasTouch: false, viewport: VIEWPORTS["1280"] });
 
     for (const { name, screen } of RESTING) {
-      test(`${screen}: sem aria-busy e sem giro em repouso`, async ({
+      test(`${screen}: em repouso, sem aria-busy e sem giro`, async ({
         page,
       }) => {
         expect(await restingSpin(page, screen, name)).toBe("none");
@@ -150,7 +153,9 @@ test.describe("o ícone gira só com movimento completo", () => {
     });
 
     for (const { name, screen } of RESTING) {
-      test(`${screen}: sem giro em repouso`, async ({ page }) => {
+      test(`${screen}: em repouso, sem aria-busy e sem giro`, async ({
+        page,
+      }) => {
         expect(await restingSpin(page, screen, name)).toBe("none");
         await expect(page.locator("html")).toHaveAttribute(
           "data-motion",
@@ -177,7 +182,9 @@ test.describe("o ícone gira só com movimento completo", () => {
     });
 
     for (const { name, screen } of RESTING) {
-      test(`${screen}: sem giro em repouso`, async ({ page }) => {
+      test(`${screen}: em repouso, sem aria-busy e sem giro`, async ({
+        page,
+      }) => {
         expect(await restingSpin(page, screen, name)).toBe("none");
         await expect(page.locator("html")).toHaveAttribute(
           "data-motion",

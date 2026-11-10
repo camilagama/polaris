@@ -194,7 +194,10 @@ const sourcesUnder = (dir: string): string[] => {
   if (statSync(root).isFile()) {
     return [dir];
   }
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+  const entries = readdirSync(root, { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name, "en")
+  );
+  return entries.flatMap((entry) => {
     const path = `${dir}/${entry.name}`;
     if (entry.isDirectory()) {
       return sourcesUnder(path);
