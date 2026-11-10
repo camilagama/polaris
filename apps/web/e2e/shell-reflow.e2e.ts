@@ -357,12 +357,12 @@ function pageMargins(page: Page, panel: string) {
   }, panel);
 }
 
-for (const [path, tab] of [
-  ["/dashboard", "Resultado"],
-  ["/dashboard?aba=despesas", "Despesas"],
+for (const [path, tab, screen] of [
+  ["/dashboard", "Resultado", "Resultado"],
+  ["/expenses", "Lançamentos", "Despesas"],
 ] as const) {
   reflowTest(
-    `a 320 px com letra de 20 px a página de ${tab} não rola na horizontal e a margem direita é a da esquerda`,
+    `a 320 px com letra de 20 px a página de ${screen} não rola na horizontal e a margem direita é a da esquerda`,
     async ({ page }) => {
       await open(page, path, { fontPixels: 20, width: 320 });
       await expect(
@@ -397,7 +397,7 @@ reflowTest(
     });
     await openReflowViewport(page, { fontPixels: 20, width: 320 });
     await serve(page);
-    await page.goto("/dashboard?aba=despesas");
+    await page.goto("/expenses");
     await expect(page.getByText("Carregando as despesas…")).toBeAttached();
     await assertNoPageScroll(page);
     release();
@@ -411,7 +411,7 @@ reflowTest(
 reflowTest(
   "a 320 px com letra de 20 px a faixa de Despesas mostra o degradê do fim, que some quando se chega às Categorias",
   async ({ page }) => {
-    await open(page, "/dashboard?aba=despesas", { fontPixels: 20, width: 320 });
+    await open(page, "/expenses", { fontPixels: 20, width: 320 });
     const strip = page.getByRole("tablist", { name: EXPENSE_TABS });
     const scroller = strip.locator("xpath=..");
     const frame = scroller.locator("xpath=..");

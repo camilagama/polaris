@@ -14,14 +14,14 @@ const render = (canCreateExpense: boolean) =>
   );
 
 describe("the Resultado of a period with no sale and no expense", () => {
-  it("keeps its sentence and offers a new sale and a new expense, as the tab of the expenses names it", () => {
+  it("keeps its sentence and offers a new sale and a new expense, as the screen of the expenses names it", () => {
     const html = render(true);
     expect(html).toContain("Sem vendas nem despesas em outubro de 2026");
     expect(html).toContain(
       "Escolha outro período ou registre vendas e despesas."
     );
     expect(html).toContain('href="/sales"');
-    expect(html).toContain('href="/dashboard?aba=despesas"');
+    expect(html).toContain('href="/expenses"');
     expect(html).toContain(">Nova venda</a>");
     expect(html).toContain(">Nova despesa</a>");
     expect(html.indexOf("Nova venda")).toBeLessThan(
@@ -33,7 +33,7 @@ describe("the Resultado of a period with no sale and no expense", () => {
     const html = render(false);
     expect(html).toContain("Nova venda");
     expect(html).not.toContain("Nova despesa");
-    expect(html).not.toContain("aba=despesas");
+    expect(html).not.toContain("/expenses");
   });
 });
 
