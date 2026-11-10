@@ -234,8 +234,11 @@ function chosenView(
 /**
  * Whether the period chosen has figures to apply to: "yes" where the cards of the month are drawn (from the server or
  * from the copy), "loading" while they are read, "no" for the error, the checklist of a store that never sold and a
- * device with no copy.
+ * device with no copy (the picker stays in its place, off, so the page does not move when that changes), and "hidden"
+ * for whoever cannot read the results.
  */
+type Applies = "hidden" | "loading" | "no" | "yes";
+
 function periodApplies({
   failed,
   readsReport,
@@ -246,9 +249,9 @@ function periodApplies({
   readsReport: boolean;
   state: HomeState;
   view: OfflineHome | null;
-}): "loading" | "no" | "yes" {
+}): Applies {
   if (!readsReport || state.sessionRefused) {
-    return "no";
+    return "hidden";
   }
   if (view) {
     return view.figures ? "yes" : "no";
@@ -274,7 +277,7 @@ function useChosenPeriod({
   timezone,
   today,
 }: {
-  applies: "loading" | "no" | "yes";
+  applies: Applies;
   now: number;
   online: boolean;
   organizationId: string;
@@ -307,9 +310,9 @@ function useChosenPeriod({
     }
   }, [reading, refresh, reload]);
   const periodRow =
-    applies === "no" ? null : (
+    applies === "hidden" ? null : (
       <HomePeriodRow
-        disabled={applies === "loading"}
+        disabled={applies !== "yes"}
         note={chosen?.note ?? null}
         offline={!online}
         onCustom={handleCustom}
