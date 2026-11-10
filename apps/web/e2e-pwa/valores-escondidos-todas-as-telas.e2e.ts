@@ -177,9 +177,14 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
   attention: [
     stateOf("pendências com itens", {
       known: {
-      places: ["innerText: R$ 20,00", "innerText: R$ 89,90", "textContent: R$ 20,00", "textContent: R$ 89,90"],
-      source: "src/offline/attention-panel.tsx",
-    },
+        places: [
+          "innerText: R$ 20,00",
+          "innerText: R$ 89,90",
+          "textContent: R$ 20,00",
+          "textContent: R$ 89,90",
+        ],
+        source: "src/offline/attention-panel.tsx",
+      },
     }),
   ],
   customers: states("clientes lista"),
@@ -193,15 +198,20 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
   expenses: [
     stateOf("despesas lista", {
       known: {
-      places: ["textContent: R$ 1.500,50"],
-      source: "src/expenses/expense-list.tsx",
-    },
+        places: ["textContent: R$ 1.500,50"],
+        source: "src/expenses/expense-list.tsx",
+      },
     }),
     stateOf("despesas recorrentes e o diálogo da regra", {
       known: {
-      places: ["innerText: R$ 1.500,50", "innerText: R$ 49,90", "textContent: R$ 1.500,50", "textContent: R$ 49,90"],
-      source: "src/expenses/expense-rules-panel.tsx",
-    },
+        places: [
+          "innerText: R$ 1.500,50",
+          "innerText: R$ 49,90",
+          "textContent: R$ 1.500,50",
+          "textContent: R$ 49,90",
+        ],
+        source: "src/expenses/expense-rules-panel.tsx",
+      },
     }),
   ],
   help: [HELP],
@@ -210,9 +220,9 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     stateOf("estoque lista"),
     stateOf("estoque custo informado", {
       known: {
-      places: ["innerText: R$ 12,50", "textContent: R$ 12,50"],
-      source: "src/inventory/stock-command-model.ts",
-    },
+        places: ["innerText: R$ 12,50", "textContent: R$ 12,50"],
+        source: "src/inventory/stock-command-model.ts",
+      },
     }),
   ],
   "products:categorias": states("categorias lista"),
@@ -223,9 +233,20 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
   sale: [
     stateOf("venda com itens", {
       known: {
-      places: ["innerText: R$ 10,00", "innerText: R$ 100,00", "innerText: R$ 129,90", "innerText: R$ 229,90", "innerText: R$ 62,40", "textContent: R$ 10,00", "textContent: R$ 100,00", "textContent: R$ 129,90", "textContent: R$ 229,90", "textContent: R$ 62,40"],
-      source: "src/sales/sale-form-model.ts",
-    },
+        places: [
+          "innerText: R$ 10,00",
+          "innerText: R$ 100,00",
+          "innerText: R$ 129,90",
+          "innerText: R$ 229,90",
+          "innerText: R$ 62,40",
+          "textContent: R$ 10,00",
+          "textContent: R$ 100,00",
+          "textContent: R$ 129,90",
+          "textContent: R$ 229,90",
+          "textContent: R$ 62,40",
+        ],
+        source: "src/sales/sale-form-model.ts",
+      },
     }),
     stateOf("venda confirmada"),
   ],
@@ -243,9 +264,9 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
   "settings:formas-de-receber": [
     stateOf("perfis de pagamento lista", {
       known: {
-      places: ["innerText: R$ 0,50", "textContent: R$ 0,50"],
-      source: "src/payment-profiles/payment-profile-list.tsx",
-    },
+        places: ["innerText: R$ 0,50", "textContent: R$ 0,50"],
+        source: "src/payment-profiles/payment-profile-list.tsx",
+      },
     }),
   ],
   "settings:lista": [SETTINGS_LIST],

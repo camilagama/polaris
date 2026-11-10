@@ -569,7 +569,10 @@ test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho
     await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
     expect(await eye(page).innerHTML()).not.toBe(before);
     await expect(
-      header(page).getByRole("button", { exact: true, name: "Esconder valores" })
+      header(page).getByRole("button", {
+        exact: true,
+        name: "Esconder valores",
+      })
     ).toHaveCount(1);
   });
 
@@ -600,9 +603,9 @@ test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho
     await openShell(page, "/products");
     await eye(page).click();
     await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
-    expect(await page.evaluate((key) => localStorage.getItem(key), HIDDEN_KEY)).toBe(
-      "escondidos"
-    );
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), HIDDEN_KEY)
+    ).toBe("escondidos");
     await page
       .getByRole("navigation", { name: "Principal" })
       .getByRole("link", { name: "Histórico" })
