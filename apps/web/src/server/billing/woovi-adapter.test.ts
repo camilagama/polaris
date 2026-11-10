@@ -108,7 +108,6 @@ const subscription = (
     emv: EMV,
     journey: "ONLY_RECURRENCY",
     recurrencyId: "RN0000000020261020FAKE000001",
-    status: "APPROVED",
     ...pix,
   },
   status: "ACTIVE",
@@ -135,7 +134,7 @@ const installment = (overrides: Record<string, unknown> = {}) => ({
 /** The body the webhook sends: the body's claim, with the payer's data. */
 const approvedBody = (overrides: Record<string, unknown> = {}) =>
   JSON.stringify({
-    ...subscription(),
+    ...subscription({}, { status: "APPROVED" }),
     event: "PIX_AUTOMATIC_APPROVED",
     ...overrides,
   });
@@ -149,6 +148,9 @@ const paidBody = () =>
 type Answer = { json?: unknown; status: number } | "network" | "timeout";
 
 const SUBSCRIPTION_PATH = `/api/v1/subscriptions/${encodeURIComponent(SUBSCRIPTION_ID)}`;
+const SUBSCRIPTION_INSTALLMENTS_PATH = `${SUBSCRIPTION_PATH}/installments`;
+const liveInstallment = () =>
+  installment({ cobr: { status: "ACTIVE" }, status: "ACTIVE" });
 const INSTALLMENT_PATH = `/api/v1/installments/${encodeURIComponent(INSTALLMENT_ID)}`;
 
 function fakeApi(answers: Record<string, Answer> = {}) {
@@ -157,6 +159,10 @@ function fakeApi(answers: Record<string, Answer> = {}) {
     [INSTALLMENT_PATH]: { json: installment(), status: 200 },
     [SUBSCRIPTION_PATH]: {
       json: { subscription: subscription() },
+      status: 200,
+    },
+    [SUBSCRIPTION_INSTALLMENTS_PATH]: {
+      json: { installments: [liveInstallment()] },
       status: 200,
     },
     ...answers,
@@ -313,7 +319,65 @@ describe("the signature (AC-1b), checked over the raw bytes", () => {
     });
     expect(t.api.urls).toEqual([
       `https://api.woovi-sandbox.com${SUBSCRIPTION_PATH}`,
+      `https://api.woovi-sandbox.com${SUBSCRIPTION_INSTALLMENTS_PATH}?skip=0&limit=100`,
     ]);
+    expect(t.logs.info).toHaveBeenCalledWith(
+      "billing_webhook_approval_inferred",
+      {
+        eventType: "PIX_AUTOMATIC_APPROVED",
+        provider: "woovi",
+        resourceId: SUBSCRIPTION_LOG_ID,
+      }
+    );
+  });
+
+  it("an authorization status the read back shows is stored with no inference log", async () => {
+    const t = setup({
+      answers: {
+        [SUBSCRIPTION_PATH]: {
+          json: { subscription: subscription({}, { status: "APPROVED" }) },
+          status: 200,
+        },
+      },
+    });
+    const { response } = await t.send(approvedBody());
+    expect(response.status).toBe(200);
+    expect(t.store.recordEvent).toHaveBeenCalledTimes(1);
+    expect(t.api.urls).toHaveLength(1);
+    expect(t.logs.info).not.toHaveBeenCalledWith(
+      "billing_webhook_approval_inferred",
+      expect.anything()
+    );
+  });
+
+  it("a sandbox-shaped approval with an installment that is not live is 200 with no fact and the state-not-shown log", async () => {
+    const t = setup({
+      answers: {
+        [SUBSCRIPTION_INSTALLMENTS_PATH]: {
+          json: { installments: [installment()] },
+          status: 200,
+        },
+      },
+    });
+    const { answer, logged, response } = await t.send(approvedBody());
+    expect(response.status).toBe(200);
+    expect(JSON.parse(answer)).toMatchObject({ received: 0 });
+    expect(t.store.recordEvent).not.toHaveBeenCalled();
+    expect(t.logs.error).toHaveBeenCalledWith(
+      "billing_webhook_state_not_shown",
+      {
+        eventType: "PIX_AUTOMATIC_APPROVED",
+        journey: "ONLY_RECURRENCY",
+        provider: "woovi",
+        resourceId: SUBSCRIPTION_LOG_ID,
+        subscriptionStatus: "ACTIVE",
+      }
+    );
+    expect(t.logs.info).not.toHaveBeenCalledWith(
+      "billing_webhook_approval_inferred",
+      expect.anything()
+    );
+    expectNoLeak(answer, logged);
   });
 
   it("a paid installment stores charge_succeeded with the period and the amount", async () => {
@@ -543,7 +607,6 @@ describe("what happens when the read back does not give the resource", () => {
         },
       },
       {
-        authorization: "APPROVED",
         charge: "ACTIVE",
         installmentStatus: "ACTIVE",
         journey: "ONLY_RECURRENCY",
@@ -561,7 +624,6 @@ describe("what happens when the read back does not give the resource", () => {
       }),
       {},
       {
-        authorization: "APPROVED",
         journey: "ONLY_RECURRENCY",
         subscriptionStatus: "ACTIVE",
       },
