@@ -1,5 +1,4 @@
 import { HelpTip } from "@/ui/help-tip";
-import { HideValuesButton } from "@/ui/hidden-values";
 import { RefreshButton } from "@/ui/refresh-button";
 import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
 import {
@@ -157,8 +156,6 @@ function Toolbar({
           disabled={state.isLoading}
           onClick={onRefresh}
         />
-        {/* v7 § 6: the same choice as on the Início, kept on the device */}
-        <HideValuesButton />
         {/* two lines kept on a phone, where "Mostrando … até o novo período carregar." takes two */}
         <p
           aria-live="polite"

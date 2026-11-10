@@ -9,8 +9,8 @@ import { Money } from "./money";
 /**
  * "Esconder valores" (revisão de UI v7, § 6): the toggle (`aria-pressed`) and the text whose amounts it hides. The
  * name of the button stays "Esconder valores" in both states, as a toggle's name does, and the pressed state says
- * whether they are hidden; the eye changes with it. Below 760 px it is an icon button (36 px) with a 44 px touch area.
- * One size on every screen: the same action is the same button.
+ * whether they are hidden; the eye changes with it. It is an icon button at every width (36 px with a 44 px touch
+ * area): the header, its one place, has no room for a label beside the sync chip.
  */
 export function HideValuesButton({ className }: { className?: string }) {
   const [hidden, setHidden] = useHiddenValues();
@@ -19,16 +19,13 @@ export function HideValuesButton({ className }: { className?: string }) {
   return (
     <Button
       aria-pressed={hidden}
-      className={cn(
-        "aria-pressed:bg-accent max-md:size-ctl-lg max-md:px-0",
-        className
-      )}
+      className={cn("size-ctl-lg px-0 aria-pressed:bg-accent", className)}
       onClick={toggle}
       type="button"
       variant="outline"
     >
       <Icon aria-hidden="true" data-icon="inline-start" />
-      <span className="max-md:sr-only">Esconder valores</span>
+      <span className="sr-only">Esconder valores</span>
     </Button>
   );
 }

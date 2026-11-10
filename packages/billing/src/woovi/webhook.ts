@@ -6,12 +6,15 @@ import {
 import type { WooviClient } from "./client";
 import { isWooviGlobalId, wooviLogId } from "./ids";
 import {
+  isApprovalInferredFromInstallments,
   mapWooviInstallmentEvent,
   mapWooviSubscriptionEvent,
   pickWooviInstallment,
   pickWooviSubscription,
   wooviEventId,
+  type WooviInstallment,
   type WooviStateNotShown,
+  type WooviSubscription,
   wooviEventKind,
   wooviStateNotShown,
 } from "./mapper";
@@ -125,6 +128,26 @@ export type WooviStateNotShownReport = Partial<WooviStateNotShown> & {
 };
 
 /**
+ * The installments of the subscription, read only when an approval needs them:
+ * the subscription read back shows no `pixRecurring.status` (sandbox).
+ */
+async function installmentsToProveApproval(
+  client: WooviClient,
+  eventType: string,
+  subscription: WooviSubscription
+): Promise<WooviInstallment[]> {
+  if (
+    eventType !== "PIX_AUTOMATIC_APPROVED" ||
+    subscription.authorization !== null
+  ) {
+    return [];
+  }
+  return (await client.listSubscriptionInstallments(subscription.id)).map(
+    pickWooviInstallment
+  );
+}
+
+/**
  * Reads back the resource the event names and maps it. A resource the API does
  * not find (404) is an `unresolved` event, never a dropped one (AC-48); an API
  * that is down or refuses the AppID throws, so the delivery is answered with a
@@ -132,13 +155,17 @@ export type WooviStateNotShownReport = Partial<WooviStateNotShown> & {
  * says when the installment or the subscription was created, not when the
  * event happened. An event that maps to no fact although the resource should
  * show one is still answered with no events, and reported to `onStateNotShown`
- * so the caller leaves a trace of a payment that may be lost.
+ * so the caller leaves a trace of a payment that may be lost. An approval
+ * the subscription read back does not show (no `pixRecurring.status`, sandbox)
+ * and that a live installment of it proves is reported to
+ * `onApprovalInferred`, so the caller leaves a trace of the inference.
  */
 export async function resolveWooviWebhook(
   client: WooviClient,
   envelope: WooviWebhookEnvelope,
   now = new Date(),
-  onStateNotShown: (report: WooviStateNotShownReport) => void = () => undefined
+  onStateNotShown: (report: WooviStateNotShownReport) => void = () => undefined,
+  onApprovalInferred: () => void = () => undefined
 ): Promise<ProviderBillingEvent[] | UnresolvedProviderEvent> {
   const kind = wooviEventKind(envelope.eventType);
   if (kind === "ignored" || envelope.resourceId === null) {
@@ -157,11 +184,23 @@ export async function resolveWooviWebhook(
         onStateNotShown({});
         return [];
       }
+      const installments = await installmentsToProveApproval(
+        client,
+        envelope.eventType,
+        subscription
+      );
       const events = mapWooviSubscriptionEvent({
         eventType: envelope.eventType,
+        installments,
         occurredAt: now,
         subscription,
       });
+      if (
+        events.length > 0 &&
+        isApprovalInferredFromInstallments(subscription, installments)
+      ) {
+        onApprovalInferred();
+      }
       const notShown =
         events.length === 0
           ? wooviStateNotShown({ eventType: envelope.eventType, subscription })
