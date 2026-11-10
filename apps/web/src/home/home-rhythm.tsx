@@ -216,7 +216,7 @@ function RhythmNumbers({
   );
 }
 
-/** The map, its reading, its keyboard, its legend and its numbers, for the days read. */
+/** The map, its tooltip, its keyboard, its legend and its numbers, for the days read. */
 function RhythmMap({ days }: { days: RhythmDay[] }) {
   const phone = useIsMobile();
   const { ref, width } = useWidth();
@@ -244,13 +244,17 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
     setHovered(index);
   }, []);
   const mapBox = useRef<HTMLDivElement>(null);
-  // a day a finger touched stays read after it lifts; touching anywhere outside the map puts the tooltip away
+  // a day a finger touched stays read after it lifts; touching anywhere outside the map puts the tooltip away (checked
+  // when the touch comes, since a finger can touch the very day the mouse already reads)
   useEffect(() => {
-    if (hovered === null || touched.current === null) {
+    if (hovered === null) {
       return;
     }
     const away = (event: Event) => {
-      if (!mapBox.current?.contains(event.target as Node)) {
+      if (
+        touched.current !== null &&
+        !mapBox.current?.contains(event.target as Node)
+      ) {
         touched.current = null;
         setHovered(null);
       }
@@ -282,6 +286,10 @@ function RhythmMap({ days }: { days: RhythmDay[] }) {
   );
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Escape") {
+        setKeyed(null);
+        return;
+      }
       const next = keyMove(event.key, keyed ?? rest, view.today);
       if (next !== null) {
         event.preventDefault();

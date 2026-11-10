@@ -47,9 +47,9 @@ export interface SalesHeatmapProps {
   onRead: (index: number | null, touch?: boolean) => void;
   /** Drawn finished, with no entrance of the cells (a phone, v7 § 7, and reduced motion). */
   still?: boolean;
-  /** The index of today: a dashed contour. */
   /** What the tooltip says of the `focus` day (already masked when the values are hidden), or null: no tooltip. */
   tip: HeatmapTip | null;
+  /** The index of today: a dashed contour. */
   today: number;
 }
 

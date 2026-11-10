@@ -3482,7 +3482,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(map.locator("[data-heatmap-empty]")).toHaveCount(175);
     await expect(map).not.toContainText("Vazio: sem venda");
     await expect(map.locator("[data-rhythm-legend]")).toHaveText("MenosMais");
-    // 3 weeks with a sale: the map says it is filling up, in the sentence under it; the chart of the mean by weekday is gone
+    // 3 weeks with a sale: the map says it is filling up, in the sentence under it; there is no chart of the mean by weekday
     await expect(map).not.toContainText("Média por dia da semana");
     await expect(map.locator("[data-weekday-bars]")).toHaveCount(0);
     // the cells are 12 px with a gap of 3
@@ -3588,6 +3588,11 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await page.keyboard.press("Tab");
     await expect(tooltip(page)).toHaveCount(0);
     await expect(atRest(page)).toHaveText(AT_REST);
+    // Escape puts the tooltip away without leaving the control
+    await slider.focus();
+    await expectTooltip(page, "Sexta, 23/10");
+    await page.keyboard.press("Escape");
+    await expect(tooltip(page)).toHaveCount(0);
   });
 
   test("a 360 px: tantas semanas quanto cabem (de 13 a 20), células de 12 px, nada passa da largura", async ({
