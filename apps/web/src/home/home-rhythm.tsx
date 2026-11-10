@@ -445,7 +445,7 @@ export function RhythmBlock({
     ) : (
       // the height of the block read, so the blocks under it stay
       <BlockSkeleton
-        className="h-[16.6875rem] md:h-[15.8125rem]"
+        className="h-[16.6875rem] max-[21.25rem]:h-[18.0625rem] md:h-[15.8125rem]"
         label="Carregando o ritmo de vendas…"
         lines={0}
       />
