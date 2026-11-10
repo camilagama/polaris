@@ -2903,271 +2903,40 @@ test.describe("o delta fica ao lado do valor quando a coluna comporta, com sinal
   }
 });
 
-const monthBack = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Mês anterior" });
-const monthForward = (page: Page) =>
-  page.getByRole("button", { exact: true, name: "Próximo mês" });
-const periodRow = (page: Page) => page.locator("[data-period-row]");
-const monthLive = (page: Page) => page.locator("[data-month-live]");
-
-async function expectPeriodText(page: Page, text: string) {
-  await expect(periodButton(page)).toHaveAccessibleName(
-    `Período: ${text}, editar`
-  );
-}
-
-test.describe("‹ e › de mês ao lado do período (L2-1b)", () => {
-  test("com um mês inteiro, as setas trocam de mês com um toque e › fica desligada no mês atual", async ({
-    page,
-  }) => {
-    const server = new FakeReportServer();
-    await openDashboard(page, server);
-    await expectPeriodText(page, "01/10 a 31/10");
-    await expect(monthBack(page)).toBeVisible();
-    await expect(monthForward(page)).toHaveAttribute("aria-disabled", "true");
-    await expect(monthBack(page)).not.toHaveAttribute("aria-disabled");
-
-    await monthForward(page).click({ force: true });
-    await expectPeriodText(page, "01/10 a 31/10");
-
-    await monthBack(page).click();
-    await expectPeriodText(page, "01/09 a 30/09");
-    await expect(monthLive(page)).toHaveText("Período: 1 a 30 de setembro");
-    await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
-    await expectPreset(page, "Mês passado");
-    await expect(monthForward(page)).not.toHaveAttribute("aria-disabled");
-
-    await monthBack(page).click();
-    await expectPeriodText(page, "01/08 a 31/08");
-    await expectPreset(page, "Período");
-    expect(server.periods.at(-1)).toEqual({
-      from: "2026-08-01",
-      to: "2026-08-31",
+test.describe("o período do Resultado não tem setas de mês", () => {
+  for (const [name, choose] of [
+    ["com o mês inteiro", async () => undefined],
+    [
+      "com Mês passado",
+      async (page: Page) => choosePreset(page, "Mês passado"),
+    ],
+    [
+      "com um mês inteiro digitado",
+      async (page: Page) => rangeFields(page, "2026-07-01", "2026-07-31"),
+    ],
+    [
+      "com Últimos 30 dias",
+      async (page: Page) => choosePreset(page, "Últimos 30 dias"),
+    ],
+  ] as const) {
+    test(`${name}, só o botão do período troca o período: nenhum "Mês anterior" nem "Próximo mês" fora do painel`, async ({
+      page,
+    }) => {
+      const server = new FakeReportServer();
+      await openDashboard(page, server);
+      await choose(page);
+      await expect(periodButton(page)).toBeVisible();
+      await expect(
+        page.getByRole("button", { exact: true, name: "Mês anterior" })
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { exact: true, name: "Próximo mês" })
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("group", { name: "Mês do período" })
+      ).toHaveCount(0);
+      await expect(page.locator("[data-month-live]")).toHaveCount(0);
     });
-
-    await monthForward(page).click();
-    await expect(monthLive(page)).toHaveText("Período: 1 a 30 de setembro");
-    await monthForward(page).click();
-    await expectPeriodText(page, "01/10 a 31/10");
-    await expect(monthLive(page)).toHaveText("Período: 1 a 31 de outubro");
-    await expectPreset(page, "Este mês");
-    await expect(monthForward(page)).toHaveAttribute("aria-disabled", "true");
-  });
-
-  test("pelo teclado, Enter e Espaço trocam de mês, a região viva diz o mês novo e › desligado não muda nada nem tira o foco", async ({
-    page,
-  }) => {
-    const server = new FakeReportServer();
-    await openDashboard(page, server);
-    const live = monthLive(page);
-    await expect(live).toHaveAttribute("aria-live", "polite");
-    await expect(live).toHaveText("Período: 1 a 31 de outubro");
-
-    await periodButton(page).focus();
-    await page.keyboard.press("Tab");
-    await expect(monthBack(page)).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expectPeriodText(page, "01/09 a 30/09");
-    await expect(live).toHaveText("Período: 1 a 30 de setembro");
-    await expect(monthBack(page)).toBeFocused();
-
-    await page.keyboard.press("Space");
-    await expectPeriodText(page, "01/08 a 31/08");
-    await expect(live).toHaveText("Período: 1 a 31 de agosto");
-
-    await page.keyboard.press("Tab");
-    await expect(monthForward(page)).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expectPeriodText(page, "01/09 a 30/09");
-    await expect(live).toHaveText("Período: 1 a 30 de setembro");
-    await page.keyboard.press("Space");
-    await expectPeriodText(page, "01/10 a 31/10");
-    await expect(live).toHaveText("Período: 1 a 31 de outubro");
-    await expect(monthForward(page)).toHaveAttribute("aria-disabled", "true");
-    await expect(monthForward(page)).toBeFocused();
-
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Space");
-    await expectPeriodText(page, "01/10 a 31/10");
-    await expect(live).toHaveText("Período: 1 a 31 de outubro");
-    await expect(monthForward(page)).toBeFocused();
-    await expect(monthBack(page)).not.toHaveAttribute("aria-disabled");
-    await expect(periodButton(page)).toHaveAccessibleName(
-      "Período: 01/10 a 31/10, editar"
-    );
-  });
-
-  test("atravessa o ano e mostra o ano quando o mês não é o de hoje", async ({
-    page,
-  }) => {
-    const server = new FakeReportServer();
-    await openDashboard(page, server);
-    await rangeFields(page, "2026-01-01", "2026-01-31");
-    await expectPeriodText(page, "01/01 a 31/01");
-    await monthBack(page).click();
-    await expectPeriodText(page, "01/12/2025 a 31/12/2025");
-    await monthForward(page).click();
-    await expectPeriodText(page, "01/01 a 31/01");
-  });
-
-  test("fora de mês inteiro (30 dias, Este ano, intervalo livre) as setas somem; um intervalo que é um mês inteiro as traz", async ({
-    page,
-  }) => {
-    const server = new FakeReportServer();
-    await openDashboard(page, server);
-    await expect(monthBack(page)).toBeVisible();
-
-    await choosePreset(page, "Últimos 30 dias");
-    await expect(monthBack(page)).toHaveCount(0);
-    await expect(monthForward(page)).toHaveCount(0);
-
-    await choosePreset(page, "Este ano");
-    await expect(monthBack(page)).toHaveCount(0);
-
-    await rangeFields(page, "2026-09-05", "2026-10-04");
-    await expect(monthBack(page)).toHaveCount(0);
-
-    await rangeFields(page, "2026-07-01", "2026-07-31");
-    await expect(monthBack(page)).toBeVisible();
-    await expect(monthForward(page)).not.toHaveAttribute("aria-disabled");
-
-    await choosePreset(page, "Mês passado");
-    await expect(monthBack(page)).toBeVisible();
-  });
-
-  test("sem conexão, Este mês e Mês passado abrem a cópia pelas setas, e os outros meses dizem que só abrem com internet", async ({
-    page,
-  }) => {
-    const server = new FakeReportServer();
-    await openDashboard(page, server);
-    await monthBack(page).click();
-    await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
-    await monthForward(page).click();
-    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
-
-    server.networkDown = true;
-    await monthBack(page).click();
-    await expectPeriodText(page, "01/09 a 30/09");
-    await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
-      timeout: 15_000,
-    });
-    await expect(card(page, CARD.netSales)).toContainText("R$ 100,00");
-
-    await monthBack(page).click();
-    await expectPeriodText(page, "01/08 a 31/08");
-    await expect(page.getByRole("alert")).toContainText(
-      "Este período só abre com internet.",
-      { timeout: 15_000 }
-    );
-    await expect(kpiCards(page)).toHaveCount(0);
-
-    await monthForward(page).click();
-    await expectPeriodText(page, "01/09 a 30/09");
-    await expect(copyNotice(page)).toContainText(COPY_NOTICE, {
-      timeout: 15_000,
-    });
-    await monthForward(page).click();
-    await expectPeriodText(page, "01/10 a 31/10");
-    await expect(card(page, CARD.netSales)).toContainText("R$ 130,00", {
-      timeout: 15_000,
-    });
-  });
-
-  test("a linha do período tem a mesma altura com as setas e sem elas, e nada na tela abaixo se mexe", async ({
-    page,
-  }) => {
-    const server = new FakeReportServer();
-    await openDashboard(page, server);
-    await expect(monthBack(page)).toBeVisible();
-    const rowWith = await periodRow(page).boundingBox();
-    const belowWith = await page
-      .getByRole("button", { exact: true, name: "Atualizar" })
-      .boundingBox();
-
-    await choosePreset(page, "Últimos 30 dias");
-    await expect(monthBack(page)).toHaveCount(0);
-    const rowWithout = await periodRow(page).boundingBox();
-    const belowWithout = await page
-      .getByRole("button", { exact: true, name: "Atualizar" })
-      .boundingBox();
-
-    expect(rowWith, "the row was not measured").not.toBeNull();
-    expect(rowWithout, "the row was not measured").not.toBeNull();
-    expect(
-      Math.abs((rowWith?.height ?? 0) - (rowWithout?.height ?? 0))
-    ).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs((belowWith?.y ?? 0) - (belowWithout?.y ?? 0))
-    ).toBeLessThanOrEqual(1);
-  });
-
-  for (const { fontPixels, width } of [
-    { fontPixels: 20, width: 320 },
-    { fontPixels: 16, width: 360 },
-  ]) {
-    reflowTest(
-      `a ${width} px com a letra em ${fontPixels} px, o período e as setas cabem numa linha só, sem corte nem rolagem lateral, e sem as setas a linha tem a mesma altura`,
-      async ({ page }) => {
-        const server = new FakeReportServer();
-        await openReflowViewport(page, { fontPixels, width });
-        await openDashboard(page, server);
-        await expectReflowFont(page, fontPixels);
-        await expectPeriodText(page, "01/10 a 31/10");
-        await expect(monthBack(page)).toBeVisible();
-        await assertNothingClipped(periodRow(page));
-        await assertNoPageScroll(page);
-        const [row, button, back, forward] = await Promise.all([
-          periodRow(page).boundingBox(),
-          periodButton(page).boundingBox(),
-          monthBack(page).boundingBox(),
-          monthForward(page).boundingBox(),
-        ]);
-        expect(forward, "the arrow was not measured").not.toBeNull();
-        expect(
-          (forward?.x ?? 0) + (forward?.width ?? 0),
-          "the arrows stay inside the row"
-        ).toBeLessThanOrEqual((row?.x ?? 0) + (row?.width ?? 0) + 1);
-        expect(
-          (button?.x ?? 0) + (button?.width ?? 0),
-          "the period and the arrows do not overlap"
-        ).toBeLessThanOrEqual((back?.x ?? 0) + 1);
-        expect(
-          Math.abs((back?.y ?? 0) - (button?.y ?? 0)),
-          "the arrows are on the line of the period"
-        ).toBeLessThanOrEqual(1);
-
-        await choosePreset(page, "Últimos 30 dias");
-        await expect(monthBack(page)).toHaveCount(0);
-        const without = await periodRow(page).boundingBox();
-        expect(
-          Math.abs((without?.height ?? 0) - (row?.height ?? 0))
-        ).toBeLessThanOrEqual(1);
-      }
-    );
-
-    reflowTest(
-      `a ${width} px com a letra em ${fontPixels} px, com o ano escrito nas datas, nada é cortado nem rola de lado`,
-      async ({ page }) => {
-        const server = new FakeReportServer();
-        await openReflowViewport(page, { fontPixels, width });
-        await openDashboard(page, server);
-        await expectReflowFont(page, fontPixels);
-        await rangeFields(page, "2025-10-01", "2025-10-31");
-        await expectPeriodText(page, "01/10/2025 a 31/10/2025");
-        await expect(monthBack(page)).toBeVisible();
-        await expect(monthForward(page)).toBeVisible();
-        await assertNothingClipped(periodRow(page));
-        await assertNoPageScroll(page);
-        const [button, back] = await Promise.all([
-          periodButton(page).boundingBox(),
-          monthBack(page).boundingBox(),
-        ]);
-        const apart =
-          (button?.x ?? 0) + (button?.width ?? 0) <= (back?.x ?? 0) + 1 ||
-          (button?.y ?? 0) + (button?.height ?? 0) <= (back?.y ?? 0) + 1;
-        expect(apart, "the arrows do not sit over the period").toBe(true);
-      }
-    );
   }
 });
 

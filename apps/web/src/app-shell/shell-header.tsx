@@ -1,30 +1,26 @@
-import CircleHelpIcon from "lucide-react/dist/esm/icons/circle-help";
 import { type RefObject, useEffect, useRef } from "react";
 import { Logo } from "@/ui/logo";
 import type { CurrentOrganization } from "../lib/current-organization";
 import { type Logout, LogoutNotices } from "../offline/runtime/logout-control";
 import { useOfflineRuntime } from "../offline/runtime/runtime-context";
 import { SyncStatus } from "../offline/runtime/sync-status";
-import { HELP_HREF, HELP_LABEL } from "./navigation-model";
 import { StoreMenu } from "./store-card";
 
 /**
  * The header of every screen of the shell: 48 px on the phone and 56 px from 760 px (`--app-header`, the one source of
  * its height), opaque in the color of the sidebar, so the two read as one frame. It carries what belongs to the
  * session and nothing that changes its height: the state chip (it shrinks to an ellipsis, the whole sentence in its
- * accessible name), "?" for Ajuda e contato from 760 px, and the menu of the store and of the account. The title of the
+ * accessible name) and the menu of the store and of the account (Ajuda e contato is in the sidebar). The title of the
  * screen stays the `h1` of the page, and the notices stay at the top of `main`.
  */
 export function ShellHeader({
   email,
-  helpCurrent,
   logout,
   onlineOnly,
   organization,
   trigger,
 }: {
   email: string | null;
-  helpCurrent: boolean;
   logout: Logout;
   onlineOnly: boolean;
   organization: CurrentOrganization | null;
@@ -48,16 +44,6 @@ export function ShellHeader({
         </a>
         <div className="ml-auto flex min-w-0 items-center gap-2 md:@max-[30rem]/header:gap-1 md:gap-3">
           <SyncStatus onlineOnly={onlineOnly} />
-          <a
-            aria-current={helpCurrent ? "page" : undefined}
-            className="touch-hit focus-ring hidden size-10 shrink-0 place-items-center rounded-md text-sidebar-foreground motion-full:transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground md:grid md:@max-[30rem]/header:size-8 [&_svg]:size-4.5"
-            data-header-help=""
-            href={HELP_HREF}
-            title={HELP_LABEL}
-          >
-            <CircleHelpIcon aria-hidden="true" />
-            <span className="sr-only">{HELP_LABEL}</span>
-          </a>
           <StoreMenu
             email={email}
             logout={logout}

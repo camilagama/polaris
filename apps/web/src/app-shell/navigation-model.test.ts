@@ -29,7 +29,7 @@ import {
 } from "./navigation-model";
 
 describe("main menu", () => {
-  it("lists the nine destinations in workflow order, each once, the Início first (map of navigation, § 1)", () => {
+  it("lists the ten destinations in workflow order, each once, the Início first and Ajuda e contato last (map of navigation, § 1)", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Início",
       "Vender",
@@ -40,12 +40,13 @@ describe("main menu", () => {
       "Resultado",
       "Despesas",
       "Configurações",
+      "Ajuda e contato",
     ]);
-    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(9);
-    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(9);
+    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(10);
+    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(10);
   });
 
-  it("groups the sidebar: Início alone, Vendas, Gestão, Financeiro and Configurações alone", () => {
+  it("groups the sidebar: Início alone, Vendas, Gestão, Financeiro, and Configurações with Ajuda e contato in the last group", () => {
     const groups = navGroups(NAV_ITEMS).map((group) => [
       group.label,
       group.items.map((item) => item.label),
@@ -55,7 +56,7 @@ describe("main menu", () => {
       ["Vendas", ["Vender", "Histórico"]],
       ["Gestão", ["Estoque", "Produtos", "Clientes"]],
       ["Financeiro", ["Resultado", "Despesas"]],
-      [null, ["Configurações"]],
+      [null, ["Configurações", "Ajuda e contato"]],
     ]);
   });
 
@@ -83,11 +84,11 @@ describe("main menu", () => {
       ["Vendas", ["Pendências"]],
       ["Gestão", ["Produtos", "Clientes"]],
       ["Financeiro", ["Resultado", "Despesas"]],
-      [null, ["Configurações"]],
+      [null, ["Configurações", "Ajuda e contato"]],
     ]);
   });
 
-  it("adds Pendências as the tenth, after Histórico, only while there is a refused record", () => {
+  it("adds Pendências as the eleventh, after Histórico, only while there is a refused record", () => {
     expect(menuItemsOf({ attention: false })).toEqual(NAV_ITEMS);
     const items = menuItemsOf({ attention: true });
     expect(items.map((item) => item.label)).toEqual([
@@ -101,6 +102,7 @@ describe("main menu", () => {
       "Resultado",
       "Despesas",
       "Configurações",
+      "Ajuda e contato",
     ]);
     expect(ATTENTION_NAV_ITEM.href).toBe("/attention");
     expect(NAV_ITEMS.some((item) => item.id === "attention")).toBe(false);
@@ -143,7 +145,7 @@ describe("main menu", () => {
     ).toEqual(["Início", "Histórico", "Vender", "Estoque"]);
   });
 
-  it("marks Estoque on Produtos and Clientes, and Mais on Pendências, Resultado, Despesas and Configurações", () => {
+  it("marks Estoque on Produtos and Clientes, and Mais on Pendências, Resultado, Despesas, Configurações and Ajuda e contato", () => {
     expect(
       Object.fromEntries(
         menuItemsOf({ attention: true }).map((item) => [
@@ -156,6 +158,7 @@ describe("main menu", () => {
       customers: "inventory",
       dashboard: "more",
       expenses: "more",
+      help: "more",
       history: "history",
       home: "home",
       inventory: "inventory",
@@ -566,7 +569,7 @@ describe("resolveRoute", () => {
     }
   });
 
-  it("opens Ajuda e contato inside the shell, working offline, and not as a destination of the menu", () => {
+  it("opens Ajuda e contato inside the shell, working offline, as the last item of the menu, after Configurações", () => {
     expect(HELP_HREF).toBe("/ajuda");
     expect(resolveRoute("/ajuda")).toEqual({
       connectionForm: true,
@@ -579,10 +582,16 @@ describe("resolveRoute", () => {
     });
     expect(resolveRoute("/ajuda/").kind).toBe("page");
     expect(HELP_LABEL).toBe("Ajuda e contato");
-    expect(NAV_ITEMS.map((item) => item.href)).not.toContain(HELP_HREF);
-    expect(
-      menuItemsOf({ attention: true }).map((item) => item.href)
-    ).not.toContain(HELP_HREF);
+    expect(NAV_ITEMS.at(-1)).toMatchObject({
+      group: null,
+      href: HELP_HREF,
+      id: "help",
+      label: HELP_LABEL,
+    });
+    expect(NAV_ITEMS.at(-2)?.id).toBe("settings");
+    expect(menuItemsOf({ attention: true }).map((item) => item.href)).toContain(
+      HELP_HREF
+    );
     // "Mais" carries the mark on this page, as on every page that is no destination of the bar
     expect(bottomBarMark("help")).toBe("more");
   });
@@ -651,7 +660,6 @@ describe("the screen key of an error report", () => {
   const shellPaths = [
     ...NAV_ITEMS.map((item) => item.href),
     ATTENTION_NAV_ITEM.href,
-    HELP_HREF,
     "/sales/detail",
   ];
   const tabAddresses = (

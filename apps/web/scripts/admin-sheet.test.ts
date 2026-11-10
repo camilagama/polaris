@@ -190,7 +190,11 @@ const ADMIN_OWN: Readonly<Record<string, readonly string[]>> = {
   CURRENT_DOT: [],
   HEADER: [],
   HEADER_BRAND: [],
-  HEADER_BUTTON: ["[&::-webkit-details-marker]:hidden"],
+  HEADER_BUTTON: [
+    "size-10",
+    "[&::-webkit-details-marker]:hidden",
+    "[&_svg]:size-4.5",
+  ],
   HEADER_END: [],
   HEADER_ROW: [],
   MAIN: [

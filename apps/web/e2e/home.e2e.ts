@@ -4739,6 +4739,8 @@ const KPI_IDS = ["home-today", "home-month", "home-result", "home-ticket"];
 
 interface HeroRead {
   card: string | null;
+  currency: number;
+  currencyWeight: string;
   size: number;
   weight: string;
 }
@@ -4748,9 +4750,13 @@ const readHeroes = (page: Page): Promise<HeroRead[]> =>
   page.evaluate(() =>
     [...document.querySelectorAll("[data-kpi-value]")].map((value) => {
       const style = getComputedStyle(value);
+      const currency = value.querySelector("[data-money-currency]");
+      const currencyStyle = currency ? getComputedStyle(currency) : null;
       return {
         card:
           value.closest("[data-kpi]")?.getAttribute("aria-labelledby") ?? null,
+        currency: Number.parseFloat(currencyStyle?.fontSize ?? "NaN"),
+        currencyWeight: currencyStyle?.fontWeight ?? "",
         size: Number.parseFloat(style.fontSize),
         weight: style.fontWeight,
       };
@@ -4760,14 +4766,14 @@ const readHeroes = (page: Page): Promise<HeroRead[]> =>
 const heightOf = async (target: Locator) =>
   (await target.boundingBox())?.height ?? Number.NaN;
 
-test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2, AC-3.6, AC-3.7)", () => {
+test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-3.2, AC-3.6, AC-3.7)", () => {
   test.skip(
     ({ browserName }) => browserName !== "chromium",
     "`Page.setFontSizes` is a Chrome DevTools command"
   );
 
   for (const width of [360, 1280]) {
-    test(`Vendas hoje é o principal e os outros três têm o mesmo tamanho, em peso 600, a ${width} px`, async ({
+    test(`os quatro cartões têm o valor e o R$ no mesmo tamanho, em peso 600, a ${width} px`, async ({
       page,
     }) => {
       await openReflowViewport(page, { fontPixels: 16, height: 800, width });
@@ -4775,16 +4781,20 @@ test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2,
       await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
       const reads = await readHeroes(page);
       expect(reads.map((read) => read.card)).toEqual(KPI_IDS);
-      const [today, ...rest] = reads;
       const coarse = await page.evaluate(
         () => matchMedia("(pointer: coarse)").matches
       );
-      const [xl, lg] = width < PHONE_WIDTH || coarse ? [32, 24] : [36, 26];
-      expect(today?.size, "o principal: text-value-xl").toBe(xl);
+      const lg = width < PHONE_WIDTH || coarse ? 24 : 26;
       expect(
-        rest.map((read) => read.size),
-        "os KPIs: text-value-lg, iguais entre si"
-      ).toEqual([lg, lg, lg]);
+        reads.map((read) => read.size),
+        "o valor: text-value-lg nos quatro, sem um principal maior"
+      ).toEqual([lg, lg, lg, lg]);
+      expect(
+        new Set(reads.map((read) => read.currency)).size,
+        "o R$ tem um tamanho só nos quatro"
+      ).toBe(1);
+      expect(reads[0]?.currency).toBeLessThan(lg);
+      expect(new Set(reads.map((read) => read.currencyWeight)).size).toBe(1);
       expect(reads.map((read) => read.weight)).toEqual([
         "600",
         "600",
@@ -4802,7 +4812,7 @@ test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2,
   ] as const) {
     for (const cents of [BIG_SALE, -BIG_SALE]) {
       const text = `${cents < 0 ? "-" : ""}R$ 99.640,35`;
-      test(`${text} no principal não corta nem quebra a ${width} px com a letra em ${fontPixels} px`, async ({
+      test(`${text} em Vendas hoje não corta nem quebra a ${width} px com a letra em ${fontPixels} px`, async ({
         page,
       }, testInfo) => {
         await openReflowViewport(page, { fontPixels, width });
@@ -4815,14 +4825,12 @@ test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2,
         await assertNothingClipped(principal);
         const [today, ...rest] = await readHeroes(page);
         const lg = 1.5 * fontPixels;
-        // at 24 px the box (9.8 rem) is under what the amount takes at xl (10.8 rem): it steps down to lg
-        const fits = fontPixels < 24;
-        expect(today?.size, "o principal cai para lg só quando não cabe").toBe(
-          fits ? 2 * fontPixels : lg
-        );
-        expect(new Set(rest.map((read) => read.size))).toEqual(new Set([lg]));
+        expect(
+          [today, ...rest].map((read) => read?.size),
+          "os quatro valores no mesmo tamanho"
+        ).toEqual([lg, lg, lg, lg]);
         testInfo.annotations.push({
-          description: `principal ${today?.size} px, KPIs ${rest[0]?.size} px`,
+          description: `Vendas hoje ${today?.size} px, KPIs ${rest[0]?.size} px`,
           type: "medida",
         });
         const sameLine = await principal.evaluate((card) => {
@@ -4846,7 +4854,7 @@ test.describe("a hierarquia dos valores nos cartões do Início (AC-3.1, AC-3.2,
   }
 
   for (const fontPixels of [20, 24]) {
-    test(`o cartão do principal tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, na largura mínima com a letra em ${fontPixels} px`, async ({
+    test(`o cartão de Vendas hoje tem a mesma altura com um valor curto, um longo, um negativo e com os valores escondidos, na largura mínima com a letra em ${fontPixels} px`, async ({
       page,
     }) => {
       await openReflowViewport(page, { fontPixels, width: 320 });

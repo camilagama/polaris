@@ -78,8 +78,6 @@ import { MenuProgress, useFirstSteps } from "./menu-progress";
 import {
   BOTTOM_BAR_IDS,
   bottomBarMark,
-  HELP_HREF,
-  HELP_LABEL,
   inBottomBar,
   menuItemsOf,
   NAV_ITEMS,
@@ -125,14 +123,6 @@ function countText(count: number): string {
 function attentionCountText(count: number): string {
   return count === 1 ? "1 registro recusado" : `${count} registros recusados`;
 }
-
-/** "Ajuda e contato" in "Mais", after the destinations: on the desktop it is the "?" of the header. */
-const HELP_ITEM: NavItem = {
-  group: null,
-  href: HELP_HREF,
-  id: "help",
-  label: HELP_LABEL,
-};
 
 /** A destination of the menu: the current one has `aria-current="page"` and the emerald dot, Pendências its count. */
 function NavLink({
@@ -230,8 +220,8 @@ interface AppSidebarProps {
 /**
  * The sidebar of the desktop (the shadcn Sidebar) and, below 760 px, the same content in the "Mais" sheet without
  * the four destinations of the bottom bar: only navigation, and at its foot the first steps and the trial. The store,
- * the theme and "Sair" are in the menu of the header; the sheet adds "Ajuda e contato" and the two legal pages, which
- * the desktop has in the header. Pendências is there only while this device has a refused record, with the count
+ * the theme and "Sair" are in the menu of the header; the sheet adds the two legal pages, which the desktop has in the
+ * header. Pendências is there only while this device has a refused record, with the count
  * (map of navigation, § 1).
  */
 function AppSidebar({
@@ -243,13 +233,9 @@ function AppSidebar({
 }: AppSidebarProps) {
   const { isMobile } = useSidebar();
   const rejected = useRuntimeSnapshot()?.counts.rejected ?? 0;
-  // on the phone "Ajuda e contato" closes the list, in the group of Configurações
-  const items = [
-    ...menuItemsOf({ attention: rejected > 0, expenses }).filter(
-      (item) => !(isMobile && inBottomBar(item.id))
-    ),
-    ...(isMobile ? [HELP_ITEM] : []),
-  ];
+  const items = menuItemsOf({ attention: rejected > 0, expenses }).filter(
+    (item) => !(isMobile && inBottomBar(item.id))
+  );
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
       <SidebarHeader className="px-4 pt-2 pb-2 group-data-[collapsible=icon]:px-2">
@@ -729,7 +715,6 @@ export function AppShell({
       <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
         <ShellHeader
           email={email}
-          helpCurrent={navId === "help"}
           logout={logout}
           onlineOnly={onlineOnly}
           organization={organization}

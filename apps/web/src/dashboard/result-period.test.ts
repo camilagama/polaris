@@ -7,7 +7,6 @@ import {
   MAX_PERIOD_DAYS,
   monthAbbreviation,
   monthName,
-  monthStep,
   PRESET_LABELS,
   PRESETS,
   periodText,
@@ -239,7 +238,7 @@ describe("calendar arithmetic", () => {
   });
 });
 
-describe("o mês inteiro e o passo de mês (AC-B)", () => {
+describe("o mês inteiro (AC-B)", () => {
   it("só um mês de calendário do dia 1 ao último dia conta como mês inteiro", () => {
     expect(wholeMonthOf({ from: "2026-11-01", to: "2026-11-30" })).toBe(
       "2026-11"
@@ -252,65 +251,5 @@ describe("o mês inteiro e o passo de mês (AC-B)", () => {
     expect(wholeMonthOf({ from: "2026-10-12", to: "2026-11-10" })).toBeNull();
     expect(wholeMonthOf({ from: "2026-01-01", to: "2026-12-31" })).toBeNull();
     expect(wholeMonthOf(null)).toBeNull();
-  });
-
-  it("do mês atual, o mês anterior é o atalho Mês passado e o próximo não existe", () => {
-    const period = { from: "2026-11-01", to: "2026-11-30" };
-    expect(monthStep(period, -1, "2026-11-09")).toEqual({
-      custom: null,
-      preset: "last-month",
-    });
-    expect(monthStep(period, 1, "2026-11-09")).toBeNull();
-  });
-
-  it("do mês passado, o próximo é o atalho Este mês e o anterior é um período livre", () => {
-    const period = { from: "2026-10-01", to: "2026-10-31" };
-    expect(monthStep(period, 1, "2026-11-09")).toEqual({
-      custom: null,
-      preset: "this-month",
-    });
-    expect(monthStep(period, -1, "2026-11-09")).toEqual({
-      custom: { from: "2026-09-01", to: "2026-09-30" },
-      preset: "custom",
-    });
-  });
-
-  it("atravessa o ano nos dois sentidos", () => {
-    expect(
-      monthStep({ from: "2026-01-01", to: "2026-01-31" }, -1, "2026-11-09")
-    ).toEqual({
-      custom: { from: "2025-12-01", to: "2025-12-31" },
-      preset: "custom",
-    });
-    expect(
-      monthStep({ from: "2025-12-01", to: "2025-12-31" }, 1, "2026-11-09")
-    ).toEqual({
-      custom: { from: "2026-01-01", to: "2026-01-31" },
-      preset: "custom",
-    });
-  });
-
-  it("não anda fora de mês inteiro nem antes de janeiro de 2000", () => {
-    expect(
-      monthStep({ from: "2026-10-12", to: "2026-11-09" }, -1, "2026-11-09")
-    ).toBeNull();
-    expect(
-      monthStep({ from: "2000-01-01", to: "2000-01-31" }, -1, "2026-11-09")
-    ).toBeNull();
-    expect(
-      monthStep({ from: "2000-02-01", to: "2000-02-29" }, -1, "2026-11-09")
-    ).toEqual({
-      custom: { from: "2000-01-01", to: "2000-01-31" },
-      preset: "custom",
-    });
-  });
-
-  it("a virada do mês na loja: no dia 1 o mês atual tem um dia só", () => {
-    const period = { from: "2026-12-01", to: "2026-12-31" };
-    expect(monthStep(period, -1, "2026-12-01")).toEqual({
-      custom: null,
-      preset: "last-month",
-    });
-    expect(monthStep(period, 1, "2026-12-01")).toBeNull();
   });
 });
