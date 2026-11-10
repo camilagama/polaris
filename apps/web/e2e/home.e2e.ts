@@ -3421,15 +3421,20 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
 
 test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   // Friday `23/10`: the 26 weeks go from Sunday `26/04` to Saturday `24/10`; the days that sold are those of SOLD
-  // at rest the line over the map says what only the rhythm knows, and the day is read only when one is touched; the
-  // best day (Sunday `18/10`) is in the summary of the map and in the reading of its day
+  // the sentence under the map is fixed and says what only the rhythm knows; the value of a day is in the tooltip over
+  // its square, opened by the pointer, the finger or the keyboard; the best day (Sunday `18/10`) is in the summary of
+  // the map and in the tooltip of its day
   const READING = "Sexta, 23/10 · R$ 320,10 · 2 vendas · hoje";
   const AT_REST =
     "Poucas semanas de vendas ainda: o mapa enche conforme você vende. 6 dias com venda nas últimas 13 semanas.";
-  const BEST_DAY_READING =
-    "Domingo, 18/10 · R$ 1.840,00 · 6 vendas · melhor dia";
   const rhythm = (page: Page) => region(page, "Ritmo de vendas");
-  const reading = (page: Page) => rhythm(page).locator("[data-rhythm-reading]");
+  const tooltip = (page: Page) =>
+    rhythm(page).locator("[data-heatmap-tooltip]");
+  const expectTooltip = async (page: Page, ...parts: string[]) => {
+    await Promise.all(
+      parts.map((part) => expect(tooltip(page)).toContainText(part))
+    );
+  };
   const atRest = (page: Page) => rhythm(page).locator("[data-rhythm-insight]");
   const dataCells = (page: Page) =>
     rhythm(page).locator(
@@ -3455,7 +3460,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(atRest(page)).toHaveText(AT_REST);
-    await expect(rhythm(page).locator("[data-rhythm-reading]")).toHaveCount(0);
+    await expect(tooltip(page)).toHaveCount(0);
     // one read of the series: from the first Sunday of the 26 weeks to the eve of the month (the month is A's)
     expect(
       server.calls
@@ -3477,10 +3482,14 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(map.locator("[data-heatmap-empty]")).toHaveCount(175);
     await expect(map).not.toContainText("Vazio: sem venda");
     await expect(map.locator("[data-rhythm-legend]")).toHaveText("MenosMais");
-    // 3 weeks with a sale: the map says it is filling up, in the line of what it says at rest
-    await expect(map).toContainText("Média por dia da semana");
+    // 3 weeks with a sale: the map says it is filling up, in the sentence under it; there is no chart of the mean by weekday
+    await expect(map).not.toContainText("Média por dia da semana");
+    await expect(map.locator("[data-weekday-bars]")).toHaveCount(0);
+    // the cells are 12 px with a gap of 3
+    const first = await dataCells(page).first().boundingBox();
+    expect(first?.width).toBeCloseTo(12, 0);
     // the card keeps to the budget of the 1280 px layout
-    expect((await map.boundingBox())?.height ?? 999).toBeLessThanOrEqual(455);
+    expect((await map.boundingBox())?.height ?? 999).toBeLessThanOrEqual(260);
     // beside Mais vendidos, under the chart, in the left 2/3
     const mapBox = await map.boundingBox();
     const topBox = await region(page, "Mais vendidos do mês").boundingBox();
@@ -3511,7 +3520,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     );
   });
 
-  test("o mouse lê o dia sob ele e, ao sair, a linha volta ao que diz em repouso", async ({
+  test("o mouse abre o tooltip do dia sob ele e, ao sair, ele fecha; a frase de baixo não muda", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -3521,17 +3530,27 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await dataCells(page)
       .nth(25 * 7)
       .hover();
-    await expect(reading(page)).toHaveText(BEST_DAY_READING);
+    await expectTooltip(
+      page,
+      "Domingo, 18/10",
+      "Vendido",
+      "R$ 1.840,00",
+      "Vendas",
+      "6",
+      "melhor dia"
+    );
+    await expect(atRest(page)).toHaveText(AT_REST);
     await dataCells(page)
       .nth(25 * 7 + 1)
       .hover();
-    await expect(reading(page)).toHaveText("Segunda, 19/10 · sem venda");
+    await expectTooltip(page, "Segunda, 19/10", "R$ 0,00");
+    await expect(tooltip(page)).not.toContainText("melhor dia");
     await page.mouse.move(5, 5);
+    await expect(tooltip(page)).toHaveCount(0);
     await expect(atRest(page)).toHaveText(AT_REST);
-    await expect(rhythm(page).locator("[data-rhythm-reading]")).toHaveCount(0);
   });
 
-  test("pelo teclado: cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
+  test("pelo teclado: o foco abre o tooltip em hoje, cima e baixo andam um dia, esquerda e direita uma semana, o aria-valuetext diz a leitura", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -3541,54 +3560,62 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     });
     await expect(slider).toHaveAttribute("aria-valuetext", READING);
     await expect(slider).toHaveValue("180");
+    await expect(tooltip(page)).toHaveCount(0);
     await slider.focus();
+    await expectTooltip(page, "Sexta, 23/10", "R$ 320,10", "2", "hoje");
     // the keyboard starts on today: down is Saturday `24/10`, to come, so it stays; up is the day before
     await page.keyboard.press("ArrowDown");
-    await expect(reading(page)).toHaveText(READING);
+    await expectTooltip(page, "Sexta, 23/10", "R$ 320,10");
     await page.keyboard.press("ArrowUp");
-    await expect(reading(page)).toHaveText("Quinta, 22/10 · sem venda");
+    await expectTooltip(page, "Quinta, 22/10", "R$ 0,00");
     await expect(slider).toHaveAttribute(
       "aria-valuetext",
       "Quinta, 22/10 · sem venda"
     );
     await page.keyboard.press("ArrowLeft");
-    await expect(reading(page)).toHaveText("Quinta, 15/10 · sem venda");
+    await expectTooltip(page, "Quinta, 15/10");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
-    await expect(reading(page)).toHaveText("Terça, 13/10 · sem venda");
+    await expectTooltip(page, "Terça, 13/10");
     await page.keyboard.press("ArrowRight");
-    await expect(reading(page)).toHaveText(
-      "Terça, 20/10 · R$ 420,50 · 3 vendas"
-    );
+    await expectTooltip(page, "Terça, 20/10", "R$ 420,50", "3");
     // a week ahead stops at today: the days to come are not read
     await page.keyboard.press("ArrowRight");
     await expect(slider).toHaveAttribute("aria-valuetext", READING);
     await page.keyboard.press("Home");
-    await expect(reading(page)).toHaveText("Domingo, 26/04 · sem venda");
-    // leaving the map, the line goes back to what it says at rest
+    await expectTooltip(page, "Domingo, 26/04");
+    // leaving the map, the tooltip closes
     await page.keyboard.press("Tab");
+    await expect(tooltip(page)).toHaveCount(0);
     await expect(atRest(page)).toHaveText(AT_REST);
+    // Escape puts the tooltip away without leaving the control
+    await slider.focus();
+    await expectTooltip(page, "Sexta, 23/10");
+    await page.keyboard.press("Escape");
+    await expect(tooltip(page)).toHaveCount(0);
   });
 
-  test("a 360 px: 13 semanas depois de Vendas por dia, células de 16 px, nada passa da largura", async ({
+  test("a 360 px: tantas semanas quanto cabem (de 13 a 20), células de 12 px, nada passa da largura", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     await openHome(page, new FakeServer(SOLD));
     const map = rhythm(page);
-    await expect(map).toContainText("Últimas 13 semanas");
-    await expect(dataCells(page)).toHaveCount(91);
+    await expect(dataCells(page).first()).toBeVisible();
+    const weeks = (await dataCells(page).count()) / 7;
+    await expect(map).toContainText(`Últimas ${weeks} semanas`);
+    expect(weeks).toBeGreaterThanOrEqual(13);
+    expect(weeks).toBeLessThanOrEqual(20);
     await expect(atRest(page)).toHaveText(AT_REST);
     const mapBox = await map.boundingBox();
     // the whole block keeps to a part of a screen, with the numbers closed
-    expect(mapBox?.height ?? 999).toBeLessThanOrEqual(400);
+    expect(mapBox?.height ?? 999).toBeLessThanOrEqual(270);
     const svgBox = await map.locator("[data-heatmap] svg").boundingBox();
     expect((svgBox?.x ?? 0) + (svgBox?.width ?? 0)).toBeLessThanOrEqual(
       (mapBox?.x ?? 0) + (mapBox?.width ?? 0)
     );
     const cell = await dataCells(page).first().boundingBox();
-    expect(cell?.width ?? 0).toBeGreaterThanOrEqual(14);
-    expect(cell?.width ?? 99).toBeLessThanOrEqual(18);
+    expect(cell?.width ?? 0).toBeCloseTo(12, 0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
@@ -3596,7 +3623,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     ).toBe(true);
   });
 
-  test("Esconder valores: a leitura do dia, as faixas do (i) e o título da legenda escondem os reais e deixam as contagens", async ({
+  test("Esconder valores: o tooltip do dia, as faixas do (i) e o título da legenda escondem os reais e deixam as contagens", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -3609,9 +3636,8 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await dataCells(page)
       .nth(25 * 7)
       .hover();
-    await expect(reading(page)).toHaveText(
-      "Domingo, 18/10 · R$ ••••valor escondido · 6 vendas · melhor dia"
-    );
+    await expectTooltip(page, "Domingo, 18/10", "R$ ••••", "6", "melhor dia");
+    await expect(tooltip(page)).not.toContainText(AN_AMOUNT);
     await expect(map).not.toContainText(AN_AMOUNT);
     await expect(map.locator("[data-rhythm-legend]")).toHaveAttribute(
       "title",
@@ -3723,15 +3749,65 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
       const ready = await placeOf(rhythm(page));
       expect(Math.abs(ready.height - reserved)).toBeLessThanOrEqual(1);
 
-      // a day read swaps the line over the map and moves nothing
+      // the tooltip of a day read is over the map, and moves nothing
+      const total = await dataCells(page).count();
       await dataCells(page)
-        .nth(size.width === 360 ? 12 * 7 + 1 : 25 * 7)
+        .nth(total - 7)
         .hover();
-      await expect(reading(page)).toBeVisible();
+      await expect(tooltip(page)).toBeVisible();
       await settled(page);
       expect(
         Math.abs((await placeOf(rhythm(page))).height - ready.height)
       ).toBeLessThanOrEqual(1);
+    });
+  }
+
+  for (const size of [
+    { height: 740, width: 360 },
+    { height: 568, width: 320 },
+  ]) {
+    test(`o tooltip de um dia fica inteiro dentro da tela em toda coluna do mapa (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await openHome(page, new FakeServer(SOLD));
+      await expect(atRest(page)).toHaveText(AT_REST);
+      await settled(page);
+      const columns = Math.floor((await dataCells(page).count()) / 7);
+      expect(columns).toBeGreaterThanOrEqual(16);
+      const panelBox = () =>
+        tooltip(page).evaluate((content) => {
+          const panel = content.closest(".pointer-events-none.absolute");
+          const box = panel?.getBoundingClientRect();
+          const map = content
+            .closest("[data-heatmap]")
+            ?.getBoundingClientRect();
+          return box && map
+            ? {
+                left: box.left,
+                mapLeft: map.left,
+                mapRight: map.right,
+                right: box.right,
+                width: window.innerWidth,
+              }
+            : null;
+        });
+      for (let column = 0; column < columns; column += 1) {
+        // biome-ignore lint/performance/noAwaitInLoops: one pointer, one column after the other
+        await dataCells(page)
+          .nth(column * 7 + 3)
+          .hover();
+        await expect(tooltip(page)).toBeVisible();
+        await settled(page);
+        const box = await panelBox();
+        expect(box, `coluna ${column}`).not.toBeNull();
+        expect(box?.left, `coluna ${column}`).toBeGreaterThanOrEqual(
+          Math.max(0, (box?.mapLeft ?? 0) - 0.5)
+        );
+        expect(box?.right, `coluna ${column}`).toBeLessThanOrEqual(
+          Math.min(box?.width ?? 0, (box?.mapRight ?? 0) + 0.5)
+        );
+      }
     });
   }
 

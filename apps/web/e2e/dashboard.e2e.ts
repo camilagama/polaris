@@ -1146,7 +1146,7 @@ test("sem conexão, o mês vazio guardado mostra o estado vazio com a cópia dit
     name: "Nova despesa",
   });
   await expect(newSale).toHaveAttribute("href", "/sales");
-  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+  await expect(newExpense).toHaveAttribute("href", "/expenses");
 
   server.networkDown = true;
   await signIn(page, user);
@@ -1159,7 +1159,7 @@ test("sem conexão, o mês vazio guardado mostra o estado vazio com a cópia dit
   await expect(newSale).toBeVisible();
   await expect(newSale).toHaveAttribute("href", "/sales");
   await expect(newExpense).toBeVisible();
-  await expect(newExpense).toHaveAttribute("href", "/dashboard?aba=despesas");
+  await expect(newExpense).toHaveAttribute("href", "/expenses");
 });
 
 test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai", async ({

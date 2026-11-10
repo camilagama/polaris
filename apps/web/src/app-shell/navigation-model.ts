@@ -1,8 +1,9 @@
-/** The destinations of the menu (the navigation map, § 1): nine, with Ajuda e contato last, and a tenth, Pendências, while it has something. */
+/** The destinations of the menu (the navigation map, § 1): ten, with Ajuda e contato last, and an eleventh, Pendências, while it has something. */
 export type NavId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "expenses"
   | "help"
   | "history"
   | "home"
@@ -16,6 +17,7 @@ export type ScreenId =
   | "attention"
   | "customers"
   | "dashboard"
+  | "expenses"
   | "help"
   | "home"
   | "inventory"
@@ -48,7 +50,7 @@ export type RouteId =
   | "subscription";
 
 /** The group of the sidebar an item is in: Início and Configurações stand alone, with no label. */
-export type NavGroup = "Gestão" | "Vendas" | null;
+export type NavGroup = "Financeiro" | "Gestão" | "Vendas" | null;
 
 export interface NavItem {
   group: NavGroup;
@@ -65,10 +67,10 @@ export const HELP_HREF = "/ajuda";
 export const HELP_LABEL = "Ajuda e contato";
 
 /**
- * The destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas for
- * what is sold, Gestão for what the store has and earns. Clientes is a register, like Produtos, as the bottom bar of
- * the phone already treats it (`BOTTOM_BAR_AREA`). Configurações and Ajuda e contato close the list, together in the
- * last group, which has no label.
+ * The ten destinations, in the order of the daily workflow, by group of the sidebar (map of navigation, § 1): Vendas
+ * for what is sold, Gestão for what the store has, Financeiro for what it earns and spends. Clientes is a register, like
+ * Produtos, as the bottom bar of the phone already treats it (`BOTTOM_BAR_AREA`). Configurações and Ajuda e contato
+ * close the list, together in the last group, which has no label.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { group: null, href: "/", id: "home", label: "Início" },
@@ -82,7 +84,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { group: "Gestão", href: "/inventory", id: "inventory", label: "Estoque" },
   { group: "Gestão", href: "/products", id: "products", label: "Produtos" },
   { group: "Gestão", href: "/customers", id: "customers", label: "Clientes" },
-  { group: "Gestão", href: "/dashboard", id: "dashboard", label: "Resultado" },
+  {
+    group: "Financeiro",
+    href: "/dashboard",
+    id: "dashboard",
+    label: "Resultado",
+  },
+  { group: "Financeiro", href: "/expenses", id: "expenses", label: "Despesas" },
   {
     group: null,
     href: "/configuracoes",
@@ -92,7 +100,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { group: null, href: HELP_HREF, id: "help", label: HELP_LABEL },
 ];
 
-/** The tenth destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
+/** The eleventh destination, only while this device has a refused record: after Histórico, in Vendas, with the count. */
 export const ATTENTION_NAV_ITEM: NavItem = {
   group: "Vendas",
   href: "/attention",
@@ -100,12 +108,20 @@ export const ATTENTION_NAV_ITEM: NavItem = {
   label: "Pendências",
 };
 
-/** The menu in its order: Pendências only while there is a refused record, and gone when it is back to zero. */
-export function menuItemsOf(options: { attention: boolean }): NavItem[] {
+/**
+ * The menu in its order: Pendências only while there is a refused record, and gone when it is back to zero; Despesas
+ * only for who can register an expense (`expense:create`, the capability the screen needs on the server).
+ */
+export function menuItemsOf(options: {
+  attention: boolean;
+  expenses?: boolean;
+}): NavItem[] {
+  const items = NAV_ITEMS.filter(
+    (item) => item.id !== "expenses" || (options.expenses ?? true)
+  );
   if (!options.attention) {
-    return [...NAV_ITEMS];
+    return items;
   }
-  const items = [...NAV_ITEMS];
   items.splice(
     items.findIndex((item) => item.id === "history") + 1,
     0,
@@ -133,7 +149,7 @@ export function inBottomBar(id: NavId): id is BottomBarId {
 /**
  * The destination of the bottom bar that carries the mark for a menu item: the item itself, or the one whose area it
  * is in (Estoque for Produtos and Clientes, map § 2). "more" for the items of no destination of the bar, which "Mais"
- * marks: Pendências, Resultado, Configurações and Ajuda e contato.
+ * marks: Pendências, Resultado, Despesas, Configurações and Ajuda e contato.
  */
 const BOTTOM_BAR_AREA: Readonly<Partial<Record<NavId, BottomBarId>>> = {
   customers: "inventory",
@@ -185,7 +201,6 @@ export const SCREEN_TABS: Readonly<Record<TabScreenId, readonly ScreenTab[]>> =
     dashboard: [
       { label: "Resultado", route: "dashboard", value: "resultado" },
       { label: "Metas", route: "dashboard", value: "metas" },
-      { label: "Despesas", route: "expenses", value: "despesas" },
     ],
     products: [
       { label: "Produtos", route: "products", value: "produtos" },
@@ -317,6 +332,7 @@ const ROUTES: Readonly<Record<string, RouteDefinition>> = {
   },
   "/customers": { navId: "customers", screen: "customers", title: "Clientes" },
   "/dashboard": { navId: "dashboard", screen: "dashboard", title: "Resultado" },
+  "/expenses": { navId: "expenses", screen: "expenses", title: "Despesas" },
   "/inventory": { navId: "inventory", screen: "inventory", title: "Estoque" },
   "/products": { navId: "products", screen: "products", title: "Produtos" },
   "/sales": { navId: "sale", screen: "sale", title: "Nova venda" },
@@ -346,7 +362,6 @@ const LEGACY_ADDRESSES: Readonly<
     tab: "senha",
   },
   "/devices": { path: "/configuracoes", screen: "settings", tab: "aparelhos" },
-  "/expenses": { path: "/dashboard", screen: "dashboard", tab: "despesas" },
   "/payment-profiles": {
     path: "/configuracoes",
     screen: "settings",
@@ -364,6 +379,27 @@ const LEGACY_ADDRESSES: Readonly<
   },
 };
 
+/** Where the tab Despesas of the Resultado was: its address opens the screen of Despesas, with the rest of the query. */
+function expensesTabAddress(
+  normalized: string,
+  search: string,
+  hash: string
+): string | null {
+  const params = new URLSearchParams(search);
+  const meta = params.get("meta");
+  const asksGoals = meta === "nova" || meta === "lista";
+  if (
+    normalized !== "/dashboard" ||
+    params.get(TAB_PARAMETER) !== "despesas" ||
+    asksGoals
+  ) {
+    return null;
+  }
+  params.delete(TAB_PARAMETER);
+  const query = params.toString();
+  return `/expenses${query ? `?${query}` : ""}${hash}`;
+}
+
 /** The address of the tab an old address opens (map § 6), or null for any other address. */
 export function legacyAddress(
   pathname: string,
@@ -372,6 +408,10 @@ export function legacyAddress(
   phone = false
 ): string | null {
   const normalized = pathname.replace(trailingSlashes, "") || "/";
+  const expenses = expensesTabAddress(normalized, search, hash);
+  if (expenses) {
+    return expenses;
+  }
   const target = Object.hasOwn(LEGACY_ADDRESSES, normalized)
     ? LEGACY_ADDRESSES[normalized]
     : undefined;

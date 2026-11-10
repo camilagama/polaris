@@ -29,7 +29,7 @@ import {
 } from "./navigation-model";
 
 describe("main menu", () => {
-  it("lists the nine destinations in workflow order, each once, the Início first and Ajuda e contato last (map of navigation, § 1)", () => {
+  it("lists the ten destinations in workflow order, each once, the Início first and Ajuda e contato last (map of navigation, § 1)", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Início",
       "Vender",
@@ -38,14 +38,15 @@ describe("main menu", () => {
       "Produtos",
       "Clientes",
       "Resultado",
+      "Despesas",
       "Configurações",
       "Ajuda e contato",
     ]);
-    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(9);
-    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(9);
+    expect(new Set(NAV_ITEMS.map((item) => item.id)).size).toBe(10);
+    expect(new Set(NAV_ITEMS.map((item) => item.href)).size).toBe(10);
   });
 
-  it("groups the sidebar: Início alone, Vendas, Gestão, and Configurações with Ajuda e contato in the last group", () => {
+  it("groups the sidebar: Início alone, Vendas, Gestão, Financeiro, and Configurações with Ajuda e contato in the last group", () => {
     const groups = navGroups(NAV_ITEMS).map((group) => [
       group.label,
       group.items.map((item) => item.label),
@@ -53,7 +54,8 @@ describe("main menu", () => {
     expect(groups).toEqual([
       [null, ["Início"]],
       ["Vendas", ["Vender", "Histórico"]],
-      ["Gestão", ["Estoque", "Produtos", "Clientes", "Resultado"]],
+      ["Gestão", ["Estoque", "Produtos", "Clientes"]],
+      ["Financeiro", ["Resultado", "Despesas"]],
       [null, ["Configurações", "Ajuda e contato"]],
     ]);
   });
@@ -80,12 +82,13 @@ describe("main menu", () => {
       ])
     ).toEqual([
       ["Vendas", ["Pendências"]],
-      ["Gestão", ["Produtos", "Clientes", "Resultado"]],
+      ["Gestão", ["Produtos", "Clientes"]],
+      ["Financeiro", ["Resultado", "Despesas"]],
       [null, ["Configurações", "Ajuda e contato"]],
     ]);
   });
 
-  it("adds Pendências as the tenth, after Histórico, only while there is a refused record", () => {
+  it("adds Pendências as the eleventh, after Histórico, only while there is a refused record", () => {
     expect(menuItemsOf({ attention: false })).toEqual(NAV_ITEMS);
     const items = menuItemsOf({ attention: true });
     expect(items.map((item) => item.label)).toEqual([
@@ -97,11 +100,29 @@ describe("main menu", () => {
       "Produtos",
       "Clientes",
       "Resultado",
+      "Despesas",
       "Configurações",
       "Ajuda e contato",
     ]);
     expect(ATTENTION_NAV_ITEM.href).toBe("/attention");
     expect(NAV_ITEMS.some((item) => item.id === "attention")).toBe(false);
+  });
+
+  it("offers Despesas only to who can register an expense, and leaves the rest of the menu as it is", () => {
+    const without = menuItemsOf({ attention: false, expenses: false });
+    expect(without.map((item) => item.label)).toEqual(
+      NAV_ITEMS.map((item) => item.label).filter(
+        (label) => label !== "Despesas"
+      )
+    );
+    expect(menuItemsOf({ attention: false, expenses: true })).toEqual(
+      NAV_ITEMS
+    );
+    expect(
+      navGroups(without)
+        .find((group) => group.label === "Financeiro")
+        ?.items.map((item) => item.label)
+    ).toEqual(["Resultado"]);
   });
 
   it("uses the words of textos.md: Formas de receber, Pendências, never the old names", () => {
@@ -124,7 +145,7 @@ describe("main menu", () => {
     ).toEqual(["Início", "Histórico", "Vender", "Estoque"]);
   });
 
-  it("marks Estoque on Produtos and Clientes, and Mais on Pendências, Resultado, Configurações and Ajuda e contato", () => {
+  it("marks Estoque on Produtos and Clientes, and Mais on Pendências, Resultado, Despesas, Configurações and Ajuda e contato", () => {
     expect(
       Object.fromEntries(
         menuItemsOf({ attention: true }).map((item) => [
@@ -136,6 +157,7 @@ describe("main menu", () => {
       attention: "more",
       customers: "inventory",
       dashboard: "more",
+      expenses: "more",
       help: "more",
       history: "history",
       home: "home",
@@ -167,7 +189,7 @@ describe("tabs", () => {
         ])
       )
     ).toEqual({
-      dashboard: ["Resultado", "Metas", "Despesas"],
+      dashboard: ["Resultado", "Metas"],
       products: ["Produtos", "Categorias"],
       settings: [
         "Formas de receber",
@@ -187,7 +209,7 @@ describe("tabs", () => {
     );
     expect(requestedTab("products", "?aba=metas").value).toBe("produtos");
     expect(requestedTab("settings", "?aba=senha&x=1").value).toBe("senha");
-    expect(requestedTab("dashboard", "?aba=despesas").value).toBe("despesas");
+    expect(requestedTab("dashboard", "?aba=despesas").value).toBe("resultado");
   });
 
   it("rewrites the address for a value that is no tab, and for a tab this person does not have", () => {
@@ -213,7 +235,7 @@ describe("tabs", () => {
       value: "formas-de-receber",
     });
     // the goals link of the Início wins over `aba`; the Resultado rewrites that one itself
-    const result = ["resultado", "metas", "despesas"];
+    const result = ["resultado", "metas"];
     expect(openedTab("dashboard", "?meta=nova", result)).toEqual({
       rewrite: false,
       value: "metas",
@@ -223,7 +245,7 @@ describe("tabs", () => {
     );
     expect(
       openedTab("dashboard", "?meta=nova&aba=despesas", result).rewrite
-    ).toBe(false);
+    ).toBe(true);
     // a tab of another screen is no tab here
     expect(openedTab("products", "?aba=metas", ["produtos"]).rewrite).toBe(
       true
@@ -349,7 +371,6 @@ describe("the addresses of the screens that became tabs (map § 6)", () => {
       Object.fromEntries(
         [
           "/categories",
-          "/expenses",
           "/payment-profiles",
           "/public-catalog",
           "/devices",
@@ -361,7 +382,6 @@ describe("the addresses of the screens that became tabs (map § 6)", () => {
       "/categories": "/products?aba=categorias",
       "/conta/seguranca": "/configuracoes?aba=senha",
       "/devices": "/configuracoes?aba=aparelhos",
-      "/expenses": "/dashboard?aba=despesas",
       "/payment-profiles": "/configuracoes",
       "/public-catalog": "/configuracoes?aba=catalogo-publico",
       "/subscription": "/configuracoes?aba=assinatura",
@@ -387,9 +407,30 @@ describe("the addresses of the screens that became tabs (map § 6)", () => {
     expect(
       legacyAddress("/subscription/", "?retorno=concluida", "#plano")
     ).toBe("/configuracoes?retorno=concluida&aba=assinatura#plano");
-    expect(legacyAddress("/expenses", "?aba=outra", "")).toBe(
-      "/dashboard?aba=despesas"
-    );
+  });
+
+  it("open Despesas for the address of the tab that left the Resultado, keeping the rest of the query and the hash", () => {
+    expect(legacyAddress("/dashboard", "?aba=despesas", "")).toBe("/expenses");
+    expect(
+      legacyAddress("/dashboard/", "?aba=despesas&ver=categorias", "#topo")
+    ).toBe("/expenses?ver=categorias#topo");
+    expect(
+      legacyAddress("/dashboard", "?ver=recorrentes&aba=despesas", "")
+    ).toBe("/expenses?ver=recorrentes");
+  });
+
+  it("leave the Resultado alone: no `aba`, Metas, an unknown tab and the goals links of the Início", () => {
+    for (const search of [
+      "",
+      "?aba=metas",
+      "?aba=resultado",
+      "?aba=xyz",
+      "?meta=nova&aba=despesas",
+      "?meta=lista&aba=despesas",
+    ]) {
+      expect(legacyAddress("/dashboard", search, ""), search).toBeNull();
+    }
+    expect(legacyAddress("/expenses", "?ver=categorias", "")).toBeNull();
   });
 
   it("leave every other address alone", () => {
@@ -407,7 +448,6 @@ describe("the addresses of the screens that became tabs (map § 6)", () => {
   it("are no route of their own any more, and `/sales/customer` is gone (the 404 of the shell)", () => {
     for (const path of [
       "/categories",
-      "/expenses",
       "/devices",
       "/subscription",
       "/conta/seguranca",
@@ -455,12 +495,11 @@ describe("resolveRoute", () => {
       screen: "dashboard",
       title: "Resultado",
     });
-    expect(resolveRoute("/dashboard", "?aba=despesas")).toMatchObject({
-      id: "expenses",
+    expect(resolveRoute("/dashboard", "?aba=metas")).toMatchObject({
+      id: "dashboard",
       navId: "dashboard",
-      onlineOnly: true,
       screen: "dashboard",
-      title: "Despesas",
+      title: "Metas",
     });
     expect(resolveRoute("/configuracoes")).toMatchObject({
       id: "payment-profiles",
@@ -488,7 +527,7 @@ describe("resolveRoute", () => {
       ["/configuracoes", "?aba=catalogo-publico"],
       ["/configuracoes", "?aba=senha"],
       ["/configuracoes", "?aba=assinatura"],
-      ["/dashboard", "?aba=despesas"],
+      ["/expenses", ""],
       ["/products", "?aba=categorias"],
       ["/sales/detail", ""],
     ] as const) {
@@ -512,7 +551,7 @@ describe("resolveRoute", () => {
   it("tells the connection notice which online-only screens hold a form to type in", () => {
     for (const [path, search] of [
       ["/configuracoes", ""],
-      ["/dashboard", "?aba=despesas"],
+      ["/expenses", ""],
       ["/products", "?aba=categorias"],
     ] as const) {
       expect(resolveRoute(path, search)).toMatchObject({

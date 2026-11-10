@@ -10,6 +10,7 @@ O Início (`/`) é a primeira tela depois de entrar: a data de hoje, o atalho "N
 - `inicio-atencao` a região "Precisa de ação", logo abaixo de "Nova venda" (sem item, ela não aparece).
 - `inicio-meta` a região "Meta" e o link "Definir meta". Com a meta de um mês que já acabou ainda dentro dos 7 dias de exibição (o Início de 2 de novembro com a de outubro liquidada), o título é "Meta de novembro", com "Sem meta ainda", o link e a linha "Outubro: R$ X de R$ Y (não atingida)"; a loja `vendas` não tem esse estado (não há meta de mês anterior).
 - `inicio-grafico` "Vendas por dia" com as abas "7 dias" e "30 dias".
+- `inicio-ritmo` a região "Ritmo de vendas": o mapa de quadrados de 12 px (um por dia, tantas semanas quanto cabem, de 13 a 26), a frase fixa sob ele, a legenda "Menos" a "Mais" e o tooltip do dia ("Vendido" e "Vendas"), que abre com o mouse, o toque ou o foco do `slider` "Dia do mapa de vendas"; não há gráfico de média por dia da semana. Seletor do tooltip: `[data-heatmap-tooltip]`; dos quadrados: `[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])`. Com a loja `vendas` a frase é a de poucas semanas de venda.
 - `inicio-esconder` o botão "Esconder valores".
 - `inicio-atualizar` o botão "Atualizar" (só o ícone no celular) relê todos os blocos, as duas janelas dos números incluídas; só com internet.
 - `inicio-nova-venda` o link "Nova venda" leva a `/sales`.

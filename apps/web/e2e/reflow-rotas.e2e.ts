@@ -29,7 +29,7 @@ import { WORKER_MARK } from "./worker-mark";
  * `COVERED` lists the screens of `screenKeys()` (the screens of `ROUTES` and each tab) that are measured here, and
  * `EXCLUDED` the ones that a test of its own measures, with its file; a screen in neither fails `a consistência`
  * below. Customers is in both: the list is `clientes-reflow.e2e.ts`, only the dialog of the customer is here. The title
- * of the expenses list card and its button are `despesas-reflow.e2e.ts`; here are its three tabs and the form.
+ * of the expenses list card and its button are `despesas-reflow.e2e.ts`; here are its three parts and the form.
  * Not measured: the screens of the Admin (desktop) and the dark theme.
  *
  * The same cases run a second time with the font at 24 px ("Muito grande" in Chrome), as a report and not as a promise:
@@ -349,19 +349,19 @@ const DATA_EXPORT: Case = {
 /** The cases of each screen of `screenKeys()` this file measures. */
 const COVERED: Readonly<Record<string, readonly Case[]>> = {
   customers: states("clientes cliente parecido"),
-  "dashboard:despesas": states(
-    "despesas lista",
-    "despesas grade de meses aberta",
-    "despesas erros nos campos",
-    "despesas recorrentes e o diálogo da regra",
-    "despesas categorias e o diálogo da categoria"
-  ),
   "dashboard:metas": states("resultado metas", "resultado nova meta com erro"),
   "dashboard:resultado": states(
     "resultado mês incompleto e gráfico de vendas",
     "resultado gráfico de vendas e custos e a tabela",
     "resultado sem dados",
     "resultado sem custo conhecido"
+  ),
+  expenses: states(
+    "despesas lista",
+    "despesas grade de meses aberta",
+    "despesas erros nos campos",
+    "despesas recorrentes e o diálogo da regra",
+    "despesas categorias e o diálogo da categoria"
   ),
   help: [HELP],
   "products:categorias": states("categorias lista", "categorias remover"),

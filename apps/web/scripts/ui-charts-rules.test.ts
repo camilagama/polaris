@@ -66,7 +66,6 @@ describe("src/ui/charts/ and src/ui/bklit/ (t285, t336)", () => {
       "ring-chart.tsx",
       "sales-heatmap.tsx",
       "sparkline.tsx",
-      "weekday-bars.tsx",
     ]);
   });
 

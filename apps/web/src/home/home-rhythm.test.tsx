@@ -119,6 +119,13 @@ describe("Ritmo de vendas at rest", () => {
     expect(textBetweenTags(html)).not.toContain("23/10 · R$");
   });
 
+  it("is the map alone: no chart of the mean by weekday and no line that changes with the day read", () => {
+    const html = render({ saturdays: true });
+    expect(html).not.toContain("data-weekday-bars");
+    expect(html).not.toContain("data-rhythm-reading");
+    expect(textBetweenTags(html)).not.toContain("Média por dia da semana");
+  });
+
   it("keeps the few-weeks warning in the line of the insight, not in a line of its own", () => {
     const html = render();
     expect(textOf(html, "data-rhythm-insight")).toBe(
@@ -239,7 +246,6 @@ describe("the numbers of the Ritmo, for assistive technology", () => {
       "Sábado é o seu melhor dia da semana nas últimas 13 semanas: média de R$ 100,00.",
       "Menos",
       "Mais",
-      "Média por dia da semana",
       "Vazio: sem venda · até R$",
       "Vendas por dia nas últimas 26 semanas: 26 dias com venda. Melhor dia 27/06, R$ 541,19.",
       "Meses anteriores atualizados até ontem.",

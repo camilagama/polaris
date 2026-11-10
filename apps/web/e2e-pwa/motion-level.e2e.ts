@@ -217,12 +217,14 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
   expect(await drawing(chart)).toEqual(next);
 
   // the map: no entrance of 1 600 ms and no wave of the cells; every cell is drawn finished a frame after it
-  // appears, nothing of it runs an animation, and reading a day changes the line at once
+  // appears, nothing of it runs an animation, and the tooltip of a day read is there at once
   const map = page.getByRole("region", { name: "Ritmo de vendas" });
   const cells = map.locator(
     '[data-heatmap] rect.visx-heatmap-rect:not([pointer-events="none"])'
   );
-  await expect(cells).toHaveCount(91);
+  await expect(cells.first()).toBeVisible();
+  const weeks = (await cells.count()) / 7;
+  expect(Number.isInteger(weeks)).toBe(true);
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(resolve))
   );
@@ -240,10 +242,10 @@ test("b) no celular o gráfico aparece pronto: sem o clip da revelação, e o ca
           .map((animation) => animation.id)
       )
   ).toEqual([]);
-  await cells.nth(12 * 7 + 1).tap();
-  await expect(map.locator("[data-rhythm-reading]")).toHaveText(
-    "Segunda, 19/10 · R$ 90,00 · 1 venda"
-  );
+  await cells.nth((weeks - 1) * 7 + 1).tap();
+  const tooltip = map.locator("[data-heatmap-tooltip]");
+  await expect(tooltip).toContainText("Segunda, 19/10");
+  await expect(tooltip).toContainText("R$ 90,00");
   expect(await opacities()).toEqual(["1"]);
 });
 

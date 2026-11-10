@@ -321,7 +321,7 @@ test("resultado-periodo", async ({ evidence, page }) => {
 
 test("despesas", async ({ evidence, page }) => {
   const description = `Aluguel verify ${Date.now()}`;
-  await page.goto("/dashboard?aba=despesas");
+  await page.goto("/expenses");
   await page
     .getByRole("button", { exact: true, name: "Nova despesa" })
     .and(page.locator("[data-expense-new]"))

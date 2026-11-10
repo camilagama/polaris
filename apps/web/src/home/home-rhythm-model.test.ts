@@ -372,6 +372,8 @@ describe("the reading of a day and the summary", () => {
 
   it("says the weekday, the date, the amount, the sales and whether it is the best day or today", () => {
     expect(rhythmReading(view, indexOf("2026-10-17"))).toEqual({
+      amount: "R$ 412,40",
+      count: "5",
       day: "Sábado, 17/10",
       note: "melhor dia",
       value: "R$ 412,40 · 5 vendas",
@@ -379,6 +381,8 @@ describe("the reading of a day and the summary", () => {
     expect(
       rhythmReadingText(
         rhythmReading(view, indexOf("2026-10-18")) ?? {
+          amount: "",
+          count: "",
           day: "",
           note: null,
           value: "",
@@ -386,6 +390,8 @@ describe("the reading of a day and the summary", () => {
       )
     ).toBe("Domingo, 18/10 · R$ 12,00 · 1 venda");
     expect(rhythmReading(view, view.today)).toEqual({
+      amount: "R$ 0,00",
+      count: "0",
       day: "Domingo, 25/10",
       note: "hoje",
       value: "sem venda",

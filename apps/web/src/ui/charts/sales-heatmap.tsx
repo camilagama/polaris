@@ -1,6 +1,14 @@
 /* Polaris adaptation of the Bklit UI heatmap chart (the blocks are in src/ui/bklit/, unchanged but for BKLIT-UI.md), MIT */
 import { MotionConfig } from "motion/react";
-import { type PointerEvent, useCallback, useEffect, useMemo } from "react";
+import {
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import { HeatmapCells } from "../bklit/charts/heatmap/heatmap-cells";
@@ -11,6 +19,9 @@ import {
   useHeatmap,
   useHeatmapInteraction,
 } from "../bklit/charts/heatmap/heatmap-context";
+import { TooltipBox } from "../bklit/charts/tooltip/tooltip-box";
+import { TooltipHeader } from "../bklit/charts/tooltip/tooltip-content";
+import { useDelayedTooltipData } from "../bklit/charts/tooltip/use-delayed-tooltip-data";
 
 /** A day of the map: its level (0 to 4) and whether it is known (a day still to come is drawn as nothing). */
 export interface HeatmapDay {
@@ -19,15 +30,22 @@ export interface HeatmapDay {
   level: 0 | 1 | 2 | 3 | 4;
 }
 
+/** What the tooltip says of the day read: its title, a label and a value per row, and a note ("melhor dia", "hoje"). */
+export interface HeatmapTip {
+  note: string | null;
+  rows: readonly { label: string; value: string }[];
+  title: string;
+}
+
 export interface SalesHeatmapProps {
   /** The index of the best day: a contour in ink. */
   best: number | null;
-  /** The side of a cell and the gap between two, in pixels (16 and 3 from 760 px, 18 and 4 on a phone). */
+  /** The side of a cell and the gap between two, in pixels (12 and 3). */
   cell: number;
   className?: string;
   /** `weeks` × 7 days from a Sunday, week after week (a column per week, Sunday on top). */
   days: readonly HeatmapDay[];
-  /** The day read now (the pointer, the finger or the keyboard): a contour in the color of the focus. */
+  /** The day read now (the pointer, the finger or the keyboard): a contour in the color of the focus and the tooltip. */
   focus: number | null;
   gap: number;
   /**
@@ -37,6 +55,8 @@ export interface SalesHeatmapProps {
   onRead: (index: number | null, touch?: boolean) => void;
   /** Drawn finished, with no entrance of the cells (a phone, v7 § 7, and reduced motion). */
   still?: boolean;
+  /** What the tooltip says of the `focus` day (already masked when the values are hidden), or null: no tooltip. */
+  tip: HeatmapTip | null;
   /** The index of today: a dashed contour. */
   today: number;
 }
@@ -51,7 +71,7 @@ const LEVELS: HeatmapLevelStyles = [
 ];
 
 /** Room for the months above and the initials of the weekdays on the left; 2 px around for the contours. */
-const MARGIN = { bottom: 2, left: 20, right: 2, top: 18 };
+const MARGIN = { bottom: 2, left: 20, right: 2, top: 16 };
 
 const MONTHS = [
   "jan",
@@ -222,12 +242,121 @@ function ReadBridge({
   return null;
 }
 
+const TOOLTIP_OFFSET = 12;
+/** The width `TooltipBox` assumes for a panel it has not measured yet. */
+const TOOLTIP_UNMEASURED_WIDTH = 180;
+
+/**
+ * Where the panel goes in the map, from the width it was measured at: beside the cell on the side with room (what
+ * `TooltipBox` does on its own), and, when neither side has room (a middle column on a phone), over the map with its
+ * edges inside it, centered on the cell as far as the edges allow. `TooltipBox` only picks a side and never limits the
+ * left, so this is done by the position it is given: with `flipX` out of reach the panel opens to the right of `x`. The
+ * width is the panel's own (`w-max` on the content): a panel placed near the right edge would be measured shrunk to the
+ * room it has there, and the next day's panel placed by that width.
+ */
+export function panelPlacement({
+  containerWidth,
+  panelWidth,
+  x,
+}: {
+  containerWidth: number;
+  panelWidth: number;
+  x: number;
+}): { flipX?: number; x: number } {
+  const fitsRight = x + TOOLTIP_OFFSET + panelWidth <= containerWidth;
+  const fitsLeft = x - TOOLTIP_OFFSET - panelWidth >= 0;
+  if (fitsRight || fitsLeft) {
+    return { x };
+  }
+  const left = Math.max(
+    0,
+    Math.min(x - panelWidth / 2, containerWidth - panelWidth)
+  );
+  return { flipX: Number.NEGATIVE_INFINITY, x: left - TOOLTIP_OFFSET };
+}
+
+/**
+ * The tooltip of the day read, from the pointer, the finger or the keyboard alike: the panel of Bklit UI's `TooltipBox`
+ * over the cell of `focus`, opening on the side with room. It sits inside the drawing, which is `aria-hidden`: the same
+ * words are in the `aria-valuetext` of the keyboard control and in the table.
+ */
+function DayTooltip({
+  focus,
+  instant,
+  tip,
+}: Pick<SalesHeatmapProps, "focus" | "tip"> & { instant: boolean }) {
+  const { binHeight, binWidth, containerRef, gap, height, margin, width } =
+    useHeatmap();
+  const box = useCellBox();
+  const cell = focus === null ? null : box(focus);
+  const x = cell === null ? 0 : margin.left + cell.x + (binWidth - gap) / 2;
+  const y = cell === null ? 0 : margin.top + cell.y + (binHeight - gap) / 2;
+  // the delayed hook compares by identity: a target rebuilt on every render would never settle
+  const target = useMemo(
+    () => (focus === null || tip === null ? null : { focus, tip, x, y }),
+    [focus, tip, x, y]
+  );
+  const shown = useDelayedTooltipData(target, 0, instant ? 0 : undefined);
+  const content = useRef<HTMLDivElement>(null);
+  const [panelWidth, setPanelWidth] = useState(TOOLTIP_UNMEASURED_WIDTH);
+  useLayoutEffect(() => {
+    const panel = content.current?.closest<HTMLElement>(
+      ".pointer-events-none.absolute"
+    );
+    const measured = panel?.offsetWidth ?? 0;
+    if (measured > 0) {
+      setPanelWidth(measured);
+    }
+  }, [shown]);
+  const placement = panelPlacement({
+    containerWidth: width,
+    panelWidth,
+    x: shown?.x ?? 0,
+  });
+  return (
+    <TooltipBox
+      animate={!instant}
+      containerHeight={height}
+      containerRef={containerRef}
+      containerWidth={width}
+      entrance={!instant}
+      exit={!instant}
+      flipX={placement.flipX}
+      offset={TOOLTIP_OFFSET}
+      visible={shown !== null}
+      x={placement.x}
+      y={shown?.y ?? 0}
+    >
+      {shown && (
+        <div className="w-max" data-heatmap-tooltip="" ref={content}>
+          <TooltipHeader>{shown.tip.title}</TooltipHeader>
+          <div className="grid gap-1 px-3.5 py-3 text-sm">
+            <dl className="grid gap-1">
+              {shown.tip.rows.map((row) => (
+                <div className="flex justify-between gap-6" key={row.label}>
+                  <dt className="text-chart-tooltip-muted">{row.label}</dt>
+                  <dd className="font-medium tabular-nums">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+            {shown.tip.note ? (
+              <p className="text-chart-tooltip-muted text-xs">
+                {shown.tip.note}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </TooltipBox>
+  );
+}
+
 /**
  * The map of the Início: Bklit UI's `HeatmapChart` with its cells (the entrance of 1 600 ms with the cells coming in a
  * wave, on the `full` level only), a cell of a fixed size, Sunday on top, the four levels of the green ramp and our
- * marks over it. No tooltip and no dimming of the other cells: the reading line above the map is the panel of the day,
- * and it changes at once. The drawing is `aria-hidden` (the block's `svg`); the summary, the reading, the keyboard and
- * the table are the screen's.
+ * marks over it. The value of a day is in a tooltip over its cell (no dimming of the other cells), and a finger reads
+ * the cell nearest to it and follows it as it drags. The drawing is `aria-hidden` (the block's `svg`); the summary, the
+ * keyboard and the table are the screen's.
  */
 export function SalesHeatmap({
   best,
@@ -238,13 +367,15 @@ export function SalesHeatmap({
   gap,
   onRead,
   still: drawnFinished = false,
+  tip,
   today,
 }: SalesHeatmapProps) {
   const still = useMotionLevel() !== "full" || drawnFinished;
   const signature = days.map((day) => `${day.date}${day.level}`).join();
   const data = useMemo(() => columnsOf(days), [signature]);
   // a finger enters and leaves a cell in the same batch of React (continuous events): the block's hover never shows
-  // it, so the touch reads the cell under it on its own `pointerdown`, from the grid of the drawing
+  // it, so the touch reads on its own `pointerdown` and `pointermove`, from the grid of the drawing: the cell nearest to
+  // the finger, because a cell of 12 px is smaller than a fingertip
   const touched = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const svg = event.currentTarget.querySelector("svg");
@@ -253,14 +384,23 @@ export function SalesHeatmap({
       }
       const box = svg.getBoundingClientRect();
       const step = cell + gap;
-      const column = Math.floor(
-        (event.clientX - box.left - MARGIN.left) / step
+      const weeks = Math.floor(days.length / 7);
+      const column = Math.max(
+        0,
+        Math.min(
+          weeks - 1,
+          Math.floor((event.clientX - box.left - MARGIN.left) / step)
+        )
       );
-      const row = Math.floor(
-        (event.clientY - box.top - MARGIN.top - gap) / step
+      const row = Math.max(
+        0,
+        Math.min(
+          6,
+          Math.floor((event.clientY - box.top - MARGIN.top - gap) / step)
+        )
       );
       const index = column * 7 + row;
-      if (column >= 0 && row >= 0 && row < 7 && days[index]?.known === true) {
+      if (days[index]?.known === true) {
         onRead(index, true);
       }
     },
@@ -268,10 +408,11 @@ export function SalesHeatmap({
   );
   return (
     <div
-      className={cn("w-full", className)}
+      className={cn("w-full touch-pan-y", className)}
       data-chart=""
       data-heatmap=""
       onPointerDown={touched}
+      onPointerMove={touched}
     >
       <MotionConfig reducedMotion={still ? "always" : "user"}>
         <HeatmapChart
@@ -293,6 +434,7 @@ export function SalesHeatmap({
           <Marks best={best} days={days} focus={focus} today={today} />
           <Labels days={days} />
           <ReadBridge days={days} onRead={onRead} />
+          <DayTooltip focus={focus} instant={still} tip={tip} />
         </HeatmapChart>
       </MotionConfig>
     </div>

@@ -13,7 +13,7 @@ Esta pasta é a fonte mantida para verificar o que a pessoa vê e faz no app web
 - Toda receita parte da loja semeada, sem o que outras receitas deixaram, salvo quando diz o contrário. Quem precisa de estado limpo semeia de novo (`cleanup` + `launch`) ou usa nomes únicos.
 - Papel e nome acessível antes de tudo (`getByRole("button", { name: "Novo produto" })`, `getByLabel("Nome do produto")`). `data-*` só onde o arquivo do destino o cita.
 - Os nomes entre aspas são literais: copie-os sem mudar acento, aspas curvas nem maiúsculas.
-- O menu no desktop é `getByRole("navigation", { exact: true, name: "Principal" })`, com os links `Início`, `Vender`, `Histórico`, `Estoque`, `Produtos`, `Clientes`, `Resultado`, `Configurações` e `Ajuda e contato`, com Início solto, "Vendas" (Vender, Histórico e Pendências), "Gestão" (Estoque, Produtos, Clientes e Resultado) e Configurações e Ajuda e contato num último grupo sem rótulo. No pé, fora da `navigation`, os links "Primeiros passos, N de 3 concluídos" (loja que nunca vendeu, depois de o Início lê-los na aba) e "Teste grátis, primeira cobrança em dd/mm, abrir Assinatura" (dono em teste); no celular ficam no "Mais", antes dos links legais do rodapé dela.
+- O menu no desktop é `getByRole("navigation", { exact: true, name: "Principal" })`, com os links `Início`, `Vender`, `Histórico`, `Estoque`, `Produtos`, `Clientes`, `Resultado`, `Despesas`, `Configurações` e `Ajuda e contato`, com Início solto, "Vendas" (Vender, Histórico e Pendências), "Gestão" (Estoque, Produtos e Clientes), "Financeiro" (Resultado e Despesas) e Configurações e Ajuda e contato num último grupo sem rótulo. No pé, fora da `navigation`, os links "Primeiros passos, N de 3 concluídos" (loja que nunca vendeu, depois de o Início lê-los na aba) e "Teste grátis, primeira cobrança em dd/mm, abrir Assinatura" (dono em teste); no celular ficam no "Mais", antes dos links legais do rodapé dela.
 - No celular (menos de 760 px), a barra de baixo é `getByRole("navigation", { exact: true, name: "Destinos" })`, com os links `Início`, `Histórico`, `Vender` (no meio), `Estoque` e o botão `getByRole("button", { exact: true, name: "Mais" })`, que abre `getByRole("dialog", { name: "Mais" })` com o mesmo menu, "Ajuda e contato" e, no rodapé, "Termos de Uso" e "Política de Privacidade".
 - O cabeçalho (`[data-app-header]`, 48 px no celular e 56 px a partir de 760 px) tem o chip e o botão `getByRole("button", { name: /^Loja, conta e ajuda: / })` (o nome termina com a loja), que abre `getByRole("menu")` com a loja e o e-mail, "Trocar de loja" (com mais de uma), "Aparência" (rádios Automático, Claro, Escuro), os itens "Ajuda e contato", "Termos de Uso" e "Política de Privacidade" e, por último, `getByRole("menuitem", { exact: true, name: "Sair" })`. Trocar de tema e de loja e sair passam por ele nas duas larguras.
 - O título de cada tela é o `h1` (`getByRole("heading", { level: 1, name })`); as abas ficam num `tablist` e o endereço guarda a aba em `?aba=`.
@@ -47,7 +47,8 @@ Os 9 do menu, na ordem do menu (os cinco primeiros com receitas mais fundas):
 - [Estoque](estoque.md) `/inventory`: receber, contar, baixar.
 - [Produtos](produtos.md) `/products`: Dialogs "Novo produto" e "Importar planilha", aba Categorias.
 - [Clientes](clientes.md) `/customers`: Dialog "Novo cliente".
-- [Resultado](resultado.md) `/dashboard`: abas Resultado, Metas e Despesas.
+- [Resultado](resultado.md) `/dashboard`: abas Resultado e Metas.
+- [Despesas](despesas.md) `/expenses`: Lançamentos, Recorrentes e Categorias.
 - [Configurações](configuracoes.md) `/configuracoes`: Formas de receber, Catálogo público, Aparelhos, Assinatura, Senha.
 - [Ajuda e contato](ajuda.md) `/ajuda`: o e-mail do suporte e o do encarregado, estática.
 
