@@ -106,8 +106,9 @@ const spinOf = (read: { button: Locator }) =>
     .locator("svg")
     .evaluate((icon) => getComputedStyle(icon).animationName);
 
-// Em repouso o botão não tem aria-busy e o ícone não gira em nenhum nível de
-// movimento; o nível só é provado nos testes de leitura ("gira enquanto lê").
+// Sem aria-busy o ícone nunca gira, em qualquer nível de movimento: estes testes
+// provam o repouso. Quem prova o nível é a leitura ("gira enquanto lê" e os
+// "fica parado, e continua com aria-busy").
 const RESTING = [
   { name: "Atualizar", screen: "estoque lista" },
   { name: "Atualizar estoque e perfis", screen: "venda com itens" },
