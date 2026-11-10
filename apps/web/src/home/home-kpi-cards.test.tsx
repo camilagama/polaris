@@ -53,9 +53,9 @@ function figures({
   todaySold?: boolean;
 } = {}): HomeFigures {
   const sold = (net: string, result: string) => (date: string) => ({
+    costs: unknownCostDays.includes(date) ? null : "5.00",
     netSales: net,
     operatingResult: unknownCostDays.includes(date) ? null : result,
-    costs: unknownCostDays.includes(date) ? null : "5.00",
     salesCount: 1,
   });
   const returned = (date: string): Partial<Day> =>
@@ -225,6 +225,31 @@ describe("Vendas hoje", () => {
     const today = card(render(figures(), false), "home-today");
     expect(words(today)).toContain("Sem números de hoje");
     expect(words(today)).not.toContain("neste aparelho");
+  });
+});
+
+describe("Vendas do mês sem venda", () => {
+  const withoutSales = (): HomeFigures => {
+    const base = figures();
+    return {
+      ...base,
+      month: {
+        ...base.month,
+        cards: { ...base.month.cards, salesCount: 0 },
+      },
+    };
+  };
+
+  it("o vazio do mês traz a ação 'Fazer uma venda' para a Venda", () => {
+    const month = card(render(withoutSales()), "home-month");
+    expect(month).toContain('href="/sales"');
+    expect(words(month)).toContain("Fazer uma venda");
+  });
+
+  it("com venda no mês, o cartão não traz a ação", () => {
+    expect(card(render(figures()), "home-month")).not.toContain(
+      "Fazer uma venda"
+    );
   });
 });
 

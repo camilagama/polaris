@@ -46,6 +46,9 @@ const NO_DAYS: readonly never[] = [];
 
 const SPARK_HEIGHT = 36;
 
+const START_SALE_LINK =
+  "touch-hit focus-ring w-fit rounded-sm text-xs underline decoration-input underline-offset-4 hover:decoration-foreground";
+
 /** What the keyboard control says of a reading: "Até 17/10: R$ 1.926,30", with the amount hidden when asked. */
 function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
   const amount =
@@ -208,6 +211,13 @@ function MonthTiles({
   return (
     <>
       <KpiTile
+        action={
+          noSale ? (
+            <a className={START_SALE_LINK} href="/sales">
+              Fazer uma venda
+            </a>
+          ) : null
+        }
         chip={chipOf(read.sales)}
         date={date}
         entity="sales"
@@ -252,7 +262,7 @@ function MonthTiles({
           : {})}
         title={
           <a
-            className="after:absolute after:inset-0 after:rounded-xl hover:underline hover:decoration-input hover:underline-offset-4 focus-visible:outline-none focus-visible:after:outline-3 focus-visible:after:outline-ring focus-visible:after:-outline-offset-3"
+            className="focus-ring touch:flex touch:min-h-11 touch:items-center rounded-sm after:absolute after:inset-0 after:rounded-xl hover:underline hover:decoration-input hover:underline-offset-4 touch:focus-visible:-outline-offset-3"
             href="/dashboard"
           >
             Resultado estimado

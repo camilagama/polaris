@@ -482,7 +482,12 @@ function CardTitle({
   title: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-1",
+        !square && "touch:gap-2.5"
+      )}
+    >
       <h2
         className="flex min-w-0 items-center font-medium text-foreground"
         id={id}
@@ -597,16 +602,22 @@ export function KpiCard({
  * The tile of the Início: about 92 px, three lines (the name with the (i); the number with the sparkline of 36 px to its
  * right; the support line, as wide as the tile). With a day read, its date takes the place of the chip on the support line
  * (the row is always there, so nothing moves). The warning of an estimate that is not whole has its own row under it,
- * only in the tile that has one. The color of the entity is in the drawing, not in a square.
+ * only in the tile that has one. The color of the entity is in the drawing, not in a square. With touch the title row and
+ * the keyboard control of the sparkline are 44 px: the control starts under the touch area of the (i), so the two never
+ * overlap (the tile grows by what it takes), and the title keeps its place.
  */
 const TILE =
-  "@container relative min-w-0 gap-0.5 overflow-hidden px-(--card-spacing) py-3";
+  "@container relative min-w-0 gap-0.5 overflow-hidden px-(--card-spacing) py-3 touch:pt-0";
 /* takes what the number leaves (a long amount is never cut for it); its 36 px do not add to the 30 px line of the number */
-const TILE_SPARK = "z-10 -my-0.75 h-9 min-w-0 flex-1 self-center";
+const TILE_SPARK =
+  "z-10 -my-0.75 h-9 min-w-0 flex-1 self-center touch:-my-1.75 touch:h-11 touch:py-1";
+const TILE_TITLE_ROW = "touch:min-h-11";
+const TILE_BODY = "flex min-w-0 items-center gap-3 touch:mt-1.5";
 const TILE_SUPPORT =
   "flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground text-xs leading-4";
 
 export function KpiTile({
+  action,
   chip,
   className,
   date,
@@ -620,6 +631,8 @@ export function KpiTile({
   value,
   warning,
 }: {
+  /** What the tile offers when it has no figure to show (a link to start): beside the support text. */
+  action?: ReactNode;
   chip?: ReactNode;
   className?: string;
   /** The day read on the sparkline ("Até 17/10"), in the place of the chip; none at rest. */
@@ -643,7 +656,7 @@ export function KpiTile({
       data-kpi={entity}
       role="region"
     >
-      <div className={TOP_ROW}>
+      <div className={cn(TOP_ROW, TILE_TITLE_ROW)}>
         <CardTitle
           entity={entity}
           help={help}
@@ -652,7 +665,7 @@ export function KpiTile({
           title={title}
         />
       </div>
-      <div className="flex min-w-0 items-center gap-3" data-kpi-body="">
+      <div className={TILE_BODY} data-kpi-body="">
         <div className="shrink-0" data-kpi-headline="">
           {value}
         </div>
@@ -671,6 +684,7 @@ export function KpiTile({
         ) : null}
         {chip && !date ? <span data-kpi-chip-row="">{chip}</span> : null}
         {note}
+        {action}
       </div>
       {warning ? (
         <div className={TILE_SUPPORT} data-kpi-warning="">
@@ -693,10 +707,10 @@ export function KpiTileSkeleton({ className }: { className?: string }) {
       )}
       data-kpi-skeleton=""
     >
-      <div className={cn(TOP_ROW, "h-5")}>
+      <div className={cn(TOP_ROW, "h-5 touch:h-11")}>
         <Skeleton className="h-3 w-24" />
       </div>
-      <div className={cn(heroBox(), "flex items-center")}>
+      <div className={cn(heroBox(), "touch:mt-1.5 flex items-center")}>
         <Skeleton className="h-[0.8em] w-32" />
       </div>
       <div className={TILE_SUPPORT}>
