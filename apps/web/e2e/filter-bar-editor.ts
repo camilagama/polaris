@@ -9,7 +9,10 @@ const PHONE_WIDTH = 760;
 export const onPhone = (page: Page) =>
   (page.viewportSize()?.width ?? PHONE_WIDTH) < PHONE_WIDTH;
 
-/** Applies what was touched in the Dialog of a phone; the Popover applied by the touch itself, so there is nothing to do. */
+/**
+ * Applies what was touched in the Dialog of a phone; the Popover applied by the touch itself, so there is nothing to do.
+ * A shortcut of a period applies by itself in the Dialog too: after it there is no "Aplicar" to press.
+ */
 export async function applyEditor(page: Page, editor: Locator) {
   if (onPhone(page)) {
     await editor.getByRole("button", { exact: true, name: "Aplicar" }).click();

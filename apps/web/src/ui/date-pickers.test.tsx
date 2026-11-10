@@ -8,7 +8,7 @@ import {
   whenBackOnline,
 } from "@/ui/calendar-on-demand";
 import { DatePicker } from "@/ui/date-picker";
-import { DateRangePicker } from "@/ui/date-range-picker";
+import { DateRangePanel, DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
 
 /**
@@ -184,6 +184,63 @@ describe("DateRangePicker", () => {
       />
     );
     expect(oneDay).toContain(">24/10/2026<");
+  });
+});
+
+const OPEN_TOGGLE = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button>/;
+const SHORTCUT_GROUP = /<fieldset[^>]*aria-label="Atalhos do período"[^>]*>/;
+const PRESSED_SHORTCUT = /<button[^>]*aria-pressed="true"[^>]*>/;
+const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
+
+describe("DateRangePanel", () => {
+  const panel = (props: Partial<Parameters<typeof DateRangePanel>[0]> = {}) =>
+    html(
+      <DateRangePanel
+        onCommit={noop}
+        today="2026-10-24"
+        value={{ from: "2026-10-01", to: "2026-10-31" }}
+        {...props}
+      />
+    );
+
+  it("o intervalo escolhido fica escrito sob o mês, no botão que abre os campos, e o nome do botão o contém", () => {
+    const markup = panel();
+    const toggle = OPEN_TOGGLE.exec(markup)?.[0] ?? "";
+    expect(attribute(toggle, "aria-label")).toBe(
+      "Digitar as datas: 01/10 a 31/10"
+    );
+    expect(toggle).toContain("01/10 a 31/10");
+    expect(toggle).not.toContain(">Digitar as datas<");
+  });
+
+  it("sem período o botão diz Digitar as datas, sem nome próprio", () => {
+    const markup = panel({ value: null });
+    const toggle = OPEN_TOGGLE.exec(markup)?.[0] ?? "";
+    expect(attribute(toggle, "aria-label")).toBeUndefined();
+    expect(toggle).toContain("Digitar as datas");
+  });
+
+  it("sem Limpar e sem frase não há linha de rodapé (régua e altura), só a frase para o leitor de tela", () => {
+    const markup = panel({ clearable: false });
+    expect(markup).not.toContain("border-border border-t");
+    expect(markup).not.toContain("Limpar");
+    expect(markup).toMatch(STATUS_LINE);
+  });
+
+  it("com Limpar a linha do rodapé volta", () => {
+    expect(panel()).toContain("border-border border-t");
+    expect(panel()).toContain("Limpar");
+  });
+
+  it("os atalhos pressionados têm fundo próprio no escuro, na coluna e no segmentado, e o segmentado rola de lado em vez de quebrar", () => {
+    const markup = panel();
+    const group = SHORTCUT_GROUP.exec(markup)?.[0] ?? "";
+    expect(attribute(group, "class")).toContain("overflow-x-auto");
+    expect(attribute(group, "class")).not.toContain("grid-cols-2");
+    const pressed = PRESSED_SHORTCUT.exec(markup)?.[0] ?? "";
+    const classes = (attribute(pressed, "class") ?? "").split(" ");
+    expect(classes).toContain("dark:aria-pressed:bg-accent");
+    expect(classes).toContain("dark:bg-transparent");
   });
 });
 

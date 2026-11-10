@@ -191,10 +191,7 @@ export function Calendar({
             defaults.month_caption
           ),
           month_grid: cn("w-full border-collapse", defaults.month_grid),
-          months: cn(
-            "relative flex flex-col gap-4 xl:flex-row",
-            defaults.months
-          ),
+          months: cn("relative flex flex-col gap-4", defaults.months),
           nav: cn(
             "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
             defaults.nav

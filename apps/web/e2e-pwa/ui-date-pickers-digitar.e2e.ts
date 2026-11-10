@@ -408,6 +408,8 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+const SHORTCUT_ROW = '[aria-label="Atalhos do período"]';
+
 test.describe("a 320 px com a letra de 20 px", () => {
   skipOutsideChromium();
 
@@ -419,10 +421,10 @@ test.describe("a 320 px com a letra de 20 px", () => {
       scrollWidth: element.scrollWidth,
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
-    await assertNothingClipped(popup);
+    await assertNothingClipped(popup, { allowScroll: [SHORTCUT_ROW] });
   }
 
-  test("AC-2.6: o painel aberto cabe, com e sem os campos: atalhos em duas linhas, campos empilhados, nada é cortado", async ({
+  test("AC-2.6: o painel aberto cabe, com e sem os campos: atalhos numa fileira que rola de lado, campos empilhados, nada é cortado", async ({
     page,
   }) => {
     await openReflowViewport(page);
@@ -437,7 +439,18 @@ test.describe("a 320 px com a letra de 20 px", () => {
     const rows = await shortcuts.evaluateAll((buttons) => [
       ...new Set(buttons.map((button) => button.getBoundingClientRect().y)),
     ]);
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
+    const row = popup.getByRole("group", { name: "Atalhos do período" });
+    const reach = await row.evaluate((element) => ({
+      client: element.clientWidth,
+      scroll: element.scrollWidth,
+    }));
+    expect(reach.scroll).toBeGreaterThan(reach.client);
+    await shortcuts.last().scrollIntoViewIfNeeded();
+    await expect
+      .poll(() => row.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+    await expect(shortcuts.last()).toBeInViewport({ ratio: 1 });
 
     await popup.getByRole("button", { name: "Digitar as datas" }).click();
     await expect(from(popup)).toBeFocused();

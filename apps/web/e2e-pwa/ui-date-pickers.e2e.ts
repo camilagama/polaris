@@ -504,14 +504,12 @@ for (const viewport of VIEWPORTS) {
       await expect(button).toHaveAccessibleName("Período, Escolher período");
     });
 
-    test("período: um mês abaixo de 1280 px e dois a partir dele, o dia com 36 px no mouse e 44 no toque, nada fora da janela", async ({
+    test("período: um mês em qualquer largura, o dia com 36 px no mouse e 44 no toque, nada fora da janela", async ({
       page,
     }) => {
       await openGallery(page);
       const popup = await openPicker(page, "Período,", "Período");
-      await expect(popup.getByRole("grid")).toHaveCount(
-        viewport.width >= 1280 ? 2 : 1
-      );
+      await expect(popup.getByRole("grid")).toHaveCount(1);
       const size = (await isTouch(page)) ? 44 : 36;
       const box = await day(popup, "2026-10-15").boundingBox();
       expect(box?.width).toBeCloseTo(size, 0);
@@ -613,7 +611,7 @@ test.describe("reaberto no meio da saída, a 1280 px", () => {
 
     expect(await chooseAndReopen(page, "Período,", "Hoje")).toBe(true);
     await expect(trigger(page, "Período,")).toHaveText("24/10/2026");
-    await expect(popup.getByText("Setembro de 2026")).toBeVisible();
+    await expect(popup.getByText("Outubro de 2026")).toBeVisible();
     await expect(popup.getByText("Novembro de 2026")).toBeHidden();
   });
 });
