@@ -349,3 +349,56 @@ for (const width of [360, WIDE_WINDOW]) {
     { coarse: width !== WIDE_WINDOW }
   );
 }
+
+const BAR = "Filtrar estoque";
+
+/** Chooses a field in the "Filtrar" menu and the option in its editor (the Popover applies at once, the phone's Dialog at "Aplicar"). */
+async function addFilter(page: Page, field: string, option: string) {
+  const bar = page.getByRole("search", { exact: true, name: BAR });
+  await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: new RegExp(`^${field}`) })
+    .click();
+  const editor = page.getByRole("dialog", { name: field });
+  await expect(editor).toBeVisible();
+  await editor.getByRole("button", { exact: true, name: option }).click();
+  const apply = editor.getByRole("button", { exact: true, name: "Aplicar" });
+  if ((await apply.count()) > 0) {
+    await apply.click();
+  }
+  await expect(editor).toHaveCount(0);
+}
+
+reflowTest(
+  "a 320 px com letra de 20 px a barra Filtrar estoque, com as três pílulas e o menu aberto, cabe inteira e nada é cortado",
+  async ({ page }) => {
+    await openStock(page, 320, 20);
+    const bar = page.getByRole("search", { exact: true, name: BAR });
+    await addFilter(page, "Saldo", "Sem saldo");
+    await addFilter(page, "Custo", "Desconhecido");
+    await addFilter(page, "Arquivados", "Incluir");
+    await expect(bar.locator('[data-slot="filter-pill"]')).toHaveCount(3);
+    await expect(
+      bar.getByRole("button", { name: "Limpar tudo" })
+    ).toBeVisible();
+    await assertNothingClipped(bar);
+    await assertNoEllipsis(bar.locator('[data-slot="filter-pill"] button'));
+    await assertNoPageScroll(page);
+    const overflowing = await bar.evaluate(
+      (root) =>
+        [...root.querySelectorAll("button")].filter(
+          (button) => button.getBoundingClientRect().right > 320.5
+        ).length
+    );
+    expect(overflowing, "botões da barra além da janela").toBe(0);
+    await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
+    const menu = await page
+      .getByRole("menu", { name: "Filtrar por" })
+      .boundingBox();
+    expect(
+      (menu?.x ?? 0) + (menu?.width ?? Number.POSITIVE_INFINITY)
+    ).toBeLessThanOrEqual(320);
+    expect(menu?.x ?? -1).toBeGreaterThanOrEqual(0);
+  }
+);

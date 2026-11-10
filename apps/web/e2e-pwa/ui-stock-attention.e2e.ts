@@ -17,18 +17,41 @@ const RECEIVE_JEANS = /^Receber estoque de Calça jeans/;
 const RECEIVE_SHIRT = /^Receber estoque de Camiseta/;
 const DEVICE_PANEL = /Saldo do aparelho: \d+ · custo médio só com conexão/;
 const LAST_MOVEMENT = /último movimento/;
-const FILTERS_BUTTON = /^Filtros/;
 const strip = (page: Page) => page.locator('[data-slot="action-strip"]');
 
-/** The balance tabs, "Sem custo" and "Incluir arquivados" are inside the "Filtros" button: its popup opens unless it already is. */
-async function openFilters(page: Page) {
-  const button = page.getByRole("button", { name: FILTERS_BUTTON });
-  if ((await button.getAttribute("aria-expanded")) !== "true") {
-    await button.click();
+const bar = (page: Page) =>
+  page.getByRole("search", { exact: true, name: "Filtrar estoque" });
+
+/** The pills of the bar in order, named as their buttons name them (a filter the person can still edit ends in ", editar"). */
+async function expectPills(page: Page, pills: string[]) {
+  await expect
+    .poll(() =>
+      bar(page)
+        .locator('[data-slot="filter-pill"] button:not([aria-label^="Tirar"])')
+        .evaluateAll((buttons) =>
+          buttons.map((button) =>
+            (button.getAttribute("aria-label") ?? "").replace(", editar", "")
+          )
+        )
+    )
+    .toEqual(pills);
+}
+
+/** Chooses a field in the "Filtrar" menu and the option in its editor. */
+async function addFilter(page: Page, field: string, option: string) {
+  await bar(page).getByRole("button", { exact: true, name: "Filtrar" }).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitem", { name: new RegExp(`^${field}`) })
+    .click();
+  const editor = page.getByRole("dialog", { name: field });
+  await expect(editor).toBeVisible();
+  await editor.getByRole("button", { exact: true, name: option }).click();
+  const apply = editor.getByRole("button", { exact: true, name: "Aplicar" });
+  if ((await apply.count()) > 0) {
+    await apply.click();
   }
-  await expect(
-    page.getByRole("tablist", { name: "Filtrar por saldo" })
-  ).toBeVisible();
+  await expect(editor).toHaveCount(0);
 }
 
 test.describe("Estoque, Precisa de ação", () => {
@@ -44,28 +67,12 @@ test.describe("Estoque, Precisa de ação", () => {
     await strip(page)
       .getByRole("link", { name: "1 variante sem saldo" })
       .click();
-    await expect(
-      page.getByRole("button", { name: "Filtros, 1 ativo" })
-    ).toBeVisible();
-    await openFilters(page);
-    await expect(
-      page.getByRole("tab", { name: "Sem saldo", selected: true })
-    ).toBeVisible();
+    await expectPills(page, ["Saldo: Sem saldo"]);
     await expect(rows.getByRole("listitem")).toHaveCount(1);
     await expect(rows).toContainText("Boné aba reta");
-    await expect(
-      page.getByRole("checkbox", { name: "Sem custo" })
-    ).not.toBeChecked();
-    await page.keyboard.press("Escape");
 
     await strip(page).getByRole("link", { name: "1 sem custo" }).click();
-    await openFilters(page);
-    await expect(
-      page.getByRole("tab", { name: "Todas", selected: true })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("checkbox", { name: "Sem custo" })
-    ).toBeChecked();
+    await expectPills(page, ["Custo: Desconhecido"]);
     await expect(rows.getByRole("listitem")).toHaveCount(1);
     await expect(rows).toContainText("Camiseta do teste");
     // the strip counts the store, not the list: it stays while a filter is on
@@ -79,20 +86,13 @@ test.describe("Estoque, Precisa de ação", () => {
   }) => {
     await stockStates.list(page);
     await page.getByLabel("Buscar no estoque").fill("jeans");
-    await openFilters(page);
-    await page.getByRole("checkbox", { name: "Incluir arquivados" }).click();
-    await page.keyboard.press("Escape");
+    await addFilter(page, "Arquivados", "Incluir");
+    await expectPills(page, ["Arquivados: Incluir"]);
     await strip(page)
       .getByRole("link", { name: "1 variante sem saldo" })
       .click();
     await expect(page.getByLabel("Buscar no estoque")).toHaveValue("");
-    await openFilters(page);
-    await expect(
-      page.getByRole("checkbox", { name: "Incluir arquivados" })
-    ).not.toBeChecked();
-    await expect(
-      page.getByRole("tab", { name: "Sem saldo", selected: true })
-    ).toBeVisible();
+    await expectPills(page, ["Saldo: Sem saldo"]);
     await expect(
       page.getByRole("list", { name: "Saldos por variante" })
     ).toContainText("Boné aba reta");
@@ -149,9 +149,8 @@ test.describe("Estoque, Precisa de ação", () => {
       page.getByRole("button", { name: "Carregar mais" })
     ).toBeVisible();
     await expect(page.getByText("Atualizado", { exact: true })).toHaveCount(0);
-    await openFilters(page);
     await expect(
-      page.getByRole("checkbox", { name: "Incluir arquivados" })
+      bar(page).getByRole("button", { exact: true, name: "Filtrar" })
     ).toBeVisible();
   });
 
@@ -193,6 +192,42 @@ test.describe("Estoque, Precisa de ação", () => {
   test("o axe não acusa a tela com a faixa", async ({ page }) => {
     await stockStates.list(page);
     await expect(strip(page)).toBeVisible();
+    expect(await axeFaults(page)).toEqual([]);
+  });
+
+  test("o axe não acusa a barra Filtrar estoque: fechada, com o menu aberto e com pílulas", async ({
+    page,
+  }) => {
+    await stockStates.list(page);
+    const open = bar(page).getByRole("button", {
+      exact: true,
+      name: "Filtrar",
+    });
+    await expect(open).toBeVisible();
+    expect(await axeFaults(page)).toEqual([]);
+    await open.click();
+    await expect(page.getByRole("menu", { name: "Filtrar por" })).toBeVisible();
+    expect(await axeFaults(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await addFilter(page, "Saldo", "Sem saldo");
+    await addFilter(page, "Arquivados", "Incluir");
+    await expectPills(page, ["Saldo: Sem saldo", "Arquivados: Incluir"]);
+    await expect(
+      bar(page).getByRole("button", { name: "Limpar tudo" })
+    ).toBeVisible();
+    expect(await axeFaults(page)).toEqual([]);
+  });
+
+  test("o axe não acusa o menu da barra sem conexão, com o motivo do custo", async ({
+    page,
+  }) => {
+    await stockStates.offline(page);
+    await bar(page)
+      .getByRole("button", { exact: true, name: "Filtrar" })
+      .click();
+    await expect(page.getByRole("menu", { name: "Filtrar por" })).toContainText(
+      "Só com conexão"
+    );
     expect(await axeFaults(page)).toEqual([]);
   });
 });

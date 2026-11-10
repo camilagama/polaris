@@ -3270,6 +3270,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Setas de mês (AC-B) | Em revisão | `dashboard/period-picker.tsx`: "Mês anterior" e "Próximo mês" ao lado do botão quando o período é um mês de calendário inteiro (`wholeMonthOf`, `monthStep` em `result-period.ts`); "›" `aria-disabled` no mês atual, "‹" para em 2000-01; o mês atual e o anterior voltam aos atalhos (com cópia offline), os outros viram "Período" ("Este período só abre com internet."). Fora de mês inteiro as setas somem. Uma linha `sr-only` com `aria-live="polite"` ("Período: 1 a 30 de setembro", o período pedido) diz o mês novo, uma vez por troca. Linha de altura fixa; só a 320 px com letra de 20 px e o ano nas datas as setas descem para baixo do botão. |
 | Provas | Em revisão | Unidade: `date-values.test.ts`, `result-period.test.ts`, `este-mes-por-tela.test.ts` (tabela por tela). e2e (Chromium): `dashboard.e2e.ts` (setas, a região viva e o teclado Enter/Espaço, ano, sumir, offline, altura, 320/20 e 360/16), `history-period.e2e.ts` e `goals.e2e.ts` (o atalho em cada tela). **Não verificado:** aparelho real (BrowserStack) e leitor de tela. |
 
+### Filtros do Estoque na barra (t985; L2-14a, A-11; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Filtros do Estoque (AC-14a) | Em revisão | `inventory/stock-filters.tsx` passa à `FilterBar` do Histórico os campos Saldo (Com saldo, Sem saldo), Custo ("Desconhecido"; sem conexão `aria-disabled` com "Só com conexão") e Arquivados ("Incluir"), no lugar do popup "Filtros" (abas, "Sem custo", "Incluir arquivados"); a busca divide a primeira linha da barra com o "Filtrar" (`leading` da `FilterBar`), e as pílulas descem para a linha de baixo; `?filtro=` e os links da faixa acendem a pílula. O menu da barra ganhou `max-w-[calc(100vw-1rem)]` (a 320 px com letra de 20 px passava da janela). |
+
 ### Despesas vira destino próprio na navegação (t982; L2-8, A-08; sem migration)
 
 | Item | Status | Observação |
