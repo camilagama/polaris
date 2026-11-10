@@ -308,6 +308,7 @@ function SaleDate({
       </legend>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-4">
         <DateField
+          disabledReason="Só até hoje"
           error={timeAtFault ? undefined : error}
           id="sale-occurred-day"
           label="Dia"

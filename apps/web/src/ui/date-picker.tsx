@@ -19,11 +19,29 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 /** The error of a date that must be chosen (never "campo obrigatório"). */
 const DATE_REQUIRED_ERROR = "Escolha uma data";
 
-export interface DatePickerProps {
+/**
+ * The limits of a date and the reason for them: a field that disables days (`min` or `max`) must say why, so the
+ * disabled day is never mute for the screen reader.
+ */
+export type DateLimits =
+  | {
+      min?: undefined;
+      max?: undefined;
+      /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
+      disabledReason?: string | undefined;
+    }
+  | {
+      /** The first day that can be chosen, `AAAA-MM-DD`. */
+      min?: IsoDate | undefined;
+      /** The last day that can be chosen, `AAAA-MM-DD`. */
+      max?: IsoDate | undefined;
+      /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
+      disabledReason: string;
+    };
+
+export type DatePickerProps = DateLimits & {
   className?: string | undefined;
   disabled?: boolean | undefined;
-  /** Why the days outside `min`..`max` cannot be chosen ("Só até hoje"). */
-  disabledReason?: string | undefined;
   /** The id of a help text the screen shows under the button, read after the error. */
   describedBy?: string | undefined;
   /** The error under the button; `true` is the default text, "Escolha uma data". */
@@ -31,16 +49,12 @@ export interface DatePickerProps {
   id?: string | undefined;
   /** The name of the field, in the accessible name of the button: "Data de competência, 24/10/2026". */
   label: string;
-  /** The last day that can be chosen, `AAAA-MM-DD`. */
-  max?: IsoDate | undefined;
-  /** The first day that can be chosen, `AAAA-MM-DD`. */
-  min?: IsoDate | undefined;
   onValueChange: (value: IsoDate | null) => void;
   /** The store's day (the screen takes it from the server); the device's day when absent. */
   today?: IsoDate | undefined;
   /** The chosen day, `AAAA-MM-DD`, or null. */
   value: IsoDate | null;
-}
+};
 
 /**
  * One date: an outline button with the calendar icon and the date written "24/10/2026" ("Escolher data" when there
@@ -104,7 +118,6 @@ export function DatePicker({
     }
   }, [choose, today, todayAllowed]);
   const todayReasonId = useId();
-  const todayReason = disabledReason ?? "Hoje está fora das datas permitidas";
 
   return (
     <div className={cn("grid gap-1.5", className)}>
@@ -168,7 +181,7 @@ export function DatePicker({
             </Button>
             {todayAllowed ? null : (
               <span className="sr-only" id={todayReasonId}>
-                {todayReason}
+                {disabledReason}
               </span>
             )}
           </div>
