@@ -5,7 +5,8 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
 
 /**
  * The same action is the same button: the secondary actions of a card ("Ver o resultado", "Ver o que falta") are
- * text-only buttons with an arrow, never an underlined link, with the height of a text-only button (28 with a mouse, 32 with touch) and the radius of a control (0,55 rem).
+ * text-only buttons with an arrow, never an underlined link, with the height of a text-only button (28 with a mouse,
+ * 32 with touch) and the radius of a control (0,55 rem).
  */
 const HOME_SCREEN = "início com vendas";
 const RESULT_SCREEN = "resultado mês incompleto e gráfico de vendas";
