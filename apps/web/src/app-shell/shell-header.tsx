@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef } from "react";
+import { HideValuesButton } from "@/ui/hidden-values";
 import { Logo } from "@/ui/logo";
 import type { CurrentOrganization } from "../lib/current-organization";
 import { type Logout, LogoutNotices } from "../offline/runtime/logout-control";
@@ -10,7 +11,8 @@ import { StoreMenu } from "./store-card";
  * The header of every screen of the shell: 48 px on the phone and 56 px from 760 px (`--app-header`, the one source of
  * its height), opaque in the color of the sidebar, so the two read as one frame. It carries what belongs to the
  * session and nothing that changes its height: the state chip (it shrinks to an ellipsis, the whole sentence in its
- * accessible name) and the menu of the store and of the account (Ajuda e contato is in the sidebar). The title of the
+ * accessible name), "Esconder valores" (the choice is of the device and holds on every screen, so its button is
+ * here, as an icon at every width) and the menu of the store and of the account (Ajuda e contato is in the sidebar). The title of the
  * screen stays the `h1` of the page, and the notices stay at the top of `main`.
  */
 export function ShellHeader({
@@ -40,10 +42,13 @@ export function ShellHeader({
           href="/"
         >
           <Logo className="size-5" />
-          Polaris
+          {/* with a very large text the row has no room for the word beside the eye, the chip and the account: the
+              mark stays and the name is still the link's, for the screen reader */}
+          <span className="@max-[13rem]/header:sr-only">Polaris</span>
         </a>
         <div className="ml-auto flex min-w-0 items-center gap-2 md:@max-[30rem]/header:gap-1 md:gap-3">
           <SyncStatus onlineOnly={onlineOnly} />
+          <HideValuesButton iconOnly />
           <StoreMenu
             email={email}
             logout={logout}

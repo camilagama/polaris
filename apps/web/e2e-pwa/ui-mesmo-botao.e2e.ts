@@ -4,8 +4,7 @@ import { expect, test } from "@playwright/test";
 import { SCREENS, VIEWPORTS } from "./ui-screens";
 
 /**
- * The same action is the same button: "Esconder valores" has one size on Início and Resultado, and the secondary
- * actions of a card ("Ver o resultado", "Ver o que falta") are text-only buttons with an arrow, never an underlined
+ * The same action is the same button: the secondary actions of a card ("Ver o resultado", "Ver o que falta") are text-only buttons with an arrow, never an underlined
  * link, with the height of a text-only button (28 with a mouse, 32 with touch) and the radius of a control (0,55 rem).
  */
 const HOME_SCREEN = "início com vendas";
@@ -39,16 +38,6 @@ const styleOf = (locator: Locator) =>
     };
   });
 
-const hideValuesHeight = async (page: Page, screen: string) => {
-  await openScreen(page, screen);
-  const button = page.getByRole("button", {
-    exact: true,
-    name: "Esconder valores",
-  });
-  await expect(button).toBeVisible();
-  return (await button.boundingBox())?.height ?? 0;
-};
-
 test.beforeEach(({ browserName }, testInfo) => {
   test.skip(
     browserName !== "chromium" || testInfo.project.name !== "chromium-desktop",
@@ -62,15 +51,6 @@ for (const context of CONTEXTS) {
       hasTouch: context.touch,
       isMobile: context.touch,
       viewport: VIEWPORTS[context.width],
-    });
-
-    test('"Esconder valores" tem a mesma altura no Início e no Resultado', async ({
-      page,
-    }) => {
-      const home = await hideValuesHeight(page, HOME_SCREEN);
-      const result = await hideValuesHeight(page, RESULT_SCREEN);
-      expect(home).toBeGreaterThan(0);
-      expect(result).toBe(home);
     });
 
     test('"Ver o resultado" é botão só texto, sem sublinhado, com o raio de controle', async ({

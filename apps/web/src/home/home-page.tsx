@@ -2,7 +2,6 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/ui/button";
-import { HideValuesButton } from "@/ui/hidden-values";
 import { RefreshButton } from "@/ui/refresh-button";
 import { SlowReadNote, StaleCopyNotice } from "../app-shell/read-wait";
 import { useCurrentOrganization } from "../lib/current-organization";
@@ -413,7 +412,6 @@ function HomeHeader({
               onClick={refresh.onClick}
             />
           ) : null}
-          <HideValuesButton />
         </div>
       </div>
       <div className="flex w-full items-start gap-2 sm:w-auto">
@@ -426,7 +424,6 @@ function HomeHeader({
             onClick={refresh.onClick}
           />
         ) : null}
-        <HideValuesButton className="max-md:hidden" />
         <NewSale
           describedBy={
             [

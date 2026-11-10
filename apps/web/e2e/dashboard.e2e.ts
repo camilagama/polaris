@@ -751,30 +751,40 @@ test("sem a leitura do dailySales, somem só os chips de Vendas e Ticket médio;
   await expect(chartRegion(page)).toBeVisible();
 });
 
-test("Esconder valores (v7 § 6): o mesmo botão do Início esconde os reais dos cartões, da cadeia, das partes e do gráfico, e as porcentagens ficam", async ({
+/**
+ * The lab of the screens has no header, so no eye: the choice reaches the page as it does from another tab of the device
+ * (the key of the Início and of the shell, and the `storage` event). The button is proved in the shell, in `home.e2e.ts`
+ * and `shell-header.e2e.ts`.
+ */
+const chooseHiddenValues = (page: Page, hidden: boolean) =>
+  page.evaluate((escondidos) => {
+    if (escondidos) {
+      window.localStorage.setItem("polaris-valores", "escondidos");
+    } else {
+      window.localStorage.removeItem("polaris-valores");
+    }
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "polaris-valores" })
+    );
+  }, hidden);
+
+test("Esconder valores (v7 § 6): a escolha do aparelho esconde os reais dos cartões, da cadeia, das partes e do gráfico, e as porcentagens ficam", async ({
   page,
 }) => {
   const server = new FakeReportServer();
   await openDashboard(page, server);
   const main = page.locator("main");
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
-  const toggle = main.getByRole("button", { name: "Esconder valores" });
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
 
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await chooseHiddenValues(page, true);
   await expect(card(page, CARD.netSales)).toContainText("R$ ••••");
   await expect(card(page, CARD.result)).not.toContainText("R$ 38,50");
   await expect(card(page, CARD.margin)).toContainText("52,69%");
   await expect(chainRow(page, "Vendas brutas")).not.toContainText("R$ 150,00");
   await expect(main).not.toContainText(AN_AMOUNT);
   await expect(main.getByText("valor escondido").first()).toBeAttached();
-  // the choice is the device's, the same key the Início reads
-  expect(
-    await page.evaluate(() => localStorage.getItem("polaris-valores"))
-  ).toBe("escondidos");
 
-  await toggle.click();
+  await chooseHiddenValues(page, false);
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
 });
 

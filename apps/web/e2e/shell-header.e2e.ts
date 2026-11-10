@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import {
   EMAIL,
@@ -27,6 +27,8 @@ const storeMenu = (page: Page) =>
   page.getByRole("button", { name: STORE_MENU_NAME });
 const header = (page: Page) => page.locator("[data-app-header]");
 const chip = (page: Page) => page.locator(".sync-status");
+const eye = (page: Page) =>
+  header(page).getByRole("button", { exact: true, name: "Esconder valores" });
 const more = (page: Page) =>
   page.getByRole("button", { exact: true, name: "Mais" });
 
@@ -59,6 +61,24 @@ const LONG_STORE =
 const LONG_EMAIL =
   "atendimento.da.loja.de.roupas.do.centro.da.cidade@exemplo-de-dominio-comprido.com.br";
 
+/** The pages of the shell, from the first screen of each route to a page that does not exist. */
+const HISTORY_URL = /\/sales\/history/;
+const SHELL_ROUTES = [
+  "/",
+  "/sales",
+  "/sales/history",
+  "/inventory",
+  "/products",
+  "/customers",
+  "/dashboard",
+  "/expenses",
+  "/configuracoes",
+  "/configuracoes?aba=aparelhos",
+  "/attention",
+  "/ajuda",
+  "/uma-pagina-que-nao-existe",
+];
+
 const rpcError = (route: Route, code: string, status: number, data?: unknown) =>
   route.fulfill({
     body: JSON.stringify({
@@ -77,7 +97,7 @@ interface Box {
   y: number;
 }
 
-/** Where the parts of the header are: the header itself, the chip and the button of the menu of the store. */
+/** Where the parts of the header are: the header itself, the chip, the eye and the button of the menu of the store. */
 function measure(page: Page) {
   return page.evaluate(() => {
     const box = (selector: string) => {
@@ -96,6 +116,7 @@ function measure(page: Page) {
     return {
       brand: box('[data-app-header] a[href="/"]'),
       chip: box("[data-app-header] .sync-status"),
+      eye: box("[data-app-header] button[aria-pressed]"),
       header: box("[data-app-header]"),
       menu: box("[data-store-menu]"),
       viewport: document.documentElement.clientWidth,
@@ -162,12 +183,23 @@ function expectSamePlaces(first: Measured, now: Measured, label: string) {
     Math.abs((now.menu?.x ?? 0) - (first.menu?.x ?? 0)),
     label
   ).toBeLessThanOrEqual(1);
+  expect(now.eye?.height, label).toBe(first.eye?.height);
+  expect(now.eye?.width, label).toBe(first.eye?.width);
+  expect(
+    Math.abs((now.eye?.x ?? 0) - (first.eye?.x ?? 0)),
+    label
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs((now.eye?.y ?? 0) - (first.eye?.y ?? 0)),
+    label
+  ).toBeLessThanOrEqual(1);
   expect(right(now.menu), label).toBeLessThanOrEqual(now.viewport);
   expect(now.chip?.x ?? -1, label).toBeGreaterThanOrEqual(0);
   if (now.brand && now.brand.width > 0) {
     expect(right(now.brand), label).toBeLessThanOrEqual(now.chip?.x ?? 0);
   }
-  expect(right(now.chip), label).toBeLessThanOrEqual(now.menu?.x ?? 0);
+  expect(right(now.chip), label).toBeLessThanOrEqual(now.eye?.x ?? 0);
+  expect(right(now.eye), label).toBeLessThanOrEqual(now.menu?.x ?? 0);
 }
 
 const setText = (page: Page, text: string) =>
@@ -445,20 +477,7 @@ async function expectTwoTaps(page: Page, width: number, label: string) {
 }
 
 test.describe("AC-2.1: Sair, Ajuda, Termos e Política a 2 toques em toda rota da casca", () => {
-  const ROUTES = [
-    "/",
-    "/sales",
-    "/sales/history",
-    "/inventory",
-    "/products",
-    "/customers",
-    "/dashboard",
-    "/configuracoes",
-    "/configuracoes?aba=aparelhos",
-    "/attention",
-    "/ajuda",
-    "/uma-pagina-que-nao-existe",
-  ];
+  const ROUTES = SHELL_ROUTES;
   for (const width of [360, 1280]) {
     test(`${width} px, com e sem conexão`, async ({ page }) => {
       await page.setViewportSize({ height: 800, width });
@@ -480,6 +499,124 @@ test.describe("AC-2.1: Sair, Ajuda, Termos e Política a 2 toques em toda rota d
       }
     });
   }
+});
+
+test.describe("AC-3.1, AC-3.4 e AC-3.5: o olho de Esconder valores no cabeçalho", () => {
+  const HIDDEN_KEY = "polaris-valores";
+
+  /** The area a finger reaches: the box of the button, plus what its `::before` adds around it. */
+  const touchArea = (button: Locator) =>
+    button.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const before = getComputedStyle(element, "::before");
+      if (before.content === "none" || before.position !== "absolute") {
+        return { height: box.height, width: box.width };
+      }
+      const px = (value: string) => Number.parseFloat(value);
+      const style = getComputedStyle(element);
+      return {
+        height:
+          box.height -
+          px(style.borderTopWidth) -
+          px(style.borderBottomWidth) -
+          px(before.top) -
+          px(before.bottom),
+        width:
+          box.width -
+          px(style.borderLeftWidth) -
+          px(style.borderRightWidth) -
+          px(before.left) -
+          px(before.right),
+      };
+    });
+
+  for (const width of [360, 1280]) {
+    test(`${width} px: em toda rota da casca há um só botão Esconder valores, no cabeçalho, com aria-pressed`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      let first: Box | null = null;
+      for (const path of SHELL_ROUTES) {
+        // biome-ignore lint/performance/noAwaitInLoops: one page at a time
+        await page.goto(path);
+        await expect(storeMenu(page), path).toBeVisible();
+        const all = page.getByRole("button", { name: "Esconder valores" });
+        await expect(all, `${path}: uma só vez na tela`).toHaveCount(1);
+        await expect(eye(page), `${path}: dentro do cabeçalho`).toHaveCount(1);
+        await expect(eye(page), path).toHaveAttribute("aria-pressed", "false");
+        const box = (await eye(page).boundingBox()) as Box;
+        first ??= box;
+        expect(
+          [box.x, box.y, box.width, box.height],
+          `${path}: o mesmo botão no mesmo lugar e do mesmo tamanho`
+        ).toEqual([first.x, first.y, first.width, first.height]);
+      }
+    });
+  }
+
+  test("o botão tem 44 px de área de toque no celular, e o ícone muda com a escolha, não o nome", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await serve(page);
+    await openShell(page);
+    const area = await touchArea(eye(page));
+    expect(area.height).toBeGreaterThanOrEqual(44);
+    expect(area.width).toBeGreaterThanOrEqual(44);
+    const before = await eye(page).innerHTML();
+    await eye(page).click();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    expect(await eye(page).innerHTML()).not.toBe(before);
+    await expect(
+      header(page).getByRole("button", { exact: true, name: "Esconder valores" })
+    ).toHaveCount(1);
+  });
+
+  test("a ordem do Tab no cabeçalho é o chip, o olho e a conta", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await leaveOneRefused(page);
+    const attention = header(page).locator("a.sync-status");
+    await expect(attention).toBeVisible();
+    await attention.focus();
+    await page.keyboard.press("Tab");
+    await expect(eye(page)).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(storeMenu(page)).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(eye(page)).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("a escolha fica ao trocar de tela, ao recarregar e no aparelho (polaris-valores)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page, "/products");
+    await eye(page).click();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    expect(await page.evaluate((key) => localStorage.getItem(key), HIDDEN_KEY)).toBe(
+      "escondidos"
+    );
+    await page
+      .getByRole("navigation", { name: "Principal" })
+      .getByRole("link", { name: "Histórico" })
+      .click();
+    await expect(page).toHaveURL(HISTORY_URL);
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "true");
+    await eye(page).click();
+    await expect(eye(page)).toHaveAttribute("aria-pressed", "false");
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), HIDDEN_KEY)
+    ).toBeNull();
+  });
 });
 
 test.describe("AC-2.3: teclado, foco e alvos", () => {
