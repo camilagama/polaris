@@ -8,7 +8,8 @@ import { buttonVariants } from "@/ui/button";
 /**
  * The size of a control by its role (DESIGN.md, "Tamanho de controle por papel"): the tokens and utilities of
  * `theme.css` and the `xl` step of the button. The browser measures the same on the gallery
- * (`e2e-pwa/ui-components.e2e.ts`); this reads the source so a change of a number fails here first.
+ * (`e2e-pwa/ui-components.e2e.ts`); `theme.css` is read as text because a token or an `@utility` has no output to call
+ * outside a browser, so a change of a number fails here first. Components are not read as text: see the notes below.
  * The height of the month picker in Despesas is measured by `e2e/expenses.e2e.ts` and the floor of `xl` on the
  * offer button of the Assinatura by `e2e/subscription-screen.e2e.ts`.
  */
@@ -72,14 +73,6 @@ describe("touch area", () => {
     expect(body).toContain("inset: min(0px, calc(50% - 22px)) 0;");
     expect(body).not.toContain("24px");
   });
-
-  it("the controls of a group can drop the area: the day of a month grid does", () => {
-    const calendar = readFileSync(
-      fileURLToPath(new URL("../ui/calendar.tsx", import.meta.url)),
-      "utf8"
-    );
-    expect(calendar).toContain("before:content-none!");
-  });
 });
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
@@ -106,6 +99,7 @@ function sourceFiles(directory = ""): string[] {
 const TOUCH_48 =
   /touch:(?:[^\s"'`:]+:)*!?(?:min-|max-)?(?:h|w|size)-(?:12|\[(?:48px|3rem)\])!?(?![\w.[])/;
 
+/** A guard over the whole tree (the matcher is proven on planted cases below), not a check of one component. */
 describe("no 48 px with touch", () => {
   it("the matcher sees the forms that leaked before and lets 44 through", () => {
     for (const leaked of [
@@ -149,23 +143,17 @@ describe("no 48 px with touch", () => {
   });
 });
 
-describe("fields and the main action on touch", () => {
-  const ui = (name: string) => readFileSync(join(SRC, "ui", name), "utf8");
-
-  it("the text field and the select are 44 px with touch, the multi-line group is not", () => {
-    expect(ui("input-group.tsx")).toContain("h-ctl-md touch:h-11");
-    expect(ui("select.tsx")).toContain("data-[size=default]:touch:h-11");
+/**
+ * Heights of the fields on touch are measured in the browser by `e2e-pwa/ui-components.e2e.ts` ("campo de texto e
+ * seletor"): the text field and the select at 32/44, the multi-line group taller than that. The month grid day
+ * drops the touch area in `e2e-pwa/ui-date-pickers.e2e.ts` ("período: um mês abaixo de 1280 px").
+ * The class merger and `buttonVariants` are called as they are, not read from source.
+ */
+describe("the class merger and the plain button", () => {
+  it("a later height wins over the 44 px of a field", () => {
     expect(cn("h-ctl-md touch:h-11", "h-auto touch:h-auto items-stretch")).toBe(
       "h-auto touch:h-auto items-stretch"
     );
-    for (const file of [
-      "inventory/stock-panel-fields.tsx",
-      "sales/sale-reason-fields.tsx",
-    ]) {
-      expect(readFileSync(join(SRC, file), "utf8")).toContain(
-        "h-auto touch:h-auto items-stretch"
-      );
-    }
   });
 
   it("the plain button stays 36 px with touch and takes no minimum height", () => {
