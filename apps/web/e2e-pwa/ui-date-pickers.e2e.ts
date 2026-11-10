@@ -813,6 +813,14 @@ test.describe("dia desligado, a 360 x 420 com toque", () => {
       })
       .toBeGreaterThanOrEqual(-1);
   });
+});
+
+test.describe("a 320 px, com toque", () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { height: 640, width: 320 },
+  });
 
   test("o período cabe: atalhos sem texto cortado, a semana inteira e nada fora da janela", async ({
     page,
