@@ -1323,8 +1323,31 @@ const UPPERCASE_ELSEWHERE: readonly { file: string; why: string }[] = [
   },
 ];
 
+/** The files that carry capital letters set by the style, outside the written exception; `readFile` is injected so a control can plant one. */
+export function uppercaseScanFaults(
+  paths: readonly string[],
+  readFile: (path: string) => string
+): string[] {
+  const listed = UPPERCASE_ELSEWHERE.map((entry) => entry.file);
+  return paths
+    .filter((path) => !listed.includes(path))
+    .flatMap((path) =>
+      uppercaseStyleFaults(path, readFile(path)).map(
+        (fault) => `${path}: ${fault}`
+      )
+    );
+}
+
+const UPPERCASE_PACKAGE_DIRS = [
+  "../../packages/ui/src",
+  "../catalog/src",
+] as const;
+
 describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
-  const files = sourcesUnder("src");
+  const files = [
+    ...sourcesUnder("src"),
+    ...UPPERCASE_PACKAGE_DIRS.flatMap(sourcesUnder),
+  ];
 
   it("a árvore de src foi lida, com o POC dentro", () => {
     expect(files.length).toBeGreaterThan(500);
@@ -1332,16 +1355,14 @@ describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
     expect(files).toContain("src/offline-poc/offline-poc.css");
   });
 
+  it("os pacotes de interface e o catálogo entram na varredura", () => {
+    expect(files).toContain("../../packages/ui/src/theme.css");
+    expect(files).toContain("../catalog/src/styles.css");
+    expect(files).toContain("../catalog/src/views.tsx");
+  });
+
   it("nenhum arquivo de src põe texto em caixa alta pelo estilo, fora da exceção", () => {
-    const listed = UPPERCASE_ELSEWHERE.map((entry) => entry.file);
-    const faults = files
-      .filter((path) => !listed.includes(path))
-      .flatMap((path) =>
-        uppercaseStyleFaults(path, read(path)).map(
-          (fault) => `${path}: ${fault}`
-        )
-      );
-    expect(faults).toEqual([]);
+    expect(uppercaseScanFaults(files, read)).toEqual([]);
   });
 
   it("a exceção é exata: o arquivo dela ainda tem caixa alta e a razão está escrita", () => {
@@ -1375,6 +1396,38 @@ describe("o app não tem caixa alta (L1-13, AC-13.2)", () => {
     expect(uppercaseStyleFaults(path, text).length).toBeGreaterThanOrEqual(
       count
     );
+  });
+
+  it.each([
+    ["../../packages/ui/src/x.tsx", '<p className="font-medium uppercase">'],
+    ["../../packages/ui/src/x.css", ".label { text-transform: uppercase; }"],
+    ["../catalog/src/x.tsx", '<p className="font-medium uppercase">'],
+    ["../catalog/src/x.css", ".label { text-transform: uppercase; }"],
+  ])(
+    "caixa alta plantada em %s reprova na varredura (controle plantado)",
+    (path, text) => {
+      expect(
+        UPPERCASE_PACKAGE_DIRS.some((dir) => path.startsWith(`${dir}/`))
+      ).toBe(true);
+      expect(uppercaseScanFaults([path], () => text)).toHaveLength(1);
+    }
+  );
+
+  it("a exceção vale só para o caminho exato: o mesmo nome em outro lugar reprova (controle plantado)", () => {
+    const plant = ".x { text-transform: uppercase; }";
+    for (const path of [
+      "../catalog/src/offline-poc/offline-poc.css",
+      "../../packages/ui/src/offline-poc/offline-poc.css",
+      "src/offline-poc/offline-poc.css.bak",
+    ]) {
+      expect(
+        uppercaseScanFaults([path], () => plant),
+        path
+      ).toHaveLength(1);
+    }
+    expect(
+      uppercaseScanFaults(["src/offline-poc/offline-poc.css"], () => plant)
+    ).toEqual([]);
   });
 
   it.each([
