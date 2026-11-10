@@ -83,7 +83,7 @@ function firstMonth(range: DraftRange | undefined, today: Date) {
 // the width the popup asks for (width 0) and fills what the month gave it (min-width 100%), so a long sentence wraps
 const HOLD_WIDTH = "w-0 min-w-full";
 
-// from 760 px the shortcuts are a column beside the month, the one in use marked; below it they are the segmented row
+// at 760 px and up the shortcuts are a column beside the month, the one in use marked; below it they are the segmented row
 // above the month: the four need about 16 rem in a row, and where the window (in the browser's own rem, so the large
 // letter counts) is narrower than 18 rem they make two rows of two, apart by 12 px so the 44 px areas of touch stay apart
 const SHORTCUTS_CLASS =
@@ -421,8 +421,9 @@ function useTypedDates({
  * and "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
  * hands it to `onCommit`, with the earlier day as the start, so an inverted range ("Até" before "De") cannot be made.
  * A shortcut hands its range over at once and "Limpar" hands over null. One month at a time at every width, the
- * shortcuts in a column beside it from 760 px and in a segmented row above it below. A half-chosen range lives in this
- * component, so closing the popover drops it and every opening starts from `value`. The `DateRangePicker` and the period editor of the filter bar share it.
+ * shortcuts in a column beside it at 760 px and up and in a segmented row above it below. A half-chosen range lives in this
+ * component, so closing the popover drops it and every opening begins with the range in `value`. The `DateRangePicker`
+ * and the period editor of the filter bar share it.
  */
 export function DateRangePanel({
   clearable = true,
