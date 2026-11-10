@@ -1,4 +1,5 @@
 import NumberFlow, { type Format, NumberFlowElement } from "@number-flow/react";
+import { useCallback, useState } from "react";
 import { MOTION } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import type { Figure } from "./animated-figure";
@@ -136,13 +137,22 @@ const CLIP = "overflow-x-clip";
 const HOST_BOX = "-my-[0.25em] align-baseline";
 
 export function Counter({ figure }: { figure: Figure }) {
+  const [counting, setCounting] = useState(false);
+  const start = useCallback(() => setCounting(true), []);
+  const finish = useCallback(() => setCounting(false), []);
   return (
-    <span aria-hidden="true" className={CLIP}>
+    <span
+      aria-hidden="true"
+      className={CLIP}
+      data-figure-counting={counting ? "" : undefined}
+    >
       <NumberFlow
         className={cn(HOST_BOX, SYMBOL_PARTS)}
         data-animated-figure=""
         format={figure.signed ? FORMAT_SIGNED : FORMAT}
         locales="pt-BR"
+        onAnimationsFinish={finish}
+        onAnimationsStart={start}
         opacityTiming={MOTION.number}
         spinTiming={MOTION.number}
         transformTiming={MOTION.number}
