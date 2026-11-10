@@ -1250,7 +1250,7 @@ test("a 360 px o período da meta abre no mês do período, e com pouco espaço 
     .toBe(true);
 });
 
-test("a 1280 px e pouca altura os dois meses rolam só na vertical: nada cortado ao lado, atalhos e rodapé à vista", async ({
+test("a 1280 px e pouca altura o mês rola só na vertical: nada cortado ao lado, atalhos e rodapé à vista", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 340, width: 1280 });
@@ -1261,7 +1261,7 @@ test("a 1280 px e pouca altura os dois meses rolam só na vertical: nada cortado
     button.scrollIntoView({ block: "center" })
   );
   const popup = await openDatePicker(page, "Período da meta");
-  await expect(popup.getByRole("grid")).toHaveCount(2);
+  await expect(popup.getByRole("grid")).toHaveCount(1);
   const months = popup.locator("[data-range-month]");
   const { clientHeight, clientWidth, scrollHeight, scrollWidth } =
     await months.evaluate((element) => ({
@@ -1270,7 +1270,7 @@ test("a 1280 px e pouca altura os dois meses rolam só na vertical: nada cortado
       scrollHeight: element.scrollHeight,
       scrollWidth: element.scrollWidth,
     }));
-  // the room is short: the months scroll, and only up and down
+  // the room is short: the month scrolls, and only up and down
   expect(scrollHeight).toBeGreaterThan(clientHeight);
   expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
   const whole = { ratio: 1 };

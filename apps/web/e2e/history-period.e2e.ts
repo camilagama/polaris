@@ -133,7 +133,6 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { exact: true, name: "7 dias" })
         .click();
-      await applyEditor(page, shortcuts);
       await expect(shortcuts).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 08/10 a 14/10, editar"
@@ -151,7 +150,6 @@ for (const viewport of FORM_VIEWPORTS) {
         .getByRole("group", { name: "Atalhos do período" })
         .getByRole("button", { exact: true, name: "Este mês" })
         .click();
-      await applyEditor(page, month);
       await expect(month).toBeHidden();
       await expect(pill(page, "Período")).toHaveAccessibleName(
         "Período: 01/10 a 14/10, editar"

@@ -78,21 +78,9 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 /** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise and never an excuse. */
 const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
-    clientWidth: 320,
+    clientWidth: 207,
     reason:
-      'a página das Despesas rola 4 px para o lado; na medida, o elemento que mais passa é o botão só de ícone "Próximo mês" do seletor de mês (54 px, sem quebra de linha), que termina em 324 px; o seletor tem de encolher ou quebrar a linha',
-    screens: [
-      "despesas lista",
-      "despesas grade de meses aberta",
-      "despesas erros nos campos",
-    ],
-    scrollWidth: 324,
-    selector: "html",
-  },
-  {
-    clientWidth: 211,
-    reason:
-      'no formulário de Nova despesa, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (211 px) e o campo não quebra a linha',
+      'no formulário de Nova despesa, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (207 px) e o campo não quebra a linha',
     screens: ["despesas erros nos campos"],
     scrollWidth: 219,
     selector:

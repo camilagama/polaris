@@ -399,10 +399,12 @@ function DraftContent({
 /**
  * The editor of a pill on a phone, inside the form Dialog (the whole screen): the title is the name of the filter, the
  * body is the editor of the Popover and the footer, fixed, has "Aplicar" and "Cancelar". Nothing is applied until
- * "Aplicar": a choice, a text, a day or a shortcut only change the draft, which lives with the content, so closing
+ * "Aplicar": a choice, a text or a day only change the draft, which lives with the content, so closing
  * (Cancelar, ×, Esc, the step back) drops it. A draft with no value (an empty text, no choice, "Limpar") applies as
  * taking the filter out, as in the Popover. With only the first day of a period marked "Aplicar" is `aria-disabled`
  * (described by the line that asks for the last day), so the day touched is never dropped by applying the old range.
+ * In a period a shortcut applies and closes at once, and "Aplicar" shows only after a day was touched or typed, or
+ * "Limpar" was pressed: until then there is no draft to confirm.
  */
 function PhoneEditorContent({
   field,
@@ -415,7 +417,21 @@ function PhoneEditorContent({
 }) {
   const [draft, setDraft] = useState<FilterRuleValue | null>(value ?? null);
   const [half, setHalf] = useState(false);
+  const [picked, setPicked] = useState(false);
   const statusId = useId();
+  const isPeriod = field.type === "date-range";
+  const showApply = !isPeriod || picked || half;
+  const draftPeriod = useCallback(
+    (next: FilterRuleValue | null, shortcut?: string) => {
+      if (shortcut) {
+        onApply(next);
+        return;
+      }
+      setDraft(next);
+      setPicked(true);
+    },
+    [onApply]
+  );
   const apply = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -434,7 +450,7 @@ function PhoneEditorContent({
         <DraftContent
           draft={draft}
           field={field}
-          onDraft={setDraft}
+          onDraft={isPeriod ? draftPeriod : setDraft}
           onHalfChange={setHalf}
           statusId={statusId}
         />
@@ -443,14 +459,16 @@ function PhoneEditorContent({
         <DialogClose render={<Button type="button" variant="outline" />}>
           Cancelar
         </DialogClose>
-        <Button
-          aria-describedby={half ? statusId : undefined}
-          aria-disabled={half || undefined}
-          size="xl"
-          type="submit"
-        >
-          Aplicar
-        </Button>
+        {showApply ? (
+          <Button
+            aria-describedby={half ? statusId : undefined}
+            aria-disabled={half || undefined}
+            size="xl"
+            type="submit"
+          >
+            Aplicar
+          </Button>
+        ) : null}
       </DialogFooter>
     </DialogForm>
   );
