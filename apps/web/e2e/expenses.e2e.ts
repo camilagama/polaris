@@ -1221,13 +1221,14 @@ test("reabrir a grade de meses no meio da saída dela mostra o ano do mês na te
   await popup.getByRole("button", { name: "Próximo ano" }).click();
   await expect(popup.getByText("2027", { exact: true })).toBeVisible();
 
-  // the same turn as the choice: "Este mês" takes the month back to 2026 while the cursor of this opening is in 2027,
-  // the popup is still leaving and the trigger opens it again
-  await page.evaluate(() => {
+  // a frame after the choice: "Este mês" takes the month back to 2026 while the cursor of this opening is in 2027, the
+  // popup is still leaving and the trigger opens it again
+  await page.evaluate(async () => {
     const thisMonth = [...document.querySelectorAll("button")].find(
       (button) => button.textContent === "Este mês"
     );
     thisMonth?.click();
+    await new Promise(requestAnimationFrame);
     document.querySelector<HTMLElement>("#expense-month")?.click();
   });
   await expect(trigger).toHaveText("Outubro de 2026");

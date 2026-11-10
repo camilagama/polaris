@@ -83,12 +83,13 @@ function firstMonth(range: DraftRange | undefined, today: Date) {
 // the width the popup asks for (width 0) and fills what the month gave it (min-width 100%), so a long sentence wraps
 const HOLD_WIDTH = "w-0 min-w-full";
 
-// from 760 px the shortcuts are a column beside the month (the one in use marked); below it they are a row that scrolls
-// sideways above the month, each one apart by 12 px so the 44 px areas of touch stay apart
+// from 760 px the shortcuts are a column beside the month, the one in use marked; below it they are the segmented row
+// above the month: the four need about 16 rem in a row, and where the window (in the browser's own rem, so the large
+// letter counts) is narrower than 18 rem they make two rows of two, apart by 12 px so the 44 px areas of touch stay apart
 const SHORTCUTS_CLASS =
-  "m-0 -mx-1 flex w-0 min-w-full shrink-0 gap-3 overflow-x-auto border-0 p-1 md:mx-0 md:w-36 md:min-w-36 md:flex-col md:gap-0.5 md:overflow-visible md:p-0";
+  "m-0 mb-1 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs max-[18rem]:grid max-[18rem]:grid-cols-2 max-[18rem]:gap-3 max-[18rem]:shadow-none md:mb-0 md:w-36 md:flex-col md:gap-0.5 md:self-start md:shadow-none";
 const SHORTCUT_CLASS =
-  "touch-hit focus-ring inline-flex h-ctl-sm shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-border bg-card px-3 font-medium text-foreground text-xs shadow-xs motion-full:transition-colors hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground md:h-ctl-md md:justify-start md:border-transparent md:bg-transparent md:text-sm md:shadow-none dark:bg-secondary/60 dark:md:bg-transparent";
+  "touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground max-[18rem]:not-first:ml-0 max-[18rem]:rounded-md max-[18rem]:first:rounded-md max-[18rem]:last:rounded-md dark:bg-secondary/60 md:h-ctl-md md:flex-none md:justify-start md:rounded-md md:border-transparent md:bg-transparent md:px-3 md:text-sm md:not-first:ml-0 md:first:rounded-md md:last:rounded-md dark:md:bg-transparent";
 
 const FIELD_LABELS: Record<TypedField, string> = { from: "Início", to: "Fim" };
 // taken from the keys: a string literal of that word followed by a quote is read as an import by the source scan of src/ui
@@ -420,7 +421,7 @@ function useTypedDates({
  * and "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
  * hands it to `onCommit`, with the earlier day as the start, so an inverted range ("Até" before "De") cannot be made.
  * A shortcut hands its range over at once and "Limpar" hands over null. One month at a time at every width, the
- * shortcuts in a column beside it from 760 px and in a row above it below. A half-chosen range lives in this component, so closing the popover drops it and every opening starts from
+ * shortcuts in a column beside it from 760 px and in a segmented row above it below. A half-chosen range lives in this component, so closing the popover drops it and every opening starts from
  * `value`. The `DateRangePicker` and the period editor of the filter bar share it.
  */
 export function DateRangePanel({

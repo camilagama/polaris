@@ -293,9 +293,7 @@ for (const viewport of VIEWPORTS) {
           .getByRole("group", { name: "Atalhos do período" })
           .getByRole("button", { name: "Este mês" })
       ).toHaveAttribute("aria-pressed", "true");
-      await expect(open.getByRole("grid")).toHaveCount(
-        viewport.width >= 1280 ? 2 : 1
-      );
+      await expect(open.getByRole("grid")).toHaveCount(1);
       const editorBox = await box(open);
       expect(editorBox.x).toBeGreaterThanOrEqual(0);
       expect(editorBox.x + editorBox.width).toBeLessThanOrEqual(viewport.width);
@@ -675,7 +673,7 @@ test.describe("reaberto no meio da saída, a 1280 px", () => {
     await expect(pill(page, "Período")).toHaveAccessibleName(
       "Período: 24/10/2026, editar"
     );
-    await expect(open.getByText("Setembro de 2026")).toBeVisible();
+    await expect(open.getByText("Outubro de 2026")).toBeVisible();
     await expect(open.getByText("Novembro de 2026")).toBeHidden();
   });
 });

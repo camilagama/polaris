@@ -611,7 +611,7 @@ test.describe("reaberto no meio da saída, a 1280 px", () => {
 
     expect(await chooseAndReopen(page, "Período,", "Hoje")).toBe(true);
     await expect(trigger(page, "Período,")).toHaveText("24/10/2026");
-    await expect(popup.getByText("Setembro de 2026")).toBeVisible();
+    await expect(popup.getByText("Outubro de 2026")).toBeVisible();
     await expect(popup.getByText("Novembro de 2026")).toBeHidden();
   });
 });

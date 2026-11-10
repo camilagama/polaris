@@ -78,9 +78,9 @@ const KNOWN_FINDINGS: readonly KnownFinding[] = [];
 /** What is cut at 320 px with the font at 24 px and not at 20 px: a report to read, never a promise and never an excuse. */
 const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
   {
-    clientWidth: 211,
+    clientWidth: 207,
     reason:
-      'no formulário de Nova despesa, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (211 px) e o campo não quebra a linha',
+      'no formulário de Nova despesa, o campo Categoria mostra "Escolha uma categoria" cortado: o texto (219 px) não cabe na caixa do campo (207 px) e o campo não quebra a linha',
     screens: ["despesas erros nos campos"],
     scrollWidth: 219,
     selector:

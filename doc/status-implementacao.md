@@ -3299,6 +3299,6 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Item | Status | Observação |
 | --- | --- | --- |
 | Um mês por vez (4a) | Em revisão | `ui/date-range-picker.tsx` mostra um mês em qualquer largura: `useTwoMonths`, `TWO_MONTHS_QUERY` (`lib/breakpoints.ts`) e o `xl:flex-row` do `ui/calendar.tsx` saem. Vale para Resultado, Histórico e Metas. |
-| Atalhos em coluna (4b) | Em revisão | A partir de 760 px os atalhos ficam numa coluna à esquerda do mês, o atual marcado; abaixo, uma fileira que rola para o lado. Aplicam na hora e fecham, como antes. Não feito: trocar "Digitar as datas" por uma linha com o intervalo escolhido. |
+| Atalhos em coluna (4b) | Em revisão | A partir de 760 px os atalhos ficam numa coluna à esquerda do mês, o atual marcado; abaixo, o segmentado de antes acima do mês. Aplicam na hora e fecham, como antes. Não feito: trocar "Digitar as datas" por uma linha com o intervalo escolhido. |
 | Despesas sem ‹ › | Em revisão | `expenses/month-picker.tsx` é um botão só, com o desenho do botão de período, e abre a grade de meses; as setas do ano dentro da grade ficam. |
 | Provas | Em revisão | Unidade: `expense-screen-parts.test.tsx`, `breakpoints.test.ts`. e2e: `expenses.e2e.ts`, `goals.e2e.ts`, `ui-date-pickers.e2e.ts`, `reflow-rotas.e2e.ts`. |
