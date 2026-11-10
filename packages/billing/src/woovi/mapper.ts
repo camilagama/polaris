@@ -215,11 +215,48 @@ function isCancelled(subscription: WooviSubscription): boolean {
   );
 }
 
+/**
+ * The installment Woovi creates once the payer approves the authorization:
+ * it and its recurring charge are `ACTIVE` (sandbox). An installment that is
+ * only scheduled, paid, expired or cancelled proves no approval.
+ */
+function isLiveInstallmentOf(
+  subscription: WooviSubscription,
+  installment: WooviInstallment
+): boolean {
+  return (
+    installment.subscriptionId === subscription.id &&
+    installment.status === "ACTIVE" &&
+    installment.charge === "ACTIVE"
+  );
+}
+
+/**
+ * The subscription read back shows no `pixRecurring.status` (only the webhook
+ * body does, sandbox) but the approval is proven by a live installment of this
+ * very subscription. Never true when the read back shows a status.
+ */
+export function isApprovalInferredFromInstallments(
+  subscription: WooviSubscription,
+  installments: readonly WooviInstallment[]
+): boolean {
+  return (
+    subscription.authorization === null &&
+    installments.some((installment) =>
+      isLiveInstallmentOf(subscription, installment)
+    )
+  );
+}
+
 /** The payer approved the authorization of a subscription that starts later: the trial may start. */
-function isTrialMethodReady(subscription: WooviSubscription): boolean {
+function isTrialMethodReady(
+  subscription: WooviSubscription,
+  installments: readonly WooviInstallment[]
+): boolean {
   return (
     subscription.status === "ACTIVE" &&
-    subscription.authorization === "APPROVED" &&
+    (subscription.authorization === "APPROVED" ||
+      isApprovalInferredFromInstallments(subscription, installments)) &&
     subscription.journey === "ONLY_RECURRENCY"
   );
 }
@@ -289,17 +326,18 @@ function chargeSucceeded(
 /** The fact of a subscription event, if the subscription read back shows it. */
 export function mapWooviSubscriptionEvent(input: {
   eventType: string;
+  installments?: readonly WooviInstallment[];
   occurredAt: Date;
   subscription: WooviSubscription;
 }): ProviderBillingEvent[] {
-  const { eventType, occurredAt, subscription } = input;
+  const { eventType, installments = [], occurredAt, subscription } = input;
   if (!isPolarisSubscription(subscription)) {
     return [];
   }
   const id = wooviEventId(eventType, subscription.id);
   if (eventType === "PIX_AUTOMATIC_APPROVED") {
     // journey 3 (no trial) is paid on approval: its fact is the charge (`COBR_COMPLETED`)
-    return isTrialMethodReady(subscription)
+    return isTrialMethodReady(subscription, installments)
       ? [
           event(
             {
@@ -421,10 +459,11 @@ export function reconcileWooviSubscription(input: {
     return [];
   }
   const events: ProviderBillingEvent[] = [];
-  if (isTrialMethodReady(subscription)) {
+  if (isTrialMethodReady(subscription, input.installments)) {
     events.push(
       ...mapWooviSubscriptionEvent({
         eventType: "PIX_AUTOMATIC_APPROVED",
+        installments: input.installments,
         occurredAt: now,
         subscription,
       })
