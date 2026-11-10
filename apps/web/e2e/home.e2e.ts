@@ -1722,7 +1722,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer({ ...SOLD, results: KNOWN }));
     const main = page.locator("main");
-    const toggle = main.getByRole("button", { name: "Esconder valores" });
+    const toggle = page.getByRole("button", { name: "Esconder valores" });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(main).toContainText("R$ 320,10");
 
@@ -1774,11 +1774,11 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     ).toBe("escondidos");
     await page.reload();
     await expect(
-      main.getByRole("button", { name: "Esconder valores" })
+      page.getByRole("button", { name: "Esconder valores" })
     ).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
     await expect(region(page, "Vendas hoje")).not.toContainText("R$ 320,10");
 
-    await main.getByRole("button", { name: "Esconder valores" }).click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
     expect(
       await page.evaluate(() => localStorage.getItem("polaris-valores"))
@@ -2129,10 +2129,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(
       ring.locator("[data-ring-chart] svg path").first()
     ).toBeAttached();
-    await page
-      .getByRole("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(meta).not.toContainText("2.670,60");
     await expect(meta).not.toContainText("5.000,00");
     await expect(meta).not.toContainText("5.254,03");
@@ -2171,10 +2168,7 @@ test.describe("meta (AC-10, AC-11)", () => {
     await expect(meta.locator("[data-goal-projection]")).toHaveText(
       GOAL_PROJECTION_SHORT
     );
-    await page
-      .getByRole("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(meta).not.toContainText("5.254,03");
     await expect(meta.locator("[data-masked-money]")).toHaveCount(3);
 
@@ -3636,10 +3630,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
-    await page
-      .locator("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     const map = rhythm(page);
     await dataCells(page)
       .nth(25 * 7)
@@ -3718,10 +3709,7 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     await expect(
       map.getByRole("button", { name: "Ver os números" })
     ).toHaveCount(0);
-    await page
-      .locator("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(map.getByRole("table")).toBeVisible();
     await expect(map.getByRole("table")).not.toContainText(AN_AMOUNT);
   });
@@ -4395,7 +4383,7 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
       const chart = region(page, "Vendas por dia");
       const visible = await chartPlaces(page);
 
-      await page.locator("main").getByRole("button", HIDE_VALUES).click();
+      await page.getByRole("button", HIDE_VALUES).click();
       await expect(chart).not.toContainText(AN_AMOUNT);
       for (const days of ["7", "30"] as const) {
         // biome-ignore lint/performance/noAwaitInLoops: one period after the other
@@ -4449,7 +4437,7 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
       ).toHaveCount(0);
       await chooseDays(page, "30");
       await expect(chart.getByRole("row")).toHaveCount(31);
-      await page.locator("main").getByRole("button", HIDE_VALUES).click();
+      await page.getByRole("button", HIDE_VALUES).click();
       await expect(chart.getByRole("table")).not.toContainText(AN_AMOUNT);
     });
   }
@@ -4971,10 +4959,7 @@ test.describe("Mais vendidos do mês a 320 px com a letra do navegador em 20 px"
     await openRanking(page, server);
     const full = await rankingRows(page);
 
-    await page
-      .getByRole("main")
-      .getByRole("button", { name: "Esconder valores" })
-      .click();
+    await page.getByRole("button", { name: "Esconder valores" }).click();
     await expect(region(page, "Mais vendidos do mês")).toContainText("R$ ••••");
     expectSameRows(await rankingRows(page), full, "Esconder valores");
 

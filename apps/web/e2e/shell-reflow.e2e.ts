@@ -566,3 +566,37 @@ for (const [width, fontPixels] of [
     );
   }
 }
+
+/** The header at its tightest: the eye, the chip and the account side by side, the chip giving way before anything is cut. */
+for (const [width, fontPixels] of [
+  [320, 20],
+  [360, 16],
+] as const) {
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px o olho, o chip e a conta cabem no cabeçalho, nessa ordem, sem corte`,
+    async ({ page }) => {
+      await open(page, "/", { fontPixels, width });
+      const header = page.locator("[data-app-header]");
+      const chip = header.locator(".sync-status");
+      await expect(chip).toBeVisible({ timeout: 20_000 });
+      const eye = header.getByRole("button", {
+        exact: true,
+        name: "Esconder valores",
+      });
+      const account = header.locator("[data-store-menu]");
+      const [chipBox, eyeBox, accountBox] = await Promise.all(
+        [chip, eye, account].map((part) => part.boundingBox())
+      );
+      expect(chipBox && eyeBox && accountBox).toBeTruthy();
+      const right = (box: typeof chipBox) => (box ? box.x + box.width : 0);
+      expect(right(chipBox)).toBeLessThanOrEqual((eyeBox?.x ?? 0) + SLACK);
+      expect(right(eyeBox)).toBeLessThanOrEqual((accountBox?.x ?? 0) + SLACK);
+      expect(right(accountBox)).toBeLessThanOrEqual(width);
+      expect(eyeBox?.width).toBeGreaterThanOrEqual(36);
+      await assertNothingClipped(header, {
+        allowScroll: [".sync-status-short"],
+      });
+      await assertNoPageScroll(page);
+    }
+  );
+}
