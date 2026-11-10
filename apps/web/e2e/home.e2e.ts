@@ -1273,7 +1273,8 @@ test.describe("o período do Início (cartões do mês, Vendas por dia e Mais ve
     await page.keyboard.press("Escape");
     await page.context().setOffline(true);
     const reason = "Sem conexão: só este mês e o anterior.";
-    await expect(page.getByText(reason).first()).toBeVisible();
+    const beside = page.locator("[data-home-period]").getByText(reason);
+    await expect(beside).toBeVisible();
     await periodButton(page).click();
     const shortcuts = page.getByRole("group", { name: "Atalhos do período" });
     const off = ["Últimos 30 dias", "Este ano"].map((name) =>
@@ -1304,7 +1305,7 @@ test.describe("o período do Início (cartões do mês, Vendas por dia e Mais ve
     await expect(periodButton(page)).toBeVisible();
     await page.keyboard.press("Escape");
     await page.context().setOffline(false);
-    await expect(page.getByText(reason)).toHaveCount(0);
+    await expect(beside).toBeHidden();
   });
 });
 

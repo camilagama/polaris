@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { PeriodPicker } from "../dashboard/period-picker";
 import type { Period, PeriodPreset } from "../dashboard/result-period";
 import { type HomeSelection, OFFLINE_ONLY } from "./home-period";
@@ -41,11 +42,17 @@ export function HomePeriodRow({
         preset={selection.preset}
         today={today}
       />
-      {offline ? (
-        <p className="text-muted-foreground text-support">
-          {OFFLINE_ONLY.reason}
-        </p>
-      ) : null}
+      {/* always in the line, hidden with a connection: the line it takes on a phone is kept, so the page does not move
+          when the connection goes or comes back */}
+      <p
+        aria-hidden={offline ? undefined : true}
+        className={cn(
+          "text-muted-foreground text-support",
+          !offline && "invisible"
+        )}
+      >
+        {OFFLINE_ONLY.reason}
+      </p>
       {note}
     </div>
   );
