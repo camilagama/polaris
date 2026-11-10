@@ -69,7 +69,7 @@ describe("KpiTile", () => {
     );
   });
 
-  it("puts the sparkline beside the number, and the date of a day read at the top right", () => {
+  it("puts the sparkline beside the number, and the date of a day read in the place of the chip", () => {
     const markup = tile({
       date: "Até 17/10",
       spark: <i data-spark="" />,

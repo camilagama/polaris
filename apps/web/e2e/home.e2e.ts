@@ -1229,7 +1229,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     ],
     [
       "Resultado estimado",
-      "Vendas menos custos, taxas e despesas do mês inteiro. Não é lucro líquido nem caixa.",
+      "Vendas menos custos, taxas e despesas do mês inteiro; não é lucro líquido nem caixa.",
     ],
     [
       "Meta",

@@ -585,7 +585,7 @@ describe("monthKpis: result (AC-9)", () => {
       count: "Sem custo informado: não dá para estimar.",
       date: "outubro inteiro",
       delta: null,
-      help: "Vendas menos custos, taxas e despesas de 1 a 25/10.",
+      help: "Vendas menos custos, taxas e despesas de 1 a 25/10; não é lucro líquido nem caixa.",
       value: null,
     });
     for (const index of [3, 24]) {
@@ -738,7 +738,7 @@ describe("monthKpis: result (AC-9)", () => {
         text: "+R$ 9,00",
         trend: "up",
       },
-      help: "Vendas menos custos, taxas e despesas de 1 a 03/10. Compara com 1 a 03/09.",
+      help: "Vendas menos custos, taxas e despesas de 1 a 03/10; não é lucro líquido nem caixa. Compara com 1 a 03/09.",
       value: "15.00",
     });
     expect(kpis.read(null).result.value).toBe("125.00");
@@ -819,7 +819,7 @@ describe("monthKpis: result (AC-9)", () => {
     expect(kpis.read(1).result.delta?.text).toBe("+R$ 6,00");
     expect(kpis.read(2).result.delta).toBeNull();
     expect(kpis.read(2).result.help).toBe(
-      "Vendas menos custos, taxas e despesas de 1 a 03/10."
+      "Vendas menos custos, taxas e despesas de 1 a 03/10; não é lucro líquido nem caixa."
     );
     expect(kpis.read(null).result.delta).toBeNull();
   });
@@ -858,6 +858,17 @@ describe("the days with no cost, on the line or in the (i)", () => {
     );
     expect(helpTipTextProblem(long)).toBeNull();
   });
+
+  it("fold the 'not net profit nor cash' sentence into the first one, so the (i) keeps two sentences", () => {
+    expect(resultHelp("do mês inteiro", null, null, true)).toBe(
+      "Vendas menos custos, taxas e despesas do mês inteiro; não é lucro líquido nem caixa."
+    );
+    expect(
+      resultHelp("de 1 a 23/10", "1 a 23/09", { total: 120, unknown: 5 }, true)
+    ).toBe(
+      "Vendas menos custos, taxas e despesas de 1 a 23/10; não é lucro líquido nem caixa. 5 de 120 dias ainda sem custo informado."
+    );
+  });
 });
 
 describe("the texts of the (i) of the cards", () => {
@@ -880,6 +891,12 @@ describe("the texts of the (i) of the cards", () => {
         const read = kpis.read(index);
         return [read.sales.help, read.result.help, read.ticket.help];
       }),
+      ...["do mês inteiro", "de 01/06 a 28/10"].flatMap((span) => [
+        resultHelp(span, null, null, true),
+        resultHelp(span, "1 a 23/09", null, true),
+        resultHelp(span, "1 a 23/09", { total: 23, unknown: 5 }, true),
+        resultHelp(span, "1 a 23/09", { total: 120, unknown: 105 }, true),
+      ]),
     ];
     for (const text of texts) {
       expect(helpTipTextProblem(text), text).toBeNull();

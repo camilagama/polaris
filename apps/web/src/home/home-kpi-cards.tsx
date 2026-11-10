@@ -24,7 +24,6 @@ import {
   dayReading,
   type KpiReading,
   monthKpis,
-  NOT_PROFIT_NOR_CASH,
   todaySeries,
   unknownDaysFit,
   unknownDaysText,
@@ -230,7 +229,7 @@ function MonthTiles({
         entity="result"
         help={{
           about: "Resultado estimado",
-          text: `${read.result.help} ${NOT_PROFIT_NOR_CASH}.`,
+          text: read.result.help,
         }}
         id="home-result"
         warning={resultWarning({
@@ -311,8 +310,8 @@ export const NO_CONNECTION_NOTE = "Sem conexão";
 
 /**
  * The four tiles without a connection and without a copy on the device (§ 7.4): in their places and with the height
- * they have with figures, each with its name, "—" (an unknown value is never a zero) and "Sem conexão". Nothing moves
- * when the connection goes or comes back.
+ * of a tile without the cost warning, each with its name, "—" (an unknown value is never a zero) and "Sem conexão". Only the
+ * Result tile grows, by the line of its cost warning, when the figures come.
  */
 export function NoFiguresCards({ today }: { today: string }) {
   const name = monthTitle(today).toLowerCase();
@@ -352,7 +351,7 @@ export function NoFiguresCards({ today }: { today: string }) {
 
 /**
  * The four tiles while the figures are read: the shape of `KpiCards`, each with the rows it has with figures, so the
- * tiles that come take the same places.
+ * tiles that come take the same places (the Result tile, with a cost warning, adds its line).
  */
 export function KpiCardsSkeleton() {
   return (

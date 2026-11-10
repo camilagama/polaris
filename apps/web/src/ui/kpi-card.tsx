@@ -681,7 +681,7 @@ export function KpiTile({
   );
 }
 
-/** A tile while its figures are read: the same rows with their heights, in `Skeleton`, so the tile that comes takes the same place. */
+/** A tile while its figures are read: the same rows with their heights, in `Skeleton`, so the tile that comes takes the same place (a Result tile with a cost warning adds its line). */
 export function KpiTileSkeleton({ className }: { className?: string }) {
   return (
     <div

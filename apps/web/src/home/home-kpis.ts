@@ -21,7 +21,7 @@ import {
  * cent, as the server rounds the card's); a percent is a ratio of two exact sums, rounded half-up to one place.
  *
  * - Vendas hoje: the net sales of a day against the mean of the 4 same weekdays before it. No date at rest: the title
- *   says it is today; reading another day puts it ("qui, 22/10") at the top right.
+ *   says it is today; reading another day puts it ("qui, 22/10") in the support line, in place of the chip.
  * - Vendas no mês: the net sales from the 1st to a day, against the same days of the previous month.
  * - Resultado estimado: the same, in reais, and only when every day of both sides has a known result (AC-9: a sum of
  *   the known days is never shown as the total). Without it, the number at rest is the server's card of the whole
@@ -459,7 +459,7 @@ function resultReading({
       count: NO_KNOWN_COST_RESULT,
       date: atRest ? wholeMonth : range,
       delta: null,
-      help: resultHelp(`de ${range}`, null, null),
+      help: resultHelp(`de ${range}`, null, null, true),
       value: null,
     };
   }
@@ -486,7 +486,8 @@ function resultReading({
     help: resultHelp(
       card ? "do mês inteiro" : `de ${range}`,
       delta ? previousRange : null,
-      result.kind === "incomplete" ? result : null
+      result.kind === "incomplete" ? result : null,
+      true
     ),
     value: card ? cards.operatingResult : known,
   };
@@ -651,14 +652,18 @@ export function unknownDaysFit(unknown: number, total: number): boolean {
 /**
  * What the (i) of the result card says: what the number is for `span` ("de 1 a 23/10", "do mês inteiro") and what it
  * compares with. With a count of days that does not fit the card, the sentence of the days takes the place of the
- * comparison (the chip, which has none then, would not say it).
+ * comparison (the chip, which has none then, would not say it). `notProfit` folds "não é lucro líquido nem caixa" into
+ * the first sentence, so the (i) of the home tile keeps the two sentences a help text may have.
  */
 export function resultHelp(
   span: string,
   compare: string | null,
-  missing: { total: number; unknown: number } | null
+  missing: { total: number; unknown: number } | null,
+  notProfit = false
 ): string {
-  const first = `Vendas menos custos, taxas e despesas ${span}.`;
+  const first = `Vendas menos custos, taxas e despesas ${span}${
+    notProfit ? `; ${NOT_PROFIT_NOR_CASH.toLowerCase()}` : ""
+  }.`;
   if (missing && !unknownDaysFit(missing.unknown, missing.total)) {
     return `${first} ${missing.unknown} de ${missing.total} dias ainda sem custo informado.`;
   }
