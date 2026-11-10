@@ -20,6 +20,7 @@ const PREVIEW: FeePreview = {
   settlementText: "30 dias",
 };
 
+const AMOUNT = /R\$\s?\d/;
 const LIVE_REGION = /<div aria-atomic="true" aria-live="polite"[^>]*>/;
 
 describe("FeePreviewDetails (P-4)", () => {
@@ -48,8 +49,6 @@ describe("FeePreviewDetails (P-4)", () => {
 });
 
 describe("the amounts of the Resumo, with Esconder valores", () => {
-  const AMOUNT = /R\$\s?\d/;
-
   beforeEach(() => {
     state.hidden = false;
   });

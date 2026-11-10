@@ -24,6 +24,7 @@ type AttentionPanelProps = import("./attention-panel").AttentionPanelProps;
 import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
 import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
 
+const AMOUNT = /R\$\s?\d/;
 const HOME_LINK = /<a [^>]*href="\/"[^>]*>Voltar ao Início<\/a>/;
 const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
 const none = () => undefined;
@@ -414,7 +415,6 @@ describe("Pendências without the offline mode", () => {
 });
 
 describe("the attention panel, with Esconder valores", () => {
-  const AMOUNT = /R\$\s?\d/;
   const sale = item({
     actions: ["redo_sale", "discard"],
     title: "Venda de R$ 89,90 · 01/11 14:20",

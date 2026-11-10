@@ -96,7 +96,9 @@ describe("o item da venda, enxuto", () => {
     expect(html).toContain("lucide-circle-check");
     expect(html).toContain(">Camiseta · Preta</span>");
     expect(html).toContain(">Saldo 6</span>");
-    expect(html).toContain("Custo médio: R$ 12,00.");
+    expect(html).toContain(
+      'Custo médio: <span class="whitespace-nowrap">R$ 12,00</span>.'
+    );
     expect(html).toContain(
       'Trocar<span class="sr-only"> variante de Camiseta · Preta</span>'
     );

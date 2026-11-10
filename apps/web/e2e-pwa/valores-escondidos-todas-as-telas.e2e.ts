@@ -174,7 +174,7 @@ const DATA_EXPORT: Case = {
 
 /** The states swept for each screen of `screenKeys()`: the state of each screen that holds amounts, and the one with the most places for them. */
 const COVERED: Readonly<Record<string, readonly Case[]>> = {
-  attention: [stateOf("pendências com itens")],
+  attention: [stateOf("pendências com itens", { hideAfterOpen: true })],
   customers: states("clientes lista"),
   "dashboard:metas": states("resultado metas"),
   "dashboard:resultado": [
@@ -189,7 +189,10 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
   ],
   help: [HELP],
   home: states("início com vendas"),
-  inventory: [stateOf("estoque lista"), stateOf("estoque custo informado")],
+  inventory: [
+    stateOf("estoque lista"),
+    stateOf("estoque custo informado", { hideAfterOpen: true }),
+  ],
   "products:categorias": states("categorias lista"),
   "products:produtos": states(
     "produtos lista",
