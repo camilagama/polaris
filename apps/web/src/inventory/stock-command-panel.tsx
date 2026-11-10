@@ -475,7 +475,9 @@ export function StockCommandPanel({
         </h3>
         {standalone ? (
           <p className="text-muted-foreground text-support">
-            {`${state.target.productName} · ${state.target.variantText}. ${balanceText}`}
+            <MoneyText
+              text={`${state.target.productName} · ${state.target.variantText}. ${balanceText}`}
+            />
           </p>
         ) : null}
         <PanelOpenReason />

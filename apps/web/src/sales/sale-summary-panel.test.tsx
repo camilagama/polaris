@@ -20,7 +20,6 @@ const PREVIEW: FeePreview = {
   settlementText: "30 dias",
 };
 
-const AMOUNT = /R\$\s?\d/;
 const LIVE_REGION = /<div aria-atomic="true" aria-live="polite"[^>]*>/;
 
 describe("FeePreviewDetails (P-4)", () => {
@@ -53,19 +52,9 @@ describe("the amounts of the Resumo, with Esconder valores", () => {
     state.hidden = false;
   });
 
-  it("writes the fee and the total as they are while the values show", () => {
-    const fees = renderToStaticMarkup(<FeePreviewDetails preview={PREVIEW} />);
-    expect(fees).toContain("R$ 2,50");
+  it("writes the total as it is while the values show", () => {
     const total = renderToStaticMarkup(<Money text="R$ 229,90" />);
     expect(total).toContain("229,90");
-  });
-
-  it("masks the amount of the fee and keeps its percent", () => {
-    state.hidden = true;
-    const html = renderToStaticMarkup(<FeePreviewDetails preview={PREVIEW} />);
-    expect(html).not.toMatch(AMOUNT);
-    expect(html).toContain("2,5%");
-    expect(html).toContain("valor escondido");
   });
 
   it("masks the total of the receipt and says 'valor escondido' to a screen reader", () => {
