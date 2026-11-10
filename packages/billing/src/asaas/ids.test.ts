@@ -13,8 +13,15 @@ describe("isAsaasId", () => {
     expect(isAsaasId("pay", "pay_")).toBe(false);
     expect(isAsaasId("pay", "pay_../x")).toBe(false);
     expect(isAsaasId("pay", "pay_a?b")).toBe(false);
+    expect(isAsaasId("pay", "pay_a#b")).toBe(false);
+    expect(isAsaasId("pay", "pay_a%2Fb")).toBe(false);
     expect(isAsaasId("pay", "pay_a-b")).toBe(false);
     expect(isAsaasId("pay", `pay_${"a".repeat(65)}`)).toBe(false);
     expect(isAsaasId("pay", 12)).toBe(false);
+  });
+
+  it("accepts a suffix made only of underscores", () => {
+    // Accepted and harmless on the webhook path: `_` is path-safe, so the encoded request path stays inside the resource.
+    expect(isAsaasId("pay", "pay__")).toBe(true);
   });
 });
