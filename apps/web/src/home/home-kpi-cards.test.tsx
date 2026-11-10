@@ -53,9 +53,9 @@ function figures({
   todaySold?: boolean;
 } = {}): HomeFigures {
   const sold = (net: string, result: string) => (date: string) => ({
-    costs: unknownCostDays.includes(date) ? null : "5.00",
     netSales: net,
     operatingResult: unknownCostDays.includes(date) ? null : result,
+    costs: unknownCostDays.includes(date) ? null : "5.00",
     salesCount: 1,
   });
   const returned = (date: string): Partial<Day> =>

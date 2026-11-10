@@ -608,7 +608,7 @@ export function KpiCard({
  */
 const TILE =
   "@container relative min-w-0 gap-0.5 overflow-hidden px-(--card-spacing) py-3 touch:pt-0";
-/* takes what the number leaves (a long amount is never cut for it); its 36 px do not add to the 30 px line of the number */
+/* takes what the number leaves (a long amount is never cut for it); its 36 px (44 with touch) do not add to the 30 px line of the number */
 const TILE_SPARK =
   "z-10 -my-0.75 h-9 min-w-0 flex-1 self-center touch:-my-1.75 touch:h-11 touch:py-1";
 const TILE_TITLE_ROW = "touch:min-h-11";
