@@ -7,7 +7,7 @@ import {
   OnDemandCalendar,
   whenBackOnline,
 } from "@/ui/calendar-on-demand";
-import { DatePicker } from "@/ui/date-picker";
+import { DatePicker, TodayFooter } from "@/ui/date-picker";
 import { DateRangePanel, DateRangePicker } from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
 
@@ -23,6 +23,7 @@ const noop = () => undefined;
 const OCTOBER_24 = parseIsoDate("2026-10-24") as Date;
 
 const BUTTON = /<button[^>]*data-slot="popover-trigger"[^>]*>/;
+const FIRST_BUTTON = /<button[^>]*>/;
 const TODAY_LABEL = /^Hoje, sábado, 24 de outubro de 2026/;
 const DISABLED_ATTRIBUTE = /\sdisabled=""/;
 const dayButton = (markup: string, iso: string) =>
@@ -76,6 +77,51 @@ describe("DatePicker", () => {
     )?.[0];
     expect(error && attribute(error, "role")).toBe("alert");
     expect(markup).toContain("Escolha uma data");
+  });
+});
+
+describe("TodayFooter, o Hoje fora dos dias permitidos", () => {
+  const footer = (allowed: boolean) =>
+    html(
+      <TodayFooter
+        allowed={allowed}
+        onPickToday={noop}
+        reason="Só depois de hoje"
+      />
+    );
+  const todayButton = (markup: string) => FIRST_BUTTON.exec(markup)?.[0] ?? "";
+
+  it("desligado: o motivo é texto à vista (sem sr-only) e o botão o descreve, aria-disabled e nunca disabled", () => {
+    const markup = footer(false);
+    const button = todayButton(markup);
+    const reasonId = attribute(button, "aria-describedby");
+    expect(reasonId).toBeTruthy();
+    const line = new RegExp(`<p[^>]*\\sid="${reasonId}"[^>]*>`).exec(
+      markup
+    )?.[0];
+    expect(line).toBeTruthy();
+    expect(attribute(line ?? "", "class")).toContain("text-muted-foreground");
+    expect(attribute(line ?? "", "class")).toContain("text-support");
+    expect(attribute(line ?? "", "class")).not.toContain("sr-only");
+    expect(markup).toContain(">Só depois de hoje</p>");
+    expect(attribute(button, "aria-disabled")).toBe("true");
+    expect(button).not.toMatch(DISABLED_ATTRIBUTE);
+  });
+
+  it("desligado sem motivo: segue aria-disabled, sem texto nem aria-describedby", () => {
+    const markup = html(<TodayFooter allowed={false} onPickToday={noop} />);
+    const button = todayButton(markup);
+    expect(markup).not.toContain("<p");
+    expect(attribute(button, "aria-disabled")).toBe("true");
+    expect(attribute(button, "aria-describedby")).toBeUndefined();
+  });
+
+  it("permitido: nem motivo nem aria-disabled nem aria-describedby", () => {
+    const markup = footer(true);
+    const button = todayButton(markup);
+    expect(markup).not.toContain("Só depois de hoje");
+    expect(attribute(button, "aria-disabled")).toBeUndefined();
+    expect(attribute(button, "aria-describedby")).toBeUndefined();
   });
 });
 
