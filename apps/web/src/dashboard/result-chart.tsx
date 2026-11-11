@@ -135,13 +135,13 @@ function costsNote(fromCopy: boolean): string {
 /**
  * The room the lines of the card keep so the box does not change height between periods: `min-h` of the tallest form the
  * line takes at that width, never `max-h` nor a clamp, so nothing is cut. The title row (with its two (i) and the seal
- * of an incomplete estimate, which wraps below 444 px) and the row that holds the reading of the day and the legend
+ * of an incomplete estimate, which wraps below 460 px; the two (i) are 20 px apart so their touch areas do not overlap) and the row that holds the reading of the day and the legend
  * (side by side from 400 px, stacked below) were measured every 4 px from 320 to 500 px, every 20 up to 820 and every 50 up
  * to 1360, over the month, 30 days, the year and 366 days, whole, with unknown days and with amounts of R$ 999.999,99, and a
  * month with an expense on its last day, with the values shown and hidden; a step is placed at the first width where the tallest form changes.
  * The row takes `content-start`, so the room goes below the text and not between its fragments.
  */
-const TITLE_RESERVE = "min-h-[2.875rem] min-[27.75rem]:min-h-[1.375rem]";
+const TITLE_RESERVE = "min-h-[2.875rem] min-[28.75rem]:min-h-[1.375rem]";
 const TOP_RESERVE =
   "min-h-[8.5rem] min-[20.75rem]:min-h-[7.375rem] min-[21.75rem]:min-h-[6.25rem] min-[23.75rem]:min-h-[5rem] min-[25rem]:min-h-[5.5rem] min-[28.25rem]:min-h-[4.5rem] min-[40rem]:min-h-[3.5rem] min-[45rem]:min-h-[2.25rem]";
 const NOTE_RESERVE = "min-h-[1.125rem]";
@@ -198,7 +198,7 @@ function ChartHeader({
             {periodHelp({ count: support.count, range, source })}
           </HelpTip>
           {support.tail ? (
-            <HelpTip about={`${title}: as linhas`} className="-my-1">
+            <HelpTip about={`${title}: as linhas`} className="-my-1 ml-4">
               {support.tail}
             </HelpTip>
           ) : null}

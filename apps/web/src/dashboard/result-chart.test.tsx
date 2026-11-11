@@ -463,3 +463,32 @@ describe("the table when the chart does not open (AC-7.8)", () => {
     expect(render(false)).not.toContain("tabindex");
   });
 });
+
+describe("the table of five columns on a phone (AC-7.8)", () => {
+  const series = resultSeries(october([]).daily ?? [], "2026-10-25");
+  const render = (visible: boolean) =>
+    renderToStaticMarkup(
+      <NumbersTable hasCosts id="numbers" series={series} visible={visible} />
+    );
+
+  it("stacks each row as a card with the name of each column beside its value, shown or not", () => {
+    for (const visible of [true, false]) {
+      const markup = render(visible);
+      expect(markup).toContain("@max-3xl:grid");
+      expect(markup).toContain('data-label="Custos"');
+      expect(markup).toContain('data-label="Despesas do período"');
+    }
+  });
+
+  it("leaves a table of two columns as it is", () => {
+    const markup = renderToStaticMarkup(
+      <NumbersTable
+        hasCosts={false}
+        id="numbers"
+        series={series}
+        visible={true}
+      />
+    );
+    expect(markup).not.toContain("@max-3xl:grid");
+  });
+});

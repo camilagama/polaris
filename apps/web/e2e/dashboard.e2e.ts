@@ -1621,6 +1621,13 @@ test.describe("Vendas × custos por dia: só o gráfico, com a ressalva dita uma
       "01/10/2026"
     );
     await expect(region.locator("tfoot")).toBeVisible();
+    const box = region.locator("[data-chart-data-table]");
+    expect(
+      await box.evaluate((element) => element.scrollWidth - element.clientWidth)
+    ).toBeLessThanOrEqual(0);
+    await expect(
+      region.locator("tbody tr").first().locator("td").first()
+    ).toHaveAttribute("data-label", "Vendas líquidas");
     expect(
       await page.evaluate(
         () =>
@@ -2702,8 +2709,8 @@ test.describe("a caixa inteira do cartão do gráfico não muda de altura entre 
 const AN_AMOUNT_DIGITS = /R\$\s*\d|\d[\d.]*,\d{2}/;
 
 const BOX_SWEEP_WIDTHS = [
-  320, 340, 360, 375, 399, 400, 412, 444, 480, 560, 640, 720, 800, 1000, 1280,
-  1440,
+  320, 340, 360, 375, 399, 400, 412, 444, 456, 459, 460, 464, 480, 560, 640,
+  720, 800, 1000, 1280, 1440,
 ] as const;
 
 test.describe("o cartão do gráfico mantém a altura entre o mês, Este ano, 30 dias e 366 dias em cada largura de 320 a 1440 px", () => {
