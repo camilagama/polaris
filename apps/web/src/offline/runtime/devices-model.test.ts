@@ -1,5 +1,6 @@
 import type { DeviceReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
+import { OFFLINE_PLAN_REASON } from "../attention-panel";
 import {
   confirmLabel,
   deviceRows,
@@ -7,18 +8,26 @@ import {
   END_OTHER_SESSIONS_HELP,
   END_OTHER_SESSIONS_LABEL,
   END_OTHER_SESSIONS_WARNING,
+  RECOGNIZING_ACCOUNT_TEXT,
+  RECOGNIZING_LEGAL_TEXT,
+  RECOGNIZING_PLAN_TEXT,
   RECOGNIZING_SLOW_TEXT,
+  RECOGNIZING_TEXT,
   RECOGNIZING_UNAVAILABLE_TEXT,
   REVOKE_WARNING,
   REVOKE_WARNING_NOTE,
   recognitionState,
+  recognitionText,
   revokedMessage,
   revokeFailure,
   SESSION_GONE_PANEL,
   SESSION_OLD_PANEL,
   signInAgainPanel,
 } from "./devices-model";
-import { PLAN_REFUSED_REASON } from "./offline-runtime";
+import {
+  ACCOUNT_UNAVAILABLE_REASONS,
+  PLAN_REFUSED_REASON,
+} from "./offline-runtime";
 
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
@@ -228,5 +237,126 @@ describe("what the screen says while it does not know this device", () => {
     expect(recognitionState(false, null, "session_refused")).toBe(
       "unavailable"
     );
+  });
+});
+
+const ERROR_OR_CODE = /erro|c[oó]digo|\d{3}/i;
+const CONNECTION_WORD = /internet|conex|rede/i;
+const SENTENCE_END = /[.!?]/g;
+
+describe("the sentence for each cause while this device is not known", () => {
+  const cases = [
+    [
+      "the browser is still preparing, patience over",
+      "starting",
+      null,
+      RECOGNIZING_SLOW_TEXT,
+    ],
+    [
+      "the browser failed (no reason)",
+      "unavailable",
+      null,
+      RECOGNIZING_UNAVAILABLE_TEXT,
+    ],
+    [
+      "the browser failed (queue_open_failed)",
+      "unavailable",
+      "queue_open_failed",
+      RECOGNIZING_UNAVAILABLE_TEXT,
+    ],
+    [
+      "the plan refused",
+      "unavailable",
+      PLAN_REFUSED_REASON,
+      RECOGNIZING_PLAN_TEXT,
+    ],
+    [
+      "the acceptance is pending",
+      "unavailable",
+      "legal_acceptance_required",
+      RECOGNIZING_LEGAL_TEXT,
+    ],
+    [
+      "the store is closed",
+      "unavailable",
+      "organization_closed",
+      RECOGNIZING_ACCOUNT_TEXT,
+    ],
+    [
+      "the copy could not be dropped",
+      "unavailable",
+      "purge_failed",
+      RECOGNIZING_ACCOUNT_TEXT,
+    ],
+    [
+      "another account signed in",
+      "unavailable",
+      "session_changed",
+      RECOGNIZING_ACCOUNT_TEXT,
+    ],
+    [
+      "the session was refused",
+      "unavailable",
+      "session_refused",
+      RECOGNIZING_ACCOUNT_TEXT,
+    ],
+  ] as const;
+
+  it.each(cases)(
+    "%s: says its own sentence and only it",
+    (_name, phase, reason, text) => {
+      const waits = phase === "starting" ? [true] : [false, true];
+      for (const slow of waits) {
+        const state = recognitionState(slow, phase, reason);
+        expect(recognitionText(state, phase, reason)).toBe(text);
+      }
+    }
+  );
+
+  it("covers every reason the runtime treats as not the browser's", () => {
+    const covered = new Set<string | null>(cases.map(([, , reason]) => reason));
+    for (const reason of [
+      PLAN_REFUSED_REASON,
+      ...ACCOUNT_UNAVAILABLE_REASONS,
+    ]) {
+      expect(covered.has(reason), reason).toBe(true);
+    }
+  });
+
+  it("waiting says the promise, and a stale reason does not change a runtime still preparing", () => {
+    expect(recognitionText("waiting", "starting")).toBe(RECOGNIZING_TEXT);
+    expect(recognitionText("slow", "starting", "session_refused")).toBe(
+      RECOGNIZING_SLOW_TEXT
+    );
+    expect(recognitionText("unavailable", null, "session_refused")).toBe(
+      RECOGNIZING_UNAVAILABLE_TEXT
+    );
+  });
+
+  it("only the browser sentence about the connection mentions it", () => {
+    for (const text of [
+      RECOGNIZING_PLAN_TEXT,
+      RECOGNIZING_LEGAL_TEXT,
+      RECOGNIZING_ACCOUNT_TEXT,
+    ]) {
+      expect(text).not.toMatch(CONNECTION_WORD);
+    }
+    expect(RECOGNIZING_SLOW_TEXT).toMatch(CONNECTION_WORD);
+  });
+
+  it("each new sentence is one line of action: no error word, no code, one sentence", () => {
+    for (const text of [
+      RECOGNIZING_PLAN_TEXT,
+      RECOGNIZING_LEGAL_TEXT,
+      RECOGNIZING_ACCOUNT_TEXT,
+    ]) {
+      expect(text).not.toMatch(ERROR_OR_CODE);
+      expect(text.match(SENTENCE_END)).toHaveLength(1);
+      expect(text.length).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it("the plan sentence is the one Pendências uses for the same cause", () => {
+    expect(RECOGNIZING_PLAN_TEXT).toBe(OFFLINE_PLAN_REASON);
   });
 });
