@@ -395,6 +395,16 @@ describe("the days with no cost: on the badge line while they fit, in the (i) wh
     expect(words(long)).toContain("estimativa incompleta");
   });
 
+  it("leaves the days out when no cost is known: the cause is the whole warning", () => {
+    const none = warning({
+      incomplete: true,
+      missing: { total: 25, unknown: 25 },
+      noCost: true,
+    });
+    expect(words(none)).toContain("Sem custo informado: não dá para estimar.");
+    expect(none).not.toContain("data-kpi-unknown");
+  });
+
   it("says nothing when the estimate is whole", () => {
     expect(warning({ incomplete: false, missing: null, noCost: false })).toBe(
       "<div></div>"
@@ -483,6 +493,14 @@ describe("the result while a day with no cost is read (RES-1)", () => {
     expect(noCostDayText(kpis, null, false)).toBeUndefined();
     expect(noCostDayText(kpis, 4, true)).toBeUndefined();
     expect(noCostDayText({ ...kpis, monthly: true }, 4, false)).toBeUndefined();
+  });
+
+  it("says in the (i), not on the face, that the figure at rest is of the whole period when a day is unknown", () => {
+    const kpis = kpisOf([5]);
+    const rest = kpis.read(null).result;
+    expect(rest.delta).toBeNull();
+    expect(rest.help).toContain("do período inteiro");
+    expect(rest.help).toContain("não é lucro líquido nem caixa");
   });
 
   it("is not due when every day is known", () => {

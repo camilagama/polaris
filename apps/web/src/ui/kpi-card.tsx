@@ -12,10 +12,6 @@ import { Money } from "./money";
 import { Skeleton } from "./skeleton";
 
 /**
- * A region named by its title; the number is text, the sparkline drawing is a reinforcement.
- */
-
-/**
  * The grid of the tiles of the Início: one column up to 759 px (the `md` of Tailwind, where the side menu appears), two
  * from there, four from 1280 px, where each tile still has room for the number and the sparkline side by side.
  */

@@ -717,7 +717,7 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
     "(−) Taxas de antecipação",
     "(−) Despesas ligadas à venda",
     "(=) Margem de contribuição",
-    "(−) Despesas do período (sem venda)Ver despesas",
+    "(−) Despesas do período (sem venda)",
     "(=) Resultado operacional estimado",
   ]);
   await expect(chainRow(page, "Vendas brutas")).toContainText("R$ 150,00");
@@ -752,9 +752,10 @@ test("o link das despesas é discreto, fica na linha das despesas do período e 
 }) => {
   await page.setViewportSize({ height: 740, width: 360 });
   await openDashboard(page, new FakeReportServer());
-  const link = chainRow(page, "sem venda").getByRole("link", {
-    name: "Ver despesas",
-  });
+  const link = chain(page).getByRole("link", { name: "Ver despesas" });
+  await expect(chainRow(page, "sem venda").getByRole("rowheader")).toHaveText(
+    "(−) Despesas do período (sem venda)"
+  );
   await expect(link).toHaveAttribute("href", "/expenses");
   const box = await link.boundingBox();
   expect(box?.width ?? 999).toBeLessThan(160);

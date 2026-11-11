@@ -88,7 +88,7 @@ export function resultWarning({
     <>
       <IncompleteBadge />
       {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
-      {missing && unknownDaysFit(missing.unknown, missing.total) ? (
+      {!noCost && missing && unknownDaysFit(missing.unknown, missing.total) ? (
         <span data-kpi-unknown="">
           {unknownDaysText(missing.unknown, missing.total)}
         </span>

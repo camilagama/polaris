@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { MoneyText } from "@/ui/hidden-values";
 import { cn } from "@/lib/utils";
 import {
@@ -101,50 +102,58 @@ export function ResultChain({
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
-            <TableRow className={rowClass(row)} key={row.id}>
-              <TableHead
-                className={cn(
-                  "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
-                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                  "@max-[18rem]:pr-4 @max-[18rem]:pb-0"
-                )}
-                scope="row"
-              >
-                <span className="flex items-baseline gap-2">
-                  <span>{row.label}</span>
-                  <span aria-hidden="true" className={LEADER} />
-                </span>
-                {row.id === "operatingExpenses" && canCreateExpense ? (
-                  <span className="mt-0.5 block">
+            <Fragment key={row.id}>
+              <TableRow className={rowClass(row)}>
+                <TableHead
+                  className={cn(
+                    "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
+                    row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
+                    "@max-[18rem]:pr-4 @max-[18rem]:pb-0"
+                  )}
+                  scope="row"
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span>{row.label}</span>
+                    <span aria-hidden="true" className={LEADER} />
+                  </span>
+
+                  {row.note ? (
+                    <span className="mt-0.5 block font-normal text-warning text-xs italic">
+                      <MoneyText text={row.note} />
+                    </span>
+                  ) : null}
+                </TableHead>
+                <TableCell
+                  className={cn(
+                    "pl-2 text-right align-top tabular-nums",
+                    STACKED_VALUE,
+                    row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
+                    row.negative && row.kind !== "line" && "text-destructive"
+                  )}
+                >
+                  {row.value === EMPTY_VALUE ? (
+                    <>
+                      <span aria-hidden="true">{EMPTY_VALUE}</span>
+                      <span className="sr-only">sem valor</span>
+                    </>
+                  ) : (
+                    <MoneyText text={row.value} />
+                  )}
+                </TableCell>
+              </TableRow>
+              {row.id === "operatingExpenses" && canCreateExpense ? (
+                <TableRow className="border-b-0 hover:bg-transparent">
+                  <TableCell
+                    className="pt-0 pb-2 @max-[18rem]:pl-4"
+                    colSpan={2}
+                  >
                     <a className={EXPENSES_LINK} href="/expenses">
                       Ver despesas
                     </a>
-                  </span>
-                ) : null}
-                {row.note ? (
-                  <span className="mt-0.5 block font-normal text-warning text-xs italic">
-                    <MoneyText text={row.note} />
-                  </span>
-                ) : null}
-              </TableHead>
-              <TableCell
-                className={cn(
-                  "pl-2 text-right align-top tabular-nums",
-                  STACKED_VALUE,
-                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                  row.negative && row.kind !== "line" && "text-destructive"
-                )}
-              >
-                {row.value === EMPTY_VALUE ? (
-                  <>
-                    <span aria-hidden="true">{EMPTY_VALUE}</span>
-                    <span className="sr-only">sem valor</span>
-                  </>
-                ) : (
-                  <MoneyText text={row.value} />
-                )}
-              </TableCell>
-            </TableRow>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </Fragment>
           ))}
         </TableBody>
       </Table>
