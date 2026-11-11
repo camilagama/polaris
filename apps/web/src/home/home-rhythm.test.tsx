@@ -286,11 +286,8 @@ const SRC = fileURLToPath(new URL("../", import.meta.url));
 const PHRASE = "Ver os números";
 const SOURCE_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.tsx?$/;
-/** The files of `src` that say the phrase: the Início's blocks are not among them, the Resultado's go with their own change. */
-const STILL_SAYING = [
-  "dashboard/result-chart.tsx",
-  "dashboard/result-series.ts",
-];
+/** The files of `src` that say the phrase: none, the lists of numbers are invisible tables now. */
+const STILL_SAYING: string[] = [];
 
 function sayingThePhrase(files: [string, string][]) {
   return files
@@ -299,7 +296,7 @@ function sayingThePhrase(files: [string, string][]) {
     .sort();
 }
 
-describe("no 'Ver os números' comes back to the Início", () => {
+describe("no 'Ver os números' comes back", () => {
   const files = readdirSync(SRC, { encoding: "utf8", recursive: true })
     .filter((file) => SOURCE_FILE.test(file) && !TEST_FILE.test(file))
     .map((file): [string, string] => [
@@ -307,7 +304,7 @@ describe("no 'Ver os números' comes back to the Início", () => {
       readFileSync(`${SRC}${file}`, "utf8"),
     ]);
 
-  it("lists exactly the files that still say it, so one more is a failure and one less lowers the list", () => {
+  it("no source file of the app says it: the lists of numbers are invisible tables, and a copy planted anywhere fails", () => {
     expect(files.length).toBeGreaterThan(300);
     expect(sayingThePhrase(files)).toEqual(STILL_SAYING);
   });

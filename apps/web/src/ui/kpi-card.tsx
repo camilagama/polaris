@@ -37,15 +37,15 @@ const STRIP_LAYOUT =
 
 /**
  * The height the strip keeps from 900 px, by its own width (its container is `KPI_STRIP_ROOT`): the tallest it gets
- * in any state, measured in the browser over the longest foot of the result card ("estimativa incompleta", the days
- * with no cost and the "Não é lucro líquido nem caixa", wrapped in a column of 150 px), the titles that wrap and, in
- * the columns narrower than 14 rem (all the steps but the last), the two lines the "vs. …" keeps under the number. The
+ * in any state, measured in the browser over the longest foot of the result card ("estimativa incompleta" with the days
+ * with no cost, or the sentence of a period with no cost known, wrapped in a column of 150 px), the titles that wrap and,
+ * in the columns narrower than 14 rem (all the steps but the last), the two lines the "vs. …" keeps under the number. The
  * ranges exclude each other, so the order of the rules does not matter; with the height kept, a period, a missing
  * comparison, an incomplete cost or hidden values move nothing under the strip. Remeasure when a text of a column
  * changes (`dashboard.e2e.ts`, "a altura da faixa de KPIs não muda").
  */
 const STRIP_RESERVE =
-  "min-[56.25rem]:@max-[40.124rem]:min-h-[19.125rem] min-[56.25rem]:@[40.125rem]:@max-[44.624rem]:min-h-[18.125rem] min-[56.25rem]:@[44.625rem]:@max-[49.499rem]:min-h-[17.5rem] min-[56.25rem]:@[49.5rem]:@max-[64.249rem]:min-h-[15.375rem] min-[56.25rem]:@[64.25rem]:min-h-[11.875rem]";
+  "min-[56.25rem]:@max-[40.124rem]:min-h-[17.875rem] min-[56.25rem]:@[40.125rem]:@max-[44.624rem]:min-h-[16.875rem] min-[56.25rem]:@[44.625rem]:@max-[49.499rem]:min-h-[16.5rem] min-[56.25rem]:@[49.5rem]:@max-[64.249rem]:min-h-[15.375rem] min-[56.25rem]:@[64.25rem]:min-h-[11.75rem]";
 
 export const KPI_STRIP = `${STRIP_LAYOUT} ${STRIP_RESERVE}`;
 

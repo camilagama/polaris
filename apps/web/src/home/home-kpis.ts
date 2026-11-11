@@ -633,7 +633,7 @@ export function monthKpis(
 }
 
 /** The warning of the result card that is never hidden: what the number is not. */
-export const NOT_PROFIT_NOR_CASH = "Não é lucro líquido nem caixa";
+const NOT_PROFIT_NOR_CASH = "Não é lucro líquido nem caixa";
 
 /** "5 de 23 dias sem custo": the days of the period that still have no cost informed (AC-6, AC-9). */
 export function unknownDaysText(unknown: number, total: number): string {

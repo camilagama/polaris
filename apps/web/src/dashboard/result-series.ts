@@ -373,29 +373,31 @@ const EQUALITY = "A diferença entre as duas linhas é o resultado estimado do";
 const TO_THE_TABLE = "O resultado de cada";
 
 /**
- * The line that supports the chart (AC-11), in five
+ * The sentences that support the chart (AC-11): the count of days with no cost and the tail, in five
  * cases. The equality "the difference between the lines is the result" holds only when the period has no commercial
  * surcharge (a surcharge is in the result and not in the cost), and, with hatched days, only on the days without the
  * hatch; with a surcharge the line sends the reader to the table. With an unknown day it starts by how many there
  * are; with no known day there is a single line and no equality. No line when the costs are not sent at all.
  */
-export function supportText(
+export function supportParts(
   series: Pick<ResultSeries, "costsDrawn" | "costsSent" | "days" | "grouped">,
   chain: PeriodChain
-): string | null {
+): { count: string | null; tail: string | null } {
   if (!series.costsSent) {
-    return null;
+    return { count: null, tail: null };
   }
   const { total, unknown } = series.days;
   const [unit, units] = series.grouped ? ["mês", "meses"] : ["dia", "dias"];
   const tail = hasSurcharges(chain)
-    ? `${TO_THE_TABLE} ${unit} está em Ver os números. ${COMPETENCE}`
+    ? `${TO_THE_TABLE} ${unit} está na tabela do gráfico. ${COMPETENCE}`
     : `${EQUALITY} ${unit}${unknown > 0 ? ` nos ${units} sem hachura` : ""}. ${COMPETENCE}`;
   if (unknown === 0) {
-    return series.costsDrawn ? tail : null;
+    return { count: null, tail: series.costsDrawn ? tail : null };
   }
-  const count = `${unknownDaysCount(unknown, total)}.`;
-  return series.costsDrawn ? `${count} ${tail}` : `${count} ${COMPETENCE}`;
+  return {
+    count: `${unknownDaysCount(unknown, total)}.`,
+    tail: series.costsDrawn ? tail : COMPETENCE,
+  };
 }
 
 export type CostPartId = "expenses" | "fees" | "goods";

@@ -128,11 +128,11 @@ export interface AreaChartProps {
   /** Drawn finished, with no reveal and no tween (a phone, v7 § 7); `prefers-reduced-motion` does the same. */
   still?: boolean;
   /**
-   * Classes that hold the room of the lines above the drawing whose length or presence changes with the data (`min-h` of
-   * the longest form, by width), so a change of period does not move the drawing: `reading` for the line of the day in
-   * focus, `legend` for the legend of the series (kept, empty, when there is no second series).
+   * Classes that hold the room of the row above the drawing, where the reading of the day in focus and the legend of the
+   * series share the line (`min-h` of the longest form, by width), so a change of period does not move the drawing. The
+   * row is kept, empty, when there is no legend.
    */
-  reserve?: { legend?: string; reading?: string };
+  reserve?: string;
   /** The block's own loading state (`status="loading"`): a pulsing line and a shimmering grid, then the reveal. */
   loading?: boolean;
   /** The text that shimmers in the middle of the chart while `loading` ("Carregando"). */
@@ -204,19 +204,21 @@ const READING_OVER_CLASS =
 function ReadingAt({
   place,
   reading,
-  reserve,
   where,
 }: {
   place: "above" | "over" | null;
   reading: DayReading;
-  reserve?: string | undefined;
   where: "above" | "over";
 }) {
   if (place !== where) {
     return null;
   }
-  const className = where === "over" ? READING_OVER_CLASS : reserve;
-  return <Reading {...reading} {...(className ? { className } : {})} />;
+  return (
+    <Reading
+      {...reading}
+      {...(where === "over" ? { className: READING_OVER_CLASS } : {})}
+    />
+  );
 }
 
 function EmptyChart({
@@ -282,6 +284,13 @@ function Unseen({ children, on }: { children: ReactNode; on: boolean }) {
   );
 }
 
+/**
+ * The reading and the legend share a row from 400 px (the reading takes what the legend leaves, the legend at most half),
+ * and stack below it, where two columns would leave each a sliver.
+ */
+const SAME_ROW =
+  "grid content-start gap-2 min-[25rem]:flex min-[25rem]:items-start min-[25rem]:justify-between min-[25rem]:gap-x-4 min-[25rem]:[&>:first-child]:min-w-0 min-[25rem]:[&>:first-child]:flex-1 min-[25rem]:[&>:last-child]:min-w-0 min-[25rem]:[&>:last-child]:max-w-1/2";
+
 /** What sits above the plot: the line of reading of the day in focus, and the legend of a second series that has one. */
 function AreaTop({
   color,
@@ -298,48 +307,47 @@ function AreaTop({
   loadingAtRest: boolean;
   place: "above" | "over" | null;
   reading: DayReading;
-  reserve: AreaChartProps["reserve"];
+  reserve: string | undefined;
   secondary: AreaChartSecondary | undefined;
   unseen: boolean;
 }) {
   const showsLegend = secondary && !secondary.subtle;
+  const sameRow = place === "above" && (showsLegend || reserve);
+  const readingLine =
+    place === "above" ? (
+      <Unseen on={unseen}>
+        <ReadingAt place={place} reading={reading} where="above" />
+      </Unseen>
+    ) : null;
+  const legendLine = showsLegend ? (
+    <Unseen on={unseen}>
+      <Legend
+        color={color}
+        dash={DASH}
+        legend={legend}
+        hatched={hasUnknown(secondary.data)}
+        secondary={secondary}
+        secondaryColor={secondary.color ?? GRAY}
+        secondaryDrawn={secondary.data.some((datum) => datum.value !== null)}
+      />
+    </Unseen>
+  ) : null;
   return (
     <>
-      {place === "above" ? (
-        <Unseen on={unseen}>
-          <ReadingAt
-            place={place}
-            reading={reading}
-            reserve={reserve?.reading}
-            where="above"
-          />
-        </Unseen>
-      ) : null}
       {loadingAtRest ? (
-        <p
-          aria-hidden="true"
-          className={cn("min-h-[1.125rem]", reserve?.reading)}
-        />
+        <p aria-hidden="true" className={cn("min-h-[1.125rem]", reserve)} />
       ) : null}
-      {showsLegend ? (
-        <Unseen on={unseen}>
-          <Legend
-            className={reserve?.legend}
-            color={color}
-            dash={DASH}
-            legend={legend}
-            hatched={hasUnknown(secondary.data)}
-            secondary={secondary}
-            secondaryColor={secondary.color ?? GRAY}
-            secondaryDrawn={secondary.data.some(
-              (datum) => datum.value !== null
-            )}
-          />
-        </Unseen>
-      ) : null}
-      {!showsLegend && reserve?.legend ? (
-        <div aria-hidden="true" className={reserve.legend} />
-      ) : null}
+      {sameRow ? (
+        <div className={cn(SAME_ROW, reserve)} data-chart-top="">
+          {readingLine}
+          {legendLine}
+        </div>
+      ) : (
+        <>
+          {readingLine}
+          {legendLine}
+        </>
+      )}
     </>
   );
 }

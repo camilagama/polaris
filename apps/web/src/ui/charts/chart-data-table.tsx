@@ -17,6 +17,8 @@ export interface ChartDataTableProps {
   /** What the table is, said first by a screen reader ("Vendas por dia, do mais novo ao mais antigo."). */
   caption: string;
   columns: readonly ChartDataColumn[];
+  /** A line that closes the table, across every column ("Depois de hoje: despesas R$ 120,00"); it goes through the mask too. */
+  footer?: string | undefined;
   /** The id the chart's `aria-details` points at. */
   id: string;
   rows: readonly ChartDataRow[];
@@ -42,6 +44,7 @@ const HIDDEN =
 export function ChartDataTable({
   caption,
   columns,
+  footer,
   id,
   rows,
   visible = false,
@@ -103,6 +106,18 @@ export function ChartDataTable({
             </tr>
           ))}
         </tbody>
+        {footer ? (
+          <tfoot>
+            <tr>
+              <td
+                className="px-2 py-2.5 text-right tabular-nums"
+                colSpan={columns.length}
+              >
+                <MoneyText text={footer} />
+              </td>
+            </tr>
+          </tfoot>
+        ) : null}
       </table>
     </div>
   );

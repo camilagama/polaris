@@ -938,7 +938,7 @@ test.describe("loja com venda", () => {
     );
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 1 a 23/10: R$ 2.660,60 no total"
+      "Vendas líquidas por dia, de 1 a 23/10: R$ 2.660,60 no total. A tabela dia a dia está no fim deste bloco."
     );
     await expect(
       chart.getByRole("button", { name: "Ver os números" })
@@ -2004,7 +2004,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 1 a 23/10: valor escondido no total"
+      "Vendas líquidas por dia, de 1 a 23/10: valor escondido no total. A tabela dia a dia está no fim deste bloco."
     );
     await expect(chart.getByRole("slider")).toHaveAttribute(
       "aria-valuetext",
