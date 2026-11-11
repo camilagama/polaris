@@ -426,59 +426,18 @@ export const Box = () => <Dialog.Root />;`;
     ).toContain(rule);
   });
 
-  it("lets only the counter adopt a sheet, and only that rule (planted control)", () => {
+  it("rejects adoptedStyleSheets in every file, the old counter's path included, and lists no exception", () => {
     const adopt = "root.adoptedStyleSheets = [sheet];";
-    const scan = (file: string, source: string) =>
-      scanUiSource(file, source, undefined, "/repo");
-    const counter = "/repo/apps/web/src/ui/figure-counter.tsx";
-    expect(scan(counter, adopt)).toEqual([]);
-    expect(scan(counter, `${adopt} el.innerHTML = x`)).toEqual([
-      { file: counter, rule: ".innerHTML" },
-    ]);
-    expect(scan(counter, `${adopt} <style>a{}</style>`)).toEqual([
-      { file: counter, rule: "<style" },
-    ]);
-    const other = "/repo/apps/web/src/ui/money.tsx";
-    expect(scan(other, adopt)).toEqual([
-      { file: other, rule: "adoptedStyleSheets" },
-    ]);
-    expect(
-      scan("/repo/apps/web/src/ui/not-figure-counter.tsx", adopt)
-    ).toHaveLength(1);
-    expect(
-      scan("/repo/apps/web/src/ui/xsrc/ui/figure-counter.tsx", adopt)
-    ).toHaveLength(1);
-    expect(SOURCE_RULE_EXCEPTIONS.map((e) => [e.file, e.rule])).toEqual([
-      ["apps/web/src/ui/figure-counter.tsx", "adoptedStyleSheets"],
-    ]);
-  });
-
-  it.each([
-    "/repo/apps/admin/src/ui/figure-counter.tsx",
-    "/repo/x/src/ui/figure-counter.tsx",
-    "/repo/apps/web/x/src/ui/figure-counter.tsx",
-    "/repo/x/apps/web/src/ui/figure-counter.tsx",
-    "/repo/apps/web/src/ui/sub/figure-counter.tsx",
-    "/other/apps/web/src/ui/figure-counter.tsx",
-  ])(
-    "the exception does not follow the name to %s (a suffix match would)",
-    (file) => {
-      expect(
-        scanUiSource(
-          file,
-          "root.adoptedStyleSheets = [sheet];",
-          undefined,
-          "/repo"
-        )
-      ).toEqual([{ file, rule: "adoptedStyleSheets" }]);
+    for (const file of [
+      "/repo/apps/web/src/ui/figure-counter.tsx",
+      "/repo/apps/web/src/ui/money.tsx",
+      "/repo/apps/web/src/ui/animated-figure.tsx",
+    ]) {
+      expect(scanUiSource(file, adopt, undefined, "/repo")).toEqual([
+        { file, rule: "adoptedStyleSheets" },
+      ]);
     }
-  );
-
-  it("finds the counter by its real path from the repository root", () => {
-    const counter = join(root, "apps/web/src/ui/figure-counter.tsx");
-    expect(scanUiSource(counter, "root.adoptedStyleSheets = [sheet];")).toEqual(
-      []
-    );
+    expect(SOURCE_RULE_EXCEPTIONS).toEqual([]);
   });
 
   it("takes a scoped package by its first two segments", () => {

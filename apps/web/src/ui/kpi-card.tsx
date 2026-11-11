@@ -191,7 +191,7 @@ export function HeroValue({
   const negative = amount.trim().startsWith("-");
   const written = formatBrlAmount(amount);
   const money = (
-    <AnimatedFigure text={written}>
+    <AnimatedFigure hidden={hidden} text={written}>
       <Money split text={written} />
     </AnimatedFigure>
   );

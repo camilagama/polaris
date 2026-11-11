@@ -1285,12 +1285,12 @@ export function UiGallery() {
             </Tabs>
           </Section>
 
-          <Section title="Contador dos números dos cartões">
+          <Section title="Número principal dos cartões">
             <p className="text-support">
-              O valor do cartão aparece pronto e só rola quando muda (outro dia
-              lido, outro período) no desktop; no celular e com movimento
-              reduzido troca sem animação. A variação, a meta e a margem nunca
-              rolam.
+              O valor do cartão aparece pronto e, quando muda (outro dia lido,
+              outro período), o novo entra com um fade curto no desktop; no
+              celular e com movimento reduzido troca sem animação. A variação, a
+              meta e a margem nunca animam.
             </p>
             <p className="font-semibold text-value-lg tabular-nums tracking-[-0.035em]">
               <AnimatedFigure text="R$ 1.234,56">

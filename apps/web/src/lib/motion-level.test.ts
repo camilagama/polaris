@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_Y_DOMAIN_TWEEN_MS } from "../ui/bklit/charts/chart-phase";
-import { LINE_LOADING_PULSE_EASE } from "../ui/bklit/charts/line-loading-timing";
 import {
   followMotionLevel,
-  MOTION,
   type MotionInputs,
   type MotionLevel,
   motionLevel,
@@ -136,15 +133,5 @@ describe("the level in the browser", () => {
 
     stop();
     expect(media.listeners.size).toBe(0);
-  });
-});
-
-describe("MOTION.number (AC-8.6)", () => {
-  it("dura o mesmo que o tween do eixo Y e usa a curva dele, de uma constante só", () => {
-    expect(MOTION.number.duration).toBe(500);
-    expect(MOTION.number.duration).toBe(DEFAULT_Y_DOMAIN_TWEEN_MS);
-    expect(MOTION.number.easing).toBe(
-      `cubic-bezier(${LINE_LOADING_PULSE_EASE.join(", ")})`
-    );
   });
 });

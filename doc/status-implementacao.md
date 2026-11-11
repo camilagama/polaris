@@ -3349,6 +3349,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Linha de status | Em revisão | `#dashboard-updated` (`aria-live="polite"`) só aparece com texto: "Atualizando…", "Mostrando … até o novo período carregar." e, sem conexão, "Último resultado confirmado: dd/mm/aaaa HH:mm" (o botão diz só "Atualizar"); sem texto fica `sr-only` e diz o horário ao leitor de tela quando a leitura termina. Sem resultado lido ainda, não diz "Atualizando…" (o cartão "Carregando o resultado…" já diz). |
 | Provas | Em revisão | Unidade: `dashboard-model.test.ts` (`formatUpdatedAt`). e2e: `dashboard.e2e.ts` (primeiro cartão a 360 px, 360/16 e 320/20 sem corte nem rolagem, foco, leitura em curso, a data de outro dia; os testes de "Atualizar" e de cópia usam o nome que começa com "Atualizar"), `ui-botao-atualizar.e2e.ts` (nome e altura do botão do Resultado). Controle: na `origin/main` o teste do primeiro cartão reprova (539 px). |
 
+### UI de 11/11: o número principal dos KPIs entra com um fade, sem dígitos rolando (t1040; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Animação | Em revisão | `ui/animated-figure.tsx`: o valor novo entra inteiro com fade de 200 ms e subida de 4 px (`motion-full:`), só quando o texto muda; a primeira entrada, o mesmo texto, os valores escondidos, o celular e `prefers-reduced-motion` não animam. Saem `ui/figure-counter.tsx`, o pedaço `figure-counter-*.js`, o guarda `counterPlacementProblems`, `MOTION.number`, a dependência `@number-flow/react` (com `number-flow` e `esm-env`), a regra do Renovate e a exceção de `adoptedStyleSheets` ([ADR 0103](../docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md), emenda do t1040). Lateral, gráficos e as outras animações não mudam. |
+| Provas | Em revisão | Unidade: `animated-figure.test.tsx` (estado da entrada), `ui-source-rules.test.ts` (reprova a rolagem de dígitos de volta, a entrada fora de `motion-full:` e o `AnimatedFigure` fora da lista), `ui-supply-chain.test.ts` (nenhuma exceção de `adoptedStyleSheets`). e2e: `e2e-real/jornadas/valor-kpi.e2e.ts`. |
+
 ### Saída do E1 (boas-vindas): o código (t1027; ADR 0106, D10, fase 1; sem migration)
 
 | Item | Status | Observação |
