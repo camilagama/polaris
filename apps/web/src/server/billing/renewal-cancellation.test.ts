@@ -689,19 +689,42 @@ describe("handleRenewalCancelRequested with Woovi", () => {
       ).rejects.toThrow("db down");
     });
 
-    it("opens the incident on the retry of a delivery that died after the cancel (already_closed, renewal ended)", async () => {
-      const { port, state, store } = approvedDuringDiscard([paidCharge]);
-      port.discardCheckout.mockResolvedValue("already_closed");
-      port.hasSubscription.mockImplementation(() => {
-        state.linked = wooviSubscription;
-        state.record = {
-          accessEndsAt: null,
-          cancelAtPeriodEnd: true,
-          state: "free",
-        };
-        return Promise.resolve(true);
-      });
+    const cancelledFact = {
+      fact: { occurredAt: now, type: "subscription_cancelled" },
+      providerEventId: "woovi:cancelled:1",
+      providerRef: wooviCheckout.providerRef,
+    };
 
+    it("writes the incident before any fact is applied, so a failed write leaves the checkout open", async () => {
+      const { port, state, store } = approvedDuringDiscard([paidCharge]);
+      store.recordClosureRefundIncident.mockRejectedValue(new Error("db down"));
+
+      await expect(
+        handleRenewalCancelRequested(
+          dependencies(store, port, billingProviderHandled),
+          envelope()
+        )
+      ).rejects.toThrow("db down");
+
+      expect(store.recordEvent).not.toHaveBeenCalled();
+      expect(store.processEvent).not.toHaveBeenCalled();
+      expect(state.linked).toBe(wooviCheckout);
+    });
+
+    it("opens the incident on the redelivery of that failed write (already_closed, subscription shown cancelled, checkout still open)", async () => {
+      const { port, store } = approvedDuringDiscard([paidCharge]);
+      store.recordClosureRefundIncident.mockRejectedValueOnce(
+        new Error("db down")
+      );
+      port.discardCheckout.mockResolvedValueOnce("discarded");
+      const first = handleRenewalCancelRequested(
+        dependencies(store, port, billingProviderHandled),
+        envelope()
+      );
+      await expect(first).rejects.toThrow("db down");
+
+      port.discardCheckout.mockResolvedValue("already_closed");
+      port.readState.mockResolvedValue([paidCharge, cancelledFact]);
       await expect(
         handleRenewalCancelRequested(
           dependencies(store, port, billingProviderHandled),
@@ -709,25 +732,38 @@ describe("handleRenewalCancelRequested with Woovi", () => {
         )
       ).resolves.toBe("cancelled");
 
-      expect(store.recordClosureRefundIncident).toHaveBeenCalledTimes(1);
+      expect(store.recordClosureRefundIncident).toHaveBeenCalledTimes(2);
       expect(store.recordCheckoutDiscarded).not.toHaveBeenCalled();
+      expect(port.cancelRenewal).not.toHaveBeenCalled();
     });
 
-    it("opens no incident for a paid checkout whose renewal is alive: the closure cancels it as any other (control)", async () => {
+    it("applies the facts only after the incident is written", async () => {
+      const { port, store } = approvedDuringDiscard([paidCharge]);
+
+      await handleRenewalCancelRequested(
+        dependencies(store, port, billingProviderHandled),
+        envelope()
+      );
+
+      const incident =
+        store.recordClosureRefundIncident.mock.invocationCallOrder[0] ?? 0;
+      const applied = store.processEvent.mock.invocationCallOrder[0] ?? 0;
+      expect(incident).toBeGreaterThan(0);
+      expect(incident).toBeLessThan(applied);
+    });
+
+    it("opens no incident for a paid checkout whose subscription is alive at the provider: the closure cancels it as any other (control)", async () => {
       const { port, state, store } = approvedDuringDiscard([paidCharge]);
-      store.processEvent.mockImplementationOnce((id: string) =>
-        Promise.resolve({
+      port.discardCheckout.mockResolvedValue("already_closed");
+      store.processEvent.mockImplementationOnce((id: string) => {
+        state.linked = wooviSubscription;
+        state.record = { ...alive };
+        return Promise.resolve({
           eventId: id,
           organizationId,
           outcomeCode: null,
           status: "applied",
-        })
-      );
-      port.discardCheckout.mockResolvedValue("already_closed");
-      port.hasSubscription.mockImplementation(() => {
-        state.linked = wooviSubscription;
-        state.record = { ...alive };
-        return Promise.resolve(true);
+        });
       });
 
       await expect(
@@ -742,6 +778,27 @@ describe("handleRenewalCancelRequested with Woovi", () => {
         wooviSubscription.providerRef,
         wooviSubscription.providerSubscriptionId
       );
+    });
+
+    it("throws, with no incident, for a paid checkout alive at the provider whose charge the inbox did not apply", async () => {
+      const { port, store } = approvedDuringDiscard([paidCharge]);
+      port.discardCheckout.mockResolvedValue("already_closed");
+      store.processEvent.mockResolvedValue({
+        eventId: "ev-1",
+        organizationId,
+        outcomeCode: "reference_mismatch",
+        status: "ignored",
+      });
+
+      await expect(
+        handleRenewalCancelRequested(
+          dependencies(store, port, billingProviderHandled),
+          envelope()
+        )
+      ).rejects.toThrow("billing_closure_checkout_subscription_unapplied");
+
+      expect(store.recordClosureRefundIncident).not.toHaveBeenCalled();
+      expect(port.cancelRenewal).not.toHaveBeenCalled();
     });
 
     it("keeps the discard written when the checkout made no subscription (control)", async () => {

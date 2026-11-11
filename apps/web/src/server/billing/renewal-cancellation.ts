@@ -180,10 +180,12 @@ export async function handleRenewalCancelRequested(
  * The provider is asked the same after `discarded`, because an approval can land
  * between the read and the cancel: the cancel then ended the subscription, its
  * facts are read in, nothing is written as given up and the answer is
- * `subscribed_cancelled` (nothing is left to cancel). A first charge paid at
- * that approval opens the pending-refund incident; the retry of a delivery
- * that died after the cancel (the provider then answers `already_closed`) opens
- * it too when the renewal is already ended. A failure throws, and the queue
+ * `subscribed_cancelled` (nothing is left to cancel). A first charge shown as paid
+ * with the renewal ended (that cancel, or, after `already_closed`, the provider
+ * showing the subscription cancelled) opens the pending-refund incident before
+ * any fact is applied, so the redelivery of a failed write still finds the
+ * checkout open and writes it again. A paid checkout whose subscription is alive
+ * at the provider is an ordinary one for the closure to cancel. A failure throws, and the queue
  * retries.
  */
 async function discardOpenCheckout(
@@ -221,42 +223,37 @@ async function discardOpenCheckout(
       : "billing_checkout_approved_during_closure_discard",
     { ...ids, provider: link.provider }
   );
-  const report = await reconcileOrganization(
-    {
-      ...(dependencies.now ? { now: dependencies.now } : {}),
-      portFor: dependencies.portFor,
-      store,
-    },
-    envelope.organizationId
+  const reconcileDependencies = {
+    ...(dependencies.now ? { now: dependencies.now } : {}),
+    portFor: dependencies.portFor,
+    store,
+  };
+  const shown = await port.readState(
+    link.providerRef,
+    dependencies.now?.() ?? new Date(),
+    link.providerSubscriptionId
   );
-  if (report.chargesSucceeded === 0) {
-    return closedBefore ? "subscribed" : "subscribed_cancelled";
+  const renewalEnded =
+    !closedBefore ||
+    shown.some((event) => event.fact.type === "subscription_cancelled");
+  const firstChargePaid = shown.some(
+    (event) => event.fact.type === "charge_succeeded"
+  );
+  // the incident is written before any fact is applied: an applied fact links the subscription to the record, and
+  // the redelivery of a delivery that failed here would no longer see an open checkout
+  if (renewalEnded && firstChargePaid) {
+    await openPaidCheckoutRefundIncident(dependencies, envelope, link, ids);
   }
-  // a first charge paid and the renewal already ended: either this run's cancel did it, or an earlier delivery's
-  // did and died before writing the incident (the provider then answers `already_closed`); a paid checkout whose
-  // renewal is alive is an ordinary subscription for the closure to cancel
-  if (closedBefore && (await renewalStillAlive(store, envelope))) {
-    return "subscribed";
-  }
-  await openPaidCheckoutRefundIncident(dependencies, envelope, link, ids);
-  return "subscribed_cancelled";
-}
-
-async function renewalStillAlive(
-  store: RenewalCancelDependencies["store"],
-  envelope: QueueEnvelope
-): Promise<boolean> {
-  const [record, link] = await Promise.all([
-    store.readRecord(envelope.organizationId),
-    store.readProviderLink(envelope.organizationId),
-  ]);
-  return Boolean(link && renewalAlive(record, link));
+  await reconcileOrganization(reconcileDependencies, envelope.organizationId);
+  return renewalEnded && (firstChargePaid || !closedBefore)
+    ? "subscribed_cancelled"
+    : "subscribed";
 }
 
 /**
- * The cancel ended a subscription whose first charge was paid at the approval: the payer paid for a store that is
- * closed, so the operator refunds by hand. A failure to write it throws: the queue retries, and the ledger row is
- * keyed by the request, so a repeat adds nothing.
+ * The renewal ended with a first charge paid at the approval: the payer paid for a store that is closed, so the
+ * operator refunds by hand. A failure to write it throws: the queue retries, and the ledger row is keyed by the
+ * request, so a repeat adds nothing.
  */
 async function openPaidCheckoutRefundIncident(
   dependencies: RenewalCancelDependencies,
