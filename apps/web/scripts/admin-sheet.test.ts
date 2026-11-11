@@ -196,7 +196,7 @@ const ADMIN_OWN: Readonly<Record<string, readonly string[]>> = {
     "[&_svg]:size-4.5",
   ],
   HEADER_END: [],
-  HEADER_ROW: [],
+  HEADER_ROW: ["md:pl-6"],
   MAIN: [
     "content",
     "w-[min(100%_-_2rem,72rem)]",
@@ -206,7 +206,7 @@ const ADMIN_OWN: Readonly<Record<string, readonly string[]>> = {
   PANEL: [],
   SHELL: [],
   SIDEBAR: [],
-  SIDEBAR_CONTAINER: [],
+  SIDEBAR_CONTAINER: ["h-svh"],
   SIDEBAR_CONTENT: [],
   SIDEBAR_GAP: [],
   SIDEBAR_GROUP: [],
