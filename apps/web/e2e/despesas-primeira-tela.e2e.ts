@@ -132,6 +132,11 @@ for (const month of MONTHS) {
     expect(
       (segmentedBox?.x ?? 0) + (segmentedBox?.width ?? 0)
     ).toBeLessThanOrEqual(filterBox?.x ?? 0);
+    expect(
+      await monthButton.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth
+      )
+    ).toBe(true);
     const lineEnd = (barBox?.x ?? 0) + (barBox?.width ?? 0);
     const spare = lineEnd - ((filterBox?.x ?? 0) + (filterBox?.width ?? 0));
     expect(spare).toBeGreaterThanOrEqual(LINE_SPARE);
