@@ -45,7 +45,6 @@ export function trialStartedContent(
     : "Seu teste do Polaris Pro começou";
   return {
     action: openSubscription(store),
-    footer: "subscription",
     heading: title,
     paragraphs: chargeToday
       ? [

@@ -123,11 +123,6 @@ const ALLOWED_LOOSE_CLOCK: LooseClockList = {
     reason:
       "the anchor of the billing facts (periods are given as instants, by offsets in days) and the instant of the sweep: hands the instant to the function under test, which compares it with rows the database stamps with its own now(); no calendar day",
   },
-  "verify-billing-notices-gate.ts": {
-    count: 1,
-    reason:
-      "hands the instant to the function under test, which compares it with rows the database stamps with its own now(); no calendar day",
-  },
   "verify-billing-read-plan-gate.ts": {
     count: 1,
     reason:

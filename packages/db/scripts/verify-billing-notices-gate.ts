@@ -6,7 +6,6 @@ import {
   WELCOME_NOTICE_WINDOW_HOURS,
 } from "@polaris/domain/billing/notices";
 import { Client } from "pg";
-import { type BillingStore, createBillingStore } from "../src/billing-store";
 import { createDatabase } from "../src/client";
 import { withGateRole } from "./gate-roles";
 import {
@@ -35,7 +34,7 @@ import {
  *   4. `billing_notice_recipient`: only the authentication role executes it; the welcome's person or the oldest active
  *      owner, only for a notice owed, only while an owner, only whether verified, never the name; the owner's policy on
  *      `"user"` sees only the user of the notice of the scope, and a malformed scope is no row, never an error;
- *   5. `welcome_notice_candidates` and the welcome's sweep of the billing store: the stores of the last 24 hours,
+ *   5. `welcome_notice_candidates` and the rows the retired sweep wrote: the stores of the last 24 hours,
  *      active, the oldest owner, the first store only, one welcome per person, each with its outbox event in the same
  *      transaction; the person deleted takes the welcome (cascade).
  *   4b. (0102) `billing_notice_store` and `billing_notice_sweep_zones`: only the billing role executes them; the store's
@@ -80,7 +79,6 @@ async function run() {
   const owner = createDatabase(adminUrl, { maxConnections: 4 });
   const logins: [string, string][] = [];
   const tests: string[] = [];
-  let store: BillingStore | undefined;
 
   try {
     const server = await owner.pool.query<{
@@ -1330,12 +1328,58 @@ async function run() {
         );
       });
     }
-    store = createBillingStore(billingUrl);
-    const billing = store;
+    /**
+     * What the retired sweep did, kept only to put welcome rows into the table the way the code once did: the billing
+     * role reads the candidates and records each welcome with its outbox event in one transaction.
+     */
+    const recordWelcomes = async (
+      limit = 100
+    ): Promise<{ candidates: number; recorded: number }> =>
+      as(billingUrl, async (client) => {
+        await client.query("BEGIN");
+        try {
+          const found = await client.query<{
+            organization_id: string;
+            user_id: string;
+          }>(
+            "SELECT organization_id, user_id FROM public.welcome_notice_candidates($1)",
+            [limit]
+          );
+          let recorded = 0;
+          for (const candidate of found.rows) {
+            const inserted = await client.query<{ id: string }>(
+              `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at, user_id)
+               VALUES ($1, 'welcome', $2, now(), $2)
+               ON CONFLICT DO NOTHING
+               RETURNING id`,
+              [candidate.organization_id, candidate.user_id]
+            );
+            const noticeId = inserted.rows[0]?.id;
+            if (noticeId) {
+              await client.query(
+                `INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id)
+                 VALUES ($1, 'billing.notice', $2::jsonb, $3, $4)`,
+                [
+                  candidate.organization_id,
+                  JSON.stringify({ noticeId }),
+                  `billing.notice:${noticeId}`,
+                  randomUUID(),
+                ]
+              );
+              recorded += 1;
+            }
+          }
+          await client.query("COMMIT");
+          return { candidates: found.rows.length, recorded };
+        } catch (error: unknown) {
+          await client.query("ROLLBACK");
+          throw error;
+        }
+      });
     // what the other gates left in the last 24 hours, and the stores above, are welcomed first
     let drained = false;
     for (let pass = 0; pass < 100 && !drained; pass += 1) {
-      const report = await billing.recordWelcomeNotices(new Date(), 500);
+      const report = await recordWelcomes(500);
       drained = report.candidates === 0;
     }
     assert.ok(drained, "the stores of the last 24 hours are drained");
@@ -1423,7 +1467,7 @@ async function run() {
       ].sort(),
       "the stores of the last 24 hours, active, with the founder, on the first store (again after a purge)"
     );
-    const report = await billing.recordWelcomeNotices();
+    const report = await recordWelcomes();
     assert.deepEqual(report, { candidates: 3, recorded: 3 });
     for (const tenant of [fresh, unverifiedStore, reopened]) {
       const rows = await owner.pool.query<{
@@ -1459,17 +1503,14 @@ async function run() {
         },
       ]);
     }
-    assert.deepEqual(await billing.recordWelcomeNotices(), {
+    assert.deepEqual(await recordWelcomes(), {
       candidates: 0,
       recorded: 0,
     });
     // two passes at once over the same new stores: one welcome and one event per person, never two
     const concurrentA = await newTenant("concurrent-a");
     const concurrentB = await newTenant("concurrent-b");
-    const passes = await Promise.all([
-      billing.recordWelcomeNotices(),
-      billing.recordWelcomeNotices(),
-    ]);
+    const passes = await Promise.all([recordWelcomes(), recordWelcomes()]);
     assert.equal(
       passes.reduce((total, pass) => total + pass.recorded, 0),
       2,
@@ -1501,7 +1542,7 @@ async function run() {
     );
     assert.equal(left.rows.length, 0, "the welcome went with the account");
     tests.push(
-      "welcome_notice_candidates is SECURITY DEFINER and stable with a fixed search_path, owned by the billing owner and executed only by the billing role, and refuses a limit outside 1 to 500; it answers the stores created in the last 24 hours and still active, with their oldest owner (verified or not), and not a store older than 24 hours, one closing, one whose founder already owns an older store or already has a welcome, and again for a person whose earlier store was purged; the store's sweep records the welcome of each, keyed by the person, with its outbox event in the same transaction, and a second pass records nothing, two passes at once record one welcome and one event per person; the window is the domain's 24 hours; the person deleted takes the welcome"
+      "welcome_notice_candidates is SECURITY DEFINER and stable with a fixed search_path, owned by the billing owner and executed only by the billing role, and refuses a limit outside 1 to 500; it answers the stores created in the last 24 hours and still active, with their oldest owner (verified or not), and not a store older than 24 hours, one closing, one whose founder already owns an older store or already has a welcome, and again for a person whose earlier store was purged; the gate's copy of the retired sweep records the welcome of each, keyed by the person, with its outbox event in the same transaction, and a second pass records nothing, two passes at once record one welcome and one event per person; the window is the domain's 24 hours; the person deleted takes the welcome"
     );
 
     console.log(
@@ -1518,7 +1559,6 @@ async function run() {
       )
     );
   } finally {
-    await store?.close().catch(() => undefined);
     for (const [role, group] of logins) {
       await owner.pool.query(`REVOKE "${group}" FROM "${role}"`);
       await owner.pool.query(`DROP ROLE IF EXISTS "${role}"`);

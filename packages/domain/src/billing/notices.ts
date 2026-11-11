@@ -60,7 +60,7 @@ export const RENEWAL_FAILED_MILESTONES = Object.freeze([
 export type RenewalFailedMilestone = (typeof RENEWAL_FAILED_MILESTONES)[number];
 /** The local hours a notice of the hourly sweep is recorded in: from 08:00 to before 20:00, in the store's time zone. */
 export const BILLING_NOTICE_SWEEP_HOURS = Object.freeze({ from: 8, until: 20 });
-/** The welcome goes to the oldest owner of a store created in the last 24 hours (the hourly sweep, decision 6). */
+/** The window of `welcome_notice_candidates`, which stays in the database until its contraction; no code records a welcome now. */
 export const WELCOME_NOTICE_WINDOW_HOURS = 24;
 
 const DAY_MS = 86_400_000;
@@ -235,11 +235,6 @@ export function sweepNoticesFor(
   return marks;
 }
 
-/** The welcome of a person (E1): one per person, whatever the store (the database holds it to that). */
-export function welcomeNotice(userId: string, now: Date): BillingNoticeMark {
-  return { dedupeKey: userId, dueAt: now, kind: "welcome" };
-}
-
 /**
  * The last local day an access that ends at `endsAt` covers: it runs up to that instant, and a period ends at midnight,
  * so the day of the instant itself is not covered. The day before the end of the grace and the yearly charge (the last
@@ -317,7 +312,7 @@ export type BillingNoticeSkipReason =
 
 /** What `noticeStillTrue` reads when a notice is about to go out: the notice, the record now and the store. */
 export interface BillingNoticeCheck {
-  /** The e-mail of this kind is on (the billing switch, or the welcome's, with the provider's configuration). */
+  /** The e-mail of this kind is on (the billing switch with the provider's configuration); always off for a welcome row recorded before the e-mail was retired. */
   emailEnabled: boolean;
   /**
    * The fact of the ledger row the notice names (E4, E7 and E-R are keyed by it), read again; null for the others or
@@ -332,7 +327,7 @@ export interface BillingNoticeCheck {
   now: Date;
   /** The store is closed (in closure, closed or waiting for the purge): no billing notice goes to it (EM-7). */
   organizationClosed: boolean;
-  /** The owner of the welcome is still an active owner of a store (E1 only). */
+  /** The owner of a welcome row recorded before the e-mail was retired is still an active owner of a store (E1 only). */
   ownerActive: boolean;
   /** The amount the notice writes, from what the checkout or the provider recorded; null when none was recorded. */
   amount: string | null;

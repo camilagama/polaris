@@ -3338,3 +3338,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Botão | Em revisão | `ui/refresh-button.tsx`: prop opcional `updated`; com ela o botão é a linha "Atualizado às 09:00" em qualquer largura, de 13 px, e o nome acessível é "Atualizar, atualizado às 09:00". Sem ela, é o botão de antes (só o ícone abaixo de 760 px). `dashboard-model.ts`: `formatUpdatedAt` no lugar de `formatUpdatedUntil`. |
 | Linha de status | Em revisão | `#dashboard-updated` (`aria-live="polite"`) só aparece com texto: "Atualizando…", "Mostrando … até o novo período carregar." e, sem conexão, "Último resultado confirmado: dd/mm/aaaa HH:mm" (o botão diz só "Atualizar"); sem texto fica `sr-only` e diz o horário ao leitor de tela quando a leitura termina. Sem resultado lido ainda, não diz "Atualizando…" (o cartão "Carregando o resultado…" já diz). |
 | Provas | Em revisão | Unidade: `dashboard-model.test.ts` (`formatUpdatedAt`). e2e: `dashboard.e2e.ts` (primeiro cartão a 360 px, 360/16 e 320/20 sem corte nem rolagem, foco, leitura em curso, a data de outro dia; os testes de "Atualizar" e de cópia usam o nome que começa com "Atualizar"), `ui-botao-atualizar.e2e.ts` (nome e altura do botão do Resultado). Controle: na `origin/main` o teste do primeiro cartão reprova (539 px). |
+
+### Saída do E1 (boas-vindas): o código (t1027; ADR 0106, D10, fase 1; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Código | Em revisão | Saem a chamada da varredura (`runWelcomeNoticeSweep`, no Worker e na manutenção), o ramo `welcome` do consumidor e a configuração dele, `emails/welcome.ts`, `recordWelcomeNotices`, `welcomeNotice` e a leitura de `WELCOME_EMAIL_ENABLED` (tipo do ambiente e as três entradas do `wrangler.jsonc`). A linha `welcome` já gravada continua legível: o consumidor a encerra como `skipped: email_not_configured`, sem enviar. |
+| Banco | Intacto | Nenhum arquivo em `packages/db/drizzle`: a função `welcome_notice_candidates`, o CHECK de tipos, o índice único por pessoa e as linhas gravadas ficam. A contração (`DROP FUNCTION`) é PR à parte, depois do primeiro deploy sem este código (Q-4 do ADR 0106, com o Filipe). |
+| Gate de banco | Em revisão | `verify-billing-notices-gate.ts` grava as linhas `welcome` por conta própria (cópia da varredura aposentada) para seguir provando a função, o índice e a cascata. |

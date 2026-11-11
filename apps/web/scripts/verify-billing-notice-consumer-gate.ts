@@ -237,7 +237,6 @@ async function run() {
       BILLING_SELF_SERVICE_ENABLED: "true",
       BILLING_SUPPORT_EMAIL: "suporte@example.invalid",
       RESEND_API_KEY: "re_gate_not_a_key",
-      WELCOME_EMAIL_ENABLED: "false",
     };
     let opened = 0;
     const wired = billingNoticeDependenciesOf(bindings, billing, () => {
