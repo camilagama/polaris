@@ -865,7 +865,7 @@ test.describe("loja com venda", () => {
     await expect(month).toContainText("12 vendas");
 
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("Incompleta");
     // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9)
     await expect(result.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
@@ -938,7 +938,7 @@ test.describe("loja com venda", () => {
     );
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 1 a 23/10: R$ 2.660,60 no total"
+      "Vendas líquidas por dia, de 1 a 23/10: R$ 2.660,60 no total. A tabela dia a dia está no fim deste bloco."
     );
     await expect(
       chart.getByRole("button", { name: "Ver os números" })
@@ -1520,7 +1520,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     });
   }
 
-  test("a ajuda não carrega aviso: a estimativa incompleta e os dias sem custo ficam à vista, com o (i) fechado", async ({
+  test("o sinal de incompleta e os dias sem custo ficam à vista, com o (i) fechado", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -1529,7 +1529,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       new FakeServer({ ...SOLD, results: { "2026-10-20": null } })
     );
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("Incompleta");
     await expect(result).toContainText("1 de 23 dias sem custo");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
@@ -2004,7 +2004,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 1 a 23/10: valor escondido no total"
+      "Vendas líquidas por dia, de 1 a 23/10: valor escondido no total. A tabela dia a dia está no fim deste bloco."
     );
     await expect(chart.getByRole("slider")).toHaveAttribute(
       "aria-valuetext",
@@ -2040,7 +2040,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       })
     );
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("Incompleta");
     await expect(result.locator("[data-kpi-unknown]")).toHaveText(
       "1 de 23 dias sem custo"
     );
@@ -2078,7 +2078,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       })
     );
     const result = region(page, "Resultado estimado");
-    await expect(result).toContainText("estimativa incompleta");
+    await expect(result).toContainText("Incompleta");
     await expect(result).toContainText(
       "Sem custo informado: não dá para estimar."
     );
@@ -4398,6 +4398,9 @@ const SALE_OUTSIDE_THE_MONTH: Scenario = {
   days: { "2026-09-25": [12_000, 2] },
 };
 const NO_SALE_AT_ALL: Scenario = { ...SOLD, days: {} };
+const SOBRE = /^Sobre /;
+const NO_COST_HELP =
+  /não é lucro líquido nem caixa\. Sem custo informado: não dá para estimar\./;
 const SIZES = [
   { height: 740, width: 360 },
   { height: 800, width: 1280 },
@@ -4892,6 +4895,205 @@ test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cart
   });
 });
 
+/** The geometry the areas of each KPI tile keep: the tile, its sparkline and the area of its number. */
+async function tileAreas(page: Page) {
+  await settled(page);
+  return page.locator("[data-kpi-row] [data-kpi]").evaluateAll((cards) =>
+    cards.map((card) => {
+      const size = (element: Element | null) => {
+        const box = element?.getBoundingClientRect();
+        return box ? { height: box.height, width: box.width } : null;
+      };
+      return {
+        figure: size(card.querySelector("[data-kpi-headline]")),
+        name: card.getAttribute("aria-labelledby"),
+        spark: size(card.querySelector("[data-kpi-spark]")),
+        tile: size(card),
+      };
+    })
+  );
+}
+
+type TileAreas = Awaited<ReturnType<typeof tileAreas>>[number];
+
+function expectSameAreas(tile: TileAreas, rest: TileAreas | undefined) {
+  const when = `${tile.name}`;
+  const same = (what: string, now?: number, before?: number) =>
+    expect(now, `${when}: ${what}`).toBeCloseTo(before ?? Number.NaN, 0);
+  same("altura", tile.tile?.height, rest?.tile?.height);
+  same("largura", tile.tile?.width, rest?.tile?.width);
+  same("área do número", tile.figure?.width, rest?.figure?.width);
+  if (tile.spark && rest?.spark) {
+    same("minigráfico", tile.spark.width, rest.spark.width);
+    same("altura do minigráfico", tile.spark.height, rest.spark.height);
+  }
+}
+
+test.describe("cartões de KPI: o valor e o minigráfico têm áreas que o número não muda", () => {
+  const SHORT: Scenario = {
+    ...SOLD,
+    results: {
+      "2026-10-18": 55_200,
+      "2026-10-20": 12_615,
+      "2026-10-23": 9603,
+    },
+  };
+  const LONG: Scenario = {
+    ...SOLD,
+    days: {
+      "2026-10-02": [8000, 1],
+      "2026-10-18": [99_964_035, 6],
+      "2026-10-23": [32_010, 2],
+    },
+    results: {
+      "2026-10-02": 100,
+      "2026-10-18": -9_964_035,
+      "2026-10-23": 100,
+    },
+  };
+  const INCOMPLETE: Scenario = {
+    ...SHORT,
+    results: { ...SHORT.results, "2026-10-20": null },
+  };
+
+  for (const size of SIZES) {
+    test(`valor curto, valor longo e estimativa incompleta: o cartão, o minigráfico e a área do número ficam do mesmo tamanho, e os quatro cartões têm a mesma altura (${size.width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const reads: Awaited<ReturnType<typeof tileAreas>>[] = [];
+      for (const scenario of [SHORT, LONG, INCOMPLETE]) {
+        // biome-ignore lint/performance/noAwaitInLoops: one store at a time, one page
+        await openHome(page, new FakeServer(scenario));
+        await expect(region(page, "Resultado estimado")).toContainText(
+          scenario === INCOMPLETE ? "Incompleta" : "R$"
+        );
+        reads.push(await tileAreas(page));
+      }
+      const [short, long, incomplete] = reads;
+      expect(short?.length).toBe(4);
+      for (const read of [short, long, incomplete]) {
+        const heights = (read ?? []).map((tile) => tile.tile?.height ?? 0);
+        expect(
+          Math.max(...heights) - Math.min(...heights),
+          "os quatro cartões têm a mesma altura"
+        ).toBeLessThanOrEqual(1);
+      }
+      for (const read of [long, incomplete]) {
+        for (const [index, tile] of (read ?? []).entries()) {
+          expectSameAreas(tile, short?.[index]);
+        }
+      }
+    });
+  }
+
+  const NO_COST: Scenario = {
+    ...SOLD,
+    results: {
+      "2026-10-02": null,
+      "2026-10-18": null,
+      "2026-10-20": null,
+      "2026-10-23": null,
+    },
+    soldWithoutCost: 12,
+  };
+
+  async function detailInsideRow(result: Locator, detail: string) {
+    return await result.evaluate((card, selector) => {
+      const row = card
+        .querySelector("[data-kpi-note-row]")
+        ?.getBoundingClientRect();
+      const box = card.querySelector(selector)?.getBoundingClientRect();
+      return Boolean(
+        row &&
+          box &&
+          box.width > 0 &&
+          box.left >= row.left - 0.5 &&
+          box.right <= row.right + 0.5 &&
+          box.top >= row.top - 0.5 &&
+          box.bottom <= row.bottom + 0.5
+      );
+    }, detail);
+  }
+
+  test("com a lateral aberta a 1280 px, os dias sem custo ficam à vista na linha de apoio e o (i) diz a contagem", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(INCOMPLETE));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-unknown]")).toContainText(
+      "de 23 dias sem custo"
+    );
+    expect(
+      await detailInsideRow(result, "[data-kpi-warning-detail]"),
+      "o detalhe está dentro da linha de apoio, não escondido"
+    ).toBe(true);
+    await result.getByRole("button", { name: SOBRE }).click();
+    await expect(
+      page.getByText("1 de 23 dias ainda sem custo informado.")
+    ).toBeVisible();
+  });
+
+  test("sem custo conhecido, com a lateral aberta a 1280 px: “Sem custo informado” à vista e o (i) diz que não dá para estimar", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(NO_COST));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-no-cost]")).toContainText(
+      "Sem custo informado"
+    );
+    expect(
+      await detailInsideRow(result, "[data-kpi-warning-detail]"),
+      "o detalhe está dentro da linha de apoio, não escondido"
+    ).toBe(true);
+    await result.getByRole("button", { name: SOBRE }).click();
+    await expect(page.getByText(NO_COST_HELP)).toBeVisible();
+  });
+
+  test("a estimativa incompleta é uma linha só, com o sinal à vista, e a data de um dia lido vem antes dele (1280 px)", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(INCOMPLETE));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-incomplete]")).toHaveText(
+      "Incompleta"
+    );
+    await expect(result.locator("[data-kpi-incomplete]")).toBeVisible();
+    await expect(result.locator("[data-kpi-note-row]")).toHaveCount(1);
+    await expect(result.locator("[data-kpi-warning]")).toHaveCount(1);
+    const rest = await tileAreas(page);
+    const slider = region(page, "Vendas em outubro").getByRole("slider");
+    await slider.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(result.locator("[data-kpi-date]")).toBeVisible();
+    await expect(result.locator("[data-kpi-incomplete]")).toBeVisible();
+    const inside = await result.evaluate((card) => {
+      const row = card
+        .querySelector("[data-kpi-note-row]")
+        ?.getBoundingClientRect();
+      const sign = card
+        .querySelector("[data-kpi-incomplete]")
+        ?.getBoundingClientRect();
+      return Boolean(
+        row &&
+          sign &&
+          sign.right <= row.right + 0.5 &&
+          sign.bottom <= row.bottom + 0.5
+      );
+    });
+    expect(inside, "o sinal de incompleta cabe inteiro na linha de apoio").toBe(
+      true
+    );
+    const read = await tileAreas(page);
+    for (const [index, tile] of read.entries()) {
+      expect(tile.tile?.height).toBeCloseTo(rest[index]?.tile?.height ?? 0, 0);
+    }
+  });
+});
+
 /** Names of 30, 45 and 60 characters. */
 const LONG_NAMES = [
   "Camiseta de algodão manga lisa",
@@ -5093,10 +5295,14 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
         await assertNothingClipped(principal);
         const [today, ...rest] = await readHeroes(page);
         const lg = 1.5 * fontPixels;
-        expect(
-          [today, ...rest].map((read) => read?.size),
-          "os quatro valores no mesmo tamanho"
-        ).toEqual([lg, lg, lg, lg]);
+        const floor = 0.875 * fontPixels;
+        for (const read of [today, ...rest]) {
+          expect(
+            read?.size,
+            "o valor desce só até caber na área dele, nunca abaixo do piso"
+          ).toBeLessThanOrEqual(lg + 0.01);
+          expect(read?.size).toBeGreaterThanOrEqual(floor - 0.01);
+        }
         testInfo.annotations.push({
           description: `Vendas hoje ${today?.size} px, KPIs ${rest[0]?.size} px`,
           type: "medida",
@@ -5145,13 +5351,13 @@ test.describe("o padrão único dos valores nos cartões do Início (AC-3.1, AC-
         expect(
           Math.abs((await heightOf(principal)) - short)
         ).toBeLessThanOrEqual(1);
-        const before = await readHeroes(page);
+        const before = await tileAreas(page);
         await page.getByRole("button", { name: "Esconder valores" }).click();
         await expect(principal.locator("[data-masked-money]")).toBeVisible();
         expect(
           Math.abs((await heightOf(principal)) - short)
         ).toBeLessThanOrEqual(1);
-        expect(await readHeroes(page)).toEqual(before);
+        expect(await tileAreas(page)).toEqual(before);
         await page.getByRole("button", { name: "Esconder valores" }).click();
       };
       await hiddenKeepsTheBox(BIG_SALE, "R$ 99.640,35");

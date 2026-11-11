@@ -175,7 +175,7 @@ function Period({
   // a period of returns only (net below zero) still has a drawing: "Sem vendas" is for a period with nothing
   const sold = rows.some((row) => chartValue(row.netSales) !== 0);
   const where = periodShort(first, last, today.slice(0, 4));
-  const summaryText = `Vendas líquidas por ${series.grouped ? "mês" : "dia"}, de ${where}: ${formatBrlAmount(total)} no total`;
+  const summaryText = `Vendas líquidas por ${series.grouped ? "mês" : "dia"}, de ${where}: ${formatBrlAmount(total)} no total. A tabela ${series.grouped ? "mês a mês" : "dia a dia"} está no fim deste bloco.`;
   return (
     <div className="grid gap-3">
       <p className="grid gap-0.5">

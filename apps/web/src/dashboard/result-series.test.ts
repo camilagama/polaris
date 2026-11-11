@@ -18,7 +18,7 @@ import {
   NO_COST_TEXT,
   readingNote,
   resultSeries,
-  supportText,
+  supportParts,
 } from "./result-series";
 
 /** The days of `from` to `to`, each built by `make(date)`. */
@@ -113,6 +113,13 @@ const sum = (values: ReadonlyArray<string | null | undefined>) =>
       Money.fromMinorUnits(0n)
     )
     .toString();
+
+/** The sentences that support the chart as one line: the count of unknown days, then the tail; null with neither. */
+function supportText(...args: Parameters<typeof supportParts>): string | null {
+  const { count, tail } = supportParts(...args);
+  const parts = [count, tail].filter((part) => part !== null);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
 
 describe("the total of the costs only exists when every day has its cost (AC-9)", () => {
   it("is known when every day carries costs and the result of the day as money", () => {
@@ -697,10 +704,10 @@ describe("the sentence that supports the chart (AC-11, texto do Petković de 26/
     );
   });
 
-  it("2. no unknown day, a surcharge: sends the reader to the table, the equality would not hold", () => {
+  it("2. no unknown day, a surcharge: says the lines are not the result, the equality would not hold", () => {
     expect(hasSurcharges(withFreight)).toBe(true);
     expect(supportText(drawnAll, withFreight)).toBe(
-      "O resultado de cada dia está em Ver os números. Despesas do período entram no dia da competência."
+      "Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do dia. Despesas do período entram no dia da competência."
     );
   });
 
@@ -710,9 +717,9 @@ describe("the sentence that supports the chart (AC-11, texto do Petković de 26/
     );
   });
 
-  it("4. unknown days, a surcharge: the count first, then the table", () => {
+  it("4. unknown days, a surcharge: the count first, then the sentence that the lines are not the result", () => {
     expect(supportText(drawnSome, withFreight)).toBe(
-      "3 de 25 dias sem custo informado. O resultado de cada dia está em Ver os números. Despesas do período entram no dia da competência."
+      "3 de 25 dias sem custo informado. Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do dia. Despesas do período entram no dia da competência."
     );
   });
 
@@ -732,7 +739,7 @@ describe("the sentence that supports the chart (AC-11, texto do Petković de 26/
       "3 de 25 dias sem custo informado. A diferença entre as duas linhas é o resultado estimado do mês nos meses sem hachura. Despesas do período entram no dia da competência."
     );
     expect(supportText(byMonth, withFreight)).toBe(
-      "3 de 25 dias sem custo informado. O resultado de cada mês está em Ver os números. Despesas do período entram no dia da competência."
+      "3 de 25 dias sem custo informado. Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do mês. Despesas do período entram no dia da competência."
     );
   });
 

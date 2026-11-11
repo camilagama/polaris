@@ -585,7 +585,7 @@ describe("monthKpis: result (AC-9)", () => {
       count: "Sem custo informado: não dá para estimar.",
       date: "outubro inteiro",
       delta: null,
-      help: "Vendas menos custos, taxas e despesas de 1 a 25/10; não é lucro líquido nem caixa.",
+      help: "Vendas menos custos, taxas e despesas de 1 a 25/10; não é lucro líquido nem caixa. Sem custo informado: não dá para estimar.",
       value: null,
     });
     for (const index of [3, 24]) {
@@ -857,6 +857,17 @@ describe("the days with no cost, on the line or in the (i)", () => {
       "Vendas menos custos, taxas e despesas de 01/06 a 28/10. 5 de 120 dias ainda sem custo informado."
     );
     expect(helpTipTextProblem(long)).toBeNull();
+  });
+
+  it("say the count of days with no cost in the (i) of the home tile even when it fits the card", () => {
+    expect(
+      resultHelp("de 1 a 23/10", null, { total: 23, unknown: 5 }, true)
+    ).toBe(
+      "Vendas menos custos, taxas e despesas de 1 a 23/10; não é lucro líquido nem caixa. 5 de 23 dias ainda sem custo informado."
+    );
+    expect(resultHelp("de 1 a 23/10", null, { total: 23, unknown: 5 })).toBe(
+      "Vendas menos custos, taxas e despesas de 1 a 23/10."
+    );
   });
 
   it("fold the 'not net profit nor cash' sentence into the first one, so the (i) keeps two sentences", () => {

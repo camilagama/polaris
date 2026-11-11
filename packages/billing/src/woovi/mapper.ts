@@ -216,49 +216,220 @@ function isCancelled(subscription: WooviSubscription): boolean {
 }
 
 /**
+ * One row of a list of installments read line by line: the installment, or
+ * only the mark that a row was out of shape and the subscription it names
+ * when that much is legible. Nothing else of a row out of shape is kept.
+ */
+export type WooviInstallmentRow =
+  | { ok: WooviInstallment }
+  | { malformed: true; subscriptionId: string | null };
+
+/**
+ * Reads a list of installments row by row: a row out of shape becomes
+ * `{ malformed }` instead of throwing. Only for the question "was it approved",
+ * where a row out of shape never proves an approval; a reading that gives
+ * money facts (`readState`, the refund) stays strict with `pickWooviInstallment`.
+ */
+export function pickWooviInstallmentRows(
+  raw: readonly unknown[]
+): WooviInstallmentRow[] {
+  return raw.map((entry) => {
+    try {
+      return { ok: pickWooviInstallment(entry) };
+    } catch (error: unknown) {
+      if (!(error instanceof ProviderResponseMalformedError)) {
+        throw error;
+      }
+      const subscriptionId =
+        typeof entry === "object" && entry !== null && !Array.isArray(entry)
+          ? (entry as Record<string, unknown>).paymentSubscriptionGlobalID
+          : undefined;
+      return {
+        malformed: true as const,
+        subscriptionId: isWooviGlobalId("subscription", subscriptionId)
+          ? subscriptionId
+          : null,
+      };
+    }
+  });
+}
+
+/** Installments already read strictly, as rows. */
+export function installmentRows(
+  installments: readonly WooviInstallment[]
+): WooviInstallmentRow[] {
+  return installments.map((installment) => ({ ok: installment }));
+}
+
+/**
+ * What the reading of a subscription says of the payer's authorization:
+ * - `pending`: not approved (yet);
+ * - `approved`: approved and in force now;
+ * - `made`: approved at some point, its state now not shown;
+ * - `revoked`: refused or revoked by the payer, or cancelled.
+ */
+export type WooviAuthorization = "approved" | "made" | "pending" | "revoked";
+
+/**
+ * A row that belongs to this subscription. A row out of shape that names no
+ * subscription legibly counts as this one's: on the side that never cancels as
+ * an abandoned checkout something that may be approved.
+ */
+function isRowOf(
+  subscription: WooviSubscription,
+  row: WooviInstallmentRow
+): boolean {
+  return "ok" in row
+    ? row.ok.subscriptionId === subscription.id
+    : row.subscriptionId === null || row.subscriptionId === subscription.id;
+}
+
+/**
  * The installment Woovi creates once the payer approves the authorization:
  * it and its recurring charge are `ACTIVE` (sandbox). An installment that is
- * only scheduled, paid, expired or cancelled proves no approval.
+ * only scheduled, paid, expired or cancelled proves no approval, and a row out
+ * of shape never does.
  */
-function isLiveInstallmentOf(
+function isLiveRowOf(
   subscription: WooviSubscription,
-  installment: WooviInstallment
+  row: WooviInstallmentRow
 ): boolean {
   return (
-    installment.subscriptionId === subscription.id &&
-    installment.status === "ACTIVE" &&
-    installment.charge === "ACTIVE"
+    "ok" in row &&
+    row.ok.subscriptionId === subscription.id &&
+    row.ok.status === "ACTIVE" &&
+    row.ok.charge === "ACTIVE"
   );
 }
 
 /**
- * The subscription read back shows no `pixRecurring.status` (only the webhook
- * body does, sandbox) but the approval is proven by a live installment of this
- * very subscription. Never true when the read back shows a status.
+ * The single rule of the authorization (ADR 0101, emenda da regra única). The
+ * first that holds:
+ * 1. `INACTIVE`, or `pixRecurring.status` `REJECTED`/`CANCELED`: revoked.
+ * 2. A `pixRecurring.status` the read back shows (the documented shape) decides
+ *    alone, and the installments do not count: the documentation creates
+ *    `SCHEDULED` installments with the subscription, before any approval.
+ * 3. None (the sandbox shape): a live installment of this subscription is
+ *    approved; any other row of it (paid, scheduled, expired, cancelled, out
+ *    of shape) is made; none is pending.
+ */
+export function wooviAuthorizationOf(
+  subscription: WooviSubscription,
+  rows: readonly WooviInstallmentRow[]
+): WooviAuthorization {
+  if (isCancelled(subscription)) {
+    return "revoked";
+  }
+  if (subscription.authorization !== null) {
+    return subscription.authorization === "APPROVED" ? "approved" : "pending";
+  }
+  if (rows.some((row) => isLiveRowOf(subscription, row))) {
+    return "approved";
+  }
+  return rows.some((row) => isRowOf(subscription, row)) ? "made" : "pending";
+}
+
+/**
+ * Whether the checkout became a subscription (the payer approved it at some
+ * point), so it is no longer a checkout to give up. A revoked one counts when
+ * its status says it was approved, never when it says it was only created, and
+ * otherwise by an installment of its own; only a caller that read the
+ * installments can see that last case (`discardCheckout` does not read them
+ * for a revoked one: cancelling it changes nothing at Woovi).
+ */
+export function isWooviSubscriptionMade(
+  subscription: WooviSubscription,
+  rows: readonly WooviInstallmentRow[]
+): boolean {
+  const authorization = wooviAuthorizationOf(subscription, rows);
+  if (authorization !== "revoked") {
+    return authorization !== "pending";
+  }
+  if (subscription.authorization === "APPROVED") {
+    return true;
+  }
+  return (
+    subscription.authorization !== "CREATED" &&
+    rows.some((row) => isRowOf(subscription, row))
+  );
+}
+
+/**
+ * The read back shows no `pixRecurring.status` (sandbox): the installments are
+ * read to answer the rule. Never for one already `INACTIVE` (revoked, nothing
+ * to read) or with a status (it decides alone).
+ */
+export function needsInstallmentsForAuthorization(
+  subscription: WooviSubscription
+): boolean {
+  return (
+    subscription.authorization === null && subscription.status !== "INACTIVE"
+  );
+}
+
+/**
+ * The approval was proven by a live installment of this very subscription,
+ * because the read back shows no `pixRecurring.status` (sandbox).
  */
 export function isApprovalInferredFromInstallments(
   subscription: WooviSubscription,
-  installments: readonly WooviInstallment[]
+  rows: readonly WooviInstallmentRow[]
 ): boolean {
   return (
     subscription.authorization === null &&
-    installments.some((installment) =>
-      isLiveInstallmentOf(subscription, installment)
-    )
+    wooviAuthorizationOf(subscription, rows) === "approved"
   );
 }
 
 /** The payer approved the authorization of a subscription that starts later: the trial may start. */
 function isTrialMethodReady(
   subscription: WooviSubscription,
-  installments: readonly WooviInstallment[]
+  rows: readonly WooviInstallmentRow[]
 ): boolean {
   return (
     subscription.status === "ACTIVE" &&
-    (subscription.authorization === "APPROVED" ||
-      isApprovalInferredFromInstallments(subscription, installments)) &&
+    wooviAuthorizationOf(subscription, rows) === "approved" &&
     subscription.journey === "ONLY_RECURRENCY"
   );
+}
+
+/**
+ * The shape of the authorization the provider gave, for the log
+ * `billing_woovi_authorization_form`: only codes and counts. Whether the read
+ * back shows `pixRecurring.status`, the installments of this subscription by
+ * status, the rows out of shape and the verdict of the rule; never an ID or a
+ * person's data.
+ */
+export interface WooviAuthorizationForm {
+  authorizationShown: boolean;
+  installmentsByStatus: Record<string, number>;
+  malformedInstallments: number;
+  verdict: WooviAuthorization;
+}
+
+export function wooviAuthorizationForm(
+  subscription: WooviSubscription,
+  rows: readonly WooviInstallmentRow[]
+): WooviAuthorizationForm {
+  const installmentsByStatus: Record<string, number> = {};
+  let malformedInstallments = 0;
+  for (const row of rows) {
+    if (!isRowOf(subscription, row)) {
+      continue;
+    }
+    if ("ok" in row) {
+      installmentsByStatus[row.ok.status] =
+        (installmentsByStatus[row.ok.status] ?? 0) + 1;
+    } else {
+      malformedInstallments += 1;
+    }
+  }
+  return {
+    authorizationShown: subscription.authorization !== null,
+    installmentsByStatus,
+    malformedInstallments,
+    verdict: wooviAuthorizationOf(subscription, rows),
+  };
 }
 
 function isPaid(installment: WooviInstallment): boolean {
@@ -326,7 +497,7 @@ function chargeSucceeded(
 /** The fact of a subscription event, if the subscription read back shows it. */
 export function mapWooviSubscriptionEvent(input: {
   eventType: string;
-  installments?: readonly WooviInstallment[];
+  installments?: readonly WooviInstallmentRow[];
   occurredAt: Date;
   subscription: WooviSubscription;
 }): ProviderBillingEvent[] {
@@ -391,11 +562,32 @@ export function mapWooviInstallmentEvent(input: {
 
 /** The codes of a resource that should have given a fact and did not; only codes, never a person's data. */
 export interface WooviStateNotShown {
-  authorization?: string;
   charge?: string;
+  /** `"unread"`: the list of installments went past its ceiling or its time, so the approval was not read. */
+  installmentList?: "unread";
   installmentStatus?: string;
   journey?: string;
+  /** How many rows of the list were out of shape: only the count, never a row. */
+  malformedInstallments?: number;
+  /**
+   * `pixRecurring.status` as read back; `"absent"` on a rejection whose read
+   * back shows none (a revocation the sandbox shape cannot show). Not named
+   * `authorization`: the log's redaction masks any key with that word.
+   */
+  pixStatus?: string;
   subscriptionStatus: string;
+}
+
+function pixStatusCode(
+  eventType: string,
+  subscription: WooviSubscription
+): { pixStatus?: string } {
+  if (subscription.authorization !== null) {
+    return { pixStatus: subscription.authorization };
+  }
+  // a rejection of a subscription still active whose read back shows no status:
+  // a revocation the sandbox shape does not show, told apart for its alert
+  return eventType === "PIX_AUTOMATIC_REJECTED" ? { pixStatus: "absent" } : {};
 }
 
 /**
@@ -430,9 +622,7 @@ export function wooviStateNotShown(input: {
     return null;
   }
   return {
-    ...(subscription.authorization === null
-      ? {}
-      : { authorization: subscription.authorization }),
+    ...pixStatusCode(eventType, subscription),
     ...(installment?.charge ? { charge: installment.charge } : {}),
     ...(installment === undefined
       ? {}
@@ -459,11 +649,12 @@ export function reconcileWooviSubscription(input: {
     return [];
   }
   const events: ProviderBillingEvent[] = [];
-  if (isTrialMethodReady(subscription, input.installments)) {
+  const rows = installmentRows(input.installments);
+  if (isTrialMethodReady(subscription, rows)) {
     events.push(
       ...mapWooviSubscriptionEvent({
         eventType: "PIX_AUTOMATIC_APPROVED",
-        installments: input.installments,
+        installments: rows,
         occurredAt: now,
         subscription,
       })
