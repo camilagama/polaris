@@ -14,7 +14,7 @@ Pré-requisitos:
 
 - o painel da loja encerrada no ar (`/loja-encerrada`, PR G1): o link e o botão "Abrir o painel" do e-mail levam a essa rota (só a rota, sem loja nem token), que pede o login e mostra a fase, as datas e o pedido de cópia dos dados. O painel também desfaz o encerramento dentro da janela de 30 dias (G2), que é o que o e-mail convida a fazer; ligar a flag continua sendo decisão do responsável;
 - domínio de envio verificado no Resend;
-- segredo `RESEND_API_KEY` e variável `AUTH_EMAIL_FROM` (em `apps/web/wrangler.jsonc`), que a autenticação já usa. A chave do Resend é uma só por Worker: apagá-la desliga a senha e estes avisos juntos, e também os e-mails de cobrança e as boas-vindas ([email-auth](./email-auth.md#desligar-a-senha-no-staging));
+- segredo `RESEND_API_KEY` e variável `AUTH_EMAIL_FROM` (em `apps/web/wrangler.jsonc`), que a autenticação já usa. A chave do Resend é uma só por Worker: apagá-la desliga a senha e estes avisos juntos, e também os e-mails de cobrança ([email-auth](./email-auth.md#desligar-a-senha-no-staging));
 - `BETTER_AUTH_BASE_URL`, que monta o link;
 - `AUTH_HYPERDRIVE`, pelo qual a função lê o endereço da conta (o papel de autenticação, não o de privacidade).
 

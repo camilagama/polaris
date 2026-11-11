@@ -143,7 +143,6 @@ function setup(
     recipient?: BillingNoticeRecipient | null;
     result?: ClosureNoticeSendResult;
     store?: BillingNoticeStoreFacts | null;
-    welcomeEmail?: BillingNoticeEmailConfig | null;
   } = {}
 ) {
   const found =
@@ -191,8 +190,6 @@ function setup(
     recipients,
     send,
     stores,
-    welcomeEmail:
-      options.welcomeEmail === undefined ? emailConfig : options.welcomeEmail,
   };
   return { dependencies, notices, recipients, send, stores };
 }
@@ -407,31 +404,11 @@ describe("the consumer of a billing notice: skipped before sending", () => {
     expectNoPersonalData(everythingLogged(spies));
   });
 
-  it("skips a billing notice as email_not_configured when only the welcome e-mail is on", async () => {
-    spyLogger();
-    const { dependencies, notices, recipients, send, stores } = setup({
-      billingEmail: null,
-      welcomeEmail: emailConfig,
-    });
-
-    expect(await handleBillingNotice(dependencies, envelope())).toBe("skipped");
-
-    expect(notices.markSkipped).toHaveBeenCalledWith(
-      NOTICE,
-      ORG,
-      "email_not_configured"
-    );
-    expect(stores.storeOf).not.toHaveBeenCalled();
-    expect(recipients.recipient).not.toHaveBeenCalled();
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it("skips the welcome as email_not_configured while the welcome e-mail is off, even with the billing e-mail on", async () => {
+  it("settles a welcome recorded before the e-mail was retired as email_not_configured, even with the billing e-mail on", async () => {
     spyLogger();
     const { dependencies, notices, recipients, send, stores } = setup({
       billingEmail: emailConfig,
       delivery: welcomeDelivery(),
-      welcomeEmail: null,
     });
 
     expect(await handleBillingNotice(dependencies, envelope())).toBe("skipped");
@@ -479,20 +456,6 @@ describe("the consumer of a billing notice: skipped before sending", () => {
     );
     expect(recipients.recipient).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
-  });
-
-  it("still sends the welcome of a closed store", async () => {
-    spyLogger();
-    const { dependencies, notices, send } = setup({
-      delivery: welcomeDelivery(),
-      store: { ...storeFacts, closed: true },
-    });
-
-    expect(await handleBillingNotice(dependencies, envelope())).toBe("sent");
-
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(notices.markSent).toHaveBeenCalledWith(NOTICE, ORG);
-    expect(notices.markSkipped).not.toHaveBeenCalled();
   });
 
   it("skips the eve of the first charge (E-B) as cancelled when the renewal was cancelled", async () => {
@@ -1217,7 +1180,7 @@ describe("the consumer's dependencies in the Worker", () => {
     };
   }
 
-  it("opens no authentication connection with both e-mails off, and turns neither on", async () => {
+  it("opens no authentication connection with the e-mail off, and turns it on for no one", async () => {
     const open = vi.fn(recipientClient);
     const wired = billingNoticeDependenciesOf(
       { ...configured, BILLING_SELF_SERVICE_ENABLED: "false" },
@@ -1226,14 +1189,13 @@ describe("the consumer's dependencies in the Worker", () => {
     );
     expect(open).not.toHaveBeenCalled();
     expect(wired.dependencies.billingEmail).toBeNull();
-    expect(wired.dependencies.welcomeEmail).toBeNull();
     expect(
       await wired.dependencies.recipients.recipient(NOTICE, ORG)
     ).toBeNull();
     await wired.close();
   });
 
-  it("turns the billing e-mails on with their switch and the welcome with its own, and closes the connection", async () => {
+  it("turns the billing e-mails on with their switch and closes the connection", async () => {
     const client = recipientClient();
     const open = vi.fn(() => client);
     const billing = billingNoticeDependenciesOf(
@@ -1248,22 +1210,11 @@ describe("the consumer's dependencies in the Worker", () => {
       from: "Polaris <avisos@example.invalid>",
       supportEmail: "suporte@example.invalid",
     });
-    expect(billing.dependencies.welcomeEmail).toBeNull();
     expect(
       await billing.dependencies.recipients.recipient(NOTICE, ORG)
     ).toEqual({ email: ADDRESS, verified: true });
     await billing.close();
     expect(client.close).toHaveBeenCalledTimes(1);
-
-    const welcome = billingNoticeDependenciesOf(
-      { ...configured, WELCOME_EMAIL_ENABLED: "true" },
-      billingStore(),
-      () => recipientClient()
-    );
-    expect(welcome.dependencies.billingEmail).toBeNull();
-    expect(welcome.dependencies.welcomeEmail?.supportEmail).toBe(
-      "suporte@example.invalid"
-    );
   });
 
   it("keeps the e-mails off without the support box or the authentication role (BILLING_SUPPORT_EMAIL is required)", () => {
@@ -1276,13 +1227,11 @@ describe("the consumer's dependencies in the Worker", () => {
         {
           ...bindings,
           BILLING_SELF_SERVICE_ENABLED: "true",
-          WELCOME_EMAIL_ENABLED: "true",
         },
         billingStore(),
         open
       );
       expect(wired.dependencies.billingEmail).toBeNull();
-      expect(wired.dependencies.welcomeEmail).toBeNull();
     }
     expect(open).not.toHaveBeenCalled();
   });

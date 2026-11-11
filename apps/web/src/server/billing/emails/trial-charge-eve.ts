@@ -26,7 +26,6 @@ export function trialChargeEveContent(
   const subject = `Amanhã o Polaris Pro será cobrado: ${amount}`;
   return {
     action: openSubscription(store),
-    footer: "subscription",
     heading: subject,
     paragraphs: [
       `Amanhã, ${calendarDay(email.firstChargeOn)}, fazemos a primeira cobrança do Pro da loja ${store.name}: ${amount} ${cycleText(email.cycleMonths)}, ${methodText(email.method)}.`,

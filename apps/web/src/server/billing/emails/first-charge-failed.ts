@@ -20,7 +20,6 @@ export function firstChargeFailedContent(
   const { store } = email;
   return {
     action: openSubscription(store),
-    footer: "subscription",
     heading: "Não conseguimos cobrar o teste do Polaris Pro",
     paragraphs: [
       `Tentamos cobrar ${amountText(email.amount)} ${cycleText(email.cycleMonths)} no fim do teste da loja ${store.name} e o pagamento não foi confirmado. O Pro não foi ativado e a loja está no plano Free.`,

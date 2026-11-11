@@ -12,8 +12,6 @@ export interface BillingEmailLink {
 export interface BillingNoticeContent {
   /** The button; the e-mail also writes its address in full, in case the button fails. */
   action: BillingEmailLink;
-  /** The footer of a notice about the subscription, or the welcome's (E1 is not about a subscription). */
-  footer: "subscription" | "welcome";
   /** The subject with the store's whole name, the heading of the body. */
   heading: string;
   paragraphs: string[];
@@ -35,11 +33,6 @@ export interface BillingEmailStore {
 /** The subscription screen (Assinatura), where every billing e-mail leads. */
 function subscriptionUrl(appOrigin: string): string {
   return `${new URL(appOrigin).origin}/subscription`;
-}
-
-/** The products screen: the welcome's button, until the short product form has an address of its own (AC-27). */
-export function productsUrl(appOrigin: string): string {
-  return `${new URL(appOrigin).origin}/products`;
 }
 
 const OPEN_SUBSCRIPTION = "Abrir a assinatura";
