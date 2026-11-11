@@ -135,7 +135,7 @@ function TodayTile({
         />
       }
       title="Vendas hoje"
-      value={<HeroValue amount={reading.value} />}
+      value={<HeroValue amount={reading.value} reading={index !== null} />}
     />
   );
 }
@@ -359,7 +359,7 @@ function MonthTiles({
             }
           : {})}
         title={`Vendas ${model.of}`}
-        value={<HeroValue amount={read.sales.value} />}
+        value={<HeroValue amount={read.sales.value} reading={index !== null} />}
       />
       <KpiTile
         chip={noCost ? undefined : chipOf(read.result)}
@@ -390,7 +390,12 @@ function MonthTiles({
             Resultado estimado
           </a>
         }
-        value={<HeroValue amount={noCost ? null : read.result.value} />}
+        value={
+          <HeroValue
+            amount={noCost ? null : read.result.value}
+            reading={index !== null}
+          />
+        }
       />
       <KpiTile
         chip={chipOf(read.ticket)}
@@ -407,7 +412,9 @@ function MonthTiles({
             }
           : {})}
         title="Ticket médio"
-        value={<HeroValue amount={read.ticket.value} />}
+        value={
+          <HeroValue amount={read.ticket.value} reading={index !== null} />
+        }
       />
     </>
   );

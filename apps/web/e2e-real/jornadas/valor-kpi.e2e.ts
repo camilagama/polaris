@@ -275,3 +275,66 @@ test("início, no desktop: o valor nasce pronto, sem entrada e sem contador de d
   expect(await startedOnFigures(page)).toEqual([]);
   expect(await page.locator("number-flow-react").count()).toBe(0);
 });
+
+test("leitura do minigráfico, no desktop: cada dia lido troca o valor na hora, sem entrada, e a volta ao repouso também", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "valor-kpi-leitura", {
+    organization: { timezone: ZONE },
+  });
+  await seedStore(journey);
+  const { page } = journey;
+  await page.addInitScript(recordEntrances);
+  await page.goto("/");
+  const today = page.getByRole("region", { name: "Vendas hoje" });
+  const value = today.locator("[data-kpi-value]");
+  await expect(value).toHaveText("R$ 90,00");
+  const slider = today.getByRole("slider", {
+    name: "Vendas por dia, últimos 30 dias",
+  });
+  await slider.focus();
+  await slider.press("Home");
+  await expect(value).not.toHaveText("R$ 90,00");
+  await slider.press("End");
+  await expect(value).toHaveText("R$ 90,00");
+  const lastMonthDay = addDays(monthStart(localDate(runT0(), ZONE)), -1);
+  const daysBack =
+    (Date.parse(localDate(runT0(), ZONE)) - Date.parse(lastMonthDay)) /
+    86_400_000;
+  const max = Number(await slider.getAttribute("max"));
+  await slider.fill(String(max - daysBack));
+  await expect(value).toHaveText("R$ 45,00");
+  await expect(page.locator("[data-figure-changed]")).toHaveCount(0);
+  await slider.blur();
+  await expect(value).toHaveText("R$ 90,00");
+  await expect(page.locator("[data-figure-changed]")).toHaveCount(0);
+  expect(
+    await startedOnFigures(page),
+    "nenhuma entrada ao ler os dias nem ao voltar"
+  ).toEqual([]);
+});
+
+test("leitura do minigráfico no Resultado, no desktop: o valor do dia troca sem entrada", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "valor-kpi-leitura-res",
+    {
+      organization: { timezone: ZONE },
+    }
+  );
+  await seedStore(journey);
+  const { page } = journey;
+  await openResultado(page);
+  const sales = page.getByRole("region", { name: SALES_OF_MONTH });
+  const slider = sales.getByRole("slider");
+  await slider.focus();
+  await slider.press("Home");
+  await expect(sales.locator("[data-kpi-value]")).not.toHaveText("R$ 90,00");
+  await slider.press("End");
+  await expect(sales.locator("[data-kpi-value]")).toHaveText("R$ 90,00");
+  await expect(page.locator("[data-figure-changed]")).toHaveCount(0);
+  expect(await startedOnFigures(page)).toEqual([]);
+});

@@ -162,12 +162,15 @@ function heroBox(strip = false, stripCharacters = 0): string {
 export function HeroValue({
   amount,
   emptyText,
+  reading = false,
   strip = false,
 }: {
   /** The amount as the server writes money ("1234.5"), or null when there is none. */
   amount: string | null;
   /** What a missing amount says in place of the dash, in the same one-line box ("sem custo neste dia"). */
   emptyText?: string | undefined;
+  /** The amount is the day read on a sparkline: it swaps with no entrance (the return to rest is handled by `AnimatedFigure`). */
+  reading?: boolean;
   /** The value of a column of `KPI_STRIP`: 24 px from 900 px. */
   strip?: boolean;
 }) {
@@ -191,7 +194,7 @@ export function HeroValue({
   const negative = amount.trim().startsWith("-");
   const written = formatBrlAmount(amount);
   const money = (
-    <AnimatedFigure hidden={hidden} text={written}>
+    <AnimatedFigure hidden={hidden} reading={reading} text={written}>
       <Money split text={written} />
     </AnimatedFigure>
   );

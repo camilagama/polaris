@@ -27,23 +27,53 @@ describe("AnimatedFigure", () => {
 });
 
 describe("nextFigureState", () => {
-  const start = { animate: false, generation: 0, text: "R$ 10,00" };
+  const start = {
+    animate: false,
+    generation: 0,
+    reading: false,
+    text: "R$ 10,00",
+  };
 
   it("o primeiro texto não anima e o mesmo texto devolve o mesmo estado (sem remontar)", () => {
-    expect(nextFigureState(start, "R$ 10,00", false)).toBe(start);
+    expect(nextFigureState(start, "R$ 10,00", false, false)).toBe(start);
   });
 
   it("um valor novo começa uma entrada nova, e outro depois começa outra", () => {
-    const first = nextFigureState(start, "R$ 20,00", false);
-    expect(first).toEqual({ animate: true, generation: 1, text: "R$ 20,00" });
-    expect(nextFigureState(first, "R$ 20,00", false)).toBe(first);
-    expect(nextFigureState(first, "R$ 30,00", false).generation).toBe(2);
+    const first = nextFigureState(start, "R$ 20,00", false, false);
+    expect(first).toEqual({
+      animate: true,
+      generation: 1,
+      reading: false,
+      text: "R$ 20,00",
+    });
+    expect(nextFigureState(first, "R$ 20,00", false, false)).toBe(first);
+    expect(nextFigureState(first, "R$ 30,00", false, false).generation).toBe(2);
   });
 
   it("uma troca com os valores escondidos não anima, nem quando eles voltam", () => {
-    const quiet = nextFigureState(start, "R$ 20,00", true);
+    const quiet = nextFigureState(start, "R$ 20,00", true, false);
     expect(quiet.animate).toBe(false);
-    expect(nextFigureState(quiet, "R$ 20,00", false)).toBe(quiet);
+    expect(nextFigureState(quiet, "R$ 20,00", false, false)).toBe(quiet);
+  });
+
+  it("cada dia lido no minigráfico troca sem entrada, e a volta ao repouso também", () => {
+    let state = start;
+    for (const text of ["R$ 20,00", "R$ 30,00", "R$ 25,00"]) {
+      state = nextFigureState(state, text, false, true);
+      expect(state.animate).toBe(false);
+    }
+    const back = nextFigureState(state, "R$ 10,00", false, false);
+    expect(back.animate).toBe(false);
+    expect(back.reading).toBe(false);
+    expect(nextFigureState(back, "R$ 40,00", false, false).animate).toBe(true);
+  });
+
+  it("uma leitura que termina no mesmo texto do repouso não deixa a próxima troca sem entrada", () => {
+    const reading = nextFigureState(start, "R$ 10,00", false, true);
+    expect(reading.generation).toBe(start.generation);
+    const rest = nextFigureState(reading, "R$ 10,00", false, false);
+    expect(rest.reading).toBe(false);
+    expect(nextFigureState(rest, "R$ 40,00", false, false).animate).toBe(true);
   });
 
   it("a entrada é um fade de 200 ms só sob motion-full, sem rolar dígito", () => {
