@@ -267,7 +267,7 @@ describe("o cartão do Resultado estimado", () => {
     expect(words(result)).not.toContain("Não é lucro líquido nem caixa");
   });
 
-  it("com dias sem custo, o selo e os dias ficam na linha de apoio", () => {
+  it("com dias sem custo, o aviso é a linha de apoio: o sinal e os dias, numa linha só", () => {
     const result = card(
       render(
         figures({
@@ -282,11 +282,14 @@ describe("o cartão do Resultado estimado", () => {
       ),
       "home-result"
     );
-    expect(words(result)).toContain("estimativa incompleta");
+    expect(words(result)).toContain("Incompleta");
     expect(result).toContain('data-kpi-unknown="">5 de 23 dias sem custo<');
-    expect(result.indexOf("estimativa incompleta")).toBeLessThan(
+    expect(result.indexOf("Incompleta")).toBeLessThan(
       result.indexOf("data-kpi-unknown")
     );
+    expect(result).not.toContain("estimativa incompleta");
+    expect(result.match(/data-kpi-note-row/g)).toHaveLength(1);
+    expect(result).toContain("h-5 overflow-hidden");
     expect(result).not.toContain("data-kpi-delta=");
   });
 });

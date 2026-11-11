@@ -18,10 +18,11 @@ import {
 
 const CLASS_ATTRIBUTE = /class="([^"]*)"/;
 const CURRENCY_SPAN = /<span class="([^"]*)" data-money-currency/;
+const FIT_IN_CQW = /min\(var\(--text-value-lg\), ([\d.]+)cqw\)/;
 const TEXT_IN_REM = /text-\[[\d.]+rem\]/;
 
 const TILE_CHIP_THEN_NOTE =
-  /data-kpi-note-row=""><span data-kpi-chip-row=""><span data-kpi-delta="down">[^<]*<\/span><\/span>2 vendas/;
+  /data-kpi-note-row=""><span class="shrink-0" data-kpi-chip-row=""><span data-kpi-delta="down">[^<]*<\/span><\/span>2 vendas/;
 
 const PILL_THEN_AGAINST =
   /data-kpi-pill=""[^>]*>.*\+30,0%<\/span>.*<\/span><span[^>]*data-kpi-delta-against=""[^>]*>vs\. 07\/10 a 05\/11<\/span>/;
@@ -83,14 +84,49 @@ describe("KpiTile", () => {
     expect(tile({})).not.toContain("data-kpi-spark");
   });
 
-  it("is 92 px tall at 3 lines, with no height kept for a foot or an action; a warning has a row only when it exists", () => {
+  it("is 92 px tall at 3 lines, with no height kept for a foot or an action; a warning is the support line, never a fourth", () => {
     const markup = tile({ note: "2 vendas" });
     expect(markup).not.toContain("data-kpi-foot");
     expect(markup).not.toContain("data-kpi-warning");
     expect(markup).toContain("py-3");
-    expect(tile({ warning: "estimativa incompleta" })).toContain(
-      'data-kpi-warning=""'
+    const warned = tile({
+      chip: <i data-chip="" />,
+      warning: "Incompleta",
+      warningDetail: "5 de 23 dias sem custo",
+    });
+    expect(warned).toContain('data-kpi-warning=""');
+    expect(warned.match(/data-kpi-note-row/g)).toHaveLength(1);
+    expect(warned).toContain("h-5 overflow-hidden");
+    expect(warned.indexOf("Incompleta")).toBeLessThan(
+      warned.indexOf("data-chip")
     );
+    expect(warned.indexOf("data-chip")).toBeLessThan(
+      warned.indexOf("5 de 23 dias sem custo")
+    );
+  });
+});
+
+describe("HeroValue of a tile", () => {
+  const sized = (amount: string) =>
+    renderToStaticMarkup(<HeroValue amount={amount} tile />);
+  const fit = (markup: string) => Number(FIT_IN_CQW.exec(markup)?.[1]);
+
+  it("sizes the figure by the width of its own area: the longer the amount, the smaller the fit, and a short one keeps the token", () => {
+    const short = fit(sized("0"));
+    const long = fit(sized("-99640.35"));
+    expect(long).toBeLessThan(short);
+    expect(short).toBeGreaterThan(30);
+    expect(long).toBeLessThan(30);
+  });
+
+  it("does not size a figure that is not a tile's, nor a dash", () => {
+    expect(renderToStaticMarkup(<HeroValue amount="129.90" />)).not.toContain(
+      "cqw"
+    );
+    expect(sized("129.90")).toContain("max(0.875rem");
+    expect(
+      renderToStaticMarkup(<HeroValue amount={null} tile />)
+    ).not.toContain("cqw");
   });
 });
 

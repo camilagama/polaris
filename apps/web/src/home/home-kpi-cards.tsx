@@ -1,3 +1,4 @@
+import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { useCallback, useMemo, useState } from "react";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
@@ -8,11 +9,7 @@ import {
   KpiTile,
   KpiTileSkeleton,
 } from "@/ui/kpi-card";
-import {
-  isIncompleteEstimate,
-  NO_KNOWN_COST_RESULT,
-} from "../dashboard/dashboard-model";
-import { IncompleteBadge } from "../dashboard/result-cards";
+import { isIncompleteEstimate } from "../dashboard/dashboard-model";
 import { resultKpis, untilText } from "../dashboard/result-kpis";
 import type {
   ComparisonDays,
@@ -135,29 +132,49 @@ function TodayTile({
         />
       }
       title="Vendas hoje"
-      value={<HeroValue amount={reading.value} />}
+      value={<HeroValue amount={reading.value} tile />}
     />
   );
 }
 
-function resultWarning({
-  incomplete,
+/** The sign of an estimate that is not whole, always in sight on the support line of the Resultado. */
+function IncompleteSign() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 font-medium text-warning"
+      data-kpi-incomplete=""
+    >
+      <TriangleAlertIcon aria-hidden="true" className="size-3.5 shrink-0" />
+      Incompleta
+    </span>
+  );
+}
+
+/** What the sign adds, after the rest of the line: the cause when no cost is known, else the days with no cost, when they fit the words. */
+function incompleteDetail({
   missing,
   noCost,
 }: {
-  incomplete: boolean;
   missing: { total: number; unknown: number } | null;
   noCost: boolean;
 }) {
-  return incomplete ? (
-    <>
-      <IncompleteBadge />
-      {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
-      {missing && unknownDaysFit(missing.unknown, missing.total) ? (
-        <span data-kpi-unknown="">
-          {unknownDaysText(missing.unknown, missing.total)}
+  if (noCost) {
+    return (
+      <>
+        <span aria-hidden="true">· </span>
+        <span data-kpi-no-cost="">
+          Sem custo informado
+          <span className="sr-only">: não dá para estimar.</span>
         </span>
-      ) : null}
+      </>
+    );
+  }
+  return missing && unknownDaysFit(missing.unknown, missing.total) ? (
+    <>
+      <span aria-hidden="true">· </span>
+      <span data-kpi-unknown="">
+        {unknownDaysText(missing.unknown, missing.total)}
+      </span>
     </>
   ) : null;
 }
@@ -359,7 +376,7 @@ function MonthTiles({
             }
           : {})}
         title={`Vendas ${model.of}`}
-        value={<HeroValue amount={read.sales.value} />}
+        value={<HeroValue amount={read.sales.value} tile />}
       />
       <KpiTile
         chip={noCost ? undefined : chipOf(read.result)}
@@ -371,7 +388,10 @@ function MonthTiles({
           text: read.result.help,
         }}
         id="home-result"
-        warning={resultWarning({ incomplete, missing, noCost })}
+        warning={incomplete ? <IncompleteSign /> : null}
+        warningDetail={
+          incomplete ? incompleteDetail({ missing, noCost }) : null
+        }
         {...(kpis.series.result && drawn && !noCost
           ? {
               range: range(read.result, model.labels.result),
@@ -390,7 +410,7 @@ function MonthTiles({
             Resultado estimado
           </a>
         }
-        value={<HeroValue amount={noCost ? null : read.result.value} />}
+        value={<HeroValue amount={noCost ? null : read.result.value} tile />}
       />
       <KpiTile
         chip={chipOf(read.ticket)}
@@ -407,7 +427,7 @@ function MonthTiles({
             }
           : {})}
         title="Ticket médio"
-        value={<HeroValue amount={read.ticket.value} />}
+        value={<HeroValue amount={read.ticket.value} tile />}
       />
     </>
   );

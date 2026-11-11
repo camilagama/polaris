@@ -641,8 +641,8 @@ export function unknownDaysText(unknown: number, total: number): string {
 }
 
 /**
- * Whether "estimativa incompleta · N de M dias sem custo" fits one line of the card at 360 px (13 px text, with room
- * left for two digits on each side: a month never has more). A longer count, which a long period of the Resultado
+ * Whether "N de M dias sem custo" is worth writing on the support line of a card (two digits on each side: a month never
+ * has more). A longer count, which a long period of the Resultado
  * can have, goes to the (i), which says it in words (`resultHelp`).
  */
 export function unknownDaysFit(unknown: number, total: number): boolean {
