@@ -165,8 +165,8 @@ function journeyNameCalls(source: string): string[][] {
 
 const RETRY_POSITION = 2;
 const REPETITION_INDEX_POSITION = 3;
-const RETRY = /^(?:\w+\.)*retry$/;
-const REPETITION_INDEX = /^(?:\w+\.)*repeatEachIndex$/;
+const RETRY = /^testInfo\.retry$/;
+const REPETITION_INDEX = /^testInfo\.repeatEachIndex$/;
 
 const lacksRepetition = (args: string[]) =>
   args.length !== REPETITION_INDEX_POSITION + 1 ||
@@ -205,7 +205,21 @@ describe("journeyName calls in the e2e suites", () => {
     const workerIndex =
       'journeyName("pilha", "a", testInfo.workerIndex, testInfo.repeatEachIndex)';
     const retryOnly = 'journeyName("pilha", "a", testInfo.retry, 0)';
-    for (const bad of [literal, repetitionTwice, workerIndex, retryOnly]) {
+    const localRetry =
+      'journeyName("pilha", "a", retry, testInfo.repeatEachIndex)';
+    const otherRetry =
+      'journeyName("pilha", "a", config.retry, testInfo.repeatEachIndex)';
+    const localIndex =
+      'journeyName("pilha", "a", testInfo.retry, repeatEachIndex)';
+    for (const bad of [
+      literal,
+      repetitionTwice,
+      workerIndex,
+      retryOnly,
+      localRetry,
+      otherRetry,
+      localIndex,
+    ]) {
       expect(journeyNameCalls(bad).filter(lacksRepetition), bad).toHaveLength(
         1
       );
@@ -315,7 +329,7 @@ describe("journeyName calls in the e2e suites", () => {
 
   it("still accepts a call with the index after a template expression with a brace in a string", () => {
     const open = ["$", "{"].join("");
-    const good = `const s = \`${open}f("}")} ${open}journeyName("a", "b", retry, testInfo.repeatEachIndex)}\`;`;
+    const good = `const s = \`${open}f("}")} ${open}journeyName("a", "b", testInfo.retry, testInfo.repeatEachIndex)}\`;`;
     expect(journeyNameCalls(good)).toHaveLength(1);
     expect(journeyNameCalls(good).filter(lacksRepetition)).toHaveLength(0);
   });
