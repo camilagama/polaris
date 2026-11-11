@@ -152,8 +152,6 @@ export interface BillingNoticeDependencies {
   recipients: BillingNoticeRecipients;
   send?: ClosureNoticeSender;
   stores: BillingNoticeStores;
-  /** The welcome (`WELCOME_EMAIL_ENABLED`); null while off. */
-  welcomeEmail: BillingNoticeEmailConfig | null;
 }
 
 /** A failure of the provider or the network: the queue tries again, and the hourly handover after it. */
@@ -247,15 +245,13 @@ interface BillingNoticeBindings {
   BILLING_SELF_SERVICE_ENABLED?: string;
   BILLING_SUPPORT_EMAIL?: string;
   RESEND_API_KEY?: string;
-  WELCOME_EMAIL_ENABLED?: string;
 }
 
 /**
  * The consumer's dependencies in the Worker: the notice and its store through the billing store (the billing role),
- * and the address through `billing_notice_recipient` (the authentication role), opened only when an e-mail is on. The
- * billing e-mails follow `BILLING_SELF_SERVICE_ENABLED`, the welcome `WELCOME_EMAIL_ENABLED`; either one needs the
- * provider's key, the sender, the support box, the app's origin and the authentication role, or it stays off and its
- * notices are skipped `email_not_configured`.
+ * and the address through `billing_notice_recipient` (the authentication role), opened only when the e-mail is on. The
+ * billing e-mails follow `BILLING_SELF_SERVICE_ENABLED` and need the provider's key, the sender, the support box, the
+ * app's origin and the authentication role, or they stay off and their notices are skipped `email_not_configured`.
  */
 export function billingNoticeDependenciesOf(
   bindings: BillingNoticeBindings,
@@ -267,22 +263,14 @@ export function billingNoticeDependenciesOf(
     bindings,
     bindings.BILLING_SELF_SERVICE_ENABLED
   );
-  const welcomeEmail = billingNoticeEmailConfig(
-    bindings,
-    bindings.WELCOME_EMAIL_ENABLED
-  );
   const recipients =
-    authConnection && (billingEmail || welcomeEmail)
-      ? openRecipients(authConnection)
-      : null;
-  // a switch on whose e-mail cannot go out: its notices are skipped email_not_configured, so a person must see it
-  for (const [email, on, config] of [
-    ["billing", bindings.BILLING_SELF_SERVICE_ENABLED, billingEmail],
-    ["welcome", bindings.WELCOME_EMAIL_ENABLED, welcomeEmail],
-  ] as const) {
-    if (on === BILLING_SELF_SERVICE_ON && !(config && recipients)) {
-      logger.warn("billing_notice_email_misconfigured", { email });
-    }
+    authConnection && billingEmail ? openRecipients(authConnection) : null;
+  // the switch on whose e-mail cannot go out: its notices are skipped email_not_configured, so a person must see it
+  if (
+    bindings.BILLING_SELF_SERVICE_ENABLED === BILLING_SELF_SERVICE_ON &&
+    !(billingEmail && recipients)
+  ) {
+    logger.warn("billing_notice_email_misconfigured", { email: "billing" });
   }
   return {
     close: async () => {
@@ -309,7 +297,6 @@ export function billingNoticeDependenciesOf(
         storeOf: (noticeId, organizationId) =>
           store.readNoticeStore(noticeId, organizationId),
       },
-      welcomeEmail: recipients ? welcomeEmail : null,
     },
   };
 }
@@ -531,7 +518,8 @@ const EMAIL_BUILDERS: Readonly<Record<BillingNoticeKind, EmailBuilder>> = {
   renewal_failed: renewalFailedEmail,
   trial_charge_eve: trialChargeEveEmail,
   trial_started: trialStartedEmail,
-  welcome: ({ where }) => ({ kind: "welcome", store: where }),
+  // rows of this kind recorded before the e-mail was retired stay readable; none is ever sent (see `skipReasonOf`)
+  welcome: () => null,
 };
 
 /**
@@ -563,8 +551,8 @@ async function skipReasonOf(
   | { config: BillingNoticeEmailConfig; store: BillingNoticeStoreFacts }
 > {
   const { kind, noticeId, organizationId } = delivery;
-  const config =
-    kind === "welcome" ? dependencies.welcomeEmail : dependencies.billingEmail;
+  // a welcome row recorded before the e-mail was retired has no e-mail on: it is settled as not configured, never sent
+  const config = kind === "welcome" ? null : dependencies.billingEmail;
   const store = config
     ? await dependencies.stores.storeOf(noticeId, organizationId)
     : null;
