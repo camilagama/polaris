@@ -320,6 +320,15 @@ Pedido do usuário de 09/11: no Início, tirar a média por dia da semana e deix
 - **Bytes** (build de produção local, Node 24, gzip nível 9, contra a `c579a11d` medida do mesmo jeito): `PRECACHE-GROWTH` de +238 162 B para **+238 003 B** (−159 B); `CHARTS` de 57 255 B para **57 357 B** (+102 B, o `TooltipBox` passa a ser usado pelo mapa e o que ele traz fica no chunk dos gráficos), `HEATMAP` de 10 189 B para **10 299 B** (+110 B). As linhas só avisam, sob `BUDGET_MODE`.
 - **Altura do cartão** (loja `vendas`, verify-polaris): de 354 px (celular de 360) e 380 px (1280) para 267 e 253 px.
 
+## Emenda: a marca no cabeçalho de largura total e a lateral abaixo dele (t994)
+
+Pedido do usuário de 09/11 (item 9): a logo deixa de viver no topo da lateral e de encolher com ela.
+
+- **O que mudou.** O `ShellHeader` passa a ser filho direto do `SidebarProvider` (coluna), acima de uma linha com a lateral e o painel do conteúdo. A marca (logo e "Polaris") aparece nele em todas as larguras, e o `SidebarTrigger` ("Recolher menu"/"Expandir menu", a partir de 1024 px) vem logo depois dela. A coluna fixa do `Sidebar` começa em `--app-header` e vai até o pé da janela; o `SidebarHeader` só existe na folha "Mais" abaixo de 760 px, onde mantém a marca e a linha do estado.
+- **O que não mudou.** Abaixo de 760 px o cabeçalho e a folha são os de antes. A coluna recolhida continua com 3 rem, ícones, tooltip à direita, item atual marcado e escolha guardada no aparelho; só as opções recolhem, e o cabeçalho, a marca e o botão ficam no mesmo lugar e com o mesmo tamanho. Nenhuma dependência nova e nenhum primitivo do Base UI entra no chunk de entrada.
+- **Ordem de foco e de leitura.** "Ir para o conteúdo", marca, botão de recolher, chip, olho e menu da loja, lateral, conteúdo. O topo passa a vir antes do menu; o leitor de tela encontra primeiro o cabeçalho.
+- **Bytes** (build de produção local, Node 24, gzip nível 9, contra a `eced86c6` medida do mesmo jeito): `PRECACHE-GROWTH` de +241 625 B para **+241 587 B** (−38 B); `CHARTS` e `HEATMAP` sem mudança relevante.
+
 ## Consequências
 
 - Uma base única de componentes acessíveis (Base UI) com identidade nossa; o DESIGN.md passa a descrever tokens no vocabulário do shadcn e deixa de ter duas tabelas de cores (`--category-*` e `--payment-*`) quando a última tela migrar.
