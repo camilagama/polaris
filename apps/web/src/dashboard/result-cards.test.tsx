@@ -189,7 +189,6 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     expect(words(margin)).toContain("41,2");
     expect(words(margin)).not.toContain("Sem custo informado");
     const result = card(markup, "result-kpi-result");
-    // the badge and the days are on the row of the warning, in sight
     expect(words(result)).toContain("estimativa incompleta");
     expect(result).toContain('data-kpi-unknown="">3 de 25 dias sem custo<');
     expect(result).toContain('data-kpi-warning=""');
@@ -313,7 +312,6 @@ describe("the strip of tiles and its (i)", () => {
     );
     expect(markup).not.toContain("col-span");
     expect(markup.match(/data-kpi-row=/g)).toHaveLength(1);
-    // the cells of the strip give up their own card from 1280 px
     expect(markup.match(/xl:bg-transparent/g)).toHaveLength(4);
   });
 

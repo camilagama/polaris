@@ -12,10 +12,7 @@ import { Money } from "./money";
 import { Skeleton } from "./skeleton";
 
 /**
- * The KPI tile, with our text, the one of the Início and of the Resultado: the name with the (i), the number, one line
- * of support (the chip of the change, which says in its name what it compares against, and a count or a warning) and, to
- * the right of the number, a sparkline of 36 px that the pointer, the finger and the arrows read. It is a region named by
- * its title; the number is text, the drawing is a reinforcement.
+ * A region named by its title; the number is text, the sparkline drawing is a reinforcement.
  */
 
 /**
@@ -26,10 +23,8 @@ export const KPI_GRID =
   "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-4";
 
 /**
- * The row of the Resultado: the tiles of `KPI_GRID` up to 1279 px (one column, two from 760 px) and, from 1280 px, one
- * card with four columns and a 1 px line between them, as wide as the row of the Início. The cells give up their own
- * ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the tiles to its corners. Below 1280 px a column
- * has no room for the number and the sparkline side by side.
+ * Up to 1279 px the tiles of `KPI_GRID`; from 1280 px one card with four columns, because a column has no room for the
+ * number and the sparkline side by side. The cells give up their own ring, background and rounding (`KPI_STRIP_CELL`).
  */
 export const KPI_STRIP =
   "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";

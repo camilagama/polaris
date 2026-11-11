@@ -262,7 +262,6 @@ const MONEY_FRACTION_ELSEWHERE: readonly {
   },
 ];
 
-/** The strings that keep a size in rem for a money value: none now, the list is exact and empty. */
 const MONEY_ABSOLUTE_SIZE_ELSEWHERE: readonly {
   file: string;
   strings: number;

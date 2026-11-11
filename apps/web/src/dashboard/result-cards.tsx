@@ -133,14 +133,10 @@ interface ResultCardsProps {
 }
 
 /**
- * The row of KPI tiles of the Resultado (revisão de UI v7, § 8), the tile of the Início: Resultado estimado, Vendas,
- * Ticket médio and Margem. The sparklines of sales, ticket and result read the same day together (the pointer, the
- * finger or the arrows), and the date of the day read takes the place of the chip; leaving, they go back to the period up
- * to today. The result has its sparkline and its chip (in reais) only when every day up to today has a known cost;
- * otherwise the badge "estimativa incompleta" and "N de M dias sem custo informado", with neither (AC-9). With no cost
- * of the goods known (`cogsCoverageOf` is "none") the result and the margin show a dash and the badge: the server's
- * figures are then the sales, never an estimate. The margin is the server's, with no sparkline. A period of fewer
- * than three points draws none. On a phone the sparklines are drawn finished; the reading by the finger stays.
+ * The sparklines of sales, ticket and result read the same day together, and the date of the day read takes the place of
+ * the chip. The result has its sparkline and chip only when every day up to today has a known cost (AC-9). With no cost
+ * of the goods known (`cogsCoverageOf` is "none") the server's figures are the sales, never an estimate, so the result
+ * and the margin show a dash and the badge.
  */
 export function ResultCards({
   comparison,
@@ -195,8 +191,7 @@ export function ResultCards({
       values={values}
     />
   );
-  // a period with no sale draws nothing, nor does one of fewer than three points; a copy kept before the series existed
-  // has the totals only
+  // a copy kept before the series existed has the totals only
   const drawn = cards.salesCount > 0 && kpis.days.length >= MIN_SPARK_POINTS;
   // no cost of the goods known: the server's margin and result are the sales, so the two cards say so, with no number
   const noCost = cogsCoverageOf(quality) === "none";
@@ -282,7 +277,6 @@ export function ResultCards({
   );
 }
 
-/** The margin tile: the server's percent, the (i) that says what it is, and the warnings. No sparkline. */
 function MarginCard({
   incomplete,
   noCost,

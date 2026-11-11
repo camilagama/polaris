@@ -58,7 +58,7 @@ const STACKED_ROW = "@max-[18rem]:grid";
 const STACKED_VALUE =
   "@max-[18rem]:pt-0 @max-[18rem]:pl-4 @max-[18rem]:text-left";
 
-/** The quiet link under the name of the line of the period's expenses (a line of its own, so the row is as wide as the others): text of the support size, underlined, with the touch area of a link. */
+/** On a line of its own, so the row is as wide as the others. */
 const EXPENSES_LINK =
   "touch-hit focus-ring whitespace-nowrap rounded-sm font-normal text-muted-foreground text-xs underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground";
 

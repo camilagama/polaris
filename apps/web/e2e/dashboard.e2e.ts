@@ -2574,7 +2574,6 @@ async function withSideMenu(page: Page, side: keyof typeof SIDE_MENU) {
   }, SIDE_MENU[side]);
 }
 
-/** The boxes of the four tiles: where each is and what it paints. */
 const cardBoxes = (page: Page) =>
   kpiCards(page).evaluateAll((cards) =>
     cards.map((element) => {
@@ -2678,7 +2677,6 @@ const HIDDEN_RUNS = ["mês completo", "mês incompleto", "seis dígitos"] as con
 
 const SWEEP_WIDTHS = [1024, 1150, 1280, 1300, 1440] as const;
 
-/** What a state of the strip measures at one width: its box, where each tile's support line sits, and what is cut. */
 async function measureStrip(page: Page) {
   await settled(page);
   return stripOf(page).evaluate((strip) => ({
@@ -2735,7 +2733,6 @@ async function sweepStrip(
 
 type Measured = Record<string, Awaited<ReturnType<typeof sweepStrip>>>;
 
-/** A tile without a warning has the one height, whatever the period, the comparison or the hidden values. */
 function expectSameStripHeight(measured: Measured, width: number) {
   const heights = Object.fromEntries(
     Object.entries(measured)
@@ -2769,7 +2766,6 @@ function expectNothingCut(measured: Measured, width: number) {
   }
 }
 
-/** A change that comes and goes moves nothing under it: the support line sits where it sat. */
 function expectChipMovesNothing(measured: Measured, width: number) {
   const withChip = measured["mês completo"]?.states[width]?.cards ?? [];
   const withoutChip =
@@ -2812,7 +2808,6 @@ test.describe("a altura da faixa de KPIs só cresce pelo aviso de estimativa; o 
         );
         await context.close();
       }
-      // the states that carry the warning are the ones that add a line
       expect(measured["mês incompleto"]?.badge).toBeGreaterThan(0);
       expect(measured["mês sem custo informado"]?.noCost).toBeGreaterThan(0);
       for (const width of SWEEP_WIDTHS) {
