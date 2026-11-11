@@ -61,10 +61,10 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
 
 2. **Restaurar** o backup para o novo ambiente (não abra o ambiente restaurado a usuários, a aparelhos nem ao cron enquanto os passos 3 a 5 não terminarem: nem o Worker, nem a sincronização, nem a varredura horária).
 
-   **Antes de restaurar as políticas, os papéis donos.** Papéis são do cluster, não do banco. Uma branch do Neon os leva junto, mas um restore lógico (`pg_dump`/`pg_restore`) num projeto novo não: cada política é `TO` um papel, e as funções `SECURITY DEFINER` pertencem a um `polaris_*_owner`. Sem o papel, o `CREATE POLICY` ou o `ALTER FUNCTION … OWNER TO` falha, ou é pulado com `--no-owner`, e uma função restaurada fica com o dono do banco, que tem `BYPASSRLS`. No destino, antes de restaurar, confira que os 20 papéis donos existem (é o `MIN_OWNER_ROLES` de `owner-role-attributes.ts`; o 19º, `polaris_activation_notice_owner`, é da 0124, e o 20º, `polaris_activation_owner`, da 0127):
+   **Antes de restaurar as políticas, os papéis donos.** Papéis são do cluster, não do banco. Uma branch do Neon os leva junto, mas um restore lógico (`pg_dump`/`pg_restore`) num projeto novo não: cada política é `TO` um papel, e as funções `SECURITY DEFINER` pertencem a um `polaris_*_owner`. Sem o papel, o `CREATE POLICY` ou o `ALTER FUNCTION … OWNER TO` falha, ou é pulado com `--no-owner`, e uma função restaurada fica com o dono do banco, que tem `BYPASSRLS`. No destino, antes de restaurar, confira que os 21 papéis donos existem (é o `MIN_OWNER_ROLES` de `owner-role-attributes.ts`; o 19º, `polaris_activation_notice_owner`, é da 0124, o 20º, `polaris_activation_owner`, da 0127, e o 21º, `polaris_activation_recipient_owner`, da 0128):
 
    ```sql
-   SELECT count(*) FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner';  -- 20
+   SELECT count(*) FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner';  -- 21
    ```
 
    Se faltar algum, crie-os antes com o bloco `DO $roles$` da migration que cria cada um (por exemplo, a 0095 cria `polaris_sync_owner`, `polaris_authorization_epoch_owner` e `polaris_onboarding_owner`), nunca com `CREATE ROLE` à mão com outros atributos. Restaure **sem** `--no-owner` e **sem** `--no-privileges`. No Neon isso não funciona sem preparo (ver abaixo). Depois do restore, do passo 2b e das migrations do passo 3, a mesma consulta do papel e esta, que repete a checagem `foreignOwner` de `definer-hardening-checks.ts` (o `staging:verify-database` só aceita o marcador `staging`), devem voltar 20 e **vazia**:

@@ -19,6 +19,8 @@ import { memberships } from "./organization";
 const billingRuntimeRole = "polaris_billing_runtime";
 const activationNoticeOwnerRole = "polaris_activation_notice_owner";
 const purgeOwnerRole = "polaris_purge_owner";
+const activationRecipientOwnerRole = "polaris_activation_recipient_owner";
+const activationRecipientScope = sql`(CASE WHEN pg_catalog.current_setting('app.owner_scope.activation_notice_recipient_notice_id', true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN pg_catalog.current_setting('app.owner_scope.activation_notice_recipient_notice_id', true)::uuid END)`;
 
 /** The three e-mails of the series (ADR 0106, D4). */
 export const ACTIVATION_NOTICE_STEPS = Object.freeze([
@@ -48,8 +50,8 @@ const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
  * deletes and which the deletion of the account must delete first.
  *
  * Under FORCE ROW LEVEL SECURITY with no policy for the tenant: the billing role records, reads and marks them, the
- * owner of the series reads them (column grants of the migration), and the purge owner sees those of a store being
- * purged.
+ * owner of the series reads them (column grants of the migration), the owner of the recipient's function sees only the
+ * notice of its call while owed, and the purge owner sees those of a store being purged.
  */
 export const activationNotices = pgTable(
   "activation_notices",
@@ -128,6 +130,12 @@ export const activationNotices = pgTable(
       for: "select",
       to: activationNoticeOwnerRole,
       using: sql`true`,
+    }),
+    // the owner of the recipient's function sees only the notice of its call, and only while it is owed
+    pgPolicy("activation_notices_recipient_owner_select_owed", {
+      for: "select",
+      to: activationRecipientOwnerRole,
+      using: sql`${table.id} = ${activationRecipientScope} AND ${owedNotice(table)}`,
     }),
     pgPolicy("activation_notices_purge_owner_select", {
       for: "select",
