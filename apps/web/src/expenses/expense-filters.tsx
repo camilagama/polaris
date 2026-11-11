@@ -92,7 +92,7 @@ interface StatusSegmentedProps {
   status: ExpenseStatusFilter;
 }
 
-/** "Ativas | Anuladas" on the month's line: a touch swaps the list, the one on screen is pressed (and says so in words, not only by colour). */
+/** "Ativas | Anuladas" on the month's line: a touch swaps the list, and the one on screen is `aria-pressed` and filled (the Aparência segmented of the sidebar marks its choice the same way). */
 function StatusSegmented({ onChange, status }: StatusSegmentedProps) {
   const pick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
@@ -106,7 +106,7 @@ function StatusSegmented({ onChange, status }: StatusSegmentedProps) {
   return (
     <fieldset
       aria-label="Situação"
-      className="m-0 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
+      className="m-0 flex shrink-0 rounded-md border-0 p-0 shadow-xs"
     >
       {STATUS_OPTIONS.map((option) => (
         <button
