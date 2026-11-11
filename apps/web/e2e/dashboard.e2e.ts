@@ -23,11 +23,17 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
  */
 const NOW = "2026-10-14T12:00:00.000Z";
 /** The server read the figures at NOW: 09:00 in the lab organization (America/Sao_Paulo). */
-const UPDATED_UNTIL = "Atualizado até 14/10/2026 09:00";
+const UPDATED_AT = "Atualizado às 09:00";
+const UPDATED_NAME = "Atualizar, atualizado às 09:00";
 const COPY_NOTICE =
   "Mostrando o último resultado confirmado, de 14/10/2026 às 09:00. Vendas e despesas feitas depois, ou ainda não enviadas deste aparelho, não estão nestes números.";
 const CACHE_KEY_PREFIX = "polaris.offline.periodSummary.";
 const rpcPrefix = /^\/rpc\//;
+const ATUALIZAR_NAME = /^Atualizar(, atualizado .+)?$/;
+/** The time of the read is the text of the button that reads again: its name starts with "Atualizar". */
+const refreshButton = (page: Page) =>
+  page.getByRole("button", { name: ATUALIZAR_NAME });
+
 /** An amount written on the screen: "R$ 130,00". */
 const AN_AMOUNT = /R\$ \d/;
 
@@ -729,7 +735,8 @@ test("mostra os quatro cartões (v7) e o passo a passo do mês atual", async ({
   );
 
   // the time of the last successful load is visible
-  await expect(page.locator("#dashboard-updated")).toContainText(UPDATED_UNTIL);
+  await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+  await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
 });
 
 test("sem a leitura do dailySales, somem só os chips de Vendas e Ticket médio; o resto da tela fica", async ({
@@ -958,7 +965,8 @@ test("uma falha do servidor mostra o erro e deixa tentar de novo", async ({
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
-  await expect(page.locator("#dashboard-updated")).toContainText(UPDATED_UNTIL);
+  await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+  await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
 });
 
 const copyNotice = (page: Page) =>
@@ -983,7 +991,8 @@ test("com o servidor, a tela diz até quando está atualizada e guarda o mês pa
   const server = new FakeReportServer();
   await openDashboard(page, server);
 
-  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+  await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
   await expect(copyNotice(page)).toHaveCount(0);
   expect(await cachedMonths(page)).toEqual(["2026-10"]);
 
@@ -1000,7 +1009,7 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await expect(card(page, CARD.result)).toContainText("R$ 38,50");
 
   server.networkDown = true;
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await refreshButton(page).click();
 
   const notice = copyNotice(page);
   await expect(notice).toContainText(COPY_NOTICE, { timeout: 15_000 });
@@ -1014,16 +1023,18 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
   await expect(quality(page)).toContainText(
     "Dados completos para este período"
   );
-  // the quiet "updated until" line is for figures the server just gave
-  await expect(page.locator("#dashboard-updated")).not.toContainText(
-    "Atualizado até"
+  // "Atualizado às" is for figures the server just gave; the copy says when it was confirmed, beside the period
+  await expect(refreshButton(page)).toHaveText("Atualizar");
+  await expect(page.locator("#dashboard-updated")).toHaveText(
+    "Último resultado confirmado: 14/10/2026 09:00"
   );
 
   // the connection is back: the figures of the server replace the copy
   server.networkDown = false;
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await refreshButton(page).click();
   await expect(copyNotice(page)).toHaveCount(0);
-  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+  await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
 });
 
 test("sem conexão, a cópia vale só para o mês já lido, com a estimativa como estava", async ({
@@ -1136,8 +1147,9 @@ test("abrir o painel sem rede mostra a cópia do mês, e com a rede de volta mos
   // back on the Resultado tab, the connection returns: the figures of the server replace the copy
   await page.getByRole("tab", { exact: true, name: "Resultado" }).click();
   server.networkDown = false;
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
-  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await refreshButton(page).click();
+  await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+  await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
   await expect(copyNotice(page)).toHaveCount(0);
 });
 
@@ -1202,7 +1214,7 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   // an outage of the server is not a refusal: with the connection there, after the three tries, the copy stays
   // under "Não foi possível atualizar agora", with what it shows and "Tentar novamente" (paliativo dos 1102)
   server.failure = { code: "SERVICE_UNAVAILABLE", status: 503 };
-  await page.getByRole("button", { exact: true, name: "Atualizar" }).click();
+  await refreshButton(page).click();
   const stale = page
     .getByRole("status")
     .filter({ hasText: "Não foi possível atualizar agora" });
@@ -1214,7 +1226,8 @@ test("uma recusa do servidor nunca cai na cópia, mas uma indisponibilidade cai"
   await expect(card(page, CARD.netSales)).toContainText("R$ 130,00");
   server.failure = null;
   await stale.getByRole("button", { name: "Tentar novamente" }).click();
-  await expect(page.locator("#dashboard-updated")).toHaveText(UPDATED_UNTIL);
+  await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+  await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
   await expect(stale).toHaveCount(0);
 });
 
@@ -2946,6 +2959,115 @@ test.describe("o período do Resultado não tem setas de mês", () => {
       await expect(page.locator("[data-month-live]")).toHaveCount(0);
     });
   }
+});
+
+/**
+ * The top of the first card at 360 px on this fixture with the control in two rows (the period, and below it
+ * "Atualizar" with its status line); the one line has to bring it up by `ONE_LINE_RISE`.
+ */
+const FIRST_CARD_TOP_BEFORE_ONE_LINE = 539;
+const ONE_LINE_RISE = 100;
+
+test.describe("uma linha de controle: o período e o horário que é o botão de atualizar (L2-4)", () => {
+  test("a 360 px, o primeiro cartão sobe ao menos 100 px em relação à tela de duas linhas (AC-4.1)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openDashboard(page, new FakeReportServer());
+    await expect(card(page, CARD.result)).toContainText("R$ 38,50");
+    const box = await card(page, CARD.result).boundingBox();
+    expect(box).not.toBeNull();
+    expect(Math.round(box?.y ?? 0)).toBeLessThanOrEqual(
+      FIRST_CARD_TOP_BEFORE_ONE_LINE - ONE_LINE_RISE
+    );
+  });
+
+  for (const size of [
+    { fontPixels: 16, height: 740, width: 360 },
+    { fontPixels: 20, height: 740, width: 320 },
+  ]) {
+    reflowTest(
+      `período e horário cabem a ${size.width} px com a letra em ${size.fontPixels} px, sem corte nem rolagem (AC-4.4)`,
+      async ({ page }) => {
+        await openReflowViewport(page, size);
+        await openDashboard(page, new FakeReportServer());
+        const refresh = refreshButton(page);
+        await expect(refresh).toHaveText(UPDATED_AT);
+        await expectReflowFont(page, size.fontPixels);
+        const period = await periodButton(page).boundingBox();
+        const read = await refresh.boundingBox();
+        expect(period).not.toBeNull();
+        expect(read).not.toBeNull();
+        for (const box of [period, read]) {
+          expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+          expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(
+            size.width
+          );
+        }
+        if (size.width === 360) {
+          expect(
+            read?.y ?? Number.POSITIVE_INFINITY,
+            "a 360 px o horário fica na linha do período"
+          ).toBeLessThan((period?.y ?? 0) + (period?.height ?? 0));
+        }
+        const clipped = await refresh.evaluate(
+          (element) => element.scrollWidth - element.clientWidth
+        );
+        expect(clipped).toBeLessThanOrEqual(0);
+        await assertNoPageScroll(page);
+        await expect(page.locator("#dashboard-updated")).toHaveText(
+          "Atualizado às 09:00"
+        );
+        const status = await page.locator("#dashboard-updated").boundingBox();
+        expect(status?.height ?? 0).toBeLessThanOrEqual(1);
+      }
+    );
+  }
+
+  test("o foco anda do período para o botão de atualizar, e o nome do botão diz o horário (AC-4.5)", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openDashboard(page, new FakeReportServer());
+    await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
+    await periodButton(page).focus();
+    await page.keyboard.press("Tab");
+    await expect(refreshButton(page)).toBeFocused();
+  });
+
+  test("lendo, o botão guarda o horário e a linha de baixo diz Atualizando…", async ({
+    page,
+  }) => {
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+    const release = server.hold("2026-10");
+    await refreshButton(page).click();
+    await expect(refreshButton(page)).toHaveAttribute("aria-busy", "true");
+    await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+    await expect(page.locator("#dashboard-updated")).toHaveText("Atualizando…");
+    release();
+    await expect(refreshButton(page)).not.toHaveAttribute("aria-busy", "true");
+    await expect(page.locator("#dashboard-updated")).toHaveText(
+      "Atualizado às 09:00"
+    );
+  });
+
+  test("com o dia da loja já outro no relógio do aparelho, o horário leva a data", async ({
+    page,
+  }) => {
+    await openDashboard(page, new FakeReportServer());
+    await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+    await page.clock.setFixedTime(new Date("2026-10-15T15:00:00.000Z"));
+    await page.getByRole("tab", { exact: true, name: "Metas" }).click();
+    await page.getByRole("tab", { exact: true, name: "Resultado" }).click();
+    await expect(refreshButton(page)).toHaveText(
+      "Atualizado em 14/10/2026 às 09:00"
+    );
+    await expect(refreshButton(page)).toHaveAccessibleName(
+      "Atualizar, atualizado em 14/10/2026 às 09:00"
+    );
+  });
 });
 
 test.describe("o passo a passo do Resultado a 320 px com a letra do navegador em 24, 20 e 16 px", () => {

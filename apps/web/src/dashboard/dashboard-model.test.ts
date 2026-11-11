@@ -6,7 +6,7 @@ import {
   formatLastConfirmed,
   formatMoneyOrDash,
   formatPercentOrDash,
-  formatUpdatedUntil,
+  formatUpdatedAt,
   isIncompleteEstimate,
   offlineCopyNotice,
   type PeriodChain,
@@ -89,25 +89,31 @@ describe("formatPercentOrDash", () => {
   });
 });
 
-describe("formatUpdatedUntil", () => {
-  it("says the date and time the server read the figures, in the organization's zone", () => {
-    const readAt = "2026-10-14T15:30:00.000Z";
-    expect(formatUpdatedUntil(readAt, "UTC")).toBe(
-      "Atualizado até 14/10/2026 15:30"
+describe("formatUpdatedAt", () => {
+  const readAt = "2026-10-14T15:30:00.000Z";
+
+  it("says only the time on the store's day, in the organization's zone", () => {
+    expect(formatUpdatedAt(readAt, "UTC", "2026-10-14")).toBe("às 15:30");
+    expect(formatUpdatedAt(readAt, "America/Sao_Paulo", "2026-10-14")).toBe(
+      "às 12:30"
     );
-    expect(formatUpdatedUntil(readAt, "America/Sao_Paulo")).toBe(
-      "Atualizado até 14/10/2026 12:30"
-    );
-    // the organization's calendar day, not the UTC one
-    expect(
-      formatUpdatedUntil("2026-10-14T02:05:00.000Z", "America/Sao_Paulo")
-    ).toBe("Atualizado até 13/10/2026 23:05");
   });
 
-  it("does not fail on a time it cannot read", () => {
-    expect(formatUpdatedUntil("not a time", "UTC")).toBe(
-      `Atualizado até ${EMPTY_VALUE} ${EMPTY_VALUE}`
+  it("adds the organization's calendar day when the read is of another day, not the UTC one", () => {
+    expect(
+      formatUpdatedAt(
+        "2026-10-14T02:05:00.000Z",
+        "America/Sao_Paulo",
+        "2026-10-14"
+      )
+    ).toBe("em 13/10/2026 às 23:05");
+    expect(formatUpdatedAt(readAt, "UTC", "2026-10-15")).toBe(
+      "em 14/10/2026 às 15:30"
     );
+  });
+
+  it("has no text for a time it cannot read", () => {
+    expect(formatUpdatedAt("not a time", "UTC", "2026-10-14")).toBeNull();
   });
 });
 
