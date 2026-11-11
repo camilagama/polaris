@@ -1137,6 +1137,18 @@ async function run() {
       [RECIPIENT_OWNER, AUTH_RUNTIME],
       "only the authentication runtime executes the recipient (and its owner)"
     );
+    const recipientAcl = await owner.pool.query<{ grantee: string }>(
+      `SELECT DISTINCT a.grantee::regrole::text AS grantee
+         FROM pg_catalog.pg_proc AS p, pg_catalog.aclexplode(p.proacl) AS a
+        WHERE p.oid = $1::regprocedure
+        ORDER BY 1`,
+      [RECIPIENT_FUNCTION]
+    );
+    assert.deepEqual(
+      recipientAcl.rows.map((row) => row.grantee),
+      [RECIPIENT_OWNER, AUTH_RUNTIME],
+      "the ACL of the recipient names only its owner and the authentication runtime (no login role, no default privilege)"
+    );
     const authUrl = await login(AUTH_RUNTIME, "polaris_candidates_auth");
     for (const [url, role] of [
       [tenantUrl, runtimeRole],
@@ -1162,7 +1174,7 @@ async function run() {
       assert.equal(answer.rows[0]?.address, null, "an unknown notice is null");
     });
     tests.push(
-      "AC-7a.3: activation_notice_recipient is SECURITY DEFINER of polaris_activation_recipient_owner (not the owner of the candidates), volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL; of PUBLIC and every polaris_* group only the authentication runtime executes it (and its owner); a tenant login and a billing login are refused (42501), an authentication login gets null for an unknown notice"
+      "AC-7a.3: activation_notice_recipient is SECURITY DEFINER of polaris_activation_recipient_owner (not the owner of the candidates), volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL; of PUBLIC and every polaris_* group only the authentication runtime executes it (and its owner), and its ACL names no one else; a tenant login and a billing login are refused (42501), an authentication login gets null for an unknown notice"
     );
 
     await scenario(async (client) => {
@@ -1359,6 +1371,26 @@ async function run() {
         { members: "0", notices: "0", users: [] },
         "the scope of a sent notice: nothing"
       );
+      for (const [name, notified] of [
+        ["failed", failed],
+        ["skipped", skipped],
+      ] as const) {
+        assert.deepEqual(
+          await sees(noticeOf.get(notified)),
+          { members: "0", notices: "0", users: [] },
+          `the scope of a ${name} notice: nothing`
+        );
+      }
+      for (const [name, notified] of [
+        ["an owner no longer active", departed],
+        ["a member who is not an owner", nowSeller],
+      ] as const) {
+        assert.deepEqual(
+          await sees(noticeOf.get(notified)),
+          { members: "0", notices: "1", users: [] },
+          `the scope of the notice of ${name}: neither that membership nor that person`
+        );
+      }
       assert.deepEqual(
         await sees(noticeOf.get(unverified)),
         { members: "1", notices: "1", users: [] },
@@ -1375,7 +1407,7 @@ async function run() {
       });
     });
     tests.push(
-      "the row security of the recipient's owner on its own: with no scope it sees no notice, owner nor \"user\" row; with the scope of an owed notice, that notice, the active owners of its store and only its person (none for a co-owner's notice, an unverified person or a sent notice); it does not read session (42501)"
+      "the row security of the recipient's owner on its own: with no scope it sees no notice, owner nor \"user\" row; with the scope of an owed notice, that notice, the active owners of its store and only its person (none for a co-owner's notice or an unverified person; no membership nor person for an owner no longer active or a member who is not an owner; nothing for a sent, failed or skipped notice); it does not read session (42501)"
     );
 
     const userPolicies = await owner.pool.query<{ entry: string }>(

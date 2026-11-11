@@ -91,8 +91,9 @@ REVOKE CREATE ON SCHEMA public FROM polaris_activation_recipient_owner;--> state
 -- The end state (a REVOKE or an ALTER without the right is only a WARNING on Neon): the recipient's owner holds exactly
 -- the columns above and nothing else (no table privilege, no write, no CREATE), so it reads neither the session, the
 -- sales, the products nor the requests about personal data; it has exactly its three policies and owns only its
--- function; only the authentication runtime executes it; the migrator keeps no SET or INHERIT on it; and neither of the
--- other two roles of the series reads the address.
+-- function; it is granted to the authentication runtime only (its ACL, so a login role or a default privilege shows
+-- too); no role, the migrator included, can SET or INHERIT it (a member with SET could write the scope itself); and
+-- neither of the other two roles of the series reads the address.
 DO $end_state$
 DECLARE
   held text[];
@@ -132,6 +133,13 @@ BEGIN
      IS DISTINCT FROM ARRAY['activation_notice_recipient(text,uuid)'] THEN
     RAISE EXCEPTION 'the recipient''s owner does not own exactly its function';
   END IF;
+  IF (SELECT pg_catalog.array_agg(g.name ORDER BY g.name COLLATE "C")
+        FROM (SELECT DISTINCT a.grantee::regrole::text AS name
+                FROM pg_catalog.pg_proc AS p, pg_catalog.aclexplode(p.proacl) AS a
+               WHERE p.oid = 'public.activation_notice_recipient(text, uuid)'::regprocedure) AS g)
+     IS DISTINCT FROM ARRAY['polaris_activation_recipient_owner', 'polaris_auth_runtime'] THEN
+    RAISE EXCEPTION 'the recipient''s function is granted to someone else than its owner and the authentication runtime';
+  END IF;
   IF pg_catalog.has_function_privilege('public', 'public.activation_notice_recipient(text, uuid)', 'EXECUTE')
      OR NOT pg_catalog.has_function_privilege('polaris_auth_runtime', 'public.activation_notice_recipient(text, uuid)', 'EXECUTE')
      OR EXISTS (
@@ -148,11 +156,10 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_catalog.pg_auth_members AS m
-     WHERE m.member = (SELECT r.oid FROM pg_catalog.pg_roles AS r WHERE r.rolname = CURRENT_USER)
-       AND m.roleid = 'polaris_activation_recipient_owner'::regrole
+     WHERE m.roleid = 'polaris_activation_recipient_owner'::regrole
        AND (m.set_option OR m.inherit_option)
   ) THEN
-    RAISE EXCEPTION 'the migrator kept SET or INHERIT on the recipient''s owner';
+    RAISE EXCEPTION 'a role, the migrator included, can SET or INHERIT the recipient''s owner';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles
               WHERE rolname = 'polaris_activation_recipient_owner'
