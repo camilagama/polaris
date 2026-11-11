@@ -196,7 +196,9 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     // the badge and the days on one line, the warning under it, and the days are in sight
     expect(words(result)).toContain("estimativa incompleta");
     expect(result).toContain('data-kpi-unknown="">· 3 de 25 dias sem custo<');
-    expect(words(result)).toContain("Não é lucro líquido nem caixa");
+    expect(words(result)).not.toContain("lucro líquido");
+    expect(words(margin)).not.toContain("lucro líquido");
+    expect(words(margin)).toContain("estimativa incompleta");
     expect(words(result)).toContain("R$");
     expect(words(result)).not.toContain("Sem custo informado");
   });

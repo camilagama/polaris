@@ -347,12 +347,13 @@ async function showScreenAlone(page: Page) {
 }
 
 export const resultStates = {
-  /** Every cost known: the two lines and their legend, the reading of the day and the table of the days open. */
+  /** Every cost known: the two lines and their legend, the reading of the day and the invisible table of the days. */
   async chart(page: Page) {
     await openResultLab(page, { complete: true });
     await page.getByRole("img", { name: TWO_LINES_CHART }).waitFor();
-    await page.getByRole("button", { name: "Ver os números" }).click();
-    await page.getByText("Depois de hoje: despesas R$ 135,10").waitFor();
+    await page
+      .getByText("Depois de hoje: despesas R$ 135,10")
+      .waitFor({ state: "attached" });
     await showScreenAlone(page);
   },
   /** No sales, no expenses: the period's empty state. */

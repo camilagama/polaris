@@ -4,7 +4,6 @@ import {
   divideHalfUp,
   type KpiReading,
   moneyDelta,
-  NOT_PROFIT_NOR_CASH,
   percentDelta,
   resultHelp,
   ticketHelp,
@@ -346,7 +345,7 @@ function resultReading({
     value = cards.operatingResult;
   }
   return {
-    count: NOT_PROFIT_NOR_CASH,
+    count: "",
     date: card ? whole : range,
     delta,
     help: resultHelp(

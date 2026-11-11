@@ -5,33 +5,13 @@ import {
   maskMoney,
   useHiddenValues,
 } from "../lib/hidden-values";
-import ChevronDownIcon from "lucide-react/dist/esm/icons/chevron-down";
-import { useCallback, useMemo } from "react";
+import { useCallback, useId, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/card";
-import { OnDemandAreaChart } from "@/ui/charts/on-demand";
-import {
-  Collapsible,
-  CollapsiblePanel,
-  CollapsibleTrigger,
-} from "@/ui/collapsible";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/ui/table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/card";
+import { ChartDataTable } from "@/ui/charts/chart-data-table";
+import { OnDemandAreaChart, useChartsFailed } from "@/ui/charts/on-demand";
+import { HelpTip } from "@/ui/help-tip";
 import { useConnectionOnline } from "../lib/browser-connection";
 import { calendarDayInTimezone } from "../lib/dates";
 import { formatBrlAmount } from "../lib/format";
@@ -54,7 +34,7 @@ import {
   type ResultSeries,
   readingNote,
   resultSeries,
-  supportText,
+  supportParts,
   unknownDaysCount,
 } from "./result-series";
 
@@ -71,7 +51,9 @@ export function ChartFailed() {
   const online = useConnectionOnline();
   return online ? (
     <div className="grid justify-items-start gap-2">
-      <p className="text-muted-foreground text-support">O gráfico não abriu.</p>
+      <p className="text-muted-foreground text-support">
+        O gráfico não abriu. Os totais estão acima e a tabela, abaixo.
+      </p>
       <Button onClick={reloadPage} size="sm" type="button" variant="outline">
         Tentar novamente
       </Button>
@@ -84,112 +66,62 @@ export function ChartFailed() {
   );
 }
 
-function isNegative(value: string | null | undefined): boolean {
-  return typeof value === "string" && value.trim().startsWith("-");
-}
+const COLUMNS_WITH_COSTS = (unit: string) =>
+  [
+    { header: unit === "mês" ? "Mês" : "Dia" },
+    { header: "Vendas líquidas", numeric: true },
+    { header: "Custos", numeric: true },
+    { header: `Resultado do ${unit}`, numeric: true },
+    { header: "Despesas do período", numeric: true },
+  ] as const;
 
-/* The table measures its own box (`@container`), like the one of the return of a sale: narrower than 48rem (a phone, or
-   a tablet with the sidebar open) each day is a card, with the date as its title and the name of each column
-   (`data-label`) beside its value; narrower than 14rem (320 px with the browser font at 24 px) the name goes above the
-   value, because its 7rem would leave the value a sliver. The head row is only for the screen reader. Nothing scrolls
-   sideways, and "Depois de hoje" stays in view under the cards. */
-const CARD_ROW =
-  "@max-3xl:grid @max-3xl:gap-1 @max-3xl:border-b @max-3xl:py-3 @max-3xl:hover:bg-transparent";
-const CARD_CELL =
-  "text-right tabular-nums @max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-[14rem]:grid-cols-1 @max-[14rem]:gap-0 @max-3xl:whitespace-normal @max-3xl:px-0! @max-3xl:py-0.5 @max-3xl:text-left @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
-const CARD_TITLE =
-  "h-auto whitespace-normal py-2.5 text-left align-middle font-medium text-foreground text-sm @max-3xl:px-0 @max-3xl:py-0";
-
-interface NumbersTableProps {
+/**
+ * The table of the numbers: every day (or month) with its sales, its costs, its result and its expenses. Invisible, it is
+ * the way to the numbers for a screen reader (the chart's `aria-details` points at it); shown, it is what stays when the
+ * chart does not open. A day whose cost is unknown says "sem custo", never a zero.
+ */
+export function NumbersTable({
+  hasCosts,
+  id,
+  series,
+  visible,
+}: {
   hasCosts: boolean;
+  id: string;
   series: ResultSeries;
-}
-
-/** "Ver os números": the day by day (or month by month) table, which is the proof that the drawing hides nothing. */
-export function NumbersTable({ hasCosts, series }: NumbersTableProps) {
-  const columns = hasCosts ? 5 : 2;
+  visible: boolean;
+}) {
   const unit = series.grouped ? "mês" : "dia";
+  const columns = hasCosts
+    ? COLUMNS_WITH_COSTS(unit)
+    : ([
+        { header: unit === "mês" ? "Mês" : "Dia" },
+        { header: "Vendas líquidas", numeric: true },
+      ] as const);
   return (
-    <div className="@container">
-      <Table className="@max-3xl:block @max-3xl:[&_tbody]:block @max-3xl:[&_tfoot]:block">
-        <TableCaption className="sr-only">
-          {`Vendas e custos de cada ${unit} do período`}
-        </TableCaption>
-        <TableHeader className="@max-3xl:sr-only">
-          <TableRow className="hover:bg-transparent">
-            <TableHead scope="col">{series.grouped ? "Mês" : "Dia"}</TableHead>
-            <TableHead className="text-right" scope="col">
-              Vendas líquidas
-            </TableHead>
-            {hasCosts ? (
-              <>
-                <TableHead className="text-right" scope="col">
-                  Custos
-                </TableHead>
-                <TableHead className="text-right" scope="col">
-                  {`Resultado do ${unit}`}
-                </TableHead>
-                <TableHead className="text-right" scope="col">
-                  Despesas do período
-                </TableHead>
-              </>
-            ) : null}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {series.rows.map((row: ResultRow) => (
-            <TableRow className={CARD_ROW} key={row.key}>
-              <TableHead className={CARD_TITLE} scope="row">
-                {row.tableLabel}
-              </TableHead>
-              <TableCell className={CARD_CELL} data-label="Vendas líquidas">
-                <MoneyText text={formatBrlAmount(row.netSales)} />
-              </TableCell>
-              {hasCosts ? (
-                <>
-                  <TableCell className={CARD_CELL} data-label="Custos">
-                    <MoneyText text={costText(row.costs)} />
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      CARD_CELL,
-                      isNegative(row.operatingResult) && "text-destructive"
-                    )}
-                    data-label={`Resultado do ${unit}`}
-                  >
-                    <MoneyText text={costText(row.operatingResult)} />
-                  </TableCell>
-                  <TableCell
-                    className={CARD_CELL}
-                    data-label="Despesas do período"
-                  >
-                    {row.expenses ? (
-                      <MoneyText text={formatBrlAmount(row.expenses)} />
-                    ) : (
-                      EMPTY_CELL
-                    )}
-                  </TableCell>
-                </>
-              ) : null}
-            </TableRow>
-          ))}
-        </TableBody>
-        {series.afterToday ? (
-          <TableFooter className="@max-3xl:block">
-            <TableRow className="@max-3xl:block">
-              <TableCell
-                className="@max-3xl:block @max-3xl:whitespace-normal @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left text-right tabular-nums"
-                colSpan={columns}
-              >
-                <MoneyText
-                  text={`Depois de hoje: despesas ${formatBrlAmount(series.afterToday)}`}
-                />
-              </TableCell>
-            </TableRow>
-          </TableFooter>
-        ) : null}
-      </Table>
-    </div>
+    <ChartDataTable
+      caption={`Vendas e custos de cada ${unit} do período`}
+      columns={columns}
+      footer={
+        series.afterToday
+          ? `Depois de hoje: despesas ${formatBrlAmount(series.afterToday)}`
+          : undefined
+      }
+      id={id}
+      rows={series.rows.map((row: ResultRow) => ({
+        cells: hasCosts
+          ? [
+              row.tableLabel,
+              formatBrlAmount(row.netSales),
+              costText(row.costs),
+              costText(row.operatingResult),
+              row.expenses ? formatBrlAmount(row.expenses) : EMPTY_CELL,
+            ]
+          : [row.tableLabel, formatBrlAmount(row.netSales)],
+        key: row.key,
+      }))}
+      visible={visible}
+    />
   );
 }
 
@@ -201,32 +133,47 @@ function costsNote(fromCopy: boolean): string {
 }
 
 /**
- * The room the lines of the card keep so the box does not change height between periods: `min-h` in lines of text
- * (1.125rem), never `max-h` nor a clamp, so nothing is cut. Each line count is that of the longest form the line takes
- * at that width (measured at 320, 340, 360, 375, 390, 412, 430, 480, 540, 600, 680, 767, 820, 1000, 1280 and 1440 px,
- * with "366 de 366 dias sem custo informado", amounts of R$ 123.456,78 and the values hidden), and a step is placed at
- * the first width that reads fewer lines. The reading and the legend wrap in lines, so they also take `content-start`:
- * the room goes below the text, not between its fragments.
+ * The room the lines of the card keep so the box does not change height between periods: `min-h` of the tallest form the
+ * line takes at that width, never `max-h` nor a clamp, so nothing is cut. The title row (with its two (i) and the seal
+ * of an incomplete estimate, which wraps below 460 px; the two (i) are 20 px apart so their touch areas do not overlap) and the row that holds the reading of the day and the legend
+ * (side by side from 400 px, stacked below) were measured every 4 px from 320 to 500 px, every 20 up to 820 and every 50 up
+ * to 1360, over the month, 30 days, the year and 366 days, whole, with unknown days and with amounts of R$ 999.999,99, and a
+ * month with an expense on its last day, with the values shown and hidden; a step is placed at the first width where the tallest form changes.
+ * The row takes `content-start`, so the room goes below the text and not between its fragments.
  */
-const TITLE_RESERVE = "min-h-[2.875rem] min-[24.375rem]:min-h-[1.375rem]";
-const DESCRIPTION_RESERVE =
-  "min-h-[calc(6*1.125rem)] min-[22.5rem]:min-h-[calc(5*1.125rem)] min-[25.75rem]:min-h-[calc(4*1.125rem)] min-[33.75rem]:min-h-[calc(3*1.125rem)] min-[47.9375rem]:min-h-[calc(2*1.125rem)]";
-const READING_RESERVE =
-  "content-start min-h-[calc(5*1.125rem)] min-[21.25rem]:min-h-[calc(4*1.125rem)] min-[30rem]:min-h-[calc(3*1.125rem)] min-[37.5rem]:min-h-[calc(2*1.125rem)]";
-const LEGEND_RESERVE =
-  "content-start min-h-[3.5rem] min-[24.375rem]:min-h-[2.25rem] min-[42.5rem]:min-h-[1rem]";
+const TITLE_RESERVE = "min-h-[2.875rem] min-[28.75rem]:min-h-[1.375rem]";
+const TOP_RESERVE =
+  "min-h-[8.5rem] min-[20.75rem]:min-h-[7.375rem] min-[21.75rem]:min-h-[6.25rem] min-[23.75rem]:min-h-[5rem] min-[25rem]:min-h-[5.5rem] min-[28.25rem]:min-h-[4.5rem] min-[40rem]:min-h-[3.5rem] min-[45rem]:min-h-[2.25rem]";
 const NOTE_RESERVE = "min-h-[1.125rem]";
-const CHART_RESERVE = { legend: LEGEND_RESERVE, reading: READING_RESERVE };
 
 interface HeaderProps {
   incomplete: boolean;
   range: string;
   source: "cache" | "server";
-  support: string | null;
+  support: { count: string | null; tail: string | null };
   unit: string;
 }
 
-/** The title with the seal of an incomplete estimate beside it, the dates, and the sentence that supports the drawing. */
+/**
+ * What the first (i) of the title says: the dates (and "cópia guardada" when they are this device's copy) and how many
+ * days have no cost. At most 160 characters, whatever the period and the state; the caveat that this is not net profit
+ * is said by the (i) of the screen, the quality warning and the foot of the chain, not here.
+ */
+export function periodHelp({
+  count,
+  range,
+  source,
+}: {
+  count: string | null;
+  range: string;
+  source: "cache" | "server";
+}): string {
+  return [`${range}${source === "cache" ? " · cópia guardada" : ""}.`, count]
+    .filter((part): part is string => part !== null)
+    .join(" ");
+}
+
+/** The title with its two (i) and, beside them, the seal of an incomplete estimate: the dates and the sentences that support the drawing are in the (i). */
 function ChartHeader({
   incomplete,
   range,
@@ -234,6 +181,7 @@ function ChartHeader({
   support,
   unit,
 }: HeaderProps) {
+  const title = `Vendas × custos por ${unit}`;
   return (
     <CardHeader className="border-b py-(--card-spacing)">
       <div
@@ -242,18 +190,21 @@ function ChartHeader({
           TITLE_RESERVE
         )}
       >
-        <CardTitle aria-level={2} id={TITLE_ID} role="heading">
-          {`Vendas × custos por ${unit}`}
-        </CardTitle>
+        <div className="flex min-w-0 items-center gap-1">
+          <CardTitle aria-level={2} id={TITLE_ID} role="heading">
+            {title}
+          </CardTitle>
+          <HelpTip about={`${title}: o período`} className="-my-1">
+            {periodHelp({ count: support.count, range, source })}
+          </HelpTip>
+          {support.tail ? (
+            <HelpTip about={`${title}: as linhas`} className="-my-1 ml-4">
+              {support.tail}
+            </HelpTip>
+          ) : null}
+        </div>
         {incomplete ? <IncompleteBadge /> : null}
       </div>
-      <CardDescription className={DESCRIPTION_RESERVE}>
-        {`${range}${source === "cache" ? " · cópia guardada" : ""}.`}
-        {support ? ` ${support}` : null}
-      </CardDescription>
-      <p className={cn("text-muted-foreground text-support", NOTE_RESERVE)}>
-        {incomplete ? "Não é lucro líquido nem dinheiro já recebido." : null}
-      </p>
     </CardHeader>
   );
 }
@@ -353,10 +304,12 @@ const PLOT_HEIGHT = 220;
  * unknown (AC-9).
  */
 function Drawing({
+  details,
   empty,
   label,
   series,
 }: {
+  details: string;
   empty: boolean;
   label: string;
   series: ResultSeries;
@@ -367,6 +320,7 @@ function Drawing({
     <OnDemandAreaChart
       color="var(--chart-sales)"
       data={data}
+      details={details}
       failed={<ChartFailed />}
       {...(empty ? { empty: "Sem vendas no período." } : {})}
       formatAxis={hidden ? noAxis : axisMoney}
@@ -379,43 +333,23 @@ function Drawing({
       name="Vendas"
       rangeLabel={series.grouped ? "Mês" : "Dia"}
       readingNote={note}
-      reserve={CHART_RESERVE}
+      reserve={TOP_RESERVE}
       spokenNote={spoken}
       {...(secondary ? { secondary } : {})}
     />
   );
 }
 
-/** "Ver os números": the table of every day, which is the proof that the drawing hides nothing; it opens without the chart. */
-function NumbersToggle({
-  hasCosts,
+/** What goes between the totals and the table: the drawing, or the sentence that says why there is none. */
+function Body({
+  details,
+  label,
   series,
 }: {
-  hasCosts: boolean;
+  details: string;
+  label: string;
   series: ResultSeries;
 }) {
-  return (
-    <Collapsible>
-      <CollapsibleTrigger
-        className="group/numbers w-fit"
-        render={<Button size="sm" variant="ghost" />}
-      >
-        Ver os números
-        <ChevronDownIcon
-          aria-hidden="true"
-          className="motion-full:transition-transform group-data-[panel-open]/numbers:rotate-180"
-          data-icon="inline-end"
-        />
-      </CollapsibleTrigger>
-      <CollapsiblePanel className="pt-1">
-        <NumbersTable hasCosts={hasCosts} series={series} />
-      </CollapsiblePanel>
-    </Collapsible>
-  );
-}
-
-/** What goes between the totals and the table: the drawing, or the sentence that says why there is none. */
-function Body({ label, series }: { label: string; series: ResultSeries }) {
   if (series.rows.length === 0) {
     return (
       <p className="text-muted-foreground">Este período ainda não começou.</p>
@@ -424,6 +358,7 @@ function Body({ label, series }: { label: string; series: ResultSeries }) {
   // a period with returns only still has a drawing: "Sem vendas" is for a period with nothing in it
   return (
     <Drawing
+      details={details}
       empty={!hasAnyValue(series.rows, series.costsDrawn)}
       label={label}
       series={series}
@@ -440,11 +375,14 @@ interface ResultChartProps {
 
 /**
  * "Vendas × custos por dia" (AC-4 to AC-12): the sales of each day and the costs against them, hatched and broken on a
- * day whose cost is unknown (AC-9). The total of sales, the total of costs and the best day are written above the drawing, and "Ver os
- * números" has the table: the numbers hold without the drawing. The period is cut at the store's today, read from the
- * server's clock; what the days to come cost closes the table.
+ * day whose cost is unknown (AC-9). The total of sales, the total of costs and the best day are written above the drawing,
+ * and the table of every day closes the card: invisible, tied to the chart by `aria-details`, and shown in the place of
+ * the drawing when the charts chunk does not open. The period is cut at the store's today, read from the server's
+ * clock; what the days to come cost closes the table.
  */
 export function ResultChart({ source, summary, timezone }: ResultChartProps) {
+  const numbersId = useId();
+  const drawingFailed = useChartsFailed();
   const { afterToday, daily, granularity } = summary;
   const today = calendarDayInTimezone(new Date(summary.generatedAt), timezone);
   const series = useMemo(
@@ -473,10 +411,10 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
         incomplete={isIncompleteEstimate(summary.quality) || unknown}
         range={range}
         source={source}
-        support={supportText(series, summary.chain)}
+        support={supportParts(series, summary.chain)}
         unit={series.grouped ? "mês" : "dia"}
       />
-      <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-3 py-(--card-spacing)">
+      <CardContent className="grid grid-cols-[minmax(0,1fr)] gap-2 py-(--card-spacing)">
         <Totals costsTotal={costsTotal} salesTotal={salesTotal} />
         <p className={cn("text-muted-foreground text-support", NOTE_RESERVE)}>
           {sent ? null : costsNote(source === "cache")}
@@ -487,9 +425,14 @@ export function ResultChart({ source, summary, timezone }: ResultChartProps) {
             {best ? <MoneyText text={best} /> : null}
           </p>
         ) : null}
-        <Body label={label} series={series} />
+        <Body details={numbersId} label={label} series={series} />
         {rows.length > 0 ? (
-          <NumbersToggle hasCosts={sent} series={series} />
+          <NumbersTable
+            hasCosts={sent}
+            id={numbersId}
+            series={series}
+            visible={drawingFailed}
+          />
         ) : null}
       </CardContent>
     </Card>

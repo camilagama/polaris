@@ -83,7 +83,8 @@ function IncompleteBadgeLine() {
 
 /**
  * The foot of the result card: the badge, with the days with no cost beside it when the line fits (a warning is not
- * hidden), then "Não é lucro líquido nem caixa", or what is missing when no cost is known (never both).
+ * hidden), then the line of the reading (empty on the Resultado, which does not repeat the caveat), or what is missing
+ * when no cost is known (never both).
  */
 export function ResultFooter({
   incomplete,

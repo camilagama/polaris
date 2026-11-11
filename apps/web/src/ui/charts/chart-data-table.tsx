@@ -17,6 +17,8 @@ export interface ChartDataTableProps {
   /** What the table is, said first by a screen reader ("Vendas por dia, do mais novo ao mais antigo."). */
   caption: string;
   columns: readonly ChartDataColumn[];
+  /** A line that closes the table, across every column ("Depois de hoje: despesas R$ 120,00"); it goes through the mask too. */
+  footer?: string | undefined;
   /** The id the chart's `aria-details` points at. */
   id: string;
   rows: readonly ChartDataRow[];
@@ -24,12 +26,34 @@ export interface ChartDataTableProps {
   visible?: boolean;
 }
 
+/* A shown table of more than three columns would be wider than a phone: below 48rem of its own box (`@container`) each row
+   becomes a card, with the first cell as its title and the name of each column (`data-label`) beside its value. The head
+   row stays for the screen reader. The invisible table keeps its table layout: a screen reader drops the table semantics
+   of a `table` turned into blocks. Nothing scrolls sideways. */
+const STACK_TABLE =
+  "@max-3xl:block @max-3xl:[&_tbody]:block @max-3xl:[&_tfoot]:block @max-3xl:[&_tfoot_tr]:block";
+const STACK_HEAD =
+  "@max-3xl:absolute @max-3xl:left-0 @max-3xl:h-px @max-3xl:w-full @max-3xl:overflow-hidden @max-3xl:[clip-path:inset(50%)] @max-3xl:[&_tr]:block @max-3xl:[&_th]:block @max-3xl:[&_th]:h-auto @max-3xl:[&_th]:whitespace-normal @max-3xl:[&_th]:p-0";
+const STACK_ROW = "@max-3xl:grid @max-3xl:gap-1 @max-3xl:py-3";
+const STACK_TITLE = "@max-3xl:px-0 @max-3xl:py-0 @max-3xl:text-base";
+const STACK_CELL =
+  "@max-3xl:grid @max-3xl:grid-cols-[minmax(7rem,45%)_minmax(0,1fr)] @max-3xl:items-center @max-3xl:gap-2 @max-[14rem]:grid-cols-1 @max-[14rem]:gap-0 @max-3xl:px-0 @max-3xl:py-0.5 @max-3xl:text-left @max-3xl:before:text-muted-foreground @max-3xl:before:text-support @max-3xl:before:content-[attr(data-label)]";
+const STACK_FOOT =
+  "@max-3xl:block @max-3xl:px-0 @max-3xl:py-3 @max-3xl:text-left";
+const MAX_SIDE_BY_SIDE_COLUMNS = 3;
+
 const align = (numeric: boolean | undefined) => numeric && "text-right";
 
 /* one pixel tall and clipped, as `sr-only` is, but as wide as the page instead of one pixel: the table inside keeps
    its columns and its text wraps, so nothing in it is wider than the screen; it is out of the flow, so it adds no gap */
 const HIDDEN =
   "absolute left-0 h-px w-full overflow-hidden [clip-path:inset(50%)]";
+
+/* an automatic table layout never goes below the widest word of each column, so five columns made a table wider than a
+   phone and every box of it past the screen; a fixed layout holds the table to the width of its wrapper and the text
+   breaks inside the cell */
+const HIDDEN_TABLE =
+  "table-fixed [overflow-wrap:anywhere] [&_td]:px-0 [&_th]:px-0";
 
 /**
  * The day-by-day numbers of a chart as a real table: invisible on the screen (clipped to one pixel, out of the tab order) and
@@ -42,16 +66,25 @@ const HIDDEN =
 export function ChartDataTable({
   caption,
   columns,
+  footer,
   id,
   rows,
   visible = false,
 }: ChartDataTableProps) {
+  const stacked = visible && columns.length > MAX_SIDE_BY_SIDE_COLUMNS;
   return (
     <div
-      className={cn(visible ? "w-full overflow-x-auto" : HIDDEN)}
+      className={cn(visible ? "w-full overflow-x-auto" : HIDDEN, "@container")}
       data-chart-data-table={visible ? "visible" : "hidden"}
     >
-      <table className="w-full caption-top text-sm" id={id}>
+      <table
+        className={cn(
+          "w-full caption-top text-sm",
+          !visible && HIDDEN_TABLE,
+          stacked && STACK_TABLE
+        )}
+        id={id}
+      >
         <caption
           className={cn(
             "text-left",
@@ -60,7 +93,7 @@ export function ChartDataTable({
         >
           {caption}
         </caption>
-        <thead className="[&_tr]:border-b">
+        <thead className={cn("[&_tr]:border-b", stacked && STACK_HEAD)}>
           <tr>
             {columns.map((column) => (
               <th
@@ -78,11 +111,14 @@ export function ChartDataTable({
         </thead>
         <tbody className="[&_tr:last-child]:border-0">
           {rows.map((row) => (
-            <tr className="border-b" key={row.key}>
+            <tr className={cn("border-b", stacked && STACK_ROW)} key={row.key}>
               {row.cells.map((cell, index) =>
                 index === 0 ? (
                   <th
-                    className="px-2 py-2.5 text-left font-normal"
+                    className={cn(
+                      "px-2 py-2.5 text-left font-normal",
+                      stacked && STACK_TITLE
+                    )}
                     key={columns[index]?.header ?? index}
                     scope="row"
                   >
@@ -92,8 +128,10 @@ export function ChartDataTable({
                   <td
                     className={cn(
                       "px-2 py-2.5",
-                      columns[index]?.numeric && "text-right tabular-nums"
+                      columns[index]?.numeric && "text-right tabular-nums",
+                      stacked && STACK_CELL
                     )}
+                    data-label={columns[index]?.header}
                     key={columns[index]?.header ?? index}
                   >
                     <MoneyText text={cell} />
@@ -103,6 +141,21 @@ export function ChartDataTable({
             </tr>
           ))}
         </tbody>
+        {footer ? (
+          <tfoot>
+            <tr>
+              <td
+                className={cn(
+                  "px-2 py-2.5 text-right tabular-nums",
+                  stacked && STACK_FOOT
+                )}
+                colSpan={columns.length}
+              >
+                <MoneyText text={footer} />
+              </td>
+            </tr>
+          </tfoot>
+        ) : null}
       </table>
     </div>
   );
