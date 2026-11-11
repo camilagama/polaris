@@ -1495,7 +1495,10 @@ test.describe("Vendas × custos por dia: só o gráfico, com a ressalva dita uma
     // visible on the page: the footer of the chain and, when it brings it, the quality banner
     const visible = await page
       .locator("main")
-      .evaluate((main) => main.innerText.match(/lucro líquido/g)?.length ?? 0);
+      .evaluate(
+        (main) =>
+          (main as HTMLElement).innerText.match(/lucro líquido/g)?.length ?? 0
+      );
     expect(visible).toBeLessThanOrEqual(2);
     // the (i) of the screen says it once; the two (i) of the chart say none and keep within 160 characters
     await page
