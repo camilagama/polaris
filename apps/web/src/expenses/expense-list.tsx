@@ -224,7 +224,7 @@ interface ExpenseListProps {
   state: ExpenseListState;
 }
 
-/** With a filter on, "Limpar filtros" takes every pill out at once, so the person need not find them one by one. */
+/** With a category on, "Limpar filtros" takes its pill out in one touch; the status is the segmented, which stays. */
 function EmptyExpenses({
   filters,
   onClearFilters,
@@ -232,9 +232,18 @@ function EmptyExpenses({
   filters: ExpenseFilters;
   onClearFilters: () => void;
 }) {
-  const narrowed = filters.categoryId !== "" || filters.status !== "active";
-  if (!narrowed) {
-    return <EmptyState afterRead bare title="Nenhuma despesa neste período." />;
+  if (filters.categoryId === "") {
+    return (
+      <EmptyState
+        afterRead
+        bare
+        title={
+          filters.status === "voided"
+            ? "Nenhuma despesa anulada neste período."
+            : "Nenhuma despesa neste período."
+        }
+      />
+    );
   }
   return (
     <EmptyState

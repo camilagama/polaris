@@ -461,18 +461,17 @@ async function choose(
 const FILTER_BAR = "Filtrar despesas";
 const filterBar = (page: Page) =>
   page.getByRole("search", { exact: true, name: FILTER_BAR });
+const FILTER_BUTTON_NAME = /^Filtrar( despesas)?$/;
+// the name is "Filtrar" from 760 px and "Filtrar despesas" (icon only) below it
 const filterButton = (page: Page) =>
-  filterBar(page).getByRole("button", { exact: true, name: "Filtrar" });
+  filterBar(page).getByRole("button", { name: FILTER_BUTTON_NAME });
+const statusSegmented = (page: Page) =>
+  page.getByRole("group", { exact: true, name: "Situação" });
 // by `aria-label`, not by role: under the form Dialog of a phone the page behind is `aria-hidden`
 const filterPill = (page: Page, field: string) =>
   page.locator(
     `search[aria-label="${FILTER_BAR}"] button[aria-label^="${field}: "]`
   );
-const removeFilter = (page: Page, field: string) =>
-  filterBar(page).getByRole("button", {
-    includeHidden: true,
-    name: `Tirar o filtro ${field}`,
-  });
 const startsWith = (text: string) => new RegExp(`^${text}`);
 
 /** Chooses a field in the "Filtrar" menu and the option in its editor (the Popover applies at once, the phone's Dialog at "Aplicar"). */
@@ -492,13 +491,14 @@ async function addFilter(page: Page, field: string, option: string) {
   await expect(editor).toHaveCount(0);
 }
 
-/** The list the screen opens on is "Ativas" and has no pill; "Anuladas" is the pill of Situação. */
+/** The segmented "Ativas | Anuladas" of the month's line: one touch swaps the list and marks the one on screen. */
 async function showStatus(page: Page, status: "Anuladas" | "Ativas") {
-  if (status === "Anuladas") {
-    await addFilter(page, "Situação", "Anuladas");
-  } else {
-    await removeFilter(page, "Situação").click();
-  }
+  const option = statusSegmented(page).getByRole("button", {
+    exact: true,
+    name: status,
+  });
+  await option.click();
+  await expect(option).toHaveAttribute("aria-pressed", "true");
 }
 
 /** The category of the list: the pill of Categoria. */
@@ -506,6 +506,7 @@ const filterCategory = (page: Page, name: string) =>
   addFilter(page, "Categoria", name);
 
 const EMPTY_WITH_FILTERS = "Nenhuma despesa encontrada com estes filtros.";
+const EMPTY_VOIDED = "Nenhuma despesa anulada neste período.";
 
 /** The "Nova despesa" of the title line: it is always there, and the only one on the screen. */
 const newExpenseButton = (page: Page) =>
@@ -768,7 +769,7 @@ test("um valor inválido é recusado na tela, sem chamar o servidor", async ({
   expect(server.expenses).toHaveLength(0);
 });
 
-test("a barra 'Filtrar despesas': abre em Ativas sem pílula, Anuladas é uma pílula e a contagem diz quantas", async ({
+test("a barra 'Filtrar despesas': abre em Ativas, Anuladas está a um toque no segmentado, sem pílula, e a contagem diz quantas", async ({
   page,
 }) => {
   await page.clock.setFixedTime(new Date(NOW));
@@ -788,6 +789,15 @@ test("a barra 'Filtrar despesas': abre em Ativas sem pílula, Anuladas é uma p�
   await expect(filterButton(page)).toBeVisible();
   await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(2);
+  await expect(
+    statusSegmented(page).getByRole("button", { exact: true, name: "Ativas" })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    statusSegmented(page).getByRole("button", {
+      exact: true,
+      name: "Anuladas",
+    })
+  ).toHaveAttribute("aria-pressed", "false");
   const summary = page
     .getByRole("status")
     .filter({ hasText: "Total do período" });
@@ -795,10 +805,7 @@ test("a barra 'Filtrar despesas': abre em Ativas sem pílula, Anuladas é uma p�
   await expect(summary).not.toContainText("anuladas");
 
   await showStatus(page, "Anuladas");
-  await expect(filterPill(page, "Situação")).toHaveAttribute(
-    "aria-label",
-    "Situação: Anuladas, editar"
-  );
+  await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(1);
   await expect(summary).toContainText("1 despesa");
   await expect(summary).toContainText("Total do período (anuladas)");
@@ -806,7 +813,23 @@ test("a barra 'Filtrar despesas': abre em Ativas sem pílula, Anuladas é uma p�
   await showStatus(page, "Ativas");
   await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(2);
-  await expect(filterButton(page)).toBeFocused();
+});
+
+test("o menu Filtrar lista só a Categoria: a Situação não é regra da barra", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date(NOW));
+  await openExpenses(page, new FakeExpenseServer());
+
+  await filterButton(page).click();
+  const menu = page.getByRole("menu", { name: "Filtrar por" });
+  await expect(menu.getByRole("menuitem")).toHaveCount(1);
+  await expect(
+    menu.getByRole("menuitem", { name: startsWith("Categoria") })
+  ).toBeVisible();
+  await expect(
+    menu.getByRole("menuitem", { name: startsWith("Situação") })
+  ).toHaveCount(0);
 });
 
 test("o filtro da barra sobrevive à troca de segmento, e fechar o editor devolve o foco à pílula", async ({
@@ -822,7 +845,12 @@ test("o filtro da barra sobrevive à troca de segmento, e fechar o editor devolv
   await expect(filterPill(page, "Categoria")).toBeVisible();
   await page.getByRole("tab", { name: "Recorrentes" }).click();
   await page.getByRole("tab", { name: "Lançamentos" }).click();
-  await expect(filterPill(page, "Situação")).toBeVisible();
+  await expect(
+    statusSegmented(page).getByRole("button", {
+      exact: true,
+      name: "Anuladas",
+    })
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(filterPill(page, "Categoria")).toBeVisible();
   await expect(page.getByText(EMPTY_WITH_FILTERS)).toBeVisible();
 
@@ -834,7 +862,7 @@ test("o filtro da barra sobrevive à troca de segmento, e fechar o editor devolv
   await expect(filterPill(page, "Categoria")).toBeFocused();
 });
 
-test("o vazio com filtros diz 'Nenhuma despesa encontrada com estes filtros.' e 'Limpar filtros' tira todas as pílulas", async ({
+test("o vazio com categoria diz 'Nenhuma despesa encontrada com estes filtros.' e 'Limpar filtros' tira a pílula e mantém a situação", async ({
   page,
 }) => {
   await page.clock.setFixedTime(new Date(NOW));
@@ -855,6 +883,9 @@ test("o vazio com filtros diz 'Nenhuma despesa encontrada com estes filtros.' e 
   await expect(page.locator("[data-slot='filter-pill']")).toHaveCount(0);
   await expect(page.locator("[data-expense-id]")).toHaveCount(1);
   await expect(filterButton(page)).toBeFocused();
+  await expect(
+    statusSegmented(page).getByRole("button", { exact: true, name: "Ativas" })
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("anular tira a despesa do período, aparece em Anuladas e pode ser reativada", async ({
@@ -1637,7 +1668,7 @@ test("o botão Nova despesa do título é o único em todas as partes e abas, e 
   await expect(newExpenseButton(page)).toBeVisible();
 
   await showStatus(page, "Anuladas");
-  await expect(page.getByText(EMPTY_WITH_FILTERS)).toBeVisible();
+  await expect(page.getByText(EMPTY_VOIDED)).toBeVisible();
   await expect(newButtons).toHaveCount(1);
   await expect(newExpenseButton(page)).toBeVisible();
   await showStatus(page, "Ativas");

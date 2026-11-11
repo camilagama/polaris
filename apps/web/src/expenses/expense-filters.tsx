@@ -1,5 +1,5 @@
 import type { ExpenseCategoryReadModel } from "@polaris/contracts";
-import { type ReactNode, useCallback, useMemo } from "react";
+import { type MouseEvent, type ReactNode, useCallback, useMemo } from "react";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
 import { focusLater } from "../lib/focus";
 import { groupCategories } from "./expense-model";
@@ -8,7 +8,6 @@ import type { ExpenseStatusFilter } from "./use-expense-list";
 const EXPENSE_FILTERS_LABEL = "Filtrar despesas";
 
 const FIELD_CATEGORY = "category";
-const FIELD_STATUS = "status";
 
 const STATUS_OPTIONS: ReadonlyArray<{
   label: string;
@@ -18,30 +17,22 @@ const STATUS_OPTIONS: ReadonlyArray<{
   { label: "Anuladas", value: "voided" },
 ];
 
-/** What the bar edits; the month is the page's own picker, on the same line. */
+/** What the list filters by; the month is the page's own picker, and the status is the segmented on the same line. */
 export interface ExpenseBarFilters {
   /** Empty for every category. */
   categoryId: string;
   status: ExpenseStatusFilter;
 }
 
-function isStatus(value: string): value is ExpenseStatusFilter {
+function isStatus(value: string | undefined): value is ExpenseStatusFilter {
   return STATUS_OPTIONS.some((option) => option.value === value);
 }
 
-/**
- * The filters as the bar's rules. "Ativas" is how the list opens, so it has no pill (as "Todas" has none in the
- * Histórico): a pill appears only for what narrows the list, and the total's label says "(anuladas)" when the list is the voided ones.
- */
+/** The bar's rules: only the category narrows by pill; "Ativas | Anuladas" is the segmented, one touch from the month. */
 export function expenseRules(filters: ExpenseBarFilters): FilterRule[] {
-  const rules: FilterRule[] = [];
-  if (filters.categoryId !== "") {
-    rules.push({ fieldId: FIELD_CATEGORY, value: filters.categoryId });
-  }
-  if (filters.status !== "active") {
-    rules.push({ fieldId: FIELD_STATUS, value: filters.status });
-  }
-  return rules;
+  return filters.categoryId === ""
+    ? []
+    : [{ fieldId: FIELD_CATEGORY, value: filters.categoryId }];
 }
 
 function chosen(rules: readonly FilterRule[], fieldId: string): string {
@@ -49,15 +40,12 @@ function chosen(rules: readonly FilterRule[], fieldId: string): string {
   return typeof value === "string" ? value : "";
 }
 
-/** The next filters of the page from the bar's list: both written, so a pill taken out is a filter turned off. */
+/** The next filters of the page from the bar's list: the category written (a pill taken out is a filter turned off), the status as it was. */
 export function expenseFilters(
-  rules: readonly FilterRule[]
+  rules: readonly FilterRule[],
+  status: ExpenseStatusFilter
 ): ExpenseBarFilters {
-  const status = chosen(rules, FIELD_STATUS);
-  return {
-    categoryId: chosen(rules, FIELD_CATEGORY),
-    status: isStatus(status) ? status : "active",
-  };
+  return { categoryId: chosen(rules, FIELD_CATEGORY), status };
 }
 
 function categoryOptions(categories: readonly ExpenseCategoryReadModel[]) {
@@ -72,7 +60,7 @@ function categoryOptions(categories: readonly ExpenseCategoryReadModel[]) {
   );
 }
 
-/** The fields in the order the "Filtrar" menu lists them. */
+/** The fields the "Filtrar" menu lists: the category. */
 export function expenseFields(
   categories: readonly ExpenseCategoryReadModel[]
 ): FilterField[] {
@@ -81,12 +69,6 @@ export function expenseFields(
       id: FIELD_CATEGORY,
       label: "Categoria",
       options: categoryOptions(categories),
-      type: "select",
-    },
-    {
-      id: FIELD_STATUS,
-      label: "Situação",
-      options: STATUS_OPTIONS,
       type: "select",
     },
   ];
@@ -105,15 +87,52 @@ export function focusFilterAfterClear() {
   focusLater(focusFilterButton);
 }
 
+interface StatusSegmentedProps {
+  onChange: (status: ExpenseStatusFilter) => void;
+  status: ExpenseStatusFilter;
+}
+
+/** "Ativas | Anuladas" on the month's line: a touch swaps the list, the one on screen is pressed (and says so in words, not only by colour). */
+function StatusSegmented({ onChange, status }: StatusSegmentedProps) {
+  const pick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      const value = event.currentTarget.dataset.status;
+      if (isStatus(value)) {
+        onChange(value);
+      }
+    },
+    [onChange]
+  );
+  return (
+    <fieldset
+      aria-label="Situação"
+      className="m-0 flex min-w-0 shrink-0 rounded-md border-0 p-0 shadow-xs"
+    >
+      {STATUS_OPTIONS.map((option) => (
+        <button
+          aria-pressed={option.value === status}
+          className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-md touch:h-11 items-center justify-center border border-border bg-card px-2 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-primary aria-pressed:text-primary-foreground sm:px-2.5 sm:text-sm dark:bg-secondary/60 dark:aria-pressed:bg-primary"
+          data-status={option.value}
+          key={option.value}
+          onClick={pick}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </fieldset>
+  );
+}
+
 interface ExpenseFiltersBarProps {
   categories: readonly ExpenseCategoryReadModel[];
   filters: ExpenseBarFilters;
-  /** The month picker, which shares the first line with "Filtrar". */
+  /** The month picker, which shares the first line with the status and "Filtrar". */
   leading: ReactNode;
   onChange: (filters: ExpenseBarFilters) => void;
 }
 
-/** The criteria besides the month, on the bar of the project: the Histórico and the Estoque filter the same way. */
+/** The criteria besides the month: the status on the line, the category on the bar of the project the Histórico and the Estoque filter with. */
 export function ExpenseFiltersBar({
   categories,
   filters,
@@ -127,21 +146,24 @@ export function ExpenseFiltersBar({
     [categoryId, status]
   );
   const handleChange = useCallback(
-    (next: FilterRule[]) => {
-      const written = expenseFilters(next);
-      onChange(written);
-      // "Ativas" chosen in the editor is no pill: the editor's trigger leaves with it, and "Filtrar" takes the focus
-      if (chosen(next, FIELD_STATUS) === "active") {
-        focusFilterAfterClear();
-      }
-    },
-    [onChange]
+    (next: FilterRule[]) => onChange(expenseFilters(next, status)),
+    [onChange, status]
+  );
+  const handleStatus = useCallback(
+    (next: ExpenseStatusFilter) => onChange({ categoryId, status: next }),
+    [categoryId, onChange]
   );
   return (
     <FilterBar
+      addIconOnPhone
       fields={fields}
       label={EXPENSE_FILTERS_LABEL}
-      leading={leading}
+      leading={
+        <>
+          {leading}
+          <StatusSegmented onChange={handleStatus} status={status} />
+        </>
+      }
       onChange={handleChange}
       value={rules}
     />

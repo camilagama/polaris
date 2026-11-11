@@ -3326,7 +3326,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Status | Observação |
 | --- | --- | --- |
-| Barra "Filtrar despesas" | Em revisão | `expenses/expense-filters.tsx` põe Categoria e Situação (Ativas, Anuladas) na `FilterBar` do projeto, com o botão do mês como `leading`; a lista abre em Ativas, que é o estado sem pílula, e Anuladas é a pílula de Situação. O select de categoria e as abas Ativas/Anuladas do cartão saíram. |
+| Barra "Filtrar despesas" | Em revisão | `expenses/expense-filters.tsx` põe a Categoria na `FilterBar` do projeto, com o botão do mês e o segmentado Ativas e Anuladas como `leading`: Anuladas fica a um toque, com o estado atual marcado, e a Situação não é regra nem pílula da barra. A 360 px (abaixo de 760 px, `addIconOnPhone`) o "Filtrar" é só ícone, nome "Filtrar despesas", para as três peças caberem numa linha e a primeira despesa ficar a 400 px ou menos (`e2e/despesas-primeira-tela.e2e.ts`). O select de categoria e as abas Ativas/Anuladas do cartão saíram. |
 | Total no alto do cartão | Em revisão | "Total do período" (com " (anuladas)" quando for o caso), `Money` `lg` e a contagem abrem o cartão, num `role="status"`; o número é o mesmo do servidor. |
 | Vazio com filtros | Em revisão | "Nenhuma despesa encontrada com estes filtros." com "Limpar filtros", que devolve o foco ao "Filtrar"; sem filtro segue "Nenhuma despesa neste período.". |
 | Primeira tela | Em revisão | A primeira despesa fica a 391 px do topo a 360 px com 3 despesas (468 px na main), medido em `e2e/despesas-primeira-tela.e2e.ts`. |

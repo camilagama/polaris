@@ -305,9 +305,9 @@ export function ExpensesPage() {
     []
   );
   const handleClearFilters = useCallback(() => {
-    handleFilters({ categoryId: "", status: "active" });
+    setChoices((current) => ({ ...current, categoryId: "" }));
     focusFilterAfterClear();
-  }, [handleFilters]);
+  }, []);
 
   // The server generates the occurrences that fell due when the list is read,
   // so a changed rule means the list (and the month total) must be read again.

@@ -26,6 +26,8 @@ const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
 const uuid = (n: number) =>
   `0199c2d0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
+const FILTER_BUTTON_NAME = /^Filtrar( despesas)?$/;
+const CATEGORY_ITEM = /^Categoria/;
 const ROWS = 14;
 
 const CATEGORIES = [
@@ -224,7 +226,7 @@ test.describe("a 320 px com letra de 20 px", () => {
   );
 
   reflowTest(
-    "a barra Filtrar despesas, com as duas pílulas, não corta nada nem rola a página, e fechar o editor devolve o foco à pílula",
+    "a barra Filtrar despesas, com a categoria e Anuladas, não corta nada nem rola a página, o segmentado segue à vista e fechar o editor devolve o foco à pílula",
     async ({ page }) => {
       await openReflowViewport(page);
       await openExpenses(page);
@@ -233,22 +235,36 @@ test.describe("a 320 px com letra de 20 px", () => {
         exact: true,
         name: "Filtrar despesas",
       });
-      const choose = async (field: string, option: string) => {
-        await bar.getByRole("button", { exact: true, name: "Filtrar" }).click();
-        await page
-          .getByRole("menu", { name: "Filtrar por" })
-          .getByRole("menuitem", { name: new RegExp(`^${field}`) })
-          .click();
-        const editor = page.getByRole("dialog", { name: field });
-        await editor.getByRole("button", { exact: true, name: option }).click();
-        await editor
-          .getByRole("button", { exact: true, name: "Aplicar" })
-          .click();
-        await expect(editor).toHaveCount(0);
-      };
-      await choose("Situação", "Anuladas");
-      await choose("Categoria", "Marketing");
-      await expect(bar.locator('[data-slot="filter-pill"]')).toHaveCount(2);
+      const segmented = bar.getByRole("group", {
+        exact: true,
+        name: "Situação",
+      });
+      const voided = segmented.getByRole("button", {
+        exact: true,
+        name: "Anuladas",
+      });
+      await expect(
+        segmented.getByRole("button", { exact: true, name: "Ativas" })
+      ).toBeInViewport({ ratio: 1 });
+      await expect(voided).toBeInViewport({ ratio: 1 });
+      await voided.click();
+      await expect(voided).toHaveAttribute("aria-pressed", "true");
+
+      await bar.getByRole("button", { name: FILTER_BUTTON_NAME }).click();
+      await page
+        .getByRole("menu", { name: "Filtrar por" })
+        .getByRole("menuitem", { name: CATEGORY_ITEM })
+        .click();
+      const chooser = page.getByRole("dialog", { name: "Categoria" });
+      await chooser
+        .getByRole("button", { exact: true, name: "Marketing" })
+        .click();
+      await chooser
+        .getByRole("button", { exact: true, name: "Aplicar" })
+        .click();
+      await expect(chooser).toHaveCount(0);
+      await expect(bar.locator('[data-slot="filter-pill"]')).toHaveCount(1);
+      await expect(voided).toBeInViewport({ ratio: 1 });
       await assertNothingClipped(bar);
       await assertNoPageScroll(page);
 

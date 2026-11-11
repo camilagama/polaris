@@ -142,10 +142,10 @@ describe("ExpenseList", () => {
     expect(html).not.toContain("para registrar a primeira");
   });
 
-  it("the empty list under a filter (voided or one category) says so and offers Limpar filtros, never a button to create", () => {
+  it("the empty list under a category says so and offers Limpar filtros, never a button to create", () => {
     for (const html of [
-      list(state({}), "voided"),
       list(state({}), "active", "c1"),
+      list(state({}), "voided", "c1"),
     ]) {
       expect(EMPTY_TITLE.exec(html)?.[1]).toBe(
         "Nenhuma despesa encontrada com estes filtros."
@@ -154,6 +154,14 @@ describe("ExpenseList", () => {
       expect(html).not.toContain("Nova despesa");
     }
     expect(list(state({}))).not.toContain("Limpar filtros");
+  });
+
+  it("the empty voided list says so with no button: the segmented, one touch away, is how to leave it", () => {
+    const html = list(state({}), "voided");
+    expect(EMPTY_TITLE.exec(html)?.[1]).toBe(
+      "Nenhuma despesa anulada neste período."
+    );
+    expect(html).not.toContain("<button");
   });
 
   it("says category, date and payee on one line, with no group and no word Competência", () => {
