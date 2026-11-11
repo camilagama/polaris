@@ -1691,7 +1691,7 @@ describe("a revocation the read back does not show", () => {
     expect(result).toEqual([]);
     expect(found).toEqual([
       {
-        authorization: "absent",
+        pixStatus: "absent",
         journey: "ONLY_RECURRENCY",
         subscriptionStatus: "ACTIVE",
       },

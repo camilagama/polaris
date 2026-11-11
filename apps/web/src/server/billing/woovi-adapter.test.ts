@@ -1,6 +1,7 @@
 import type { FetchLike } from "@polaris/billing/http";
 import type { BillingStore } from "@polaris/db/billing-store";
 import { logger } from "@polaris/observability/logger";
+import { redact } from "@polaris/observability/redaction";
 import { Hono } from "hono";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ServerEnv, WorkerBindings } from "../environment";
@@ -624,7 +625,7 @@ describe("what happens when the read back does not give the resource", () => {
       }),
       {},
       {
-        authorization: "absent",
+        pixStatus: "absent",
         journey: "ONLY_RECURRENCY",
         subscriptionStatus: "ACTIVE",
       },
@@ -677,6 +678,11 @@ describe("what happens when the read back does not give the resource", () => {
         resourceId: SUBSCRIPTION_LOG_ID,
       }
     );
+    // the code reaches the log: the redaction masks any key named `authorization`
+    const shown = t.logs.error.mock.calls.find(
+      ([event]) => event === "billing_webhook_state_not_shown"
+    );
+    expect(redact(shown?.[1] ?? {})).toMatchObject({ pixStatus: "absent" });
     // only the subscription read back: no list, no PUT …/cancel
     expect(t.api.urls).toEqual([
       `https://api.woovi-sandbox.com${SUBSCRIPTION_PATH}`,

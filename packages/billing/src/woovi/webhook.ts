@@ -141,9 +141,10 @@ export const WEBHOOK_INSTALLMENT_PAGES = 3;
  * The installments of the subscription, read only when an approval needs them
  * (the read back shows no `pixRecurring.status`, sandbox), row by row: one row
  * out of shape does not lose the approval another row proves. Null when the
- * list went past its ceiling or the provider did not answer in time: the
- * delivery is answered 200 with no fact rather than 5xx, which would make
- * Woovi send it (and this read) again; the reconciliation reads the state.
+ * list went past its ceiling or the provider was unavailable for it (timeout
+ * of each call, network, 429 or 5xx): the delivery is answered 200 with no
+ * fact rather than 5xx, which would make Woovi send it (and this read) again;
+ * the reconciliation reads the state.
  */
 async function installmentsToProveApproval(
   client: WooviClient,

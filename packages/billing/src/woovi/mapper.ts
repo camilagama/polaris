@@ -333,7 +333,9 @@ export function wooviAuthorizationOf(
  * Whether the checkout became a subscription (the payer approved it at some
  * point), so it is no longer a checkout to give up. A revoked one counts when
  * its status says it was approved, never when it says it was only created, and
- * otherwise by an installment of its own.
+ * otherwise by an installment of its own; only a caller that read the
+ * installments can see that last case (`discardCheckout` does not read them
+ * for a revoked one: cancelling it changes nothing at Woovi).
  */
 export function isWooviSubscriptionMade(
   subscription: WooviSubscription,
@@ -560,11 +562,6 @@ export function mapWooviInstallmentEvent(input: {
 
 /** The codes of a resource that should have given a fact and did not; only codes, never a person's data. */
 export interface WooviStateNotShown {
-  /**
-   * `pixRecurring.status` as read back; `"absent"` on a rejection whose read
-   * back shows none (a revocation the sandbox shape cannot show).
-   */
-  authorization?: string;
   charge?: string;
   /** `"unread"`: the list of installments went past its ceiling or its time, so the approval was not read. */
   installmentList?: "unread";
@@ -572,21 +569,25 @@ export interface WooviStateNotShown {
   journey?: string;
   /** How many rows of the list were out of shape: only the count, never a row. */
   malformedInstallments?: number;
+  /**
+   * `pixRecurring.status` as read back; `"absent"` on a rejection whose read
+   * back shows none (a revocation the sandbox shape cannot show). Not named
+   * `authorization`: the log's redaction masks any key with that word.
+   */
+  pixStatus?: string;
   subscriptionStatus: string;
 }
 
-function authorizationCode(
+function pixStatusCode(
   eventType: string,
   subscription: WooviSubscription
-): { authorization?: string } {
+): { pixStatus?: string } {
   if (subscription.authorization !== null) {
-    return { authorization: subscription.authorization };
+    return { pixStatus: subscription.authorization };
   }
   // a rejection of a subscription still active whose read back shows no status:
   // a revocation the sandbox shape does not show, told apart for its alert
-  return eventType === "PIX_AUTOMATIC_REJECTED"
-    ? { authorization: "absent" }
-    : {};
+  return eventType === "PIX_AUTOMATIC_REJECTED" ? { pixStatus: "absent" } : {};
 }
 
 /**
@@ -621,7 +622,7 @@ export function wooviStateNotShown(input: {
     return null;
   }
   return {
-    ...authorizationCode(eventType, subscription),
+    ...pixStatusCode(eventType, subscription),
     ...(installment?.charge ? { charge: installment.charge } : {}),
     ...(installment === undefined
       ? {}

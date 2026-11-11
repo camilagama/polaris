@@ -85,7 +85,7 @@ async function readBack(client: WooviClient, envelope: WooviWebhookEnvelope) {
         logger.error("billing_webhook_state_not_shown", { ...ids, ...shown });
         if (
           envelope.eventType === "PIX_AUTOMATIC_REJECTED" &&
-          shown.authorization === "absent"
+          shown.pixStatus === "absent"
         ) {
           // a revocation the read back may never show (still ACTIVE, no status):
           // an operator confirms it in Woovi's panel and cancels the renewal from
