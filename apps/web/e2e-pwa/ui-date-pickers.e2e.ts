@@ -569,6 +569,7 @@ for (const viewport of VIEWPORTS) {
       await expect(popup).toBeHidden();
       popup = await open();
       toggle = popup.getByRole("button", { name: "Digitar as datas" });
+      await expect(toggle).toHaveText("Digitar as datas");
       const next = popup.getByRole("button", { name: "Próximo mês" });
       await next.click();
       await next.click();
