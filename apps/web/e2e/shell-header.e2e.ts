@@ -890,7 +890,7 @@ test.describe("AC-1.6: nenhuma rolagem de lado, na página, na lateral e em Mais
     for (const name of [
       "Pendências, 1 registro recusado",
       "Primeiros passos, 2 de 3 concluídos",
-      "Teste grátis, primeira cobrança em 10/11, abrir Assinatura",
+      "Teste grátis, primeira cobrança em 10/12, abrir Assinatura",
     ]) {
       // biome-ignore lint/performance/noAwaitInLoops: one link at a time
       await expect(

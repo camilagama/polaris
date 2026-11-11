@@ -1079,7 +1079,7 @@ test.describe("barra do celular a 360 e 320 px", () => {
 test.describe("pé do menu: primeiros passos e teste grátis", () => {
   const STEPS_NAME = "Primeiros passos, 2 de 3 concluídos";
   const TRIAL_NAME =
-    "Teste grátis, primeira cobrança em 10/11, abrir Assinatura";
+    "Teste grátis, primeira cobrança em 10/12, abrir Assinatura";
 
   const stepsLink = (page: Page) =>
     page.getByRole("link", { exact: true, name: STEPS_NAME });
@@ -1101,7 +1101,7 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
       "href",
       "/configuracoes?aba=assinatura"
     );
-    await expect(trialLink(page)).toContainText("1ª cobrança em 10/11");
+    await expect(trialLink(page)).toContainText("1ª cobrança em 10/12");
     await expect(trialLink(page)).toContainText("Assinatura");
     // the date, never a count of days (AS-3, AC-12)
     await expect(page.locator("[data-menu-progress]")).not.toContainText(DAYS);
@@ -1213,7 +1213,7 @@ test.describe("pé do menu: primeiros passos e teste grátis", () => {
     ).toBeVisible();
     for (const [link, tooltip] of [
       [stepsLink(page), "Primeiros passos · 2 de 3"],
-      [trialLink(page), "Teste grátis · 1ª cobrança em 10/11"],
+      [trialLink(page), "Teste grátis · 1ª cobrança em 10/12"],
     ] as const) {
       // biome-ignore lint/performance/noAwaitInLoops: one tooltip at a time
       await expect(link).toBeVisible();
