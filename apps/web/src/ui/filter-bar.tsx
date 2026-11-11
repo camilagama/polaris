@@ -64,6 +64,8 @@ export type {
 } from "@/ui/filter-bar-model";
 
 export interface FilterBarProps {
+  /** Below 760 px "Filtrar" is only the icon, named by `label`: the first line keeps room for what `leading` brings. */
+  addIconOnPhone?: boolean;
   /** The screen's `role="status"` line ("3 vendas com esse filtro"): it goes inside the `<search>`, under the bar. */
   children?: ReactNode;
   className?: string | undefined;
@@ -742,6 +744,7 @@ function FieldItem({
  * passes as `children`.
  */
 export function FilterBar({
+  addIconOnPhone = false,
   children,
   className,
   fields,
@@ -752,6 +755,7 @@ export function FilterBar({
 }: FilterBarProps) {
   const level = useMotionLevel();
   const phone = usePhone();
+  const iconOnly = addIconOnPhone && phone;
   const searchRef = useRef<HTMLElement>(null);
   /** The field chosen in the menu, whose pill waits for a value. */
   const [adding, setAdding] = useState<string | null>(null);
@@ -899,14 +903,22 @@ export function FilterBar({
           <DropdownMenuTrigger
             render={
               <Button
+                aria-label={iconOnly ? label : undefined}
                 className="shrink-0"
                 data-slot="filter-add"
+                size={iconOnly ? "icon" : "default"}
                 variant="outline"
               />
             }
           >
-            <FunnelIcon aria-hidden="true" data-icon="inline-start" />
-            Filtrar
+            {iconOnly ? (
+              <FunnelIcon aria-hidden="true" />
+            ) : (
+              <>
+                <FunnelIcon aria-hidden="true" data-icon="inline-start" />
+                Filtrar
+              </>
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent
             aria-label="Filtrar por"
