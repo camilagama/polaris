@@ -156,7 +156,7 @@ for (const theme of THEMES) {
 }
 
 for (const viewport of VIEWPORTS) {
-  test(`Venda: escondidos, o total do formulário sai mascarado e a prévia de taxas segue escrita (${viewport.name})`, async ({
+  test(`Venda: escondidos, o total do formulário sai mascarado e a prévia de taxas sai mascarada (${viewport.name})`, async ({
     page,
   }) => {
     await useDevice(page, viewport, "claro", true);
@@ -165,10 +165,11 @@ for (const viewport of VIEWPORTS) {
       name: "Prévia de taxas e prazo",
     });
     await expect(preview).toBeVisible();
-    await expect(
-      preview.getByText("R$ 7,08 (R$ 0,50 + 2,99% do total devido)")
-    ).toBeVisible();
-    await expect(preview.locator("[data-masked-money]")).toHaveCount(0);
+    await expect(preview.locator("[data-masked-money]").first()).toBeAttached();
+    await expect(preview).toContainText("2,99% do total devido");
+    await expect(preview).not.toContainText("7,08");
+    await expect(preview).not.toContainText("0,50");
+    expect(await amountsWritten(page)).toEqual([]);
     const total = viewport.width < 760 ? "[data-submit-bar]" : "main";
     await expect(
       page.locator(total).locator("[data-masked-money]").first()
