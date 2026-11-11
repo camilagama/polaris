@@ -24,7 +24,6 @@ declare global {
   }
 }
 
-/** Records every CSS animation that starts on a main number of a card, once per start event: nothing is polled. */
 function recordEntrances() {
   window.started = [];
   document.addEventListener(
@@ -112,7 +111,6 @@ async function lastMonth(page: Page): Promise<void> {
     .click();
 }
 
-/** The Resultado with the month read, ready to switch to the previous one (R$ 90,00 becomes R$ 45,00). */
 async function openResultado(page: Page): Promise<void> {
   await page.addInitScript(recordEntrances);
   await page.goto("/dashboard");
@@ -156,7 +154,6 @@ test("desktop: o valor novo entra inteiro com um fade de 200 ms, sem contador de
     "o valor que entra já é o final"
   ).toBe(true);
 
-  // nothing counts digit by digit: no custom element of a counter, no second copy of the figure for a reader
   expect(await page.locator("number-flow-react").count()).toBe(0);
   expect(await page.locator("[data-animated-figure]").count()).toBe(0);
   expect(await page.locator("[data-figure-counting]").count()).toBe(0);

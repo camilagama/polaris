@@ -322,9 +322,8 @@ const SOURCE_RULES: { rule: string; pattern: RegExp }[] = [
 
 /**
  * What one file may hold of `SOURCE_RULES`, exactly: the file (its path from the repository root, matched whole, never
- * by the end of the path: the same name in another app or folder still fails), the rule and why. There is none: the
- * only one was the counter of the cards, which adopted a constructed sheet because the policy of the page
- * (`style-src 'self'`) refuses a `<style>` inside a shadow root, and it is gone.
+ * by the end of the path: the same name in another app or folder still fails), the rule and why. Empty: a
+ * constructed sheet is the way around `style-src 'self'` refusing a `<style>`, and no file needs it.
  */
 export const SOURCE_RULE_EXCEPTIONS: readonly {
   file: string;

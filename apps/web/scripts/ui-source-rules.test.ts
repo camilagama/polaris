@@ -476,10 +476,8 @@ export function focusListFaults(
 }
 
 /**
- * O número principal do cartão de KPI muda com um fade curto, inteiro, nunca com dígitos rolando (DESIGN.md "Movimento"):
- * nenhum pacote de contador (`@number-flow/*`, `number-flow`) em `package.json` nem no código, nenhum elemento ou opção
- * de rolagem (`<NumberFlow`, `spinTiming`, `transformTiming`, `opacityTiming`, `figure-counter`), e o `AnimatedFigure`
- * só nos itens da lista fechada, com a entrada sob `motion-full:` (celular e movimento reduzido ficam parados).
+ * O número principal do cartão de KPI não rola dígitos (DESIGN.md "Movimento"): reprova o pacote de contador, o
+ * `<NumberFlow`, as opções de rolagem, o `AnimatedFigure` fora da lista fechada e a entrada fora de `motion-full:`.
  */
 export const FIGURE_COMPONENT = "src/ui/animated-figure.tsx";
 export const FIGURE_USERS = [
