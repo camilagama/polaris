@@ -68,7 +68,7 @@ describe("a lista única de atalhos", () => {
 });
 
 describe("o limite de dias do período", () => {
-  const span = { days: 366, reason: "Escolha até 1 ano." };
+  const span = { days: 366, reason: "Escolha até 1 ano" };
 
   it("conta as duas pontas, em qualquer ordem", () => {
     expect(daysInRange("2026-10-01", "2026-10-01")).toBe(1);
@@ -79,7 +79,7 @@ describe("o limite de dias do período", () => {
 
   it("a data final digitada além do limite diz o motivo e não vira período", () => {
     const texts = { from: "13/10/2025", to: "14/10/2026" };
-    expect(typedProblems(texts, span)).toEqual({ to: "Escolha até 1 ano." });
+    expect(typedProblems(texts, span)).toEqual({ to: "Escolha até 1 ano" });
     expect(typedRange(texts, span)).toBeNull();
     expect(typedProblems(texts)).toEqual({});
     expect(typedRange(texts)).toEqual({ from: "2025-10-13", to: "2026-10-14" });

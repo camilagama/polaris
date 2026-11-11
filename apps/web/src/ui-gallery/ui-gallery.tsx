@@ -426,6 +426,7 @@ function DatePickerStates() {
   const [empty, setEmpty] = useState<IsoDate | null>(null);
   const [chosen, setChosen] = useState<IsoDate | null>("2026-10-24");
   const [limited, setLimited] = useState<IsoDate | null>(null);
+  const [upcoming, setUpcoming] = useState<IsoDate | null>(null);
   const [required, setRequired] = useState<IsoDate | null>(null);
   const [period, setPeriod] = useState<DateRange | null>({
     from: "2026-10-01",
@@ -479,6 +480,21 @@ function DatePickerStates() {
               value={limited}
             />
             <FieldDescription>De 05/10 até hoje.</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="galeria-data-futura">
+              Data de entrega
+            </FieldLabel>
+            <DatePicker
+              disabledReason="Só depois de hoje"
+              id="galeria-data-futura"
+              label="Data de entrega"
+              min="2026-10-25"
+              onValueChange={setUpcoming}
+              today={TODAY}
+              value={upcoming}
+            />
+            <FieldDescription>A partir de amanhã.</FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="galeria-data-erro">Vencimento</FieldLabel>

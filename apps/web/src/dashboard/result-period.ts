@@ -149,7 +149,7 @@ export function rangeMessage(problem: RangeProblem): string {
     case "order":
       return "A data inicial vem depois da final.";
     default:
-      return "Escolha até 1 ano.";
+      return "Escolha até 1 ano";
   }
 }
 
