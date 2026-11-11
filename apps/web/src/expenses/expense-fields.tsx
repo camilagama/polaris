@@ -103,8 +103,6 @@ function categoryLabel(category: ExpenseCategoryReadModel): string {
 }
 
 interface ExpenseCategorySelectProps {
-  /** An item for "no category" with this text (the filter's "Todas as categorias"); without it, a placeholder. */
-  allLabel?: string | undefined;
   categories: readonly ExpenseCategoryReadModel[];
   className?: string | undefined;
   disabled?: boolean | undefined;
@@ -119,7 +117,6 @@ interface ExpenseCategorySelectProps {
 
 /** The categories under the name of their group (Base UI Select): it opens below the field, never over it. */
 export function ExpenseCategorySelect({
-  allLabel,
   categories,
   className,
   disabled,
@@ -137,9 +134,6 @@ export function ExpenseCategorySelect({
   const items: { label: string; value: string | null }[] = categories.map(
     (category) => ({ label: categoryLabel(category), value: category.id })
   );
-  if (allLabel) {
-    items.unshift({ label: allLabel, value: null });
-  }
   const labelId = `${id}-label`;
   return (
     <Field className={cn("min-w-0", className)} data-invalid={Boolean(error)}>
@@ -160,7 +154,6 @@ export function ExpenseCategorySelect({
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {allLabel ? <SelectItem value={null}>{allLabel}</SelectItem> : null}
           {groupCategories(categories).map((section) => (
             <SelectGroup key={section.key}>
               <SelectLabel>{section.label}</SelectLabel>
