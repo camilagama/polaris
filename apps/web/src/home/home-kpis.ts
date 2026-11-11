@@ -459,7 +459,7 @@ function resultReading({
       count: NO_KNOWN_COST_RESULT,
       date: atRest ? wholeMonth : range,
       delta: null,
-      help: resultHelp(`de ${range}`, null, null, true),
+      help: `${resultHelp(`de ${range}`, null, null, true)} ${NO_KNOWN_COST_RESULT}`,
       value: null,
     };
   }
@@ -652,8 +652,10 @@ export function unknownDaysFit(unknown: number, total: number): boolean {
 /**
  * What the (i) of the result card says: what the number is for `span` ("de 1 a 23/10", "do mês inteiro") and what it
  * compares with. With a count of days that does not fit the card, the sentence of the days takes the place of the
- * comparison (the chip, which has none then, would not say it). `notProfit` folds "não é lucro líquido nem caixa" into
- * the first sentence, so the (i) of the home tile keeps the two sentences a help text may have.
+ * comparison (the chip, which has none then, would not say it). `notProfit` is the (i) of the home tile: it folds "não é
+ * lucro líquido nem caixa" into the first sentence, so the help keeps the two sentences a text may have, and it always
+ * says the count of days with no cost, because the tile cuts the count short in a narrow column and an estimate that is
+ * not whole has no comparison to lose.
  */
 export function resultHelp(
   span: string,
@@ -664,7 +666,10 @@ export function resultHelp(
   const first = `Vendas menos custos, taxas e despesas ${span}${
     notProfit ? `; ${NOT_PROFIT_NOR_CASH.toLowerCase()}` : ""
   }.`;
-  if (missing && !unknownDaysFit(missing.unknown, missing.total)) {
+  if (
+    missing &&
+    (notProfit || !unknownDaysFit(missing.unknown, missing.total))
+  ) {
     return `${first} ${missing.unknown} de ${missing.total} dias ainda sem custo informado.`;
   }
   return compare ? `${first} Compara com ${compare}.` : first;

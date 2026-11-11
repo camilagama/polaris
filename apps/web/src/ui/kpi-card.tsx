@@ -660,9 +660,9 @@ const TILE_SPARK =
 const TILE_TITLE_ROW = "touch:min-h-11";
 const TILE_SUPPORT =
   "flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground text-xs leading-4";
-/* the warning row is one line tall: the sign comes first, so it is never the part that wraps out of sight, and the detail
-   (the days) is the last item, which wraps whole under the clip instead of being cut into another number */
-const TILE_WARNING = "h-5 overflow-hidden";
+/* the warning row is one line: the sign comes first and never shrinks, and the detail (the days) is the last item, which is
+   cut with an ellipsis at the end of the same line when the column is narrow, never wrapped out of sight */
+const TILE_WARNING = "h-5 flex-nowrap overflow-hidden";
 
 export function KpiTile({
   action,
@@ -697,7 +697,7 @@ export function KpiTile({
   value: ReactNode;
   /** The sign of a warning that must stay in sight: it opens the support line, which stays one line tall. */
   warning?: ReactNode;
-  /** What the sign says more (the days with no cost): last on the line, shown whole or clipped whole, never cut in the middle. */
+  /** What the sign says more (the days with no cost): last on the line, shown whole or cut at the end with an ellipsis, never wrapped out of sight. */
   warningDetail?: ReactNode;
 }) {
   return (
@@ -749,7 +749,7 @@ export function KpiTile({
         {note}
         {action}
         {warningDetail ? (
-          <span className="whitespace-nowrap" data-kpi-warning-detail="">
+          <span className="min-w-0 truncate" data-kpi-warning-detail="">
             {warningDetail}
           </span>
         ) : null}

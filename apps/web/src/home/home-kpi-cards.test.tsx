@@ -289,7 +289,8 @@ describe("o cartão do Resultado estimado", () => {
     );
     expect(result).not.toContain("estimativa incompleta");
     expect(result.match(/data-kpi-note-row/g)).toHaveLength(1);
-    expect(result).toContain("h-5 overflow-hidden");
+    expect(result).toContain("h-5 flex-nowrap overflow-hidden");
+    expect(result).toContain(`min-w-0 truncate" data-kpi-warning-detail`);
     expect(result).not.toContain("data-kpi-delta=");
   });
 });

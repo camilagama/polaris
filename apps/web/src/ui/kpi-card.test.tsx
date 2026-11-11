@@ -96,7 +96,7 @@ describe("KpiTile", () => {
     });
     expect(warned).toContain('data-kpi-warning=""');
     expect(warned.match(/data-kpi-note-row/g)).toHaveLength(1);
-    expect(warned).toContain("h-5 overflow-hidden");
+    expect(warned).toContain("h-5 flex-nowrap overflow-hidden");
     expect(warned.indexOf("Incompleta")).toBeLessThan(
       warned.indexOf("data-chip")
     );

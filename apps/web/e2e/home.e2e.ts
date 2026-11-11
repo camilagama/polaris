@@ -1520,7 +1520,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     });
   }
 
-  test("a ajuda não carrega aviso: o sinal de incompleta e os dias sem custo ficam à vista, com o (i) fechado", async ({
+  test("o sinal de incompleta e os dias sem custo ficam à vista, com o (i) fechado", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -4398,6 +4398,9 @@ const SALE_OUTSIDE_THE_MONTH: Scenario = {
   days: { "2026-09-25": [12_000, 2] },
 };
 const NO_SALE_AT_ALL: Scenario = { ...SOLD, days: {} };
+const SOBRE = /^Sobre /;
+const NO_COST_HELP =
+  /não é lucro líquido nem caixa\. Sem custo informado: não dá para estimar\./;
 const SIZES = [
   { height: 740, width: 360 },
   { height: 800, width: 1280 },
@@ -4983,6 +4986,71 @@ test.describe("cartões de KPI: o valor e o minigráfico têm áreas que o núme
       }
     });
   }
+
+  const NO_COST: Scenario = {
+    ...SOLD,
+    results: {
+      "2026-10-02": null,
+      "2026-10-18": null,
+      "2026-10-20": null,
+      "2026-10-23": null,
+    },
+    soldWithoutCost: 12,
+  };
+
+  async function detailInsideRow(result: Locator, detail: string) {
+    return await result.evaluate((card, selector) => {
+      const row = card
+        .querySelector("[data-kpi-note-row]")
+        ?.getBoundingClientRect();
+      const box = card.querySelector(selector)?.getBoundingClientRect();
+      return Boolean(
+        row &&
+          box &&
+          box.width > 0 &&
+          box.left >= row.left - 0.5 &&
+          box.right <= row.right + 0.5 &&
+          box.top >= row.top - 0.5 &&
+          box.bottom <= row.bottom + 0.5
+      );
+    }, detail);
+  }
+
+  test("com a lateral aberta a 1280 px, os dias sem custo ficam à vista na linha de apoio e o (i) diz a contagem", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(INCOMPLETE));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-unknown]")).toContainText(
+      "de 23 dias sem custo"
+    );
+    expect(
+      await detailInsideRow(result, "[data-kpi-warning-detail]"),
+      "o detalhe está dentro da linha de apoio, não escondido"
+    ).toBe(true);
+    await result.getByRole("button", { name: SOBRE }).click();
+    await expect(
+      page.getByText("1 de 23 dias ainda sem custo informado.")
+    ).toBeVisible();
+  });
+
+  test("sem custo conhecido, com a lateral aberta a 1280 px: “Sem custo informado” à vista e o (i) diz que não dá para estimar", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(NO_COST));
+    const result = region(page, "Resultado estimado");
+    await expect(result.locator("[data-kpi-no-cost]")).toContainText(
+      "Sem custo informado"
+    );
+    expect(
+      await detailInsideRow(result, "[data-kpi-warning-detail]"),
+      "o detalhe está dentro da linha de apoio, não escondido"
+    ).toBe(true);
+    await result.getByRole("button", { name: SOBRE }).click();
+    await expect(page.getByText(NO_COST_HELP)).toBeVisible();
+  });
 
   test("a estimativa incompleta é uma linha só, com o sinal à vista, e a data de um dia lido vem antes dele (1280 px)", async ({
     page,
