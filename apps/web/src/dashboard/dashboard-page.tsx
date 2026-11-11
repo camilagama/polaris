@@ -30,7 +30,7 @@ import { useCurrentOrganization } from "../lib/current-organization";
 import { calendarDayInTimezone } from "../lib/dates";
 import { useRuntimeSnapshot } from "../offline/runtime/runtime-context";
 import { waitingOperations } from "../offline/runtime/sync-status";
-import { formatLastConfirmed, formatUpdatedUntil } from "./dashboard-model";
+import { formatLastConfirmed, formatUpdatedAt } from "./dashboard-model";
 import { EmptyResult } from "./empty-result";
 import { groupGoals } from "./goal-model";
 import { GoalsPanel } from "./goals-panel";
@@ -106,11 +106,11 @@ interface ToolbarProps {
 }
 
 /**
- * Which read the line beside the period talks about: the server's, or the copy the device kept. While another period
- * loads, the figures of the one before stay on the screen, dimmed, and this line says which they are: in its own place,
- * so nothing is put above the figures and nothing moves (no line comes and goes over them).
+ * What the line under the controls says, only when there is something to say: the device's copy ("Último resultado
+ * confirmado"), or the read in progress. While another period loads, the figures of the one before stay on the
+ * screen, dimmed, and this line says which they are. The server's time is not here: it is the text of "Atualizar".
  */
-function updatedText(
+function statusText(
   state: PeriodSummaryState,
   timezone: string,
   period: Period,
@@ -118,18 +118,25 @@ function updatedText(
 ): string | null {
   const { isLoading, source, summary } = state;
   if (isLoading) {
-    return summary && !samePeriod(summary.period, period)
-      ? `Mostrando ${periodText(summary.period, thisYear)} até o novo período carregar.`
-      : "Atualizando…";
+    if (!summary) {
+      return null;
+    }
+    return samePeriod(summary.period, period)
+      ? "Atualizando…"
+      : `Mostrando ${periodText(summary.period, thisYear)} até o novo período carregar.`;
   }
-  if (!summary) {
-    return null;
-  }
-  return source === "server"
-    ? formatUpdatedUntil(summary.generatedAt, timezone)
-    : formatLastConfirmed(summary.generatedAt, timezone);
+  return summary && source !== "server"
+    ? formatLastConfirmed(summary.generatedAt, timezone)
+    : null;
 }
 
+/**
+ * The one line of control: the period on the left and, on the right, the time of the server's read, which is the
+ * button that reads again. When the two do not fit, the time goes down before anything is cut. The status line comes
+ * under it only when it has something to say (no height kept for it), in the same `aria-live` region that is always in
+ * in place; with nothing to say it is `sr-only` and tells the screen reader the time once a read ends, as the button
+ * name does not change under a reader that is not looking at it.
+ */
 function Toolbar({
   onCustom,
   onPreset,
@@ -141,30 +148,42 @@ function Toolbar({
   timezone,
   today,
 }: ToolbarProps) {
+  const { source, summary } = state;
+  const updated =
+    source === "server" && summary
+      ? formatUpdatedAt(
+          summary.generatedAt,
+          timezone,
+          calendarDayInTimezone(new Date(), timezone)
+        )
+      : null;
+  const status = statusText(state, timezone, period, thisYear);
   return (
-    <div className="grid gap-4">
-      <PeriodPicker
-        onCustom={onCustom}
-        onPreset={onPreset}
-        period={period}
-        preset={preset}
-        today={today}
-      />
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-4">
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3">
+        <PeriodPicker
+          onCustom={onCustom}
+          onPreset={onPreset}
+          period={period}
+          preset={preset}
+          today={today}
+        />
         <RefreshButton
           busy={state.isLoading}
           disabled={state.isLoading}
           onClick={onRefresh}
+          updated={updated ?? undefined}
         />
-        {/* two lines kept on a phone, where "Mostrando … até o novo período carregar." takes two */}
-        <p
-          aria-live="polite"
-          className="min-h-9 basis-full self-center text-muted-foreground text-support md:min-h-0 md:basis-auto"
-          id="dashboard-updated"
-        >
-          {updatedText(state, timezone, period, thisYear)}
-        </p>
       </div>
+      <p
+        aria-live="polite"
+        className={
+          status ? "mt-2 text-muted-foreground text-support" : "sr-only"
+        }
+        id="dashboard-updated"
+      >
+        {status ?? (updated ? `Atualizado ${updated}` : null)}
+      </p>
     </div>
   );
 }

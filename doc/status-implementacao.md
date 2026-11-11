@@ -3330,6 +3330,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Texto do período longo | Em revisão | `dashboard/result-period.ts`: "Escolha até 1 ano" (sem ponto, como os outros motivos); testes e e2e que o citam atualizados. |
 | Provas | Em revisão | Unidade: `date-pickers.test.tsx` (`TodayFooter`). e2e: `ui-date-pickers.e2e.ts` (motivo à vista, descrição acessível, sem escolher, 360 x 600 e 320 px com fonte de 20 px, axe nos dois temas) sobre o novo seletor "Data de entrega" da galeria. |
 
+### UI de 11/11: uma linha de controle no Resultado (L2-4, t1026; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Linha única | Em revisão | `dashboard/dashboard-page.tsx` (`Toolbar`): o período à esquerda e, à direita, o `RefreshButton` com o horário da leitura do servidor ("Atualizado às 09:00", hora da loja; com a data quando o dia da loja no relógio do aparelho já é outro). O horário quebra para a linha de baixo antes de cortar (320 px com letra de 20 px). O primeiro cartão a 360 px sobe de 539 para 435 px na loja do e2e (104 px). |
+| Botão | Em revisão | `ui/refresh-button.tsx`: prop opcional `updated`; com ela o botão é a linha "Atualizado às 09:00" em qualquer largura, de 13 px, e o nome acessível é "Atualizar, atualizado às 09:00". Sem ela, é o botão de antes (só o ícone abaixo de 760 px). `dashboard-model.ts`: `formatUpdatedAt` no lugar de `formatUpdatedUntil`. |
+| Linha de status | Em revisão | `#dashboard-updated` (`aria-live="polite"`) só aparece com texto: "Atualizando…", "Mostrando … até o novo período carregar." e, sem conexão, "Último resultado confirmado: dd/mm/aaaa HH:mm" (o botão diz só "Atualizar"); sem texto fica `sr-only` e diz o horário ao leitor de tela quando a leitura termina. Sem resultado lido ainda, não diz "Atualizando…" (o cartão "Carregando o resultado…" já diz). |
+| Provas | Em revisão | Unidade: `dashboard-model.test.ts` (`formatUpdatedAt`). e2e: `dashboard.e2e.ts` (primeiro cartão a 360 px, 360/16 e 320/20 sem corte nem rolagem, foco, leitura em curso, a data de outro dia; os testes de "Atualizar" e de cópia usam o nome que começa com "Atualizar"), `ui-botao-atualizar.e2e.ts` (nome e altura do botão do Resultado). Controle: na `origin/main` o teste do primeiro cartão reprova (539 px). |
+
 ### Saída do E1 (boas-vindas): o código (t1027; ADR 0106, D10, fase 1; sem migration)
 
 | Item | Status | Observação |

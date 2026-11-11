@@ -13,9 +13,12 @@ import { SCREENS, VIEWPORTS } from "./ui-screens";
  */
 const RESULT_SCREEN = "resultado mês incompleto e gráfico de vendas";
 
+/** The Resultado's button is the line "Atualizado às 09:00": its name starts with "Atualizar" and says the time. */
+const RESULT_NAME = /^Atualizar, atualizado às \d{2}:\d{2}$/;
+
 const REFRESHES = [
   { name: "Atualizar", screen: "início com vendas" },
-  { name: "Atualizar", screen: RESULT_SCREEN },
+  { name: RESULT_NAME, screen: RESULT_SCREEN },
   { name: "Atualizar metas", screen: "resultado metas" },
   { name: "Atualizar", screen: "estoque lista" },
   { name: "Atualizar estoque e perfis", screen: "venda com itens" },
@@ -48,14 +51,14 @@ async function readingResult(page: Page) {
     await held;
     await route.fallback();
   });
-  const button = page.getByRole("button", { exact: true, name: "Atualizar" });
+  const button = page.getByRole("button", { exact: true, name: RESULT_NAME });
   const before = await button.boundingBox();
   await button.click();
   await expect(button).toHaveAttribute("aria-busy", "true");
   return { before, button, release };
 }
 
-const heightOf = async (page: Page, name: string) => {
+const heightOf = async (page: Page, name: string | RegExp) => {
   const button = page.getByRole("button", { exact: true, name });
   await expect(button).toBeVisible();
   const box = await button.boundingBox();
@@ -78,7 +81,7 @@ for (const context of CONTEXTS) {
     });
 
     for (const { name, screen } of REFRESHES) {
-      test(`${screen}: "${name}" tem ${context.height} px`, async ({
+      test(`${screen}: "${String(name)}" tem ${context.height} px`, async ({
         page,
       }) => {
         await openScreen(page, screen);
@@ -90,7 +93,7 @@ for (const context of CONTEXTS) {
       page,
     }) => {
       const read = await readingResult(page);
-      expect(await heightOf(page, "Atualizar")).toBeCloseTo(context.height, 0);
+      expect(await heightOf(page, RESULT_NAME)).toBeCloseTo(context.height, 0);
       const during = await read.button.boundingBox();
       expect(during, "o botão lendo não muda de lugar nem de tamanho").toEqual(
         read.before
@@ -169,7 +172,7 @@ test.describe("o ícone gira só com movimento completo", () => {
       await expect(page.locator("html")).toHaveAttribute("data-motion", "none");
       expect(await spinOf(read)).toBe("none");
       await expect(
-        page.getByRole("button", { exact: true, name: "Atualizar" })
+        page.getByRole("button", { exact: true, name: RESULT_NAME })
       ).toHaveAttribute("aria-busy", "true");
     });
   });
@@ -201,7 +204,7 @@ test.describe("o ícone gira só com movimento completo", () => {
       );
       expect(await spinOf(read)).toBe("none");
       await expect(
-        page.getByRole("button", { exact: true, name: "Atualizar" })
+        page.getByRole("button", { exact: true, name: RESULT_NAME })
       ).toHaveAttribute("aria-busy", "true");
     });
   });
