@@ -35,13 +35,10 @@ const RE_7 = /desistir|valor de volta|arrependimento/i;
 const RE_8 = /teste termina|o teste acaba|fim do teste/i;
 const RE_9 = /\d+\s*(dias|dia|úteis)/i;
 const RE_10 = /nenhuma nova cobrança/i;
-const RE_11 = /\bPro\b/;
-const RE_12 = /sem internet|offline/i;
 const RE_13 = /carência|inadimplência|dunning|nota fiscal/i;
 const RE_14 = /\b\d{4}[ -]\d{4}[ -]\d{4}\b/;
 const RE_15 = /\d{13,19}/;
 const RE_16 = /\d{3}\.\d{3}\.\d{3}-\d{2}/;
-const RE_17 = /Polaris, um produto de .+, CNPJ /;
 const RE_18 =
   /Polaris, um produto de .+, CNPJ \d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\./;
 const RE_19 = /<!DOCTYPE[^>]*>/i;
@@ -172,7 +169,6 @@ function cases(store: BillingEmailStore = STORE): Case[] {
     kind: "refund_confirmed",
     store,
   });
-  add("welcome", null, { kind: "welcome", store });
   return list;
 }
 
@@ -252,12 +248,15 @@ function withStore(name: string, timeZone = STORE.timeZone) {
   return { ...STORE, name, timeZone };
 }
 
+// the domain still reads the kind of the welcome rows recorded before it was retired; no e-mail is built for it
+const SENT_KINDS = BILLING_NOTICE_KINDS.filter((kind) => kind !== "welcome");
+
 describe("the kinds of billing e-mail", () => {
-  it("are the kinds of the domain, each with content", () => {
+  it("are the kinds of the domain that are still sent, each with content", () => {
     expect([...BILLING_NOTICE_EMAIL_KINDS].sort()).toEqual(
-      [...BILLING_NOTICE_KINDS].sort()
+      [...SENT_KINDS].sort()
     );
-    for (const kind of BILLING_NOTICE_KINDS) {
+    for (const kind of SENT_KINDS) {
       const item = ALL.find((candidate) => candidate.email.kind === kind);
       expect(item, `fixture for ${kind}`).toBeDefined();
       const content = billingNoticeContent((item as Case).email);
@@ -519,9 +518,7 @@ describe("the links", () => {
   it("lead every billing e-mail to the subscription screen, with no query, hash or tracking", async () => {
     for (const item of await renderAll()) {
       const links = hrefs(item.out.html);
-      const wanted =
-        item.email.kind === "welcome" ? `${ORIGIN}/products` : SUBSCRIPTION_URL;
-      expect(links, item.label).toContain(wanted);
+      expect(links, item.label).toContain(SUBSCRIPTION_URL);
       for (const link of links) {
         expect(link, item.label).not.toMatch(RE_20);
         expect(link.startsWith(`${ORIGIN}/`), item.label).toBe(true);
@@ -546,9 +543,7 @@ describe("the links", () => {
 
   it("writes the address in full in the line below the button, in the HTML and in the plain text", async () => {
     for (const item of await renderAll()) {
-      const url =
-        item.email.kind === "welcome" ? `${ORIGIN}/products` : SUBSCRIPTION_URL;
-      const line = `Se o botão não funcionar, abra este endereço: ${url}`;
+      const line = `Se o botão não funcionar, abra este endereço: ${SUBSCRIPTION_URL}`;
       expect(htmlText(item.out.html), item.label).toContain(line);
       expect(flat(item.out.text), item.label).toContain(line);
     }
@@ -741,9 +736,6 @@ describe("the form of the message", () => {
       `Dúvidas: responda este e-mail ou escreva para ${SUPPORT}.`,
     ];
     for (const item of await renderAll()) {
-      if (item.email.kind === "welcome") {
-        continue;
-      }
       const html = htmlText(item.out.html);
       const text = flat(item.out.text);
       for (const line of lines) {
@@ -755,29 +747,12 @@ describe("the form of the message", () => {
     }
   });
 
-  it("gives the welcome its own footer, with no mention of a subscription", async () => {
-    const [welcome] = await renderAll([kindCase("welcome")]);
-    const text = flat(welcome?.out.text ?? "");
-    expect(text).toContain(
-      "Este é um e-mail automático do Polaris. O Polaris nunca pede a sua senha por e-mail."
-    );
-    expect(text).toContain(
-      `Dúvidas: responda este e-mail ou escreva para ${SUPPORT}.`
-    );
-    expect(text).toMatch(RE_17);
-    expect(text).not.toContain("assinatura");
-    expect(htmlText(welcome?.out.html ?? "")).not.toContain("assinatura");
-  });
-
-  it("builds the footer lines from the kind of footer and the support address", () => {
-    const subscription = billingEmailFooter("subscription", SUPPORT);
+  it("builds the footer lines from the support address", () => {
+    const subscription = billingEmailFooter(SUPPORT);
     expect(subscription).toHaveLength(3);
     expect(subscription[0]).toContain("sobre a sua assinatura");
     expect(subscription[1]).toBe(
       `Dúvidas: responda este e-mail ou escreva para ${SUPPORT}.`
-    );
-    expect(billingEmailFooter("welcome", SUPPORT)[0]).not.toContain(
-      "assinatura"
     );
   });
 });
@@ -797,14 +772,6 @@ describe("what the text must never say", () => {
         expect(everything, `${item.label} ${pattern}`).not.toMatch(pattern);
       }
     }
-  });
-
-  it("does not promise selling without internet, nor sell the Pro, in the welcome", async () => {
-    const [welcome] = await renderAll([kindCase("welcome")]);
-    const everything = [welcome?.out.subject, welcome?.out.text].join("\n");
-    expect(everything).not.toMatch(RE_12);
-    expect(everything).not.toMatch(RE_11);
-    expect(everything).toContain("O plano Free não pede forma de pagamento.");
   });
 
   it("does not say Nenhuma nova cobrança, nor a number of days for the refund to come back", () => {
@@ -926,7 +893,7 @@ describe("the colors", () => {
     const files = readdirSync(directory).filter(
       (name) => RE_4.test(name) && !name.includes(".test.")
     );
-    expect(files.length).toBeGreaterThanOrEqual(13);
+    expect(files.length).toBeGreaterThanOrEqual(12);
     for (const name of files) {
       const source = readFileSync(`${directory}${name}`, "utf8");
       expect(source, name).not.toMatch(RE_3);

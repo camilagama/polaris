@@ -30,7 +30,6 @@ export function chargeReceiptContent(
   const first = email.refundUntil !== null;
   return {
     action: openSubscription(store),
-    footer: "subscription",
     heading: "Recebemos o pagamento do Polaris Pro",
     paragraphs: [
       first

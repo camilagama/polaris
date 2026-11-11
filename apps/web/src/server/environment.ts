@@ -104,7 +104,7 @@ export interface WorkerBindings {
    */
   MEDIA_THUMBS_ENABLED?: string;
   /**
-   * The support box of the billing e-mails and the welcome (ADR 0104, decision 7): the footer names it and it is the
+   * The support box of the billing e-mails (ADR 0104, decision 7): the footer names it and it is the
    * reply-to. Required: without it (or without `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `BETTER_AUTH_BASE_URL` and
    * `AUTH_HYPERDRIVE`) those e-mails stay off and their notices are skipped `email_not_configured`. Not a secret.
    */
@@ -144,13 +144,6 @@ export interface WorkerBindings {
    * (and absent) leaves it off; the sign-up and `/aceite` record the acceptance either way.
    */
   LEGAL_ACCEPTANCE_ENFORCED?: string;
-  /**
-   * `true` turns on the hourly sweep of the welcome (E1, ADR 0104, decision 6): the stores of the last 24 hours get
-   * their welcome recorded, with its outbox event. Anything else leaves it off and writes nothing. Off in every
-   * environment: it goes on only with the consumer of `billing.notice` deployed (PR G), the legal basis checked (EM-37)
-   * and P48.
-   */
-  WELCOME_EMAIL_ENABLED?: string;
   GOOGLE_CLIENT_SECRET?: string;
   HYPERDRIVE: HyperdriveBinding;
   IMAGES?: MediaImagesBinding;

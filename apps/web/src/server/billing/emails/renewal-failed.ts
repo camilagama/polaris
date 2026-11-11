@@ -46,7 +46,6 @@ export function renewalFailedContent(
   const until = lastDayOf(email.accessEndsAt, store.timeZone);
   const common = {
     action: openSubscription(store),
-    footer: "subscription" as const,
     summary: null,
   };
   if (email.milestone === "d0") {

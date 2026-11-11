@@ -25,7 +25,6 @@ export function annualRenewalReminderContent(
   const subject = `Em 7 dias o Polaris Pro será renovado: ${amount}`;
   return {
     action: openSubscription(store),
-    footer: "subscription",
     heading: subject,
     paragraphs: [
       `Em 7 dias, ${date}, fazemos a renovação anual do Pro da loja ${store.name}: ${amount} por ano, ${methodText(email.method)}.`,

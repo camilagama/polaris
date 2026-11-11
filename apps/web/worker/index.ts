@@ -26,7 +26,6 @@ import {
 import {
   runBillingMaintenance,
   runRefundSafetyNet,
-  runWelcomeNoticeSweep,
   runUnclaimedTrialSettlement,
   runWooviReconciliation,
 } from "../src/server/billing/maintenance";
@@ -161,7 +160,7 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
  * Applies the events that were received but not processed, then what time itself
  * causes, asks again for the renewal cancellations still owed, cancels the renewal
  * a refund or a chargeback left alive (and flags the owner's refunds still
- * pending, ADR 0104), records the welcome of the new stores (with its switch on), reads Woovi's
+ * pending, ADR 0104), reads Woovi's
  * subscriptions again (the reconciliation), settles the trials no reservation paid for (ADR 0101), and
  * last hands over the billing notices the queue left owed (ADR 0104).
  */
@@ -208,15 +207,6 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     failures.push(error);
   }
   try {
-    // the welcome of the stores of the last 24 hours (ADR 0104, decision 6), only with its own switch on
-    const welcome = await runWelcomeNoticeSweep(env, store);
-    if (welcome) {
-      logger.info("billing_welcome_notices_complete", { ...welcome });
-    }
-  } catch (error: unknown) {
-    failures.push(error);
-  }
-  try {
     // the reconciliation with Woovi (ADR 0101, PR 6): what a webhook answered without a fact is read here
     const reconciled = await runWooviReconciliation(env, store);
     if (reconciled) {
@@ -237,7 +227,7 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
   try {
     // last: it is the job that spends the most CPU (a render and a send per notice), so an overrun of the cron's
     // CPU costs e-mails, which the next hour hands over, and never the reconciliation or the settlement. It comes
-    // after the sweep and the welcome, which record notices: the ones due that the queue left owed (a receipt or a
+    // after the sweep, which records notices: the ones due that the queue left owed (a receipt or a
     // cancellation that waited, a delivery the queue gave up on) go out here, one at a time
     const handover = await runBillingNoticeHandover(env, store);
     logger.info("billing_notice_handover_complete", { ...handover });
@@ -637,7 +627,7 @@ async function handleRenewalCancelEvent(
 }
 
 /**
- * The handler of `billing.notice` (ADR 0104, decision 7): a notice of the billing cycle, or the welcome, was recorded.
+ * The handler of `billing.notice` (ADR 0104, decision 7): a notice of the billing cycle was recorded.
  * Without the billing role there is no notice to read, and a retry would not change it. A failure of the provider or
  * the network throws: the queue tries again, then the dead-letter queue (an incident), and the hourly handover after it.
  */
