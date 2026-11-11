@@ -213,6 +213,9 @@ export async function leaveOneRefused(page: Page) {
   );
 }
 
+/** The day the trial of `TRIAL_PLAN` is lived in: before its first charge, whatever day the suite runs. */
+const TRIAL_DAY = new Date("2026-11-05T15:00:00.000Z");
+
 /** A trial with its first charge set, as the server reads it (every key: the answer is strict). */
 export const TRIAL_PLAN = {
   accessEndsAt: "2026-11-11T03:00:00.000Z",
@@ -265,6 +268,7 @@ export async function serveFoot(
       timezone: "America/Sao_Paulo",
     },
   ];
+  await page.clock.setFixedTime(TRIAL_DAY);
   await serve(page, organizations);
   await page.route("**/rpc/organization/listMine", (route) =>
     route.fulfill(json({ billingSelfService, organizations }))
