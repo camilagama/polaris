@@ -40,7 +40,6 @@ const mocks = vi.hoisted(() => ({
   runPrivacyMaintenance: vi.fn(),
   runRefundSafetyNet: vi.fn(),
   runUnclaimedTrialSettlement: vi.fn(),
-  runWelcomeNoticeSweep: vi.fn(),
   runWooviReconciliation: vi.fn(),
   unverifiedUserClose: vi.fn(),
   unverifiedUserPurge: vi.fn(),
@@ -130,7 +129,6 @@ vi.mock("../src/server/billing/maintenance", () => ({
   runBillingMaintenance: mocks.runBillingMaintenance,
   runRefundSafetyNet: mocks.runRefundSafetyNet,
   runUnclaimedTrialSettlement: mocks.runUnclaimedTrialSettlement,
-  runWelcomeNoticeSweep: mocks.runWelcomeNoticeSweep,
   runWooviReconciliation: mocks.runWooviReconciliation,
 }));
 vi.mock("../src/server/billing/renewal-cancellation", () => ({
@@ -196,7 +194,6 @@ describe("the scheduled maintenance", () => {
     mocks.runUnclaimedTrialSettlement.mockResolvedValue(null);
     mocks.runRefundSafetyNet.mockResolvedValue(quietRefundNet);
     mocks.runWooviReconciliation.mockResolvedValue(null);
-    mocks.runWelcomeNoticeSweep.mockResolvedValue(null);
     mocks.handOverOwedBillingNotices.mockResolvedValue(quietHandover);
     mocks.createBillingNoticeRecipientClient.mockReturnValue({
       close: mocks.billingRecipientsClose,
@@ -451,18 +448,19 @@ describe("the scheduled maintenance", () => {
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
 
-  it("runs the welcome's sweep on the billing connection with the bindings, and a failure makes the run incomplete without stopping the rest (ADR 0104)", async () => {
-    mocks.runWelcomeNoticeSweep.mockRejectedValue(new Error("welcome_failed"));
+  it("runs each billing job once and no welcome sweep: the maintenance module has none to call", async () => {
+    await expect(runScheduled(configured)).resolves.toBeUndefined();
 
-    await expect(
-      runScheduled({ ...configured, WELCOME_EMAIL_ENABLED: "true" })
-    ).rejects.toThrow("welcome_failed");
-    expect(mocks.runWelcomeNoticeSweep).toHaveBeenCalledWith(
-      expect.objectContaining({ WELCOME_EMAIL_ENABLED: "true" }),
-      expect.objectContaining({ close: mocks.billingClose })
-    );
-    expect(mocks.runWooviReconciliation).toHaveBeenCalledTimes(1);
-    expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
+    const jobs = [
+      mocks.runBillingMaintenance,
+      mocks.rearmRenewalCancellations,
+      mocks.runRefundSafetyNet,
+      mocks.runWooviReconciliation,
+      mocks.runUnclaimedTrialSettlement,
+    ];
+    for (const job of jobs) {
+      expect(job).toHaveBeenCalledTimes(1);
+    }
     expect(mocks.billingClose).toHaveBeenCalledTimes(1);
   });
 
@@ -473,7 +471,6 @@ describe("the scheduled maintenance", () => {
     await expect(runScheduled(configured)).rejects.toThrow("handover_failed");
     const [off] = mocks.handOverOwedBillingNotices.mock.calls[0] ?? [];
     expect(off.billingEmail).toBeNull();
-    expect(off.welcomeEmail).toBeNull();
     expect(mocks.createBillingNoticeRecipientClient).not.toHaveBeenCalled();
     expect(mocks.runWooviReconciliation).toHaveBeenCalledTimes(1);
     expect(mocks.runUnclaimedTrialSettlement).toHaveBeenCalledTimes(1);
@@ -494,7 +491,6 @@ describe("the scheduled maintenance", () => {
     ).resolves.toBeUndefined();
     const [on] = mocks.handOverOwedBillingNotices.mock.calls[1] ?? [];
     expect(on.billingEmail?.supportEmail).toBe("suporte@example.invalid");
-    expect(on.welcomeEmail).toBeNull();
     expect(mocks.createBillingNoticeRecipientClient).toHaveBeenCalledWith(
       "postgresql://auth.invalid/db"
     );
@@ -1484,7 +1480,6 @@ describe("the queue consumer", () => {
       const [dependencies, envelope] =
         mocks.handleBillingNotice.mock.calls[0] ?? [];
       expect(dependencies.billingEmail).toBeNull();
-      expect(dependencies.welcomeEmail).toBeNull();
       expect(envelope).toMatchObject({
         eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a41",
         organizationId: "org_1",

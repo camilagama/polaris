@@ -3329,3 +3329,11 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Motivo do "Hoje" | Em revisão | `ui/date-picker.tsx` (`TodayFooter`): com "Hoje" fora de `min`..`max`, o rodapé escreve o `disabledReason` ao lado do botão, no texto pequeno e secundário da linha de motivo do calendário (`text-support`, `text-muted-foreground`), ligado ao botão por `aria-describedby`; o botão segue `aria-disabled` e focável e não escolhe. Substitui o `sr-only`. O motivo ocupa o espaço à esquerda e quebra de linha em vez de alargar o popover. |
 | Texto do período longo | Em revisão | `dashboard/result-period.ts`: "Escolha até 1 ano" (sem ponto, como os outros motivos); testes e e2e que o citam atualizados. |
 | Provas | Em revisão | Unidade: `date-pickers.test.tsx` (`TodayFooter`). e2e: `ui-date-pickers.e2e.ts` (motivo à vista, descrição acessível, sem escolher, 360 x 600 e 320 px com fonte de 20 px, axe nos dois temas) sobre o novo seletor "Data de entrega" da galeria. |
+
+### Saída do E1 (boas-vindas): o código (t1027; ADR 0106, D10, fase 1; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Código | Em revisão | Saem a chamada da varredura (`runWelcomeNoticeSweep`, no Worker e na manutenção), o ramo `welcome` do consumidor e a configuração dele, `emails/welcome.ts`, `recordWelcomeNotices`, `welcomeNotice` e a leitura de `WELCOME_EMAIL_ENABLED` (tipo do ambiente e as três entradas do `wrangler.jsonc`). A linha `welcome` já gravada continua legível: o consumidor a encerra como `skipped: email_not_configured`, sem enviar. |
+| Banco | Intacto | Nenhum arquivo em `packages/db/drizzle`: a função `welcome_notice_candidates`, o CHECK de tipos, o índice único por pessoa e as linhas gravadas ficam. A contração (`DROP FUNCTION`) é PR à parte, depois do primeiro deploy sem este código (Q-4 do ADR 0106, com o Filipe). |
+| Gate de banco | Em revisão | `verify-billing-notices-gate.ts` grava as linhas `welcome` por conta própria (cópia da varredura aposentada) para seguir provando a função, o índice e a cascata. |

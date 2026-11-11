@@ -31,7 +31,6 @@ export function accessEndedContent(
   const { overLimit, store } = email;
   return {
     action: openSubscription(store),
-    footer: "subscription",
     heading: `A loja ${store.name} voltou ao plano Free`,
     paragraphs: [
       `O acesso Pro da loja ${store.name} terminou em ${localDay(email.endedAt, store.timeZone)}. A loja está no plano Free. Seus dados e seu histórico continuam aqui.`,
