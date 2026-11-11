@@ -111,7 +111,7 @@ function StatusSegmented({ onChange, status }: StatusSegmentedProps) {
       {STATUS_OPTIONS.map((option) => (
         <button
           aria-pressed={option.value === status}
-          className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-md touch:h-11 items-center justify-center border border-border bg-card px-1.5 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-primary aria-pressed:text-primary-foreground sm:px-2.5 sm:text-sm dark:bg-secondary/60 dark:aria-pressed:bg-primary"
+          className="touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-md touch:h-11 items-center justify-center border border-border bg-card px-1.25 font-medium text-foreground text-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-primary aria-pressed:text-primary-foreground sm:px-2.5 sm:text-sm dark:bg-secondary/60 dark:aria-pressed:bg-primary"
           data-status={option.value}
           key={option.value}
           onClick={pick}
