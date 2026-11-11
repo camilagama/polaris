@@ -40,7 +40,7 @@ const reference = () => ({
   ledger_not_reapplied: 0,
   ledger_rows: 3,
   migrations: { count: 5, last_created_at: 10, last_hash: "m5" },
-  owner_roles: 20,
+  owner_roles: 21,
   permissive_public_policies: 0,
   polaris_roles_bypassing_rls: [],
   policies: { count: 4, hash: "p" },
@@ -236,7 +236,7 @@ describe("targetFindings", () => {
     bypass: true,
     comment: "polaris.environment=restore-drill",
     database: "drill",
-    owner_roles: 20,
+    owner_roles: 21,
     relations: 0,
     session_marker: "",
   });
@@ -394,7 +394,7 @@ describe("referenceFindings", () => {
       { migrations: { count: 6, last_created_at: 11, last_hash: "m6" } },
       "migrations differ",
     ],
-    ["owner roles", { owner_roles: 19 }, "owner roles"],
+    ["owner roles", { owner_roles: 20 }, "owner roles"],
     ["foreign definers", { foreign_owner_definers: 1 }, "not polaris_*_owner"],
   ])("flags %s", (_name, change, text) => {
     const found = referenceFindings(reference(), { ...reference(), ...change });

@@ -26,7 +26,7 @@ const reference = () => ({
   ledger_not_reapplied: 0,
   ledger_rows: 3,
   migrations: { count: 5, last_created_at: 10, last_hash: "m5" },
-  owner_roles: 20,
+  owner_roles: 21,
   permissive_public_policies: 0,
   polaris_roles_bypassing_rls: [],
   policies: { count: 4, hash: "p" },
@@ -49,7 +49,7 @@ const target = () => ({
   bypass: true,
   comment: "polaris.environment=restore-drill",
   database: "drill",
-  owner_roles: 20,
+  owner_roles: 21,
   relations: 0,
   session_marker: "",
 });
