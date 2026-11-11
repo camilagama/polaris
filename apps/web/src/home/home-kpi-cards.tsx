@@ -144,7 +144,7 @@ function IncompleteSign() {
       className="inline-flex items-center gap-1 font-medium text-warning"
       data-kpi-incomplete=""
     >
-      <TriangleAlertIcon aria-hidden="true" className="size-3.5 shrink-0" />
+      <TriangleAlertIcon aria-hidden="true" className="size-3 shrink-0" />
       Incompleta
     </span>
   );
