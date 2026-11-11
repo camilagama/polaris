@@ -10,26 +10,33 @@ import {
   ProviderUnavailableError,
   type UnresolvedProviderEvent,
 } from "../provider-port";
-import type { WooviClient } from "./client";
+import { type WooviClient, WooviListTooLongError } from "./client";
 import {
+  isWooviSubscriptionMade,
   pickWooviInstallment,
+  pickWooviInstallmentRows,
   pickWooviSubscription,
   reconcileWooviSubscription,
+  type WooviAuthorizationForm,
+  wooviAuthorizationOf,
   wooviEventId,
 } from "./mapper";
 import {
   disputeWebhookBody,
+  docSubscriptionJson,
   globalId,
   INSTALLMENT_ID,
   INSTALLMENT_LOG_ID,
   installmentJson,
   installmentWebhookBody,
+  liveInstallmentJson,
   OTHER_INSTALLMENT_ID,
   OTHER_SUBSCRIPTION_ID,
   PERSONAL_VALUES,
   refundWebhookBody,
   SUBSCRIPTION_ID,
   SUBSCRIPTION_LOG_ID,
+  scheduledInstallmentJson,
   subscriptionJson,
   subscriptionWebhookBody,
 } from "./test-fixtures";
@@ -47,6 +54,8 @@ function fakeApi(
   options: {
     down?: boolean;
     installments?: Resource[];
+    /** The raw list the listing answers, rows out of shape included, or the error it throws. */
+    installmentList?: Error | unknown[];
     subscriptions?: Resource[];
   } = {}
 ) {
@@ -82,6 +91,12 @@ function fakeApi(
     ),
     listSubscriptionInstallments: vi.fn((id: string) => {
       calls.push(`installments:${id}`);
+      if (options.installmentList instanceof Error) {
+        return Promise.reject(options.installmentList);
+      }
+      if (options.installmentList) {
+        return Promise.resolve(options.installmentList.map(read));
+      }
       return Promise.resolve(
         installments
           .filter((entry) => entry.paymentSubscriptionGlobalID === id)
@@ -249,7 +264,7 @@ describe("PIX_AUTOMATIC_APPROVED", () => {
         api.client,
         readWooviWebhook(JSON.stringify(approved())) as never,
         clock,
-        (report) => reports.push(report)
+        { onStateNotShown: (report) => reports.push(report) }
       );
       expect(result).toEqual([]);
       expect(reports).toEqual([
@@ -290,9 +305,10 @@ describe("PIX_AUTOMATIC_APPROVED", () => {
         api.client,
         readWooviWebhook(text) as never,
         clock,
-        () => undefined,
-        () => {
-          inferred += 1;
+        {
+          onApprovalInferred: () => {
+            inferred += 1;
+          },
         }
       );
       return inferred;
@@ -1260,9 +1276,9 @@ describe("an event whose fact the resource read back does not show", () => {
     if (!envelope) {
       throw new Error("expected a readable webhook");
     }
-    const result = await resolveWooviWebhook(api.client, envelope, clock, (r) =>
-      found.push(r)
-    );
+    const result = await resolveWooviWebhook(api.client, envelope, clock, {
+      onStateNotShown: (r) => found.push(r),
+    });
     return { found, result };
   }
 
@@ -1285,7 +1301,7 @@ describe("an event whose fact the resource read back does not show", () => {
         ],
       }),
     ],
-    ["REJECTED of a subscription still approved", rejected(), fakeApi()],
+    ["REJECTED of a subscription still active", rejected(), fakeApi()],
     [
       "APPROVED of a subscription still being created",
       approved(),
@@ -1377,5 +1393,339 @@ describe("inspectWooviWebhook", () => {
     ["an event name out of pattern", JSON.stringify({ event: "approved" })],
   ])("names nothing for %s", (_name, text) => {
     expect(inspectWooviWebhook(text).refusedFactEvent).toBeNull();
+  });
+});
+
+describe("wooviAuthorizationOf: the single rule of the authorization", () => {
+  const sub = (value: Resource) =>
+    pickWooviSubscription(parseProviderJson(JSON.stringify(value)));
+  const rows = (...values: unknown[]) =>
+    pickWooviInstallmentRows(
+      values.map((value) => parseProviderJson(JSON.stringify(value)))
+    );
+  const ofOther = { paymentSubscriptionGlobalID: OTHER_SUBSCRIPTION_ID };
+
+  it.each([
+    ["sandbox shape, no installment", subscriptionJson(), [], "pending"],
+    [
+      "sandbox shape, a live installment",
+      subscriptionJson(),
+      [liveInstallmentJson()],
+      "approved",
+    ],
+    [
+      "sandbox shape, only a paid installment",
+      subscriptionJson(),
+      [installmentJson()],
+      "made",
+    ],
+    [
+      "sandbox shape, only a scheduled installment",
+      subscriptionJson(),
+      [scheduledInstallmentJson()],
+      "made",
+    ],
+    [
+      "sandbox shape, a live installment of another subscription",
+      subscriptionJson(),
+      [liveInstallmentJson(ofOther)],
+      "pending",
+    ],
+    [
+      "sandbox shape, only a row out of shape of this subscription",
+      subscriptionJson(),
+      [installmentJson({ dateGenerateCharge: undefined })],
+      "made",
+    ],
+    [
+      "sandbox shape, a row out of shape that names no subscription",
+      subscriptionJson(),
+      [{ status: "ACTIVE" }],
+      "made",
+    ],
+    [
+      "sandbox shape, a row out of shape of another subscription",
+      subscriptionJson(),
+      [installmentJson({ ...ofOther, dateGenerateCharge: undefined })],
+      "pending",
+    ],
+    [
+      "documented shape CREATED with a SCHEDULED installment",
+      docSubscriptionJson("CREATED"),
+      [scheduledInstallmentJson()],
+      "pending",
+    ],
+    [
+      "documented shape CREATED with a live installment",
+      docSubscriptionJson("CREATED"),
+      [liveInstallmentJson()],
+      "pending",
+    ],
+    [
+      "documented shape APPROVED with no installment",
+      docSubscriptionJson("APPROVED"),
+      [],
+      "approved",
+    ],
+    [
+      "documented shape APPROVED with a SCHEDULED installment",
+      docSubscriptionJson("APPROVED"),
+      [scheduledInstallmentJson()],
+      "approved",
+    ],
+    ["INACTIVE", subscriptionJson({ status: "INACTIVE" }), [], "revoked"],
+    [
+      "INACTIVE with a live installment",
+      subscriptionJson({ status: "INACTIVE" }),
+      [liveInstallmentJson()],
+      "revoked",
+    ],
+    [
+      "documented shape REJECTED",
+      docSubscriptionJson("REJECTED"),
+      [liveInstallmentJson()],
+      "revoked",
+    ],
+    [
+      "documented shape CANCELED",
+      docSubscriptionJson("CANCELED"),
+      [],
+      "revoked",
+    ],
+  ] as [string, Resource, unknown[], string][])(
+    "%s is %s",
+    (_name, subscription, installments, expected) => {
+      expect(
+        wooviAuthorizationOf(sub(subscription), rows(...installments))
+      ).toBe(expected);
+    }
+  );
+
+  it.each([
+    ["pending", subscriptionJson(), [], false],
+    ["approved", subscriptionJson(), [liveInstallmentJson()], true],
+    ["made", subscriptionJson(), [installmentJson()], true],
+    [
+      "revoked with an installment of its own",
+      subscriptionJson({ status: "INACTIVE" }),
+      [installmentJson()],
+      true,
+    ],
+    [
+      "revoked with no installment",
+      subscriptionJson({ status: "INACTIVE" }),
+      [],
+      false,
+    ],
+    [
+      "revoked with only another subscription's installment",
+      subscriptionJson({ status: "INACTIVE" }),
+      [installmentJson(ofOther)],
+      false,
+    ],
+    [
+      "revoked after an approval the status shows",
+      docSubscriptionJson("APPROVED", { status: "INACTIVE" }),
+      [],
+      true,
+    ],
+    [
+      "cancelled while only created, with a scheduled installment",
+      docSubscriptionJson("CREATED", { status: "INACTIVE" }),
+      [scheduledInstallmentJson()],
+      false,
+    ],
+  ] as [string, Resource, unknown[], boolean][])(
+    "became a subscription when %s: %s",
+    (_name, subscription, installments, expected) => {
+      expect(
+        isWooviSubscriptionMade(sub(subscription), rows(...installments))
+      ).toBe(expected);
+    }
+  );
+
+  it("a row out of shape keeps only the mark and its subscription, nothing of the row", () => {
+    expect(
+      rows(
+        installmentJson({ dateGenerateCharge: undefined }),
+        { paymentSubscriptionGlobalID: "not-an-id" },
+        "not a record"
+      )
+    ).toEqual([
+      { malformed: true, subscriptionId: SUBSCRIPTION_ID },
+      { malformed: true, subscriptionId: null },
+      { malformed: true, subscriptionId: null },
+    ]);
+  });
+});
+
+describe("the approval read row by row (rows out of shape)", () => {
+  const malformed = () => installmentJson({ dateGenerateCharge: undefined });
+
+  async function resolveApproval(api: ReturnType<typeof fakeApi>) {
+    const found: WooviStateNotShownReport[] = [];
+    const forms: WooviAuthorizationForm[] = [];
+    const result = await resolveWooviWebhook(
+      api.client,
+      readWooviWebhook(JSON.stringify(approved())) as never,
+      clock,
+      {
+        onAuthorizationForm: (form) => forms.push(form),
+        onStateNotShown: (report) => found.push(report),
+      }
+    );
+    return { forms, found, result };
+  }
+
+  it("a row out of shape beside a live installment does not lose the approval", async () => {
+    const { found, result } = await resolveApproval(
+      fakeApi({ installmentList: [malformed(), liveInstallmentJson()] })
+    );
+    expect(
+      (result as ProviderBillingEvent[]).map((entry) => entry.fact.type)
+    ).toEqual(["trial_method_ready"]);
+    expect(found).toEqual([]);
+  });
+
+  it("only a row out of shape gives no fact and is reported by its count, never its content", async () => {
+    const { found, result } = await resolveApproval(
+      fakeApi({ installmentList: [malformed()] })
+    );
+    expect(result).toEqual([]);
+    expect(found).toEqual([
+      {
+        journey: "ONLY_RECURRENCY",
+        malformedInstallments: 1,
+        subscriptionStatus: "ACTIVE",
+      },
+    ]);
+  });
+
+  it("tells the shape of the approval by codes and counts", async () => {
+    const { forms } = await resolveApproval(
+      fakeApi({
+        installmentList: [
+          malformed(),
+          liveInstallmentJson(),
+          installmentJson(),
+        ],
+      })
+    );
+    expect(forms).toEqual([
+      {
+        authorizationShown: false,
+        installmentsByStatus: { ACTIVE: 1, COMPLETED: 1 },
+        malformedInstallments: 1,
+        verdict: "approved",
+      },
+    ]);
+  });
+
+  it("tells the documented shape too, with no installment read", async () => {
+    const api = fakeApi({ subscriptions: [docSubscriptionJson("APPROVED")] });
+    const { forms } = await resolveApproval(api);
+    expect(forms).toEqual([
+      {
+        authorizationShown: true,
+        installmentsByStatus: {},
+        malformedInstallments: 0,
+        verdict: "approved",
+      },
+    ]);
+    expect(api.calls).toEqual([`subscription:${SUBSCRIPTION_ID}`]);
+  });
+});
+
+describe("the ceiling of the approval's extra read", () => {
+  it.each([
+    ["past its ceiling of pages", new WooviListTooLongError()],
+    ["unanswered in time", new ProviderUnavailableError()],
+  ])(
+    "a list %s answers no fact and reports it unread, never throwing",
+    async (_name, error) => {
+      const api = fakeApi({ installmentList: error });
+      const found: WooviStateNotShownReport[] = [];
+      const result = await resolveWooviWebhook(
+        api.client,
+        readWooviWebhook(JSON.stringify(approved())) as never,
+        clock,
+        { onStateNotShown: (report) => found.push(report) }
+      );
+      expect(result).toEqual([]);
+      expect(found).toEqual([
+        {
+          installmentList: "unread",
+          journey: "ONLY_RECURRENCY",
+          subscriptionStatus: "ACTIVE",
+        },
+      ]);
+    }
+  );
+
+  it("asks for at most 3 pages", async () => {
+    const api = fakeApi({ installments: [liveInstallment()] });
+    await factsOf(approved(), api);
+    expect(api.client.listSubscriptionInstallments).toHaveBeenCalledWith(
+      SUBSCRIPTION_ID,
+      { maxPages: 3 }
+    );
+  });
+
+  it("the subscription's own read still throws when the provider is down", async () => {
+    await expect(
+      deliver(approved(), fakeApi({ down: true }))
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+  });
+});
+
+describe("a revocation the read back does not show", () => {
+  it("REJECTED of a subscription still ACTIVE with no status: no fact, authorization absent, nothing written", async () => {
+    const api = fakeApi({ subscriptions: [subscriptionJson()] });
+    const found: WooviStateNotShownReport[] = [];
+    const result = await resolveWooviWebhook(
+      api.client,
+      readWooviWebhook(JSON.stringify(rejected())) as never,
+      clock,
+      { onStateNotShown: (report) => found.push(report) }
+    );
+    expect(result).toEqual([]);
+    expect(found).toEqual([
+      {
+        authorization: "absent",
+        journey: "ONLY_RECURRENCY",
+        subscriptionStatus: "ACTIVE",
+      },
+    ]);
+    expect(api.client.cancelSubscription).not.toHaveBeenCalled();
+    expect(api.client.listSubscriptionInstallments).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the sandbox shape INACTIVE", subscriptionJson({ status: "INACTIVE" })],
+    ["the documented shape REJECTED", docSubscriptionJson("REJECTED")],
+  ])(
+    "REJECTED read back as %s is subscription_cancelled",
+    async (_name, subscription) => {
+      const events = await factsOf(
+        rejected(),
+        fakeApi({ subscriptions: [subscription] })
+      );
+      expect(events.map((entry) => entry.fact.type)).toEqual([
+        "subscription_cancelled",
+      ]);
+    }
+  );
+
+  it("an APPROVED with no live installment is never reported as absent", async () => {
+    const found: WooviStateNotShownReport[] = [];
+    await resolveWooviWebhook(
+      fakeApi({ installments: [] }).client,
+      readWooviWebhook(JSON.stringify(approved())) as never,
+      clock,
+      { onStateNotShown: (report) => found.push(report) }
+    );
+    expect(found).toEqual([
+      { journey: "ONLY_RECURRENCY", subscriptionStatus: "ACTIVE" },
+    ]);
   });
 });

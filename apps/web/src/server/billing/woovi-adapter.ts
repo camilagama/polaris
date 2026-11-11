@@ -8,6 +8,7 @@ import {
   createWooviClient,
   type WooviClient,
 } from "@polaris/billing/woovi/client";
+import { logWooviAuthorizationForm } from "@polaris/billing/woovi/port";
 import {
   wooviPublicKeys,
   wooviSignatureMatches,
@@ -68,22 +69,31 @@ async function readBack(client: WooviClient, envelope: WooviWebhookEnvelope) {
     ...(envelope.logId === null ? {} : { resourceId: envelope.logId }),
   };
   try {
-    const resolved = await resolveWooviWebhook(
-      client,
-      envelope,
-      new Date(),
-      (shown) => {
+    const resolved = await resolveWooviWebhook(client, envelope, new Date(), {
+      onApprovalInferred: () => {
+        // the subscription read back shows no authorization status (only the
+        // webhook body does): the approval is proven by its live installment
+        logger.info("billing_webhook_approval_inferred", ids);
+      },
+      onAuthorizationForm: (form) => {
+        logWooviAuthorizationForm("webhook_approval", form);
+      },
+      onStateNotShown: (shown) => {
         // an event that names a payment or a cancellation, answered 200 because
         // the read back does not show it (yet): never a 503, a forged body would
         // become a loop of redeliveries; the reconciliation reads the state
         logger.error("billing_webhook_state_not_shown", { ...ids, ...shown });
+        if (
+          envelope.eventType === "PIX_AUTOMATIC_REJECTED" &&
+          shown.authorization === "absent"
+        ) {
+          // a revocation the read back may never show (still ACTIVE, no status):
+          // an operator confirms it in Woovi's panel and cancels the renewal from
+          // the Admin; the webhook itself never writes to Woovi (ADR 0101)
+          logger.error("billing_woovi_revocation_not_shown", ids);
+        }
       },
-      () => {
-        // the subscription read back shows no authorization status (only the
-        // webhook body does): the approval is proven by its live installment
-        logger.info("billing_webhook_approval_inferred", ids);
-      }
-    );
+    });
     return Array.isArray(resolved) ? resolved : [resolved];
   } catch (error: unknown) {
     if (error instanceof ProviderResponseMalformedError) {

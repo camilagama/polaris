@@ -38,6 +38,7 @@
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
 | [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed`, `billing_amount_mismatch_incident_failed` | 60 min | 1 | critical | sim |
+| [`pix-revogacao-nao-mostrada`](#pix-revogacao-nao-mostrada) | `billing_woovi_revocation_not_shown` | 24 h | 1 | warning | não |
 | [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
 | [`revelacoes-por-hora`](#revelacoes-por-hora) | `admin_reveal_rate_limited` (Worker `polaris-admin`) | 60 min | 1 | warning | não |
 
@@ -285,6 +286,16 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 **Como confirmar.** Workers Logs: `event = "billing_refund_pending_incident_failed"`, por `cause` e `sqlState`. Com `sqlState`, veja também [erros-de-banco](#erros-de-banco).
 
 **O que fazer.** Corrija a causa do banco; a próxima passada horária grava o incidente (uma vez só). Enquanto isso, trate a loja pelo log, como se o incidente existisse ([reembolso pendente](./billing-providers.md#reembolso-pendente)). Para `billing_amount_mismatch_incident_failed`, o `billing_refund_amount_mismatch` logo antes no mesmo Worker nomeia a loja (ID opaco): trate como o incidente de divergência ([billing-providers](./billing-providers.md)).
+
+<a id="pix-revogacao-nao-mostrada"></a>
+
+### pix-revogacao-nao-mostrada — revogação do Pix Automático que a releitura não mostra
+
+**O que significa.** Chegou um `PIX_AUTOMATIC_REJECTED` assinado de uma assinatura do Polaris, e a releitura com o AppID do Polaris ainda a mostra `ACTIVE` e sem `pixRecurring.status` (a forma do sandbox). Pode ser uma revogação pelo pagador que a Woovi não reflete na assinatura, e então o Pro segue até a próxima cobrança falhar (até cerca de 7 dias, mais a carência). Não há débito sem autorização. Também pode ser um corpo antigo repetido (a assinatura RSA não tem carimbo de tempo). O evento é `billing_woovi_revocation_not_shown` (erro, Worker `polaris-web`, só `eventType`, `provider` e o `resourceId` decodificado da assinatura). Ao lado sai o `billing_webhook_state_not_shown` da mesma entrega, com `authorization = "absent"`. O webhook só lê: ele nunca cancela na Woovi ([ADR 0101](../adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md), emenda da regra única).
+
+**Como confirmar.** Workers Logs: `event = "billing_woovi_revocation_not_shown"`, com o `resourceId` (`PaymentSubscription:<hex>`). O `providerRef` da loja é esse texto em base64. No painel da Woovi, abra a assinatura e veja se a autorização do Pix foi revogada ou recusada. A loja é a dona do `providerRef` na seção Cobrança do Admin.
+
+**O que fazer.** Se o painel mostra a autorização revogada e a assinatura viva, cancele a renovação da loja pelo comando "Cancelar renovação" da seção Cobrança do Admin ([comandos do operador](./billing-providers.md#comandos-do-operador-no-admin-cancelar-renovação-e-reembolsar)), com caso aberto. Se o painel mostra a assinatura `INACTIVE`, nada a fazer: a reconciliação horária grava o cancelamento. Se a autorização está em vigor, é corpo repetido: nada a fazer. Anote no caso o que a releitura mostrava: a primeira revogação real decide se a Woovi inativa a assinatura (item 29 do [release-checklist](./release-checklist.md)).
 
 <a id="revelacoes-por-hora"></a>
 

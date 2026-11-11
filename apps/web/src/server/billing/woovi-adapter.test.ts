@@ -624,6 +624,7 @@ describe("what happens when the read back does not give the resource", () => {
       }),
       {},
       {
+        authorization: "absent",
         journey: "ONLY_RECURRENCY",
         subscriptionStatus: "ACTIVE",
       },
@@ -657,6 +658,105 @@ describe("what happens when the read back does not give the resource", () => {
       expectNoLeak(answer, logged);
     }
   );
+
+  it("a revocation the read back does not show raises its own alert event, and nothing is written to Woovi", async () => {
+    const t = setup();
+    const { answer, logged, response } = await t.send(
+      JSON.stringify({
+        event: "PIX_AUTOMATIC_REJECTED",
+        globalID: SUBSCRIPTION_ID,
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(t.store.recordEvent).not.toHaveBeenCalled();
+    expect(t.logs.error).toHaveBeenCalledWith(
+      "billing_woovi_revocation_not_shown",
+      {
+        eventType: "PIX_AUTOMATIC_REJECTED",
+        provider: "woovi",
+        resourceId: SUBSCRIPTION_LOG_ID,
+      }
+    );
+    // only the subscription read back: no list, no PUT …/cancel
+    expect(t.api.urls).toEqual([
+      `https://api.woovi-sandbox.com${SUBSCRIPTION_PATH}`,
+    ]);
+    expectNoLeak(answer, logged);
+  });
+
+  it("a rejection read back INACTIVE is a fact, with no revocation alert", async () => {
+    const t = setup({
+      answers: {
+        [SUBSCRIPTION_PATH]: {
+          json: { subscription: subscription({ status: "INACTIVE" }) },
+          status: 200,
+        },
+      },
+    });
+    const { response } = await t.send(
+      JSON.stringify({
+        event: "PIX_AUTOMATIC_REJECTED",
+        globalID: SUBSCRIPTION_ID,
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(t.store.recordEvent).toHaveBeenCalledTimes(1);
+    expect(t.logs.error).not.toHaveBeenCalledWith(
+      "billing_woovi_revocation_not_shown",
+      expect.anything()
+    );
+  });
+
+  it.each([
+    [
+      "past 3 full pages",
+      {
+        json: { installments: Array.from({ length: 100 }, liveInstallment) },
+        status: 200,
+      },
+      3,
+    ],
+    ["that times out", "timeout", 1],
+  ] as [string, Answer, number][])(
+    "an approval whose list of installments is %s is answered 200 with no fact, never a 5xx",
+    async (_case, list, pages) => {
+      const t = setup({ answers: { [SUBSCRIPTION_INSTALLMENTS_PATH]: list } });
+      const { response } = await t.send(approvedBody());
+      expect(response.status).toBe(200);
+      expect(t.store.recordEvent).not.toHaveBeenCalled();
+      expect(
+        t.api.urls.filter((url) => url.includes("/installments"))
+      ).toHaveLength(pages);
+      expect(t.logs.error).toHaveBeenCalledWith(
+        "billing_webhook_state_not_shown",
+        {
+          eventType: "PIX_AUTOMATIC_APPROVED",
+          installmentList: "unread",
+          journey: "ONLY_RECURRENCY",
+          provider: "woovi",
+          resourceId: SUBSCRIPTION_LOG_ID,
+          subscriptionStatus: "ACTIVE",
+        }
+      );
+    }
+  );
+
+  it("an approval logs the shape the provider gave, by codes only", async () => {
+    const t = setup();
+    const { logged } = await t.send(approvedBody());
+    expect(t.logs.info).toHaveBeenCalledWith(
+      "billing_woovi_authorization_form",
+      {
+        authorizationShown: false,
+        installmentsByStatus: { ACTIVE: 1 },
+        malformedInstallments: 0,
+        provider: "woovi",
+        reading: "webhook_approval",
+        verdict: "approved",
+      }
+    );
+    expectNoLeak(logged);
+  });
 
   it("an approval of the journey that pays on approval is not an error", async () => {
     const t = setup({
