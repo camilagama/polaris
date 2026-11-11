@@ -1,12 +1,17 @@
 import PackagePlusIcon from "lucide-react/dist/esm/icons/package-plus";
 import TriangleAlertIcon from "lucide-react/dist/esm/icons/triangle-alert";
 import { type ReactNode, useEffect, useRef } from "react";
+import {
+  MASKED_MONEY,
+  MASKED_SPOKEN,
+  useHiddenValues,
+} from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button, buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { FieldError } from "@/ui/field";
-import { NoBreakMoney } from "@/ui/hidden-values";
+import { MoneyText, NoBreakMoney } from "@/ui/hidden-values";
 import { stockEntryHref } from "../inventory/stock-entry-link";
 import { focusLater } from "../lib/focus";
 import {
@@ -81,6 +86,21 @@ export function Money({
   /** As formatBrlAmount writes it: "R$ 1.234,56". */
   text: string;
 }) {
+  const [hidden] = useHiddenValues();
+  if (hidden) {
+    return (
+      <>
+        <span
+          aria-hidden="true"
+          className={cn("whitespace-nowrap tabular-nums", className)}
+          data-masked-money=""
+        >
+          {MASKED_MONEY}
+        </span>
+        <span className="sr-only">{MASKED_SPOKEN}</span>
+      </>
+    );
+  }
   const number = text.replace(CURRENCY_PREFIX, "");
   return (
     <span
@@ -390,7 +410,7 @@ export function SummaryPanel({
                   key={row.key}
                   label={row.label}
                   tone={row.tone}
-                  value={row.value}
+                  value={<MoneyText text={row.value} />}
                 />
               ))}
             </dl>

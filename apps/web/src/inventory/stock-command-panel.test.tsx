@@ -32,7 +32,8 @@ function render(action: "write_off" | "receive", standalone: boolean) {
   );
 }
 
-const TITLE_LINE = "Saldo atual: 26 · custo médio R$ 12,00";
+const TITLE_LINE =
+  'Saldo atual: 26 · custo médio <span class="whitespace-nowrap">R$ 12,00</span>';
 
 describe("the line under the title of the movement panel", () => {
   it("is left out inside the row, which already says the balance and the cost", () => {

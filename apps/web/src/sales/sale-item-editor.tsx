@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/ui/button";
 import { CardDescription } from "@/ui/card";
 import { FieldDescription } from "@/ui/field";
+import { MoneyText } from "@/ui/hidden-values";
 import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { stockEntryHref } from "../inventory/stock-entry-link";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
@@ -259,7 +260,7 @@ function ChosenVariant({
             thumbs ? "pl-16" : "pl-6"
           )}
         >
-          {costText}
+          <MoneyText text={costText} />
         </p>
       ) : null}
     </div>
@@ -349,13 +350,13 @@ function ChosenItemFields({
           {priceHint ?? "Preços por unidade."}
           {summaryLine?.negotiationText ? (
             <span className="mt-0.5 block text-warning">
-              {summaryLine.negotiationText}
+              <MoneyText text={summaryLine.negotiationText} />
             </span>
           ) : null}
         </FieldDescription>
         {summaryLine ? (
           <span className="shrink-0 font-semibold tabular-nums">
-            {summaryLine.lineTotalText}
+            <MoneyText text={summaryLine.lineTotalText} />
           </span>
         ) : null}
       </div>

@@ -1,10 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import type { AttentionItem, AttentionSummary } from "./attention";
-import {
+
+const hiding = vi.hoisted(() => ({ hidden: false }));
+
+vi.mock("@/lib/hidden-values", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/hidden-values")>()),
+  useHiddenValues: () => [hiding.hidden, () => undefined],
+}));
+
+const {
   AttentionPanel,
-  type AttentionPanelProps,
   AttentionUnavailable,
   OFFLINE_BROWSER_REASON,
   OFFLINE_NEUTRAL_REASON,
@@ -12,10 +19,12 @@ import {
   OFFLINE_UNAVAILABLE_TITLE,
   refusedText,
   signInAgainButtonId,
-} from "./attention-panel";
+} = await import("./attention-panel");
+type AttentionPanelProps = import("./attention-panel").AttentionPanelProps;
 import { RECOGNIZING_UNAVAILABLE_TEXT } from "./runtime/devices-model";
 import { PLAN_REFUSED_REASON } from "./runtime/offline-runtime";
 
+const AMOUNT = /R\$\s?\d/;
 const HOME_LINK = /<a [^>]*href="\/"[^>]*>Voltar ao Início<\/a>/;
 const SIGN_IN_AGAIN_OFF = /disabled=""[^>]*>Sair e entrar de novo/;
 const none = () => undefined;
@@ -402,5 +411,43 @@ describe("Pendências without the offline mode", () => {
         OFFLINE_BROWSER_REASON.slice(0, -1)
       )
     ).toBe(true);
+  });
+});
+
+describe("the attention panel, with Esconder valores", () => {
+  const sale = item({
+    actions: ["redo_sale", "discard"],
+    title: "Venda de R$ 89,90 · 01/11 14:20",
+  });
+  const redo = {
+    redoProblem: {
+      commandId: sale.commandId,
+      lines: [
+        {
+          kind: "unavailable" as const,
+          label: "Item 1 (2 un. a R$ 20,00)",
+        },
+      ],
+      message: "Não preenchi a venda.",
+    },
+  };
+
+  beforeEach(() => {
+    hiding.hidden = false;
+  });
+
+  it("writes the value of the sale and of its lines as they are while the values show", () => {
+    const html = render({ items: [sale], waitingBehind: 0 }, redo);
+    expect(html).toContain("R$ 89,90");
+    expect(html).toContain("R$ 20,00");
+  });
+
+  it("masks the value of the sale and of each line of the redo, and keeps the moment", () => {
+    hiding.hidden = true;
+    const html = render({ items: [sale], waitingBehind: 0 }, redo);
+    expect(html).not.toMatch(AMOUNT);
+    expect(html).toContain("· 01/11 14:20");
+    expect(html).toContain("un. a ");
+    expect(html).toContain("valor escondido");
   });
 });
