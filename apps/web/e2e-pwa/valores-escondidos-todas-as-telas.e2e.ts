@@ -174,19 +174,7 @@ const DATA_EXPORT: Case = {
 
 /** The states swept for each screen of `screenKeys()`: the state of each screen that holds amounts, and the one with the most places for them. */
 const COVERED: Readonly<Record<string, readonly Case[]>> = {
-  attention: [
-    stateOf("pendências com itens", {
-      known: {
-        places: [
-          "innerText: R$ 20,00",
-          "innerText: R$ 89,90",
-          "textContent: R$ 20,00",
-          "textContent: R$ 89,90",
-        ],
-        source: "src/offline/attention-panel.tsx",
-      },
-    }),
-  ],
+  attention: [stateOf("pendências com itens", { hideAfterOpen: true })],
   customers: states("clientes lista"),
   "dashboard:metas": states("resultado metas"),
   "dashboard:resultado": [
@@ -196,60 +184,21 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     }),
   ],
   expenses: [
-    stateOf("despesas lista", {
-      known: {
-        places: ["textContent: R$ 1.500,50"],
-        source: "src/expenses/expense-list.tsx",
-      },
-    }),
-    stateOf("despesas recorrentes e o diálogo da regra", {
-      known: {
-        places: [
-          "innerText: R$ 1.500,50",
-          "innerText: R$ 49,90",
-          "textContent: R$ 1.500,50",
-          "textContent: R$ 49,90",
-        ],
-        source: "src/expenses/expense-rules-panel.tsx",
-      },
-    }),
+    stateOf("despesas lista"),
+    stateOf("despesas recorrentes e o diálogo da regra"),
   ],
   help: [HELP],
   home: states("início com vendas"),
   inventory: [
     stateOf("estoque lista"),
-    stateOf("estoque custo informado", {
-      known: {
-        places: ["innerText: R$ 12,50", "textContent: R$ 12,50"],
-        source: "src/inventory/stock-command-model.ts",
-      },
-    }),
+    stateOf("estoque custo informado", { hideAfterOpen: true }),
   ],
   "products:categorias": states("categorias lista"),
   "products:produtos": states(
     "produtos lista",
     "produtos variantes, opções e combinação"
   ),
-  sale: [
-    stateOf("venda com itens", {
-      known: {
-        places: [
-          "innerText: R$ 10,00",
-          "innerText: R$ 100,00",
-          "innerText: R$ 129,90",
-          "innerText: R$ 229,90",
-          "innerText: R$ 62,40",
-          "textContent: R$ 10,00",
-          "textContent: R$ 100,00",
-          "textContent: R$ 129,90",
-          "textContent: R$ 229,90",
-          "textContent: R$ 62,40",
-        ],
-        source: "src/sales/sale-form-model.ts",
-      },
-    }),
-    stateOf("venda confirmada"),
-  ],
+  sale: [stateOf("venda com itens"), stateOf("venda confirmada")],
   "sale-detail": states(
     "detalhe da venda aberto",
     "detalhe da venda cancelamento revisado"
@@ -261,14 +210,7 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     stateOf("assinatura Pro ativo", { planPrices: true }),
   ],
   "settings:catalogo-publico": states("catálogo público no ar"),
-  "settings:formas-de-receber": [
-    stateOf("perfis de pagamento lista", {
-      known: {
-        places: ["innerText: R$ 0,50", "textContent: R$ 0,50"],
-        source: "src/payment-profiles/payment-profile-list.tsx",
-      },
-    }),
-  ],
+  "settings:formas-de-receber": [stateOf("perfis de pagamento lista")],
   "settings:lista": [SETTINGS_LIST],
   "settings:senha": states("trocar senha"),
   "settings:seus-dados": [DATA_EXPORT],

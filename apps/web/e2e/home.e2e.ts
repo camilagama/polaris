@@ -157,6 +157,30 @@ function dayEntry(scenario: Scenario, day: string): Record<string, unknown> {
   };
 }
 
+/** Above this many days the server sends the months, not the days. */
+const LONGEST_BY_DAY = 62;
+
+/** The days of the series added up by calendar month, as the server sends a long period. */
+function byMonth(
+  daily: readonly Record<string, unknown>[]
+): Record<string, unknown>[] {
+  const months = new Map<string, Record<string, unknown>[]>();
+  for (const day of daily) {
+    const key = String(day.date).slice(0, 7);
+    months.set(key, [...(months.get(key) ?? []), day]);
+  }
+  return [...months.values()].map((days) => ({
+    date: days[0]?.date,
+    days: days.length,
+    netSales: money(
+      days.reduce((sum, day) => sum + Math.round(Number(day.netSales) * 100), 0)
+    ),
+    salesCount: days.reduce((sum, day) => sum + Number(day.salesCount), 0),
+    to: days.at(-1)?.date,
+    unknownDays: 0,
+  }));
+}
+
 class FakeServer {
   scenario: Scenario;
   /** The server's clock (Node's, not the page's: the page's clock is Playwright's). */
@@ -233,6 +257,7 @@ class FakeServer {
       (sum, day) => sum + Math.round(Number(day.netSales) * 100),
       0
     );
+    const grouped = daily.length > LONGEST_BY_DAY ? byMonth(daily) : null;
     const count = daily.reduce((sum, day) => sum + Number(day.salesCount), 0);
     const inMonth = from.startsWith("2026-10") || from.startsWith("2026-11");
     const unknownCost = inMonth ? this.scenario.soldWithoutCost : 0;
@@ -275,7 +300,8 @@ class FakeServer {
         processingFees: zero,
         returns: zero,
       },
-      daily,
+      daily: grouped ?? daily,
+      ...(grouped ? { granularity: "month" } : {}),
       generatedAt: new Date(this.now).toISOString(),
       period: { from, to },
       quality: {
@@ -733,6 +759,18 @@ async function closeMenuFoot(page: Page) {
 
 const region = (page: Page, name: string) =>
   page.getByRole("region", { exact: true, name });
+const PERIOD_BUTTON = /^Período: /;
+const TYPE_DATES = /Digitar as datas/;
+const periodButton = (page: Page) =>
+  page.getByRole("button", { name: PERIOD_BUTTON });
+/** The picker of the period of the Início, then one of its shortcuts ("Mês passado"): it applies and closes. */
+async function choosePeriod(page: Page, shortcut: string) {
+  await periodButton(page).click();
+  await page
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: shortcut })
+    .click();
+}
 const newSale = (page: Page) =>
   page.getByRole("link", { exact: true, name: "Nova venda" });
 const periodCalls = (server: FakeServer) =>
@@ -890,31 +928,25 @@ test.describe("loja com venda", () => {
     await expect(top).toContainText("Boné antigo");
 
     const chart = region(page, "Vendas por dia");
-    await expect(chart.getByRole("tab", { name: "7 dias" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-    await expect(chart).toContainText("R$ 2.580,60");
-    // the period it adds up, and the peak written once, in the drawing, with its date
-    await expect(chart).toContainText("17 a 23/10");
+    await expect(chart.getByRole("tab")).toHaveCount(0);
+    await expect(chart).toContainText("R$ 2.660,60");
+    // the period it adds up (the month to today), and the peak written once, in the drawing, with its date
+    await expect(chart).toContainText("1 a 23/10");
     await expect(chart).not.toContainText("Melhor dia");
     await expect(chart.locator("[data-chart-value-label]")).toHaveText(
       "18/10 · R$ 1.840,00"
     );
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 17/10 a 23/10: R$ 2.580,60 no total"
+      "Vendas líquidas por dia, de 1 a 23/10: R$ 2.660,60 no total"
     );
     await expect(
       chart.getByRole("button", { name: "Ver os números" })
     ).toHaveCount(0);
-    await expect(chart.getByRole("row")).toHaveCount(8);
-    await expect(chart.getByRole("row").nth(2)).toContainText(
+    await expect(chart.getByRole("row")).toHaveCount(24);
+    await expect(chart.getByRole("row").nth(18)).toContainText(
       "18/10/2026R$ 1.840,00"
     );
-    await chart.getByRole("tab", { name: "30 dias" }).click();
-    await expect(chart).toContainText("24/09 a 23/10");
-    await expect(chart).toContainText("R$ 2.660,60");
 
     // the order of the parts at 360 px (AC-4), and nothing scrolls sideways
     const names = await page
@@ -1081,31 +1113,236 @@ test.describe("loja com venda", () => {
     expect(above).not.toContain("none");
   });
 
-  test("a troca 7 → 30 dias mantém o mesmo gráfico (sem nova revelação) e a tabela invisível troca de período", async ({
+  test("o gráfico desenha o mês até hoje, um ponto por dia, sem as abas 7 e 30 dias", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     const server = new FakeServer(SOLD);
     await openHome(page, server);
     const chart = region(page, "Vendas por dia");
-    const drawing = chart.locator("[data-chart-area] svg").first();
-    await expect(drawing).toBeVisible();
+    await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
     await expect(chart.locator('input[type="range"]')).toHaveAttribute(
       "max",
-      "6"
+      "22"
     );
+    await expect(chart.getByRole("row")).toHaveCount(24);
+    await expect(chart.getByRole("tab")).toHaveCount(0);
+  });
+});
 
-    // the drawing (not only the box around it) is the same element after the change of period: it was not mounted again
-    await drawing.evaluate((node) => node.setAttribute("data-first-mount", ""));
-    await expect(chart.getByRole("row")).toHaveCount(8);
-
-    await chart.getByRole("tab", { name: "30 dias" }).click();
-    await expect(chart.locator('input[type="range"]')).toHaveAttribute(
-      "max",
-      "29"
+test.describe("o período do Início (cartões do mês, Vendas por dia e Mais vendidos)", () => {
+  test("Mês passado muda os três cartões do mês, o gráfico e o ranking; Hoje e o Ritmo ficam; voltar a Este mês não lê de novo", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await expect(periodButton(page)).toContainText("01/10 a 31/10");
+    await expect(region(page, "Vendas em outubro")).toContainText(
+      "R$ 2.660,60"
     );
-    await expect(drawing).toHaveAttribute("data-first-mount", "");
-    await expect(chart.getByRole("row")).toHaveCount(31);
+    const today = await region(page, "Vendas hoje").innerText();
+    const rhythm = await region(page, "Ritmo de vendas")
+      .getByRole("img")
+      .getAttribute("aria-label");
+
+    await choosePeriod(page, "Mês passado");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
+    const september = region(page, "Vendas em setembro");
+    await expect(september).toContainText("R$ 170,00");
+    await expect(region(page, "Resultado estimado")).toBeVisible();
+    await expect(region(page, "Ticket médio")).toBeVisible();
+    await expect(region(page, "Vendas por dia")).toContainText("1 a 30/09");
+    await expect(region(page, "Vendas por dia")).toContainText("R$ 170,00");
+    await expect(region(page, "Mais vendidos de setembro")).toBeVisible();
+    await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
+    // what is always "now" does not move
+    expect(await region(page, "Vendas hoje").innerText()).toBe(today);
+    expect(
+      await region(page, "Ritmo de vendas")
+        .getByRole("img")
+        .getAttribute("aria-label")
+    ).toBe(rhythm);
+    expect(
+      periodCalls(server).some(
+        (call) =>
+          call.input.from === "2026-09-01" &&
+          call.input.to === "2026-09-30" &&
+          call.input.topProducts === 3
+      )
+    ).toBe(true);
+
+    const reads = periodCalls(server).length;
+    await choosePeriod(page, "Este mês");
+    await expect(region(page, "Vendas em outubro")).toContainText(
+      "R$ 2.660,60"
+    );
+    await expect(region(page, "Mais vendidos do mês")).toBeVisible();
+    expect(periodCalls(server).length).toBe(reads);
+  });
+
+  test("Este ano vem por mês acima de 62 dias, e o período digitado vale", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    await choosePeriod(page, "Este ano");
+    await expect(periodButton(page)).toContainText("01/01 a 23/10");
+    const chart = region(page, "Vendas por mês");
+    await expect(chart).toBeVisible();
+    await expect(chart.getByRole("row")).toHaveCount(11);
+    await expect(region(page, "Mais vendidos do período")).toBeVisible();
+  });
+
+  test("escolher o período pelo teclado deixa o foco no botão do período, ao carregar e ao voltar a Este mês", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    const shortcut = (name: string) =>
+      page
+        .getByRole("group", { name: "Atalhos do período" })
+        .getByRole("button", { exact: true, name });
+    for (const [name, text] of [
+      ["Mês passado", "01/09 a 30/09"],
+      ["Este mês", "01/10 a 31/10"],
+    ] as const) {
+      // biome-ignore lint/performance/noAwaitInLoops: one choice after the other
+      await periodButton(page).focus();
+      await page.keyboard.press("Enter");
+      await shortcut(name).focus();
+      await page.keyboard.press("Enter");
+      await expect(periodButton(page)).toContainText(text);
+      await expect(
+        region(
+          page,
+          name === "Este mês" ? "Vendas em outubro" : "Vendas em setembro"
+        )
+      ).toContainText("R$");
+      await expect(periodButton(page)).toBeFocused();
+    }
+  });
+
+  test("o cartão de Vendas diz 'do período' quando o período não é um mês inteiro, e o mês inteiro diz 'em setembro'", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(page, new FakeServer(SOLD));
+    await choosePeriod(page, "Este ano");
+    await expect(periodButton(page)).toContainText("01/01 a 23/10");
+    await expect(region(page, "Vendas do período")).toBeVisible();
+    await choosePeriod(page, "Últimos 30 dias");
+    await expect(periodButton(page)).not.toContainText("01/01");
+    await expect(region(page, "Vendas do período")).toBeVisible();
+    await expect(region(page, "Vendas em o período")).toHaveCount(0);
+    await choosePeriod(page, "Mês passado");
+    await expect(region(page, "Vendas em setembro")).toBeVisible();
+    await expect(region(page, "Vendas do período")).toHaveCount(0);
+  });
+
+  test("um período que falha diz o erro no lugar dos cartões do mês e Tentar novamente lê de novo; Hoje segue", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    server.broken.set("report/periodSummary", "500");
+    await choosePeriod(page, "Mês passado");
+    await expect(page.getByRole("alert").first()).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    await expect(region(page, "Vendas por dia")).toHaveCount(0);
+    server.broken.delete("report/periodSummary");
+    await page
+      .getByRole("button", { name: "Tentar novamente" })
+      .first()
+      .click();
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+  });
+
+  test("loja que nunca vendeu (primeiros passos) não tem o seletor: não há números do período a mostrar", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openHome(
+      page,
+      new FakeServer({ ...SOLD, days: {}, everSold: false })
+    );
+    await expect(region(page, "Primeiros passos")).toBeVisible();
+    await expect(periodButton(page)).toHaveCount(0);
+  });
+
+  test("a releitura do período que falha deixa os números na tela e diz que não atualizou, com Tentar novamente", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openHome(page, server);
+    await choosePeriod(page, "Mês passado");
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+    server.broken.set("report/periodSummary", "500");
+    await page.getByRole("button", { name: "Atualizar" }).first().click();
+    const retry = page.locator("[data-home-period]").getByRole("button", {
+      name: "Tentar novamente",
+    });
+    await expect(retry).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-home-period]")).toContainText(
+      "Mostrando os números de"
+    );
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+    server.broken.delete("report/periodSummary");
+    await retry.click();
+    await expect(retry).toHaveCount(0);
+    await expect(region(page, "Vendas em setembro")).toContainText("R$ 170,00");
+  });
+
+  test("sem conexão só Este mês e Mês passado abrem: os outros atalhos ficam apagados com o motivo, e o calendário e os campos não valem", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    await openWithCopy(page, new FakeServer(SOLD));
+    // the chunk of the calendar comes with the first opening; the offline panel is the second
+    await periodButton(page).click();
+    await expect(
+      page.locator('[role="grid"] button[data-day]').first()
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.context().setOffline(true);
+    const reason = "Sem conexão: só este mês e o anterior.";
+    const beside = page.locator("[data-home-period]").getByText(reason);
+    await expect(beside).toBeVisible();
+    await periodButton(page).click();
+    const shortcuts = page.getByRole("group", { name: "Atalhos do período" });
+    const off = ["Últimos 30 dias", "Este ano"].map((name) =>
+      shortcuts.getByRole("button", { exact: true, name })
+    );
+    const on = ["Este mês", "Mês passado"].map((name) =>
+      shortcuts.getByRole("button", { exact: true, name })
+    );
+    await Promise.all([
+      ...off.map(async (button) => {
+        await expect(button).toHaveAttribute("aria-disabled", "true");
+        await expect(button).toHaveAccessibleDescription(reason);
+      }),
+      ...on.map((button) =>
+        expect(button).not.toHaveAttribute("aria-disabled", "true")
+      ),
+    ]);
+    await expect(page.getByRole("button", { name: TYPE_DATES })).toHaveCount(0);
+    const days = page.locator('[role="grid"] button[data-day]');
+    await expect(days.first()).toBeVisible();
+    await expect(
+      page.locator('[role="grid"] button[data-day]:not([aria-disabled="true"])')
+    ).toHaveCount(0);
+    await shortcuts
+      .getByRole("button", { exact: true, name: "Este ano" })
+      .click({ force: true });
+    await expect(periodButton(page)).toContainText("01/10 a 31/10");
+    await expect(periodButton(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.context().setOffline(false);
+    await expect(beside).toBeHidden();
   });
 });
 
@@ -1237,7 +1474,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     ],
     [
       "Vendas por dia",
-      "A linha tracejada são os 7 dias anteriores. Toque num dia para ver os dois valores.",
+      "Vendas líquidas de cada dia do período. Toque num dia para ver o valor.",
     ],
   ];
 
@@ -1746,11 +1983,11 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-area] svg").first()).toBeVisible();
     await expect(chart.getByRole("img")).toHaveAttribute(
       "aria-label",
-      "Vendas líquidas por dia, de 17/10 a 23/10: valor escondido no total"
+      "Vendas líquidas por dia, de 1 a 23/10: valor escondido no total"
     );
     await expect(chart.getByRole("slider")).toHaveAttribute(
       "aria-valuetext",
-      "23/10: Vendas valor escondido, 7 dias antes valor escondido"
+      "23/10: valor escondido"
     );
 
     // kept on the device, like the theme: the next opening still hides
@@ -1842,7 +2079,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await page.setViewportSize({ height: 800, width: 1280 });
     await openHome(page, new FakeServer(SOLD));
     const chart = region(page, "Vendas por dia");
-    // the best day and today, whatever the period: `17/10` to `23/10` sold on 18 and on 23
+    // the best day and today: the month to today sold on the 18th and on the 23rd
     await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
     await expect(chart.locator("[data-chart-mark=sold]")).toHaveCount(2);
     await expect(chart.locator("[data-chart-best]")).toHaveAttribute(
@@ -1853,12 +2090,9 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-value-label]")).toHaveText([
       "18/10 · R$ 1.840,00",
     ]);
-    // the days before are a faint line with no legend, and nothing above the drawing at rest
+    // no legend, and nothing above the drawing at rest
     await expect(chart.locator("[data-chart-legend]")).toHaveCount(0);
     await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
-    await chart.getByRole("tab", { name: "30 dias" }).click();
-    await expect(chart.locator("[data-chart-mark]")).toHaveCount(2);
-    await expect(chart.locator("[data-chart-value-label]")).toHaveCount(1);
   });
 
   for (const width of [360, 320]) {
@@ -1904,7 +2138,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
-    // the week of the chart sold on the 18th and the 20th; today (`23/10`) sold nothing
+    // the month of the chart sold on the 2nd, the 18th and the 20th; today (`23/10`) sold nothing
     const { "2026-10-23": _today, ...noSaleToday } = SOLD.days;
     await openHome(page, new FakeServer({ ...SOLD, days: noSaleToday }));
     const chart = region(page, "Vendas por dia");
@@ -1937,7 +2171,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     expect(xs[0]).toBeLessThan(xs[1] ?? 0);
   });
 
-  test("Vendas por dia: a leitura de um dia pelo teclado aparece só enquanto dura, com os dois valores, e a ajuda abre pelo teclado", async ({
+  test("Vendas por dia: a leitura de um dia pelo teclado aparece só enquanto dura, com o valor do dia, e a ajuda abre pelo teclado", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -1947,12 +2181,9 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
     await slider.focus();
     await page.keyboard.press("ArrowLeft");
-    await expect(slider).toHaveAttribute(
-      "aria-valuetext",
-      "22/10: Vendas R$ 0,00, 7 dias antes R$ 0,00"
-    );
+    await expect(slider).toHaveAttribute("aria-valuetext", "22/10: R$ 0,00");
     await expect(chart.locator("[data-chart-reading]")).toContainText(
-      "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
+      "22/10 R$ 0,00"
     );
     await slider.blur();
     await expect(chart.locator("[data-chart-reading]")).toHaveCount(0);
@@ -1962,7 +2193,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     await page.keyboard.press("Enter");
     await expect(
       page.getByText(
-        "A linha tracejada são os 7 dias anteriores. Toque num dia para ver os dois valores."
+        "Vendas líquidas de cada dia do período. Toque num dia para ver o valor."
       )
     ).toBeVisible();
     await page.keyboard.press("Escape");
@@ -1998,9 +2229,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       const before = await at();
       await page.keyboard.press("ArrowLeft");
       const reading = chart.locator("[data-chart-reading]");
-      await expect(reading).toContainText(
-        "22/10 · Vendas R$ 0,00 · 7 dias antes R$ 0,00"
-      );
+      await expect(reading).toContainText("22/10 R$ 0,00");
       await expect(reading).toBeVisible();
       const tooltipRows = chart.locator("[data-chart-tooltip-row]");
       await expect(tooltipRows).toHaveCount(0);
@@ -2860,22 +3089,23 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     });
   }
 
-  test("a aba do gráfico e a rolagem sobrevivem à queda e à volta da conexão", async ({
+  test("o período escolhido e a rolagem sobrevivem à queda e à volta da conexão", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
     const server = new FakeServer(SOLD);
     await openWithCopy(page, server);
     const chart = region(page, "Vendas por dia");
-    await chart.getByRole("tab", { name: "30 dias" }).click();
+    await choosePeriod(page, "Mês passado");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
+    await expect(chart).toContainText("1 a 30/09");
     await chart.scrollIntoViewIfNeeded();
     const scrolled = await page.evaluate(() => window.scrollY);
     expect(scrolled).toBeGreaterThan(0);
-    const thirty = chart.getByRole("tab", { name: "30 dias" });
     // the blocks above the chart change height offline (the sentence under "Nova venda", the stock's lines): the
     // proof is that the page does not jump back to the top and the chart stays in view, not the exact pixel
     const kept = async () => {
-      await expect(thirty).toBeInViewport();
+      await expect(chart).toBeInViewport();
       expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(
         scrolled / 2
       );
@@ -2883,14 +3113,13 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
 
     await page.context().setOffline(true);
     await expect(page.getByText(OFFLINE_SALE)).toBeVisible();
-    await expect(thirty).toHaveAttribute("aria-selected", "true");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
+    await expect(chart).toContainText("1 a 30/09");
     await kept();
 
-    const reads = periodCalls(server).length;
     await page.context().setOffline(false);
-    await expect.poll(() => periodCalls(server).length).toBeGreaterThan(reads);
     await expect(page.getByText(OFFLINE_SALE)).toHaveCount(0);
-    await expect(thirty).toHaveAttribute("aria-selected", "true");
+    await expect(periodButton(page)).toContainText("01/09 a 30/09");
     await kept();
   });
 
@@ -2956,6 +3185,38 @@ test.describe("sem conexão (§ 7, AC-28 a AC-31)", () => {
     );
     await expect(page.getByText("Avisos do estoque")).toHaveCount(0);
     await expect(newSale(page)).toHaveAttribute("href", "/sales");
+  });
+
+  test("sem cópia e sem conexão o botão do período está desligado e a frase dos dois meses não aparece nem para o leitor de tela; com a cópia ela aparece", async ({
+    page,
+  }) => {
+    await page.setViewportSize(SIZES[1]);
+    const server = new FakeServer(SOLD);
+    await openWithCopy(page, server);
+    const sentence = page
+      .locator("[data-home-period]")
+      .getByText("Sem conexão: só este mês e o anterior.");
+    await page.context().setOffline(true);
+    await expect(sentence).toBeVisible();
+    await expect(sentence).not.toHaveAttribute("aria-hidden", "true");
+    await page.context().setOffline(false);
+    await page.evaluate((pattern) => {
+      for (const key of Object.keys(localStorage)) {
+        if (new RegExp(pattern).test(key)) {
+          localStorage.removeItem(key);
+        }
+      }
+    }, OFFLINE_KEYS.source);
+    await reopenWithoutNetwork(page, server);
+    await expect(region(page, "Vendas hoje")).toContainText(NO_CONNECTION, {
+      timeout: 20_000,
+    });
+    await expect(periodButton(page)).toBeDisabled();
+    const hidden = page
+      .locator("[data-home-period] p")
+      .filter({ hasText: "Sem conexão: só este mês e o anterior." });
+    await expect(hidden).toHaveAttribute("aria-hidden", "true");
+    await expect(hidden).toBeHidden();
   });
 
   test("loja que já vendeu, sem venda no mês nem antes: aberta sem rede a partir da cópia, o checklist não aparece", async ({
@@ -4111,7 +4372,7 @@ test.describe("paliativo dos 1102: leituras tentadas de novo, em fila e com frei
   });
 });
 
-const SALE_OUTSIDE_THE_WEEK: Scenario = {
+const SALE_OUTSIDE_THE_MONTH: Scenario = {
   ...SOLD,
   days: { "2026-09-25": [12_000, 2] },
 };
@@ -4176,26 +4437,33 @@ async function chartPlaces(page: Page) {
 
 type ChartPlaces = Awaited<ReturnType<typeof chartPlaces>>;
 
-/** Every place of the block within a pixel of the one before: the height, the total and the block below. */
+/**
+ * The block of the chart within a pixel of the one before: its height, and where the total and the block below sit from
+ * its top. The block's own top is not compared: the cards above it have another shape when the month sold nothing.
+ */
 function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
-  for (const key of ["card", "next", "total"] as const) {
-    expect(
-      Math.abs(after[key].height - before[key].height),
-      `altura de ${key}`
-    ).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(after[key].top - before[key].top),
-      `topo de ${key}`
-    ).toBeLessThanOrEqual(1);
+  const from = (places: ChartPlaces) => ({
+    card: places.card.height,
+    next: places.next.top - places.card.top,
+    nextHeight: places.next.height,
+    total: places.total.top - places.card.top,
+    totalHeight: places.total.height,
+  });
+  const [now, then] = [from(after), from(before)];
+  for (const key of Object.keys(now) as (keyof typeof now)[]) {
+    expect(Math.abs(now[key] - then[key]), key).toBeLessThanOrEqual(1);
   }
 }
 
-async function chooseDays(page: Page, days: "7" | "30") {
-  const chart = region(page, "Vendas por dia");
-  await chart.getByRole("tab", { name: `${days} dias` }).click();
-  await expect(
-    chart.getByRole("tab", { name: `${days} dias` })
-  ).toHaveAttribute("aria-selected", "true");
+const MONTHS = {
+  last: { range: "01/09 a 30/09", shortcut: "Mês passado" },
+  this: { range: "01/10 a 31/10", shortcut: "Este mês" },
+} as const;
+
+/** One of the two months through the picker of the Início, once the block has the period asked. */
+async function chooseMonth(page: Page, month: keyof typeof MONTHS) {
+  await choosePeriod(page, MONTHS[month].shortcut);
+  await expect(periodButton(page)).toContainText(MONTHS[month].range);
 }
 
 /** The block of one period has either the drawing or the sentence; waits for the one the scenario gives it. */
@@ -4212,19 +4480,19 @@ async function expectPeriodShown(page: Page, empty: boolean) {
 test.describe("Vendas por dia: trocar de período não muda a altura do bloco nem o que vem depois", () => {
   const cases = [
     {
-      name: "dados e dados (7 e 30 dias com venda)",
+      name: "dados e dados (este mês e o passado com venda)",
       scenario: SOLD,
-      empty: { 30: false, 7: false },
+      empty: { last: false, this: false },
     },
     {
-      name: "dados e vazio (7 dias sem venda, 30 dias com)",
-      scenario: SALE_OUTSIDE_THE_WEEK,
-      empty: { 30: false, 7: true },
+      name: "vazio e dados (este mês sem venda, o passado com)",
+      scenario: SALE_OUTSIDE_THE_MONTH,
+      empty: { last: false, this: true },
     },
     {
-      name: "vazio e vazio (a loja que não vendeu em 30 dias)",
+      name: "vazio e vazio (a loja que não vendeu nos dois meses)",
       scenario: NO_SALE_AT_ALL,
-      empty: { 30: true, 7: true },
+      empty: { last: true, this: true },
     },
   ] as const;
 
@@ -4233,16 +4501,16 @@ test.describe("Vendas por dia: trocar de período não muda a altura do bloco ne
       test(`${name} (${size.width} px)`, async ({ page }) => {
         await page.setViewportSize(size);
         await openHome(page, new FakeServer(scenario));
-        await expectPeriodShown(page, empty[7]);
-        const week = await chartPlaces(page);
+        await expectPeriodShown(page, empty.this);
+        const thisMonth = await chartPlaces(page);
 
-        await chooseDays(page, "30");
-        await expectPeriodShown(page, empty[30]);
-        expectSamePlaces(await chartPlaces(page), week);
+        await chooseMonth(page, "last");
+        await expectPeriodShown(page, empty.last);
+        expectSamePlaces(await chartPlaces(page), thisMonth);
 
-        await chooseDays(page, "7");
-        await expectPeriodShown(page, empty[7]);
-        expectSamePlaces(await chartPlaces(page), week);
+        await chooseMonth(page, "this");
+        await expectPeriodShown(page, empty.this);
+        expectSamePlaces(await chartPlaces(page), thisMonth);
       });
     }
 
@@ -4275,7 +4543,7 @@ test.describe("Vendas por dia: trocar de período não muda a altura do bloco ne
     page,
   }) => {
     await page.setViewportSize(SIZES[1]);
-    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_WEEK));
+    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_MONTH));
     await expectPeriodShown(page, true);
     const chart = region(page, "Vendas por dia");
     // the chart of the chunk (the box that held its place has no `data-chart`)
@@ -4313,7 +4581,7 @@ test.describe("Vendas por dia: trocar de período não muda a altura do bloco ne
 const HIDE_VALUES = { name: "Esconder valores" } as const;
 
 test.describe("Vendas por dia: só o gráfico, com os números numa tabela invisível (L2-6)", () => {
-  test("a tabela invisível está ligada ao gráfico e troca com 7 e 30 dias; o botão não existe", async ({
+  test("a tabela invisível está ligada ao gráfico e troca com o período; o botão não existe", async ({
     page,
   }) => {
     await page.setViewportSize(SIZES[0]);
@@ -4324,28 +4592,29 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
       chart.getByRole("button", { name: "Ver os números" })
     ).toHaveCount(0);
     await expect(chart).not.toContainText("Os números estão abaixo");
-    await expectInvisibleTable(chart, 3);
-    await expect(chart.getByRole("columnheader").nth(2)).toHaveText(
-      "7 dias antes"
-    );
-    await expect(chart.getByRole("row")).toHaveCount(8);
+    await expectInvisibleTable(chart, 2);
+    await expect(chart.getByRole("row")).toHaveCount(24);
     await expect(chart.getByRole("row").nth(1)).toContainText(
-      "17/10/2026R$ 0,00R$ 0,00"
+      "01/10/2026R$ 0,00"
     );
     await expect(chart.getByRole("row").nth(2)).toContainText(
+      "02/10/2026R$ 80,00"
+    );
+    await expect(chart.getByRole("row").nth(18)).toContainText(
       "18/10/2026R$ 1.840,00"
     );
-    await expect(chart.getByRole("row").nth(7)).toContainText(
+    await expect(chart.getByRole("row").nth(23)).toContainText(
       "23/10/2026R$ 320,10"
     );
-    await expect(chart.getByRole("slider")).toHaveAttribute("max", "6");
+    await expect(chart.getByRole("slider")).toHaveAttribute("max", "22");
 
-    await chooseDays(page, "30");
+    await chooseMonth(page, "last");
+    await expectPeriodShown(page, false);
     await expectInvisibleTable(chart, 2);
     await expect(chart.getByRole("row")).toHaveCount(31);
-    await expect(chart.getByRole("row").nth(1)).toContainText("24/09/2026");
-    await expect(chart.getByRole("row").nth(30)).toContainText(
-      "23/10/2026R$ 320,10"
+    await expect(chart.getByRole("row").nth(1)).toContainText("01/09/2026");
+    await expect(chart.getByRole("row").nth(20)).toContainText(
+      "20/09/2026R$ 50,00"
     );
     await expect(chart.getByRole("slider")).toHaveAttribute("max", "29");
     // the keyboard control and the summary of the image stay
@@ -4357,7 +4626,7 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
   });
 
   for (const size of SIZES) {
-    test(`com Esconder valores a tabela invisível também mascara, e a altura do cartão não muda entre 7 e 30 dias (${size.width} px)`, async ({
+    test(`com Esconder valores a tabela invisível também mascara, e a altura do cartão não muda entre os dois meses (${size.width} px)`, async ({
       page,
     }) => {
       await page.setViewportSize(size);
@@ -4368,9 +4637,10 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
 
       await page.getByRole("button", HIDE_VALUES).click();
       await expect(chart).not.toContainText(AN_AMOUNT);
-      for (const days of ["7", "30"] as const) {
+      for (const month of ["last", "this"] as const) {
         // biome-ignore lint/performance/noAwaitInLoops: one period after the other
-        await chooseDays(page, days);
+        await chooseMonth(page, month);
+        await expectPeriodShown(page, false);
         const table = chart.getByRole("table");
         expect(await table.evaluate((node) => node.textContent)).not.toMatch(
           AN_AMOUNT
@@ -4411,14 +4681,14 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
         "data-chart-data-table",
         "visible"
       );
-      await expect(chart.getByRole("row")).toHaveCount(8);
-      await expect(chart.getByRole("row").nth(2)).toContainText(
+      await expect(chart.getByRole("row")).toHaveCount(24);
+      await expect(chart.getByRole("row").nth(18)).toContainText(
         "18/10/2026R$ 1.840,00"
       );
       await expect(
         chart.getByRole("button", { name: "Ver os números" })
       ).toHaveCount(0);
-      await chooseDays(page, "30");
+      await chooseMonth(page, "last");
       await expect(chart.getByRole("row")).toHaveCount(31);
       await page.getByRole("button", HIDE_VALUES).click();
       await expect(chart.getByRole("table")).not.toContainText(AN_AMOUNT);
@@ -4430,7 +4700,7 @@ test.describe("Vendas por dia: só o gráfico, com os números numa tabela invis
   }) => {
     await page.setViewportSize(SIZES[1]);
     await page.route(CHARTS_CHUNK, (route) => route.abort());
-    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_WEEK));
+    await openHome(page, new FakeServer(SALE_OUTSIDE_THE_MONTH));
     const chart = region(page, "Vendas por dia");
     await expect(chart).toContainText("Sem vendas no período.", {
       timeout: 20_000,

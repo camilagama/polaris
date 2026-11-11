@@ -15,10 +15,10 @@ type RefreshButtonProps = Omit<
 
 /**
  * "Atualizar": the one button that reads a screen again, outline, with the control height (32 with a mouse, 36 with
- * touch). Below 760 px it is the icon alone, with a 44 px touch area, as "Esconder valores" beside it. The visible
- * text is always inside the accessible name ("Atualizar metas"), so a voice command that says what it sees works
- * (WCAG 2.5.3). The turning icon is under `motion-full:`: on a phone and with `prefers-reduced-motion` it stays still,
- * and the button keeps its size and its place either way.
+ * touch). Below 760 px it is the icon alone, with a 44 px touch area. The visible text is always inside the
+ * accessible name ("Atualizar metas"), so a voice command that says what it sees works (WCAG 2.5.3). The turning icon
+ * is under `motion-full:`: on a phone and with `prefers-reduced-motion` it stays still, and the button keeps its size
+ * and its place either way.
  */
 export function RefreshButton({
   busy = false,

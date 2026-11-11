@@ -39,13 +39,19 @@ function barWidth(netSales: string, top: bigint): number {
  * font enlarged, a narrow column) the name takes its own line, up to two, and the net sales and the units go to the
  * line under it.
  */
-export function TopProductsBlock({ products }: { products: TopProducts }) {
+export function TopProductsBlock({
+  products,
+  title = "Mais vendidos do mês",
+}: {
+  products: TopProducts;
+  title?: string;
+}) {
   const top = products.reduce((max, product) => {
     const cents = Money.from(product.netSales).minorUnits;
     return cents > max ? cents : max;
   }, 0n);
   return (
-    <HomeBlock id="home-top" title="Mais vendidos do mês">
+    <HomeBlock id="home-top" title={title}>
       <ol className="grid min-w-0">
         {products.map((product, index) => {
           const content = (

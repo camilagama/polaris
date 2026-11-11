@@ -3303,6 +3303,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Despesas sem ‹ › | Em revisão | `expenses/month-picker.tsx` é um botão só, com o desenho do botão de período, e abre a grade de meses; as setas do ano dentro da grade ficam. |
 | Provas | Em revisão | Unidade: `expense-screen-parts.test.tsx`, `breakpoints.test.ts`. e2e: `expenses.e2e.ts`, `goals.e2e.ts`, `ui-date-pickers.e2e.ts`, `reflow-rotas.e2e.ts`. |
 
+### UI de 09/11: período no Início (t993; item 4c, resposta 1 (a); sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Seletor no Início | Em revisão | `home/home-period-row.tsx` põe o `PeriodPicker` do Resultado no fim da linha que nomeia o mês (`KpiGroup` ganha o `control`; a página o entrega por `home/period-control.ts`, também ao esqueleto, ao erro e ao "sem conexão" dos cartões). O período muda os três cartões do mês (`home-kpi-cards.tsx`: `MonthGroup` guarda a linha e o seletor num lugar só, sem remontar a cada troca de período, e `MonthCards` lê o modelo do mês de hoje ou o `resultKpis` do Resultado), "Vendas por dia" (`home-chart.tsx`, por `resultSeries`: dias até hoje, meses acima de 62 dias) e "Mais vendidos" (título pelo período). Vendas hoje, Meta e Ritmo não mudam. |
+| Uma leitura, só quando escolhido | Em revisão | "Este mês" é a leitura que a página já faz (mesma cópia, nenhuma leitura nova ao voltar a ele); outro período é um `periodSummary` (`home/use-home-period.ts`, o `usePeriodSummary` do Resultado com `enabled`), mais os períodos anteriores dos chips (`useComparisonDays` e `useComparisonSales`). Leitura não escreve (AC-23). "Atualizar" relê o período escolhido. |
+| "7 dias \| 30 dias" | Removido | O segmentado e a linha tracejada dos 7 dias anteriores saíram do "Vendas por dia" (o período da tela manda). |
+| Sem conexão (D1) | Em revisão | `DateRangePicker`/`DateRangePanel` ganham `only`: só Este mês e Mês passado abrem; os outros atalhos ficam `aria-disabled` ligados ao motivo, os dias do calendário ficam desligados e os campos de digitar não aparecem; a frase "Sem conexão: só este mês e o anterior." fica ao lado do botão. O mês passado vem da cópia do aparelho quando ela existe (a mesma chave do Resultado). |
+| Provas | Em revisão | Unidade: `home-period.test.ts`, `home-chart.test.tsx`, `date-pickers.test.tsx` (`only`). e2e (Chromium): `home.e2e.ts` (período, Este ano por mês, erro do período, sem conexão, alturas do bloco entre os meses), `motion-level.e2e.ts`, `ui-csp.e2e.ts`. **Não verificado:** aparelho real (BrowserStack), leitor de tela; baselines da regressão visual do Início (o CI as despeja). |
+
 ### UI de 10/11: o dia desligado do calendário recebe o foco das setas e mostra o motivo (t1010, PR-A2 do desenho t1007; sem migration)
 
 | Item | Status | Observação |

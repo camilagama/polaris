@@ -45,6 +45,12 @@ import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 
+/** A screen that can read only some of the shortcuts (without a connection): the rest stay in place, off, with the reason. */
+export interface RangeOnly {
+  reason: string;
+  shortcuts: readonly RangePreset[];
+}
+
 export interface DateRangePickerProps {
   /** The verb that ends the accessible name of the button, for a screen where the period is always set: "Período: 01/10 a 24/10, editar". */
   action?: string | undefined;
@@ -57,6 +63,8 @@ export interface DateRangePickerProps {
   /** The error under the button (the screen's text). */
   error?: string | undefined;
   id?: string | undefined;
+  /** Only these shortcuts can be chosen: the others, the days and the typed dates are off, and the reason is written. */
+  only?: RangeOnly | undefined;
   /** The name of the field, in the accessible name of the button: "Período, 01/10 a 24/10". */
   label: string;
   /** The range chosen, or null for "Limpar"; `shortcut` says which one when a shortcut gave it. */
@@ -494,6 +502,18 @@ function useRevealPressed(
   }, [group, pressed]);
 }
 
+/** With `only` every day is off; otherwise the days that would make a range longer than the span. */
+function onlyDisabled(
+  only: RangeOnly | undefined,
+  span: RangeSpan | undefined,
+  far: (day: Date) => boolean
+): ((day: Date) => boolean) | undefined {
+  if (only) {
+    return () => true;
+  }
+  return span ? far : undefined;
+}
+
 /**
  * What a range editor shows inside a popover: the shortcuts the screen chose (`date-range-shortcuts.ts`) above the month
  * and "Limpar" below. The first touch on a day marks the start and keeps the editor open; the second closes the range and
@@ -508,6 +528,7 @@ export function DateRangePanel({
   endsToday = false,
   onCommit,
   onHalfChange,
+  only,
   pressed: pressedProp,
   shortcuts = DEFAULT_SHORTCUTS,
   span,
@@ -529,6 +550,7 @@ export function DateRangePanel({
    * caller that applies by a button of its own waits; its presence also takes "Aplicar" out of the typed fields.
    */
   onHalfChange?: ((half: boolean) => void) | undefined;
+  only?: RangeOnly | undefined;
   pressed?: RangePreset | null | undefined;
   shortcuts?: readonly RangePreset[] | undefined;
   span?: RangeSpan | undefined;
@@ -580,6 +602,9 @@ export function DateRangePanel({
 
   const pickDay = useCallback(
     (_range: unknown, day: Date) => {
+      if (only) {
+        return;
+      }
       const next = nextRange(draft, toIsoDate(day));
       if (next.complete) {
         commit(next.range);
@@ -587,16 +612,20 @@ export function DateRangePanel({
         adopt(next.draft);
       }
     },
-    [adopt, commit, draft]
+    [adopt, commit, draft, only]
   );
 
   const pickPreset = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       const preset = event.currentTarget.dataset.preset as RangePreset;
+      if (only && !only.shortcuts.includes(preset)) {
+        return;
+      }
       commit(shortcutRange(preset, today, endsToday), preset);
     },
-    [commit, endsToday, today]
+    [commit, endsToday, only, today]
   );
+  const onlyReasonId = useId();
 
   const clear = useCallback(() => commit(null), [commit]);
 
@@ -616,18 +645,27 @@ export function DateRangePanel({
         className={SHORTCUTS_CLASS}
         ref={shortcutRow}
       >
-        {shortcutsOf(shortcuts).map((preset) => (
-          <button
-            aria-pressed={preset.value === pressed}
-            className={SHORTCUT_CLASS}
-            data-preset={preset.value}
-            key={preset.value}
-            onClick={pickPreset}
-            type="button"
-          >
-            {preset.label}
-          </button>
-        ))}
+        {shortcutsOf(shortcuts).map((preset) => {
+          const off =
+            only !== undefined && !only.shortcuts.includes(preset.value);
+          return (
+            <button
+              aria-describedby={off ? onlyReasonId : undefined}
+              aria-disabled={off || undefined}
+              aria-pressed={preset.value === pressed}
+              className={cn(
+                SHORTCUT_CLASS,
+                off && "cursor-not-allowed text-muted-foreground opacity-60"
+              )}
+              data-preset={preset.value}
+              key={preset.value}
+              onClick={pickPreset}
+              type="button"
+            >
+              {preset.label}
+            </button>
+          );
+        })}
       </fieldset>
       <div className="contents md:flex md:min-h-0 md:min-w-0 md:flex-col md:gap-3">
         {/* with little room (the popover above the field at 360 px) only the month scrolls: the shortcuts, "Limpar"
@@ -643,8 +681,8 @@ export function DateRangePanel({
         >
           <OnDemandCalendar
             autoFocus
-            disabled={span ? far : undefined}
-            disabledReason={span?.reason}
+            disabled={onlyDisabled(only, span, far)}
+            disabledReason={only?.reason ?? span?.reason}
             mode="range"
             month={month}
             onMonthChange={setMonth}
@@ -653,18 +691,29 @@ export function DateRangePanel({
             today={todayDate}
           />
         </div>
-        <div ref={typed.anchor}>
-          <DateRangeTyping
-            {...typed.typingProps}
-            label={rangeLabel || undefined}
-          />
-        </div>
-        <DateRangeFooter
-          clearable={clearable && Boolean(value || half)}
-          half={half}
-          onClear={clear}
-          typed={typed}
-        />
+        {only ? (
+          <p
+            className={cn("text-muted-foreground text-support", HOLD_WIDTH)}
+            id={onlyReasonId}
+          >
+            {only.reason}
+          </p>
+        ) : (
+          <>
+            <div ref={typed.anchor}>
+              <DateRangeTyping
+                {...typed.typingProps}
+                label={rangeLabel || undefined}
+              />
+            </div>
+            <DateRangeFooter
+              clearable={clearable && Boolean(value || half)}
+              half={half}
+              onClear={clear}
+              typed={typed}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -685,6 +734,7 @@ export function DateRangePicker({
   id,
   label,
   onValueChange,
+  only,
   pressed,
   shortcuts,
   span,
@@ -759,6 +809,7 @@ export function DateRangePicker({
             endsToday={endsToday}
             key={openings}
             onCommit={commit}
+            only={only}
             pressed={pressed}
             shortcuts={shortcuts}
             span={span}

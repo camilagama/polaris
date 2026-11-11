@@ -13,22 +13,33 @@ import {
   NO_KNOWN_COST_RESULT,
 } from "../dashboard/dashboard-model";
 import { IncompleteBadge } from "../dashboard/result-cards";
+import { resultKpis, untilText } from "../dashboard/result-kpis";
+import type {
+  ComparisonDays,
+  ComparisonSales,
+} from "../dashboard/use-period-summary";
 import { formatBrlAmount } from "../lib/format";
 import {
   MASKED_SPOKEN,
   maskMoney,
   useHiddenValues,
 } from "../lib/hidden-values";
+import {
+  cogsCoverageOf,
+  type StoredPeriodSummary,
+} from "../lib/period-summary-cache";
 import { useIsMobile } from "../lib/use-mobile";
 import {
   dayReading,
   type KpiReading,
+  type MonthKpis,
   monthKpis,
   todaySeries,
   unknownDaysFit,
   unknownDaysText,
 } from "./home-kpis";
 import { chartValue, monthTitle } from "./home-model";
+import { usePeriodControl } from "./period-control";
 import type { HomeFigures } from "./use-home";
 
 /**
@@ -105,6 +116,7 @@ function TodayTile({
   return (
     <KpiTile
       chip={chipOf(reading)}
+      className={PLACE.today}
       date={index === null ? undefined : reading.date || undefined}
       entity="sales"
       help={{ about: "Vendas hoje", text: reading.help }}
@@ -150,25 +162,137 @@ function resultWarning({
   ) : null;
 }
 
-function MonthTiles({
-  figures,
-  still,
-}: {
-  figures: HomeFigures;
-  still: boolean;
-}) {
-  const [hidden] = useHiddenValues();
+/** What the three tiles of the month are made of: the month of today's figures, or the period the person chose. */
+export type MonthSource =
+  | { figures: HomeFigures; kind: "month" }
+  | PeriodSource;
+
+export interface PeriodSource {
+  comparison: ComparisonDays | null;
+  kind: "period";
+  salesComparison: ComparisonSales | null;
+  summary: StoredPeriodSummary;
+  today: string;
+}
+
+/** The tiles' model in the shape both sources give: the readings, the drawings, and the words that name the period. */
+interface MonthModel {
+  cards: StoredPeriodSummary["cards"];
+  kpis: Pick<MonthKpis, "days" | "read" | "series" | "result">;
+  labels: { result: string; sales: string; ticket: string };
+  noCost: boolean;
+  /** "em outubro", or "do período": what the tile of Vendas is of, in the words read after its title. */
+  of: string;
+  /** The result has days with no cost informed: the month of today says it by its quality line, a period by its days. */
+  partialDays: boolean;
+  quality: StoredPeriodSummary["quality"];
+  until: (read: KpiReading, index: number | null) => string;
+}
+
+function monthModel(figures: HomeFigures): MonthModel {
   const { cards, quality } = figures.month;
   const before = figures.before.daily ?? NO_DAYS;
   const month = figures.month.daily ?? NO_DAYS;
-  const kpis = useMemo(
-    () => monthKpis(before, month, figures.today, cards, quality),
-    [before, month, figures.today, cards, quality]
+  const kpis = monthKpis(before, month, figures.today, cards, quality);
+  const name = monthTitle(figures.today).toLowerCase();
+  return {
+    cards,
+    kpis,
+    labels: {
+      result: "Resultado estimado, acumulado por dia",
+      sales: `Vendas em ${name}, acumulado por dia`,
+      ticket: "Ticket médio, por dia do mês",
+    },
+    noCost: kpis.result.kind === "noCost",
+    of: `em ${name}`,
+    partialDays: false,
+    quality,
+    until: (read) => `Até ${read.date.replace("1 a ", "")}`,
+  };
+}
+
+function periodModel(source: PeriodSource): MonthModel {
+  const { comparison, salesComparison, summary, today } = source;
+  const { cards, quality } = summary;
+  const kpis = resultKpis({
+    cards,
+    daily: summary.daily ?? NO_DAYS,
+    period: summary.period,
+    previous: comparison,
+    previousSales: salesComparison,
+    today,
+  });
+  const unit = kpis.monthly ? "mês" : "dia";
+  return {
+    cards,
+    kpis,
+    labels: {
+      result: `Resultado estimado, acumulado por ${unit}`,
+      sales: `Vendas do período, acumulado por ${unit}`,
+      ticket: `Ticket médio, por ${unit} do período`,
+    },
+    noCost: cogsCoverageOf(quality) === "none",
+    of: kpis.month ? `em ${kpis.month}` : "do período",
+    partialDays: kpis.result.kind === "incomplete",
+    quality,
+    until: (_read, index) =>
+      untilText(
+        kpis.days[
+          Math.min(index ?? kpis.days.length - 1, kpis.days.length - 1)
+        ],
+        today
+      ),
+  };
+}
+
+/** Where each tile sits from 1280 px: Hoje alone at the left, the three of the month under the line of the period. */
+const PLACE = {
+  error: "md:col-span-2 xl:col-span-3 xl:col-start-2 xl:row-start-2",
+  line: "md:col-span-2 xl:col-span-3 xl:col-start-2 xl:row-start-1",
+  result: "xl:col-start-3 xl:row-start-2",
+  sales: "md:col-span-2 xl:col-span-1 xl:col-start-2 xl:row-start-2",
+  ticket: "xl:col-start-4 xl:row-start-2",
+  today: "md:col-span-2 xl:col-span-1 xl:col-start-1 xl:row-start-2",
+} as const;
+
+/**
+ * The line that holds the period picker of the Início, at its end, above the three tiles of the month. It is there in
+ * every state of the tiles (skeleton, figures, error, no connection), so the picker is never taken down and put up
+ * again by a change of period: the focus it had stays on it.
+ */
+function PeriodLine() {
+  const control = usePeriodControl();
+  if (!control) {
+    return null;
+  }
+  return (
+    <div
+      className={`flex min-h-9 items-center justify-end ${PLACE.line}`}
+      data-kpi-group-line=""
+    >
+      {control}
+    </div>
   );
-  const [index, setIndex, clear] = useReading();
+}
+
+function MonthTiles({
+  clear,
+  index,
+  model,
+  setIndex,
+  still,
+}: {
+  clear: () => void;
+  index: number | null;
+  model: MonthModel;
+  setIndex: (index: number | null) => void;
+  still: boolean;
+}) {
+  const [hidden] = useHiddenValues();
+  const { cards, kpis, noCost, quality } = model;
   const last = kpis.days.length - 1;
   const read = kpis.read(index);
-  const until = `Até ${read.sales.date.replace("1 a ", "")}`;
+  const until = model.until(read.sales, index);
   const date = index === null ? undefined : until;
   const range = (reading: KpiReading, label: string): KpiRange => ({
     label,
@@ -197,16 +321,15 @@ function MonthTiles({
       values={values}
     />
   );
-  const name = monthTitle(figures.today).toLowerCase();
   // a month with no sale says so; a copy kept before the series existed has the totals only, nothing drawn
   const noSale = cards.salesCount === 0;
   const drawn = !noSale && kpis.days.length > 0;
   // the line is red when the result up to today is below zero: its color does not change while a day is read
-  const resultNegative = (kpis.read(null).result.value ?? "")
+  const resultNegative = formatBrlAmount(kpis.read(null).result.value ?? "0")
     .trim()
     .startsWith("-");
   const incomplete =
-    kpis.result.kind === "noCost" || isIncompleteEstimate(quality);
+    noCost || isIncompleteEstimate(quality) || model.partialDays;
   const missing = kpis.result.kind === "incomplete" ? kpis.result : null;
   return (
     <>
@@ -219,22 +342,24 @@ function MonthTiles({
           ) : null
         }
         chip={chipOf(read.sales)}
+        className={PLACE.sales}
         date={date}
         entity="sales"
-        help={{ about: `Vendas em ${name}`, text: read.sales.help }}
+        help={{ about: `Vendas ${model.of}`, text: read.sales.help }}
         id="home-month"
         note={read.sales.count}
         {...(drawn
           ? {
-              range: range(read.sales, `Vendas em ${name}, acumulado por dia`),
+              range: range(read.sales, model.labels.sales),
               spark: spark(kpis.series.sales, "var(--chart-sales)", "zero"),
             }
           : {})}
-        title={`Vendas em ${name}`}
+        title={`Vendas ${model.of}`}
         value={<HeroValue amount={read.sales.value} />}
       />
       <KpiTile
-        chip={chipOf(read.result)}
+        chip={noCost ? undefined : chipOf(read.result)}
+        className={PLACE.result}
         date={date}
         entity="result"
         help={{
@@ -242,21 +367,14 @@ function MonthTiles({
           text: read.result.help,
         }}
         id="home-result"
-        warning={resultWarning({
-          incomplete,
-          missing,
-          noCost: kpis.result.kind === "noCost",
-        })}
-        {...(kpis.series.result && drawn
+        warning={resultWarning({ incomplete, missing, noCost })}
+        {...(kpis.series.result && drawn && !noCost
           ? {
-              range: range(
-                read.result,
-                "Resultado estimado, acumulado por dia"
-              ),
+              range: range(read.result, model.labels.result),
               spark: spark(
                 kpis.series.result,
                 resultNegative ? "var(--destructive)" : "var(--chart-result)",
-                kpis.series.result.some((value) => value < 0) ? "range" : "zero"
+                "range"
               ),
             }
           : {})}
@@ -268,10 +386,11 @@ function MonthTiles({
             Resultado estimado
           </a>
         }
-        value={<HeroValue amount={read.result.value} />}
+        value={<HeroValue amount={noCost ? null : read.result.value} />}
       />
       <KpiTile
         chip={chipOf(read.ticket)}
+        className={PLACE.ticket}
         date={date}
         entity="ticket"
         help={{ about: "Ticket médio", text: read.ticket.help }}
@@ -279,7 +398,7 @@ function MonthTiles({
         note={read.ticket.count || null}
         {...(drawn
           ? {
-              range: range(read.ticket, "Ticket médio, por dia do mês"),
+              range: range(read.ticket, model.labels.ticket),
               spark: spark(kpis.series.ticket, "var(--chart-ticket)", "range"),
             }
           : {})}
@@ -290,28 +409,132 @@ function MonthTiles({
   );
 }
 
+/** The three tiles of the month while the period the person chose is read (the line and its picker keep their place). */
+function PeriodTilesSkeleton() {
+  return (
+    <>
+      <KpiTileSkeleton className={PLACE.sales} />
+      <KpiTileSkeleton className={PLACE.result} />
+      <KpiTileSkeleton className={PLACE.ticket} />
+    </>
+  );
+}
+
+/** What the three tiles of the month show: the month of the figures, or the period chosen (loading, failed, read). */
+export type MonthPart =
+  | { kind: "figures" }
+  | { kind: "loading" }
+  | { error: React.ReactNode; kind: "error" }
+  | { kind: "period"; source: PeriodSource };
+
+/** Which period the tiles show: what is read apart from the reading of a day, which starts over when it changes. */
+function partKey(month: MonthPart): string {
+  if (month.kind !== "period") {
+    return month.kind;
+  }
+  const { from, to } = month.source.summary.period;
+  return `${from}/${to}`;
+}
+
+function monthSource(month: MonthPart, own: MonthSource): MonthSource | null {
+  if (month.kind === "period") {
+    return month.source;
+  }
+  return month.kind === "figures" ? own : null;
+}
+
+/** The three tiles of the month under the line of the picker, or their skeletons or the error, in the same place. */
+function MonthGroup({
+  month,
+  own,
+  still,
+}: {
+  month: MonthPart;
+  own: MonthSource;
+  still: boolean;
+}) {
+  const source = monthSource(month, own);
+  const model = useMemo<MonthModel | null>(() => {
+    if (source === null) {
+      return null;
+    }
+    return source.kind === "month"
+      ? monthModel(source.figures)
+      : periodModel(source);
+  }, [source]);
+  const [index, setIndex, clear] = useReading();
+  const key = partKey(month);
+  const [shown, setShown] = useState(key);
+  if (shown !== key) {
+    setShown(key);
+    clear();
+  }
+  return (
+    <>
+      <PeriodLine />
+      {monthBody(month, model, { clear, index, key, setIndex, still })}
+    </>
+  );
+}
+
+function monthBody(
+  month: MonthPart,
+  model: MonthModel | null,
+  reading: {
+    clear: () => void;
+    index: number | null;
+    key: string;
+    setIndex: (index: number | null) => void;
+    still: boolean;
+  }
+) {
+  if (month.kind === "loading") {
+    return (
+      <div className="contents" role="status">
+        <span className="sr-only">Carregando o período…</span>
+        <PeriodTilesSkeleton />
+      </div>
+    );
+  }
+  if (month.kind === "error") {
+    return <div className={`self-start ${PLACE.error}`}>{month.error}</div>;
+  }
+  if (model === null) {
+    return null;
+  }
+  const { key, ...rest } = reading;
+  return <MonthTiles key={key} model={model} {...rest} />;
+}
+
 export function KpiCards({
   figures,
+  month = { kind: "figures" },
   todayShown = true,
 }: {
   figures: HomeFigures;
+  month?: MonthPart;
   /** False when the figures are a copy of another day of the store (or have no series): never yesterday's as today's. */
   todayShown?: boolean;
 }) {
   const still = useIsMobile();
+  const own = useMemo<MonthSource>(
+    () => ({ figures, kind: "month" }),
+    [figures]
+  );
   return (
     <div className={KPI_GRID} data-kpi-row="">
       {todayShown ? (
         <TodayTile figures={figures} still={still} />
       ) : (
         <KpiTile
+          className={PLACE.today}
           entity="sales"
           id="home-today"
           title="Vendas hoje"
           value={<p className="text-muted-foreground">Sem números de hoje</p>}
         />
       )}
-      <MonthTiles figures={figures} still={still} />
+      <MonthGroup month={month} own={own} still={still} />
     </div>
   );
 }
@@ -328,13 +551,16 @@ export function NoFiguresCards({ today }: { today: string }) {
   return (
     <div className={KPI_GRID} data-kpi-row="">
       <KpiTile
+        className={PLACE.today}
         entity="sales"
         id="home-today"
         note={NO_CONNECTION_NOTE}
         title="Vendas hoje"
         value={<HeroValue amount={null} />}
       />
+      <PeriodLine />
       <KpiTile
+        className={PLACE.sales}
         entity="sales"
         id="home-month"
         note={NO_CONNECTION_NOTE}
@@ -342,6 +568,7 @@ export function NoFiguresCards({ today }: { today: string }) {
         value={<HeroValue amount={null} />}
       />
       <KpiTile
+        className={PLACE.result}
         entity="result"
         id="home-result"
         note={NO_CONNECTION_NOTE}
@@ -349,6 +576,7 @@ export function NoFiguresCards({ today }: { today: string }) {
         value={<HeroValue amount={null} />}
       />
       <KpiTile
+        className={PLACE.ticket}
         entity="ticket"
         id="home-ticket"
         note={NO_CONNECTION_NOTE}
@@ -366,10 +594,9 @@ export function NoFiguresCards({ today }: { today: string }) {
 export function KpiCardsSkeleton() {
   return (
     <div className={KPI_GRID} data-kpi-row="">
-      <KpiTileSkeleton />
-      <KpiTileSkeleton />
-      <KpiTileSkeleton />
-      <KpiTileSkeleton />
+      <KpiTileSkeleton className={PLACE.today} />
+      <PeriodLine />
+      <PeriodTilesSkeleton />
     </div>
   );
 }
