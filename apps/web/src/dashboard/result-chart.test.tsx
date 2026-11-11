@@ -9,7 +9,7 @@ import { resultSeries, supportParts } from "./result-series";
 
 /**
  * The markup of "Vendas × custos por dia" (AC-9 and AC-11): the five sentences of support, the
- * summary a screen reader gets (`role="img"`) and the table "Ver os números", where a
+ * summary a screen reader gets (`role="img"`) and the invisible table of the numbers, where a
  * day of unknown cost says "sem custo informado", never R$ 0,00. The drawing itself is measured in the browser.
  */
 

@@ -289,7 +289,7 @@ function Unseen({ children, on }: { children: ReactNode; on: boolean }) {
  * and stack below it, where two columns would leave each a sliver.
  */
 const SAME_ROW =
-  "grid content-start gap-2 min-[25rem]:flex min-[25rem]:items-start min-[25rem]:justify-between min-[25rem]:gap-x-4 min-[25rem]:[&>:first-child]:min-w-0 min-[25rem]:[&>:first-child]:flex-1 min-[25rem]:[&>:last-child]:min-w-0 min-[25rem]:[&>:last-child]:max-w-1/2";
+  "grid content-start gap-2 min-[25rem]:flex min-[25rem]:items-start min-[25rem]:justify-between min-[25rem]:gap-x-4 min-[25rem]:[&>:first-child]:min-w-0 min-[25rem]:[&>:first-child]:flex-1 min-[25rem]:[&>:last-child:not(:first-child)]:min-w-0 min-[25rem]:[&>:last-child:not(:first-child)]:max-w-1/2";
 
 /** What sits above the plot: the line of reading of the day in focus, and the legend of a second series that has one. */
 function AreaTop({

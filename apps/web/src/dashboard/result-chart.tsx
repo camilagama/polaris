@@ -157,7 +157,7 @@ interface HeaderProps {
 /**
  * What the first (i) of the title says: the dates (and "cópia guardada" when they are this device's copy) and how many
  * days have no cost. At most 160 characters, whatever the period and the state; the caveat that this is not net profit
- * is said by the (i) of the screen, the warning and the foot of the chain, not here.
+ * is said by the (i) of the screen, the quality warning and the foot of the chain, not here.
  */
 export function periodHelp({
   count,
