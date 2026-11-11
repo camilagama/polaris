@@ -34,18 +34,27 @@ describe("MonthPicker", () => {
     expect(html).toContain('for="m"');
   });
 
-  it("writes any month the list can read, the first one there is included", () => {
-    const html = renderToStaticMarkup(
-      <MonthPicker
-        currentMonth="2026-10"
-        id="m"
-        label="Mês"
-        month="0000-01"
-        onChange={noop}
-      />
-    );
-    expect(html).toContain("Janeiro de 0");
-  });
+  it.each([
+    ["0000-01", "Janeiro de 0"],
+    ["2026-03", "Março de 2026"],
+    ["2026-12", "Dezembro de 2026"],
+    ["9999-12", "Dezembro de 9999"],
+  ])(
+    "writes the month %s in words as %s, the first and the last one the list can read included",
+    (month, words) => {
+      const html = renderToStaticMarkup(
+        <MonthPicker
+          currentMonth="2026-10"
+          id="m"
+          label="Mês"
+          month={month}
+          onChange={noop}
+        />
+      );
+      expect(html).toContain(`${words}</button>`);
+      expect(html).toContain(`aria-label="Mês, ${words}"`);
+    }
+  );
 });
 
 const filters: ExpenseFilters = {
