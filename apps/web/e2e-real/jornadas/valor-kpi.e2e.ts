@@ -10,7 +10,8 @@ const SALES_OF_PERIOD = /^Vendas /;
 const SALES_OF_MONTH = /^Vendas em /;
 const PERIOD_BUTTON_NAME = /^Período: .+, editar$/;
 const ENTRANCE_MS = 200;
-const LOADING_NEW_PERIOD = /Mostrando|Atualizando/;
+const LOADING_NEW_PERIOD =
+  /^Mostrando .+ até o novo período carregar\.$|^Atualizando…$/;
 
 interface Started {
   changed: boolean;
@@ -249,9 +250,7 @@ test("valores escondidos: a troca não anima e mostrar de novo não toca a entra
   await openPeriod(page);
   await lastMonth(page);
   await expect(periodButton).not.toHaveText(periodBefore ?? "");
-  await expect(page.locator("#dashboard-updated")).not.toContainText(
-    LOADING_NEW_PERIOD
-  );
+  await expect(page.getByText(LOADING_NEW_PERIOD)).toHaveCount(0);
   await page.getByRole("button", { name: "Esconder valores" }).click();
   await expect(
     page.getByRole("region", { name: SALES_OF_PERIOD }).first()
