@@ -3322,6 +3322,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Aparência do dia | Em revisão | Só o número apaga (texto a 40%, riscado); sem `opacity` no botão, então o contorno de foco de 3 px fica inteiro; o toque chega ao dia (`cursor-not-allowed`), sem fundo de hover e sem escala ao apertar. |
 | Provas | Em revisão | Unidade: `calendar-limit.test.tsx`, `date-pickers.test.tsx`. e2e: `ui-date-pickers.e2e.ts` (teclado, mouse, toque, 360 x 600, axe com o dia focado), `ui-date-pickers-leitor-de-tela.e2e.ts`, `dashboard.e2e.ts` (a seta chega a 2025-10-13 desligado). Controle: sem a correção os testes novos reprovam. O motivo dos quatro campos de data mudos é do PR-A1 (t1009). |
 
+### UI de 10/11: Despesas organizada (t1022; corte L2-9; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Barra "Filtrar despesas" | Em revisão | `expenses/expense-filters.tsx` põe a Categoria na `FilterBar` do projeto, com o botão do mês e o segmentado Ativas e Anuladas como `leading`: Anuladas fica a um toque, com o estado atual marcado, e a Situação não é regra nem pílula da barra. A 360 px (abaixo de 760 px, `addIconOnPhone`) o "Filtrar" é só ícone, nome "Filtrar despesas", para as três peças caberem numa linha e a primeira despesa ficar a 400 px ou menos (`e2e/despesas-primeira-tela.e2e.ts`). O select de categoria e as abas Ativas/Anuladas do cartão saíram. |
+| Total no alto do cartão | Em revisão | "Total do período" (com " (anuladas)" quando for o caso), `Money` `lg` e a contagem abrem o cartão, num `role="status"`; o número é o mesmo do servidor. |
+| Vazio com filtros | Em revisão | "Nenhuma despesa encontrada com estes filtros." com "Limpar filtros" quando há uma categoria na barra: ele tira a pílula, mantém a situação do segmentado e devolve o foco ao "Filtrar"; nas Anuladas sem categoria a frase é "Nenhuma despesa anulada neste período."; sem filtro segue "Nenhuma despesa neste período.". |
+| Primeira tela | Em revisão | A primeira despesa fica a 400 px do topo ou menos a 360 px com 3 despesas, e o mês, o segmentado e o "Filtrar" só ícone cabem numa linha (a 320 px com letra de 20 px a linha quebra em duas, sem esconder o segmentado), medido em `e2e/despesas-primeira-tela.e2e.ts` com cada um dos doze meses (o mais largo é Novembro ou Dezembro de 2026) e 8 px de folga ou mais na linha. |
+| Provas | Em revisão | Unidade: `expense-filters.test.tsx`, `expense-screen-parts.test.tsx`. e2e (Chromium): `expenses.e2e.ts` (barra, filtro entre segmentos, vazio, alturas), `despesas-reflow.e2e.ts` (320 px com letra de 20 px), `despesas-primeira-tela.e2e.ts`; varredura de valores escondidos sem mudar a lista `known`. As baselines de `despesas-lista` da regressão visual vêm do CI (amd64). |
+
 ### UI de 10/11: "Hoje" desligado do DatePicker com o motivo à vista, e "Escolha até 1 ano" sem ponto final (t1024; sem migration)
 
 | Item | Status | Observação |

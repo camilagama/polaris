@@ -99,7 +99,7 @@ export const MOTION_CONTEXT: UiContext = light("360", true);
 /** Opens an overlay by its trigger, waits for it, and closes it with Escape, waiting for the exit too. */
 async function openAndClose(
   page: Page,
-  trigger: { name: string; role: "button" | "combobox" },
+  trigger: { name: string | RegExp; role: "button" | "combobox" },
   popup: { name?: string; role: "dialog" | "listbox" | "menu" }
 ) {
   // a form dialog can be open already (its own backdrop stays): what must go is the one of this overlay
@@ -352,6 +352,7 @@ const EXPENSE_SOURCES = [
   "src/expenses/expense-categories-panel.tsx",
   "src/expenses/expense-category-form.tsx",
   "src/expenses/expense-fields.tsx",
+  "src/expenses/expense-filters.tsx",
   "src/expenses/expense-form.tsx",
   "src/expenses/expense-list.tsx",
   "src/expenses/expense-rule-form.tsx",
@@ -373,16 +374,19 @@ const expenseScreen = (
   sourceDirs: EXPENSE_SOURCES,
 });
 
-/** The category filter and the grid of months (the popover of the month picker), each opened and closed. */
-async function exerciseExpenseCategoryFilter(page: Page) {
+const FILTER_BUTTON = /^Filtrar( despesas)?$/;
+const MONTH_BUTTON = /^Mês de competência, /;
+
+/** The menu of "Filtrar" (named "Filtrar despesas" while it is only the icon, below 760 px) and the grid of months (the popover of the month picker), each opened and closed. */
+async function exerciseExpenseFilters(page: Page) {
   await openAndClose(
     page,
-    { name: "Categoria", role: "combobox" },
-    { role: "listbox" }
+    { name: FILTER_BUTTON, role: "button" },
+    { name: "Filtrar por", role: "menu" }
   );
   await openAndClose(
     page,
-    { name: "Mês de competência, Outubro de 2026", role: "button" },
+    { name: MONTH_BUTTON, role: "button" },
     { name: "Mês de competência", role: "dialog" }
   );
 }
@@ -883,7 +887,7 @@ export const SCREENS: UiScreen[] = [
   stockScreen("baixa recusada", stockStates.writeOffRefused),
   stockScreen("sem conexão", stockStates.offline),
   stockScreen("sem conexão, recebimento guardado", stockStates.offlineKept),
-  expenseScreen("lista", expenseStates.list, exerciseExpenseCategoryFilter),
+  expenseScreen("lista", expenseStates.list, exerciseExpenseFilters),
   expenseScreen("grade de meses aberta", expenseStates.monthGrid),
   expenseScreen("erros nos campos", expenseStates.errors),
   expenseScreen("recorrentes e o diálogo da regra", expenseStates.rules),
