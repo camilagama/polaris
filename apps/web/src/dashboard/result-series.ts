@@ -370,14 +370,15 @@ export function hasSurcharges(chain: PeriodChain): boolean {
 
 const COMPETENCE = "Despesas do período entram no dia da competência.";
 const EQUALITY = "A diferença entre as duas linhas é o resultado estimado do";
-const TO_THE_TABLE = "O resultado de cada";
+const SURCHARGED =
+  "Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do";
 
 /**
  * The sentences that support the chart (AC-11): the count of days with no cost and the tail, in five
  * cases. The equality "the difference between the lines is the result" holds only when the period has no commercial
  * surcharge (a surcharge is in the result and not in the cost), and, with hatched days, only on the days without the
- * hatch; with a surcharge the line sends the reader to the table. With an unknown day it starts by how many there
- * are; with no known day there is a single line and no equality. No line when the costs are not sent at all.
+ * hatch; with a surcharge the line says the difference between the lines is not the result. With an unknown day it
+ * starts by how many there are; with no known day there is a single line and no equality. No line when the costs are not sent at all.
  */
 export function supportParts(
   series: Pick<ResultSeries, "costsDrawn" | "costsSent" | "days" | "grouped">,
@@ -389,7 +390,7 @@ export function supportParts(
   const { total, unknown } = series.days;
   const [unit, units] = series.grouped ? ["mês", "meses"] : ["dia", "dias"];
   const tail = hasSurcharges(chain)
-    ? `${TO_THE_TABLE} ${unit} está na tabela do gráfico. ${COMPETENCE}`
+    ? `${SURCHARGED} ${unit}. ${COMPETENCE}`
     : `${EQUALITY} ${unit}${unknown > 0 ? ` nos ${units} sem hachura` : ""}. ${COMPETENCE}`;
   if (unknown === 0) {
     return { count: null, tail: series.costsDrawn ? tail : null };

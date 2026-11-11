@@ -1286,7 +1286,7 @@ test.describe("o gráfico de vendas e custos (AC-4 a AC-12)", () => {
     // there is a surcharge in October: the sentence does not promise that the lines differ by the result (AC-11)
     const lines = await chartHelp(page, region, "as linhas");
     expect(lines).toContain(
-      "O resultado de cada dia está na tabela do gráfico. Despesas do período entram no dia da competência."
+      "Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do dia. Despesas do período entram no dia da competência."
     );
     expect(lines).not.toContain(
       "A diferença entre as duas linhas é o resultado estimado do dia."
@@ -1554,6 +1554,42 @@ test.describe("Vendas × custos por dia: só o gráfico, com a ressalva dita uma
 `);
   });
 
+  test("a 360 px a tabela invisível mantém o layout de tabela e a mesma árvore de acessibilidade", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openDashboard(page, new FakeReportServer());
+    const region = chartRegion(page);
+    await expect(region.getByRole("img", { name: CHART_IMAGE })).toBeVisible();
+    const table = region.locator("[data-chart-data-table] table");
+    await expect(table).toHaveCSS("display", "table");
+    await expect(table.locator("tbody tr").first()).toHaveCSS(
+      "display",
+      "table-row"
+    );
+    await expect(table.locator("tbody td").first()).toHaveCSS(
+      "display",
+      "table-cell"
+    );
+    await expect(region).toMatchAriaSnapshot(`
+      - heading "Vendas × custos por dia" [level=2]
+      - img /Vendas líquidas e custos por dia, 1 a 31 de outubro/
+      - slider "Dia"
+      - table:
+        - caption: Vendas e custos de cada dia do período
+        - rowgroup:
+          - row "Dia Vendas líquidas Custos Resultado do dia Despesas do período":
+            - columnheader "Dia"
+            - columnheader "Vendas líquidas"
+            - columnheader "Custos"
+            - columnheader "Resultado do dia"
+            - columnheader "Despesas do período"
+        - rowgroup:
+          - row:
+            - rowheader "01/10/2026"
+`);
+  });
+
   test("com Esconder valores ligado, a tabela, a leitura do dia e a dica do gráfico não deixam dígito de valor (AC-7.6)", async ({
     page,
   }) => {
@@ -1707,7 +1743,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
       "1 de janeiro a 14 de outubro."
     );
     expect(await chartHelp(page, region, "as linhas")).toContain(
-      "O resultado de cada mês está na tabela do gráfico. Despesas do período entram no dia da competência."
+      "Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do mês. Despesas do período entram no dia da competência."
     );
     await expect(
       region.getByRole("img", {

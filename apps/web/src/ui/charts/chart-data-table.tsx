@@ -26,9 +26,10 @@ export interface ChartDataTableProps {
   visible?: boolean;
 }
 
-/* A table of more than three columns, shown or not, would be wider than a phone: below 48rem of its own box (`@container`) each row
+/* A shown table of more than three columns would be wider than a phone: below 48rem of its own box (`@container`) each row
    becomes a card, with the first cell as its title and the name of each column (`data-label`) beside its value. The head
-   row stays for the screen reader. Nothing scrolls sideways. */
+   row stays for the screen reader. The invisible table keeps its table layout: a screen reader drops the table semantics
+   of a `table` turned into blocks. Nothing scrolls sideways. */
 const STACK_TABLE =
   "@max-3xl:block @max-3xl:[&_tbody]:block @max-3xl:[&_tfoot]:block @max-3xl:[&_tfoot_tr]:block";
 const STACK_HEAD =
@@ -64,7 +65,7 @@ export function ChartDataTable({
   rows,
   visible = false,
 }: ChartDataTableProps) {
-  const stacked = columns.length > MAX_SIDE_BY_SIDE_COLUMNS;
+  const stacked = visible && columns.length > MAX_SIDE_BY_SIDE_COLUMNS;
   return (
     <div
       className={cn(visible ? "w-full overflow-x-auto" : HIDDEN, "@container")}

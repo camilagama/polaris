@@ -143,10 +143,10 @@ describe("the sentence of support of the chart, in its five cases (AC-11)", () =
     );
   });
 
-  it("2. every day known, a surcharge: to the table, no equality", () => {
+  it("2. every day known, a surcharge: says the lines are not the result, no equality", () => {
     const said = support(october([], "12.00"));
     expect(said).toBe(
-      "O resultado de cada dia está na tabela do gráfico. Despesas do período entram no dia da competência."
+      "Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do dia. Despesas do período entram no dia da competência."
     );
     expect(said).not.toContain(EQUALITY);
   });
@@ -157,10 +157,10 @@ describe("the sentence of support of the chart, in its five cases (AC-11)", () =
     );
   });
 
-  it("4. 3 of 25 days unknown, a surcharge: the count, then the table", () => {
+  it("4. 3 of 25 days unknown, a surcharge: the count, then the sentence that the lines are not the result", () => {
     const said = support(october([3, 12, 21], "12.00"));
     expect(said).toBe(
-      "3 de 25 dias sem custo informado. O resultado de cada dia está na tabela do gráfico. Despesas do período entram no dia da competência."
+      "3 de 25 dias sem custo informado. Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do dia. Despesas do período entram no dia da competência."
     );
     expect(said).not.toContain(EQUALITY);
   });
@@ -471,13 +471,17 @@ describe("the table of five columns on a phone (AC-7.8)", () => {
       <NumbersTable hasCosts id="numbers" series={series} visible={visible} />
     );
 
-  it("stacks each row as a card with the name of each column beside its value, shown or not", () => {
-    for (const visible of [true, false]) {
-      const markup = render(visible);
-      expect(markup).toContain("@max-3xl:grid");
-      expect(markup).toContain('data-label="Custos"');
-      expect(markup).toContain('data-label="Despesas do período"');
-    }
+  it("stacks each row as a card with the name of each column beside its value when it is shown", () => {
+    const markup = render(true);
+    expect(markup).toContain("@max-3xl:grid");
+    expect(markup).toContain('data-label="Custos"');
+    expect(markup).toContain('data-label="Despesas do período"');
+  });
+
+  it("keeps the table layout when it is invisible: only the screen reader reads it", () => {
+    const markup = render(false);
+    expect(markup).not.toContain("@max-3xl:");
+    expect(markup).toContain('data-label="Custos"');
   });
 
   it("leaves a table of two columns as it is", () => {
