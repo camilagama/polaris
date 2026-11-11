@@ -1498,7 +1498,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await panel.getByLabel("Início", { exact: true }).fill("13/10/2025");
     await panel.getByLabel("Fim", { exact: true }).fill("14/10/2026");
     await panel.getByLabel("Início", { exact: true }).focus();
-    await expect(panel.getByRole("alert")).toContainText("Escolha até 1 ano.");
+    await expect(panel.getByRole("alert")).toContainText("Escolha até 1 ano");
     const apply = panel.getByRole("button", { name: "Aplicar" });
     await expect(apply).toHaveAttribute("aria-disabled", "true");
     await apply.focus();
@@ -1595,7 +1595,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     const reason = await beyond.getAttribute("aria-describedby");
     expect(reason).not.toBeNull();
     await expect(panel.locator(`[id="${reason}"]`)).toHaveText(
-      "Escolha até 1 ano."
+      "Escolha até 1 ano"
     );
     await expect(edge).not.toHaveAttribute("aria-disabled", "true");
     await edge.click();
@@ -1631,7 +1631,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     const edge = day("2025-10-14");
     await expect(edge).toBeFocused();
     await expect(edge).not.toHaveAttribute("aria-disabled", "true");
-    const reason = panel.getByText("Escolha até 1 ano.", { exact: true });
+    const reason = panel.getByText("Escolha até 1 ano", { exact: true });
     await expect(reason).toBeHidden();
 
     // one more day back: the arrow reaches the day beyond, turned off, and the reason shows as text
@@ -1639,7 +1639,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     const beyond = day("2025-10-13");
     await expect(beyond).toBeFocused();
     await expect(beyond).toHaveAttribute("aria-disabled", "true");
-    await expect(beyond).toHaveAccessibleDescription("Escolha até 1 ano.");
+    await expect(beyond).toHaveAccessibleDescription("Escolha até 1 ano");
     await expect(reason).toBeVisible();
     const asked = server.periods.length;
     await page.keyboard.press("Enter");
