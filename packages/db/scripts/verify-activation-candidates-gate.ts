@@ -42,6 +42,12 @@ import {
  *   7. the table itself: a notice whose ID carries "@" is refused, the same person and step in two stores is refused;
  *      and the effect accepted in the ADR: the membership of the first store deleted (and its notice with it), the
  *      next store of the person becomes a candidate.
+ *   8. the recipient (migration 0128, AC-7a.1 to AC-7a.5): only its own role reads `"user".email` (not the series'
+ *      nor the measure's); it reads neither session, sales, products nor privacy_cases, and holds exactly its columns;
+ *      only the authentication runtime executes `activation_notice_recipient`; it answers the address of an owed notice
+ *      of the verified oldest active owner of the store and null for every other case (sent, skipped, failed, not
+ *      verified, co-owner, former owner, member who is not an owner, another store); its row security alone shows one
+ *      notice, its store's owners and one person; and the policies on `"user"` are exactly the expected ones.
  * Every case runs in a transaction that is rolled back, with the stores the other gates left suspended inside it, so
  * the answers are about this gate's stores only. Local Postgres only: the fixtures write sale headers whose items the
  * deferred checks never see.
@@ -54,6 +60,10 @@ const expectedDatabase =
 const BILLING_RUNTIME = "polaris_billing_runtime";
 const NOTICE_OWNER = "polaris_activation_notice_owner";
 const FUNCTION = "public.activation_notice_candidates(timestamptz, integer)";
+const AUTH_RUNTIME = "polaris_auth_runtime";
+const RECIPIENT_OWNER = "polaris_activation_recipient_owner";
+const MEASURE_OWNER = "polaris_activation_owner";
+const RECIPIENT_FUNCTION = "public.activation_notice_recipient(text, uuid)";
 const ZONE = "America/Sao_Paulo";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -1009,6 +1019,450 @@ async function run() {
     });
     tests.push(
       "activation_notices refuses an ID or a reason with @ (23514) and the same person and step in a second store (23505) from the billing role; the second store of a person gets nothing; the membership of the first store deleted takes its notice (cascade) and the next store becomes the person's first, the effect the ADR accepts"
+    );
+
+    // 8. the recipient of the series (0128, ADR 0106, D2): only its role reads the address, and only of one notice owed
+    const recipientFunction = await owner.pool.query<{
+      config: string[];
+      definer: boolean;
+      owner: string;
+      source: string;
+      volatility: string;
+    }>(
+      `SELECT p.prosecdef AS definer, p.proconfig AS config, p.proowner::regrole::text AS owner, p.prosrc AS source,
+              p.provolatile::text AS volatility
+         FROM pg_catalog.pg_proc AS p WHERE p.oid = $1::regprocedure`,
+      [RECIPIENT_FUNCTION]
+    );
+    const [recipientFn] = recipientFunction.rows;
+    assert.ok(recipientFn);
+    assert.equal(recipientFn.definer, true, "the recipient: SECURITY DEFINER");
+    assert.equal(
+      recipientFn.owner,
+      RECIPIENT_OWNER,
+      "the recipient is owned by its own role, never by the owner of the candidates"
+    );
+    assert.deepEqual(recipientFn.config, [
+      "search_path=pg_catalog, public, pg_temp",
+    ]);
+    assert.doesNotMatch(recipientFn.source, DYNAMIC_SQL, "no dynamic SQL");
+    assert.equal(recipientFn.volatility, "v", "volatile: no cache answers it");
+    const addressReaders = await owner.pool.query<{
+      role: string;
+      email: boolean;
+    }>(
+      `SELECT r.role, pg_catalog.has_column_privilege(r.role, 'public."user"', 'email', 'SELECT') AS email
+         FROM unnest($1::text[]) AS r (role)
+        ORDER BY r.role COLLATE "C"`,
+      [[RECIPIENT_OWNER, NOTICE_OWNER, MEASURE_OWNER]]
+    );
+    assert.deepEqual(
+      addressReaders.rows,
+      [
+        { email: false, role: NOTICE_OWNER },
+        { email: false, role: MEASURE_OWNER },
+        { email: true, role: RECIPIENT_OWNER },
+      ],
+      'of the three roles of the series only the recipient\'s reads "user".email'
+    );
+    tests.push(
+      'AC-7a.1: has_column_privilege on "user".email is true for polaris_activation_recipient_owner and false for polaris_activation_notice_owner (the series) and polaris_activation_owner (the measure)'
+    );
+
+    const forbidden = await owner.pool.query<{ reach: string }>(
+      `SELECT t.name || ':' || CASE
+                WHEN pg_catalog.has_table_privilege($1, 'public.' || t.name, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') THEN 'table'
+                WHEN pg_catalog.has_any_column_privilege($1, 'public.' || t.name, 'SELECT, INSERT, UPDATE, REFERENCES') THEN 'column'
+                ELSE 'none' END AS reach
+         FROM unnest(ARRAY['session', 'sales', 'products', 'privacy_cases']) AS t (name)
+        ORDER BY t.name COLLATE "C"`,
+      [RECIPIENT_OWNER]
+    );
+    assert.deepEqual(
+      forbidden.rows.map((row) => row.reach),
+      ["privacy_cases:none", "products:none", "sales:none", "session:none"],
+      "the recipient's owner reads neither session, sales, products nor privacy_cases, not even one column"
+    );
+    const recipientColumns = await owner.pool.query<{ entry: string }>(
+      `SELECT c.table_name || '.' || c.column_name || ':' || c.privilege_type AS entry
+         FROM information_schema.column_privileges AS c
+        WHERE c.grantee = $1
+        ORDER BY c.table_name || '.' || c.column_name || ':' || c.privilege_type COLLATE "C"`,
+      [RECIPIENT_OWNER]
+    );
+    assert.deepEqual(
+      recipientColumns.rows.map((row) => row.entry),
+      [
+        "activation_notices.failed_at:SELECT",
+        "activation_notices.id:SELECT",
+        "activation_notices.organization_id:SELECT",
+        "activation_notices.sent_at:SELECT",
+        "activation_notices.skipped_reason:SELECT",
+        "activation_notices.user_id:SELECT",
+        "memberships.created_at:SELECT",
+        "memberships.organization_id:SELECT",
+        "memberships.role:SELECT",
+        "memberships.status:SELECT",
+        "memberships.user_id:SELECT",
+        "user.email:SELECT",
+        "user.email_verified:SELECT",
+        "user.id:SELECT",
+      ],
+      "the recipient's owner holds exactly its columns"
+    );
+    const recipientTables = await owner.pool.query(
+      "SELECT 1 FROM information_schema.table_privileges WHERE grantee = $1",
+      [RECIPIENT_OWNER]
+    );
+    assert.equal(
+      recipientTables.rows.length,
+      0,
+      "the recipient's owner holds no table privilege"
+    );
+    tests.push(
+      'AC-7a.2: polaris_activation_recipient_owner has no table nor column privilege on session, sales, products or privacy_cases, no table privilege at all, and exactly 14 SELECT columns of activation_notices, memberships and "user" (id, email, email_verified)'
+    );
+
+    const recipientExecutors = await owner.pool.query<{ role: string }>(
+      `SELECT r.role FROM (
+         SELECT 'public' AS role
+         UNION ALL SELECT rolname::text FROM pg_catalog.pg_roles WHERE rolname LIKE 'polaris\\_%' AND NOT rolcanlogin
+       ) AS r
+        WHERE pg_catalog.has_function_privilege(r.role, $1, 'EXECUTE')
+        ORDER BY r.role COLLATE "C"`,
+      [RECIPIENT_FUNCTION]
+    );
+    assert.deepEqual(
+      recipientExecutors.rows.map((row) => row.role),
+      [RECIPIENT_OWNER, AUTH_RUNTIME],
+      "only the authentication runtime executes the recipient (and its owner)"
+    );
+    const recipientAcl = await owner.pool.query<{ grantee: string }>(
+      `SELECT DISTINCT a.grantee::regrole::text AS grantee
+         FROM pg_catalog.pg_proc AS p, pg_catalog.aclexplode(p.proacl) AS a
+        WHERE p.oid = $1::regprocedure
+        ORDER BY 1`,
+      [RECIPIENT_FUNCTION]
+    );
+    assert.deepEqual(
+      recipientAcl.rows.map((row) => row.grantee),
+      [RECIPIENT_OWNER, AUTH_RUNTIME],
+      "the ACL of the recipient names only its owner and the authentication runtime (no login role, no default privilege)"
+    );
+    const authUrl = await login(AUTH_RUNTIME, "polaris_candidates_auth");
+    for (const [url, role] of [
+      [tenantUrl, runtimeRole],
+      [billingUrl, BILLING_RUNTIME],
+    ] as const) {
+      await as(url, async (client) => {
+        await setLoginRole(client, role, "session");
+        await expectSqlState(
+          () =>
+            client.query(
+              "SELECT public.activation_notice_recipient('x', gen_random_uuid())"
+            ),
+          "42501",
+          `${role} does not execute the recipient`
+        );
+      });
+    }
+    await as(authUrl, async (client) => {
+      await setLoginRole(client, AUTH_RUNTIME, "session");
+      const answer = await client.query<{ address: string | null }>(
+        "SELECT public.activation_notice_recipient('x', gen_random_uuid()) AS address"
+      );
+      assert.equal(answer.rows[0]?.address, null, "an unknown notice is null");
+    });
+    tests.push(
+      "AC-7a.3: activation_notice_recipient is SECURITY DEFINER of polaris_activation_recipient_owner (not the owner of the candidates), volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL; of PUBLIC and every polaris_* group only the authentication runtime executes it (and its owner), and its ACL names no one else; a tenant login and a billing login are refused (42501), an authentication login gets null for an unknown notice"
+    );
+
+    await scenario(async (client) => {
+      const created = at(ten, -25 * HOUR);
+      const store = (spec: Partial<StoreSpec> = {}) =>
+        newStore(client, { createdAt: created, ...spec });
+      const owed = await store();
+      const attempted = await store();
+      const sent = await store();
+      const skipped = await store();
+      const failed = await store();
+      const unverified = await store({ verified: false });
+      const shared = await store();
+      const coOwner = await newPerson(client);
+      await client.query(
+        "INSERT INTO public.memberships (organization_id, user_id, role, status, created_at) VALUES ($1, $2, 'owner', 'active', $3)",
+        [shared.organizationId, coOwner, at(created, MINUTE)]
+      );
+      const sharedCoOwner: Store = {
+        organizationId: shared.organizationId,
+        userId: coOwner,
+      };
+      const departed = await store();
+      const nowSeller = await store();
+      const leftFounder = await store();
+      const successor = await newPerson(client);
+      await client.query(
+        "INSERT INTO public.memberships (organization_id, user_id, role, status, created_at) VALUES ($1, $2, 'owner', 'active', $3)",
+        [leftFounder.organizationId, successor, at(created, MINUTE)]
+      );
+      const leftSuccessor: Store = {
+        organizationId: leftFounder.organizationId,
+        userId: successor,
+      };
+      const removed = await store();
+      const outcomes: [Store, "owed" | "sent" | "skipped" | "failed"][] = [
+        [owed, "owed"],
+        [attempted, "owed"],
+        [sent, "sent"],
+        [skipped, "skipped"],
+        [failed, "failed"],
+        [unverified, "owed"],
+        [shared, "owed"],
+        [sharedCoOwner, "owed"],
+        [departed, "owed"],
+        [nowSeller, "owed"],
+        [leftFounder, "owed"],
+        [leftSuccessor, "owed"],
+        [removed, "owed"],
+      ];
+      const noticeOf = new Map<Store, string>();
+      for (const [notified, outcome] of outcomes) {
+        await seedNotice(client, notified, "a1", outcome, at(ten, -HOUR));
+        const id = await client.query<{ id: string }>(
+          "SELECT id FROM public.activation_notices WHERE organization_id = $1 AND user_id = $2",
+          [notified.organizationId, notified.userId]
+        );
+        noticeOf.set(notified, String(id.rows[0]?.id));
+      }
+      await client.query(
+        "UPDATE public.activation_notices SET first_attempted_at = $2, last_attempted_at = $2 WHERE id = $1",
+        [noticeOf.get(attempted), at(ten, -30 * MINUTE)]
+      );
+      // the memberships hold only active owners today; the function and the policies still read role and status, so the
+      // two checks are lifted in this transaction (rolled back) to prove a former owner and a member who is not one
+      await client.query(
+        "ALTER TABLE public.memberships DROP CONSTRAINT memberships_role_check, DROP CONSTRAINT memberships_status_check"
+      );
+      await client.query(
+        "UPDATE public.memberships SET status = 'removed' WHERE organization_id = $1 AND user_id = $2",
+        [departed.organizationId, departed.userId]
+      );
+      await client.query(
+        "UPDATE public.memberships SET role = 'seller' WHERE organization_id = $1 AND user_id = $2",
+        [nowSeller.organizationId, nowSeller.userId]
+      );
+      await client.query(
+        "UPDATE public.memberships SET status = 'removed' WHERE organization_id = $1 AND user_id = $2",
+        [leftFounder.organizationId, leftFounder.userId]
+      );
+      const removedNotice = noticeOf.get(removed);
+      await client.query(
+        "DELETE FROM public.memberships WHERE organization_id = $1 AND user_id = $2",
+        [removed.organizationId, removed.userId]
+      );
+      const addressOf = async (
+        organizationId: string | null,
+        notice: string | null | undefined
+      ) =>
+        withGateRole(client, AUTH_RUNTIME, async () => {
+          const answer = await client.query<{ address: string | null }>(
+            "SELECT public.activation_notice_recipient($1, $2) AS address",
+            [organizationId, notice ?? null]
+          );
+          const scope = await client.query<{ scope: string | null }>(
+            "SELECT pg_catalog.current_setting('app.owner_scope.activation_notice_recipient_notice_id', true) AS scope"
+          );
+          assert.ok(
+            !scope.rows[0]?.scope,
+            "the function leaves no scope in the caller's transaction"
+          );
+          return answer.rows[0]?.address ?? null;
+        });
+      const emailOf = (person: string) =>
+        `candidates-${person}@example.invalid`;
+      const cases: [string, Store, string | null][] = [
+        ["an owed notice of the verified founder", owed, emailOf(owed.userId)],
+        [
+          "an owed notice already tried once",
+          attempted,
+          emailOf(attempted.userId),
+        ],
+        ["a sent notice", sent, null],
+        ["a skipped notice", skipped, null],
+        ["a failed notice", failed, null],
+        ["a person whose e-mail is not verified", unverified, null],
+        ["the founder of a shared store", shared, emailOf(shared.userId)],
+        ["a co-owner who is not the oldest owner", sharedCoOwner, null],
+        ["an owner who is no longer active", departed, null],
+        ["a member who is not an owner", nowSeller, null],
+        ["a founder who left the store", leftFounder, null],
+        [
+          "the oldest owner still active after the founder left",
+          leftSuccessor,
+          emailOf(successor),
+        ],
+      ];
+      for (const [name, notified, expected] of cases) {
+        assert.equal(
+          await addressOf(notified.organizationId, noticeOf.get(notified)),
+          expected,
+          name
+        );
+      }
+      assert.equal(
+        await addressOf(removed.organizationId, removedNotice),
+        null,
+        "an owner whose membership was deleted (the notice went with it)"
+      );
+      assert.equal(
+        await addressOf(sent.organizationId, noticeOf.get(owed)),
+        null,
+        "a notice asked with another store"
+      );
+      assert.equal(
+        await addressOf(owed.organizationId, randomUUID()),
+        null,
+        "a notice that does not exist"
+      );
+      assert.equal(await addressOf(null, null), null, "null arguments");
+      tests.push(
+        "AC-7a.4: called by the authentication runtime, activation_notice_recipient answers the address of an owed notice of the verified founder (also after an attempt, and of the oldest active owner once the founder left), and null for a sent, skipped or failed notice, an unverified e-mail, a co-owner who is not the oldest, an owner no longer active, a member who is not an owner, a founder who left, a deleted membership, another store, an unknown notice and null arguments; it leaves no scope in the caller's transaction"
+      );
+
+      // the row security alone, without the function: what the owner sees with no scope, the scope of an owed notice
+      // of a shared store, of a sent one and of an unverified person
+      const sees = (scope: string | undefined) =>
+        withGateRole(client, RECIPIENT_OWNER, async () => {
+          await client.query(
+            "SELECT pg_catalog.set_config('app.owner_scope.activation_notice_recipient_notice_id', $1, true)",
+            [scope ?? ""]
+          );
+          const rows = await client.query<{
+            members: string;
+            notices: string;
+            users: string[];
+          }>(
+            `SELECT (SELECT count(*) FROM public.activation_notices)::text AS notices,
+                    (SELECT count(*) FROM public.memberships)::text AS members,
+                    ARRAY(SELECT u.id FROM public."user" AS u ORDER BY u.id) AS users`
+          );
+          await client.query(
+            "SELECT pg_catalog.set_config('app.owner_scope.activation_notice_recipient_notice_id', '', true)"
+          );
+          return rows.rows[0];
+        });
+      assert.deepEqual(
+        await sees(undefined),
+        { members: "0", notices: "0", users: [] },
+        "no scope, nothing"
+      );
+      assert.deepEqual(
+        await sees(noticeOf.get(shared)),
+        { members: "2", notices: "1", users: [shared.userId] },
+        "the scope of an owed notice: that notice, the two owners of its store and only its person"
+      );
+      assert.deepEqual(
+        await sees(noticeOf.get(sharedCoOwner)),
+        { members: "2", notices: "1", users: [] },
+        "the scope of a co-owner's notice: not the co-owner's row"
+      );
+      assert.deepEqual(
+        await sees(noticeOf.get(sent)),
+        { members: "0", notices: "0", users: [] },
+        "the scope of a sent notice: nothing"
+      );
+      for (const [name, notified] of [
+        ["failed", failed],
+        ["skipped", skipped],
+      ] as const) {
+        assert.deepEqual(
+          await sees(noticeOf.get(notified)),
+          { members: "0", notices: "0", users: [] },
+          `the scope of a ${name} notice: nothing`
+        );
+      }
+      for (const [name, notified] of [
+        ["an owner no longer active", departed],
+        ["a member who is not an owner", nowSeller],
+      ] as const) {
+        assert.deepEqual(
+          await sees(noticeOf.get(notified)),
+          { members: "0", notices: "1", users: [] },
+          `the scope of the notice of ${name}: neither that membership nor that person`
+        );
+      }
+      assert.deepEqual(
+        await sees(noticeOf.get(unverified)),
+        { members: "1", notices: "1", users: [] },
+        "the scope of an unverified person: not that person's row"
+      );
+      await withGateRole(client, RECIPIENT_OWNER, async () => {
+        await client.query("SAVEPOINT probe");
+        await expectSqlState(
+          () => client.query("SELECT count(*) FROM public.session"),
+          "42501",
+          "the recipient's owner does not read the sessions"
+        );
+        await client.query("ROLLBACK TO SAVEPOINT probe");
+      });
+    });
+    tests.push(
+      "the row security of the recipient's owner on its own: with no scope it sees no notice, owner nor \"user\" row; with the scope of an owed notice, that notice, the active owners of its store and only its person (none for a co-owner's notice or an unverified person; no membership nor person for an owner no longer active or a member who is not an owner; nothing for a sent, failed or skipped notice); it does not read session (42501)"
+    );
+
+    const userPolicies = await owner.pool.query<{ entry: string }>(
+      `SELECT r.role || ':' || COALESCE((
+                SELECT pg_catalog.string_agg(p.policyname, ',' ORDER BY p.policyname COLLATE "C")
+                  FROM pg_catalog.pg_policies AS p
+                 WHERE p.schemaname = 'public' AND p.tablename = 'user' AND r.role = ANY (p.roles)
+              ), '-') AS entry
+         FROM unnest($1::text[]) AS r (role)
+        ORDER BY r.role COLLATE "C"`,
+      [
+        [
+          RECIPIENT_OWNER,
+          NOTICE_OWNER,
+          MEASURE_OWNER,
+          runtimeRole,
+          BILLING_RUNTIME,
+          "polaris_catalog_runtime",
+          "polaris_admin_runtime",
+          "public",
+        ],
+      ]
+    );
+    assert.deepEqual(
+      userPolicies.rows.map((row) => row.entry),
+      [
+        "polaris_activation_notice_owner:user_activation_notice_owner_select_recent_owner",
+        "polaris_activation_owner:-",
+        "polaris_activation_recipient_owner:user_activation_recipient_owner_select",
+        "polaris_admin_runtime:-",
+        "polaris_billing_runtime:-",
+        "polaris_catalog_runtime:-",
+        "polaris_pr11_runtime:-",
+        "public:-",
+      ],
+      'the policies on "user": one of the recipient\'s owner, the one of 0124 of the series, none of the measure, the tenant, billing, catalog, Admin runtime nor PUBLIC'
+    );
+    const recipientPolicies = await owner.pool.query<{ entry: string }>(
+      `SELECT p.tablename || '.' || p.policyname || ':' || p.cmd AS entry
+         FROM pg_catalog.pg_policies AS p
+        WHERE $1 = ANY (p.roles)
+        ORDER BY p.tablename || '.' || p.policyname COLLATE "C"`,
+      [RECIPIENT_OWNER]
+    );
+    assert.deepEqual(
+      recipientPolicies.rows.map((row) => row.entry),
+      [
+        "activation_notices.activation_notices_recipient_owner_select_owed:SELECT",
+        "memberships.memberships_activation_recipient_owner_select_owner:SELECT",
+        "user.user_activation_recipient_owner_select:SELECT",
+      ],
+      "the recipient's owner has exactly its three policies, all SELECT"
+    );
+    tests.push(
+      "AC-7a.5: on \"user\" the recipient's owner has exactly one policy (user_activation_recipient_owner_select); the owner of the series keeps only its policy of 0124 (and no grant on email); the measure, the tenant, billing, catalog and Admin runtimes and PUBLIC have none; the recipient's owner has exactly three policies, all SELECT"
     );
 
     console.log(

@@ -59,6 +59,7 @@ const DEVICE_OWNER = "polaris_device_session_owner";
 const ADMIN_OWNER = "polaris_admin_owner";
 const ACTIVATION_NOTICE_OWNER = "polaris_activation_notice_owner";
 const ACTIVATION_OWNER = "polaris_activation_owner";
+const ACTIVATION_RECIPIENT_OWNER = "polaris_activation_recipient_owner";
 const TABLES = [
   "account",
   "auth_security_audit_event",
@@ -88,6 +89,8 @@ const ONBOARDING_SCOPE = "app.owner_scope.onboarding_user_id";
 const NOTICE_SCOPE = "app.owner_scope.notice_recipient_notice_id";
 const BILLING_NOTICE_SCOPE =
   "app.owner_scope.billing_notice_recipient_notice_id";
+const ACTIVATION_RECIPIENT_SCOPE =
+  "app.owner_scope.activation_notice_recipient_notice_id";
 const ofUnverified = (table: string) =>
   `(EXISTS ( SELECT 1\n   FROM "user" u\n  WHERE ((u.id = ${table}.user_id) AND (NOT u.email_verified))))`;
 const deviceScope = `NULLIF(current_setting('${DEVICE_SCOPE}'::text, true), ''::text)`;
@@ -192,6 +195,13 @@ const EXPECTED_POLICIES: PolicyRow[] = [
     ACTIVATION_NOTICE_OWNER,
     `(EXISTS ( SELECT 1\n   FROM (memberships m\n     JOIN organizations o ON ((o.id = m.organization_id)))\n  WHERE ((m.user_id = "user".id) AND (m.role = 'owner'::text) AND (m.status = 'active'::text))))`
   ),
+  // the person of the notice of the series of the call (0128, ADR 0106, D2): verified and the oldest active owner of its store
+  policy(
+    "user.user_activation_recipient_owner_select",
+    "SELECT",
+    ACTIVATION_RECIPIENT_OWNER,
+    `(email_verified AND (EXISTS ( SELECT 1\n   FROM activation_notices n\n  WHERE ((n.id =\n        CASE\n            WHEN (current_setting('${ACTIVATION_RECIPIENT_SCOPE}'::text, true) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text) THEN (current_setting('${ACTIVATION_RECIPIENT_SCOPE}'::text, true))::uuid\n            ELSE NULL::uuid\n        END) AND (n.user_id = "user".id) AND (n.user_id = ( SELECT f.user_id\n           FROM memberships f\n          WHERE ((f.organization_id = n.organization_id) AND (f.role = 'owner'::text) AND (f.status = 'active'::text))\n          ORDER BY f.created_at, f.user_id\n         LIMIT 1))))))`
+  ),
   // the sign-ups of the activation funnel (0105, ADR 0071 amended): three columns, counted by week, never a row out
   policy("user.user_admin_owner_select", "SELECT", ADMIN_OWNER, "true"),
   policy("user.user_auth_runtime_all", "ALL", AUTH_RUNTIME, "true", "true"),
@@ -268,6 +278,9 @@ const EXPECTED_GRANTS = [
   "auth_security_audit_event polaris_unverified_user_owner INSERT (subject_id)",
   "user polaris_activation_notice_owner SELECT (email_verified)",
   "user polaris_activation_notice_owner SELECT (id)",
+  "user polaris_activation_recipient_owner SELECT (email)",
+  "user polaris_activation_recipient_owner SELECT (email_verified)",
+  "user polaris_activation_recipient_owner SELECT (id)",
   "user polaris_admin_owner SELECT (created_at)",
   "user polaris_admin_owner SELECT (email_verified)",
   "user polaris_admin_owner SELECT (id)",
