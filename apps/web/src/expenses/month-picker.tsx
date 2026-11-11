@@ -255,7 +255,7 @@ export function MonthPicker({
           render={
             <Button
               aria-label={`${label}, ${text}`}
-              className="touch:h-11 w-full justify-start font-normal sm:w-fit sm:min-w-40"
+              className="touch:h-11 w-full justify-start font-normal max-[47.5rem]:pr-2 max-[47.5rem]:has-data-[icon=inline-start]:pl-2 sm:w-fit sm:min-w-40"
               id={id}
               type="button"
               variant="outline"
