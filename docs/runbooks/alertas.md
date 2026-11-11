@@ -36,6 +36,7 @@
 | [`loja-encerrada-parada`](#loja-encerrada-parada) | `closure_purge_overdue` | 24 h | 1 | warning | não |
 | [`purge-parado`](#purge-parado) | `organization_purge_stalled` | 24 h | 1 | warning | não |
 | [`aviso-de-encerramento-falhando`](#aviso-de-encerramento-falhando) | `closure_notice_email_failed` | 24 h | 1 | warning | não |
+| [`checkout-pago-no-encerramento`](#checkout-pago-no-encerramento) | `billing_closure_paid_checkout_refund_pending` | 24 h | 1 | warning | não |
 | [`rede-de-reembolso-parada`](#rede-de-reembolso-parada) | `billing_refund_rearm_exhausted` | 60 min | 1 | critical | sim |
 | [`incidente-de-reembolso-nao-gravado`](#incidente-de-reembolso-nao-gravado) | `billing_refund_pending_incident_failed`, `billing_amount_mismatch_incident_failed` | 60 min | 1 | critical | sim |
 | [`comando-de-cobranca-do-operador`](#comando-de-cobranca-do-operador) | `billing_operator_command` (Worker `polaris-admin`) | 15 min | 1 | critical | sim |
@@ -265,6 +266,16 @@ O lote de miniaturas (`/api/media/thumbs`) lê com um `get` por id e responde in
 **Como confirmar.** Workers Logs: `event = "closure_notice_email_failed"`, agrupado por `outcome`, `httpStatus` e `milestone`. Muitos `failure` com 401 ou 403, ou com `errorCode = "invalid_from_address"`, apontam para a chave ou o remetente (`AUTH_EMAIL_FROM`, domínio verificado no provedor); 5xx ou 429, para o provedor. Banco, só leitura, seguindo a [política de perfis de CLI](./cli-profile-policy.md): `SELECT organization_id, milestone, due_at, failed_at FROM closure_notices WHERE failure_code = 'email_rejected' AND failed_at > now() - interval '24 hours'`.
 
 **O que fazer.** `outcome = "failure"`: o problema é do provedor ou da configuração. Confira o estado do Resend, o segredo `RESEND_API_KEY` e o remetente `AUTH_EMAIL_FROM` do Worker (sem imprimir valores). Não é preciso reenviar à mão: a fila tenta de novo, e o repasse horário envia o devido. Se a mensagem cair na DLQ, o incidente aparece em [dlq](#dlq). `outcome = "rejected"`: o provedor recusou o endereço, e não há reenvio automático. O dono corrige o endereço da conta, e o suporte, com um caso de privacidade aberto, reemite o aviso ([runbook dos avisos](./avisos-de-encerramento.md#ato-de-suporte)). Se o endereço não puder ser entregue, o responsável dispensa o aviso com o motivo `email_undeliverable`, sob o caso de exclusão do dono aceito. Nunca grave `sent_at` nem `failed_at` à mão.
+
+<a id="checkout-pago-no-encerramento"></a>
+
+### checkout-pago-no-encerramento — checkout aprovado e pago durante o descarte do encerramento
+
+**O que significa.** O encerramento de uma loja descartou no Pix Automático o checkout ainda aberto, e a aprovação do pagador caiu entre a leitura e o cancelamento: o provedor já tinha uma assinatura, o cancelamento a encerrou, e a 1ª parcela foi paga na aprovação. O pagador pagou por uma loja que está encerrada e o Polaris não reembolsa sozinho (`WOOVI_REFUND_ENABLED` desligado). O evento é `billing_closure_paid_checkout_refund_pending` (erro, só `eventId` do outbox, `organizationId` opaco e `provider`). Na mesma hora abre-se uma ocorrência do incidente operacional `billing_refund_pending` com a causa `refund_not_completed`, uma por pedido de encerramento e checkout (repetir a entrega não soma). Se o banco falha ao gravar o incidente, o consumidor lança: a fila tenta de novo e, esgotadas as tentativas, a DLQ abre o incidente ([dlq](#dlq)); a nova entrega abre o reembolso pendente mesmo que o provedor já responda `already_closed`.
+
+**Como confirmar.** Workers Logs: `event = "billing_closure_paid_checkout_refund_pending"`, e o `billing_checkout_approved_during_closure_discard` logo antes, com o mesmo `eventId`. Admin: o incidente `billing_refund_pending` / `refund_not_completed` na lista de incidentes.
+
+**O que fazer.** Reembolse a 1ª parcela pelo painel do provedor, pelo caminho de [reembolso pendente](./billing-providers.md#reembolso-pendente), e registre no caso de suporte da loja. A assinatura já está cancelada: não há renovação a cancelar.
 
 <a id="rede-de-reembolso-parada"></a>
 

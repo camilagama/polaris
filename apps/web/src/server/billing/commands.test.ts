@@ -1627,6 +1627,7 @@ describe("reconcileOrganization", () => {
 
     expect(report).toEqual({
       applied: 0,
+      chargesSucceeded: 0,
       duplicates: 0,
       failed: 0,
       ignored: 0,
@@ -1718,6 +1719,7 @@ describe("reconcileOrganization", () => {
     expect(store.processEvent).toHaveBeenCalledWith("id-1", now);
     expect(report).toEqual({
       applied: 2,
+      chargesSucceeded: 0,
       duplicates: 1,
       failed: 1,
       ignored: 1,
