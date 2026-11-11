@@ -4,21 +4,10 @@ import { AnimatedFigure, parseFigure } from "./animated-figure";
 
 describe("parseFigure", () => {
   it.each([
-    ["R$ 129,90", { digits: 2, kind: "money", signed: false, value: 129.9 }],
-    [
-      "-R$ 99.640,35",
-      { digits: 2, kind: "money", signed: false, value: -99_640.35 },
-    ],
-    ["+R$ 436,86", { digits: 2, kind: "money", signed: true, value: 436.86 }],
-    ["41,2%", { digits: 1, kind: "percent", signed: false, value: 41.2 }],
-    ["+30,0%", { digits: 1, kind: "percent", signed: true, value: 30 }],
-    ["-100,0%", { digits: 1, kind: "percent", signed: false, value: -100 }],
-    ["−12,5%", { digits: 1, kind: "percent", signed: false, value: -12.5 }],
-    ["0%", { digits: 0, kind: "percent", signed: false, value: 0 }],
-    [
-      "1.234,56%",
-      { digits: 2, kind: "percent", signed: false, value: 1234.56 },
-    ],
+    ["R$ 129,90", { signed: false, value: 129.9 }],
+    ["-R$ 99.640,35", { signed: false, value: -99_640.35 }],
+    ["+R$ 436,86", { signed: true, value: 436.86 }],
+    ["−R$ 12,50", { signed: false, value: -12.5 }],
   ])("%s", (text, figure) => {
     expect(parseFigure(text)).toEqual(figure);
   });
@@ -31,8 +20,9 @@ describe("parseFigure", () => {
     "R$ 12",
     "12 vendas",
     "R$ 1,5",
-    "5%a",
-  ])("%j não é um número do cartão", (text) => {
+    "41,2%",
+    "+30,0%",
+  ])("%j não é um valor do cartão", (text) => {
     expect(parseFigure(text)).toBeNull();
   });
 });

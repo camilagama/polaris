@@ -828,20 +828,17 @@ test.describe("loja com venda", () => {
     // the KPI cards (v7 § 3): Friday `23/10` against the mean of the 4 Fridays before it (only `02/10` sold, R$ 80,00)
     const today = region(page, "Vendas hoje");
     await expect(today).toContainText("R$ 320,10");
-    // one line of support: what it compares with and the count
-    await expect(today).toContainText("vs. média das sextas · 2 vendas");
+    await expect(today).toContainText("16,0×2 vendas");
+    await expect(today).not.toContainText("vs. média");
     // no date at rest: the title says it is today
     await expect(today.locator("[data-kpi-date]")).toHaveCount(0);
     // +1.500,5% is said as a multiple from +1.000% up: seen "16,0×", heard "subiu para 16,0 vezes o valor anterior"
     await expect(
       today.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
     ).toHaveText("16,0×");
-    await expect(today.locator("[data-kpi-delta=up] .sr-only")).toHaveText(
-      "subiu para 16,0 vezes o valor anterior"
-    );
-    // the base is in sight ("vs. média das sextas"), so the chip has no name of its own
-    await expect(today.locator("[data-kpi-delta=up]")).not.toHaveAttribute(
-      "aria-label"
+    await expect(today.locator("[data-kpi-delta=up]")).toHaveAttribute(
+      "aria-label",
+      "subiu para 16,0 vezes o valor anterior em relação à média das sextas"
     );
     // the sparkline is a reinforcement: hidden from the screen reader, with no axis; the range is its keyboard
     await expect(
@@ -856,10 +853,7 @@ test.describe("loja com venda", () => {
     // 1 to 23 October against 1 to 23 September: R$ 2.660,60 against R$ 170,00
     const month = region(page, "Vendas em outubro");
     await expect(month).toContainText("R$ 2.660,60");
-    // the month and its period are said once, above the three cards of the month
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 23/10"
-    );
+    await expect(page.locator("[data-kpi-group]")).toHaveCount(0);
     await expect(month.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(
       month.locator("[data-kpi-delta=up] [data-kpi-delta-text]")
@@ -872,17 +866,14 @@ test.describe("loja com venda", () => {
 
     const result = region(page, "Resultado estimado");
     await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText("Não é lucro líquido nem caixa");
-    // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9); the number is
-    // the server's card of the whole month, and the date says so
-    await expect(result.locator("[data-kpi-date]")).toHaveText(
-      "outubro inteiro"
-    );
+    // this server sends no result of the day: no sparkline, no chip and no sum of the known days (AC-9)
+    await expect(result.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
-    await expect(
-      result.getByRole("link", { name: "Ver o resultado" })
-    ).toHaveAttribute("href", "/dashboard");
+    await expect(result.getByRole("link")).toHaveAttribute(
+      "href",
+      "/dashboard"
+    );
 
     const ticket = region(page, "Ticket médio");
     await expect(ticket).toContainText("R$ 221,72");
@@ -1424,18 +1415,38 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       const box = await target.first().boundingBox();
       return (box?.y ?? Number.POSITIVE_INFINITY) + (box?.height ?? 0);
     };
-    // the number of Hoje, and the line that names the month and its period (the title of the month's cards)
     expect(
       await bottom(region(page, "Vendas hoje").locator("[data-kpi-value]"))
     ).toBeLessThanOrEqual(740);
-    expect(await bottom(page.locator("[data-kpi-group]"))).toBeLessThanOrEqual(
-      740
-    );
+    expect(await bottom(periodButton(page))).toBeLessThanOrEqual(740);
+    expect(
+      await bottom(region(page, "Vendas em outubro").locator("h2"))
+    ).toBeLessThanOrEqual(740);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
       )
     ).toBe(true);
+  });
+
+  test("a 360 px o seletor de período fica entre Hoje e os cartões do mês, e Hoje, o seletor e Vendas cabem na janela", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const top = async (target: Locator) =>
+      (await target.first().boundingBox())?.y ?? Number.NaN;
+    const picker = await top(periodButton(page));
+    expect(picker).toBeGreaterThan(await top(region(page, "Vendas hoje")));
+    expect(picker).toBeLessThan(await top(region(page, "Vendas em outubro")));
+    const bottom = async (target: Locator) => {
+      const box = await target.first().boundingBox();
+      return (box?.y ?? Number.POSITIVE_INFINITY) + (box?.height ?? 0);
+    };
+    expect(await bottom(region(page, "Vendas em outubro"))).toBeLessThanOrEqual(
+      740
+    );
   });
 
   test("a altura da página a 360 px com os mesmos três itens de ação", async ({
@@ -1466,14 +1477,17 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
       "Vendas hoje",
       "Vendas líquidas de hoje. Compara com a média das 4 sextas-feiras anteriores.",
     ],
-    ["Vendas", "Vendas líquidas de 1 a 23/10. Compara com 1 a 23/09."],
+    [
+      "Vendas em outubro",
+      "Vendas líquidas de 1 a 23/10. Compara com 1 a 23/09.",
+    ],
     [
       "Ticket médio",
       "Vendas líquidas divididas pelo número de vendas, de 1 a 23/10. Compara com 1 a 23/09.",
     ],
     [
       "Resultado estimado",
-      "Vendas menos custos, taxas e despesas do mês inteiro.",
+      "Vendas menos custos, taxas e despesas do mês inteiro; não é lucro líquido nem caixa.",
     ],
     [
       "Meta",
@@ -1506,7 +1520,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     });
   }
 
-  test("a ajuda não carrega aviso: o que é de dinheiro fica à vista, com o (i) fechado", async ({
+  test("a ajuda não carrega aviso: a estimativa incompleta e os dias sem custo ficam à vista, com o (i) fechado", async ({
     page,
   }) => {
     await page.setViewportSize({ height: 740, width: 360 });
@@ -1516,7 +1530,7 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     );
     const result = region(page, "Resultado estimado");
     await expect(result).toContainText("estimativa incompleta");
-    await expect(result).toContainText("Não é lucro líquido nem caixa");
+    await expect(result).toContainText("1 de 23 dias sem custo");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 });
@@ -1848,14 +1862,14 @@ test.describe("Vendas hoje sem base de comparação", () => {
     await openHome(page, new FakeServer(returned));
     const today = region(page, "Vendas hoje");
     await expect(today).toContainText("Nenhuma venda ainda");
-    await expect(today).toContainText(
-      "vs. média das sextas: sem média para comparar"
-    );
     await expect(today.locator("[data-kpi-delta]")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Sobre Vendas hoje" }).click();
     await expect(
-      page.getByText("Vendas líquidas de hoje.", { exact: true })
+      page.getByText(
+        "Vendas líquidas de hoje. Sem média das 4 sextas-feiras anteriores para comparar.",
+        { exact: true }
+      )
     ).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Compara com a média");
   });
@@ -1890,9 +1904,8 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     // the 18th of 23 days: the cards read the 1st to the 18th together
     const x = strip.x + 4 + ((strip.width - 8) * 17) / 22;
     await page.mouse.move(x, strip.y + strip.height / 2);
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 18/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveText("Até 18/10");
+    await expect(result.locator("[data-kpi-date]")).toHaveText("Até 18/10");
     await expect(sales.locator("[data-kpi-value]")).toHaveText("R$ 1.920,00");
     await expect(sales).toContainText("7 vendas");
     await expect(result.locator("[data-kpi-value]")).toHaveText("R$ 576,00");
@@ -1902,9 +1915,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     ).toHaveCount(0);
 
     await page.mouse.move(10, 10);
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 23/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveCount(0);
     await expect(sales.locator("[data-kpi-value]")).toHaveText("R$ 2.660,60");
   });
 
@@ -1925,9 +1936,7 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
       "aria-valuetext",
       "Até 22/10: R$ 2.340,50"
     );
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 22/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveText("Até 22/10");
     // the outline of the keyboard focus goes round the strip, inside it
     expect(
       await slider.evaluate((node) => {
@@ -1938,15 +1947,12 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
 
     const today = region(page, "Vendas hoje").getByRole("slider");
     await today.focus();
-    await expect(page.locator("[data-kpi-group]")).toHaveText(
-      "Outubro · 1 a 23/10"
-    );
+    await expect(sales.locator("[data-kpi-date]")).toHaveCount(0);
     await page.keyboard.press("ArrowLeft");
     await expect(today).toHaveAttribute(
       "aria-valuetext",
       "qui, 22/10: R$ 0,00"
     );
-    // another day than today: its date is at the top right
     await expect(
       region(page, "Vendas hoje").locator("[data-kpi-date]")
     ).toHaveText("qui, 22/10");
@@ -2035,11 +2041,9 @@ test.describe("cartões de KPI (revisão de UI v7, § 3 e § 6)", () => {
     );
     const result = region(page, "Resultado estimado");
     await expect(result).toContainText("estimativa incompleta");
-    // the badge and the days on one line, the warning under it
     await expect(result.locator("[data-kpi-unknown]")).toHaveText(
-      "· 1 de 23 dias sem custo"
+      "1 de 23 dias sem custo"
     );
-    await expect(result).toContainText("Não é lucro líquido nem caixa");
     await expect(result.locator("[data-kpi-spark]")).toHaveCount(0);
     await expect(result.locator("[data-kpi-delta]")).toHaveCount(0);
     await expect(result.getByRole("slider")).toHaveCount(0);
@@ -4822,30 +4826,22 @@ test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cart
       expect([...chips].sort()).toEqual([false, true]);
     });
 
-    test(`sem venda no mês: a linha do chip e a do texto de apoio continuam nos quatro cartões, vazias para o leitor de tela (${size.width} px)`, async ({
+    test(`sem venda no mês: a linha de apoio continua nos quatro cartões, sem chip (${size.width} px)`, async ({
       page,
     }) => {
       await page.setViewportSize(size);
       await openHome(page, new FakeServer(NO_SALE_AT_ALL));
       await expect(region(page, "Vendas hoje")).toContainText("R$ 0,00");
-      const rows = page.locator(
-        "[data-kpi-row] [data-kpi] [data-kpi-chip-row]"
-      );
-      await expect(rows).toHaveCount(4);
-      const chipRows = await rows.evaluateAll((elements) =>
-        elements.map((element) => ({
-          height: element.getBoundingClientRect().height,
-          text: element.textContent,
-        }))
-      );
-      for (const row of chipRows) {
-        expect(row.height).toBeGreaterThanOrEqual(20);
-        expect(row.text).toBe("");
-      }
       const notes = page.locator(
         "[data-kpi-row] [data-kpi] [data-kpi-note-row]"
       );
       await expect(notes).toHaveCount(4);
+      const heights = await notes.evaluateAll((elements) =>
+        elements.map((element) => element.getBoundingClientRect().height)
+      );
+      for (const height of heights) {
+        expect(height).toBeGreaterThanOrEqual(20);
+      }
       await expect(
         page.locator("[data-kpi-row] [data-kpi] [data-kpi-delta]")
       ).toHaveCount(0);

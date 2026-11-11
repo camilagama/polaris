@@ -310,7 +310,6 @@ function salesReading({
     date: range,
     delta,
     help: `Vendas líquidas de ${range}.${compare}`,
-    note: null,
     value: atRest ? cards.netSales : Money.fromMinorUnits(sum.net).toString(),
   };
 }
@@ -355,7 +354,6 @@ function resultReading({
       delta ? prior.range : null,
       result.kind === "incomplete" ? result : null
     ),
-    note: null,
     value,
   };
 }
@@ -390,7 +388,6 @@ function ticketReading({
     date: range,
     delta,
     help: ticketHelp(range, delta ? priorSales.range : null),
-    note: null,
     value,
   };
 }

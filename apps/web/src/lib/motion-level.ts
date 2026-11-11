@@ -105,7 +105,7 @@ export function useMotionLevel(): MotionLevel {
 }
 
 /**
- * The count of a main number of a card (`AnimatedFigure`): the duration and the curve of the tween of the y axis of the
+ * The roll of the main number of a card (`AnimatedFigure`): the duration and the curve of the tween of the y axis of the
  * charts, so a number and the axis beside it move alike. Only at the `full` level.
  */
 export const MOTION = {

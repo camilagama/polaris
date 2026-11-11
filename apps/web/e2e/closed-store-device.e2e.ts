@@ -43,6 +43,8 @@ const LAB_KEY = {
   secret: "lab-secret-lab-secret-lab-secret-0123456789",
 };
 const HOUR = 3_600_000;
+/** `21/10/2026` at noon in São Paulo, a day into the undo window that ends at `recoverUntil`. */
+const NOW = new Date("2026-10-21T15:00:00.000Z");
 const SESSION_USER_KEY = "polaris.offline.session-user";
 const DEVICE_KEY = "polaris.offline.device";
 const LOJA_ENCERRADA = /\/loja-encerrada/;
@@ -242,7 +244,7 @@ class ClosingServer {
   }
 
   private async issue(deviceId: string) {
-    const issuedAt = new Date();
+    const issuedAt = new Date(NOW);
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({
@@ -385,6 +387,10 @@ async function expectClosedDevice(
     page.getByRole("heading", { exact: true, name: "Nova venda" })
   ).toHaveCount(0);
 }
+
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(NOW);
+});
 
 test.describe("aparelho com a loja encerrada (AC-11)", () => {
   test.setTimeout(90_000);
