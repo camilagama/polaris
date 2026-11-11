@@ -325,7 +325,7 @@ function MonthTiles({
   const noSale = cards.salesCount === 0;
   const drawn = !noSale && kpis.days.length > 0;
   // the line is red when the result up to today is below zero: its color does not change while a day is read
-  const resultNegative = formatBrlAmount(kpis.read(null).result.value ?? "0")
+  const resultNegative = (kpis.read(null).result.value ?? "")
     .trim()
     .startsWith("-");
   const incomplete =
@@ -374,7 +374,7 @@ function MonthTiles({
               spark: spark(
                 kpis.series.result,
                 resultNegative ? "var(--destructive)" : "var(--chart-result)",
-                "range"
+                kpis.series.result.some((value) => value < 0) ? "range" : "zero"
               ),
             }
           : {})}
