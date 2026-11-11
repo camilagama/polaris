@@ -34,8 +34,6 @@ interface MoneyProps {
   split?: boolean | undefined;
   /** As `formatBrlAmount` writes it ("R$ 1.234,56"); null is an amount nobody knows, "—". */
   text: string | null;
-  /** Shows the amount while the values are hidden: for the places that mask by themselves. */
-  unmasked?: boolean | undefined;
 }
 
 export function Money({
@@ -43,7 +41,6 @@ export function Money({
   size,
   split = size === "lg" || size === "xl",
   text,
-  unmasked = false,
 }: MoneyProps) {
   const [hidden] = useHiddenValues();
   const sized = cn(
@@ -62,7 +59,7 @@ export function Money({
       </>
     );
   }
-  if (hidden && !unmasked) {
+  if (hidden) {
     return (
       <>
         <span

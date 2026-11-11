@@ -64,4 +64,19 @@ describe("the amounts of the Resumo, with Esconder valores", () => {
     expect(html).toContain("R$ ••••");
     expect(html).toContain("valor escondido");
   });
+
+  it("masks the amount of the fee in the preview and keeps its percent and words", () => {
+    state.hidden = true;
+    const html = renderToStaticMarkup(<FeePreviewDetails preview={PREVIEW} />);
+    expect(html).not.toContain("2,50");
+    expect(html).toContain("2,5% (<span");
+    expect(html).toContain("R$ ••••");
+    expect(html).toContain("valor escondido");
+  });
+
+  it("writes the fee of the preview as it is while the values show", () => {
+    const html = renderToStaticMarkup(<FeePreviewDetails preview={PREVIEW} />);
+    expect(html).toContain("2,5% (<span");
+    expect(html).toContain("R$ 2,50");
+  });
 });

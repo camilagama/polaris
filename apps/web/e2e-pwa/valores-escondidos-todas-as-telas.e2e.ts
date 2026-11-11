@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 import { skipOutsideChromium } from "../e2e/reflow";
 import { screenKeys } from "../src/app-shell/navigation-model";
 import { json, settle } from "./ui-entry-states";
+import { repricedDraft } from "./ui-sale-draft-states";
 import { SCREENS } from "./ui-screens";
 import { serveHealth } from "./worker-mark";
 
@@ -54,6 +55,8 @@ interface Case {
   /** Only where the screen exists: the list of Configurações is a phone's. */
   phoneOnly?: boolean;
   planPrices?: boolean;
+  /** What the state has to show for the sweep to be reading the amounts it is there for: a state that opens without it fails. */
+  shows?: (page: Page) => Promise<void>;
 }
 
 const stateOf = (
@@ -62,7 +65,13 @@ const stateOf = (
     hideAfterOpen = false,
     known,
     planPrices = false,
-  }: { hideAfterOpen?: boolean; known?: KnownLeak; planPrices?: boolean } = {}
+    shows,
+  }: {
+    hideAfterOpen?: boolean;
+    known?: KnownLeak;
+    planPrices?: boolean;
+    shows?: (page: Page) => Promise<void>;
+  } = {}
 ): Case => {
   const screen = SCREENS.find((candidate) => candidate.name === name);
   if (screen === undefined) {
@@ -74,6 +83,7 @@ const stateOf = (
     name,
     open: (page) => screen.open(page, page.context()),
     planPrices,
+    ...(shows ? { shows } : {}),
   };
 };
 const states = (...names: string[]) => names.map((name) => stateOf(name));
@@ -115,6 +125,29 @@ async function serveShell(page: Page, answers: Record<string, unknown> = {}) {
     return route.abort("internetdisconnected");
   });
 }
+
+/** The preview of fees and term of the sale on credit with a profile: the amount of the fee is written in it. */
+const FEE_PREVIEW = stateOf("venda pagamento a crédito", {
+  shows: (page) =>
+    expect(
+      page
+        .getByRole("region", { name: "Prévia de taxas e prazo" })
+        .locator("[data-masked-money]")
+        .first()
+    ).toBeAttached(),
+});
+
+/** The cart that came back after the list price changed: the notice writes the new price. */
+const REPRICED_DRAFT: Case = {
+  name: "venda com preço de tabela atualizado no rascunho",
+  open: repricedDraft,
+  shows: (page) =>
+    expect(
+      page
+        .locator("[aria-live]")
+        .filter({ hasText: "preço de tabela atualizado para" })
+    ).toBeVisible(),
+};
 
 const HELP: Case = {
   name: "ajuda",
@@ -198,7 +231,12 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
     "produtos lista",
     "produtos variantes, opções e combinação"
   ),
-  sale: [stateOf("venda com itens"), stateOf("venda confirmada")],
+  sale: [
+    stateOf("venda com itens"),
+    FEE_PREVIEW,
+    REPRICED_DRAFT,
+    stateOf("venda confirmada"),
+  ],
   "sale-detail": states(
     "detalhe da venda aberto",
     "detalhe da venda cancelamento revisado"
@@ -430,6 +468,7 @@ for (const viewport of VIEWPORTS) {
             ).toBeAttached();
           }
           await settle(page);
+          await screen.shows?.(page);
           await expect(page.locator("main").first()).toBeAttached();
           expect(
             describeLeaks(

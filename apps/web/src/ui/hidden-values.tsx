@@ -31,20 +31,6 @@ export function HideValuesButton({ className }: { className?: string }) {
 }
 
 /**
- * A text with its amounts kept in one piece: "R$" and the number never fall on two lines, however large the font is.
- * The text is the same, only each amount sits in a box that does not break.
- */
-export function NoBreakMoney({ text }: { text: string }) {
-  return (
-    <>
-      {moneyParts(text).map((part, index) =>
-        part.money ? <Money key={index} text={part.text} unmasked /> : part.text
-      )}
-    </>
-  );
-}
-
-/**
  * A text that may carry amounts ("Melhor dia: 18/10, R$ 1.840,00"): as it is while the values show, and with each
  * amount masked while they are hidden (the rest of the words, the percents and the counts stay).
  */

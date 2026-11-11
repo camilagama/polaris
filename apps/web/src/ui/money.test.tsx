@@ -9,7 +9,7 @@ vi.mock("@/lib/hidden-values", async (importOriginal) => ({
   useHiddenValues: () => [state.hidden, () => undefined],
 }));
 
-const { MoneyText, NoBreakMoney } = await import("./hidden-values");
+const { MoneyText } = await import("./hidden-values");
 const { HeroValue } = await import("./kpi-card");
 const { Money } = await import("./money");
 
@@ -171,19 +171,14 @@ describe("Money, with the values hidden", () => {
         )
       )
     ).toBe("Melhor dia: 18/10, R$ ••••valor escondido");
-    expect(
-      textOf(renderToStaticMarkup(<NoBreakMoney text="Total R$ 1.840,00" />))
-    ).toBe("Total R$ 1.840,00");
   });
 });
 
-describe("MoneyText and NoBreakMoney, with the values showing", () => {
-  it("write the text they are given, each amount in a box that does not break", () => {
+describe("MoneyText, with the values showing", () => {
+  it("writes the text it is given, each amount in a box that does not break", () => {
     const text = "Melhor dia: 18/10, R$ 1.840,00 e -R$ 12,00";
-    for (const Component of [MoneyText, NoBreakMoney]) {
-      const markup = renderToStaticMarkup(<Component text={text} />);
-      expect(textOf(markup)).toBe(text);
-      expect(markup.match(/whitespace-nowrap/g)).toHaveLength(2);
-    }
+    const markup = renderToStaticMarkup(<MoneyText text={text} />);
+    expect(textOf(markup)).toBe(text);
+    expect(markup.match(/whitespace-nowrap/g)).toHaveLength(2);
   });
 });
