@@ -101,6 +101,25 @@ const SHORTCUTS_CLASS =
 const SHORTCUT_CLASS =
   "touch-hit focus-ring not-first:-ml-px inline-flex h-ctl-sm min-w-fit flex-auto snap-start items-center justify-center whitespace-nowrap border border-border bg-card px-2 font-medium text-foreground text-xs shadow-xs motion-full:transition-colors first:rounded-l-md last:rounded-r-md hover:bg-accent aria-pressed:bg-accent aria-pressed:text-accent-foreground dark:bg-transparent dark:hover:bg-accent dark:aria-pressed:bg-accent md:h-ctl-md md:flex-none md:justify-start md:rounded-md md:border-transparent md:bg-transparent md:px-3 md:text-sm md:shadow-none md:not-first:ml-0 md:first:rounded-md md:last:rounded-md md:aria-pressed:bg-accent";
 
+/**
+ * What the button of the typed fields writes for the draft: the whole range as `formatRange` does, or the first day alone
+ * with the same rule of the year (none when it falls in the year of `today`), followed by "a …".
+ */
+export function draftLabel(
+  draft: DraftRange | undefined,
+  today: IsoDate
+): string | undefined {
+  if (!draft?.from) {
+    return undefined;
+  }
+  if (draft.to) {
+    return formatRange({ from: draft.from, to: draft.to }, today);
+  }
+  const text = formatDate(draft.from);
+  const sameYear = draft.from.slice(0, 4) === today.slice(0, 4);
+  return `${sameYear ? text.slice(0, 5) : text} a …`;
+}
+
 const FIELD_LABELS: Record<TypedField, string> = { from: "Início", to: "Fim" };
 // taken from the keys: a string literal of that word followed by a quote is read as an import by the source scan of src/ui
 const FIELDS = Object.keys(FIELD_LABELS) as TypedField[];
@@ -629,10 +648,7 @@ export function DateRangePanel({
 
   const clear = useCallback(() => commit(null), [commit]);
 
-  const rangeLabel =
-    draft?.from && draft.to
-      ? formatRange({ from: draft.from, to: draft.to }, today)
-      : half && `${formatDate(half)} a …`;
+  const rangeLabel = draftLabel(draft, today);
   const selected = {
     from: parseIsoDate(draft?.from),
     to: parseIsoDate(draft?.to),

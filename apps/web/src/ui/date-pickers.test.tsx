@@ -8,7 +8,11 @@ import {
   whenBackOnline,
 } from "@/ui/calendar-on-demand";
 import { DatePicker, TodayFooter } from "@/ui/date-picker";
-import { DateRangePanel, DateRangePicker } from "@/ui/date-range-picker";
+import {
+  DateRangePanel,
+  DateRangePicker,
+  draftLabel,
+} from "@/ui/date-range-picker";
 import { parseIsoDate } from "@/ui/date-values";
 
 /**
@@ -329,6 +333,29 @@ describe("DateRangePanel", () => {
     const classes = (attribute(pressed, "class") ?? "").split(" ");
     expect(classes).toContain("dark:aria-pressed:bg-accent");
     expect(classes).toContain("dark:bg-transparent");
+  });
+});
+
+describe("draftLabel, o que o botão de digitar as datas escreve", () => {
+  const today = "2026-10-24";
+
+  it("o 1º dia só segue a regra de ano do intervalo completo: sem ano neste ano, com ano em outro", () => {
+    expect(draftLabel({ from: "2026-11-03" }, today)).toBe("03/11 a …");
+    expect(draftLabel({ from: "2025-11-03" }, today)).toBe("03/11/2025 a …");
+    expect(draftLabel({ from: "2027-01-05" }, today)).toBe("05/01/2027 a …");
+  });
+
+  it("o intervalo completo não muda: sem ano quando é todo deste ano, com ano nos dois quando não é", () => {
+    expect(draftLabel({ from: "2026-10-01", to: "2026-10-31" }, today)).toBe(
+      "01/10 a 31/10"
+    );
+    expect(draftLabel({ from: "2025-12-20", to: "2026-01-10" }, today)).toBe(
+      "20/12/2025 a 10/01/2026"
+    );
+  });
+
+  it("sem início não escreve nada", () => {
+    expect(draftLabel(undefined, today)).toBeUndefined();
   });
 });
 

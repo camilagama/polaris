@@ -543,6 +543,49 @@ for (const viewport of VIEWPORTS) {
       await expect(button).toHaveAccessibleName("Período, Escolher período");
     });
 
+    test("período: com só o 1º dia o botão de digitar escreve a data pela regra do ano e o painel não muda de largura", async ({
+      page,
+    }) => {
+      await openGallery(page);
+      const open = () =>
+        openPicker(page, "Período das vendas,", "Período das vendas");
+      let popup = await open();
+      let toggle = popup.getByRole("button", { name: "Digitar as datas" });
+      await expect(toggle).toHaveText("Digitar as datas");
+      const before = await popup.boundingBox();
+      const toggleBefore = await toggle.boundingBox();
+
+      await day(popup, "2026-10-10").click();
+      await expect(toggle).toHaveText("10/10 a …");
+      await expect(toggle).toHaveAccessibleName("Digitar as datas: 10/10 a …");
+      const after = await popup.boundingBox();
+      expect(after?.width).toBeCloseTo(before?.width ?? 0, 0);
+      expect((await toggle.boundingBox())?.height).toBeCloseTo(
+        toggleBefore?.height ?? 0,
+        0
+      );
+
+      await page.keyboard.press("Escape");
+      await expect(popup).toBeHidden();
+      popup = await open();
+      toggle = popup.getByRole("button", { name: "Digitar as datas" });
+      await expect(toggle).toHaveText("Digitar as datas");
+      const next = popup.getByRole("button", { name: "Próximo mês" });
+      await next.click();
+      await next.click();
+      await next.click();
+      await expect(popup.getByText("Janeiro de 2027").first()).toBeVisible();
+      await day(popup, "2027-01-05").click();
+      await expect(toggle).toHaveText("05/01/2027 a …");
+      await expect(toggle).toHaveAccessibleName(
+        "Digitar as datas: 05/01/2027 a …"
+      );
+      expect((await popup.boundingBox())?.width).toBeCloseTo(
+        before?.width ?? 0,
+        0
+      );
+    });
+
     test("período: um mês em qualquer largura, o dia com 36 px no mouse e 44 no toque, nada fora da janela", async ({
       page,
     }) => {
@@ -964,6 +1007,32 @@ test.describe("Hoje desligado, a 360 x 600 e a 320 px com fonte de 20 px", () =>
     });
   }
 });
+
+for (const viewport of VIEWPORTS) {
+  for (const theme of ["claro", "escuro"] as const) {
+    test(`o atalho em uso tem fundo próprio, pela cor computada, a ${viewport.width} px no tema ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await openGallery(page, theme);
+      const popup = await openPicker(page, "Período,", "Período");
+      const shortcuts = popup.getByRole("group", {
+        name: "Atalhos do período",
+      });
+      const pressed = shortcuts.getByRole("button", { name: "Este mês" });
+      await expect(pressed).toHaveAttribute("aria-pressed", "true");
+      const other = shortcuts.getByRole("button", { name: "Mês passado" });
+      await expect(other).toHaveAttribute("aria-pressed", "false");
+      await page.mouse.move(0, 0);
+      const background = (target: Locator) =>
+        target.evaluate((element) => getComputedStyle(element).backgroundColor);
+      const marked = await background(pressed);
+      expect(marked).not.toBe(await background(other));
+      expect(marked).not.toBe(await background(popup));
+      expect(marked).not.toBe("rgba(0, 0, 0, 0)");
+    });
+  }
+}
 
 for (const theme of ["claro", "escuro"] as const) {
   test(`axe não acha nada com cada seletor aberto (tema ${theme})`, async ({
