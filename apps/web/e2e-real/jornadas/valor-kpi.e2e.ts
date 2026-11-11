@@ -10,6 +10,7 @@ const SALES_OF_PERIOD = /^Vendas /;
 const SALES_OF_MONTH = /^Vendas em /;
 const PERIOD_BUTTON_NAME = /^Período: .+, editar$/;
 const ENTRANCE_MS = 200;
+const LOADING_NEW_PERIOD = /Mostrando|Atualizando/;
 
 interface Started {
   changed: boolean;
@@ -130,6 +131,9 @@ test("desktop: o valor novo entra inteiro com um fade de 200 ms, sem contador de
   await openResultado(page);
   expect(await startedOnFigures(page), "o valor nasce pronto").toEqual([]);
   await expect(page.locator("[data-figure-changed]")).toHaveCount(0);
+  const salesCard = page.getByRole("region", { name: SALES_OF_MONTH });
+  const before = await salesCard.locator("[data-kpi-value]").boundingBox();
+  const cardBefore = await salesCard.boundingBox();
 
   await openPeriod(page);
   await lastMonth(page);
@@ -160,6 +164,17 @@ test("desktop: o valor novo entra inteiro com um fade de 200 ms, sem contador de
   const value = sales.locator("[data-kpi-value]");
   await expect(value).toHaveText("R$ 45,00");
   await expect(value.locator("[aria-hidden=true]")).toHaveCount(0);
+  await expect(page.locator("[data-figure-changed]")).toHaveCount(0);
+
+  const afterBox = await value.boundingBox();
+  const cardAfter = await sales.boundingBox();
+  expect(
+    Math.abs((afterBox?.height ?? 0) - (before?.height ?? -1))
+  ).toBeLessThan(1);
+  expect(Math.abs((afterBox?.y ?? 0) - (before?.y ?? -1))).toBeLessThan(1);
+  expect(
+    Math.abs((cardAfter?.height ?? 0) - (cardBefore?.height ?? -1))
+  ).toBeLessThan(1);
 });
 
 test("celular (< 760 px): o valor troca na hora, sem animação", async ({
@@ -229,15 +244,35 @@ test("valores escondidos: a troca não anima e mostrar de novo não toca a entra
     page.getByRole("button", { name: "Esconder valores" })
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-kpi-value]").first()).toContainText("R$");
+  const periodButton = page.getByRole("button", { name: PERIOD_BUTTON_NAME });
+  const periodBefore = await periodButton.textContent();
   await openPeriod(page);
   await lastMonth(page);
-  await expect(
-    page.getByRole("region", { name: SALES_OF_PERIOD }).first()
-  ).toBeVisible();
+  await expect(periodButton).not.toHaveText(periodBefore ?? "");
+  await expect(page.locator("#dashboard-updated")).not.toContainText(
+    LOADING_NEW_PERIOD
+  );
   await page.getByRole("button", { name: "Esconder valores" }).click();
   await expect(
     page.getByRole("region", { name: SALES_OF_PERIOD }).first()
   ).toContainText("R$ 45,00");
   await expect(page.locator("[data-figure-changed]")).toHaveCount(0);
   expect(await startedOnFigures(page)).toEqual([]);
+});
+
+test("início, no desktop: o valor nasce pronto, sem entrada e sem contador de dígitos", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(browser, testInfo, "valor-kpi-inicio", {
+    organization: { timezone: ZONE },
+  });
+  await seedStore(journey);
+  const { page } = journey;
+  await page.addInitScript(recordEntrances);
+  await page.goto("/");
+  const today = page.getByRole("region", { name: "Vendas hoje" });
+  await expect(today.locator("[data-kpi-value]")).toHaveText("R$ 90,00");
+  await expect(page.locator("[data-figure-changed]")).toHaveCount(0);
+  expect(await startedOnFigures(page)).toEqual([]);
+  expect(await page.locator("number-flow-react").count()).toBe(0);
 });

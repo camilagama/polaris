@@ -1,10 +1,15 @@
-import { type ReactNode, useState } from "react";
+import {
+  type AnimationEvent,
+  type ReactNode,
+  useCallback,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 
 /**
  * The new figure comes in whole (fade and a slight rise), never digit by digit. `children` stays the plain DOM, so
  * readers get the final text at once. Only a different `text` after the first draw remounts the box with the entrance;
- * `motion-full:` keeps it off on a phone and under `prefers-reduced-motion`, and a change made while the values are
+ * the entrance is dropped when it ends, so a later change of motion level does not replay it; `motion-full:` keeps it off on a phone and under `prefers-reduced-motion`, and a change made while the values are
  * hidden is not played when they come back.
  */
 
@@ -43,6 +48,11 @@ export function AnimatedFigure({
     generation: 0,
     text,
   });
+  const settle = useCallback((event: AnimationEvent<HTMLSpanElement>) => {
+    if (event.target === event.currentTarget) {
+      setLast((state) => ({ ...state, animate: false }));
+    }
+  }, []);
   const next = nextFigureState(last, text, hidden);
   if (next !== last) {
     setLast(next);
@@ -52,6 +62,7 @@ export function AnimatedFigure({
       className={cn("inline-block align-baseline", last.animate && ENTRANCE)}
       data-figure-changed={last.animate ? "" : undefined}
       key={last.generation}
+      onAnimationEnd={settle}
     >
       {children}
     </span>

@@ -565,6 +565,15 @@ describe("o número principal dos cartões entra com um fade, sem rolar dígitos
     expect(
       figureFaults("src/home/home-kpi-cards.tsx", 'import("./figure-counter")')
     ).toHaveLength(1);
+    for (const burla of [
+      "const o = { transformTiming: t };",
+      "const o = { opacityTiming: t };",
+      'const a = <b data-figure-counting="" />;',
+      'const a = <b data-animated-figure="" />;',
+      "import n from 'number-flow';",
+    ]) {
+      expect(figureFaults("src/ui/kpi-card.tsx", burla), burla).toHaveLength(1);
+    }
     expect(figureFaults("src/dashboard/result-chart.tsx", use)).toHaveLength(1);
     expect(figureFaults("src/home/home-goal.tsx", use)).toHaveLength(1);
     expect(figureFaults("src/ui/kpi-card.tsx", use)).toEqual([]);
