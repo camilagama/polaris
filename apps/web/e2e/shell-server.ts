@@ -30,6 +30,10 @@ const LEASE_KEY = {
   secret: "teste-secret-teste-secret-teste-secret-0123456789",
 };
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const SAO_PAULO_OFFSET = 3 * HOUR;
+/** The instant a page was pinned to, so the lease the server signs is not in the future of that page's clock. */
+const pinnedNow = new WeakMap<Page, Date>();
 const DEVICE = {
   createdAt: "2026-10-01T12:00:00.000Z",
   id: "0199c2d0-0000-7000-8000-000000000001",
@@ -102,7 +106,7 @@ export async function serve(page: Page, organizations = ORGANIZATIONS) {
       deviceId: string;
       organizationId: string;
     };
-    const issuedAt = new Date();
+    const issuedAt = pinnedNow.get(page) ?? new Date();
     const expiresAt = new Date(issuedAt.getTime() + 72 * HOUR);
     const lease = await signOfflineLease(
       buildOfflineLeaseClaims({
@@ -213,17 +217,29 @@ export async function leaveOneRefused(page: Page) {
   );
 }
 
-/** The day the trial of `TRIAL_PLAN` is lived in: before its first charge, whatever day the suite runs. */
-const TRIAL_DAY = new Date("2026-11-05T15:00:00.000Z");
+/** `03/11/2026` at noon in São Paulo: the instant every page of `serveFoot` is pinned to. */
+const FOOT_NOW = new Date("2026-11-03T15:00:00.000Z");
+const TRIAL_DAYS = 7;
+const CHARGE_DAY = new Date(
+  FOOT_NOW.getTime() - SAO_PAULO_OFFSET + TRIAL_DAYS * DAY
+)
+  .toISOString()
+  .slice(0, 10);
+const ACCESS_ENDS_AT = new Date(
+  Date.parse(`${CHARGE_DAY}T00:00:00.000Z`) + DAY + SAO_PAULO_OFFSET
+).toISOString();
 
-/** A trial with its first charge set, as the server reads it (every key: the answer is strict). */
+/**
+ * A trial with its first charge set, as the server reads it (every key: the answer is strict). The dates come from
+ * `FOOT_NOW`, which `serveFoot` pins in the page: the first charge is on `10/11/2026` and the access ends at the end of that day.
+ */
 export const TRIAL_PLAN = {
-  accessEndsAt: "2026-11-11T03:00:00.000Z",
+  accessEndsAt: ACCESS_ENDS_AT,
   cycleMonths: 1,
   kept: { historyMonths: 3, products: 18, sales: 47 },
   limits: { goals: 3, images: 5000, variants: 2000 },
   method: "card",
-  nextCharge: { amount: "24.90", cycleMonths: 1, on: "2026-11-10" },
+  nextCharge: { amount: "24.90", cycleMonths: 1, on: CHARGE_DAY },
   offer: {
     methods: ["card", "pix_automatic"],
     prices: [
@@ -260,6 +276,8 @@ export async function serveFoot(
     steps?: number | null;
   }
 ) {
+  pinnedNow.set(page, FOOT_NOW);
+  await page.clock.setFixedTime(FOOT_NOW);
   const organizations = [
     {
       id: ORGANIZATION_ID,
@@ -268,7 +286,6 @@ export async function serveFoot(
       timezone: "America/Sao_Paulo",
     },
   ];
-  await page.clock.setFixedTime(TRIAL_DAY);
   await serve(page, organizations);
   await page.route("**/rpc/organization/listMine", (route) =>
     route.fulfill(json({ billingSelfService, organizations }))
