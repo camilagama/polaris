@@ -7,7 +7,7 @@ import {
   ProviderResponseMalformedError,
   ProviderUnavailableError,
 } from "../provider-port";
-import { createWooviClient } from "./client";
+import { createWooviClient, WooviListTooLongError } from "./client";
 import {
   globalId,
   INSTALLMENT_ID,
@@ -567,6 +567,28 @@ describe("listSubscriptionInstallments", () => {
       clientWith(fetch).listSubscriptionInstallments(SUBSCRIPTION_ID)
     );
     expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+    expect(calls).toHaveLength(10);
+  });
+
+  it("a caller's ceiling of pages stops the reading there", async () => {
+    const { calls, fetch } = recorder(() => ok(installmentsPage(100)));
+    const error = await failureOf(() =>
+      clientWith(fetch).listSubscriptionInstallments(SUBSCRIPTION_ID, {
+        maxPages: 3,
+      })
+    );
+    expect(error).toBeInstanceOf(WooviListTooLongError);
+    expect(error).toBeInstanceOf(ProviderResponseMalformedError);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("a caller's ceiling never reads past the client's own", async () => {
+    const { calls, fetch } = recorder(() => ok(installmentsPage(100)));
+    await failureOf(() =>
+      clientWith(fetch).listSubscriptionInstallments(SUBSCRIPTION_ID, {
+        maxPages: 50,
+      })
+    );
     expect(calls).toHaveLength(10);
   });
 

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { logger } from "@polaris/observability/logger";
+import { describe, expect, it, vi } from "vitest";
 import type { FetchInit, FetchLike } from "../http";
 import { parseProviderJson } from "../json";
 import {
@@ -18,12 +19,15 @@ import {
 } from "./mapper";
 import { createWooviPort, type WooviPortConfig } from "./port";
 import {
+  docSubscriptionJson,
   INSTALLMENT_ID,
   installmentJson,
+  liveInstallmentJson,
   OTHER_INSTALLMENT_ID,
   OTHER_SUBSCRIPTION_ID,
   PERSONAL_VALUES,
   SUBSCRIPTION_ID,
+  scheduledInstallmentJson,
   subscriptionJson,
 } from "./test-fixtures";
 
@@ -648,6 +652,54 @@ describe("discardCheckout", () => {
   it("a subscription the payer has not approved is cancelled and discarded", async () => {
     const { calls, fetch } = fakeWoovi(
       on("GET", SUBSCRIPTION_PATH, json({ subscription: subscriptionJson() })),
+      getInstallments(),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "discarded"
+    );
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      `GET ${SUBSCRIPTION_PATH}`,
+      `GET ${INSTALLMENTS_PATH}`,
+      `PUT ${SUBSCRIPTION_PATH}/cancel`,
+    ]);
+  });
+
+  it.each([
+    ["a live installment (approved now)", liveInstallmentJson()],
+    [
+      "only a paid installment (approved, its state now not shown)",
+      installmentJson(),
+    ],
+    [
+      "only an installment out of shape of this subscription",
+      installmentJson({ dateGenerateCharge: undefined }),
+    ],
+  ])(
+    "the sandbox shape with %s is no longer a checkout: already closed, with no PUT",
+    async (_name, installment) => {
+      const { calls, fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(installment),
+        cancelRoute()
+      );
+
+      expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+        "already_closed"
+      );
+      expect(calls.some((call) => call.method === "PUT")).toBe(false);
+    }
+  );
+
+  it("an installment of ANOTHER subscription does not keep a checkout alive", async () => {
+    const { calls, fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        liveInstallmentJson({
+          paymentSubscriptionGlobalID: OTHER_SUBSCRIPTION_ID,
+        })
+      ),
       cancelRoute()
     );
 
@@ -655,7 +707,54 @@ describe("discardCheckout", () => {
       "discarded"
     );
     expect(calls.at(-1)?.method).toBe("PUT");
-    expect(calls.at(-1)?.url).toBe(`${SUBSCRIPTION_PATH}/cancel`);
+  });
+
+  it("the documented shape CREATED with a SCHEDULED installment is still a checkout: PUT and discarded", async () => {
+    const { calls, fetch } = fakeWoovi(
+      on(
+        "GET",
+        SUBSCRIPTION_PATH,
+        json({ subscription: docSubscriptionJson("CREATED") })
+      ),
+      getInstallments(scheduledInstallmentJson()),
+      cancelRoute()
+    );
+
+    expect(await portWith(fetch).discardCheckout(SUBSCRIPTION_ID)).toBe(
+      "discarded"
+    );
+    // the status decides alone: the installments are not even read
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      `GET ${SUBSCRIPTION_PATH}`,
+      `PUT ${SUBSCRIPTION_PATH}/cancel`,
+    ]);
+  });
+
+  it("logs the shape of the authorization by codes and counts only", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    try {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentJson(), installmentJson()),
+        cancelRoute()
+      );
+      await portWith(fetch).discardCheckout(SUBSCRIPTION_ID);
+      expect(info).toHaveBeenCalledWith("billing_woovi_authorization_form", {
+        authorizationShown: false,
+        installmentsByStatus: { ACTIVE: 1, COMPLETED: 1 },
+        malformedInstallments: 0,
+        provider: "woovi",
+        reading: "discard_checkout",
+        verdict: "approved",
+      });
+      const logged = JSON.stringify(info.mock.calls);
+      expect(logged).not.toContain(SUBSCRIPTION_ID);
+      for (const value of PERSONAL_VALUES) {
+        expect(logged).not.toContain(value);
+      }
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("an approved subscription is no longer a checkout: already closed, with no PUT", async () => {
@@ -727,6 +826,24 @@ describe("hasSubscription", () => {
     const { fetch } = fakeWoovi(
       notApproved(),
       getInstallments(installmentJson())
+    );
+    expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
+  });
+
+  it("an installment of ANOTHER subscription does not make one", async () => {
+    const { fetch } = fakeWoovi(
+      notApproved(),
+      getInstallments(
+        installmentJson({ paymentSubscriptionGlobalID: OTHER_SUBSCRIPTION_ID })
+      )
+    );
+    expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(false);
+  });
+
+  it("an installment out of shape does not throw: it counts on the side that never discards", async () => {
+    const { fetch } = fakeWoovi(
+      notApproved(),
+      getInstallments(installmentJson({ dateGenerateCharge: undefined }))
     );
     expect(await portWith(fetch).hasSubscription(SUBSCRIPTION_ID)).toBe(true);
   });
@@ -822,6 +939,40 @@ describe("readState", () => {
         "trial_method_ready",
       ]);
     });
+  });
+
+  it("an installment out of shape still throws: the reconciliation stays strict", async () => {
+    const { fetch } = fakeWoovi(
+      getSubscription(),
+      getInstallments(
+        liveInstallmentJson(),
+        installmentJson({ dateGenerateCharge: undefined })
+      )
+    );
+    await expect(
+      portWith(fetch).readState(SUBSCRIPTION_ID, NOW)
+    ).rejects.toBeInstanceOf(ProviderResponseMalformedError);
+  });
+
+  it("logs the shape of the authorization it read", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => undefined);
+    try {
+      const { fetch } = fakeWoovi(
+        getSubscription(),
+        getInstallments(liveInstallmentJson())
+      );
+      await portWith(fetch).readState(SUBSCRIPTION_ID, NOW);
+      expect(info).toHaveBeenCalledWith("billing_woovi_authorization_form", {
+        authorizationShown: false,
+        installmentsByStatus: { ACTIVE: 1 },
+        malformedInstallments: 0,
+        provider: "woovi",
+        reading: "reconciliation",
+        verdict: "approved",
+      });
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("carries nothing personal", async () => {
