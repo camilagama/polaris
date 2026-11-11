@@ -2,7 +2,7 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
-import { noCostDayText, ResultCards, ResultFooter } from "./result-cards";
+import { noCostDayText, ResultCards, resultWarning } from "./result-cards";
 import { resultKpis } from "./result-kpis";
 import { addDays } from "./result-period";
 
@@ -122,10 +122,6 @@ function words(markup: string): string {
   return out.replace(/\s+/g, " ").trim();
 }
 
-const GROUP_LINE = /^Outubro · 1 a 25\/10/;
-// a `col-span-2` with no breakpoint in front of it
-const BARE_SPAN = /(?:^|[\s"])col-span-2/;
-
 const ALL = Array.from({ length: 25 }, (_, index) => index + 1);
 
 /** The same summary with the server's `quality.cogsCoverage`: the screen reads the counts, never this field. */
@@ -193,10 +189,10 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     expect(words(margin)).toContain("41,2");
     expect(words(margin)).not.toContain("Sem custo informado");
     const result = card(markup, "result-kpi-result");
-    // the badge and the days on one line, the warning under it, and the days are in sight
+    // the badge and the days are on the row of the warning, in sight
     expect(words(result)).toContain("estimativa incompleta");
-    expect(result).toContain('data-kpi-unknown="">· 3 de 25 dias sem custo<');
-    expect(words(result)).toContain("Não é lucro líquido nem caixa");
+    expect(result).toContain('data-kpi-unknown="">3 de 25 dias sem custo<');
+    expect(result).toContain('data-kpi-warning=""');
     expect(words(result)).toContain("R$");
     expect(words(result)).not.toContain("Sem custo informado");
   });
@@ -288,34 +284,20 @@ describe("the chips of the cards and where they come from", () => {
   });
 });
 
-describe("one column, one group, one (i) a card", () => {
-  it("says the month and its period once, above the cards, and names the region by the month", () => {
+describe("the strip of tiles and its (i)", () => {
+  it("names each tile by what it is of: the month of a month, the period of any other, and says no date at rest", () => {
     const markup = cards(october([]));
-    expect(markup).toContain('role="group"');
-    expect(markup).toContain('aria-label="Outubro, 1 a 25/10"');
-    const line = markup.slice(
-      markup.lastIndexOf("<p", markup.indexOf("data-kpi-group"))
-    );
-    expect(words(line)).toMatch(GROUP_LINE);
-    // the cards do not repeat the date; the title says the month only to a screen reader
+    expect(card(markup, "result-kpi-sales")).toContain(">Vendas em outubro<");
+    expect(markup).not.toContain("data-kpi-group");
     expect(markup).not.toContain("data-kpi-date");
-    expect(card(markup, "result-kpi-sales")).toContain(
-      'Vendas<span class="sr-only"> em outubro</span>'
-    );
-  });
-
-  it("gives a date of its own to the result only when it is another period", () => {
-    // an unknown day: the card is the server's, of the whole month
-    const markup = cards(october([5]));
-    expect(card(markup, "result-kpi-result")).toContain("outubro inteiro");
-    expect(markup.match(/data-kpi-date/g)).toHaveLength(1);
+    expect(markup).not.toContain("data-kpi-foot");
   });
 
   it("has an (i) on every card, named by its title, and none of them carries a warning", () => {
     const markup = cards(october([]));
     for (const about of [
       "Resultado estimado",
-      "Vendas",
+      "Vendas em outubro",
       "Ticket médio",
       "Margem",
     ]) {
@@ -324,34 +306,26 @@ describe("one column, one group, one (i) a card", () => {
     expect(markup.match(/data-slot="help-tip"/g)).toHaveLength(4);
   });
 
-  it("is one column up to 759 px, two up to 899 px and one strip of four columns from 900 px", () => {
+  it("is one column up to 759 px, two up to 1279 px and one strip of four columns from 1280 px", () => {
     const markup = cards(october([]));
     expect(markup).toContain(
-      "grid grid-cols-1 gap-3 md:max-[56.24875rem]:grid-cols-2 min-[56.25rem]:grid-cols-4 min-[56.25rem]:gap-0"
+      "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-0"
     );
-    // no card takes half the width below 760 px: a span only from the first breakpoint, and none in the strip
-    expect(markup).not.toMatch(BARE_SPAN);
-    expect(markup).not.toContain("min-[56.25rem]:col-span");
+    expect(markup).not.toContain("col-span");
     expect(markup.match(/data-kpi-row=/g)).toHaveLength(1);
-    // the cells of the strip give up their own card from 900 px
-    expect(markup.match(/min-\[56\.25rem\]:bg-transparent/g)).toHaveLength(4);
+    // the cells of the strip give up their own card from 1280 px
+    expect(markup.match(/xl:bg-transparent/g)).toHaveLength(4);
   });
 
-  it("puts the chip in the box of the number, after it, with its sign and the name of what it compares with", () => {
+  it("puts the chip on the support line under the number, with its sign and the name of what it compares with", () => {
     const markup = cards(october([]), null, SEPTEMBER_SALES);
     const sales = card(markup, "result-kpi-sales");
-    const headline = sales.slice(
-      sales.lastIndexOf("<div", sales.indexOf("data-kpi-headline"))
+    expect(sales.indexOf("data-kpi-value")).toBeLessThan(
+      sales.indexOf("data-kpi-chip-row")
     );
-    expect(headline.indexOf("data-kpi-value")).toBeLessThan(
-      headline.indexOf("data-kpi-chip-row")
+    expect(sales.indexOf("data-kpi-note-row")).toBeLessThan(
+      sales.indexOf("data-kpi-chip-row")
     );
-    expect(headline.indexOf("data-kpi-chip-row")).toBeLessThan(
-      headline.indexOf("data-kpi-note-row")
-    );
-    expect(headline).toContain("min-[56.25rem]:@[14rem]:flex-row");
-    expect(headline).not.toContain("@[14rem]:flex-wrap");
-    expect(headline).toContain("min-[56.25rem]:@[14rem]:items-baseline");
     expect(words(sales)).toContain("+25,0%vs. setembro");
     expect(sales).toContain(
       'aria-label="subiu 25,0 por cento em relação a setembro (1 a 25/09)"'
@@ -359,47 +333,74 @@ describe("one column, one group, one (i) a card", () => {
     expect(sales).toContain('data-kpi-delta="up"');
   });
 
-  it("keeps the chip row of a card with no comparison, empty, and no words for a screen reader in it", () => {
+  it("has no chip row for a card with no comparison", () => {
     const markup = cards(october([]), null, null);
     for (const id of ["sales", "ticket", "result"]) {
-      const chipRow = card(markup, `result-kpi-${id}`);
-      expect(chipRow).toContain('data-kpi-chip-row=""></div>');
+      expect(card(markup, `result-kpi-${id}`)).not.toContain(
+        "data-kpi-chip-row"
+      );
     }
   });
 
-  it("gives the four figures 24 px from 900 px, the one of the card below it", () => {
+  it("has a sparkline only with three points or more", () => {
+    const days = october([]).daily ?? [];
+    const short = (count: number): StoredPeriodSummary => ({
+      ...october([]),
+      daily: days.slice(0, count),
+    });
+    expect(cards(short(3))).toContain("data-kpi-spark");
+    for (const count of [2, 1, 0]) {
+      const markup = cards(short(count));
+      expect(markup).not.toContain("data-kpi-spark");
+      expect(markup).not.toContain('type="range"');
+    }
+  });
+
+  it("gives the margin no sparkline, and the three of value one each", () => {
     const markup = cards(october([]));
-    expect(markup.match(/min-\[56\.25rem\]:text-\[1\.5rem\]/g)).toHaveLength(4);
-    const sales = card(markup, "result-kpi-sales");
-    expect(sales).toContain("text-value-lg");
-    expect(sales).not.toContain("text-[1.875rem]");
+    expect(markup.match(/data-kpi-spark/g)).toHaveLength(3);
+    expect(card(markup, "result-kpi-margin")).not.toContain("data-kpi-spark");
+  });
+
+  it("keeps the sign of a negative result in the text, not only in the color", () => {
+    const summary = october([]);
+    const negative = {
+      ...summary,
+      cards: { ...summary.cards, operatingResult: "-99640.35" },
+      daily: (summary.daily ?? []).map((day) => ({
+        ...day,
+        operatingResult: "-4.00",
+      })),
+    } as StoredPeriodSummary;
+    const result = card(cards(negative), "result-kpi-result");
+    expect(words(result)).toContain("-R$");
+    expect(result).toContain("text-destructive");
   });
 });
 
 describe("the days with no cost: on the badge line while they fit, in the (i) when they do not", () => {
+  const warning = (props: Parameters<typeof resultWarning>[0]) =>
+    renderToStaticMarkup(<div>{resultWarning(props)}</div>);
   const missing = (unknown: number, total: number) =>
-    renderToStaticMarkup(
-      <ResultFooter
-        incomplete
-        line="Não é lucro líquido nem caixa"
-        missing={{ total, unknown }}
-        noCost={false}
-      />
-    );
+    warning({ incomplete: true, missing: { total, unknown }, noCost: false });
 
   it("fits two digits on each side", () => {
     const fits = missing(5, 23);
     expect(words(fits)).toContain("estimativa incompleta");
-    expect(fits).toContain('data-kpi-unknown="">· 5 de 23 dias sem custo<');
-    expect(words(fits)).toContain("Não é lucro líquido nem caixa");
-    expect(missing(99, 99)).toContain("· 99 de 99 dias sem custo");
+    expect(fits).toContain('data-kpi-unknown="">5 de 23 dias sem custo<');
+    expect(missing(99, 99)).toContain("99 de 99 dias sem custo");
   });
 
-  it("leaves the line with the badge alone, and the warning, when the count is wider", () => {
+  it("leaves the badge alone when the count is wider", () => {
     const long = missing(5, 120);
     expect(long).not.toContain("data-kpi-unknown");
     expect(words(long)).toContain("estimativa incompleta");
-    expect(words(long)).toContain("Não é lucro líquido nem caixa");
+  });
+
+  it("says nothing when the estimate is whole", () => {
+    expect(warning({ incomplete: false, missing: null, noCost: false })).toBe(
+      "<div></div>"
+    );
   });
 });
 

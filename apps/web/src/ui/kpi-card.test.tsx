@@ -5,14 +5,13 @@ import {
   HeroPercent,
   HeroValue,
   type KpiDelta,
-  KpiCard,
+  KPI_STRIP,
   KpiTile,
   KpiTileSkeleton,
 } from "./kpi-card";
 
 /**
- * The geometry of a KPI card does not depend on what it says now: the support line is always there, a foot given as
- * `null` keeps its line, the longest date keeps its width out of sight, and the number, the dash and "R$ ••••" share
+ * The geometry of a KPI tile does not depend on what it says now: the support line is always there, and the number, the dash and "R$ ••••" share
  * one box of exactly the line height. The heights themselves are measured in the browser (e2e-real/cls).
  */
 
@@ -25,17 +24,6 @@ const TILE_CHIP_THEN_NOTE =
 
 const PILL_THEN_AGAINST =
   /data-kpi-pill=""[^>]*>.*\+30,0%<\/span>.*<\/span><span[^>]*data-kpi-delta-against=""[^>]*>vs\. 07\/10 a 05\/11<\/span>/;
-
-const card = (props: Partial<Parameters<typeof KpiCard>[0]>) =>
-  renderToStaticMarkup(
-    <KpiCard
-      entity="sales"
-      id="kpi"
-      title="Vendas"
-      value={<HeroValue amount="129.90" />}
-      {...props}
-    />
-  );
 
 const tile = (props: Partial<Parameters<typeof KpiTile>[0]>) =>
   renderToStaticMarkup(
@@ -94,33 +82,6 @@ describe("KpiTile", () => {
   });
 });
 
-describe("KpiCard", () => {
-  it("keeps the row of the chip without a chip, with no text for a screen reader", () => {
-    const bare = card({});
-    expect(bare).toContain('data-kpi-chip-row=""');
-    expect(bare).toContain("min-h-5");
-    expect(bare).not.toContain("data-kpi-delta");
-  });
-
-  it("keeps the foot's line when the foot is null, and draws none without one", () => {
-    expect(card({ footer: null })).toContain("data-kpi-foot");
-    expect(card({})).not.toContain("data-kpi-foot");
-  });
-
-  it("keeps the width of the longest date out of sight, with or without a date", () => {
-    const rest = card({
-      date: "outubro inteiro",
-      dateReserve: "outubro inteiro",
-    });
-    const reading = card({ dateReserve: "outubro inteiro" });
-    for (const markup of [rest, reading]) {
-      expect(markup).toContain('aria-hidden="true" class="invisible');
-    }
-    expect(rest).toContain('data-kpi-date="">outubro inteiro');
-    expect(reading).not.toContain("data-kpi-date");
-  });
-});
-
 describe("HeroValue", () => {
   it("the number and the dash share the box of one line height", () => {
     for (const markup of [
@@ -145,48 +106,6 @@ describe("HeroValue", () => {
     );
     expect(known).toContain("90");
     expect(known).not.toContain("sem custo neste dia");
-  });
-});
-
-describe("HeroValue in a column of the strip", () => {
-  const sizeOf = (amount: string | null) =>
-    renderToStaticMarkup(<HeroValue amount={amount} strip />);
-
-  it("is 24 px from 900 px for an amount that fits the narrowest column", () => {
-    const markup = sizeOf("129.90");
-    expect(markup).toContain("min-[56.25rem]:text-[1.5rem]");
-    expect(markup).not.toContain("@max-");
-  });
-
-  it("steps an amount of 12 or 13 characters down to 20 px, and of 14 or more to 18 px, only in a column too narrow for it", () => {
-    const twelve = sizeOf("12345.67");
-    expect(twelve).toContain("min-[56.25rem]:@[9rem]:text-[1.5rem]");
-    expect(twelve).toContain("min-[56.25rem]:@max-[8.999rem]:text-[1.25rem]");
-    expect(sizeOf("999999.99")).toContain("@max-[8.999rem]:text-[1.25rem]");
-    const long = sizeOf("-9999999.99");
-    expect(long).toContain("min-[56.25rem]:@[10.5rem]:text-[1.5rem]");
-    expect(long).toContain("min-[56.25rem]:@max-[10.499rem]:text-[1.125rem]");
-  });
-
-  it("keeps the line of 20 px and the box of 1.05 em at 900 px, which the merge of the classes drops when the line comes before the size", () => {
-    for (const amount of ["129.90", "12345.67", "-9999999.99", null]) {
-      const classes =
-        CLASS_ATTRIBUTE.exec(
-          renderToStaticMarkup(<HeroValue amount={amount} strip />)
-        )?.[1]?.split(" ") ?? [];
-      expect(classes).toContain("min-[56.25rem]:leading-5");
-      expect(classes).toContain("min-[56.25rem]:h-[1.05em]");
-    }
-  });
-
-  it("keeps the dash and the empty text at 24 px, with no step", () => {
-    expect(sizeOf(null)).toContain("min-[56.25rem]:text-[1.5rem]");
-  });
-
-  it("does not touch the value of a card that is not in the strip", () => {
-    const markup = renderToStaticMarkup(<HeroValue amount="999999.99" />);
-    expect(markup).not.toContain("min-[56.25rem]");
-    expect(markup).toContain("text-value-lg");
   });
 });
 
@@ -241,11 +160,9 @@ describe("HeroValue sizes", () => {
 
 describe("HeroPercent", () => {
   it("is in the box of the amounts beside it, in the same size and weight, with the % a step smaller", () => {
-    const markup = renderToStaticMarkup(<HeroPercent strip text="41,2%" />);
+    const markup = renderToStaticMarkup(<HeroPercent text="41,2%" />);
     expect(markup).toContain("font-semibold");
     expect(markup).toContain("text-value-lg");
-    expect(markup).toContain("min-[56.25rem]:leading-5");
-    expect(markup).toContain("min-[56.25rem]:text-[1.5rem]");
     expect(markup).toContain('data-kpi-value="">41,2<span');
     expect(markup).toContain("text-[0.56em]");
   });
@@ -277,7 +194,7 @@ describe("KpiTileSkeleton", () => {
   });
 });
 
-describe("DeltaChip in a column of the strip", () => {
+describe("DeltaChip", () => {
   const DELTA: KpiDelta = {
     against: "vs. 07/10 a 05/11",
     money: false,
@@ -285,46 +202,17 @@ describe("DeltaChip in a column of the strip", () => {
     text: "+30,0%",
     trend: "up",
   };
-  const chip = (strip: boolean, delta: KpiDelta = DELTA) =>
-    renderToStaticMarkup(<DeltaChip delta={delta} strip={strip} />);
+  const chip = (delta: KpiDelta = DELTA) =>
+    renderToStaticMarkup(<DeltaChip delta={delta} />);
 
-  it("keeps the arrow and the number in a pill of their own and the 'vs. …' after it, whole", () => {
-    const markup = chip(true);
+  it("keeps the arrow and the number in a pill of their own and the 'vs. …' after it, cut with an ellipsis when it does not fit", () => {
+    const markup = chip();
     expect(markup).toMatch(PILL_THEN_AGAINST);
-  });
-
-  it("stacks the 'vs. …' under the pill, wrapping and muted, in a column narrower than 14 rem", () => {
-    const markup = chip(true);
-    expect(markup).toContain("min-[56.25rem]:@max-[13.999rem]:flex-col");
-    expect(markup).toContain("min-[56.25rem]:@max-[13.999rem]:bg-transparent");
-    expect(markup).toContain(
-      "min-[56.25rem]:@max-[13.999rem]:whitespace-normal"
-    );
-    expect(markup).toContain(
-      "min-[56.25rem]:@max-[13.999rem]:overflow-visible"
-    );
-    expect(markup).toContain(
-      "min-[56.25rem]:@max-[13.999rem]:text-muted-foreground"
-    );
-    expect(markup).toContain("min-[56.25rem]:@max-[13.999rem]:rounded-full");
-  });
-
-  it("still cuts the 'vs. …' beside the number, where the line never wraps", () => {
-    expect(chip(true)).toContain("min-w-0 truncate");
-  });
-
-  it("gives the 'vs. …' a title with the whole text in the strip, where it may be cut beside the number", () => {
-    expect(chip(true)).toContain('title="vs. 07/10 a 05/11"');
-    expect(chip(false)).not.toContain("title=");
-  });
-
-  it("is the chip of before outside the strip", () => {
-    expect(chip(false)).not.toContain("@max-");
-    expect(chip(false)).not.toContain("min-[56.25rem]");
+    expect(markup).toContain("min-w-0 truncate");
   });
 
   it("keeps the name of the chip on the whole, so the screen reader reads it once", () => {
-    const markup = chip(true, {
+    const markup = chip({
       ...DELTA,
       basis: "em relação a setembro (1 a 14/09)",
     });
@@ -333,12 +221,22 @@ describe("DeltaChip in a column of the strip", () => {
     );
     expect(markup.match(/aria-label=/g)).toHaveLength(1);
   });
+});
 
-  it("keeps the two lines of the chip row in the narrow column, empty without a comparison", () => {
-    const markup = card({ strip: true });
-    expect(markup).toContain(
-      "min-[56.25rem]:@max-[13.999rem]:min-h-[3.375rem]"
-    );
-    expect(markup).toContain('data-kpi-chip-row=""');
+describe("KpiTile in the strip of the Resultado", () => {
+  it("gives up its own card only from 1280 px, where the strip is one card with four columns", () => {
+    const cell = tile({ strip: true });
+    expect(cell).toContain("xl:rounded-none");
+    expect(cell).toContain("xl:ring-0");
+    expect(tile({})).not.toContain("xl:ring-0");
+    expect(KPI_STRIP).toContain("xl:grid-cols-4");
+    expect(KPI_STRIP).toContain("xl:divide-x");
+    expect(KPI_STRIP).not.toContain("min-[56.25rem]");
+  });
+
+  it("keeps a tile without a sparkline (the margin) to its text", () => {
+    const markup = tile({ note: "Sem custo informado", strip: true });
+    expect(markup).not.toContain("data-kpi-spark");
+    expect(markup).toContain("Sem custo informado");
   });
 });

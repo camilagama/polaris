@@ -56,8 +56,10 @@ function summary(
   } as unknown as StoredPeriodSummary;
 }
 
-const chain = (value: StoredPeriodSummary) =>
-  renderToStaticMarkup(<ResultChain summary={value} />);
+const chain = (value: StoredPeriodSummary, canCreateExpense = false) =>
+  renderToStaticMarkup(
+    <ResultChain canCreateExpense={canCreateExpense} summary={value} />
+  );
 
 /** The markup of the row of a line, from its name to the end of its row. */
 function row(markup: string, label: string): string {
@@ -177,5 +179,25 @@ describe("the chain with no cost known", () => {
     );
     expect(markup).toContain("data-parts-bar");
     expect(words(markup)).not.toContain("a divisão dos custos não aparece");
+  });
+});
+
+describe("the link to the expenses beside the line of the period's expenses", () => {
+  const LINK = '<a class="';
+
+  it("is a quiet link in the row of the line, only for who can register an expense", () => {
+    const markup = chain(summary([]), true);
+    const line = row(markup, "(−) Despesas do período (sem venda)");
+    expect(line).toContain('href="/expenses"');
+    expect(words(line)).toContain("Ver despesas");
+    expect(line).toContain("text-xs");
+    expect(markup.match(/href="\/expenses"/g)).toHaveLength(1);
+    expect(markup.indexOf(LINK)).toBeGreaterThan(-1);
+  });
+
+  it("is not there for who cannot, nor in any other row", () => {
+    const markup = chain(summary([]));
+    expect(markup).not.toContain('href="/expenses"');
+    expect(markup).not.toContain("Ver despesas");
   });
 });

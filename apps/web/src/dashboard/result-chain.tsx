@@ -58,8 +58,19 @@ const STACKED_ROW = "@max-[18rem]:grid";
 const STACKED_VALUE =
   "@max-[18rem]:pt-0 @max-[18rem]:pl-4 @max-[18rem]:text-left";
 
+/** The quiet link under the name of the line of the period's expenses (a line of its own, so the row is as wide as the others): text of the support size, underlined, with the touch area of a link. */
+const EXPENSES_LINK =
+  "touch-hit focus-ring whitespace-nowrap rounded-sm font-normal text-muted-foreground text-xs underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground";
+
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
-export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
+export function ResultChain({
+  canCreateExpense,
+  summary,
+}: {
+  /** `expense:create`: the line of the period's expenses leads to the screen that registers them only for who can. */
+  canCreateExpense: boolean;
+  summary: StoredPeriodSummary;
+}) {
   const rows = chainRows(summary.chain, summary.quality);
   return (
     <Card
@@ -103,6 +114,13 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
                   <span>{row.label}</span>
                   <span aria-hidden="true" className={LEADER} />
                 </span>
+                {row.id === "operatingExpenses" && canCreateExpense ? (
+                  <span className="mt-0.5 block">
+                    <a className={EXPENSES_LINK} href="/expenses">
+                      Ver despesas
+                    </a>
+                  </span>
+                ) : null}
                 {row.note ? (
                   <span className="mt-0.5 block font-normal text-warning text-xs italic">
                     <MoneyText text={row.note} />

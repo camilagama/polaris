@@ -6,10 +6,8 @@ import {
   HeroPercent,
   HeroValue,
   KPI_STRIP,
-  KPI_STRIP_ROOT,
-  KpiCard,
-  KpiGroup,
   type KpiRange,
+  KpiTile,
 } from "@/ui/kpi-card";
 import {
   type KpiReading,
@@ -73,48 +71,30 @@ export function noCostDayText(
   return day?.operatingResult === null ? NO_COST_DAY : undefined;
 }
 
-function IncompleteBadgeLine() {
-  return (
-    <span className="mb-1 block">
-      <IncompleteBadge />
-    </span>
-  );
-}
-
 /**
- * The foot of the result card: the badge, with the days with no cost beside it when the line fits (a warning is not
- * hidden), then "Não é lucro líquido nem caixa", or what is missing when no cost is known (never both).
+ * The warning of an estimate that is not whole, on a row of its own under the support line of the tile (the badge, the
+ * cause when no cost is known, and the days with no cost beside it when the line fits: a warning is not hidden).
  */
-export function ResultFooter({
+export function resultWarning({
   incomplete,
-  line,
   missing,
   noCost,
 }: {
   incomplete: boolean;
-  line: string;
-  /** The days of the period with no cost informed, when some are. */
   missing: { total: number; unknown: number } | null;
   noCost: boolean;
 }) {
-  const days =
-    !noCost && missing && unknownDaysFit(missing.unknown, missing.total);
-  return (
+  return incomplete ? (
     <>
-      {incomplete ? (
-        <span className="mb-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <IncompleteBadge />
-          {days && missing ? (
-            <span data-kpi-unknown="">
-              {"· "}
-              {unknownDaysText(missing.unknown, missing.total)}
-            </span>
-          ) : null}
+      <IncompleteBadge />
+      {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
+      {missing && unknownDaysFit(missing.unknown, missing.total) ? (
+        <span data-kpi-unknown="">
+          {unknownDaysText(missing.unknown, missing.total)}
         </span>
       ) : null}
-      {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : line}
     </>
-  );
+  ) : null;
 }
 
 /** No day: the same array on every render, so a copy without the series does not redo the memoized cards. */
@@ -128,15 +108,13 @@ function spoken(prefix: string, reading: KpiReading, hidden: boolean): string {
   return hidden ? maskMoney(text, MASKED_SPOKEN) : text;
 }
 
-/** The height of a sparkline: 64 px from 760 px, 52 on a phone. */
-function sparkHeight(still: boolean): number {
-  return still ? 52 : 64;
-}
+const SPARK_HEIGHT = 36;
 
-function chip(reading: KpiReading) {
-  return reading.delta
-    ? { chip: <DeltaChip delta={reading.delta} strip /> }
-    : {};
+/** A sparkline of fewer points than this says nothing: the tile ends with its text. */
+const MIN_SPARK_POINTS = 3;
+
+function chipOf(reading: KpiReading) {
+  return reading.delta ? <DeltaChip delta={reading.delta} /> : undefined;
 }
 
 type SparkColor =
@@ -155,14 +133,14 @@ interface ResultCardsProps {
 }
 
 /**
- * The row of KPI cards of the Resultado (revisão de UI v7, § 8), in the mold of the Início: Resultado estimado, Vendas,
+ * The row of KPI tiles of the Resultado (revisão de UI v7, § 8), the tile of the Início: Resultado estimado, Vendas,
  * Ticket médio and Margem. The sparklines of sales, ticket and result read the same day together (the pointer, the
- * finger or the arrows); leaving, they go back to the period up to today. The result has its sparkline and its chip
- * (in reais) only when every day up to today has a known cost; otherwise the badge "estimativa incompleta" and "N de M
- * dias sem custo informado", with neither (AC-9). With no cost of the goods known (`cogsCoverageOf` is "none") the
- * result and the margin show a dash, the badge and one line each: the server's figures are then the sales, never an
- * estimate. The margin is the server's, with no sparkline. On a phone the sparklines are drawn finished; the reading
- * by the finger stays.
+ * finger or the arrows), and the date of the day read takes the place of the chip; leaving, they go back to the period up
+ * to today. The result has its sparkline and its chip (in reais) only when every day up to today has a known cost;
+ * otherwise the badge "estimativa incompleta" and "N de M dias sem custo informado", with neither (AC-9). With no cost
+ * of the goods known (`cogsCoverageOf` is "none") the result and the margin show a dash and the badge: the server's
+ * figures are then the sales, never an estimate. The margin is the server's, with no sparkline. A period of fewer
+ * than three points draws none. On a phone the sparklines are drawn finished; the reading by the finger stays.
  */
 export function ResultCards({
   comparison,
@@ -190,9 +168,10 @@ export function ResultCards({
   const clear = useCallback(() => setIndex(null), []);
   const last = kpis.days.length - 1;
   const read = kpis.read(index);
-  const rest = kpis.read(null);
   const until = untilText(kpis.days[Math.min(index ?? last, last)], today);
+  const date = index === null ? undefined : until;
   const unit = kpis.monthly ? "mês" : "dia";
+  const salesName = kpis.month ? `Vendas em ${kpis.month}` : "Vendas líquidas";
   const range = (reading: KpiReading, label: string): KpiRange => ({
     label,
     max: last,
@@ -209,149 +188,101 @@ export function ResultCards({
     <OnDemandSparkline
       color={color}
       domain={domain}
-      height={sparkHeight(still)}
+      height={SPARK_HEIGHT}
       onRead={setIndex}
       readIndex={index}
       still={still}
       values={values}
     />
   );
-  // a period with no sale draws nothing; a copy kept before the series existed has the totals only
-  const drawn = cards.salesCount > 0 && kpis.days.length > 0;
+  // a period with no sale draws nothing, nor does one of fewer than three points; a copy kept before the series existed
+  // has the totals only
+  const drawn = cards.salesCount > 0 && kpis.days.length >= MIN_SPARK_POINTS;
   // no cost of the goods known: the server's margin and result are the sales, so the two cards say so, with no number
   const noCost = cogsCoverageOf(quality) === "none";
   const incomplete =
     noCost ||
     isIncompleteEstimate(quality) ||
     kpis.result.kind === "incomplete";
-  const resultNegative = (rest.result.value ?? "").trim().startsWith("-");
-  // the group says the period once; the result card keeps a date of its own only when it is another ("outubro inteiro")
-  const resultDate =
-    read.result.date === read.sales.date ? undefined : read.result.date;
-  const resultDateAtRest =
-    rest.result.date === rest.sales.date ? undefined : rest.result.date;
+  const resultNegative = (kpis.read(null).result.value ?? "")
+    .trim()
+    .startsWith("-");
   const missing = kpis.result.kind === "incomplete" ? kpis.result : null;
   return (
-    <div className={KPI_STRIP_ROOT}>
-      <KpiGroup period={read.sales.date} title={capitalized(kpis.month)}>
-        <div className={KPI_STRIP} data-kpi-row="">
-          <KpiCard
-            {...(noCost ? {} : chip(read.result))}
-            strip
-            className="md:max-[56.24875rem]:col-span-2"
-            {...(resultDate ? { date: resultDate } : {})}
-            {...(resultDateAtRest ? { dateReserve: resultDateAtRest } : {})}
-            entity="result"
-            footer={
-              <ResultFooter
-                incomplete={incomplete}
-                line={read.result.count}
-                missing={missing}
-                noCost={noCost}
-              />
+    <div className={KPI_STRIP} data-kpi-row="">
+      <KpiTile
+        chip={noCost ? undefined : chipOf(read.result)}
+        date={date}
+        entity="result"
+        help={{ about: "Resultado estimado", text: read.result.help }}
+        id="result-kpi-result"
+        strip
+        warning={resultWarning({ incomplete, missing, noCost })}
+        {...(kpis.series.result && drawn && !noCost
+          ? {
+              range: range(
+                read.result,
+                `Resultado estimado, acumulado por ${unit}`
+              ),
+              spark: spark(
+                kpis.series.result,
+                resultNegative ? "var(--destructive)" : "var(--chart-result)",
+                kpis.series.result.some((value) => value < 0) ? "range" : "zero"
+              ),
             }
-            help={{ about: "Resultado estimado", text: read.result.help }}
-            id="result-kpi-result"
-            {...(kpis.series.result && drawn && !noCost
-              ? {
-                  range: range(
-                    read.result,
-                    `Resultado estimado, acumulado por ${unit}`
-                  ),
-                  spark: spark(
-                    kpis.series.result,
-                    resultNegative
-                      ? "var(--destructive)"
-                      : "var(--chart-result)",
-                    "range"
-                  ),
-                }
-              : {})}
-            title="Resultado estimado"
-            value={
-              <HeroValue
-                strip
-                amount={noCost ? null : read.result.value}
-                emptyText={noCostDayText(kpis, index, noCost)}
-              />
+          : {})}
+        title="Resultado estimado"
+        value={
+          <HeroValue
+            amount={noCost ? null : read.result.value}
+            emptyText={noCostDayText(kpis, index, noCost)}
+          />
+        }
+      />
+      <KpiTile
+        chip={chipOf(read.sales)}
+        date={date}
+        entity="sales"
+        help={{ about: salesName, text: read.sales.help }}
+        id="result-kpi-sales"
+        note={read.sales.count}
+        strip
+        {...(drawn
+          ? {
+              range: range(read.sales, `${salesName}, acumulado por ${unit}`),
+              spark: spark(kpis.series.sales, "var(--chart-sales)", "zero"),
             }
-          />
-          <KpiCard
-            {...chip(read.sales)}
-            strip
-            className="md:max-[56.24875rem]:col-span-2"
-            entity="sales"
-            footer={read.sales.count}
-            help={{ about: "Vendas", text: read.sales.help }}
-            id="result-kpi-sales"
-            {...(drawn
-              ? {
-                  range: range(
-                    read.sales,
-                    `${salesName(kpis.month)}, acumulado por ${unit}`
-                  ),
-                  spark: spark(kpis.series.sales, "var(--chart-sales)", "zero"),
-                }
-              : {})}
-            title={<SalesTitle month={kpis.month} />}
-            value={<HeroValue amount={read.sales.value} strip />}
-          />
-          <KpiCard
-            {...chip(read.ticket)}
-            strip
-            entity="ticket"
-            footer={read.ticket.count || null}
-            help={{ about: "Ticket médio", text: read.ticket.help }}
-            id="result-kpi-ticket"
-            {...(drawn
-              ? {
-                  range: range(
-                    read.ticket,
-                    `Ticket médio, por ${unit} do período`
-                  ),
-                  spark: spark(
-                    kpis.series.ticket,
-                    "var(--chart-ticket)",
-                    "range"
-                  ),
-                }
-              : {})}
-            title="Ticket médio"
-            value={<HeroValue amount={read.ticket.value} strip />}
-          />
-          <MarginCard
-            incomplete={incomplete}
-            noCost={noCost}
-            percent={cards.marginPercent}
-          />
-        </div>
-      </KpiGroup>
+          : {})}
+        title={salesName}
+        value={<HeroValue amount={read.sales.value} />}
+      />
+      <KpiTile
+        chip={chipOf(read.ticket)}
+        date={date}
+        entity="ticket"
+        help={{ about: "Ticket médio", text: read.ticket.help }}
+        id="result-kpi-ticket"
+        note={read.ticket.count || null}
+        strip
+        {...(drawn
+          ? {
+              range: range(read.ticket, `Ticket médio, por ${unit} do período`),
+              spark: spark(kpis.series.ticket, "var(--chart-ticket)", "range"),
+            }
+          : {})}
+        title="Ticket médio"
+        value={<HeroValue amount={read.ticket.value} />}
+      />
+      <MarginCard
+        incomplete={incomplete}
+        noCost={noCost}
+        percent={cards.marginPercent}
+      />
     </div>
   );
 }
 
-/** "outubro" as "Outubro", null for a period that is not a month. */
-function capitalized(month: string | null): string | null {
-  return month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : null;
-}
-
-/** What the sales card is called: "Vendas em outubro" for a month, "Vendas líquidas" for any other period. */
-function salesName(month: string | null): string {
-  return month ? `Vendas em ${month}` : "Vendas líquidas";
-}
-
-/** The title of the sales card: "Vendas", and the month only for a screen reader (the group says it). */
-function SalesTitle({ month }: { month: string | null }) {
-  return month ? (
-    <>
-      Vendas<span className="sr-only"> em {month}</span>
-    </>
-  ) : (
-    "Vendas líquidas"
-  );
-}
-
-/** The margin card: the server's percent, the (i) that says what it is, and the warnings. No sparkline. */
+/** The margin tile: the server's percent, the (i) that says what it is, and the warnings. No sparkline. */
 function MarginCard({
   incomplete,
   noCost,
@@ -362,36 +293,24 @@ function MarginCard({
   percent: string | null;
 }) {
   return (
-    <KpiCard
-      strip
-      {...(incomplete || noCost
-        ? {
-            footer: (
-              <>
-                {incomplete ? <IncompleteBadgeLine /> : null}
-                {noCost ? NO_COST_MARGIN : null}
-              </>
-            ),
-          }
-        : {})}
+    <KpiTile
       entity="result"
       help={{
         about: "Margem",
         text: "Resultado estimado dividido pelas vendas líquidas do período.",
       }}
       id="result-kpi-margin"
-      title="Margem"
-      value={<MarginValue percent={noCost ? null : percent} />}
-    />
-  );
-}
-
-/** The margin as a display: "41,2%", the sign of a percent a step smaller; a dash when there is none. Never hidden. */
-function MarginValue({ percent }: { percent: string | null }) {
-  return (
-    <HeroPercent
+      {...(noCost ? { note: NO_COST_MARGIN } : {})}
       strip
-      text={percent === null ? null : formatPercentOrDash(percent)}
+      title="Margem"
+      value={
+        <HeroPercent
+          text={
+            noCost || percent === null ? null : formatPercentOrDash(percent)
+          }
+        />
+      }
+      warning={incomplete ? <IncompleteBadge /> : null}
     />
   );
 }

@@ -11,13 +11,12 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
-import { buttonVariants } from "@/ui/button";
 import { Card, CardContent } from "@/ui/card";
 import { Tabs, TabsContent } from "@/ui/tabs";
 import { replaceAddress } from "../app-shell/address";
 import { addressWithTab, requestedTab } from "../app-shell/navigation-model";
 import { SlowReadNote } from "../app-shell/read-wait";
-import { TITLE_ACTION_CLASS, TitleLine } from "../app-shell/screen-title";
+import { TitleLine } from "../app-shell/screen-title";
 import {
   ScreenTabList,
   ScreenTabTrigger,
@@ -61,24 +60,10 @@ import {
 
 const RESULT_TABS = ["resultado", "metas"] as const;
 
-function Heading({ canCreateExpense }: { canCreateExpense: boolean }) {
+function Heading() {
   return (
     <header>
-      <TitleLine
-        action={
-          canCreateExpense ? (
-            <a
-              className={cn(
-                buttonVariants({ variant: "outline" }),
-                TITLE_ACTION_CLASS
-              )}
-              href="/expenses"
-            >
-              Despesas do período
-            </a>
-          ) : null
-        }
-      >
+      <TitleLine>
         <div className="flex items-center gap-1">
           <h1 className="text-title">Resultado</h1>
           <HelpTip about="Resultado">
@@ -294,7 +279,7 @@ function Content({
         summary={summary}
         timezone={timezone}
       />
-      <ResultChain summary={summary} />
+      <ResultChain canCreateExpense={canCreateExpense} summary={summary} />
     </div>
   );
 }
@@ -397,7 +382,7 @@ export function DashboardPage() {
 
   return (
     <div className="grid gap-5 font-sans text-foreground text-sm antialiased">
-      <Heading canCreateExpense={canCreateExpense} />
+      <Heading />
       <Tabs className="min-w-0 gap-5" onValueChange={handleTab} value={tab}>
         <ScreenTabList label="Resultado e metas" value={tab}>
           <ScreenTabTrigger value="resultado">Resultado</ScreenTabTrigger>

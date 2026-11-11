@@ -1,13 +1,13 @@
 # Resultado
 
-Resultado (`/dashboard`) é a estimativa do período com as vendas confirmadas e as despesas (não é lucro líquido nem dinheiro recebido), em duas abas: Resultado e Metas (`/dashboard?aba=metas`). As despesas são o destino [Despesas](despesas.md); o Resultado leva a elas pelo link "Despesas do período".
+Resultado (`/dashboard`) é a estimativa do período com as vendas confirmadas e as despesas (não é lucro líquido nem dinheiro recebido), em duas abas: Resultado e Metas (`/dashboard?aba=metas`). As despesas são o destino [Despesas](despesas.md); o Resultado leva a elas pelo link "Ver despesas", sob a linha "(−) Despesas do período (sem venda)" de "Como chegamos a este resultado".
 
 ## Sub-features
 
 - `resultado-periodo` aba Resultado: `button "Período: 01/10 a 31/10, editar"` (o seletor do projeto, igual no celular e no desktop; o botão abre um painel `dialog "Período"` com o `group "Atalhos do período"` ("Este mês", "Mês passado", "Últimos 30 dias", "Este ano"), o calendário e, sob ele, o botão do intervalo escolhido (`button "Digitar as datas: 01/11 a 30/11"`, abre os campos Início e Fim) para o intervalo livre, até 366 dias; um atalho aplica e fecha o painel; acima de 62 dias o gráfico e "Ver os números" agrupam por mês), "Atualizar", "Qualidade dos dados" e as regiões "Resultado estimado", "Vendas em <mês>", "Ticket médio", "Margem". A partir de 900 px as quatro regiões são colunas de uma faixa só (`[data-kpi-row]`); abaixo, cartões.
 - `resultado-atualizar` aba Resultado: uma linha de controle, o período à esquerda e à direita o botão `button "Atualizar, atualizado às 09:00"` (o texto visível é "Atualizado às 09:00", hora da loja; o nome começa com "Atualizar"), que lê de novo; a leitura em curso e a cópia sem conexão ("Último resultado confirmado: dd/mm/aaaa HH:mm", com o botão dizendo só "Atualizar") vêm numa linha abaixo (`#dashboard-updated`), que só existe com texto.
 - `resultado-vazio` período sem venda nem despesa: "Sem vendas nem despesas em <período>" com os links "Nova venda" (leva a `/sales`) e, só com `expense:create`, "Nova despesa" (leva a `/expenses`); loja `vazia`.
-- `resultado-link-despesas` o link "Despesas do período", na linha do título, leva a `/expenses`.
+- `resultado-link-despesas` o link "Ver despesas", sob a linha "(−) Despesas do período (sem venda)" da cadeia "Como chegamos a este resultado" (só com `expense:create`), leva a `/expenses`.
 - `metas` aba Metas: `region "Metas"`, "Nova meta"; vazio: "Nenhuma meta ainda" com a linha de apoio, sem botão (o "Nova meta" único é o do cabeçalho, sempre).
 
 ## How to get to it (user POV)

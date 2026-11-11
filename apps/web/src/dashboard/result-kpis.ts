@@ -352,7 +352,8 @@ function resultReading({
     help: resultHelp(
       card ? "do período inteiro" : `de ${range}`,
       delta ? prior.range : null,
-      result.kind === "incomplete" ? result : null
+      result.kind === "incomplete" ? result : null,
+      true
     ),
     value,
   };

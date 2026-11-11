@@ -262,21 +262,12 @@ const MONEY_FRACTION_ELSEWHERE: readonly {
   },
 ];
 
-/**
- * The strings that keep a size in rem for a money value: the four columns of the strip of the Resultado, which from
- * 900 px have a size of their own (24 px, and 20 or 18 px for a long amount in a narrow column). The list is exact.
- */
+/** The strings that keep a size in rem for a money value: none now, the list is exact and empty. */
 const MONEY_ABSOLUTE_SIZE_ELSEWHERE: readonly {
   file: string;
   strings: number;
   why: string;
-}[] = [
-  {
-    file: "src/ui/kpi-card.tsx",
-    strings: 3,
-    why: "a faixa de quatro KPIs do Resultado, de 900 px em diante, tem 24 px nas quatro colunas e desce a 20 ou 18 px um valor longo numa coluna estreita (stripValueSize); a escala de dinheiro não cabe em 120 px",
-  },
-];
+}[] = [];
 
 const stringsOf = (text: string) =>
   [...withoutComments(text).matchAll(STRING)].map(
@@ -865,14 +856,11 @@ describe("controle: as regras de fonte pegam o que existem para pegar", () => {
     ).toContain("fora de ui/money.tsx");
     const strip =
       'const a = "min-[56.25rem]:text-[1.5rem]"; const b = "x:text-[1.25rem]"; const c = "y:text-[1.125rem]"; const d = "text-[0.56em]";';
-    expect(money(strip, "src/ui/kpi-card.tsx")).toEqual([]);
-    expect(
-      money(
-        `${strip} const d = "md:text-[1.875rem]";`,
-        "src/ui/kpi-card.tsx"
-      ).join()
-    ).toContain(
-      "4 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 3"
+    expect(money('const d = "text-[0.56em]";', "src/ui/kpi-card.tsx")).toEqual(
+      []
+    );
+    expect(money(strip, "src/ui/kpi-card.tsx").join()).toContain(
+      "3 texto(s) com tamanho em rem ou px em dinheiro, e a lista diz 0"
     );
     expect(
       money(

@@ -8,11 +8,8 @@ import {
   KpiTile,
   KpiTileSkeleton,
 } from "@/ui/kpi-card";
-import {
-  isIncompleteEstimate,
-  NO_KNOWN_COST_RESULT,
-} from "../dashboard/dashboard-model";
-import { IncompleteBadge } from "../dashboard/result-cards";
+import { isIncompleteEstimate } from "../dashboard/dashboard-model";
+import { resultWarning } from "../dashboard/result-cards";
 import { resultKpis, untilText } from "../dashboard/result-kpis";
 import type {
   ComparisonDays,
@@ -35,8 +32,6 @@ import {
   type MonthKpis,
   monthKpis,
   todaySeries,
-  unknownDaysFit,
-  unknownDaysText,
 } from "./home-kpis";
 import { chartValue, monthTitle } from "./home-model";
 import { usePeriodControl } from "./period-control";
@@ -138,28 +133,6 @@ function TodayTile({
       value={<HeroValue amount={reading.value} />}
     />
   );
-}
-
-function resultWarning({
-  incomplete,
-  missing,
-  noCost,
-}: {
-  incomplete: boolean;
-  missing: { total: number; unknown: number } | null;
-  noCost: boolean;
-}) {
-  return incomplete ? (
-    <>
-      <IncompleteBadge />
-      {noCost ? <span data-kpi-no-cost="">{NO_KNOWN_COST_RESULT}</span> : null}
-      {missing && unknownDaysFit(missing.unknown, missing.total) ? (
-        <span data-kpi-unknown="">
-          {unknownDaysText(missing.unknown, missing.total)}
-        </span>
-      ) : null}
-    </>
-  ) : null;
 }
 
 /** What the three tiles of the month are made of: the month of today's figures, or the period the person chose. */

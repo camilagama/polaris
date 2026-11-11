@@ -3349,6 +3349,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Linha de status | Em revisão | `#dashboard-updated` (`aria-live="polite"`) só aparece com texto: "Atualizando…", "Mostrando … até o novo período carregar." e, sem conexão, "Último resultado confirmado: dd/mm/aaaa HH:mm" (o botão diz só "Atualizar"); sem texto fica `sr-only` e diz o horário ao leitor de tela quando a leitura termina. Sem resultado lido ainda, não diz "Atualizando…" (o cartão "Carregando o resultado…" já diz). |
 | Provas | Em revisão | Unidade: `dashboard-model.test.ts` (`formatUpdatedAt`). e2e: `dashboard.e2e.ts` (primeiro cartão a 360 px, 360/16 e 320/20 sem corte nem rolagem, foco, leitura em curso, a data de outro dia; os testes de "Atualizar" e de cópia usam o nome que começa com "Atualizar"), `ui-botao-atualizar.e2e.ts` (nome e altura do botão do Resultado). Controle: na `origin/main` o teste do primeiro cartão reprova (539 px). |
 
+### UI de 11/11: faixa de KPIs do Resultado no cartão novo e o link das despesas na cadeia (item 6b, t990; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Cartão do Resultado | Em revisão | `dashboard/result-cards.tsx` compõe o `KpiTile` do Início (t989) nos quatro cartões: nome com o (i), valor com o minigráfico de 36 px à direita e uma linha de apoio (chip, ou a data do dia lido no lugar dele). Saem `KpiCard`, `KpiGroup`, `STRIP_RESERVE`, o `strip` do `HeroValue`, do `HeroPercent` e do `DeltaChip` e as exceções de tamanho em rem de `ui-source-rules.test.ts` (lista vazia). O selo "estimativa incompleta" e os dias sem custo ficam numa linha própria (`resultWarning`, reaproveitada pelo Início); "Não é lucro líquido nem caixa" vai para o (i) (`resultKpis` passa `notProfit`). |
+| Minigráfico | Em revisão | Vendas, Ticket e Resultado; a Margem nunca; nenhum com menos de 3 pontos (`MIN_SPARK_POINTS`) nem sem venda no período. O Resultado usa o domínio do Início (do zero, e do mínimo ao máximo só com valor negativo na série). |
+| Faixa | Em revisão | Uma coluna abaixo de 760 px, duas até 1279 px e uma peça de quatro colunas com divisórias a partir de 1280 px (`KPI_STRIP`; antes eram 900 px, ponto em que a coluna de ~160 px não comporta número e minigráfico lado a lado). A altura só cresce pelo aviso de estimativa; o e2e varre 1024 a 1440 px com a lateral aberta e recolhida. Substitui a linha "Faixa de quatro colunas", o "Delta ao lado do valor" e a "Altura estável" da t831. |
+| Link das despesas (RES-1 a, PR 795) | Em revisão | O botão de largura toda sob o título a 360 px saiu; o link "Ver despesas" (só com `expense:create`) fica sob o nome da linha "(−) Despesas do período (sem venda)" da cadeia, em linha própria para a tabela não alargar a 320 px com a letra em 16 px. |
+| Provas | Em revisão | Unidade: `ui/kpi-card.test.tsx`, `dashboard/result-cards.test.tsx`, `result-chain.test.tsx`. e2e: `dashboard.e2e.ts` (faixa em 1279 e 1280 px, altura, chip sob o valor com axe, leitura de um dia, 2 e 3 pontos, o link) e `app-shell.e2e.ts` (Despesas sem o link do título). O que só roda no CI: a suíte e2e inteira, e2e-real, CodeQL e as baselines da regressão visual. |
+
 ### Saída do E1 (boas-vindas): o código (t1027; ADR 0106, D10, fase 1; sem migration)
 
 | Item | Status | Observação |
