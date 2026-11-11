@@ -12,20 +12,19 @@ import { Money } from "./money";
 import { Skeleton } from "./skeleton";
 
 /**
- * The KPI card of the recipe "KPI sparklines" of Bklit UI, with our text (revisão de UI v7, § 3): the name with the
- * square of its entity's color and, beside it, the (i) with the help, the date at the top right when the card has one of
- * its own, the number as a display, one line of support (the chip of the change, which says in its name what it
- * compares against, and a count or a warning) and, at the bottom, edge to edge, the sparkline that the pointer, the
- * finger and the arrows read. The card is a region named by its title; the number is text, the drawing is a
- * reinforcement.
+ * The KPI cards, with our text. `KpiTile` is the one of the Início: the name with the (i),
+ * the number, one line of support (the chip of the change, which says in its name what it compares against, and a count
+ * or a warning) and, to the right of the number, a sparkline of 36 px that the pointer, the finger and the arrows read.
+ * `KpiCard` is the one of the Resultado, with a foot and the sparkline edge to edge. Both are regions named by their
+ * title; the number is text, the drawing is a reinforcement.
  */
 
 /**
- * The grid of the KPI cards: one column up to 759 px (the `md` of Tailwind, where the side menu appears), two from
- * there, four from 1024 px.
+ * The grid of the tiles of the Início: one column up to 759 px (the `md` of Tailwind, where the side menu appears), two
+ * from there, four from 1280 px, where each tile still has room for the number and the sparkline side by side.
  */
 export const KPI_GRID =
-  "grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4 lg:gap-4";
+  "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-4";
 
 /**
  * The row of the Resultado: the cards of `KPI_GRID` up to 899 px (two columns from 760 px), and from 900 px one card
@@ -91,9 +90,6 @@ function stripValueSize(characters: number): string {
   return "min-[56.25rem]:text-[1.5rem]";
 }
 
-/** The name of the group while it has no period to say. */
-const PENDING_LABEL = "Cartões do período";
-
 /**
  * The group of the cards of one period: a line that says the period once ("Outubro · 1 a 23/10"), which is also the name
  * of the group, so the cards do not repeat it. The cards stay items of the grid of the row (`contents`): the line
@@ -102,27 +98,27 @@ const PENDING_LABEL = "Cartões do período";
 export function KpiGroup({
   children,
   className,
-  control,
   period,
-  placeholder,
   title,
 }: {
   children: ReactNode;
   className?: string;
-  /** A control for the period, at the end of the line (the Início's picker): the line is then a box with room for it. */
-  control?: ReactNode;
-  /** The period, "1 a 23/10"; null while there is none to say (the period is being read, or failed). */
-  period: string | null;
-  /** What stands where the period's text would, while there is none: the line and its control keep the same place. */
-  placeholder?: ReactNode;
+  /** The period, "1 a 23/10". */
+  period: string;
   /** The month, "Outubro", when the period is one. */
   title?: string | null;
 }) {
-  const text =
-    period === null ? (
-      (placeholder ?? <span aria-hidden="true" />)
-    ) : (
-      <>
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset has a box of its own, and the cards must stay items of the grid
+    <div
+      aria-label={title ? `${title}, ${period}` : period}
+      className="contents"
+      role="group"
+    >
+      <p
+        className={cn("text-muted-foreground text-support", className)}
+        data-kpi-group=""
+      >
         {title ? (
           <>
             <span className="font-medium text-foreground">{title}</span>
@@ -130,34 +126,7 @@ export function KpiGroup({
           </>
         ) : null}
         <span className="tabular-nums">{period}</span>
-      </>
-    );
-  const label =
-    period !== null && title
-      ? `${title}, ${period}`
-      : (period ?? PENDING_LABEL);
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset has a box of its own, and the cards must stay items of the grid
-    <div aria-label={label} className="contents" role="group">
-      {control ? (
-        <div
-          className={cn(
-            "flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-muted-foreground text-support",
-            className
-          )}
-          data-kpi-group-line=""
-        >
-          {period === null ? text : <p data-kpi-group="">{text}</p>}
-          {control}
-        </div>
-      ) : (
-        <p
-          className={cn("text-muted-foreground text-support", className)}
-          data-kpi-group=""
-        >
-          {text}
-        </p>
-      )}
+      </p>
       {children}
     </div>
   );
@@ -266,10 +235,8 @@ export function HeroPercent({
       className={cn(box, text.trim().startsWith("-") && "text-destructive")}
       data-kpi-value=""
     >
-      <AnimatedFigure smallSign text={text}>
-        {text.replace("%", "")}
-        <span className="font-medium text-[0.56em] tracking-normal">%</span>
-      </AnimatedFigure>
+      {text.replace("%", "")}
+      <span className="font-medium text-[0.56em] tracking-normal">%</span>
     </p>
   );
 }
@@ -307,11 +274,7 @@ function MoneyChipText({ text }: { text: string }) {
 function chipText(delta: KpiDelta, named: boolean, hidden: boolean): ReactNode {
   const seen = (
     <span aria-hidden="true" data-kpi-delta-text="">
-      {delta.money ? (
-        <MoneyChipText text={delta.text} />
-      ) : (
-        <AnimatedFigure text={delta.text}>{delta.text}</AnimatedFigure>
-      )}
+      {delta.money ? <MoneyChipText text={delta.text} /> : delta.text}
     </span>
   );
   if (named) {
@@ -426,9 +389,11 @@ const RANGE_CLASS =
   "pointer-events-none absolute inset-0 m-0 size-full appearance-none rounded-b-xl bg-transparent focus-visible:outline-3 focus-visible:outline-ring focus-visible:-outline-offset-3 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none";
 
 function SparkSlot({
+  className,
   range,
   spark,
 }: {
+  className: string;
   range: KpiRange | undefined;
   spark: ReactNode;
 }) {
@@ -439,7 +404,7 @@ function SparkSlot({
     [onChange]
   );
   return (
-    <div className={cn("relative touch-pan-y", SPARK_SLOT)} data-kpi-spark="">
+    <div className={cn("relative touch-pan-y", className)} data-kpi-spark="">
       {spark}
       {range ? (
         <input
@@ -461,11 +426,9 @@ function SparkSlot({
 
 const TOP_ROW =
   "flex min-h-[1.125rem] min-w-0 items-center justify-between gap-x-2 text-muted-foreground text-support";
-const SUPPORT_ROWS = "grid gap-y-1";
 const CHIP_ROW = "flex min-h-5 min-w-0 items-center";
-const NOTE_ROW = "text-muted-foreground text-xs leading-4";
-/** The lines the note of a card may take: its row keeps them, so a longer note moves nothing under it. */
-const NOTE_LINES = { 1: "min-h-4", 2: "min-h-8" } as const;
+/* an empty row under the chip: `STRIP_RESERVE` was measured with its 16 px, so the strip keeps it */
+const NOTE_ROW = "min-h-4 text-muted-foreground text-xs leading-4";
 const FOOTER_ROW = "min-h-4 text-muted-foreground text-xs leading-4";
 const SPARK_SLOT = "-mx-(--card-spacing) mt-auto h-[3.25rem] md:h-16";
 const CARD =
@@ -505,8 +468,51 @@ function KpiDate({
   );
 }
 
+function CardTitle({
+  entity,
+  help,
+  id,
+  square,
+  title,
+}: {
+  entity: KpiEntity;
+  help: { about: string; text: string } | undefined;
+  id: string;
+  square: boolean;
+  title: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-1",
+        !square && "touch:gap-2.5"
+      )}
+    >
+      <h2
+        className="flex min-w-0 items-center font-medium text-foreground"
+        id={id}
+      >
+        {square ? (
+          <span
+            aria-hidden="true"
+            className={cn(
+              "mr-1.5 size-2 shrink-0 rounded-xs",
+              ENTITY_SQUARE[entity]
+            )}
+          />
+        ) : null}
+        <span className="min-w-0">{title}</span>
+      </h2>
+      {help ? (
+        <HelpTip about={help.about} className="relative z-10 -my-0.75">
+          {help.text}
+        </HelpTip>
+      ) : null}
+    </div>
+  );
+}
+
 export function KpiCard({
-  action,
   chip,
   className,
   date,
@@ -515,16 +521,12 @@ export function KpiCard({
   footer,
   help,
   id,
-  note,
-  noteLines = 1,
   range,
   spark,
   strip = false,
   title,
   value,
 }: {
-  /** A link under the support line ("Ver o resultado"). */
-  action?: ReactNode;
   chip?: ReactNode;
   className?: string;
   /** The date of a card that has one of its own, at the top right; the others take it from their group. */
@@ -535,16 +537,12 @@ export function KpiCard({
    */
   dateReserve?: string;
   entity: KpiEntity;
-  /** The line under the support line. `null` keeps its height empty, for a card whose foot comes and goes. */
+  /** The line under the chip. `null` keeps its height empty, for a card whose foot comes and goes. */
   footer?: ReactNode;
   /** The (i) beside the title: what the number is and what it compares with (never a warning). */
   help?: { about: string; text: string };
   /** The id of the title, the name of the region. */
   id: string;
-  /** The rest of the support line, beside the chip: a count, or the warning. */
-  note?: ReactNode;
-  /** The most lines the note takes when a day is read (2 for the "vs. média das quintas: sem vendas antes · …" of Hoje). */
-  noteLines?: 1 | 2;
   range?: KpiRange;
   /** The sparkline, or nothing (then the card ends with its text). */
   spark?: ReactNode;
@@ -571,30 +569,10 @@ export function KpiCard({
           strip && "min-[56.25rem]:flex-wrap min-[56.25rem]:gap-y-0"
         )}
       >
-        <div className="flex min-w-0 items-center gap-1">
-          <h2
-            className="flex min-w-0 items-center font-medium text-foreground"
-            id={id}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "mr-1.5 size-2 shrink-0 rounded-xs",
-                ENTITY_SQUARE[entity]
-              )}
-            />
-            <span className="min-w-0">{title}</span>
-          </h2>
-          {help ? (
-            <HelpTip about={help.about} className="-my-0.75">
-              {help.text}
-            </HelpTip>
-          ) : null}
-        </div>
+        <CardTitle entity={entity} help={help} id={id} square title={title} />
         <KpiDate date={date} reserve={dateReserve} />
       </div>
-      {/* two rows that are always there, empty without a change or a note: a chip that comes with a day read, or a note
-          that goes away, moves nothing under them */}
+      {/* a row that is always there, empty without a change: a chip that comes with a day read moves nothing under it */}
       <div
         className={cn("flex flex-col gap-1", strip && STRIP_HEADLINE)}
         data-kpi-headline=""
@@ -607,82 +585,139 @@ export function KpiCard({
           {chip}
         </div>
       </div>
-      <div className={cn(NOTE_ROW, NOTE_LINES[noteLines])} data-kpi-note-row="">
-        {note}
-      </div>
+      <div className={NOTE_ROW} data-kpi-note-row="" />
       {footer === undefined ? null : (
         <div className={FOOTER_ROW} data-kpi-foot="">
           {footer}
         </div>
       )}
-      {action}
-      {spark ? <SparkSlot range={range} spark={spark} /> : null}
+      {spark ? (
+        <SparkSlot className={SPARK_SLOT} range={range} spark={spark} />
+      ) : null}
     </Card>
   );
 }
 
-/**
- * A KPI card while its figures are read: the rows of `KpiCard` with their heights (the top line, the number, the support
- * line, the foot and the action when the card has them, the sparkline), drawn in `Skeleton`, so the card that comes
- * takes the same place. Drawing only: the status is said by whom shows it.
+/*
+ * The tile of the Início: about 92 px, three lines (the name with the (i); the number with the sparkline of 36 px to its
+ * right; the support line, as wide as the tile). With a day read, its date takes the place of the chip on the support line
+ * (the row is always there, so nothing moves). The warning of an estimate that is not whole has its own row under it,
+ * only in the tile that has one. The color of the entity is in the drawing, not in a square. With touch the title row and
+ * the keyboard control of the sparkline are 44 px: the control starts under the touch area of the (i), so the two never
+ * overlap (the tile grows by what it takes), and the title keeps its place.
  */
-export function KpiCardSkeleton({
-  action = false,
+const TILE =
+  "@container relative min-w-0 gap-0.5 overflow-hidden px-(--card-spacing) py-3 touch:pt-0";
+/* takes what the number leaves (a long amount is never cut for it); its 36 px (44 with touch) do not add to the 30 px line of the number */
+const TILE_SPARK =
+  "z-10 -my-0.75 h-9 min-w-0 flex-1 self-center touch:-my-1.75 touch:h-11 touch:py-1";
+const TILE_TITLE_ROW = "touch:min-h-11";
+const TILE_BODY = "flex min-w-0 items-center gap-3 touch:mt-1.5";
+const TILE_SUPPORT =
+  "flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground text-xs leading-4";
+
+export function KpiTile({
+  action,
+  chip,
   className,
-  footer = 0,
-  noteLines = 1,
-  spark = true,
+  date,
+  entity,
+  help,
+  id,
+  note,
+  range,
+  spark,
+  title,
+  value,
+  warning,
 }: {
-  /** The card has a link under the support line ("Ver o resultado"). */
-  action?: boolean;
+  /** What the tile offers when it has no figure to show (a link to start): beside the support text. */
+  action?: ReactNode;
+  chip?: ReactNode;
   className?: string;
-  /** Lines of the foot ("Não é lucro líquido nem caixa"); 0 for none. */
-  footer?: number;
-  /** The lines the note of the card keeps, as in `KpiCard`. */
-  noteLines?: 1 | 2;
-  spark?: boolean;
+  /** The day read on the sparkline ("Até 17/10"), in the place of the chip; none at rest. */
+  date?: string | undefined;
+  entity: KpiEntity;
+  help?: { about: string; text: string };
+  id: string;
+  /** What goes beside the chip: the count. */
+  note?: ReactNode;
+  range?: KpiRange;
+  spark?: ReactNode;
+  title: ReactNode;
+  value: ReactNode;
+  /** A warning that must stay in sight, on a row of its own under the support line. */
+  warning?: ReactNode;
 }) {
+  return (
+    <Card
+      aria-labelledby={id}
+      className={cn(TILE, className)}
+      data-kpi={entity}
+      role="region"
+    >
+      <div className={cn(TOP_ROW, TILE_TITLE_ROW)}>
+        <CardTitle
+          entity={entity}
+          help={help}
+          id={id}
+          square={false}
+          title={title}
+        />
+      </div>
+      <div className={TILE_BODY} data-kpi-body="">
+        <div className="shrink-0" data-kpi-headline="">
+          {value}
+        </div>
+        {spark ? (
+          <SparkSlot className={TILE_SPARK} range={range} spark={spark} />
+        ) : null}
+      </div>
+      <div className={TILE_SUPPORT} data-kpi-note-row="">
+        {date ? (
+          <span
+            className="whitespace-nowrap font-medium text-foreground tabular-nums"
+            data-kpi-date=""
+          >
+            {date}
+          </span>
+        ) : null}
+        {chip && !date ? <span data-kpi-chip-row="">{chip}</span> : null}
+        {note}
+        {action}
+      </div>
+      {warning ? (
+        <div className={TILE_SUPPORT} data-kpi-warning="">
+          {warning}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+/** A tile while its figures are read: the same rows with their heights, in `Skeleton`, so the tile that comes takes the same place (a Result tile with a cost warning adds its line). */
+export function KpiTileSkeleton({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
       className={cn(
-        "group/card flex flex-col overflow-hidden rounded-xl bg-card py-(--card-spacing) shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
-        CARD,
-        !spark && "pb-(--card-spacing)",
+        "group/card flex flex-col overflow-hidden rounded-xl bg-card text-sm shadow-xs ring-1 ring-foreground/[0.06] [--card-spacing:--spacing(3)] dark:shadow-[inset_0_1px_0_var(--card-glow)] md:[--card-spacing:--spacing(4)]",
+        TILE,
         className
       )}
       data-kpi-skeleton=""
     >
-      <div className={TOP_ROW}>
+      <div className={cn(TOP_ROW, "h-5 touch:h-11")}>
         <Skeleton className="h-3 w-24" />
       </div>
-      <div className={cn(heroBox(), "flex items-center")}>
+      <div
+        className={cn(heroBox(), "touch:mt-1.5 flex min-h-7.5 items-center")}
+      >
         <Skeleton className="h-[0.8em] w-32" />
       </div>
-      <div className={SUPPORT_ROWS}>
-        <div className={CHIP_ROW} data-kpi-chip-row="">
-          <Skeleton className="h-3 w-28" />
-        </div>
-        <div
-          className={cn(NOTE_ROW, NOTE_LINES[noteLines])}
-          data-kpi-note-row=""
-        />
+      <div className={TILE_SUPPORT}>
+        <Skeleton className="h-3 w-20" />
       </div>
-      {Array.from({ length: footer }, (_, index) => (
-        <div
-          className={cn(FOOTER_ROW, "flex items-center")}
-          data-kpi-skeleton-foot=""
-          key={index}
-        >
-          <Skeleton className="h-3 w-full" />
-        </div>
-      ))}
-      {action ? (
-        <div className="flex h-4 items-center">
-          <Skeleton className="h-3 w-24" />
-        </div>
-      ) : null}
-      {spark ? <div className={SPARK_SLOT} /> : null}
     </div>
   );
 }

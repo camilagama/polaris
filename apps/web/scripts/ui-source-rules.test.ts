@@ -252,8 +252,8 @@ const MONEY_FRACTION_ELSEWHERE: readonly {
 }[] = [
   {
     file: "src/ui/figure-counter.tsx",
-    strings: 4,
-    why: "o contador escreve o R$, o espaço, os centavos e o % nas partes do NumberFlow com a mesma fração do Money, para o valor que conta não mudar de forma",
+    strings: 3,
+    why: "o contador escreve o R$, o espaço e os centavos nas partes do NumberFlow com a mesma fração do Money, para o valor que conta não mudar de forma",
   },
   {
     file: "src/ui/kpi-card.tsx",
@@ -481,16 +481,15 @@ export function focusListFaults(
 }
 
 /**
- * Só os números principais e indicativos dos cards animam (DESIGN.md "Movimento"): `@number-flow/react` é importado só
- * no contador, e o contador só é usado pelos itens da lista fechada (o valor e o chip do cartão de KPI, a Margem e o
- * percentual da Meta, mais a galeria que mostra o componente). Qualquer outro uso, ou outro arquivo que importe o pacote, reprova.
+ * Só o valor principal do cartão de KPI rola (DESIGN.md "Movimento"): `@number-flow/react` é importado só
+ * no contador, e o contador só é usado pelos itens da lista fechada (o valor do cartão de KPI, mais a galeria que
+ * mostra o componente). Qualquer outro uso, ou outro arquivo que importe o pacote, reprova.
  * O contador (`figure-counter.tsx`) é um pedaço que só `animated-figure.tsx` carrega, com `import()` e só no nível `full`:
  * um import estático dele, de qualquer arquivo, o traria de volta ao pedaço do cartão e ao celular.
  */
 export const FIGURE_COUNTER = "src/ui/figure-counter.tsx";
 export const FIGURE_LOADER = "src/ui/animated-figure.tsx";
 export const FIGURE_USERS = [
-  "src/home/home-goal.tsx",
   "src/ui-gallery/ui-gallery.tsx",
   "src/ui/kpi-card.tsx",
 ] as const;
@@ -550,6 +549,7 @@ describe("o contador só nos números principais e indicativos dos cartões (AC-
     expect(figureFaults("src/ui/money.tsx", pkg)).toHaveLength(1);
     expect(figureFaults("src/dashboard/result-chart.tsx", use)).toHaveLength(1);
     expect(figureFaults("src/home/home-chart.tsx", use)).toHaveLength(1);
+    expect(figureFaults("src/home/home-goal.tsx", use)).toHaveLength(1);
     expect(figureFaults(FIGURE_COUNTER, pkg)).toEqual([]);
     expect(figureFaults("src/ui/kpi-card.tsx", use)).toEqual([]);
     const staticImport = 'import { Counter } from "./figure-counter";';
@@ -1050,10 +1050,7 @@ const HIDE_VALUES_SIZE = /<HideValuesButton\b[^>]*\bsize=/;
 const LINK_VARIANT_LINE = /^\s*link:\s*"[^"]*"/m;
 const SMALL_RADIUS = /\brounded-(?:sm|xs|none)\b/;
 const LINK_AS_CARD_ACTION = /variant(?:=["{]+["']?|:\s*["'])link\b/;
-const CARD_ACTION_SCREENS = [
-  "src/dashboard/quality-banner.tsx",
-  "src/home/home-kpi-cards.tsx",
-];
+const CARD_ACTION_SCREENS = ["src/dashboard/quality-banner.tsx"];
 
 export function sameButtonFaults(path: string, text: string): string[] {
   const code = withoutComments(text);
@@ -1091,7 +1088,6 @@ describe("mesmo botão, mesmo nome (L1-6, AC-6.1, AC-6.2, AC-6.5)", () => {
     expect(read("src/dashboard/quality-banner.tsx")).toContain(
       'variant="ghost"'
     );
-    expect(read("src/home/home-kpi-cards.tsx")).toContain('variant: "ghost"');
   });
 
   it("a volta de cada uma reprova (controle plantado)", () => {
@@ -1117,12 +1113,6 @@ describe("mesmo botão, mesmo nome (L1-6, AC-6.1, AC-6.2, AC-6.5)", () => {
       sameButtonFaults(
         "src/dashboard/quality-banner.tsx",
         '<Button size="sm" variant="link" />'
-      )
-    ).toHaveLength(1);
-    expect(
-      sameButtonFaults(
-        "src/home/home-kpi-cards.tsx",
-        'buttonVariants({ size: "sm", variant: "link" })'
       )
     ).toHaveLength(1);
     expect(

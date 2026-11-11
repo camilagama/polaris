@@ -593,9 +593,9 @@ test("enquanto o pedaço vem, uma caixa da altura do gráfico guarda o lugar", a
     items.map((item) => Math.round(item.getBoundingClientRect().height))
   );
   // the eight area charts: the plot, the margins of the blocks (40 px) and the line of reading above it (26 px), and
-  // 44 px more for the legend of two series; the six miniatures: 32 px; the sparkline of the KPI card: 64 px
+  // 44 px more for the legend of two series; the six miniatures: 32 px; the sparkline of the KPI tile: 36 px
   expect(heights.filter((height) => height === 32)).toHaveLength(6);
-  expect(heights.filter((height) => height === 64)).toHaveLength(1);
+  expect(heights.filter((height) => height === 36)).toHaveLength(1);
   expect(
     heights.filter((height) => [246, 286, 330].includes(height))
   ).toHaveLength(8);

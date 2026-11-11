@@ -1,37 +1,23 @@
 import NumberFlow, { type Format, NumberFlowElement } from "@number-flow/react";
-import { useCallback, useLayoutEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { MOTION } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 import type { Figure } from "./animated-figure";
 
 /**
- * The count itself, `@number-flow/react` as Bklit UI's `ChartStatFlow` uses it, which only this file imports (the rule
+ * The roll itself, `@number-flow/react` as Bklit UI's `ChartStatFlow` uses it, which only this file imports (the rule
  * is in `scripts/ui-source-rules.test.ts`). `animated-figure.tsx` loads this module with a dynamic `import()` and only
  * at the `full` level of motion, so the package is a chunk of its own that a phone, or a window under
  * `prefers-reduced-motion`, never asks for, and no other chunk carries it (`counterPlacementProblems` in
  * `pwa/precache-budget.ts`). Nothing else may import this file statically, or the package comes back into that chunk.
  */
 
-const formats = new Map<string, Format>();
-
-function formatOf({ digits, kind, signed }: Figure): Format {
-  const key = `${kind}:${digits}:${signed}`;
-  let format = formats.get(key);
-  if (!format) {
-    const signDisplay = signed ? "always" : "auto";
-    format =
-      kind === "money"
-        ? { currency: "BRL", signDisplay, style: "currency" }
-        : {
-            maximumFractionDigits: digits,
-            minimumFractionDigits: digits,
-            signDisplay,
-            useGrouping: true,
-          };
-    formats.set(key, format);
-  }
-  return format;
-}
+const FORMAT: Format = {
+  currency: "BRL",
+  signDisplay: "auto",
+  style: "currency",
+};
+const FORMAT_SIGNED: Format = { ...FORMAT, signDisplay: "always" };
 
 const styleSheets = new Map<string, CSSStyleSheet>();
 const roots = new WeakMap<Element, ShadowRoot>();
@@ -140,11 +126,9 @@ function closeShadowRoot(): boolean {
 export const COUNTER_READY =
   typeof Element !== "undefined" && closeShadowRoot();
 
-/* the "R$" and the percent sign are a size smaller than the number, and the cents one step under it, as `Money` writes them */
+/* the "R$" is a size smaller than the number, and the cents one step under it, as `Money` writes them */
 const SYMBOL_PARTS =
   "[&::part(currency)]:font-medium [&::part(currency)]:text-[0.56em] [&::part(currency)]:tracking-normal [&::part(literal)]:text-[0.56em] [&::part(literal)]:tracking-normal [&::part(fraction)]:text-[0.72em]";
-const SMALL_PERCENT =
-  "[&::part(right)]:font-medium [&::part(right)]:text-[0.56em] [&::part(right)]:tracking-normal";
 /* the fade of the digits spills half an em past each side of the number: clipped sideways, so the card that holds it never
    scrolls or looks cut, and left open vertically, where the digits roll. Only the counter is inside the clip: the text of
    the figure is outside it, so the box that cuts holds no text to be cut */
@@ -152,30 +136,10 @@ const CLIP = "overflow-x-clip";
 /* the host takes room above and below the digits for the fade of their mask: pulled back so the line keeps its height */
 const HOST_BOX = "-my-[0.25em] align-baseline";
 
-function partsClass(figure: Figure, smallSign: boolean): string {
-  if (figure.kind === "money") {
-    return SYMBOL_PARTS;
-  }
-  return smallSign ? SMALL_PERCENT : "";
-}
-
-export function Counter({
-  enter,
-  figure,
-  smallSign,
-}: {
-  enter: boolean;
-  figure: Figure;
-  smallSign: boolean;
-}) {
-  const [shown, setShown] = useState(enter ? 0 : figure.value);
-  useLayoutEffect(() => {
-    setShown(figure.value);
-  }, [figure.value]);
+export function Counter({ figure }: { figure: Figure }) {
   const [counting, setCounting] = useState(false);
   const start = useCallback(() => setCounting(true), []);
   const finish = useCallback(() => setCounting(false), []);
-  const money = figure.kind === "money";
   return (
     <span
       aria-hidden="true"
@@ -183,17 +147,16 @@ export function Counter({
       data-figure-counting={counting ? "" : undefined}
     >
       <NumberFlow
-        className={cn(HOST_BOX, partsClass(figure, smallSign))}
+        className={cn(HOST_BOX, SYMBOL_PARTS)}
         data-animated-figure=""
-        format={formatOf(figure)}
+        format={figure.signed ? FORMAT_SIGNED : FORMAT}
         locales="pt-BR"
         onAnimationsFinish={finish}
         onAnimationsStart={start}
         opacityTiming={MOTION.number}
         spinTiming={MOTION.number}
         transformTiming={MOTION.number}
-        value={shown}
-        {...(money ? {} : { suffix: "%" })}
+        value={figure.value}
       />
     </span>
   );
