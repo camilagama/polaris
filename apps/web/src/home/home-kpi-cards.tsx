@@ -245,10 +245,13 @@ function periodModel(source: PeriodSource): MonthModel {
   };
 }
 
-/** Where each tile sits from 1280 px: Hoje alone at the left, the three of the month under the line of the period. */
+/**
+ * Where each tile sits from 1280 px: Hoje alone at the left, the three of the month under the line of the period. In
+ * one column the line goes after the tiles, so the four of them fit in the 360 × 740 window with the actions above.
+ */
 const PLACE = {
   error: "md:col-span-2 xl:col-span-3 xl:col-start-2 xl:row-start-2",
-  line: "md:col-span-2 xl:col-span-3 xl:col-start-2 xl:row-start-1",
+  line: "max-md:order-last md:col-span-2 xl:col-span-3 xl:col-start-2 xl:row-start-1",
   result: "xl:col-start-3 xl:row-start-2",
   sales: "md:col-span-2 xl:col-span-1 xl:col-start-2 xl:row-start-2",
   ticket: "xl:col-start-4 xl:row-start-2",
