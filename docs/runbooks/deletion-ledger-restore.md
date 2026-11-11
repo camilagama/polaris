@@ -67,7 +67,7 @@ Se o ambiente de origem não puder mais ser lido (perda total), os tombstones po
    SELECT count(*) FROM pg_roles WHERE rolname LIKE 'polaris\_%\_owner';  -- 21
    ```
 
-   Se faltar algum, crie-os antes com o bloco `DO $roles$` da migration que cria cada um (por exemplo, a 0095 cria `polaris_sync_owner`, `polaris_authorization_epoch_owner` e `polaris_onboarding_owner`), nunca com `CREATE ROLE` à mão com outros atributos. Restaure **sem** `--no-owner` e **sem** `--no-privileges`. No Neon isso não funciona sem preparo (ver abaixo). Depois do restore, do passo 2b e das migrations do passo 3, a mesma consulta do papel e esta, que repete a checagem `foreignOwner` de `definer-hardening-checks.ts` (o `staging:verify-database` só aceita o marcador `staging`), devem voltar 20 e **vazia**:
+   Se faltar algum, crie-os antes com o bloco `DO $roles$` da migration que cria cada um (por exemplo, a 0095 cria `polaris_sync_owner`, `polaris_authorization_epoch_owner` e `polaris_onboarding_owner`), nunca com `CREATE ROLE` à mão com outros atributos. Restaure **sem** `--no-owner` e **sem** `--no-privileges`. No Neon isso não funciona sem preparo (ver abaixo). Depois do restore, do passo 2b e das migrations do passo 3, a mesma consulta do papel e esta, que repete a checagem `foreignOwner` de `definer-hardening-checks.ts` (o `staging:verify-database` só aceita o marcador `staging`), devem voltar 21 e **vazia**:
 
    ```sql
    SELECT n.nspname || '.' || p.proname AS funcao, pg_get_userbyid(p.proowner) AS dono
