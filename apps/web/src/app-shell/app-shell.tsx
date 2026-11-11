@@ -37,7 +37,6 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarRail,
-  SidebarTrigger,
   useSidebar,
 } from "@/ui/sidebar";
 import { MediaThumbnailScope } from "../catalog/media-thumbnail-scope";
@@ -218,7 +217,7 @@ interface AppSidebarProps {
 }
 
 /**
- * The sidebar of the desktop (the shadcn Sidebar) and, below 760 px, the same content in the "Mais" sheet without
+ * The sidebar of the desktop (the shadcn Sidebar, under the header of the shell, which holds the brand and the button that folds it) and, below 760 px, the same content in the "Mais" sheet without
  * the four destinations of the bottom bar: only navigation, and at its foot the first steps and the trial. The store,
  * the theme and "Sair" are in the menu of the header; the sheet adds the two legal pages, which the desktop has in the
  * header. Pendências is there only while this device has a refused record, with the count
@@ -238,22 +237,20 @@ function AppSidebar({
   );
   return (
     <Sidebar mobileTitle="Mais" side={isMobile ? "right" : "left"}>
-      <SidebarHeader className="px-4 pt-2 pb-2 group-data-[collapsible=icon]:px-2">
-        <div className="flex min-h-10 items-center justify-between gap-2 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center">
-          <a
-            className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
-            href="/"
-          >
-            <Logo />
-            <span className="group-data-[collapsible=icon]:sr-only">
-              Polaris
-            </span>
-          </a>
-          {/* the column folds only from 1024 px: below, the button is not there */}
-          <SidebarTrigger />
-        </div>
-        {isMobile ? <SyncStatusMenuLine onlineOnly={onlineOnly} /> : null}
-      </SidebarHeader>
+      {isMobile ? (
+        <SidebarHeader className="px-4 pt-2 pb-2">
+          <div className="flex min-h-10 items-center">
+            <a
+              className="touch-hit focus-ring flex w-fit items-center gap-2.5 rounded-sm font-semibold tracking-tight"
+              href="/"
+            >
+              <Logo />
+              <span>Polaris</span>
+            </a>
+          </div>
+          <SyncStatusMenuLine onlineOnly={onlineOnly} />
+        </SidebarHeader>
+      ) : null}
       <SidebarContent>
         <nav aria-label="Principal">
           {navGroups(items).map((group) => (
@@ -695,72 +692,77 @@ export function AppShell({
     );
   }
   return (
-    <SidebarProvider className="app-shell-root bg-sidebar">
+    <SidebarProvider className="app-shell-root flex-col bg-sidebar">
       <a
         className="focus-ring not-focus:sr-only fixed top-2 left-2 z-50 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm no-underline"
         href="#conteudo"
       >
         Ir para o conteúdo
       </a>
-      <AppSidebar
-        chargeDay={chargeDay}
-        expenses={
-          organization === null ||
-          hasCapabilityForRole(organization.organization.role, "expense:create")
-        }
-        firstSteps={firstSteps}
-        navId={navId}
+      <ShellHeader
+        email={email}
+        logout={logout}
         onlineOnly={onlineOnly}
+        organization={organization}
+        trigger={storeMenu}
       />
-      <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
-        <ShellHeader
-          email={email}
-          logout={logout}
+      <div className="flex min-h-0 w-full flex-1">
+        <AppSidebar
+          chargeDay={chargeDay}
+          expenses={
+            organization === null ||
+            hasCapabilityForRole(
+              organization.organization.role,
+              "expense:create"
+            )
+          }
+          firstSteps={firstSteps}
+          navId={navId}
           onlineOnly={onlineOnly}
-          organization={organization}
-          trigger={storeMenu}
         />
-        {/* the panel of the content, in the frame of the sidebar and the header: from 760 px its top left corner is
+        <SidebarInset className="pb-(--app-bottom-bar) md:pb-0">
+          {/* the panel of the content, in the frame of the sidebar and the header: from 760 px its top left corner is
             rounded, with the 1 px ring of a card on the two edges it shares with the frame */}
-        <div
-          className="flex flex-1 flex-col bg-background md:rounded-tl-xl md:border-(--card-ring) md:border-t md:border-l"
-          data-app-panel=""
-        >
-          {/* on the phone the content fills the window between the header and the bottom bar, so a short page does
-              not scroll */}
-          <main
-            className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_var(--app-header)_-_var(--app-bottom-bar,0rem)))]"
-            id="conteudo"
-            // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
-            tabIndex={-1}
+          <div
+            className="flex flex-1 flex-col bg-background md:rounded-tl-xl md:border-(--card-ring) md:border-t md:border-l"
+            data-app-panel=""
           >
-            <ShellLogoutNotices logout={logout} trigger={storeMenu} />
-            <ShellNotices
-              acceptance={showAcceptanceNotice}
-              connection={
-                onlineOnly && !sessionOver ? { form: connectionForm } : null
-              }
-              session={showNotice}
-            />
-            <GraceNoticeSlot
-              facts={planFacts}
-              onSubscription={routeId === "subscription"}
-            />
-            {closedNotice && requiresOrganization ? (
-              closedNotice
-            ) : (
-              <OfflineAccessGate>
-                {requiresOrganization ? (
-                  <OrganizationGate>{children}</OrganizationGate>
-                ) : (
-                  children
-                )}
-              </OfflineAccessGate>
-            )}
-          </main>
-        </div>
-        <BottomBar navId={navId} />
-      </SidebarInset>
+            {/* on the phone the content fills the window between the header and the bottom bar, so a short page does
+              not scroll */}
+            <main
+              className="mx-auto w-[min(100%_-_2rem,76rem)] pt-[clamp(2rem,5vw,4.25rem)] pb-14 max-md:min-h-[var(--shell-main-min,calc(100dvh_-_var(--app-header)_-_var(--app-bottom-bar,0rem)))]"
+              id="conteudo"
+              // the target of "Ir para o conteúdo" and of a screen opened with no load ("Conhecer o Pro"): focusable by script
+              tabIndex={-1}
+            >
+              <ShellLogoutNotices logout={logout} trigger={storeMenu} />
+              <ShellNotices
+                acceptance={showAcceptanceNotice}
+                connection={
+                  onlineOnly && !sessionOver ? { form: connectionForm } : null
+                }
+                session={showNotice}
+              />
+              <GraceNoticeSlot
+                facts={planFacts}
+                onSubscription={routeId === "subscription"}
+              />
+              {closedNotice && requiresOrganization ? (
+                closedNotice
+              ) : (
+                <OfflineAccessGate>
+                  {requiresOrganization ? (
+                    <OrganizationGate>{children}</OrganizationGate>
+                  ) : (
+                    children
+                  )}
+                </OfflineAccessGate>
+              )}
+            </main>
+          </div>
+          <BottomBar navId={navId} />
+        </SidebarInset>
+      </div>
     </SidebarProvider>
   );
 }

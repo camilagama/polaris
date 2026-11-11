@@ -254,6 +254,14 @@ Qualquer promoção de SHA para produção. Mudança neste checklist entra por P
 
 - Evidência: o SHA, a tabela conferida linha a linha contra o que a promoção liga, e o teste verde.
 
+### 29. Pix Automático aberto a lojas reais só com a forma da autorização vista e a revogação coberta (BLOCK, proposta)
+
+- Critério, antes de abrir o Pix Automático (Woovi) a lojas reais, as duas coisas abaixo ([ADR 0101](../adr/0101-adaptador-asaas-porta-de-saida-e-releitura-do-recurso.md), emenda da regra única):
+  - (a) **Revogação:** a primeira revogação real (conta de produção, ou resposta por escrito do suporte da Woovi) mostrou o que a releitura da assinatura traz depois do `PIX_AUTOMATIC_REJECTED`. Se ela não foi conferida, o sinal [`pix-revogacao-nao-mostrada`](./alertas.md#pix-revogacao-nao-mostrada) tem dono nomeado e o runbook dele foi lido: o dono cancela a renovação pelo comando "Cancelar renovação" do Admin.
+  - (b) **Forma da autorização:** a linha `billing_woovi_authorization_form` da primeira assinatura real foi vista nos Workers Logs (campos `authorizationShown`, `installmentsByStatus`, `malformedInstallments` e `verdict`, nos `reading` `webhook_approval`, `discard_checkout` e `reconciliation`). Ela diz se a produção mostra `pixRecurring.status` e se cria parcelas antes da aprovação. Sem `pixRecurring.status` **e** com parcela antes da aprovação, a regra conta um checkout abandonado como assinatura: não abrir o Pix.
+- Severidade: proposta (BLOCK), pendente de decisão do Arrascaeta.
+- Evidência: a data, a linha vista (só os códigos) e, para (a), o que a releitura mostrou ou o nome do dono do sinal.
+
 ## Veredito
 
 Ordem de decisão:

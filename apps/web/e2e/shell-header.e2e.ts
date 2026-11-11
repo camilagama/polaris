@@ -1032,3 +1032,105 @@ test.describe("AC-4: a folha Mais só com navegação", () => {
     }
   });
 });
+
+test.describe("AC-6: a logo no cabeçalho de largura total e a lateral abaixo dele", () => {
+  const places = (page: Page) =>
+    page.evaluate(() => {
+      const box = (selector: string) => {
+        const rect = document.querySelector(selector)?.getBoundingClientRect();
+        return rect
+          ? { height: rect.height, width: rect.width, x: rect.x, y: rect.y }
+          : null;
+      };
+      return {
+        brand: box('[data-app-header] a[href="/"]'),
+        header: box("[data-app-header]"),
+        inner: box('[data-slot="sidebar-inner"]'),
+        menu: box("[data-store-menu]"),
+        trigger: box("[data-app-header] [data-slot=sidebar-trigger]"),
+        viewport: document.documentElement.clientWidth,
+      };
+    });
+
+  for (const width of [768, 1024, 1280]) {
+    test(`${width} px: o cabeçalho cobre a largura, a lateral começa embaixo dele e a logo é uma só, no cabeçalho`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 800, width });
+      await serve(page);
+      await openShell(page);
+      const found = await places(page);
+      expect(found.header?.x).toBe(0);
+      expect(found.header?.width).toBe(found.viewport);
+      expect(found.inner?.y).toBe(found.header?.height);
+      expect(found.brand?.y).toBeLessThan(found.header?.height ?? 0);
+      expect(found.menu?.x).toBeGreaterThan(found.brand?.x ?? 0);
+      await expect(
+        page.getByRole("link", { exact: true, name: "Polaris" })
+      ).toHaveCount(1);
+      await expect(
+        header(page).getByRole("link", { exact: true, name: "Polaris" })
+      ).toHaveCount(1);
+      await expect(page.locator('[data-slot="sidebar-trigger"]')).toHaveCount(
+        width >= 1024 ? 1 : 0
+      );
+    });
+  }
+
+  test("1280 px: recolher mexe só nas opções; o cabeçalho, a logo e o botão ficam onde estavam, o item atual segue marcado e cada ícone tem dica", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page);
+    const open = await places(page);
+    const nav = page.getByRole("navigation", { name: "Principal" });
+    await page
+      .getByRole("button", { exact: true, name: "Recolher menu" })
+      .click();
+    await expect(
+      page.locator('[data-slot="sidebar"][data-state="collapsed"]')
+    ).toHaveCount(1);
+    await expect.poll(async () => (await places(page)).inner?.width).toBe(48);
+    const folded = await places(page);
+    expect(folded.header).toEqual(open.header);
+    expect(folded.brand).toEqual(open.brand);
+    expect(folded.trigger).toEqual(open.trigger);
+    expect(folded.inner?.y).toBe(open.inner?.y);
+    await expect(nav.locator("[data-active]")).toHaveCount(1);
+    const current = nav.locator("[data-active]");
+    await current.hover();
+    await expect(page.locator("[data-slot=tooltip-content]")).toHaveText(
+      "Produtos"
+    );
+  });
+
+  test("1280 px: a ordem é Ir para o conteúdo, a logo, o botão de recolher, e o cabeçalho vem antes da lateral e da lateral ao conteúdo", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 800, width: 1280 });
+    await serve(page);
+    await openShell(page);
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("link", { name: "Ir para o conteúdo" })
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(header(page).locator('a[href="/"]')).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { exact: true, name: "Recolher menu" })
+    ).toBeFocused();
+    const order = await page.evaluate(() => {
+      const top = document.querySelector("[data-app-header]");
+      const nav = document.querySelector('nav[aria-label="Principal"]');
+      const main = document.querySelector("main");
+      const before = (a: Element | null, b: Element | null) =>
+        a !== null &&
+        b !== null &&
+        a.compareDocumentPosition(b) === Node.DOCUMENT_POSITION_FOLLOWING;
+      return [before(top, nav), before(nav, main)];
+    });
+    expect(order).toEqual([true, true]);
+  });
+});
