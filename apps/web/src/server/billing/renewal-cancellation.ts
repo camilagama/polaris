@@ -185,8 +185,8 @@ export async function handleRenewalCancelRequested(
  * showing the subscription cancelled) opens the pending-refund incident before
  * any fact is applied, so the redelivery of a failed write still finds the
  * checkout open and writes it again. A paid checkout whose subscription is alive
- * at the provider is an ordinary one for the closure to cancel. A failure throws, and the queue
- * retries.
+ * at the provider is an ordinary one for the closure to cancel. A failure
+ * throws, and the queue retries.
  */
 async function discardOpenCheckout(
   dependencies: RenewalCancelDependencies,
@@ -244,7 +244,12 @@ async function discardOpenCheckout(
   if (renewalEnded && firstChargePaid) {
     await openPaidCheckoutRefundIncident(dependencies, envelope, link, ids);
   }
-  await reconcileOrganization(reconcileDependencies, envelope.organizationId);
+  // the facts applied are the ones the incident was decided on, not a second read that could show another charge
+  await reconcileOrganization(
+    reconcileDependencies,
+    envelope.organizationId,
+    shown
+  );
   return renewalEnded && (firstChargePaid || !closedBefore)
     ? "subscribed_cancelled"
     : "subscribed";

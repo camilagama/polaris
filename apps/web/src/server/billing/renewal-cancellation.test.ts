@@ -75,13 +75,15 @@ function fakeStore(record: Record<string, unknown> | null = alive) {
       return Promise.resolve({
         eventId: id,
         organizationId,
-        outcomeCode: null,
-        status: "applied",
+        outcomeCode: null as string | null,
+        status: "applied" as string,
       });
     }),
     readProviderLink: vi.fn(() => Promise.resolve(state.linked)),
     readRecord: vi.fn(() => Promise.resolve(state.record)),
-    recordClosureRefundIncident: vi.fn(() => Promise.resolve()),
+    recordClosureRefundIncident: vi.fn(
+      (_input: { requestId: string }, _at: Date) => Promise.resolve()
+    ),
     recordCheckoutDiscarded: vi.fn(
       (input: { link: { providerRef: string }; requestId: string }) => {
         discarded.set(input.requestId, input.link.providerRef);
@@ -733,8 +735,25 @@ describe("handleRenewalCancelRequested with Woovi", () => {
       ).resolves.toBe("cancelled");
 
       expect(store.recordClosureRefundIncident).toHaveBeenCalledTimes(2);
+      const [firstCall, secondCall] =
+        store.recordClosureRefundIncident.mock.calls;
+      expect(secondCall?.[0].requestId).toBe(firstCall?.[0].requestId);
       expect(store.recordCheckoutDiscarded).not.toHaveBeenCalled();
       expect(port.cancelRenewal).not.toHaveBeenCalled();
+    });
+
+    it("applies the facts the incident was decided on, with one read of the provider", async () => {
+      const { port, store } = approvedDuringDiscard([paidCharge]);
+
+      await handleRenewalCancelRequested(
+        dependencies(store, port, billingProviderHandled),
+        envelope()
+      );
+
+      expect(port.readState).toHaveBeenCalledTimes(1);
+      expect(store.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ providerEventId: "woovi:charge:1" })
+      );
     });
 
     it("applies the facts only after the incident is written", async () => {

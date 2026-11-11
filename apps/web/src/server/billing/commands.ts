@@ -2,6 +2,7 @@ import {
   type BillingProviderPort,
   type CheckoutHandoff,
   type PreparedSubscription,
+  type ProviderBillingEvent,
   ProviderNotConfiguredError,
   ProviderNotFoundError,
 } from "@polaris/billing/provider-port";
@@ -640,8 +641,6 @@ export interface OperatorCommandDependencies {
 
 export interface ReconcileReport {
   applied: number;
-  /** Charges the provider shows as paid (`charge_succeeded`), whatever the inbox did with them. */
-  chargesSucceeded: number;
   duplicates: number;
   failed: number;
   ignored: number;
@@ -664,13 +663,13 @@ export async function reconcileOrganization(
       "processEvent" | "readProviderLink" | "recordEvent"
     >;
   },
-  organizationId: string
+  organizationId: string,
+  alreadyRead?: readonly ProviderBillingEvent[]
 ): Promise<ReconcileReport> {
   const { store } = dependencies;
   const now = dependencies.now?.() ?? new Date();
   const report: ReconcileReport = {
     applied: 0,
-    chargesSucceeded: 0,
     duplicates: 0,
     failed: 0,
     ignored: 0,
@@ -684,15 +683,10 @@ export async function reconcileOrganization(
   }
   report.linked = true;
   const port = dependencies.portFor(link.provider);
-  const events = await port.readState(
-    link.providerRef,
-    now,
-    link.providerSubscriptionId
-  );
+  const events =
+    alreadyRead ??
+    (await port.readState(link.providerRef, now, link.providerSubscriptionId));
   report.read = events.length;
-  report.chargesSucceeded = events.filter(
-    (event) => event.fact.type === "charge_succeeded"
-  ).length;
   for (const event of events) {
     // biome-ignore lint/performance/noAwaitInLoops: Facts are stored and applied in the order the provider shows them.
     const stored = await store.recordEvent({
