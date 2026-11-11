@@ -163,15 +163,18 @@ function journeyNameCalls(source: string): string[][] {
   return calls;
 }
 
+const RETRY_POSITION = 2;
 const REPETITION_INDEX_POSITION = 3;
+const RETRY = /^(?:\w+\.)*retry$/;
 const REPETITION_INDEX = /^(?:\w+\.)*repeatEachIndex$/;
 
 const lacksRepetition = (args: string[]) =>
   args.length !== REPETITION_INDEX_POSITION + 1 ||
+  !RETRY.test(args[RETRY_POSITION] as string) ||
   !REPETITION_INDEX.test(args[REPETITION_INDEX_POSITION] as string);
 
 describe("journeyName calls in the e2e suites", () => {
-  it("pass the repetition index, or --repeat-each inserts the same user twice", () => {
+  it("pass the retry and the repetition index, or a retry or --repeat-each inserts the same user twice", () => {
     const offenders = sourceFiles(ROOT).flatMap((file) =>
       journeyNameCalls(readFileSync(file, "utf8"))
         .filter(lacksRepetition)
@@ -193,6 +196,20 @@ describe("journeyName calls in the e2e suites", () => {
       'x(journeyName(f("pilha"), "a", testInfo.retry, testInfo.repeatEachIndex))';
     expect(journeyNameCalls(bad).filter(lacksRepetition)).toHaveLength(1);
     expect(journeyNameCalls(good).filter(lacksRepetition)).toHaveLength(0);
+  });
+
+  it("rejects an attempt that is not the retry, even with the repetition index in place", () => {
+    const literal = 'journeyName("pilha", "a", 0, testInfo.repeatEachIndex)';
+    const repetitionTwice =
+      'journeyName("pilha", "a", testInfo.repeatEachIndex, testInfo.repeatEachIndex)';
+    const workerIndex =
+      'journeyName("pilha", "a", testInfo.workerIndex, testInfo.repeatEachIndex)';
+    const retryOnly = 'journeyName("pilha", "a", testInfo.retry, 0)';
+    for (const bad of [literal, repetitionTwice, workerIndex, retryOnly]) {
+      expect(journeyNameCalls(bad).filter(lacksRepetition), bad).toHaveLength(
+        1
+      );
+    }
   });
 
   it("accepts the index with a trailing comma and across lines", () => {
@@ -242,7 +259,7 @@ describe("journeyName calls in the e2e suites", () => {
   it("reads a call inside a template expression and still skips the template text", () => {
     const open = ["$", "{"].join("");
     const bad = `const email = \`${open}journeyName("a", "b", 0)}@x.com\`;`;
-    const good = `const email = \`${open}journeyName("a", "b", 0, testInfo.repeatEachIndex)}@x.com\`;`;
+    const good = `const email = \`${open}journeyName("a", "b", testInfo.retry, testInfo.repeatEachIndex)}@x.com\`;`;
     const text = `const note = \`journeyName(1) and ${open}"x"}\`;`;
     expect(journeyNameCalls(bad).filter(lacksRepetition)).toHaveLength(1);
     expect(journeyNameCalls(good).filter(lacksRepetition)).toHaveLength(0);
