@@ -338,14 +338,13 @@ describe("readPeriodSummary: a capa de cada produto do ranking", () => {
     >;
     const query = {
       from: () => query,
-      orderBy: () => {
-        return Promise.resolve(
+      orderBy: () =>
+        Promise.resolve(
           Object.entries(covers).map(([productId, coverAssetId]) => ({
             coverAssetId,
             productId,
           }))
-        );
-      },
+        ),
       where: (condition: unknown) => {
         asked.push(condition);
         return query;
