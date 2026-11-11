@@ -9,6 +9,7 @@ import {
 import {
   ACCOUNT_UNAVAILABLE_REASONS,
   isBrowserFailure,
+  LEGAL_ACCEPTANCE_REASON,
   PLAN_REFUSED_REASON,
   type RuntimeSnapshot,
 } from "./offline-runtime";
@@ -133,7 +134,7 @@ export function recognitionText(
   if (reason === PLAN_REFUSED_REASON) {
     return RECOGNIZING_PLAN_TEXT;
   }
-  if (reason === "legal_acceptance_required") {
+  if (reason === LEGAL_ACCEPTANCE_REASON) {
     return RECOGNIZING_LEGAL_TEXT;
   }
   return ACCOUNT_UNAVAILABLE_REASONS.has(reason)

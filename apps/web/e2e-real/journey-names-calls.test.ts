@@ -163,14 +163,12 @@ function journeyNameCalls(source: string): string[][] {
   return calls;
 }
 
-const FIRST_REPETITION_POSITION = 2;
+const REPETITION_INDEX_POSITION = 3;
 const REPETITION_INDEX = /^(?:\w+\.)*repeatEachIndex$/;
 
-/** The index may sit from the third argument on: only a call that never passes it is refused. */
 const lacksRepetition = (args: string[]) =>
-  !args
-    .slice(FIRST_REPETITION_POSITION)
-    .some((arg) => REPETITION_INDEX.test(arg));
+  args.length !== REPETITION_INDEX_POSITION + 1 ||
+  !REPETITION_INDEX.test(args[REPETITION_INDEX_POSITION] as string);
 
 describe("journeyName calls in the e2e suites", () => {
   it("pass the repetition index, or --repeat-each inserts the same user twice", () => {
@@ -208,38 +206,14 @@ describe("journeyName calls in the e2e suites", () => {
     expect(journeyNameCalls(good).filter(lacksRepetition)).toHaveLength(0);
   });
 
-  it("accepts the index in the third, fourth or fifth position", () => {
-    const third =
+  it("rejects the index in the wrong position", () => {
+    const swapped =
       'journeyName("pilha", "a", testInfo.repeatEachIndex, testInfo.retry)';
-    const fourth =
-      'journeyName("pilha", "a", testInfo.retry, testInfo.repeatEachIndex)';
-    const fifth =
-      'journeyName("pilha", "a", testInfo.retry, 0, testInfo.repeatEachIndex)';
-    for (const good of [third, fourth, fifth]) {
-      expect(journeyNameCalls(good), good).toHaveLength(1);
-      expect(journeyNameCalls(good).filter(lacksRepetition), good).toHaveLength(
-        0
-      );
-    }
-  });
-
-  it("still rejects a call that never passes the index, wherever the other arguments are", () => {
-    const none = 'journeyName("pilha", "a", testInfo.retry)';
-    const noneWithExtra = 'journeyName("pilha", "a", testInfo.retry, 0, 1)';
-    const onlyInProject = 'journeyName(testInfo.repeatEachIndex, "a", 0)';
-    const onlyInJourney = 'journeyName("pilha", testInfo.repeatEachIndex, 0)';
-    const lookalike = 'journeyName("pilha", "a", testInfo.retry, other.index)';
-    for (const bad of [
-      none,
-      noneWithExtra,
-      onlyInProject,
-      onlyInJourney,
-      lookalike,
-    ]) {
-      expect(journeyNameCalls(bad), bad).toHaveLength(1);
-      expect(journeyNameCalls(bad).filter(lacksRepetition), bad).toHaveLength(
-        1
-      );
+    const early = 'journeyName("pilha", testInfo.repeatEachIndex, 0, 0)';
+    const extra =
+      'journeyName("pilha", "a", testInfo.retry, testInfo.repeatEachIndex, 1)';
+    for (const bad of [swapped, early, extra]) {
+      expect(journeyNameCalls(bad).filter(lacksRepetition)).toHaveLength(1);
     }
   });
 
