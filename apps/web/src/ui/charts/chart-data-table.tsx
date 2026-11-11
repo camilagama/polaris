@@ -49,6 +49,12 @@ const align = (numeric: boolean | undefined) => numeric && "text-right";
 const HIDDEN =
   "absolute left-0 h-px w-full overflow-hidden [clip-path:inset(50%)]";
 
+/* an automatic table layout never goes below the widest word of each column, so five columns made a table wider than a
+   phone and every box of it past the screen; a fixed layout holds the table to the width of its wrapper and the text
+   breaks inside the cell */
+const HIDDEN_TABLE =
+  "table-fixed [overflow-wrap:anywhere] [&_td]:px-0 [&_th]:px-0";
+
 /**
  * The day-by-day numbers of a chart as a real table: invisible on the screen (clipped to one pixel, out of the tab order) and
  * tied to the chart by the chart's `aria-details`, so the drawing is never the only source of a number for assistive
@@ -72,7 +78,11 @@ export function ChartDataTable({
       data-chart-data-table={visible ? "visible" : "hidden"}
     >
       <table
-        className={cn("w-full caption-top text-sm", stacked && STACK_TABLE)}
+        className={cn(
+          "w-full caption-top text-sm",
+          !visible && HIDDEN_TABLE,
+          stacked && STACK_TABLE
+        )}
         id={id}
       >
         <caption
