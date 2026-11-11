@@ -1418,14 +1418,35 @@ test.describe("o Início enxuto: a dobra a 360 px e a ajuda de cada bloco", () =
     expect(
       await bottom(region(page, "Vendas hoje").locator("[data-kpi-value]"))
     ).toBeLessThanOrEqual(740);
-    expect(await bottom(region(page, "Vendas em outubro"))).toBeLessThanOrEqual(
-      740
-    );
+    expect(await bottom(periodButton(page))).toBeLessThanOrEqual(740);
+    expect(
+      await bottom(region(page, "Vendas em outubro").locator("h2"))
+    ).toBeLessThanOrEqual(740);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth
       )
     ).toBe(true);
+  });
+
+  test("a 360 px o seletor de período fica entre Hoje e os cartões do mês, e Hoje, o seletor e Vendas cabem na janela", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    await openHome(page, new FakeServer(SOLD));
+    await expect(region(page, "Vendas hoje")).toContainText("R$ 320,10");
+    const top = async (target: Locator) =>
+      (await target.first().boundingBox())?.y ?? Number.NaN;
+    const picker = await top(periodButton(page));
+    expect(picker).toBeGreaterThan(await top(region(page, "Vendas hoje")));
+    expect(picker).toBeLessThan(await top(region(page, "Vendas em outubro")));
+    const bottom = async (target: Locator) => {
+      const box = await target.first().boundingBox();
+      return (box?.y ?? Number.POSITIVE_INFINITY) + (box?.height ?? 0);
+    };
+    expect(await bottom(region(page, "Vendas em outubro"))).toBeLessThanOrEqual(
+      740
+    );
   });
 
   test("a altura da página a 360 px com os mesmos três itens de ação", async ({

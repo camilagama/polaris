@@ -161,6 +161,7 @@ describe("a coluna e os quatro cartões", () => {
 });
 
 const CLASS_ATTRIBUTE = /class="([^"]*)"/;
+const REORDERING_CLASS = /[\s"](?:[\w-]+:)*order-(?:first|last|\d)/;
 
 /** The classes of the element that carries `attribute` in a card: the number box, or the R$ inside it. */
 function classesWith(markup: string, attribute: string): string {
@@ -351,6 +352,20 @@ describe("o seletor de período na linha acima dos cartões do mês", () => {
     );
     expect(markup).toContain("min-h-9");
     expect(markup).not.toContain("Outubro · 1 a 23/10");
+  });
+
+  it("o seletor vem entre Hoje e os cartões do mês no DOM, sem classe que mude a ordem visual", () => {
+    for (const markup of [
+      withControl(<KpiCards figures={figures()} />),
+      withControl(<KpiCardsSkeleton />),
+      withControl(<NoFiguresCards today={TODAY} />),
+    ]) {
+      expect(markup).not.toMatch(REORDERING_CLASS);
+    }
+    const markup = withControl(<KpiCards figures={figures()} />);
+    const picker = markup.indexOf("Seletor");
+    expect(markup.indexOf("Vendas hoje")).toBeLessThan(picker);
+    expect(picker).toBeLessThan(markup.indexOf("Vendas em outubro"));
   });
 
   it("o esqueleto e o sem conexão guardam a mesma linha, com o seletor no mesmo lugar", () => {
