@@ -123,14 +123,6 @@ const KNOWN_FINDINGS_24: readonly KnownFinding[] = [
       'div[data-slot="field"] > button#expense-new-category-group > span[data-slot="select-value"]',
   },
   {
-    clientWidth: 47,
-    reason:
-      'no Resultado sem custo conhecido, o título "Resultado estimado" do cartão é cortado: o texto (92 px) fica numa caixa de 47 px; o título tem de poder quebrar em duas linhas',
-    screens: ["resultado sem custo conhecido"],
-    scrollWidth: 92,
-    selector: 'div[data-slot="card"] > h2#result-kpi-result > span',
-  },
-  {
     clientWidth: 272,
     reason:
       "na Ajuda, um dos dois cartões, Suporte ou Dados pessoais, tem 272 px e o conteúdo (título, texto e e-mail) mede 290 px: passa 18 px da borda direita",
