@@ -5,7 +5,7 @@ import { type HomeSelection, OFFLINE_ONLY } from "./home-period";
 
 /**
  * The period of the cards of the month, of Vendas por dia and of Mais vendidos: the Resultado's picker (one month at a
- * time), at the end of the line that names the month. Without a connection only this month and the last one open: the
+ * time), at the end of a line of its own above the tiles of the month. Without a connection only this month and the last one open: the
  * others are off in the panel, with the reason, and from 640 px the line says it beside the button too (on a phone it is
  * for the screen reader, the panel has it in words). The sentence is always in the line, invisible with a connection, so
  * the line does not change height when the connection goes or comes back. `note` is the line about what is on screen (a
@@ -50,8 +50,8 @@ export function HomePeriodRow({
       <PeriodPicker
         disabled={disabled}
         onCustom={onCustom}
-        onPreset={onPreset}
         only={offline ? OFFLINE_ONLY : undefined}
+        onPreset={onPreset}
         period={period}
         preset={selection.preset}
         today={today}
