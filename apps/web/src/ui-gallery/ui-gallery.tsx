@@ -68,7 +68,7 @@ import {
 import { EmptyState } from "@/ui/empty-state";
 import { HelpTip } from "@/ui/help-tip";
 import { HideValuesButton, MoneyText } from "@/ui/hidden-values";
-import { DeltaChip, HeroValue, KpiCard, KpiTile } from "@/ui/kpi-card";
+import { DeltaChip, HeroValue, KpiTile } from "@/ui/kpi-card";
 import { Money } from "@/ui/money";
 import {
   Field,
@@ -1339,7 +1339,7 @@ export function UiGallery() {
                 title="Vendas"
                 value={<HeroValue amount="2660.60" tile />}
               />
-              <KpiCard
+              <KpiTile
                 chip={
                   <DeltaChip
                     delta={{
@@ -1352,14 +1352,14 @@ export function UiGallery() {
                   />
                 }
                 entity="result"
-                footer="Não é lucro líquido nem caixa"
                 help={{
                   about: "Resultado estimado",
                   text: "Vendas menos custos, taxas e despesas de 1 a 25/10. Compara com 1 a 25/09.",
                 }}
                 id="galeria-kpi-resultado"
+                note="Não é lucro líquido nem caixa"
                 title="Resultado estimado"
-                value={<HeroValue amount="-48.30" />}
+                value={<HeroValue amount="-48.30" tile />}
               />
             </div>
           </Section>
