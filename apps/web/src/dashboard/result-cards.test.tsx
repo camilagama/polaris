@@ -608,6 +608,17 @@ describe("the link of the sales card to the Histórico", () => {
     expect(without).not.toContain("basis-full");
   });
 
+  it("keeps the count on the line under the chip when there is no link", () => {
+    const summary = october([]);
+    summary.cards.salesCount = 0;
+    const markup = sales(summary);
+    expect(markup).not.toContain("data-kpi-sales-link");
+    expect(markup.indexOf("data-kpi-chip-row")).toBeLessThan(
+      markup.indexOf("basis-full")
+    );
+    expect(words(markup)).toContain("Nenhuma venda ainda");
+  });
+
   it("puts the arrow after the words", () => {
     const markup = sales(october([]));
     expect(markup).toMatch(ARROW_AFTER_WORDS);

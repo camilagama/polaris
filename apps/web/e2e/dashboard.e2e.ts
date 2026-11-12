@@ -2351,10 +2351,17 @@ const rowStep = (chart: Locator) =>
     return step;
   });
 
+/** Where the strip of KPI cards ends: the sales card is a line taller under the comparison chip, and that moves what is below. */
+async function stripBottom(page: Page): Promise<number> {
+  const strip = await placeOf(page.locator("[data-kpi-row]").first());
+  return strip.top + strip.height;
+}
+
 async function chartPlaces(page: Page) {
   await settled(page);
   const chart = chartRegion(page);
   return {
+    stripBottom: await stripBottom(page),
     card: await placeOf(chart),
     rowStep: await rowStep(chart),
     next: await placeOf(chain(page)),
@@ -2372,8 +2379,12 @@ function expectSamePlaces(after: ChartPlaces, before: ChartPlaces) {
       `altura de ${key}`
     ).toBeLessThanOrEqual(1);
     expect(
-      Math.abs(after[key].top - before[key].top),
-      `topo de ${key}`
+      Math.abs(
+        after[key].top -
+          after.stripBottom -
+          (before[key].top - before.stripBottom)
+      ),
+      `topo de ${key} a partir da faixa de KPIs`
     ).toBeLessThanOrEqual(1);
   }
 }
@@ -3068,14 +3079,16 @@ async function measureStrip(page: Page) {
       .filter((value) => value.scrollWidth > value.clientWidth)
       .map((value) => value.textContent),
     height: strip.getBoundingClientRect().height,
-    linkLine: [...strip.querySelectorAll("[data-kpi]")].reduce((most, cell) => {
-      const row = cell.querySelector("[data-kpi-note-row]");
-      if (!(row && cell.querySelector("[data-kpi-sales-link]"))) {
-        return most;
-      }
-      const line = Number.parseFloat(getComputedStyle(row).minHeight);
-      return Math.max(most, row.getBoundingClientRect().height - line);
-    }, 0),
+    linkLine: (() => {
+      const row = strip.querySelector("[data-kpi=sales] [data-kpi-note-row]");
+      return row
+        ? Math.max(
+            0,
+            row.getBoundingClientRect().height -
+              Number.parseFloat(getComputedStyle(row).minHeight)
+          )
+        : 0;
+    })(),
     warned: strip.querySelector("[data-kpi-notice]") !== null,
   }));
 }
@@ -3139,7 +3152,7 @@ function expectSameStripHeight(measured: Measured, width: number) {
   for (const [name, run] of Object.entries(measured)) {
     expect(
       run.states[width]?.linkLine ?? 0,
-      `${name} a ${width} px: o link acrescenta no máximo uma linha de apoio`
+      `${name} a ${width} px: o cartão de vendas acrescenta no máximo uma linha de apoio sob o chip`
     ).toBeLessThanOrEqual(17);
   }
   for (const [name, run] of Object.entries(measured)) {
