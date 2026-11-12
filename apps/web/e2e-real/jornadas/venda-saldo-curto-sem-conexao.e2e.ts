@@ -60,8 +60,21 @@ test("venda com saldo curto sem conexão: o link abre a entrada com a quantidade
   await item.getByRole("link", { name: ENTRY_LINK }).click();
 
   await expect(
-    page.getByRole("heading", { name: "Receber estoque" })
+    page.getByRole("heading", { exact: true, level: 1, name: "Estoque" })
   ).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Sem conexão" }).first()
+  ).toBeVisible({ timeout: 20_000 });
+  try {
+    await expect(
+      page.getByRole("heading", { name: "Receber estoque" })
+    ).toBeVisible({ timeout: 20_000 });
+  } catch (error) {
+    throw new Error(
+      `o painel não abriu; a tela diz: ${await page.locator("main").innerText()}`,
+      { cause: error }
+    );
+  }
   await expect(page.getByLabel("Quantidade recebida")).toHaveValue("2");
   expect(new URL(page.url()).search).toBe("");
   expect(await queuedCommands(page)).toBe(0);
