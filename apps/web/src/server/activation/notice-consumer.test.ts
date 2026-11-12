@@ -475,9 +475,7 @@ describe("the consumer of an activation notice: the configuration", () => {
       new URL("../environment.ts", import.meta.url),
       "utf8"
     );
-    const secretNames = [
-      ...declared.matchAll(STRING_BINDING),
-    ]
+    const secretNames = [...declared.matchAll(STRING_BINDING)]
       .map((match) => match[1] ?? "")
       .filter(
         (name) =>
