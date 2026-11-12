@@ -3,13 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { StoredPeriodSummary } from "../lib/period-summary-cache";
 import { GapSeries } from "../ui/charts/chart-gaps";
 import { knownRuns } from "../ui/charts/chart-data";
-import { NumbersTable, ResultChart } from "./result-chart";
+import { NumbersTable, periodHelp, ResultChart } from "./result-chart";
 import { addDays } from "./result-period";
-import { resultSeries } from "./result-series";
+import { resultSeries, supportParts } from "./result-series";
 
 /**
  * The markup of "Vendas × custos por dia" (AC-9 and AC-11): the five sentences of support, the
- * summary a screen reader gets (`role="img"`) and the table "Ver os números", where a
+ * summary a screen reader gets (`role="img"`) and the invisible table of the numbers, where a
  * day of unknown cost says "sem custo informado", never R$ 0,00. The drawing itself is measured in the browser.
  */
 
@@ -124,10 +124,13 @@ function text(markup: string) {
 }
 
 const CUTS_TEXT = /max-h-|line-clamp/;
-const CONTENT_START_CLASS = /class="(?:[^"]* )?content-start(?: [^"]*)?"/;
-const DESCRIPTION = /<div[^>]*data-slot="card-description"[^>]*>(.*?)<\/div>/s;
-const support = (markup: string) =>
-  text(markup.match(DESCRIPTION)?.[1] ?? "").replace("1 a 31 de outubro. ", "");
+function support(summary: StoredPeriodSummary): string {
+  const { count, tail } = supportParts(
+    resultSeries(summary.daily ?? [], "2026-10-25"),
+    summary.chain
+  );
+  return [count, tail].filter((part) => part !== null).join(" ");
+}
 const COSTS_TOTAL = /<dt[^>]*>Custos<\/dt>/;
 const THIRD_ROW = /<tr[^>]*>(?:(?!<\/tr>).)*03\/10\/2026.*?<\/tr>/s;
 const EQUALITY = "A diferença entre as duas linhas";
@@ -135,36 +138,36 @@ const ALL_UNKNOWN = Array.from({ length: 25 }, (_, index) => index + 1);
 
 describe("the sentence of support of the chart, in its five cases (AC-11)", () => {
   it("1. every day known, no surcharge: the equality", () => {
-    expect(support(chart(october([])))).toBe(
+    expect(support(october([]))).toBe(
       "A diferença entre as duas linhas é o resultado estimado do dia. Despesas do período entram no dia da competência."
     );
   });
 
-  it("2. every day known, a surcharge: to the table, no equality", () => {
-    const said = support(chart(october([], "12.00")));
+  it("2. every day known, a surcharge: says the lines are not the result, no equality", () => {
+    const said = support(october([], "12.00"));
     expect(said).toBe(
-      "O resultado de cada dia está em Ver os números. Despesas do período entram no dia da competência."
+      "Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do dia. Despesas do período entram no dia da competência."
     );
     expect(said).not.toContain(EQUALITY);
   });
 
   it("3. 3 of 25 days unknown, no surcharge: the count, then the equality on the days without the hatch", () => {
-    expect(support(chart(october([3, 12, 21])))).toBe(
+    expect(support(october([3, 12, 21]))).toBe(
       "3 de 25 dias sem custo informado. A diferença entre as duas linhas é o resultado estimado do dia nos dias sem hachura. Despesas do período entram no dia da competência."
     );
   });
 
-  it("4. 3 of 25 days unknown, a surcharge: the count, then the table", () => {
-    const said = support(chart(october([3, 12, 21], "12.00")));
+  it("4. 3 of 25 days unknown, a surcharge: the count, then the sentence that the lines are not the result", () => {
+    const said = support(october([3, 12, 21], "12.00"));
     expect(said).toBe(
-      "3 de 25 dias sem custo informado. O resultado de cada dia está em Ver os números. Despesas do período entram no dia da competência."
+      "3 de 25 dias sem custo informado. Com acréscimos nas vendas, a diferença entre as linhas não é o resultado do dia. Despesas do período entram no dia da competência."
     );
     expect(said).not.toContain(EQUALITY);
   });
 
   it("5. no day known: the count and the competence, no equality", () => {
     for (const surcharges of ["0.00", "12.00"]) {
-      expect(support(chart(october(ALL_UNKNOWN, surcharges)))).toBe(
+      expect(support(october(ALL_UNKNOWN, surcharges))).toBe(
         "25 de 25 dias sem custo informado. Despesas do período entram no dia da competência."
       );
     }
@@ -189,56 +192,41 @@ describe("the chart with unknown days (AC-9, emenda de 25/10)", () => {
 });
 
 describe("the room the card keeps for its lines (lugar reservado)", () => {
-  const NOT_NET_PROFIT = "Não é lucro líquido nem dinheiro já recebido.";
-
-  it("keeps the line 'Não é lucro líquido' in the box, empty when every day is known", () => {
+  it("keeps the line of the note and the line of the best day in the box, whatever the state", () => {
     const complete = chart(october([]));
     const incomplete = chart(october([3]));
-    expect(complete).not.toContain(NOT_NET_PROFIT);
-    expect(incomplete).toContain(NOT_NET_PROFIT);
     const lines = (markup: string) =>
       markup.match(/<p class="[^"]*min-h-\[1\.125rem\][^"]*"[^>]*>/g) ?? [];
     expect(lines(complete)).toHaveLength(lines(incomplete).length);
-    expect(lines(complete).length).toBeGreaterThanOrEqual(3);
+    expect(lines(complete).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("holds the same lines in the box that stands in for the drawing while its chunk loads", () => {
+  it("holds the same row in the box that stands in for the drawing while its chunk loads", () => {
     const markup = chart(october([3]));
     expect(markup).toContain("data-chart-loading");
-    expect(markup).toContain("min-h-[calc(5*1.125rem)]");
-    expect(markup).toContain("min-h-[3.5rem]");
-  });
-
-  it("puts the room reserved for the reading and the legend below their text, not between the fragments", () => {
-    const markup = chart(october([3]));
-    const reserved = (floor: string) =>
-      (
-        markup.match(/<div aria-hidden="true" class="[^"]*"[^>]*>/g) ?? []
-      ).filter((tag) => tag.includes(floor));
-    const reading = reserved("min-h-[calc(5*1.125rem)]");
-    const legend = reserved("min-h-[3.5rem]");
-    expect(reading).toHaveLength(1);
-    expect(legend).toHaveLength(1);
-    expect(reading[0]).toMatch(CONTENT_START_CLASS);
-    expect(legend[0]).toMatch(CONTENT_START_CLASS);
-    expect('<div class="place-content-start min-h-[3.5rem]">').not.toMatch(
-      CONTENT_START_CLASS
-    );
+    const rows =
+      markup.match(
+        /<div aria-hidden="true" class="[^"]*min-h-\[8\.5rem\][^"]*"/g
+      ) ?? [];
+    expect(rows).toHaveLength(1);
+    expect(markup).not.toContain("min-h-[calc(5*1.125rem)]");
   });
 
   it("reserves with min-h only: nothing is cut with max-h or a line clamp", () => {
     const markup = chart(october([3]));
-    expect(markup).toContain("min-h-[calc(");
+    expect(markup).toContain("min-h-[");
     expect(markup).not.toMatch(CUTS_TEXT);
   });
 });
 
-describe("the table Ver os números (AC-9, AC-18)", () => {
+describe("the table of the numbers, invisible and tied to the chart (AC-9, AC-18)", () => {
   const table = (unknown: readonly number[]) =>
     renderToStaticMarkup(
       <NumbersTable
         hasCosts
+        id="numbers"
         series={resultSeries(october(unknown).daily ?? [], "2026-10-25")}
+        visible={false}
       />
     );
 
@@ -340,15 +328,24 @@ describe("the unit of the texts follows the grouping (day for a month, month for
     const said = text(markup);
     expect(said).toContain("Vendas × custos por mês");
     expect(said).not.toContain("Vendas × custos por dia");
-    expect(said).toContain("é o resultado estimado do mês");
+    expect(
+      supportParts(
+        resultSeries(year().daily ?? [], "2026-10-25", {
+          granularity: "month",
+        }),
+        year().chain
+      ).tail
+    ).toContain("é o resultado estimado do mês");
 
     const table = text(
       renderToStaticMarkup(
         <NumbersTable
           hasCosts
+          id="numbers"
           series={resultSeries(year().daily ?? [], "2026-10-25", {
             granularity: "month",
           })}
+          visible={false}
         />
       )
     );
@@ -360,17 +357,142 @@ describe("the unit of the texts follows the grouping (day for a month, month for
     const markup = chart(october([]));
     const said = text(markup);
     expect(said).toContain("Vendas × custos por dia");
-    expect(said).toContain("é o resultado estimado do dia");
+    expect(support(october([]))).toContain("é o resultado estimado do dia");
 
     const table = text(
       renderToStaticMarkup(
         <NumbersTable
           hasCosts
+          id="numbers"
           series={resultSeries(october([]).daily ?? [], "2026-10-25")}
+          visible={false}
         />
       )
     );
     expect(table).toContain("Resultado do dia");
     expect(table).not.toContain("Resultado do mês");
+  });
+});
+
+describe("the (i) of the title and the caveat said once (AC-7.2 to AC-7.4)", () => {
+  const states = [
+    ["complete", october([])],
+    ["with unknown days", october([3, 12, 21])],
+    ["with surcharges", october([], "12.00")],
+    ["with no known day", october(ALL_UNKNOWN, "12.00")],
+  ] as const;
+
+  for (const [name, summary] of states) {
+    it(`${name}: the card says no "lucro líquido" and no "Ver os números", the (i) are the place for it`, () => {
+      const said = text(chart(summary));
+      expect(said).not.toContain("lucro líquido");
+      expect(said).not.toContain("Ver os números");
+      expect(said).not.toContain("1 a 31 de outubro");
+    });
+  }
+
+  it("the seal of the estimate stays beside the title of an incomplete chart", () => {
+    expect(text(chart(october([3])))).toContain("estimativa incompleta");
+    expect(text(chart(october([])))).not.toContain("estimativa incompleta");
+  });
+
+  it("each (i) keeps within 160 characters, whatever the period, the copy and the days without cost", () => {
+    const ranges = [
+      "1 a 31 de outubro",
+      "28 de fevereiro de 2025 a 23 de setembro de 2026",
+    ];
+    for (const range of ranges) {
+      for (const source of ["cache", "server"] as const) {
+        for (const unknown of [0, 3, 366]) {
+          const summary = october(
+            Array.from({ length: unknown }, (_, index) => index + 1),
+            "12.00"
+          );
+          const { tail } = supportParts(
+            resultSeries(summary.daily ?? [], "2026-10-25"),
+            summary.chain
+          );
+          const count =
+            unknown > 0 ? "366 de 366 dias sem custo informado." : null;
+          for (const help of [periodHelp({ count, range, source }), tail]) {
+            expect(help?.length ?? 0).toBeLessThanOrEqual(160);
+          }
+        }
+      }
+    }
+  });
+
+  it("the first (i) carries the dates, the copy and the days without cost, in this order, and no caveat", () => {
+    expect(
+      periodHelp({
+        count: "3 de 31 dias sem custo informado.",
+        range: "1 a 31 de outubro",
+        source: "cache",
+      })
+    ).toBe(
+      "1 a 31 de outubro · cópia guardada. 3 de 31 dias sem custo informado."
+    );
+    expect(
+      periodHelp({ count: null, range: "1 a 31 de outubro", source: "server" })
+    ).toBe("1 a 31 de outubro.");
+  });
+});
+
+describe("the table when the chart does not open (AC-7.8)", () => {
+  const series = resultSeries(
+    (october([]).daily ?? []).map((day) =>
+      day.date > "2026-10-25" ? { ...day, costs: "10.00" } : day
+    ),
+    "2026-10-25"
+  );
+  const render = (visible: boolean) =>
+    renderToStaticMarkup(
+      <NumbersTable hasCosts id="numbers" series={series} visible={visible} />
+    );
+
+  it("is clipped to one pixel when the chart opens and shown when it does not, with the same rows", () => {
+    expect(render(false)).toContain('data-chart-data-table="hidden"');
+    expect(render(true)).toContain('data-chart-data-table="visible"');
+    expect(text(render(false))).toBe(text(render(true)));
+  });
+
+  it("closes with what the days after today cost, and never offers a button", () => {
+    const said = text(render(false));
+    expect(said).toContain("Depois de hoje: despesas R$ 60,00");
+    expect(render(false)).not.toContain("<button");
+    expect(render(false)).not.toContain("tabindex");
+  });
+});
+
+describe("the table of five columns on a phone (AC-7.8)", () => {
+  const series = resultSeries(october([]).daily ?? [], "2026-10-25");
+  const render = (visible: boolean) =>
+    renderToStaticMarkup(
+      <NumbersTable hasCosts id="numbers" series={series} visible={visible} />
+    );
+
+  it("stacks each row as a card with the name of each column beside its value when it is shown", () => {
+    const markup = render(true);
+    expect(markup).toContain("@max-3xl:grid");
+    expect(markup).toContain('data-label="Custos"');
+    expect(markup).toContain('data-label="Despesas do período"');
+  });
+
+  it("keeps the table layout when it is invisible: only the screen reader reads it", () => {
+    const markup = render(false);
+    expect(markup).not.toContain("@max-3xl:");
+    expect(markup).toContain('data-label="Custos"');
+  });
+
+  it("leaves a table of two columns as it is", () => {
+    const markup = renderToStaticMarkup(
+      <NumbersTable
+        hasCosts={false}
+        id="numbers"
+        series={series}
+        visible={true}
+      />
+    );
+    expect(markup).not.toContain("@max-3xl:grid");
   });
 });

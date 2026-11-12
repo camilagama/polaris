@@ -1,4 +1,5 @@
 import { isValidCalendarDate } from "@polaris/domain/inventory/calendar-date";
+import { logger } from "@polaris/observability/logger";
 import { newPolarisReference } from "../asaas/ids";
 import type { FetchLike } from "../http";
 import { AMOUNT_PLACEHOLDER, stringifyWithAmount } from "../json";
@@ -17,15 +18,41 @@ import { alignWooviCustomer } from "./customer";
 import { isWooviGlobalId } from "./ids";
 import {
   installmentPeriodEndsAt,
+  installmentRows,
+  isWooviSubscriptionMade,
+  needsInstallmentsForAuthorization,
   pickWooviEndToEndId,
   pickWooviInstallment,
+  pickWooviInstallmentRows,
   pickWooviSubscription,
   reconcileWooviSubscription,
   refundableInstallment,
+  type WooviAuthorizationForm,
   type WooviSubscription,
+  wooviAuthorizationForm,
   wooviRefundCorrelationId,
   wooviRefundEvent,
 } from "./mapper";
+
+/**
+ * Which shape of the authorization the provider gave, by codes and counts
+ * only: the first real subscription tells whether production shows
+ * `pixRecurring.status` and when it creates installments (ADR 0101, regra
+ * única).
+ */
+export function logWooviAuthorizationForm(
+  reading: "discard_checkout" | "reconciliation" | "webhook_approval",
+  form: WooviAuthorizationForm
+): void {
+  logger.info("billing_woovi_authorization_form", {
+    authorizationShown: form.authorizationShown,
+    installmentsByStatus: form.installmentsByStatus,
+    malformedInstallments: form.malformedInstallments,
+    provider: "woovi",
+    reading,
+    verdict: form.verdict,
+  });
+}
 
 /**
  * The outbound port to Woovi, Pix Automático (ADR 0101, emenda do PR 6). The
@@ -242,7 +269,16 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
         }
         throw error;
       }
-      if (subscription.authorization === "APPROVED") {
+      const rows = needsInstallmentsForAuthorization(subscription)
+        ? pickWooviInstallmentRows(
+            await client.listSubscriptionInstallments(subscription.id)
+          )
+        : [];
+      logWooviAuthorizationForm(
+        "discard_checkout",
+        wooviAuthorizationForm(subscription, rows)
+      );
+      if (isWooviSubscriptionMade(subscription, rows)) {
         // the payer authorized it: it is a subscription, no longer a checkout to give up
         // (the caller asks `hasSubscription` and cancels it as a renewal when it must)
         return "already_closed";
@@ -256,13 +292,16 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
         providerRef,
         providerSubscriptionId
       );
-      if (subscription.authorization === "APPROVED") {
+      if (isWooviSubscriptionMade(subscription, [])) {
         return true;
       }
-      // installments exist only after the approval (sandbox): one approved and
-      // then revoked by the payer still made a subscription
-      return (
-        (await client.listSubscriptionInstallments(subscription.id)).length > 0
+      // installments of this subscription exist only after the approval (sandbox):
+      // one approved and then revoked by the payer still made a subscription
+      return isWooviSubscriptionMade(
+        subscription,
+        pickWooviInstallmentRows(
+          await client.listSubscriptionInstallments(subscription.id)
+        )
       );
     },
     async prepareSubscription(input) {
@@ -291,6 +330,10 @@ export function createWooviPort(config: WooviPortConfig): BillingProviderPort {
       const installments = (
         await client.listSubscriptionInstallments(subscription.id)
       ).map(pickWooviInstallment);
+      logWooviAuthorizationForm(
+        "reconciliation",
+        wooviAuthorizationForm(subscription, installmentRows(installments))
+      );
       return reconcileWooviSubscription({ installments, now, subscription });
     },
     async refundCurrentPeriod(

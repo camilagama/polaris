@@ -1337,7 +1337,7 @@ export function UiGallery() {
                   />
                 }
                 title="Vendas"
-                value={<HeroValue amount="2660.60" />}
+                value={<HeroValue amount="2660.60" tile />}
               />
               <KpiCard
                 chip={

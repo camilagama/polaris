@@ -27,10 +27,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/tooltip";
    every screen is in the entry chunk, where a primitive would pull its shared code out of the screens' chunks); only
    the Tooltip of the folded column is one. From 760 px it is the fixed column of 16 rem; below, the same content opens
    in a modal panel (the "Mais" of the bottom bar). From 1024 px it folds to its icons as the shadcn `collapsible="icon"`
-   does (map of navigation, § 5): `Ctrl+B` (or `⌘B`), the rail on its edge and the button at its top, the name of each
+   does (map of navigation, § 5): `Ctrl+B` (or `⌘B`), the rail on its edge and the button in the header, the name of each
    item in a tooltip, and the choice kept on the device (`localStorage`, as the cookie of the shadcn would be: the app
    has no server render to read it). From 760 to 1023 px it never folds. The column has no border of its own: with the
-   header of the shell in the same color it is a frame, and the panel of the content draws the edge. Focus is the 3 px outline (`focus-ring`);
+   header of the shell (full width, above it) in the same color it is a frame, and the panel of the content draws the edge. Focus is the 3 px outline (`focus-ring`);
    items are 32 px with a mouse and 44 px with touch; the group label has no transparency. */
 const SIDEBAR_WIDTH = "16rem";
 /** The folded column: 32 px items in 8 px of room on each side, and the 44 px of an item with touch. */
@@ -356,7 +356,7 @@ function Sidebar({
       />
       <div
         className={cx(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) motion-full:transition-[left,right,width] motion-full:duration-200 ease-linear data-[side=right]:right-0 data-[side=left]:left-0 group-data-[collapsible=icon]:w-(--sidebar-width-icon) md:flex",
+          "fixed top-(--app-header,0px) bottom-0 z-10 hidden w-(--sidebar-width) motion-full:transition-[left,right,width] motion-full:duration-200 ease-linear data-[side=right]:right-0 data-[side=left]:left-0 group-data-[collapsible=icon]:w-(--sidebar-width-icon) md:flex",
           className
         )}
         data-side={side}
@@ -375,7 +375,7 @@ function Sidebar({
   );
 }
 
-/** The button at the top of the column that folds and unfolds it (from 1024 px only), named for what it does. */
+/** The button that folds and unfolds the column (from 1024 px only), named for what it does; it sits in the header of the shell. */
 function SidebarTrigger({ className, ...props }: ComponentProps<"button">) {
   const { collapsible, state, toggleSidebar } = useSidebar();
   if (!collapsible) {
@@ -404,7 +404,7 @@ function SidebarTrigger({ className, ...props }: ComponentProps<"button">) {
 
 /**
  * The rail on the edge of the column (from 1024 px): a click folds or unfolds it, as in the shadcn. Out of the order
- * of the keyboard and of a screen reader (the button at the top and `Ctrl+B` do the same), so it is not one more stop
+ * of the keyboard and of a screen reader (the button of the header and `Ctrl+B` do the same), so it is not one more stop
  * nor a second button of the same name.
  */
 function SidebarRail() {

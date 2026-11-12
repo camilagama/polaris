@@ -334,6 +334,18 @@ export const alertSignals = [
     windowMinutes: 1440,
   },
   {
+    id: "checkout-pago-no-encerramento",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["billing_closure_paid_checkout_refund_pending"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Checkout aprovado e pago durante o descarte do encerramento (reembolso à mão)",
+    windowMinutes: 1440,
+  },
+  {
     id: "rede-de-reembolso-parada",
     notify: "wake",
     severity: "critical",
@@ -358,6 +370,21 @@ export const alertSignals = [
     threshold: { atLeast: 1, kind: "count" },
     title: "Incidente do reembolso não gravado",
     windowMinutes: 60,
+  },
+  {
+    // a Pix Automático revocation the read back may never show: the webhook only reads (ADR 0101), so a person
+    // confirms it in Woovi's panel and cancels the renewal from the Admin; the loss until then is bounded (no debit
+    // without an authorization), so it is reported, not waking
+    id: "pix-revogacao-nao-mostrada",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["billing_woovi_revocation_not_shown"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Revogação do Pix Automático que a releitura não mostra (assinatura ACTIVE sem status)",
+    windowMinutes: 1440,
   },
   {
     // every command of an operator that reached a provider wakes the other person of the Access (ADR 0105): the
