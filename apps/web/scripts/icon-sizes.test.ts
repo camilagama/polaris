@@ -11,7 +11,8 @@ import { describe, expect, it } from "vitest";
  */
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
-const FOURTEEN_PX = /(?<![\w-])(?:[^\s"'`]*:)?size-3\.5(?![\w.-])/g;
+const FOURTEEN_PX =
+  /(?<![\w-])(?:[^\s"'`]*:)?size-(?:3\.5|\[14px\])(?![\w.-])/g;
 
 const BRAND_MARKS: Readonly<Record<string, number>> = {
   "sign-in/entry-ui.tsx": 1,
@@ -57,6 +58,7 @@ describe("nenhum ícone de 14 px (regra 11)", () => {
       "[&_svg]:size-3.5",
     ]);
     expect(fourteenPxUses('className="sm:size-3.5"')).toEqual(["sm:size-3.5"]);
+    expect(fourteenPxUses('className="size-[14px]"')).toEqual(["size-[14px]"]);
     expect(
       fourteenPxUses(
         'className="size-4 size-3 size-35 size-3.55 text-size-3.5 [&_svg]:size-4"'

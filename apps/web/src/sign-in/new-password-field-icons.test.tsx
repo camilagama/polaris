@@ -27,10 +27,13 @@ const svgs = (html: string) => listOf(html).match(/<svg\b[^>]*>/g) ?? [];
 
 describe("os ícones dos requisitos da senha têm 16 px", () => {
   it.each([
-    ["nenhum requisito atendido", ""],
-    ["todos os requisitos atendidos", "Senha-Forte-2026!"],
-  ])("%s", (_name, value) => {
-    const icons = svgs(renderList(value));
+    ["nenhum requisito atendido", "", false],
+    ["todos os requisitos atendidos", "Senha-Forte-2026!", true],
+  ])("%s", (_name, value, met) => {
+    const html = renderList(value);
+    expect(listOf(html)).toContain(`data-met="${met}"`);
+    expect(listOf(html)).not.toContain(`data-met="${!met}"`);
+    const icons = svgs(html);
     expect(icons.length).toBeGreaterThan(0);
     for (const icon of icons) {
       expect(icon).toMatch(SIXTEEN_PX);
