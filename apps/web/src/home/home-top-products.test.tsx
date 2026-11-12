@@ -41,7 +41,9 @@ const text = (html: string) =>
 
 describe("Mais vendidos do mês: a marcação de cada linha", () => {
   const rows = items(
-    renderToStaticMarkup(<TopProductsBlock products={PRODUCTS} />)
+    renderToStaticMarkup(
+      <TopProductsBlock products={PRODUCTS} salesCount={9} />
+    )
   );
 
   it("mantém a ordem, o nome completo, o valor e as unidades de cada produto", () => {
@@ -114,7 +116,7 @@ describe("Mais vendidos: a miniatura de cada linha", () => {
     const rows = items(
       renderToStaticMarkup(
         <ThumbnailLoaderProvider loader={loader}>
-          <TopProductsBlock products={PRODUCTS} />
+          <TopProductsBlock products={PRODUCTS} salesCount={9} />
         </ThumbnailLoaderProvider>
       )
     );
@@ -141,6 +143,7 @@ describe("Mais vendidos: a altura que o cartão recebe", () => {
           products={Array.from({ length: count }, (_, index) =>
             product(index + 1)
           )}
+          salesCount={count}
         />
       )
     );
@@ -166,8 +169,26 @@ describe("Mais vendidos: a altura que o cartão recebe", () => {
 
 describe("Mais vendidos: o período em que nada vendeu", () => {
   it("fica na mesma caixa, com a frase do gráfico no lugar da lista", () => {
-    const html = renderToStaticMarkup(<TopProductsBlock products={[]} />);
+    const html = renderToStaticMarkup(
+      <TopProductsBlock products={[]} salesCount={0} />
+    );
     expect(text(html)).toBe("Mais vendidos do mês Sem vendas no período.");
     expect(html).not.toContain("<ol");
+  });
+
+  it("com vendas e nenhum produto restante diz que foram devolvidas, na mesma caixa", () => {
+    const empty = renderToStaticMarkup(
+      <TopProductsBlock products={[]} salesCount={0} />
+    );
+    const returned = renderToStaticMarkup(
+      <TopProductsBlock products={[]} salesCount={3} />
+    );
+    expect(text(returned)).toBe(
+      "Mais vendidos do mês As vendas do período foram devolvidas."
+    );
+    expect(returned).not.toContain("<ol");
+    expect(returned.replace("As vendas do período foram devolvidas.", "")).toBe(
+      empty.replace("Sem vendas no período.", "")
+    );
   });
 });

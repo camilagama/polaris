@@ -1295,6 +1295,7 @@ describe("the queue consumer", () => {
       (typeof OUTBOX_EVENT_TYPES)[number],
       { entity: string; event: Record<string, string | number> }
     > = {
+      "activation.notice": { entity: noticeId, event: { noticeId } },
       "billing.notice": { entity: noticeId, event: { noticeId } },
       "billing.renewal_cancel_requested": {
         entity: String(requestedAt),
@@ -1349,6 +1350,35 @@ describe("the queue consumer", () => {
         expect(sent.retry).not.toHaveBeenCalled();
         expect(sent.ack).toHaveBeenCalledTimes(1);
       }
+    );
+  });
+
+  it("refuses an activation notice as permanent, without a retry, until its consumer exists", async () => {
+    const noticeId = "0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a42";
+    const sent = message({
+      attempt: 1,
+      correlationId: "req-activation",
+      event: { noticeId },
+      eventId: "0199a1b2-c3d4-7e5f-9a6b-7c8d9e0f1a43",
+      idempotencyKey: outboxIdempotencyKey("activation.notice", noticeId),
+      organizationId: "org_1",
+      type: "activation.notice",
+      version: 1,
+    });
+    await worker.queue(
+      { messages: [sent], queue: "polaris-default" } as never,
+      {} as never
+    );
+
+    expect(sent.retry).not.toHaveBeenCalled();
+    expect(sent.ack).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorClass: "PermanentHandlerError",
+        event: "queue_message_failed",
+        eventType: "activation.notice",
+        permanent: true,
+      })
     );
   });
 

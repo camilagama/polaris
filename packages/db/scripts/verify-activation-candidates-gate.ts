@@ -13,6 +13,7 @@ import {
   redactedFailure,
   requiredEnvironment,
   runtimeRole,
+  sqlState,
 } from "./sales-gate-support";
 
 /**
@@ -80,6 +81,9 @@ const OPT_OUT_INSERT =
 const OPT_OUT_NO_UPDATE = /ON CONFLICT \(user_id\) DO NOTHING/;
 const OPT_OUT_NARROW_CATCH = /EXCEPTION\s+WHEN\s+foreign_key_violation\s+THEN/;
 const OTHERS = /\bOTHERS\b/i;
+const ROW_SECURITY = /row-level security/;
+const COLUMN_PRIVILEGE = /permission denied/;
+const LOWER_HEX_LETTER = /[a-f]/;
 const READ_OR_CHANGE = /\bSELECT\b|\bUPDATE\b|\bDELETE\b|\bRETURNING\b/i;
 const issuer =
   "https://polaris-activation-candidates-gate.cloudflareaccess.com";
@@ -1892,6 +1896,251 @@ async function run() {
     }
     tests.push(
       "AC-8a.4 (the database's part): after the billing runtime records the opt-out of a person with two stores, activation_notice_candidates answers no step of that person in either store, also once the first store's membership is gone and the second becomes their first, while a control person with the same two stores gets the a1 in the first and then in the second; with the switch on, off when the opt-out is recorded and turned on afterwards, and turned on after the stores were created (the control's steps come back series_off, the person's not at all). Turning an already owed notice into skipped: opted_out at send time is the consumer's (7c)"
+    );
+
+    // 9. the outbox of the billing role for the series (0130): an `activation.notice` of a notice of the same store, and
+    // nothing else; `billing.notice` still asks for a `billing_notices` row and `activation.notice` does not pass by it
+    await scenario(async (client) => {
+      const store = await newStore(client, { createdAt: at(ten, -3 * DAY) });
+      const other = await newStore(client, { createdAt: at(ten, -3 * DAY) });
+      await seedNotice(client, store, "a1", "owed", ten);
+      await seedNotice(client, other, "a1", "owed", ten);
+      const noticeOf = async (of: Store) =>
+        String(
+          (
+            await client.query<{ id: string }>(
+              "SELECT id FROM public.activation_notices WHERE organization_id = $1 AND user_id = $2",
+              [of.organizationId, of.userId]
+            )
+          ).rows[0]?.id
+        );
+      const noticeId = await noticeOf(store);
+      const capitals = noticeId.replace(LOWER_HEX_LETTER, (letter) =>
+        letter.toUpperCase()
+      );
+      const otherNoticeId = await noticeOf(other);
+      const billingNoticeId = String(
+        (
+          await client.query<{ id: string }>(
+            `INSERT INTO public.billing_notices (organization_id, kind, dedupe_key, due_at)
+             VALUES ($1, 'trial_started', $2, now()) RETURNING id`,
+            [store.organizationId, `ref-${randomUUID()}`]
+          )
+        ).rows[0]?.id
+      );
+      const insertEvent = (
+        organizationId: string,
+        type: string,
+        event: unknown,
+        key: string,
+        extra = ""
+      ) =>
+        client.query(
+          `INSERT INTO public.event_outbox (organization_id, type, event, idempotency_key, correlation_id${extra ? `, ${extra.split("=")[0]}` : ""})
+           VALUES ($1, $2, $3::jsonb, $4, $5${extra ? `, ${extra.split("=")[1]}` : ""})`,
+          [organizationId, type, JSON.stringify(event), key, randomUUID()]
+        );
+      const refused: [string, () => Promise<unknown>, RegExp][] = [
+        [
+          "a notice that does not exist",
+          () => {
+            const missing = randomUUID();
+            return insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: missing },
+              `activation.notice:${missing}`
+            );
+          },
+          ROW_SECURITY,
+        ],
+        [
+          "the notice of another store",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: otherNoticeId },
+              `activation.notice:${otherNoticeId}`
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "a body with a key beside the notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId, step: "a1" },
+              `activation.notice:${noticeId}`
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "a body without the notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              {},
+              `activation.notice:${noticeId}`
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "an ID that is not a uuid",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: "not-a-uuid" },
+              "activation.notice:not-a-uuid"
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "the ID in capitals",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: capitals },
+              `activation.notice:${capitals}`
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "another key than the one of the body",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `activation.notice:${otherNoticeId}`
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "the key of the billing type for the series' notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `billing.notice:${noticeId}`
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "a status other than pending",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `activation.notice:${noticeId}`,
+              "status='dispatched'"
+            ),
+          COLUMN_PRIVILEGE,
+        ],
+        [
+          "attempts other than zero",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId },
+              `activation.notice:${noticeId}`,
+              "attempts=3"
+            ),
+          COLUMN_PRIVILEGE,
+        ],
+        [
+          "a billing notice recorded as an activation notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "activation.notice",
+              { noticeId: billingNoticeId },
+              `activation.notice:${billingNoticeId}`
+            ),
+          ROW_SECURITY,
+        ],
+        [
+          "an activation notice recorded as a billing notice",
+          () =>
+            insertEvent(
+              store.organizationId,
+              "billing.notice",
+              { noticeId },
+              `billing.notice:${noticeId}`
+            ),
+          ROW_SECURITY,
+        ],
+      ];
+      await withGateRole(client, BILLING_RUNTIME, async () => {
+        for (const [label, attempt, layer] of refused) {
+          await client.query("SAVEPOINT probe");
+          await assert.rejects(
+            attempt,
+            (error: unknown) => {
+              assert.equal(sqlState(error), "42501", label);
+              assert.match(String((error as Error).message), layer, label);
+              return true;
+            },
+            `${label}: refused`
+          );
+          await client.query("ROLLBACK TO SAVEPOINT probe");
+        }
+        await insertEvent(
+          store.organizationId,
+          "activation.notice",
+          { noticeId },
+          `activation.notice:${noticeId}`
+        );
+        await insertEvent(
+          store.organizationId,
+          "billing.notice",
+          { noticeId: billingNoticeId },
+          `billing.notice:${billingNoticeId}`
+        );
+        await client.query("SAVEPOINT probe");
+        await expectSqlState(
+          () => client.query("SELECT id FROM public.event_outbox LIMIT 1"),
+          "42501",
+          "the billing role still reads no event"
+        );
+        await client.query("ROLLBACK TO SAVEPOINT probe");
+      });
+      const written = await client.query<{
+        attempts: number;
+        event: unknown;
+        idempotency_key: string;
+        status: string;
+        type: string;
+      }>(
+        "SELECT type, event, idempotency_key, status, attempts FROM public.event_outbox WHERE organization_id = $1 AND type IN ('activation.notice', 'billing.notice') ORDER BY type",
+        [store.organizationId]
+      );
+      assert.deepEqual(written.rows, [
+        {
+          attempts: 0,
+          event: { noticeId },
+          idempotency_key: `activation.notice:${noticeId}`,
+          status: "pending",
+          type: "activation.notice",
+        },
+        {
+          attempts: 0,
+          event: { noticeId: billingNoticeId },
+          idempotency_key: `billing.notice:${billingNoticeId}`,
+          status: "pending",
+          type: "billing.notice",
+        },
+      ]);
+    });
+    tests.push(
+      "the billing runtime writes the outbox event activation.notice (pending, no attempt, the body with the notice's ID alone, the key from it) for an activation_notices row of the same store, and refuses with 42501 (the policy, with its row-level security message): a notice that does not exist, one of another store, a body with a key beside the notice or without it, an ID that is not a uuid or in capitals, another key, the billing type's key, a billing_notices ID as an activation notice and an activation_notices ID as billing.notice (which still asks for its billing_notices row, and records with it); the status and the attempts are refused (42501, permission denied) by the column privileges, which the policy repeats; it still reads no event"
     );
 
     console.log(

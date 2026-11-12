@@ -5545,6 +5545,19 @@ function expectSameRows(
 
 const WIDE_WINDOW = 1440;
 
+reflowTest(
+  "Mais vendidos do mês: com vendas e nenhum produto restante depois das devoluções, a caixa diz que foram devolvidas",
+  async ({ page }) => {
+    const server = new FakeServer(SOLD);
+    server.top = [];
+    await openHome(page, server);
+    const block = region(page, "Mais vendidos do mês");
+    await expect(block).toContainText("As vendas do período foram devolvidas.");
+    await expect(block).not.toContainText("Sem vendas no período.");
+    await expect(block.locator("ol")).toHaveCount(0);
+  }
+);
+
 test.describe("Mais vendidos do mês: cinco linhas com a miniatura de 32 px", () => {
   for (const [width, height] of [[360, 740]] as const) {
     reflowTest(
@@ -5585,11 +5598,12 @@ test.describe("Mais vendidos do mês: cinco linhas com a miniatura de 32 px", ()
 test.describe("Mais vendidos do mês com a letra de 16 px: a linha de cada largura", () => {
   for (const [label, width, height, oneLine] of [
     ["360", 360, 740, false],
+    ["1280", 1280, 800, true],
     ["1440", 1440, 900, true],
   ] as const) {
     reflowTest(
       oneLine
-        ? `a ${label} px, com a lateral recolhida, nome, valor e unidades ficam numa linha só`
+        ? `a ${label} px, nome, valor e unidades ficam numa linha só${width >= WIDE_WINDOW ? ", com a lateral recolhida" : ""}`
         : `a ${label} px o nome tem a sua linha, o valor e as unidades a de baixo, e a miniatura de 32 px fica ao lado das duas`,
       async ({ page }) => {
         await page.setViewportSize({ height, width });
@@ -5635,7 +5649,8 @@ test.describe("Mais vendidos do mês com a letra de 16 px: a linha de cada largu
                 wrap: style.whiteSpace,
               };
             });
-          expect(cut).toMatchObject({
+          expect(cut).toEqual({
+            cut: width < WIDE_WINDOW,
             ellipsis: "ellipsis",
             overflow: "hidden",
             wrap: "nowrap",

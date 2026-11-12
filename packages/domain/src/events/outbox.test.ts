@@ -62,6 +62,7 @@ describe("outboxEvent", () => {
       "billing.renewal_cancel_requested",
       "organization.closure_notice",
       "billing.notice",
+      "activation.notice",
     ]);
   });
 
@@ -82,6 +83,33 @@ describe("outboxEvent", () => {
     });
     for (const event of [
       { kind: "welcome", noticeId },
+      { noticeId: "owner@example.com" },
+      { userId: "user_1" },
+      {},
+    ]) {
+      expect(() => outboxEvent({ ...notice, event })).toThrow(
+        InvalidOutboxEventError
+      );
+    }
+  });
+
+  it("takes the notice of the activation series by its ID, and nothing beside it", () => {
+    const noticeId = "0199f0aa-2b3c-7d4e-8f90-123456789abc";
+    const notice = {
+      event: { noticeId },
+      idempotencyKey: outboxIdempotencyKey("activation.notice", noticeId),
+      organizationId: "org_1",
+      type: "activation.notice",
+    };
+    expect(outboxEvent(notice)).toEqual({
+      correlationId: null,
+      event: { noticeId },
+      idempotencyKey: `activation.notice:${noticeId}`,
+      organizationId: "org_1",
+      type: "activation.notice",
+    });
+    for (const event of [
+      { noticeId, tipId: "welcome" },
       { noticeId: "owner@example.com" },
       { userId: "user_1" },
       {},

@@ -128,6 +128,10 @@ interface EventModel {
   queue: QueueName;
 }
 const EVENT_MODEL: Readonly<Record<string, EventModel>> = {
+  "activation.notice": {
+    keys: { noticeId: stringMatching(/^[A-Za-z0-9_-]{1,64}$/) },
+    queue: "default",
+  },
   "billing.notice": {
     keys: { noticeId: stringMatching(/^[A-Za-z0-9_-]{1,64}$/) },
     queue: "default",

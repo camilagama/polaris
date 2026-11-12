@@ -37,6 +37,8 @@ const QUEUE_BY_EVENT_TYPE: Readonly<Record<OutboxEventType, QueueName>> =
     "organization.closure_notice": "default",
     // an e-mail of the billing cycle: the consumer checks it is still true before it goes out (ADR 0104)
     "billing.notice": "default",
+    // an e-mail of a tip: a late one is only a late tip, and the consumer checks it is still wanted before it goes out
+    "activation.notice": "default",
   });
 
 export interface QueueEnvelope {
