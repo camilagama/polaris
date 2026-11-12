@@ -7,7 +7,10 @@ import { WORKER_MARK } from "./worker-mark";
 /**
  * Reloading right after "Sair" must show the sign-in screen every time, never an empty `#root`, and the first load must
  * not need a second one (`public/boot-retry.js` is for a module that failed to download, not a way to hide a page that
- * did not mount). "Right after" is the moment the server answered the sign-out: the page is still leaving, and the
+ * did not mount; `app-shell/chunk-load-error.ts` reloads for a screen that failed to download): neither marks the tab
+ * and, counting from the last reload the test asked for, at most one document of the sign-in address is requested.
+ * Proved by mutation: with the chunk-load-error reload forced after the mount the test fails on both the mark and the
+ * count. "Right after" is the moment the server answered the sign-out: the page is still leaving, and the
  * reload is the person's second tap. Two devices: one that has the service worker for days (the same context, the
  * worker in control across the rounds) and one that just installed it (a new context each round, a first visit).
  */
@@ -15,10 +18,12 @@ const ROUNDS = 20;
 const MOUNT_MS = 20_000;
 const SIGN_IN_HEADING = "Entrar no Polaris";
 const FIRST_ACCESS_HEADING = "Abra a sua loja";
-const ENTRY_RELOAD_MARK = "polaris:entry-reload";
+const RELOAD_MARKS = ["polaris:entry-reload", "polaris:chunk-reload-at"];
 /** The browser logs the 401 the signed-out server answers: expected, and not an error of the page. */
 const REFUSED_SESSION = /status of 401/;
 const SIGN_OUT = /\/api\/auth\/sign-out$/;
+const REPEATED_RELOAD =
+  "rounds where the reload was asked again on the sign-in page";
 const RPC_PREFIX = /^.*\/rpc\//;
 
 const json = (status: number, body: unknown) => ({
@@ -82,23 +87,25 @@ async function serveSession(context: BrowserContext) {
   return state;
 }
 
-/** The init script tells the test each time `boot-retry.js` marks the tab to reload it: the one reload it allows itself. */
+/** The init script tells the test each time `boot-retry.js` or `chunk-load-error.ts` marks the tab to reload it. */
 async function watchBootRetry(page: Page) {
   const retries: string[] = [];
-  await page.exposeFunction("polarisBootRetry", (url: string) => {
-    retries.push(url);
+  await page.exposeFunction("polarisBootRetry", (mark: string, url: string) => {
+    retries.push(`${mark} at ${url}`);
   });
-  await page.addInitScript((key) => {
+  await page.addInitScript((marks) => {
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (name: string, value: string) {
-      if (name === key) {
+      if (marks.includes(name)) {
         (
-          window as unknown as { polarisBootRetry: (url: string) => void }
-        ).polarisBootRetry(window.location.href);
+          window as unknown as {
+            polarisBootRetry: (mark: string, url: string) => void;
+          }
+        ).polarisBootRetry(name, window.location.href);
       }
       return set.call(this, name, value);
     };
-  }, ENTRY_RELOAD_MARK);
+  }, RELOAD_MARKS);
   return retries;
 }
 
@@ -137,13 +144,17 @@ async function signInAndOut(page: Page) {
 const SIGN_IN_ADDRESS = /\/entrar/;
 const TRANSIENT = /ERR_ABORTED|detached|Not attached to an active page/;
 
-/** A reload that met the page's own move to the start did not happen: it is asked again once the page reached the sign-in address. */
-async function reloadNow(page: Page) {
+/**
+ * A reload that met the page's own move to the start did not happen: it is asked again once the page reached the
+ * sign-in address. Returns how many times it was asked and the documents requested before the last ask.
+ */
+async function reloadNow(page: Page, seen: { documents: string[] }) {
   for (let attempt = 1; ; attempt += 1) {
+    const documentsBefore = seen.documents.length;
     try {
       // biome-ignore lint/performance/noAwaitInLoops: the second ask only follows a reload that did not happen
       await page.reload({ waitUntil: "commit" });
-      return;
+      return { attempts: attempt, documentsBefore };
     } catch (error) {
       if (!TRANSIENT.test(String(error)) || attempt === 3) {
         throw error;
@@ -153,13 +164,14 @@ async function reloadNow(page: Page) {
   }
 }
 
+/** Returns how many times the reload was asked: more than one means it met the page already leaving. */
 async function reloadAndExpectSignIn(
   page: Page,
   retries: string[],
   round: number
 ) {
   const seen = watch(page);
-  await reloadNow(page);
+  const { attempts, documentsBefore } = await reloadNow(page, seen);
   await expect(
     page.getByRole("heading", { level: 1, name: SIGN_IN_HEADING }),
     `round ${round}: the sign-in screen after the reload`
@@ -168,9 +180,17 @@ async function reloadAndExpectSignIn(
   await page.waitForLoadState("load");
   expect(
     retries,
-    `round ${round}: the entry module did not run and the page reloaded itself (documents ${seen.documents.join(" ")})`
+    `round ${round}: the page marked the tab to reload itself (documents ${seen.documents.join(" ")})`
   ).toEqual([]);
+  const signInDocuments = seen.documents
+    .slice(documentsBefore)
+    .filter((path) => SIGN_IN_ADDRESS.test(path));
+  expect(
+    signInDocuments.length,
+    `round ${round}: sign-in documents since the last reload (${seen.documents.join(" ")})`
+  ).toBeLessThanOrEqual(1);
   expect(seen.console, `round ${round}: the browser log`).toEqual([]);
+  return attempts;
 }
 
 async function freshContext(browser: Browser, baseURL: string) {
@@ -185,9 +205,10 @@ test.describe("recarregar logo depois de sair", () => {
     baseURL,
     browser,
     buildVersion,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(420_000);
     buildVersion("1");
+    let repeated = 0;
     const { context, page, state } = await freshContext(
       browser,
       baseURL as string
@@ -208,7 +229,9 @@ test.describe("recarregar logo depois de sair", () => {
         state.signedIn = true;
         // biome-ignore lint/performance/noAwaitInLoops: each round starts from the page the round before left
         await signInAndOut(page);
-        await reloadAndExpectSignIn(page, retries, round);
+        if ((await reloadAndExpectSignIn(page, retries, round)) > 1) {
+          repeated += 1;
+        }
         expect(
           await page.evaluate(
             () => navigator.serviceWorker.controller !== null
@@ -219,25 +242,36 @@ test.describe("recarregar logo depois de sair", () => {
     } finally {
       await context.close();
     }
+    testInfo.annotations.push({
+      description: `${repeated} of ${ROUNDS}`,
+      type: REPEATED_RELOAD,
+    });
   });
 
   test(`com o worker recém-instalado: ${ROUNDS} primeiras visitas, sair e recarregar mostram a entrada`, async ({
     baseURL,
     browser,
     buildVersion,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(420_000);
     buildVersion("1");
+    let repeated = 0;
     for (let round = 1; round <= ROUNDS; round += 1) {
       // biome-ignore lint/performance/noAwaitInLoops: a new device each round, one at a time
       const { context, page } = await freshContext(browser, baseURL as string);
       try {
         const retries = await watchBootRetry(page);
         await signInAndOut(page);
-        await reloadAndExpectSignIn(page, retries, round);
+        if ((await reloadAndExpectSignIn(page, retries, round)) > 1) {
+          repeated += 1;
+        }
       } finally {
         await context.close();
       }
     }
+    testInfo.annotations.push({
+      description: `${repeated} of ${ROUNDS}`,
+      type: REPEATED_RELOAD,
+    });
   });
 });
