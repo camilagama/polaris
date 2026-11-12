@@ -586,6 +586,18 @@ describe("secrets stay out of install and build steps (condition 6)", () => {
     expect(workflows).toContain("deploy-staging.yml");
   });
 
+  const withoutInstallOrBuild = ["backup-staging.yml"];
+
+  it("lists exactly the workflows that run no install or build step", () => {
+    const found = workflows
+      .filter((name) => {
+        const text = readFileSync(join(workflowDir, name), "utf8");
+        return readWorkflow(text, name).recognized === 0;
+      })
+      .sort();
+    expect(found).toEqual(withoutInstallOrBuild);
+  });
+
   it.each(workflows)(
     "%s: no secret in a step that installs or builds",
     (name) => {
@@ -593,10 +605,12 @@ describe("secrets stay out of install and build steps (condition 6)", () => {
       const { problems, recognized } = readWorkflow(text, name);
       expect(problems).toEqual([]);
       // A reader that recognizes nothing would pass any file: it must see the install it knows is there.
-      expect(
-        recognized,
-        `${name}: no install or build step recognized`
-      ).toBeGreaterThan(0);
+      if (!withoutInstallOrBuild.includes(name)) {
+        expect(
+          recognized,
+          `${name}: no install or build step recognized`
+        ).toBeGreaterThan(0);
+      }
     }
   );
 
