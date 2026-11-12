@@ -4,6 +4,7 @@ import {
   addDays,
   copyMonthOf,
   dayCount,
+  historyLinkState,
   MAX_PERIOD_DAYS,
   monthAbbreviation,
   monthName,
@@ -254,6 +255,15 @@ describe("o mês inteiro (AC-B)", () => {
     expect(wholeMonthOf({ from: "2026-10-12", to: "2026-11-10" })).toBeNull();
     expect(wholeMonthOf({ from: "2026-01-01", to: "2026-12-31" })).toBeNull();
     expect(wholeMonthOf(null)).toBeNull();
+  });
+});
+
+describe("the state of the link to the Histórico", () => {
+  it("carries the period and the confirmed situation, the two things the sales card counts", () => {
+    expect(historyLinkState({ from: "2026-10-01", to: "2026-10-14" })).toEqual({
+      historyPeriod: { from: "2026-10-01", to: "2026-10-14" },
+      historyStatus: "confirmed",
+    });
   });
 });
 

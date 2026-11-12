@@ -228,6 +228,17 @@ export function samePeriod(a: Period | null, b: Period | null): boolean {
 /** The key under which the Resultado leaves the period to filter in the state of the entry it opens in the Histórico. */
 export const HISTORY_PERIOD_STATE = "historyPeriod";
 
+/** The key under which the Resultado leaves the situation to filter, beside the period, for the Histórico it opens. */
+export const HISTORY_STATUS_STATE = "historyStatus";
+
+/** The navigation state of "Ver as N vendas": the period of the card and the confirmed sales, which are all the card counts. */
+export function historyLinkState(period: Period): Record<string, unknown> {
+  return {
+    [HISTORY_PERIOD_STATE]: period,
+    [HISTORY_STATUS_STATE]: "confirmed",
+  };
+}
+
 /** The key under which the Histórico leaves the period to read in the state of the entry it opens in the Resultado. */
 export const RESULT_PERIOD_STATE = "resultPeriod";
 

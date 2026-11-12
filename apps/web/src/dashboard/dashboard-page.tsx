@@ -46,7 +46,7 @@ import { ResultChain } from "./result-chain";
 import { ResultChart } from "./result-chart";
 import {
   copyMonthOf,
-  HISTORY_PERIOD_STATE,
+  historyLinkState,
   type Period,
   type PeriodPreset,
   periodFromState,
@@ -399,7 +399,7 @@ export function DashboardPage() {
     }
   }, [initialTab]);
   const handleOpenSales = useCallback((sales: Period) => {
-    navigateInApp("/sales/history", { [HISTORY_PERIOD_STATE]: sales });
+    navigateInApp("/sales/history", historyLinkState(sales));
   }, []);
   const handlePreset = useCallback((preset: PeriodPreset) => {
     setSelection({ custom: null, preset });

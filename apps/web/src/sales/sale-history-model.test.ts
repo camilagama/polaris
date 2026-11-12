@@ -27,6 +27,7 @@ import {
   saleDetailHref,
   saleDetailView,
   saleTimelineEvents,
+  statusFromState,
 } from "./sale-history-model";
 
 const organizationId = "org_1";
@@ -855,5 +856,26 @@ describe("sale detail", () => {
       expect(registered?.timeText).toMatch(SAME_YEAR_TEXT);
       expect(sale?.timeText).toMatch(JUNE_TEXT);
     });
+  });
+});
+
+describe("the situation that travels in the navigation state", () => {
+  it("takes a situation that narrows the list and ignores anything else", () => {
+    for (const [value] of HISTORY_STATUS_FILTERS) {
+      expect(statusFromState(value)).toBe(value);
+    }
+    for (const value of [
+      undefined,
+      null,
+      "",
+      "Confirmed",
+      "paid",
+      " confirmed",
+      1,
+      {},
+      ["confirmed"],
+    ]) {
+      expect(statusFromState(value), JSON.stringify(value)).toBe("");
+    }
   });
 });
