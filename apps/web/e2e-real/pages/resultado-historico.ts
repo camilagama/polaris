@@ -36,7 +36,7 @@ export async function seedSales(
   journey: Journey,
   today: number,
   withLastMonth = true
-): Promise<void> {
+): Promise<{ sell: (occurredAt: string) => Promise<string> }> {
   const organizationId = journey.organizationId as string;
   const { rpc } = journey.user;
   const day = localDate(runT0(), ZONE);
@@ -69,6 +69,7 @@ export async function seedSales(
     // biome-ignore lint/performance/noAwaitInLoops: one sale at a time, each with its own command id
     await sell(new Date(runT0()).toISOString());
   }
+  return { sell };
 }
 
 export const salesCard = (page: Page): Locator =>

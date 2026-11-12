@@ -50,7 +50,9 @@ import {
   writeLastPayment,
 } from "./last-payment-model";
 import {
+  KEPT_PRICE_NOTICE,
   mergeLastPrices,
+  pricesForVariantChange,
   type RememberedPrices,
   readLastPrices,
   suggestionHint,
@@ -584,10 +586,32 @@ export function SalePage() {
       applySalePreset(withdrawSalePreset(current, previous, preset), preset)
     );
   }, [editForm, preset]);
+  const listPrices = useRef(new Map<string, string | null>());
+  const [keptPriceNotice, setKeptPriceNotice] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const setKeptNotice = useCallback((draftId: string, kept: boolean) => {
+    setKeptPriceNotice((current) => {
+      if (current.has(draftId) === kept) {
+        return current;
+      }
+      const next = new Set(current);
+      if (kept) {
+        next.add(draftId);
+      } else {
+        next.delete(draftId);
+      }
+      return next;
+    });
+  }, []);
   const handleItemChange = useCallback(
-    (draftId: string, changes: Partial<ItemDraft>) =>
-      editForm((current) => updateItem(current, draftId, changes)),
-    [editForm]
+    (draftId: string, changes: Partial<ItemDraft>) => {
+      if ("chargedUnitPrice" in changes || "listedUnitPrice" in changes) {
+        setKeptNotice(draftId, false);
+      }
+      editForm((current) => updateItem(current, draftId, changes));
+    },
+    [editForm, setKeptNotice]
   );
   const handlePickVariant = useCallback(
     (draftId: string, entry: InventoryBalanceEntryReadModel) => {
@@ -597,12 +621,37 @@ export function SalePage() {
         entry.variantId,
         entry.listPrice
       );
-      editForm((current) => {
-        const item = current.items.find(
-          (candidate) => candidate.draftId === draftId
+      const item = form.items.find(
+        (candidate) => candidate.draftId === draftId
+      );
+      const swapping =
+        item !== undefined &&
+        item.variantId !== "" &&
+        item.variantId !== entry.variantId;
+      if (item?.variantId !== entry.variantId) {
+        listPrices.current.set(entry.variantId, entry.listPrice);
+      }
+      let prices: Pick<
+        ItemDraft,
+        "chargedUnitPrice" | "listedUnitPrice"
+      > | null = null;
+      if (item && swapping) {
+        const swapped = pricesForVariantChange(
+          item,
+          suggestPrices(
+            lastPrices,
+            item.variantId,
+            listPrices.current.get(item.variantId) ?? null
+          ),
+          suggestion
         );
-        const prices = item ? withSuggestedPrices(item, suggestion) : null;
-        return updateItem(current, draftId, {
+        prices = swapped;
+        setKeptNotice(draftId, swapped.keptTyped);
+      } else if (item) {
+        prices = withSuggestedPrices(item, suggestion);
+      }
+      editForm((current) =>
+        updateItem(current, draftId, {
           ...itemChangesForEntry(entry),
           ...(prices
             ? {
@@ -610,13 +659,13 @@ export function SalePage() {
                 listedUnitPrice: prices.listedUnitPrice,
               }
             : {}),
-        });
-      });
+        })
+      );
       focusLater(() =>
         document.getElementById(`sale-item-${draftId}-quantity`)?.focus()
       );
     },
-    [editForm, lastPrices, seedStock]
+    [editForm, form.items, lastPrices, seedStock, setKeptNotice]
   );
   const handleAddItem = useCallback(
     () => editForm((current) => addItem(current, newId())),
@@ -1037,7 +1086,11 @@ export function SalePage() {
                     onRemove={handleRemoveItem}
                     organizationId={organizationId}
                     otherLinesQuantity={otherLinesQuantity(form.items, item)}
-                    priceHint={suggestionHint(lastPrices, item)}
+                    priceHint={
+                      keptPriceNotice.has(item.draftId)
+                        ? KEPT_PRICE_NOTICE
+                        : suggestionHint(lastPrices, item)
+                    }
                     stock={catalog.stock}
                     stockWarning={evaluation.stockWarnings[item.draftId]}
                     summaryLine={summaryLines.get(item.draftId)}
