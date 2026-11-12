@@ -339,11 +339,11 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
     await trigger.click();
-    await afterRenderedFrames(page);
     // the trigger, not only the popup, says it is closed: a menu the click is still opening has no popup yet,
     // so "no menu" alone can pass just before it appears
     await expect(async () => {
       await page.keyboard.press("Escape");
+      await afterRenderedFrames(page);
       await expect(trigger).toHaveAttribute("aria-expanded", "false", {
         timeout: 1000,
       });
