@@ -41,7 +41,7 @@ const context =
   "Polaris é um app de gestão para pequenas lojas (pt-BR, valores em reais). A loja é fictícia e já começa logada; " +
   "não há e-mail, Google, pagamento real nem cobrança neste ambiente local. " +
   "Nunca encerre a organização, nunca exporte dados, nunca assine o plano Pro e nunca saia da conta (Sair). " +
-  "Não são bugs: dados de exemplo da semeadura (Camiseta básica, Boné aba curva, Meia cano alto, uma venda de 2 camisetas e outra de 1 boné e 3 meias); " +
+  "Não são bugs: dados de exemplo da semeadura (Camiseta básica, Boné aba curva, Meia cano alto, uma venda de 2 camisetas e outra de 1 boné e 3 meias; em algumas lojas, o Chaveiro de metal sem custo e uma venda dele); " +
   "um link que abre outra aba; texto acessível partido em volta de links; imagens que carregam ao rolar.";
 
 const explorer = {

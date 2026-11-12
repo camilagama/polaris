@@ -151,3 +151,95 @@ env -u E2E_ANTHROPIC_API_KEY CI=true bun e2e-agent/pilha/preparar.ts limpar
 ```
 
 Os objetivos das 4 sessões começam por "Explore como um lojista na primeira semana e reporte qualquer coisa errada.", seguido da área, e terminam com "Limites: não encerre a organização nem exporte dados." Os textos inteiros estão no corpo do PR.
+
+## Rodada 2 (t1104): as áreas que a t886 não cobriu
+
+Mesma ferramenta, pilha e regras da t886. Partiu da branch do PR 707 com a `origin/main` de 12/11/2026 (`920392a3`) mesclada nela. Nenhum bug foi corrigido, nada mudou no CI nem na `main`, e **o PR continua em rascunho, com `segurar`**. Alvo: só a pilha local do e2e-real com dados fictícios (nunca o staging, o Google ou dados reais). O Admin ficou fora, como na t886 (exige o Cloudflare Access).
+
+### Resumo
+
+- **4 sessões de explore** (Sonnet 5.5, `--agent explorador`), uma por área, em sequência. **Total: 2.666.700 tokens**, 89% do teto de 3 milhões; o teste dos achados não chamou o modelo.
+- **Passos: 3 na área 1 e 2 nas áreas 2 a 4**, e não 3 em cada uma como a tarefa pedia. Um passo custou em média 296 mil tokens, então 12 passos dariam cerca de 3,6 milhões, acima do teto. Escolhi gastar os 3 passos na confirmação da venda (a área com mais bug) e cobrir o que sobrou das outras com testes de locators, que custam 0 token.
+- **Achados dos exploradores: 3** (2 na Venda, 0 em Produtos, 0 no custo desconhecido e 1 nos Primeiros passos). Com teste: **1 confirmado, 1 não reproduz e 1 falha por desenho**. Os testes extras trouxeram controles e os passos que as sessões não alcançaram.
+- A suíte `tests/rodada2` fica vermelha de propósito: 4 dos 17 testes (contando as 7 sessões do setup e a fumaça) falham, e só um é bug. Não é para virar spec.
+
+### Mudanças na pilha desde a t886
+
+- **Lojas desta rodada:** `bb-r2-venda`, `bb-r2-produtos`, `bb-r2-estoque-semcusto`, `bb-r2-primeiros-vazia` (a loja nova, sem produto, estoque nem venda), `bb-r2-pix-vazia` e `bb-achados-1` a `bb-achados-7`, uma loja por teste que muda dados.
+- **Sufixo `-semcusto`** em `pilha/preparar.ts`: a loja ganha o "Chaveiro de metal", com 10 unidades abertas por contagem a partir do zero (custo desconhecido, como manda `docs/business-rules/inventory.md`) e uma venda de 2 dele. O `-vazia` já existia.
+- **PostgreSQL:** o mesmo esquema da t886, um cluster 18 descartável na porta 5442 (`initdb` em `/tmp`).
+
+### Por área
+
+| Área | Loja | Passos | Ações / chamadas | Tokens (cache) | Tempo do explore | Achados do explorador |
+|---|---|---|---|---|---|---|
+| 1. Confirmação da venda | `bb-r2-venda` | 3 de 3 | — / 46 chamadas | 912,3 mil (85%) | 2 min 49 s | 2 |
+| 2. Produtos | `bb-r2-produtos` | 2 de 2 | 31 ações / 32 chamadas | 688,2 mil (86%) | 1 min 53 s | 0 |
+| 3. Custo desconhecido | `bb-r2-estoque-semcusto` | 2 de 2 | 19 ações / 26 chamadas | 525,8 mil (69%) | 1 min 56 s | 0 |
+| 4. Primeiros passos | `bb-r2-primeiros-vazia` | 2 de 2 | 26 ações / 28 chamadas | 540,4 mil (76%) | 2 min 20 s | 1 |
+| **Total** | | 9 passos | | **2.666,7 mil** | 9 min | 3 |
+
+Os testes (locators, sem `agent.act`) custaram 0 token. Cada execução da pilha (build, preview, semeadura, testes e explore) levou de 3 a 4 minutos.
+
+### O que cada sessão cobriu e o que ficou de fora
+
+- **Confirmação da venda:** montou uma venda de 2 itens, trocou um, confirmou em dinheiro, conferiu a venda no Histórico (uma vez só, total certo) e o estoque que baixou e voltou ao cancelar. **Ficou de fora:** a tela de confirmação com a hora (o explorador viu o botão "Confirmando venda…" por mais tempo que o esperado, mas a venda saiu; os testes confirmam a venda em todas as execuções, sem espera longa) e a remoção de um item.
+  - **"Desfazer" da venda:** o explorador não achou, porque não existe. Uma venda confirmada só se corrige por **Cancelar venda** no Detalhe (a regra do AGENTS.md: "Corrigir por cancelamento ou devolução"). É o desenho; sem teste.
+- **Produtos:** editou nome e preço da Meia (conferiu em Vender), arquivou o Boné e viu que a venda antiga manteve o Boné e o total. **Ficou de fora:** desfazer o arquivamento; coberto pelos 2 testes abaixo.
+- **Custo desconhecido:** viu "Custo desconhecido" no Estoque e na venda, "Margem indeterminada" (sem NaN nem R$ 0,00) e "1 variante sem custo" no Início. **Ficou de fora:** comparar os valores em R$ entre Início e Resultado ("Esconder valores" ligado tirou as leituras), o valor em estoque e o efeito de "Informar custo" nas vendas antigas. Não coberto por teste.
+- **Primeiros passos:** cadastrou a Caneca (10 unidades a R$ 10,00), vendeu 2 no Pix e leu Início e Resultado. **Ficou de fora:** se "Primeiros passos" some ou fecha 3 de 3 depois da venda, o botão Atualizar, a aba Metas e os demais links.
+
+## Achados
+
+Todos os testes estão em `apps/web/e2e-agent/tests/rodada2/`, com a tag `rodada2`, só com locators. Resultado da última execução, do zero, com banco novo: 17 testes, 13 passam, 4 falham.
+
+| # | Área | Achado | Teste | Resultado | Veredito |
+|---|---|---|---|---|---|
+| 1 | 1 | Trocar uma variante por outra deixa os preços da anterior | `venda-trocar-preco.e2e.ts` | **Falha** (em todas as execuções): preço cobrado "49,90" no lugar de "12,50" | **Confirmado** |
+| 2 | 1 | O Detalhe da venda abre com "Algo deu errado nesta tela" vindo do Histórico | `venda-detalhe-do-historico.e2e.ts` | **Passa** (em todas as execuções): confirma em dinheiro, abre o Histórico, toca a venda e o Detalhe abre | **Não reproduz** |
+| 3 | 4 | Com o custo do produto informado, o Resultado diz "1 de 12 dias sem custo informado" depois de uma venda no Pix | `primeiros-passos-pix-caneca.e2e.ts`, `resultado-pix-dia-sem-custo.e2e.ts` | **Falha** (em todas as execuções com o sinal certo) | **Desenhado**, com a ressalva de texto abaixo |
+| controle | 4 | A mesma venda em dinheiro | `resultado-dinheiro-dia-com-custo.e2e.ts` | **Falha** igual | mostra que a causa não é o Pix |
+| controle | 3 | Venda de item sem custo diz "sem custo informado" e "Não inclui 1 item sem custo conhecido" | `resultado-custo-desconhecido-controle.e2e.ts` | Passa | prova que as duas buscas de texto enxergam o aviso |
+| — | 2 | (passo não alcançado) arquivar e Desfazer; arquivar, sumir de Vender e Restaurar | `produto-arquivar-e-desfazer.e2e.ts` (2 testes) | **Passam** | Produtos sem achado |
+
+### 1. Trocar a variante mantém o preço da anterior (confirmado)
+
+- **Onde:** `/sales`, linha do item, "Trocar".
+- **Passos do teste:** escolher a Camiseta básica (preço cobrado e de tabela "49,90"), tocar em "Trocar variante de Camiseta…", escolher a Meia cano alto (tabela R$ 12,50) e ler o preço cobrado.
+- **Observado:** "49,90" nos dois campos; o explorador viu o mesmo com Boné (35,00) trocado pela Meia, antes da correção do teste. Uma Meia adicionada como item novo vem com "12,50".
+- **Causa:** `handlePickVariant` (`apps/web/src/sales/sale-page.tsx:592`) aplica `withSuggestedPrices` (`apps/web/src/sales/last-prices-model.ts:165`), que só preenche o campo **vazio** ("fills only prices the operator has not typed yet"). O preço que o app mesmo sugeriu para a variante anterior já ocupa o campo, então a troca não o toca e a venda sai com o preço de outra variante.
+- **Risco:** o total e o que se cobra saem com o preço errado, sem aviso. A tela diz "Trocar" sem mencionar preço, e o DESIGN.md (§ Venda) só promete que sair sem escolher volta à linha como estava.
+- **Já conhecido?** Não achei registro em `ux-pendencias.md`, no DESIGN.md nem nos testes de `last-prices-model.test.ts`, que cobrem o preço digitado à mão.
+- **Decisão pendente:** o que fazer com o preço que o operador digitou antes de trocar (manter? perguntar?). O que o app sugeriu e ninguém tocou deveria seguir a variante nova. É de produto e fica para a correção.
+
+### 2. Detalhe da venda com tela de erro (não reproduz)
+
+- **Observado pelo explorador:** "Algo deu errado nesta tela" ao tocar a venda recém confirmada no Histórico.
+- **Evidência no log da pilha:** um único `client_error` com `errorClass: ChunkLoadError`, `routeId: sale-detail`, no instante do erro. O chunk da tela já tinha sido baixado (200) antes na mesma sessão. Era a primeira sessão da rodada, com a máquina em carga e o vídeo ligado.
+- **Teste:** passa em todas as execuções. Sem reprodução, sem veredito de bug; o `ChunkLoadError` isolado pode ser do download perdido em carga, mas **não está provado**. Se voltar a aparecer, o primeiro lugar a olhar é o carregamento do chunk com o service worker.
+
+### 3. "1 de 12 dias sem custo informado" com o custo do produto informado (desenhado)
+
+- **Observado:** o Resultado diz "1 de 12 dias sem custo informado", a linha do dia 12/11 diz "sem custo informado" em Custos e no Resultado do dia, e a cadeia "Como chegamos a este resultado" mostra CMV R$ 20,00. O explorador leu isso como contradição.
+- **Teste e controle:** a venda no Pix **e** a mesma venda em dinheiro, as duas em loja sem perfil de pagamento, deixam o dia como "sem custo informado". O aviso da própria tela diz o motivo: "Estimativa incompleta: 3 vendas sem taxa e nenhuma despesa registrada". Antes de afirmar a ausência do aviso do dia, os três testes esperam a linha do CMV na tela e afirmam que "Não inclui N item sem custo conhecido" **não** aparece: o custo do item é todo conhecido e o dia continua marcado. O controle da loja com o Chaveiro mostra que as duas frases aparecem quando o que falta é o custo do item.
+- **Por que não é bug:** `docs/business-rules/expenses-and-results.md` diz que "custo, taxa de processamento ou taxa de antecipação desconhecidos numa venda da data deixam custos e resultado do dia nulos, nunca zero". Sem perfil de pagamento, nenhuma venda tem taxa conhecida, e o dia fica nulo (o ADR 0054 cita só a taxa desconhecida num "caso de canto"). O CMV de R$ 20,00 na cadeia é a parte conhecida.
+- **Para UX, se quiser:** "sem custo informado" é o nome do dia nulo e cobre "Custos (CMV, taxas e despesas)", mas o lojista lê "custo" como o do produto. "Sem taxa informada" quando só a taxa falta tiraria a dúvida; é decisão de texto.
+- **Falso passe que corrigi:** a primeira versão passou por esperar só o título "Como chegamos a este resultado", que aparece antes do gráfico, e `toBeHidden` passa sem nó. Agora espera o gráfico ("Vendas líquidas e custos por dia") antes de afirmar a ausência.
+
+### Produtos: sem achado
+
+A sessão não achou defeito. Como ela não chegou a desfazer o arquivamento, escrevi os testes dos dois caminhos: arquivar e **Desfazer** no próprio aviso devolve o produto à lista e a Vender; arquivar tira o produto de Vender e **Restaurar** pela aba Arquivados o devolve. Os dois passam.
+
+## O que vazou ou poderia vazar (rodada 2)
+
+- **Chave:** `E2E_ANTHROPIC_API_KEY` só no comando do e2e (`com-pilha.sh` já tira do build, do preview e do preparar), nunca impressa, gravada ou commitada. Instalação com `env -u`.
+- **Antes do push:** `gitleaks detect --no-git --source apps/web/e2e-agent` (40,7 MB, com `.e2e/` e `node_modules`): nenhum vazamento. Varredura própria de 35 valores (a chave inteira e os últimos 12 caracteres, o segredo do run, as senhas dos logins e os cookies inteiros e só o token), sem imprimir nenhum, no worktree com `.e2e/`, nos logs desta rodada e no `git log -p` da branch: **0 ocorrências**.
+- **Para a Anthropic:** a instrução, a árvore de acessibilidade e capturas de telas locais com dados fictícios (lojas `Loja bb-…`, `qa-bb-…@e2e.invalid`).
+
+## Para a próxima rodada
+
+- **Profundidade:** o limite foi o teto de 3 milhões, não a ferramenta: 296 mil tokens por passo.
+- **Ainda sem cobertura:** "Informar custo" depois de uma venda sem custo e o valor em estoque; Remover item da venda; "Primeiros passos" depois da primeira venda; comparação de valores entre Início e Resultado (o explorador deve desligar "Esconder valores" antes).
+- **Lojas:** uma loja por teste que muda dados (a Caneca já existe depois da primeira execução e o cadastro dá CONFLICT).
+
+## Total de tokens da rodada 2: 2.666.700

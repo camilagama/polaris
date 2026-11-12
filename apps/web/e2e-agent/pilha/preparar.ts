@@ -10,7 +10,12 @@ import {
   ownerDatabaseUrl,
   previewEnvironment,
 } from "../../e2e-real/run-environment";
-import { seedCashSale, seedProduct, seedStock } from "../../e2e-real/seed";
+import {
+  nextCommandId,
+  seedCashSale,
+  seedProduct,
+  seedStock,
+} from "../../e2e-real/seed";
 
 /**
  * A pilha do piloto do `e2e`, sobre o harness do e2e-real: o mesmo banco por run, os mesmos logins por
@@ -74,11 +79,47 @@ function todayInSaoPaulo(now: Date): string {
   }).format(now);
 }
 
+type Rpc = Awaited<ReturnType<typeof createJourneyUser>>["rpc"];
+
+/**
+ * Um produto cujo estoque entra sem custo: a abertura sem custo é uma contagem a partir do zero e deixa o custo
+ * médio desconhecido (docs/business-rules/inventory.md), e uma venda dele fica com custo desconhecido.
+ */
+async function seedUnknownCost(
+  rpc: Rpc,
+  organizationId: string,
+  today: string,
+  now: Date
+): Promise<void> {
+  const chaveiro = await seedProduct(
+    rpc,
+    organizationId,
+    "Chaveiro de metal",
+    "9.90"
+  );
+  await rpc.inventory.inventoryCount({
+    commandId: nextCommandId(),
+    commandVersion: 1,
+    expectedVersion: 0,
+    occurredOn: today,
+    organizationId,
+    physicalQuantity: 10,
+    variantId: chaveiro.variantId,
+  });
+  await seedCashSale(
+    rpc,
+    organizationId,
+    [{ price: "9.90", quantity: 2, variantId: chaveiro.variantId }],
+    now.toISOString()
+  );
+}
+
 /** O que cada loja tem antes da exploração: o catálogo de uma loja de roupas na primeira semana. */
 async function seedStore(
-  rpc: Awaited<ReturnType<typeof createJourneyUser>>["rpc"],
+  rpc: Rpc,
   organizationId: string,
-  now: Date
+  now: Date,
+  unknownCost: boolean
 ): Promise<void> {
   const today = todayInSaoPaulo(now);
   const camiseta = await seedProduct(
@@ -117,6 +158,9 @@ async function seedStore(
     ],
     now.toISOString()
   );
+  if (unknownCost) {
+    await seedUnknownCost(rpc, organizationId, today, now);
+  }
 }
 
 async function main(): Promise<void> {
@@ -174,7 +218,12 @@ async function main(): Promise<void> {
         timezone: "America/Sao_Paulo",
       });
       if (!store.endsWith("-vazia")) {
-        await seedStore(user.rpc, created.organization.id, now);
+        await seedStore(
+          user.rpc,
+          created.organization.id,
+          now,
+          store.endsWith("-semcusto")
+        );
       }
       sessions[store] = {
         cookies: user.cookies,
