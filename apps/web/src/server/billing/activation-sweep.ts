@@ -26,8 +26,9 @@ export function activationEmailsEnabled(
 /**
  * The hourly sweep of the activation series, in the maintenance lane that already runs: no cron of its own. It
  * records, it never sends (the consumer of `activation.notice` does). The log says only the outcome, whether the
- * switch was on, the counts and the reasons of the skipped: no store, no person and no address. A failure is logged with its class
- * and code alone and thrown, so the run shows itself incomplete.
+ * switch was on, the counts and the reasons of the skipped: no store, no person and no address. A failure is logged
+ * with its class and code alone and thrown as it came, like the other jobs of the lane, so the run shows itself
+ * incomplete with the error's code.
  */
 export async function runActivationSweep(
   bindings: ActivationSweepBindings,
@@ -48,7 +49,7 @@ export async function runActivationSweep(
       outcome: "failure",
       seriesOn: enabled,
     });
-    throw new Error("activation_sweep_failed", { cause: error });
+    throw error;
   }
   logger.info(
     "activation_sweep_complete",

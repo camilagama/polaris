@@ -147,7 +147,7 @@ describe("the hourly sweep of the activation series", () => {
 
     await expect(
       runActivationSweep({ ACTIVATION_EMAILS_ENABLED: "true" }, store, now)
-    ).rejects.toThrow("activation_sweep_failed");
+    ).rejects.toBe(error);
 
     const written = lines.join("\n");
     expect(written).toContain("activation_sweep_failed");
