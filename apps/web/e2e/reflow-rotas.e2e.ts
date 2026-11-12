@@ -66,9 +66,9 @@ interface KnownFinding {
   clientWidth: number;
   /** What a later change has to do about it, in the words of the screen. */
   reason: string;
-  scrollWidth: number;
   /** The names of the cases below in which it shows up. */
   screens: readonly string[];
+  scrollWidth: number;
   /** `ClippedElement.selector`, or `html` for the page that scrolls sideways. */
   selector: string;
 }
@@ -401,25 +401,22 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
  */
 const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
   {
-    "resultado mês incompleto e gráfico de vendas": {
-      file: "dashboard.e2e.ts",
-      test: "com a letra em 24 px, o R$ e o número de cada valor ficam na mesma linha",
-    },
     "resultado gráfico de vendas e custos e a tabela": {
       file: "dashboard.e2e.ts",
       test: "com a letra em 24 px, o gráfico lê inteiro, com a tabela dos dias invisível, sem rolagem lateral",
+    },
+    "resultado mês incompleto e gráfico de vendas": {
+      file: "dashboard.e2e.ts",
+      test: "com a letra em 24 px, o R$ e o número de cada valor ficam na mesma linha",
     },
   };
 
 /**
  * The cases of `COVERED` that cannot be driven at 24 px because the screen does not let the person reach a control the
- * case has to press: the case, and what is measured (it is read again by `a guarda de 24 px confere o que não alcança`
- * below, which fails when the control can be reached, so the case goes back to `COVERED_24`).
+ * case has to press: the case, and what is measured. A line here needs a test that fails when the control can be
+ * reached, so the case goes back to `COVERED_24`.
  */
-const UNREACHABLE_AT_24: Readonly<Record<string, string>> = {
-  "aparelhos confirmação aberta":
-    'the dialog of the revocation is taller than the window, centered and without scroll (overflow visible), so the button "Sim, revogar e encerrar as outras sessões" stays outside the window even after scrolling it into view',
-};
+const UNREACHABLE_AT_24: Readonly<Record<string, string>> = {};
 
 /** The screens a test of its own measures at 320 px with 20 px: the file of that test. */
 const EXCLUDED: Readonly<Record<string, string>> = {
@@ -879,46 +876,190 @@ test.describe("a guarda pega o que corta só a 24 px", () => {
   });
 });
 
-test.describe("a guarda de 24 px confere o que não alcança", () => {
-  test("o botão de confirmar a revogação segue fora da janela a 24 px: se couber, o caso volta para COVERED_24", async ({
+const REVOKE_ALL = "Sim, revogar e encerrar as outras sessões";
+const OTHER_SESSIONS = "Encerrar também as outras sessões";
+
+interface DialogWindow {
+  fontPixels: number;
+  height: number;
+  width: number;
+}
+
+async function openRevocation(
+  page: Page,
+  context: BrowserContext,
+  { fontPixels, height, width }: DialogWindow
+) {
+  await openReflowViewport(page, { fontPixels, height, width });
+  await stateOf("aparelhos lista").open(page, context);
+  const trigger = page.getByRole("button", { name: REVOKE_OTHER });
+  await trigger.click();
+  await expectReflowFont(page, fontPixels);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  return { dialog, trigger };
+}
+
+const measureDialog = (dialog: Locator) =>
+  dialog.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      bottom: box.bottom,
+      clientHeight: element.clientHeight,
+      overflowY: style.overflowY,
+      overscrollY: style.overscrollBehaviorY,
+      pageScroll: window.scrollY,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+      top: box.top,
+      windowHeight: window.innerHeight,
+    };
+  });
+
+/** Whether the whole control is inside the box of its dialog, and the box is inside the window. */
+const insideDialog = (target: Locator) =>
+  target.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const dialog = element.closest('[role="dialog"]')?.getBoundingClientRect();
+    return (
+      dialog !== undefined &&
+      box.top >= Math.max(dialog.top, 0) &&
+      box.bottom <= Math.min(dialog.bottom, window.innerHeight)
+    );
+  });
+
+async function tabStop(page: Page) {
+  await page.keyboard.press("Tab");
+  const focused = page.locator(":focus");
+  expect(await insideDialog(focused), "the focused control is in view").toBe(
+    true
+  );
+  return focused.evaluate(
+    (element) =>
+      `${element.getAttribute("data-slot")}|${element.textContent?.trim()}`
+  );
+}
+
+/**
+ * The small dialog taller than the window: it opens at the top with the title in view and without the focus pulling
+ * the scroll, scrolls as a whole, and the button that ends the action is reached by scrolling the dialog, by Tab, and
+ * with the visible part shrunk (the keyboard of a phone).
+ */
+async function expectSmallDialogScrolls(
+  page: Page,
+  context: BrowserContext,
+  size: DialogWindow
+) {
+  const { dialog, trigger } = await openRevocation(page, context, size);
+  const title = dialog.getByRole("heading");
+
+  const fresh = await measureDialog(dialog);
+  expect(fresh.scrollTop, "opens at the top, before anything is touched").toBe(
+    0
+  );
+  expect(await insideDialog(title), "the title is in view").toBe(true);
+  const pageBefore = fresh.pageScroll;
+
+  await page.getByRole("checkbox", { name: OTHER_SESSIONS }).click();
+  await dialog.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  const confirm = page.getByRole("button", { exact: true, name: REVOKE_ALL });
+  const opened = await measureDialog(dialog);
+  expect(
+    opened.scrollHeight,
+    "the case is only worth something if the content is taller than the window"
+  ).toBeGreaterThan(opened.clientHeight);
+  expect(opened.overflowY).toBe("auto");
+  expect(opened.overscrollY).toBe("contain");
+  expect(opened.top).toBeGreaterThanOrEqual(0);
+  expect(opened.bottom).toBeLessThanOrEqual(opened.windowHeight);
+
+  await confirm.scrollIntoViewIfNeeded();
+  expect(await insideDialog(confirm), "the button is in view").toBe(true);
+  const scrolled = await measureDialog(dialog);
+  expect(scrolled.scrollTop).toBeGreaterThan(0);
+  expect(scrolled.pageScroll, "the page behind does not scroll").toBe(
+    pageBefore
+  );
+  await dialog.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+
+  const reached = new Set<string>();
+  for (let step = 0; step < 6; step += 1) {
+    // biome-ignore lint/performance/noAwaitInLoops: one Tab after the other
+    reached.add(await tabStop(page));
+  }
+  expect([...reached]).toEqual(
+    expect.arrayContaining([
+      `button|${REVOKE_ALL}`,
+      "button|Cancelar",
+      "checkbox|",
+    ])
+  );
+  expect((await measureDialog(dialog)).pageScroll).toBe(pageBefore);
+
+  const visible = Math.floor(size.height / 2);
+  await page.setViewportSize({ height: visible, width: size.width });
+  await expect
+    .poll(() =>
+      dialog.evaluate((element) => ({
+        center: element.style.getPropertyValue("--dialog-center"),
+        height: element.style.getPropertyValue("--dialog-height"),
+      }))
+    )
+    .toEqual({ center: `${visible / 2}px`, height: `${visible}px` });
+  const shrunk = await measureDialog(dialog);
+  expect(shrunk.top).toBeGreaterThanOrEqual(0);
+  expect(shrunk.bottom).toBeLessThanOrEqual(visible);
+  await confirm.scrollIntoViewIfNeeded();
+  expect(await insideDialog(confirm), "reachable with the keyboard up").toBe(
+    true
+  );
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+}
+
+test.describe("o diálogo pequeno mais alto que a janela rola inteiro", () => {
+  test("a 320 px com a letra em 24 px, o botão de revogar se alcança rolando o próprio diálogo", async ({
     context,
     page,
   }) => {
-    await openReflowViewport(page, { fontPixels: BEST_EFFORT_FONT_PIXELS });
-    await stateOf("aparelhos lista").open(page, context);
-    await page.getByRole("button", { name: REVOKE_OTHER }).click();
-    await page
-      .getByRole("checkbox", { name: "Encerrar também as outras sessões" })
-      .click();
-    await expectReflowFont(page, BEST_EFFORT_FONT_PIXELS);
-    const button = page.getByRole("button", {
-      exact: true,
-      name: "Sim, revogar e encerrar as outras sessões",
+    await expectSmallDialogScrolls(page, context, {
+      fontPixels: BEST_EFFORT_FONT_PIXELS,
+      height: 740,
+      width: REFLOW_WIDTH,
     });
-    await button.scrollIntoViewIfNeeded();
-    const seen = await button.evaluate((element) => {
-      const dialog = element.closest('[role="dialog"]');
-      const box = element.getBoundingClientRect();
-      return {
-        bottom: box.bottom,
-        dialogHeight: dialog?.getBoundingClientRect().height ?? 0,
-        overflowY: dialog ? getComputedStyle(dialog).overflowY : "",
-        top: box.top,
-        windowHeight: window.innerHeight,
-      };
+  });
+
+  test("numa janela baixa de 568 × 320 com a letra em 20 px, o botão de revogar se alcança sem o 24 px", async ({
+    context,
+    page,
+  }) => {
+    await expectSmallDialogScrolls(page, context, {
+      fontPixels: FLOOR_FONT_PIXELS,
+      height: 320,
+      width: 568,
     });
-    expect(
-      seen.dialogHeight,
-      "the dialog fits the window now: take the case out of UNREACHABLE_AT_24"
-    ).toBeGreaterThan(seen.windowHeight);
-    expect(
-      seen.overflowY,
-      "the dialog scrolls now: take the case out of UNREACHABLE_AT_24"
-    ).toBe("visible");
-    expect(
-      seen.bottom > seen.windowHeight || seen.top < 0,
-      "the button is inside the window now: take the case out of UNREACHABLE_AT_24"
-    ).toBe(true);
+  });
+
+  test("o diálogo que cabe na janela não rola e fica no centro, como era", async ({
+    context,
+    page,
+  }) => {
+    const { dialog } = await openRevocation(page, context, {
+      fontPixels: 16,
+      height: 740,
+      width: 1280,
+    });
+    const seen = await measureDialog(dialog);
+    expect(seen.scrollHeight).toBeLessThanOrEqual(seen.clientHeight);
+    const box = await dialog.boundingBox();
+    expect((box?.y ?? 0) + (box?.height ?? 0) / 2).toBeCloseTo(370, 0);
   });
 });
 

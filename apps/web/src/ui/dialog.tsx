@@ -2,6 +2,7 @@
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import XIcon from "lucide-react/dist/esm/icons/x";
+import type * as React from "react";
 import {
   createContext,
   type RefObject,
@@ -12,7 +13,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type * as React from "react";
 import { PHONE_QUERY } from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -24,6 +24,9 @@ import {
   FORM_FOOTER_CLASS,
   FORM_HEADER_CLASS,
   FORM_POPUP_CLASS,
+  followVisualViewport,
+  SMALL_FOOTER_CLASS,
+  SMALL_POPUP_CLASS,
 } from "@/ui/dialog-layout";
 
 /**
@@ -32,31 +35,6 @@ import {
  */
 type DialogLayout = "dialog" | "form";
 const DialogLayoutContext = createContext<DialogLayout>("dialog");
-
-/**
- * Keeps the form dialog on the part of the screen the person can see. With the keyboard open the layout viewport
- * does not shrink (iOS, and Chrome for Android since 108), so a box sized by `dvh` would put its footer under the
- * keyboard; the box follows the visual viewport instead, through two custom properties (`dialog-layout.ts`).
- */
-function followVisualViewport(
-  popup: HTMLElement | null
-): (() => void) | undefined {
-  const viewport = window.visualViewport;
-  if (!(popup && viewport)) {
-    return;
-  }
-  const sync = () => {
-    popup.style.setProperty("--dialog-height", `${viewport.height}px`);
-    popup.style.setProperty("--dialog-top", `${viewport.offsetTop}px`);
-  };
-  sync();
-  viewport.addEventListener("resize", sync);
-  viewport.addEventListener("scroll", sync);
-  return () => {
-    viewport.removeEventListener("resize", sync);
-    viewport.removeEventListener("scroll", sync);
-  };
-}
 
 // an entry a reload left behind is stepped over as the screen loads, before any dialog opens or the screen is ready
 if (typeof window !== "undefined") {
@@ -194,17 +172,15 @@ function DialogContent({
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
+        aria-modal="true"
         className={cn(
           "data-open:fade-in-0 data-closed:fade-out-0 motion-full:duration-[220ms] motion-full:data-closed:animate-out motion-full:data-open:animate-in",
-          isForm
-            ? FORM_POPUP_CLASS
-            : "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground text-sm shadow-lg outline-none ring-1 ring-foreground/[0.06] sm:max-w-sm",
+          isForm ? FORM_POPUP_CLASS : SMALL_POPUP_CLASS,
           className
         )}
-        aria-modal="true"
         data-layout={layout}
         data-slot="dialog-content"
-        ref={isForm ? followVisualViewport : undefined}
+        ref={followVisualViewport}
         {...props}
       >
         <DialogLayoutContext.Provider value={layout}>
@@ -284,9 +260,7 @@ function DialogFooter({
     <div
       className={cn(
         "flex",
-        isForm
-          ? FORM_FOOTER_CLASS
-          : "-mx-4 -mb-4 flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        isForm ? FORM_FOOTER_CLASS : SMALL_FOOTER_CLASS,
         className
       )}
       data-slot="dialog-footer"
