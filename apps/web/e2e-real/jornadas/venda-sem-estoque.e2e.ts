@@ -249,3 +249,53 @@ test("venda com saldo curto: o link da linha abre a entrada com a quantidade que
   expect(writes).toEqual([]);
   expect(await movements(sql, product.variantId)).toBe(1);
 });
+
+test("venda com duas linhas da mesma variante: os dois links abrem a entrada com o que falta no total", async ({
+  browser,
+  sql,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "venda-linhas-da-variante",
+    { organization: { timezone: ZONE } }
+  );
+  const { page } = journey;
+  const organizationId = journey.organizationId as string;
+  const product = await seedProduct(
+    journey.user.rpc,
+    organizationId,
+    "Caneca esmaltada",
+    "35.00"
+  );
+  await seedStock(
+    journey.user.rpc,
+    organizationId,
+    product.variantId,
+    4,
+    "12.00",
+    localDate(runT0(), ZONE)
+  );
+
+  await page.goto("/sales");
+  const line = { charged: "35,00", option: MUG, quantity: 3, search: "Caneca" };
+  await fillSale(page, [line, line], []);
+  const href = `/inventory?entrada=${product.variantId}&de=venda&quantidade=2`;
+  const first = page.getByRole("group", { exact: true, name: "Item 1" });
+  const second = page.getByRole("group", { exact: true, name: "Item 2" });
+  await expect(first).toContainText("Acima do saldo (4)");
+  await expect(second).toContainText("Acima do saldo (4)");
+  await expect(first.getByRole("link", { name: ENTRY_LINK })).toHaveAttribute(
+    "href",
+    href
+  );
+  const secondLink = second.getByRole("link", { name: ENTRY_LINK });
+  await expect(secondLink).toHaveAttribute("href", href);
+
+  await secondLink.click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(page.getByLabel("Quantidade recebida")).toHaveValue("2");
+  expect(await movements(sql, product.variantId)).toBe(1);
+});
