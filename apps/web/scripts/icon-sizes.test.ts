@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
  * The icon scale of the app is 12, 16 and 18 px (DESIGN.md, rule 11), so a Lucide icon is never `size-3.5` (14 px),
  * on the icon itself or through a rule on the `svg` of its button (`[&_svg]:size-3.5`). The same 14 px written as
  * `h-3.5 w-3.5` or `h-[14px] w-[14px]` counts as ONE use when both sit in the same element (text between `<`, `>` and
- * `;`, so `cn("h-3.5", on && "w-3.5")` pairs too) with the same variant prefix; a lone `h-3.5` or `w-3.5` is a line of
+ * `;`, so `cn("h-3.5", on && "w-3.5")` pairs too) with the same variant prefix. A `>` inside a variant
+ * (`[&>svg]:`, `has-[>svg]:`) or in an arrow `=>` does not end the element; a lone `h-3.5` or `w-3.5` is a line of
  * a skeleton or a bar, not a square icon, and does not count. The scan reads every
  * `.tsx` of `src` and the list of what may keep 14 px is exact by file and number of uses: the Google "G", a brand
  * mark and not a Lucide icon. An entry nothing uses, or used once more, fails.
@@ -17,7 +18,7 @@ const TEST_FILE = /\.(?:test|spec)\.tsx?$/;
 const FOURTEEN_PX =
   /(?<![\w-])((?:[^\s"'`]*:)?)!?(size|[hw])-(?:3\.5|\[14px\])(?![\w.-])/g;
 const DOLLAR = "$";
-const ELEMENT_BOUNDARY = /[;<>]/;
+const ELEMENT_BOUNDARY = /[;<]|(?<!=|(?:^|[\s"'`])[\w!:-]*\[[^\s"'`;<]*)>/;
 
 const BRAND_MARKS: Readonly<Record<string, number>> = {
   "sign-in/entry-ui.tsx": 1,
@@ -141,6 +142,58 @@ describe("nenhum ícone de 14 px (regra 11)", () => {
       "h-3.5 w-3.5",
     ]);
     expect(fourteenPxUses('className="md:!h-3.5 w-3.5"')).toEqual([]);
+  });
+
+  it("o > de dentro da variante ou de uma seta não corta o elemento", () => {
+    expect(fourteenPxUses('className="[&>svg]:h-3.5 [&>svg]:w-3.5"')).toEqual([
+      "[&>svg]:h-3.5 [&>svg]:w-3.5",
+    ]);
+    expect(
+      fourteenPxUses('className="has-[>svg]:h-3.5 has-[>svg]:w-3.5"')
+    ).toEqual(["has-[>svg]:h-3.5 has-[>svg]:w-3.5"]);
+    expect(
+      fourteenPxUses(
+        `className="[&>*:not([class*='size-'])]:h-3.5 [&>*:not([class*='size-'])]:w-3.5"`
+      )
+    ).toEqual(["])]:h-3.5 ])]:w-3.5"]);
+    expect(
+      fourteenPxUses(
+        'className="[&[data-x]>svg]:h-3.5 [&[data-x]>svg]:w-3.5 [&:not([disabled])>svg]:h-3.5 [&:not([disabled])>svg]:w-3.5"'
+      )
+    ).toEqual([
+      "[&[data-x]>svg]:h-3.5 [&[data-x]>svg]:w-3.5",
+      "[&:not([disabled])>svg]:h-3.5 [&:not([disabled])>svg]:w-3.5",
+    ]);
+    expect(
+      fourteenPxUses(
+        'className="[&:has(>svg)]:h-3.5 md:has-[>svg]:w-3.5 [&:has(>svg)]:w-3.5 md:has-[>svg]:h-3.5"'
+      )
+    ).toEqual([
+      "[&:has(>svg)]:h-3.5 [&:has(>svg)]:w-3.5",
+      "md:has-[>svg]:h-3.5 md:has-[>svg]:w-3.5",
+    ]);
+    expect(
+      fourteenPxUses(
+        '<a className="h-3.5" x={a[0]}><b className="w-3.5" /></a>'
+      )
+    ).toEqual([]);
+    expect(fourteenPxUses('className="[&>svg]:size-3.5"')).toEqual([
+      "[&>svg]:size-3.5",
+    ]);
+    expect(
+      fourteenPxUses('className={cn("h-3.5", f((x) => x) && "w-3.5")}')
+    ).toEqual(["h-3.5 w-3.5"]);
+    expect(fourteenPxUses('className="[&>svg]:h-3.5 [&_svg]:w-3.5"')).toEqual(
+      []
+    );
+    expect(
+      fourteenPxUses(
+        '<a className="[&>svg]:h-3.5"></a><b className="[&>svg]:w-3.5"></b>'
+      )
+    ).toEqual([]);
+    expect(
+      fourteenPxUses('[<a className="h-3.5" />, <b className="w-3.5" />]')
+    ).toEqual([]);
   });
 
   it("h ou w de 14 px sozinho, variantes que não casam e números parecidos não contam", () => {
