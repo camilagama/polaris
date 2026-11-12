@@ -113,12 +113,16 @@ function labScreen(): LabScreen {
 const seededCatalog = () =>
   new URLSearchParams(window.location.search).get("catalog") === "seeded";
 
+/** `&variants=unpriced`: the sale screen with one more variant, which has no list price. */
+const unpricedVariant = () =>
+  new URLSearchParams(window.location.search).get("variants") === "unpriced";
+
 function newServer(screen: LabScreen) {
   if (screen === "products") {
     return seededCatalog() ? new ProductsLabServer() : new FakeCatalogServer();
   }
   return screen === "sale" || screen === "stock" || screen === "history"
-    ? new SaleLabServer()
+    ? new SaleLabServer(screen === "sale" && unpricedVariant())
     : new FakeCustomerServer();
 }
 

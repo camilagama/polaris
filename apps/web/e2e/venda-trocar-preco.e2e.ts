@@ -6,10 +6,13 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
  * Swapping the variant of a line in the sale takes the prices of the new variant; when the operator typed a price on
- * that line the charged price stays, the list price is still the new variant's, and a note says so. The lab offers Azul (list price 50,00) and Vermelha (10,00).
+ * that line the charged price stays, the list price is still the new variant's, and a note says so. The lab offers Azul (list price 50,00) and Vermelha (10,00); with `&variants=unpriced` it also offers Verde, which has no list price, so the swap to it leaves the prices of the new variant empty.
  */
 const AZUL = /Camiseta do laboratório · Azul/;
 const VERMELHA = /Camiseta do laboratório · Vermelha/;
+const VERDE = /Camiseta do laboratório · Verde/;
+const SALE_LAB = "/offline-screens-lab?screen=sale";
+const UNPRICED_LAB = "/offline-screens-lab?screen=sale&variants=unpriced";
 const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
 const AZUL_ID = "0199c2d0-0000-7000-8000-0000000000b1";
 const KEPT_NOTICE = "Preço cobrado mantido da variante anterior.";
@@ -24,7 +27,18 @@ const rpc = (body: unknown) => ({
   headers: { ...WORKER_MARK },
 });
 
-async function openSale(page: Page, fontPixels = 16) {
+async function startLab(page: Page, lab: string) {
+  await page.goto(lab);
+  await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
+  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  await expect(page.getByTestId("message")).toContainText(
+    "Iniciar: ok (ready)",
+    { timeout: 20_000 }
+  );
+  await page.getByLabel("Rede disponível").uncheck();
+}
+
+async function openSale(page: Page, fontPixels = 16, lab = SALE_LAB) {
   await setBrowserFont(page, fontPixels);
   await page.addInitScript(
     ([key, variant]) => {
@@ -45,14 +59,7 @@ async function openSale(page: Page, fontPixels = 16) {
     route.fulfill(rpc({ profiles: [] }))
   );
   await serveLabWorker(page);
-  await page.goto("/offline-screens-lab?screen=sale");
-  await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
-  await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
-  await expect(page.getByTestId("message")).toContainText(
-    "Iniciar: ok (ready)",
-    { timeout: 20_000 }
-  );
-  await page.getByLabel("Rede disponível").uncheck();
+  await startLab(page, lab);
   const item = page.getByRole("group", { exact: true, name: "Item 1" });
   await item.getByLabel("Produto ou variante").fill("camiseta azul");
   await page.getByRole("option", { name: AZUL }).click();
@@ -72,6 +79,21 @@ async function swapToRed(page: Page, item: Locator) {
   await page.getByRole("option", { name: VERMELHA }).click();
   await expect(
     item.getByText("Camiseta do laboratório · Vermelha", { exact: true })
+  ).toBeVisible();
+}
+
+async function swapToGreen(page: Page, item: Locator) {
+  await item
+    .getByRole("button", {
+      name: "Trocar variante de Camiseta do laboratório · Azul",
+    })
+    .click();
+  await item
+    .getByRole("combobox", { name: "Produto ou variante" })
+    .fill("verde");
+  await page.getByRole("option", { name: VERDE }).click();
+  await expect(
+    item.getByText("Camiseta do laboratório · Verde", { exact: true })
   ).toBeVisible();
 }
 
@@ -144,7 +166,51 @@ test("digitar de novo o preço que o app sugeriu não conta como editado", async
   page,
 }) => {
   const item = await openSale(page);
+  await item.getByLabel("Preço cobrado").fill("45,00");
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("45,00");
+  await item.getByLabel("Preço de tabela").fill("55,00");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("55,00");
   await item.getByLabel("Preço cobrado").fill("49,90");
+  await item.getByLabel("Preço de tabela").fill("49,90");
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("49,90");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("49,90");
+  await swapToRed(page, item);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("10,00");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("10,00");
+  await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
+});
+
+test("trocar para uma variante sem preço de tabela nem última venda mantém o cobrado digitado, deixa a tabela vazia e avisa", async ({
+  page,
+}) => {
+  const item = await openSale(page, 16, UNPRICED_LAB);
+  await item.getByLabel("Preço cobrado").fill("45,00");
+  await swapToGreen(page, item);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("45,00");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("");
+  await expect(item.getByRole("note")).toContainText(KEPT_NOTICE);
+  await expect(item.getByLabel("Preço cobrado")).toHaveAccessibleDescription(
+    KEPT_NOTICE_PATTERN
+  );
+});
+
+test("trocar para uma variante sem preço de tabela nem última venda, sem editar, esvazia os dois preços e não cobra o da anterior", async ({
+  page,
+}) => {
+  const item = await openSale(page, 16, UNPRICED_LAB);
+  await swapToGreen(page, item);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("");
+  await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
+});
+
+test("com o rascunho restaurado e os preços iguais à sugestão, trocar leva os preços da variante nova sem aviso", async ({
+  page,
+}) => {
+  const item = await openSale(page);
+  await page.reload();
+  await startLab(page, SALE_LAB);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("49,90");
   await swapToRed(page, item);
   await expect(item.getByLabel("Preço cobrado")).toHaveValue("10,00");
   await expect(item.getByLabel("Preço de tabela")).toHaveValue("10,00");

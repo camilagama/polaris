@@ -1,12 +1,18 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  pricesForVariantChange,
+  type RememberedPrices,
+  suggestPrices,
+} from "./last-prices-model";
+import {
   chosenItemCount,
   clearSaleConsequence,
   draftVariantIds,
   refreshedDraftMessage,
   refreshRestoredItems,
 } from "./sale-draft-restore";
+import { readSaleDraft, writeSaleDraft } from "./sale-draft-storage";
 import {
   addItem,
   createBlankSaleForm,
@@ -210,5 +216,93 @@ describe("Limpar venda", () => {
     expect(chosenItemCount(createBlankSaleForm(ids()))).toBe(0);
     expect(clearSaleConsequence(3)).toBe("Isso tira os 3 itens da venda.");
     expect(clearSaleConsequence(1)).toBe("Isso tira o item da venda.");
+  });
+});
+
+describe("trocar a variante de uma linha do rascunho restaurado", () => {
+  const ORG = "0199c2d0-0000-7000-8000-00000000a001";
+  const NOW = new Date("2026-11-12T15:00:00.000Z");
+  const remembered: RememberedPrices = {
+    [SHIRT]: { charged: "49.90", listed: "49.90", on: "2026-10-01" },
+  };
+  const redNext = { chargedUnitPrice: "10,00", listedUnitPrice: "10,00" };
+
+  function tabStorage() {
+    const data = new Map<string, string>();
+    return {
+      getItem: (key: string) => data.get(key) ?? null,
+      removeItem: (key: string) => {
+        data.delete(key);
+      },
+      setItem: (key: string, value: string) => {
+        data.set(key, value);
+      },
+    };
+  }
+
+  /** The cart goes to the tab's storage and comes back, then is read against the catalog, as the page does on mount. */
+  function restoredLine(prices: Partial<ItemDraft>): ItemDraft {
+    const storage = tabStorage();
+    const createId = ids();
+    const form = updateItem(
+      createBlankSaleForm(createId),
+      "draft-1",
+      line(SHIRT, { label: "Camiseta", ...prices })
+    );
+    writeSaleDraft(storage, ORG, { form, startedAt: NOW.toISOString() });
+    const read = readSaleDraft(storage, ORG, NOW, "America/Sao_Paulo");
+    if (read.kind !== "restored") {
+      throw new Error("the draft should have come back");
+    }
+    const refreshed = refreshRestoredItems(
+      read.draft.form,
+      draftVariantIds(read.draft.form),
+      [entry(SHIRT, { listPrice: "49.90" })],
+      createId,
+      false
+    );
+    const [restored] = refreshed.form.items;
+    if (!restored) {
+      throw new Error("the line should have stayed");
+    }
+    return restored;
+  }
+
+  function swapToRed(item: ItemDraft) {
+    return pricesForVariantChange(
+      item,
+      suggestPrices(remembered, item.variantId),
+      redNext
+    );
+  }
+
+  it("com os preços iguais à sugestão da última venda, os da variante nova entram sem aviso", () => {
+    const restored = restoredLine({
+      chargedUnitPrice: "49,90",
+      listedUnitPrice: "49,90",
+    });
+
+    expect(restored).toMatchObject({
+      chargedUnitPrice: "49,90",
+      listedUnitPrice: "49,90",
+    });
+    expect(swapToRed(restored)).toEqual({
+      chargedUnitPrice: "10,00",
+      keptTyped: false,
+      listedUnitPrice: "10,00",
+    });
+  });
+
+  it("com o cobrado negociado, o cobrado fica, a tabela é a da nova e o aviso aparece", () => {
+    const restored = restoredLine({
+      chargedUnitPrice: "45,00",
+      listedUnitPrice: "49,90",
+    });
+
+    expect(swapToRed(restored)).toEqual({
+      chargedUnitPrice: "45,00",
+      keptTyped: true,
+      listedUnitPrice: "10,00",
+    });
   });
 });
