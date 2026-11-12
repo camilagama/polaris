@@ -145,7 +145,7 @@ describe("report.periodSummary", () => {
     // a series by date says nothing more than it did
     expect(summary).not.toHaveProperty("granularity");
     expect(summary).not.toHaveProperty("afterToday");
-    // the Result page does not ask for the ranking and does not get it
+    // without topProducts in the request there is no ranking and no covers read
     expect(summary).not.toHaveProperty("topProducts");
     // gross 200 + freight 10 ; cogs 60 ; linked 5 ; fee unknown
     expect(summary.cards).toEqual({
