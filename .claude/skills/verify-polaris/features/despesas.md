@@ -11,7 +11,7 @@ Despesas (`/expenses`) é a tela das despesas da loja, um destino do menu no gru
 
 - Desktop: link `Despesas` do menu "Principal" (grupo "Financeiro"), 1 clique; só existe para quem tem `expense:create`.
 - Celular: "Mais" e o link `Despesas` (2 toques).
-- Resultado: o link "Despesas do período", na linha do título do Resultado (só com `expense:create`).
+- Resultado: o link "Ver despesas", sob a linha "(−) Despesas do período (sem venda)" da cadeia (só com `expense:create`).
 - Resultado vazio: o link "Nova despesa" (só com `expense:create`).
 - Endereço: `/expenses`; `/dashboard?aba=despesas` (e `&ver=`) abre a mesma tela no próprio navegador, sem carga nova.
 
@@ -30,4 +30,4 @@ Preconditions:
 ## Gotchas
 
 - Despesas é tela só do servidor: sem conexão não carrega.
-- O link "Despesas do período" do Resultado é um link comum (`<a href="/expenses">`): a tela abre com a carga da página.
+- O link "Ver despesas" do Resultado é um link comum (`<a href="/expenses">`): a tela abre com a carga da página.

@@ -826,15 +826,13 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
     await expect.poll(() => pathOf(page)).toBe("/dashboard?aba=metas");
   });
 
-  test("Despesas é um destino: marca o item atual, o Resultado leva a ela e o chip diz que a tela precisa de internet", async ({
+  test("Despesas é um destino: marca o item atual e o chip diz que a tela precisa de internet", async ({
     context,
     page,
   }) => {
     await serve(page);
     await page.goto("/dashboard");
-    await page
-      .getByRole("link", { exact: true, name: "Despesas do período" })
-      .click();
+    await sidebar(page).getByRole("link", { name: "Despesas" }).click();
     await expect.poll(() => pathOf(page)).toBe("/expenses");
     const current = sidebar(page).locator('[aria-current="page"]');
     await expect(current).toHaveCount(1);
@@ -852,7 +850,7 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
     );
   });
 
-  test("quem não pode registrar despesa não tem o item Despesas nem o link do Resultado; o endereço abre a tela como sempre", async ({
+  test("quem não pode registrar despesa não tem o item Despesas; o endereço abre a tela como sempre", async ({
     page,
   }) => {
     await serve(
@@ -869,9 +867,6 @@ test.describe("os 10 destinos e as abas (1280 px)", () => {
     await expect(sidebar(page).getByRole("link")).toHaveText(
       DESTINATIONS.filter((label) => label !== "Despesas")
     );
-    await expect(
-      page.getByRole("link", { exact: true, name: "Despesas do período" })
-    ).toHaveCount(0);
     await page.goto("/dashboard?aba=despesas");
     await expect.poll(() => pathOf(page)).toBe("/expenses");
     await expect(
