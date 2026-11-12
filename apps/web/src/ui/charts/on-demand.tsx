@@ -209,12 +209,9 @@ export function OnDemandAreaChart({
         {props.readingAtRest === false ? null : (
           <div
             aria-hidden="true"
-            className={cn("min-h-[1.125rem]", props.reserve.reading)}
+            className={cn("min-h-[1.125rem]", props.reserve)}
           />
         )}
-        {props.reserve.legend ? (
-          <div aria-hidden="true" className={props.reserve.legend} />
-        ) : null}
         <Reserved
           floor={32}
           height={(props.height ?? 180) + EXTRA_HEIGHT}

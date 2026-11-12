@@ -31,6 +31,14 @@ const MAX_PAGES = 10;
 const PAGE_SIZE = 100;
 const trailingSlashes = /\/+$/;
 
+/** A list longer than the pages the caller reads: not an answer to trust. */
+export class WooviListTooLongError extends ProviderResponseMalformedError {
+  constructor() {
+    super();
+    this.name = "WooviListTooLongError";
+  }
+}
+
 export interface WooviClientConfig {
   /** The AppID (secret), sent as `Authorization`. */
   appId: string;
@@ -66,7 +74,14 @@ export interface WooviClient {
   getCustomer: (correlationId: string) => Promise<unknown>;
   getInstallment: (installmentId: string) => Promise<unknown>;
   getSubscription: (subscriptionId: string) => Promise<unknown>;
-  listSubscriptionInstallments: (subscriptionId: string) => Promise<unknown[]>;
+  /**
+   * The installments of a subscription, page by page, up to `maxPages`
+   * (10 by default); a longer list throws `WooviListTooLongError`.
+   */
+  listSubscriptionInstallments: (
+    subscriptionId: string,
+    options?: { maxPages?: number }
+  ) => Promise<unknown[]>;
   /**
    * `POST /api/v1/refund`: gives back a Pix received, named by its
    * `endToEndId`, in full. The `correlationID` is Polaris's and makes a repeat
@@ -225,10 +240,14 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
   }
 
   /** Reads a list page by page; a short page is the last one, whatever `pageInfo` says. */
-  async function listAll(path: string, key: string): Promise<unknown[]> {
+  async function listAll(
+    path: string,
+    key: string,
+    maxPages = MAX_PAGES
+  ): Promise<unknown[]> {
     const items: unknown[] = [];
     const separator = path.includes("?") ? "&" : "?";
-    for (let page = 0; page < MAX_PAGES; page += 1) {
+    for (let page = 0; page < maxPages; page += 1) {
       const answer = record(
         // biome-ignore lint/performance/noAwaitInLoops: Pages are read one after the other.
         await call(
@@ -247,7 +266,7 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
       }
     }
     // more than a list Polaris reads can have: not an answer to trust
-    throw new ProviderResponseMalformedError();
+    throw new WooviListTooLongError();
   }
 
   return {
@@ -308,10 +327,11 @@ export function createWooviClient(config: WooviClientConfig): WooviClient {
         "subscription",
         true
       ),
-    listSubscriptionInstallments: async (subscriptionId) =>
+    listSubscriptionInstallments: async (subscriptionId, options) =>
       listAll(
         `/api/v1/subscriptions/${globalIdPath("subscription", subscriptionId)}/installments`,
-        "installments"
+        "installments",
+        Math.max(1, Math.min(options?.maxPages ?? MAX_PAGES, MAX_PAGES))
       ),
     refundPix: async (body) =>
       unwrap(await call("POST", "/api/v1/refund", body), "refund", false),

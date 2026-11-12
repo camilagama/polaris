@@ -394,9 +394,9 @@ const COVERED: Readonly<Record<string, readonly Case[]>> = {
  *   `dd` values apart, nothing clipped) and the chain of a month of millions (R$ and number on one line, nothing
  *   clipped, the chain in view). The test does not open the day table and does not use the
  *   incomplete-estimate month (warning, badges, hatched first day).
- * - "resultado gráfico de vendas e custos e a tabela": the chart region and the day table with "Depois de hoje" (the
- *   amounts of the rows and of the footer on one line, nothing clipped) and that the page does not roll sideways.
- *   It does not read the chain.
+ * - "resultado gráfico de vendas e custos e a tabela": the chart region (nothing clipped, the legend and the reading of
+ *   the day in their row), that the invisible day table closes with "Depois de hoje" and that the page does not roll
+ *   sideways. It does not read the chain.
  * The page and the KPI cards of both cases are not swept at 24 px by anyone: 24 px is best effort.
  */
 const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
@@ -407,7 +407,7 @@ const ALREADY_AT_24: Readonly<Record<string, { file: string; test: string }>> =
     },
     "resultado gráfico de vendas e custos e a tabela": {
       file: "dashboard.e2e.ts",
-      test: 'com a letra em 24 px, o gráfico, a tabela dos dias e o "Depois de hoje" leem inteiros, sem rolagem lateral',
+      test: "com a letra em 24 px, o gráfico lê inteiro, com a tabela dos dias invisível, sem rolagem lateral",
     },
   };
 

@@ -132,6 +132,50 @@ export function installmentJson(
   };
 }
 
+/**
+ * The subscription in the documented shape: the read back shows
+ * `pixRecurring.status` (`CREATED`, `APPROVED`, `REJECTED`…). Not seen in the
+ * sandbox; the rule must hold for both shapes.
+ */
+export function docSubscriptionJson(
+  authorization: string,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const base = subscriptionJson();
+  return {
+    ...base,
+    pixRecurring: {
+      ...(base.pixRecurring as Record<string, unknown>),
+      status: authorization,
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * The installment the sandbox creates once the payer approves: it and its
+ * recurring charge are `ACTIVE` (not paid yet).
+ */
+export function liveInstallmentJson(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const base = installmentJson();
+  return {
+    ...base,
+    cobr: { ...(base.cobr as Record<string, unknown>), status: "ACTIVE" },
+    status: "ACTIVE",
+    ...overrides,
+  };
+}
+
+/** An installment in the sandbox shape with the documented `SCHEDULED` state (waiting for its COBR). */
+export function scheduledInstallmentJson(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const { cobr: _cobr, ...base } = installmentJson();
+  return { ...base, status: "SCHEDULED", ...overrides };
+}
+
 /** The body of `PIX_AUTOMATIC_APPROVED` and `PIX_AUTOMATIC_REJECTED`: the body's claim, with personal data. */
 export function subscriptionWebhookBody(
   event: string,

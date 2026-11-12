@@ -192,6 +192,9 @@ describe("the Margem and the Resultado estimado with no cost known", () => {
     expect(words(result)).toContain("estimativa incompleta");
     expect(result).toContain('data-kpi-unknown="">3 de 25 dias sem custo<');
     expect(result).toContain('data-kpi-warning=""');
+    expect(words(result)).not.toContain("lucro líquido");
+    expect(words(margin)).not.toContain("lucro líquido");
+    expect(words(margin)).toContain("estimativa incompleta");
     expect(words(result)).toContain("R$");
     expect(words(result)).not.toContain("Sem custo informado");
   });
@@ -313,6 +316,20 @@ describe("the strip of tiles and its (i)", () => {
     expect(markup).not.toContain("col-span");
     expect(markup.match(/data-kpi-row=/g)).toHaveLength(1);
     expect(markup.match(/xl:bg-transparent/g)).toHaveLength(4);
+  });
+
+  it("sizes the three amounts by the width of their own area, as the tiles of the Início do", () => {
+    const markup = cards(october([]));
+    for (const id of [
+      "result-kpi-result",
+      "result-kpi-sales",
+      "result-kpi-ticket",
+    ]) {
+      expect(card(markup, id)).toMatch(
+        /data-kpi-value="" style="font-size:max\(0\.875rem, min\(var\(--text-value-lg\), [\d.]+cqw\)\)"/
+      );
+    }
+    expect(card(markup, "result-kpi-margin")).not.toContain("cqw");
   });
 
   it("puts the chip on the support line under the number, with its sign and the name of what it compares with", () => {

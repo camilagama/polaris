@@ -1,6 +1,11 @@
 import ArrowDownIcon from "lucide-react/dist/esm/icons/arrow-down";
 import ArrowUpIcon from "lucide-react/dist/esm/icons/arrow-up";
-import { type ChangeEvent, type ReactNode, useCallback } from "react";
+import {
+  type ChangeEvent,
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+} from "react";
 import { formatBrlAmount } from "@/lib/format";
 import { MASKED_SPOKEN, maskMoney, useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
@@ -19,8 +24,8 @@ export const KPI_GRID =
   "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-4";
 
 /**
- * Up to 1279 px the tiles of `KPI_GRID`; from 1280 px one card with four columns, because a column has no room for the
- * number and the sparkline side by side. The cells give up their own ring, background and rounding (`KPI_STRIP_CELL`).
+ * Up to 1279 px the tiles of `KPI_GRID`; from 1280 px one card with four columns and a 1 px line between them. The cells
+ * give up their own ring, background and rounding (`KPI_STRIP_CELL`); the strip clips the sparklines to its corners.
  */
 export const KPI_STRIP =
   "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-0 xl:divide-x xl:divide-border xl:overflow-hidden xl:rounded-xl xl:bg-card xl:shadow-xs xl:ring-1 xl:ring-foreground/[0.06] xl:dark:shadow-[inset_0_1px_0_var(--card-glow)]";
@@ -44,17 +49,48 @@ const SIGN = /^[+-]/;
 const HERO_BOX =
   "h-(--text-value-lg--line-height) whitespace-nowrap font-semibold text-value-lg tabular-nums tracking-[-0.035em]";
 
+/** The width of a character of the figure, in em at `text-value-lg`: measured over the amounts a tile writes ("R$ 99.640,35"), with the "R$" and the cents a step smaller. */
+const FIGURE_CHARACTER_EM = 0.44;
+
+/** The floor of the figure of a tile: low enough for the longest amount a store writes (17 characters) in the narrowest area. */
+const TILE_FIGURE_FLOOR = "0.875rem";
+
+/**
+ * The size of the figure of a tile, from the width of its own area (a container, `cqw`) and the characters it writes, so
+ * a long amount steps down to fit and a short one keeps `text-value-lg`: the area never grows with the number.
+ */
+function tileFigureSize(characters: number): CSSProperties {
+  const fit = (100 / (Math.max(characters, 1) * FIGURE_CHARACTER_EM)).toFixed(
+    2
+  );
+  return {
+    fontSize: `max(${TILE_FIGURE_FLOOR}, min(var(--text-value-lg), ${fit}cqw))`,
+  };
+}
+
+/** What the amount is written as, for the width it takes: hidden values are always the same seven characters. */
+function writtenLength(amount: string, hidden: boolean): number {
+  return hidden ? "R$ ••••".length : formatBrlAmount(amount).length;
+}
+
 export function HeroValue({
   amount,
   emptyText,
+  tile = false,
 }: {
   /** The amount as the server writes money ("1234.5"), or null when there is none. */
   amount: string | null;
   /** What a missing amount says in place of the dash, in the same one-line box ("sem custo neste dia"). */
   emptyText?: string | undefined;
+  /** The value of a `KpiTile`: its size follows the width of its own area, which a long amount does not change. */
+  tile?: boolean;
 }) {
   const [hidden] = useHiddenValues();
   const box = HERO_BOX;
+  const size =
+    tile && amount !== null
+      ? tileFigureSize(writtenLength(amount, hidden))
+      : undefined;
   if (amount === null && emptyText) {
     return (
       <p className={cn(box, "text-muted-foreground")}>
@@ -78,13 +114,17 @@ export function HeroValue({
   );
   if (hidden) {
     return (
-      <p className={box} data-kpi-value="">
+      <p className={box} data-kpi-value="" style={size}>
         {money}
       </p>
     );
   }
   return (
-    <p className={cn(box, negative && "text-destructive")} data-kpi-value="">
+    <p
+      className={cn(box, negative && "text-destructive")}
+      data-kpi-value=""
+      style={size}
+    >
       {money}
     </p>
   );
@@ -304,22 +344,30 @@ function CardTitle({
 }
 
 /*
- * The tile of the Início: about 92 px, three lines (the name with the (i); the number with the sparkline of 36 px to its
+ * The tile of the Início and of the Resultado: about 92 px, three lines (the name with the (i); the number with the sparkline of 36 px to its
  * right; the support line, as wide as the tile). With a day read, its date takes the place of the chip on the support line
- * (the row is always there, so nothing moves). The warning of an estimate that is not whole has its own row under it,
- * only in the tile that has one. The color of the entity is in the drawing, not in a square. With touch the title row and
- * the keyboard control of the sparkline are 44 px: the control starts under the touch area of the (i), so the two never
- * overlap (the tile grows by what it takes), and the title keeps its place.
+ * (the row is always there, so nothing moves). The warning of an estimate that is not whole is the support line itself:
+ * one line, so the tile has the height of the others. The color of the entity is in the drawing, not in a square. With
+ * touch the title row and the keyboard control of the sparkline are 44 px: the control starts under the touch area of
+ * the (i), so the two never overlap (the tile grows by what it takes), and the title keeps its place.
  */
 const TILE =
   "@container relative min-w-0 gap-0.5 overflow-hidden px-(--card-spacing) py-3 touch:pt-0";
-/* takes what the number leaves (a long amount is never cut for it); its 36 px (44 with touch) do not add to the 30 px line of the number */
+/* two areas of a width the tile gives and no content changes: two thirds for the number, one third for the sparkline (a
+   container of its own, so the number measures itself against its area), whether or not there is a sparkline; with touch
+   the sparkline is 44 px less its margins, 30, and the body keeps them for the tile that has none */
+const TILE_BODY =
+  "grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-center gap-3 touch:mt-1.5 touch:min-h-7.5";
+const TILE_FIGURE = "@container min-w-0 overflow-hidden";
+/* its 36 px (44 with touch) do not add to the 30 px line of the number */
 const TILE_SPARK =
-  "z-10 -my-0.75 h-9 min-w-0 flex-1 self-center touch:-my-1.75 touch:h-11 touch:py-1";
+  "z-10 -my-0.75 h-9 min-w-0 self-center touch:-my-1.75 touch:h-11 touch:py-1";
 const TILE_TITLE_ROW = "touch:min-h-11";
-const TILE_BODY = "flex min-w-0 items-center gap-3 touch:mt-1.5";
 const TILE_SUPPORT =
   "flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground text-xs leading-4";
+/* the warning row is one line: the sign comes first and never shrinks, and the detail (the days) is the last item, which is
+   cut with an ellipsis at the end of the same line when the column is narrow, never wrapped out of sight */
+const TILE_WARNING = "h-5 flex-nowrap overflow-hidden";
 
 export function KpiTile({
   action,
@@ -336,6 +384,7 @@ export function KpiTile({
   title,
   value,
   warning,
+  warningDetail,
 }: {
   /** What the tile offers when it has no figure to show (a link to start): beside the support text. */
   action?: ReactNode;
@@ -354,8 +403,10 @@ export function KpiTile({
   strip?: boolean;
   title: ReactNode;
   value: ReactNode;
-  /** A warning that must stay in sight, on a row of its own under the support line. */
+  /** The sign of a warning that must stay in sight: it opens the support line, which stays one line tall. */
   warning?: ReactNode;
+  /** What the sign says more (the days with no cost): last on the line, shown whole or cut at the end with an ellipsis, never wrapped out of sight. */
+  warningDetail?: ReactNode;
 }) {
   return (
     <Card
@@ -368,31 +419,43 @@ export function KpiTile({
         <CardTitle help={help} id={id} title={title} />
       </div>
       <div className={TILE_BODY} data-kpi-body="">
-        <div className="shrink-0" data-kpi-headline="">
+        <div className={TILE_FIGURE} data-kpi-headline="">
           {value}
         </div>
         {spark ? (
           <SparkSlot className={TILE_SPARK} range={range} spark={spark} />
         ) : null}
       </div>
-      <div className={TILE_SUPPORT} data-kpi-note-row="">
+      <div
+        className={cn(TILE_SUPPORT, warning && TILE_WARNING)}
+        data-kpi-note-row=""
+      >
+        {warning ? (
+          <span className="shrink-0" data-kpi-warning="">
+            {warning}
+          </span>
+        ) : null}
         {date ? (
           <span
-            className="whitespace-nowrap font-medium text-foreground tabular-nums"
+            className="shrink-0 whitespace-nowrap font-medium text-foreground tabular-nums"
             data-kpi-date=""
           >
             {date}
           </span>
         ) : null}
-        {chip && !date ? <span data-kpi-chip-row="">{chip}</span> : null}
+        {chip && !date ? (
+          <span className="shrink-0" data-kpi-chip-row="">
+            {chip}
+          </span>
+        ) : null}
         {note}
         {action}
+        {warningDetail ? (
+          <span className="min-w-0 truncate" data-kpi-warning-detail="">
+            {warningDetail}
+          </span>
+        ) : null}
       </div>
-      {warning ? (
-        <div className={TILE_SUPPORT} data-kpi-warning="">
-          {warning}
-        </div>
-      ) : null}
     </Card>
   );
 }

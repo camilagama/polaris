@@ -22,6 +22,9 @@ const SCOPE_COL = /<th[^>]*scope="col"/g;
 const FOCUSABLE = /tabindex|<a |<button|<input/;
 const HIDDEN_WRAPPER =
   /<div class="[^"]*overflow-hidden[^"]*" data-chart-data-table="hidden">/;
+const TABLE_TAG =
+  /<table class="w-full caption-top text-sm[^"]*" id="numbers">/;
+const FIXED_TABLE = /<table class="[^"]*\btable-fixed\b/;
 const DIGIT_OF_AMOUNT = /R\$ \d/;
 
 function render(visible?: boolean) {
@@ -43,14 +46,20 @@ beforeEach(() => {
 describe("ChartDataTable", () => {
   it("is a table with its caption, a header per column and a row per entry, under the id the chart points at", () => {
     const html = render();
-    expect(html).toContain(
-      '<table class="w-full caption-top text-sm" id="numbers">'
-    );
+    expect(html).toMatch(TABLE_TAG);
     expect(html).toContain("<caption");
     expect(html).toContain("Vendas por dia.</caption>");
     expect(html.match(SCOPE_COL)).toHaveLength(2);
     expect(html.match(/<tr[ >]/g)).toHaveLength(3);
     expect(html).toContain("23/10/2026");
+  });
+
+  it("holds the invisible table to the width of its wrapper, and leaves the shown one on its own layout", () => {
+    const hidden = render();
+    expect(hidden).toMatch(FIXED_TABLE);
+    expect(hidden).toContain("[overflow-wrap:anywhere]");
+    expect(hidden).toContain("[&amp;_td]:px-0");
+    expect(render(true)).not.toContain("table-fixed");
   });
 
   it("is invisible on the screen and out of the tab order unless it is shown", () => {

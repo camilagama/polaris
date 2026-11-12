@@ -1336,7 +1336,7 @@ export function UiGallery() {
                   />
                 }
                 title="Vendas"
-                value={<HeroValue amount="2660.60" />}
+                value={<HeroValue amount="2660.60" tile />}
               />
               <KpiTile
                 chip={
@@ -1358,7 +1358,7 @@ export function UiGallery() {
                 id="galeria-kpi-resultado"
                 note="Não é lucro líquido nem caixa"
                 title="Resultado estimado"
-                value={<HeroValue amount="-48.30" />}
+                value={<HeroValue amount="-48.30" tile />}
               />
             </div>
           </Section>

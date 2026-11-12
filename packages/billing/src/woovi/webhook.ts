@@ -1,20 +1,24 @@
 import {
   type ProviderBillingEvent,
   ProviderNotFoundError,
+  ProviderUnavailableError,
   type UnresolvedProviderEvent,
 } from "../provider-port";
-import type { WooviClient } from "./client";
+import { type WooviClient, WooviListTooLongError } from "./client";
 import { isWooviGlobalId, wooviLogId } from "./ids";
 import {
   isApprovalInferredFromInstallments,
   mapWooviInstallmentEvent,
   mapWooviSubscriptionEvent,
   pickWooviInstallment,
+  pickWooviInstallmentRows,
   pickWooviSubscription,
-  wooviEventId,
-  type WooviInstallment,
+  type WooviAuthorizationForm,
+  type WooviInstallmentRow,
   type WooviStateNotShown,
   type WooviSubscription,
+  wooviAuthorizationForm,
+  wooviEventId,
   wooviEventKind,
   wooviStateNotShown,
 } from "./mapper";
@@ -128,44 +132,136 @@ export type WooviStateNotShownReport = Partial<WooviStateNotShown> & {
 };
 
 /**
- * The installments of the subscription, read only when an approval needs them:
- * the subscription read back shows no `pixRecurring.status` (sandbox).
+ * The pages of installments an approval may read: a signed body can be sent
+ * again by anyone, so each delivery's extra read is bounded (3 × 100 rows).
+ */
+export const WEBHOOK_INSTALLMENT_PAGES = 3;
+
+/**
+ * The installments of the subscription, read only when an approval needs them
+ * (the read back shows no `pixRecurring.status`, sandbox), row by row: one row
+ * out of shape does not lose the approval another row proves. Null when the
+ * list went past its ceiling or the provider was unavailable for it (timeout
+ * of each call, network, 429 or 5xx): the delivery is answered 200 with no
+ * fact rather than 5xx, which would make Woovi send it (and this read) again;
+ * the reconciliation reads the state.
  */
 async function installmentsToProveApproval(
   client: WooviClient,
   eventType: string,
   subscription: WooviSubscription
-): Promise<WooviInstallment[]> {
+): Promise<WooviInstallmentRow[] | null> {
   if (
     eventType !== "PIX_AUTOMATIC_APPROVED" ||
     subscription.authorization !== null
   ) {
     return [];
   }
-  return (await client.listSubscriptionInstallments(subscription.id)).map(
-    pickWooviInstallment
+  try {
+    return pickWooviInstallmentRows(
+      await client.listSubscriptionInstallments(subscription.id, {
+        maxPages: WEBHOOK_INSTALLMENT_PAGES,
+      })
+    );
+  } catch (error: unknown) {
+    if (
+      error instanceof WooviListTooLongError ||
+      error instanceof ProviderUnavailableError
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/** What the caller is told besides the facts; each is optional. */
+export interface WooviWebhookHooks {
+  /** An approval proven by a live installment (no `pixRecurring.status` read back). */
+  onApprovalInferred?: () => void;
+  /** The shape the provider gave of an approval: only codes and counts. */
+  onAuthorizationForm?: (form: WooviAuthorizationForm) => void;
+  /** An event that should have given a fact and did not. */
+  onStateNotShown?: (report: WooviStateNotShownReport) => void;
+}
+
+async function resolveSubscriptionEvent(
+  client: WooviClient,
+  envelope: WooviWebhookEnvelope & { resourceId: string },
+  now: Date,
+  hooks: WooviWebhookHooks
+): Promise<ProviderBillingEvent[]> {
+  const subscription = pickWooviSubscription(
+    await client.getSubscription(envelope.resourceId)
   );
+  if (subscription.id !== envelope.resourceId) {
+    hooks.onStateNotShown?.({});
+    return [];
+  }
+  const rows = await installmentsToProveApproval(
+    client,
+    envelope.eventType,
+    subscription
+  );
+  if (rows === null) {
+    const notShown = wooviStateNotShown({
+      eventType: envelope.eventType,
+      subscription,
+    });
+    if (notShown) {
+      hooks.onStateNotShown?.({ ...notShown, installmentList: "unread" });
+    }
+    return [];
+  }
+  if (envelope.eventType === "PIX_AUTOMATIC_APPROVED") {
+    hooks.onAuthorizationForm?.(wooviAuthorizationForm(subscription, rows));
+  }
+  const events = mapWooviSubscriptionEvent({
+    eventType: envelope.eventType,
+    installments: rows,
+    occurredAt: now,
+    subscription,
+  });
+  if (
+    events.length > 0 &&
+    isApprovalInferredFromInstallments(subscription, rows)
+  ) {
+    hooks.onApprovalInferred?.();
+  }
+  const notShown =
+    events.length === 0
+      ? wooviStateNotShown({ eventType: envelope.eventType, subscription })
+      : null;
+  if (notShown) {
+    const malformed = rows.filter((row) => !("ok" in row)).length;
+    hooks.onStateNotShown?.(
+      malformed > 0
+        ? { ...notShown, malformedInstallments: malformed }
+        : notShown
+    );
+  }
+  return events;
 }
 
 /**
  * Reads back the resource the event names and maps it. A resource the API does
  * not find (404) is an `unresolved` event, never a dropped one (AC-48); an API
  * that is down or refuses the AppID throws, so the delivery is answered with a
- * 503 and Woovi sends it again. The time of the fact is `now`: Woovi's body
+ * 503 and Woovi sends it again (except the bounded list of an approval, see
+ * `installmentsToProveApproval`). The time of the fact is `now`: Woovi's body
  * says when the installment or the subscription was created, not when the
  * event happened. An event that maps to no fact although the resource should
  * show one is still answered with no events, and reported to `onStateNotShown`
  * so the caller leaves a trace of a payment that may be lost. An approval
  * the subscription read back does not show (no `pixRecurring.status`, sandbox)
  * and that a live installment of it proves is reported to
- * `onApprovalInferred`, so the caller leaves a trace of the inference.
+ * `onApprovalInferred`, so the caller leaves a trace of the inference. The
+ * webhook only reads: it never writes to Woovi.
  */
 export async function resolveWooviWebhook(
   client: WooviClient,
   envelope: WooviWebhookEnvelope,
   now = new Date(),
-  onStateNotShown: (report: WooviStateNotShownReport) => void = () => undefined,
-  onApprovalInferred: () => void = () => undefined
+  hooks: WooviWebhookHooks = {}
 ): Promise<ProviderBillingEvent[] | UnresolvedProviderEvent> {
   const kind = wooviEventKind(envelope.eventType);
   if (kind === "ignored" || envelope.resourceId === null) {
@@ -177,44 +273,18 @@ export async function resolveWooviWebhook(
   };
   try {
     if (kind === "subscription") {
-      const subscription = pickWooviSubscription(
-        await client.getSubscription(missing.id)
-      );
-      if (subscription.id !== envelope.resourceId) {
-        onStateNotShown({});
-        return [];
-      }
-      const installments = await installmentsToProveApproval(
+      return await resolveSubscriptionEvent(
         client,
-        envelope.eventType,
-        subscription
+        { ...envelope, resourceId: envelope.resourceId },
+        now,
+        hooks
       );
-      const events = mapWooviSubscriptionEvent({
-        eventType: envelope.eventType,
-        installments,
-        occurredAt: now,
-        subscription,
-      });
-      if (
-        events.length > 0 &&
-        isApprovalInferredFromInstallments(subscription, installments)
-      ) {
-        onApprovalInferred();
-      }
-      const notShown =
-        events.length === 0
-          ? wooviStateNotShown({ eventType: envelope.eventType, subscription })
-          : null;
-      if (notShown) {
-        onStateNotShown(notShown);
-      }
-      return events;
     }
     const installment = pickWooviInstallment(
       await client.getInstallment(missing.id)
     );
     if (installment.id !== envelope.resourceId) {
-      onStateNotShown({});
+      hooks.onStateNotShown?.({});
       return [];
     }
     // the subscription comes from the installment read back, never from the body
@@ -237,7 +307,7 @@ export async function resolveWooviWebhook(
           })
         : null;
     if (notShown) {
-      onStateNotShown({
+      hooks.onStateNotShown?.({
         ...notShown,
         subscriptionLogId: wooviLogId("subscription", subscription.id),
       });
