@@ -1054,9 +1054,14 @@ test("sem conexão, atualizar mostra o último resultado confirmado, dito como t
     "Último resultado confirmado: 14/10/2026 09:00"
   );
 
-  // the connection is back: the figures of the server replace the copy
+  // over the copy the read in progress takes the place of the confirmed-at line, in view
   server.networkDown = false;
+  const release = server.hold("2026-10");
   await refreshButton(page).click();
+  const status = page.locator("#dashboard-updated");
+  await expect(status).toHaveText("Atualizando…");
+  expect((await status.boundingBox())?.height ?? 0).toBeGreaterThan(1);
+  release();
   await expect(copyNotice(page)).toHaveCount(0);
   await expect(refreshButton(page)).toHaveText(UPDATED_AT);
   await expect(refreshButton(page)).toHaveAccessibleName(UPDATED_NAME);
@@ -3361,7 +3366,7 @@ test.describe("uma linha de controle: o período e o horário que é o botão de
     await expect(refreshButton(page)).toBeFocused();
   });
 
-  test("lendo, o botão guarda o horário e a linha de baixo diz Atualizando…", async ({
+  test("lendo, o botão guarda o horário e o status diz Atualizando…", async ({
     page,
   }) => {
     const server = new FakeReportServer();
@@ -3377,6 +3382,28 @@ test.describe("uma linha de controle: o período e o horário que é o botão de
     await expect(page.locator("#dashboard-updated")).toHaveText(
       "Atualizado às 09:00"
     );
+  });
+
+  test("Atualizar no mesmo período: o primeiro cartão não se move e o Atualizando… fica só na região aria-live", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ height: 740, width: 360 });
+    const server = new FakeReportServer();
+    await openDashboard(page, server);
+    await expect(refreshButton(page)).toHaveText(UPDATED_AT);
+    const status = page.locator("#dashboard-updated");
+    const top = async () => (await card(page, CARD.result).boundingBox())?.y;
+    const before = await top();
+    const release = server.hold("2026-10");
+    await refreshButton(page).click();
+    await expect(refreshButton(page)).toHaveAttribute("aria-busy", "true");
+    await expect(status).toHaveText("Atualizando…");
+    await expect(status).toHaveAttribute("aria-live", "polite");
+    expect((await status.boundingBox())?.height ?? 0).toBeLessThanOrEqual(1);
+    expect(await top()).toBe(before);
+    release();
+    await expect(refreshButton(page)).not.toHaveAttribute("aria-busy", "true");
+    expect(await top()).toBe(before);
   });
 
   test("com o dia da loja já outro no relógio do aparelho, o horário leva a data", async ({
