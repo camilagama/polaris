@@ -3403,6 +3403,17 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gate | Em revisão | `activation-candidates` estendido: grava com aviso da mesma loja; recusa aviso inexistente, de outra loja, corpo com campo a mais ou sem o aviso, ID que não é uuid ou em maiúsculas, chave errada, aviso de cobrança como de ativação e o inverso (cada recusa confere a mensagem de RLS). Status e tentativas diferentes são recusados pelo privilégio de coluna do papel (a política repete a condição, sem prova direta). `event-outbox` ganha a política na lista exata. |
 | Fora deste PR | Pendente | A varredura no Worker (7b, t1065) e o consumidor e o envio (7c). |
 
+### Avisos de ativação: o descadastro, parte do Worker (t1069; corte ativacao-fase1b, Item 8a-2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Token (AC-8a.2) | Em revisão | `server/tips-stop/unsubscribe-token.ts`: `<ID em base64url>.<HMAC-SHA256>` sobre `polaris/email-tips-stop/v1` e o ID, sem data; `UNSUBSCRIBE_TOKEN_SECRET` (e `_PREVIOUS_` na rotação), recusado se curto ou igual ao `BETTER_AUTH_SECRET`; adulterado, de outra finalidade ou de outro segredo é recusado. |
+| Rota (AC-8a.1, AC-8a.3, AC-8a.10) | Em revisão | `/api/parar-dicas?t=`: limite por HMAC do IP (`TIPS_STOP_RATE_LIMIT`, 20/min) antes de tudo; token conferido antes de qualquer conexão; GET e HEAD só perguntam; POST (formulário ou `List-Unsubscribe=One-Click`, corpo não lido) grava por `activation_record_opt_out` na conexão de cobrança e responde igual exista ou não a pessoa. Única exceção da guarda de origem (`ORIGIN_CHECK_EXEMPT_PATHS`). |
+| Página (AC-8a.6, AC-8a.7) | Em revisão | HTML do Worker sem script nem link externo, no molde do `EntryScreen`, tema do sistema; perfil `form-document` de `@polaris/http-security` (estilo por hash, `form-action 'self'`, `no-referrer`, `no-store`); tokens gerados de `theme.css`. |
+| Log (AC-8a.8) | Em revisão | Uma linha `tips_stop_answered` com método, `reason` e `outcome`; nunca token, query, pessoa ou endereço. |
+| Gerador do link | Em revisão | `unsubscribeLink(baseURL, token)` e `createUnsubscribeToken`, para o consumidor (7c). |
+| Fora deste PR | Pendente | O cabeçalho `List-Unsubscribe` no e-mail e o consumidor (7c); o Switch em Seus dados (8b); criar o segredo em staging e produção (responsável). |
+
 ### Avisos de ativação: a varredura no Worker, atrás da flag desligada (t1065; corte ativacao-fase1b, Item 7b; sem migration)
 
 | Item | Status | Observação |
@@ -3410,7 +3421,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Flag (AC-7b.1, AC-7b.7) | Em revisão | `ACTIVATION_EMAILS_ENABLED` `"false"` no topo, no staging e na produção de `apps/web/wrangler.jsonc`; só `"true"` liga. Desligada, a varredura só zera o instante da liga. |
 | Varredura (AC-7b.2 a AC-7b.6) | Em revisão | `billing-store.ts` (`sweepActivationSeries`): numa transação, grava o instante quando ele é nulo, chama `activation_notice_candidates(p_now, 50)` e grava cada passo; o devido com o evento `activation.notice`, `expired` e `series_off` como aviso pulado com o motivo. `server/billing/activation-sweep.ts` lê a flag, passa o lote fixo de 50 e loga só contagens; o `billing.maintenance` da faixa 17 a chama, sem cron novo. |
 | Provas | Em revisão | `activation-sweep.test.ts` (flag, lote, log sem `@` nem IDs, a flag dos três ambientes), `worker/index.test.ts` (a ordem na faixa e a falha que não para o resto) e o gate novo `activation-sweep` (PostgreSQL 18 do CI: flag desligada, instante e ciclo, 23h59/24 h, 3 dias, 11:59/12:00, teto em 2 com três lojas, lock tomado e duas varreduras ao mesmo tempo). |
-| Fora deste PR | Pendente | O consumidor e o envio (7c), o descadastro (8a-2) e a parada por reclamação (9). A leitura da CPU da varredura no staging (AC-7b.6) é do Filipe, antes do merge. |
+| Fora deste PR | Pendente | O consumidor e o envio (7c) e a parada por reclamação (9). A leitura da CPU da varredura no staging (AC-7b.6) é do Filipe, antes do merge. |
 
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
 
