@@ -38,7 +38,7 @@ function barWidth(netSales: string, top: bigint): number {
 const SPREAD_FROM = 3;
 
 /**
- * The five most sold products of the month, by units net of returns; none sold, no block (AC-16). Each line has the
+ * The five most sold products of the month, by units net of returns; none sold, the same box says so (AC-16). Each line has the
  * miniature of the product (its two initials when it has no photo or while it comes, in a box of the same size, so
  * nothing moves when the photo arrives) with the position in a small circle over its corner, the name, the net sales
  * and the units, and a green bar proportional to the net sales (v7 § 3 item 11), drawn in CSS: it says the same as

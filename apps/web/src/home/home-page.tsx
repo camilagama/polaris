@@ -1047,7 +1047,7 @@ export function HomePage() {
 
   const goalPending = useFirstGoalRead(
     organizationId,
-    picked.loading,
+    picked.loading && online,
     state.goals.status
   );
 
