@@ -221,11 +221,7 @@ function StockItem({
             </span>
           </Figure>
         </dl>
-        <RowActions
-          disabled={rowLocked}
-          onOpen={onOpen}
-          row={row}
-        />
+        <RowActions disabled={rowLocked} onOpen={onOpen} row={row} />
       </div>
       {children}
     </li>
