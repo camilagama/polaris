@@ -332,7 +332,7 @@ function rankingBlock(
   chosen: ChosenView | null
 ): React.ReactNode {
   if (chosen?.month.kind === "loading") {
-    return <BlockSkeleton label="Carregando os mais vendidos…" lines={3} />;
+    return <BlockSkeleton label="Carregando os mais vendidos…" lines={5} />;
   }
   if (top.length === 0) {
     return null;

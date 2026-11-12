@@ -3360,6 +3360,13 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Link das despesas (RES-1 a, PR 795) | Em revisão | O botão de largura toda sob o título a 360 px saiu; o link "Ver despesas" (só com `expense:create`) fica sob o nome da linha "(−) Despesas do período (sem venda)" da cadeia, em linha própria para a tabela não alargar a 320 px com a letra em 16 px. |
 | Provas | Em revisão | Unidade: `ui/kpi-card.test.tsx`, `dashboard/result-cards.test.tsx`, `result-chain.test.tsx`. e2e: `dashboard.e2e.ts` (faixa em 1279 e 1280 px, altura, chip sob o valor com axe, leitura de um dia, 2 e 3 pontos, o link) e `app-shell.e2e.ts` (Despesas sem o link do título). O que só roda no CI: a suíte e2e inteira, e2e-real, CodeQL e as baselines da regressão visual. |
 
+### UI de 11/11: o número principal dos KPIs entra com um fade, sem dígitos rolando (t1040; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Animação | Em revisão | `ui/animated-figure.tsx`: o valor novo entra inteiro com fade de 200 ms e subida de 4 px (`motion-full:`), só quando o texto muda; a primeira entrada, o dia lido no minigráfico (e a volta ao repouso), o mesmo texto, os valores escondidos, o celular e `prefers-reduced-motion` não animam. Saem `ui/figure-counter.tsx`, o pedaço `figure-counter-*.js`, o guarda `counterPlacementProblems`, `MOTION.number`, a dependência `@number-flow/react` (com `number-flow` e `esm-env`), a regra do Renovate e a exceção de `adoptedStyleSheets` ([ADR 0103](../docs/adr/0103-base-de-componentes-shadcn-base-ui-e-tailwind-4.md), emenda do t1040). Lateral, gráficos e as outras animações não mudam. |
+| Provas | Em revisão | Unidade: `animated-figure.test.tsx` (estado da entrada), `ui-source-rules.test.ts` (reprova a rolagem de dígitos de volta, a entrada fora de `motion-full:` e o `AnimatedFigure` fora da lista), `ui-supply-chain.test.ts` (nenhuma exceção de `adoptedStyleSheets`). e2e: `e2e-real/jornadas/valor-kpi.e2e.ts`. |
+
 ### Saída do E1 (boas-vindas): o código (t1027; ADR 0106, D10, fase 1; sem migration)
 
 | Item | Status | Observação |
@@ -3377,3 +3384,12 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Migration (AC-7a.6, AC-7a.7) | Em revisão | Só `CREATE`, `GRANT` e políticas, com `lock_timeout` de 10 s antes dos locks de `memberships`, `"user"` e `activation_notices`. A função de candidatos e o papel dela não mudam. |
 | Gate (AC-7a.1 a AC-7a.5) | Em revisão | `activation-candidates` estendido (só acrescenta casos): privilégios do papel novo, quem executa, logins de tenant e de cobrança recusados, tabela de casos (devido, tentado, enviado, pulado, falho, não verificado, co-dona, dona que saiu, membro que não é dono, sucessora da fundadora, outra loja, aviso inexistente), a RLS sozinha e as políticas em `"user"`. Ajustados ao papel novo: `auth-tables-row-security`, `tenant-context` e o piso `MIN_OWNER_ROLES` (21, também em `scripts/backup/restore-lib.mjs`, no ADR 0093 e nos runbooks). |
 | Fora deste PR | Pendente | A varredura no Worker (7b), o consumidor e o envio (7c), o descadastro (8a) e a parada por reclamação (9). Nada liga e-mail. |
+
+### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Cinco linhas | Em revisão | `home/use-home.ts` e `dashboard/use-period-summary.ts` pedem `TOP_PRODUCTS` (5, de `lib/period-summary-cache.ts`) sob a mesma chave da cópia; o esqueleto tem cinco linhas. |
+| Miniatura | Em revisão | `home/home-figures.tsx`: `ProductThumbnail` de 32 px com a posição num círculo sobre o canto; iniciais sem capa ou sem a chave; a linha de uma só fila passa de 15/20 rem para 20,75 rem de contêiner. `useThumbnailSequence` põe as cinco capas no mesmo lote. |
+| Servidor | Em revisão | `periodSummary` devolve `coverAssetId` por produto do ranking (`readPeriodSummary`, opção `covers`, uma consulta a mais por `readProductCovers`; sem migration, SQL do ranking intacto). Contrato: campo opcional. |
+| Provas | Em revisão | `home-top-products.test.tsx`, `report-router.test.ts`, `period-summary-cache.test.ts`; e2e `home.e2e.ts` (cinco caixas de 32 px a 360 px, nome inteiro a 320/20 e nas larguras de 1150 a 1397 px). |

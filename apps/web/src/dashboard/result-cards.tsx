@@ -231,6 +231,7 @@ export function ResultCards({
           <HeroValue
             amount={noCost ? null : read.result.value}
             emptyText={noCostDayText(kpis, index, noCost)}
+            reading={index !== null}
             tile
           />
         }
@@ -250,7 +251,9 @@ export function ResultCards({
             }
           : {})}
         title={salesName}
-        value={<HeroValue amount={read.sales.value} tile />}
+        value={
+          <HeroValue amount={read.sales.value} reading={index !== null} tile />
+        }
       />
       <KpiTile
         chip={chipOf(read.ticket)}
@@ -267,7 +270,9 @@ export function ResultCards({
             }
           : {})}
         title="Ticket médio"
-        value={<HeroValue amount={read.ticket.value} tile />}
+        value={
+          <HeroValue amount={read.ticket.value} reading={index !== null} tile />
+        }
       />
       <MarginCard
         incomplete={incomplete}

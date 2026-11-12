@@ -37,12 +37,6 @@
       "groupName": "GitHub Actions"
     },
     {
-      "description": "Counter of the cards patches internals of number-flow (willUpdate, didUpdate, attachShadow); a bump needs a human, and contador.e2e.ts catches the rest",
-      "matchPackageNames": ["@number-flow/**", "number-flow"],
-      "dependencyDashboardApproval": true,
-      "automerge": false
-    },
-    {
       "description": "Require dashboard approval for major updates",
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,

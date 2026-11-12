@@ -574,11 +574,13 @@ const periodSummary = z.object({
   /**
    * The most sold products of the period, by units net of returns, only when
    * asked for (`topProducts` in the input). The name is the product's current
-   * one; a deleted product says so.
+   * one; a deleted product says so. `coverAssetId` is its cover, for the
+   * miniature of the line.
    */
   topProducts: z
     .array(
       z.object({
+        coverAssetId,
         deleted: z.boolean(),
         name: z.string(),
         netSales: z.string(),
