@@ -153,7 +153,7 @@ function SalesLink({
       {label}
       <ArrowRightIcon
         aria-hidden="true"
-        className="@min-[11.5rem]:block hidden size-3.5"
+        className="@min-[11.5rem]:block hidden size-4"
       />
     </button>
   );
