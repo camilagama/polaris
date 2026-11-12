@@ -11,7 +11,7 @@ import {
 } from "../pages/resultado-historico";
 
 const SALES_LINK = /^Ver as \d+ vendas de /;
-const RESULT_LINK = /^Ver o resultado de /;
+const RESULT_LINK = /^Ver o resultado deste período/;
 const SYNC_STATUS = "Tudo sincronizado";
 const OFFLINE_STATUS = "Sem conexão";
 

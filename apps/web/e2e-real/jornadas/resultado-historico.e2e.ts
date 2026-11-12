@@ -53,6 +53,66 @@ test("o cartão de vendas leva ao Histórico com o período do cartão, e o menu
   await expect(historyRows(page)).toHaveCount(4);
 });
 
+test("o link cabe na linha de apoio, sem quebrar nem ficar sob o minigráfico, a 1280 px e a 320 px com letra de 20 px", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "resultado-historico-caixa",
+    { organization: { timezone: ZONE } }
+  );
+  await seedSales(journey, 3);
+  const { page } = journey;
+  const session = await page.context().newCDPSession(page);
+  const geometry = async () => {
+    await expect(
+      salesCard(page).getByRole("button", { name: SALES_LINK })
+    ).toBeVisible();
+    return await page.evaluate(() => {
+      const rect = (selector: string) =>
+        document.querySelector(selector)?.getBoundingClientRect();
+      const box = rect("[data-kpi=sales] [data-kpi-sales-link]");
+      const tile = rect("[data-kpi=sales]");
+      const spark = rect("[data-kpi=sales] [data-kpi-spark]");
+      const lineHeight = Number.parseFloat(
+        getComputedStyle(document.documentElement).fontSize
+      );
+      return {
+        inside: Boolean(
+          box && tile && box.left >= tile.left && box.right <= tile.right
+        ),
+        oneLine: Boolean(box && box.height <= lineHeight * 1.3),
+        apart: Boolean(
+          box &&
+            spark &&
+            (box.right <= spark.left ||
+              box.left >= spark.right ||
+              box.bottom <= spark.top ||
+              box.top >= spark.bottom)
+        ),
+      };
+    });
+  };
+
+  for (const [width, font] of [
+    [1280, 16],
+    [320, 20],
+  ] as const) {
+    // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other, on the same page
+    await session.send("Page.setFontSizes", {
+      fontSizes: { fixed: font, standard: font },
+    });
+    await page.setViewportSize({ height: 740, width });
+    await page.goto("/dashboard");
+    expect(await geometry(), `${width} px, letra de ${font} px`).toEqual({
+      apart: true,
+      inside: true,
+      oneLine: true,
+    });
+  }
+});
+
 test("com uma venda o link diz Ver a venda", async ({ browser }, testInfo) => {
   const journey = await openJourney(
     browser,
@@ -93,7 +153,7 @@ test("o Histórico com o período leva ao Resultado no mesmo período, e recarre
 
   const back = page.getByRole("button", {
     exact: true,
-    name: `Ver o resultado de ${label}`,
+    name: `Ver o resultado deste período, de ${label}`,
   });
   await expect(back).toHaveText("Ver o resultado deste período");
   await back.click();

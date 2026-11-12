@@ -570,16 +570,20 @@ describe("the link of the sales card to the Histórico", () => {
     expect(words(markup)).toContain("25 vendas");
   });
 
+  it("has no link for a period that has not started: no day is counted yet", () => {
+    const summary = october([]);
+    summary.period = { from: "2026-11-01", to: "2026-11-30" };
+    expect(sales(summary)).not.toContain("data-kpi-sales-link");
+  });
+
   it("has no link with no sale", () => {
     const summary = october([]);
     summary.cards.salesCount = 0;
     expect(sales(summary)).not.toContain("data-kpi-sales-link");
   });
 
-  it("puts the arrow after the words and hides it before the words would wrap", () => {
+  it("puts the arrow after the words", () => {
     const markup = sales(october([]));
     expect(markup).toMatch(ARROW_AFTER_WORDS);
-    expect(markup).toContain("hidden");
-    expect(markup).toContain("@min-[11.5rem]:block");
   });
 });
