@@ -352,6 +352,20 @@ for (const width of [360, WIDE_WINDOW]) {
 
 const BAR = "Filtrar estoque";
 
+/** Turns a yes-or-no filter on from its own item in the "Filtrar" menu: two touches, no second panel; the menu closes and the focus goes back to "Filtrar". */
+async function toggleFilter(page: Page, name: string) {
+  const open = page
+    .getByRole("search", { exact: true, name: BAR })
+    .getByRole("button", { exact: true, name: "Filtrar" });
+  await open.click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) })
+    .click();
+  await expect(page.getByRole("menu", { name: "Filtrar por" })).toHaveCount(0);
+  await expect(open).toBeFocused();
+}
+
 /** Chooses a field in the "Filtrar" menu and the option in its editor (the Popover applies at once, the phone's Dialog at "Aplicar"). */
 async function addFilter(page: Page, field: string, option: string) {
   const bar = page.getByRole("search", { exact: true, name: BAR });
@@ -376,8 +390,8 @@ reflowTest(
     await openStock(page, 320, 20);
     const bar = page.getByRole("search", { exact: true, name: BAR });
     await addFilter(page, "Saldo", "Sem saldo");
-    await addFilter(page, "Custo", "Desconhecido");
-    await addFilter(page, "Arquivados", "Incluir");
+    await toggleFilter(page, "Custo desconhecido");
+    await toggleFilter(page, "Incluir arquivados");
     await expect(bar.locator('[data-slot="filter-pill"]')).toHaveCount(3);
     await expect(
       bar.getByRole("button", { name: "Limpar tudo" })
