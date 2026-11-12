@@ -1,7 +1,16 @@
 /// <reference lib="dom" />
 import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
-import { test } from "./support";
+import {
+  attachTraces,
+  createTrace,
+  failedFiles,
+  since,
+  type Trace,
+  tracedRoute,
+  traceNetwork,
+} from "./network-trace";
+import { test as base } from "./support";
 import { WORKER_MARK } from "./worker-mark";
 
 /**
@@ -26,6 +35,25 @@ const REPEATED_RELOAD =
   "rounds where the reload was asked again on the sign-in page";
 const RPC_PREFIX = /^.*\/rpc\//;
 
+/** The trace of each page of the test, attached to the report when the test does not end as expected. */
+const test = base.extend<{ traces: Map<string, Trace> }>({
+  traces: async (
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright fixtures need the object pattern as first argument
+    {},
+    use,
+    testInfo
+  ) => {
+    const traces = new Map<string, Trace>();
+    await use(traces);
+    if (
+      testInfo.status !== testInfo.expectedStatus ||
+      process.env.E2E_NETWORK_TRACE === "1"
+    ) {
+      await attachTraces(testInfo, traces);
+    }
+  },
+});
+
 const json = (status: number, body: unknown) => ({
   body: JSON.stringify(body),
   contentType: "application/json",
@@ -33,14 +61,14 @@ const json = (status: number, body: unknown) => ({
   status,
 });
 
-async function serveSession(context: BrowserContext) {
+async function serveSession(context: BrowserContext, trace: Trace) {
   const state: { signedIn: boolean } = { signedIn: true };
-  await context.route("**/api/auth-methods", (route) =>
+  await tracedRoute(context, trace, "**/api/auth-methods", (route) =>
     route.fulfill(
       json(200, { emailPassword: true, google: true, turnstileSiteKey: null })
     )
   );
-  await context.route("**/api/auth/get-session", (route) =>
+  await tracedRoute(context, trace, "**/api/auth/get-session", (route) =>
     route.fulfill(
       json(
         200,
@@ -53,11 +81,11 @@ async function serveSession(context: BrowserContext) {
       )
     )
   );
-  await context.route(SIGN_OUT, (route) => {
+  await tracedRoute(context, trace, SIGN_OUT, (route) => {
     state.signedIn = false;
     return route.fulfill(json(200, { success: true }));
   });
-  await context.route("**/rpc/**", (route) => {
+  await tracedRoute(context, trace, "**/rpc/**", (route) => {
     const procedure = new URL(route.request().url()).pathname.replace(
       RPC_PREFIX,
       ""
@@ -92,12 +120,10 @@ async function serveSession(context: BrowserContext) {
  * `trace` keeps the order of what the tab did (documents, commits, the module `<script>` errors, the page leaving), so a
  * failure on a slow runner says which document the mark came from instead of only that it came.
  */
-async function watchBootRetry(page: Page) {
+async function watchBootRetry(page: Page, trace: Trace) {
   const retries: string[] = [];
-  const trace: string[] = [];
-  const started = performance.now();
-  const note = (what: string) =>
-    trace.push(`+${Math.round(performance.now() - started)}ms ${what}`);
+  const { note } = trace;
+  await traceNetwork(page.context(), page, trace);
   await page.exposeFunction("polarisBootRetry", (mark: string, url: string) => {
     retries.push(`${mark} at ${url}`);
     note(`mark ${mark} at ${url}`);
@@ -216,20 +242,29 @@ async function reloadNow(page: Page, seen: { documents: string[] }) {
 /** Returns how many times the reload was asked: more than one means it met the page already leaving. */
 async function reloadAndExpectSignIn(
   page: Page,
-  { retries, trace }: { retries: string[]; trace: string[] },
+  { retries, trace }: { retries: string[]; trace: Trace },
   round: number
 ) {
   const seen = watch(page);
+  const from = trace.lines.length;
   const { attempts, documentsBefore } = await reloadNow(page, seen);
-  await expect(
-    page.getByRole("heading", { level: 1, name: SIGN_IN_HEADING }),
-    `round ${round}: the sign-in screen after the reload (${trace.slice(-20).join("; ")})`
-  ).toBeVisible({ timeout: MOUNT_MS });
+  const happened = () =>
+    `files that did not load: ${failedFiles(trace, from)}; ${since(trace, from, 60)}`;
+  try {
+    await expect(
+      page.getByRole("heading", { level: 1, name: SIGN_IN_HEADING })
+    ).toBeVisible({ timeout: MOUNT_MS });
+  } catch (error) {
+    throw new Error(
+      `round ${round}: the sign-in screen after the reload (${happened()})`,
+      { cause: error }
+    );
+  }
   await expect(page.locator("#root")).not.toBeEmpty();
   await page.waitForLoadState("load");
   expect(
     retries,
-    `round ${round}: the page marked the tab to reload itself (documents ${seen.documents.join(" ")}; ${trace.slice(-20).join("; ")})`
+    `round ${round}: the page marked the tab to reload itself (documents ${seen.documents.join(" ")}; ${happened()})`
   ).toEqual([]);
   const signInDocuments = seen.documents
     .slice(documentsBefore)
@@ -242,11 +277,18 @@ async function reloadAndExpectSignIn(
   return attempts;
 }
 
-async function freshContext(browser: Browser, baseURL: string) {
+async function freshContext(
+  browser: Browser,
+  baseURL: string,
+  traces: Map<string, Trace>,
+  name: string
+) {
   const context = await browser.newContext({ baseURL });
   const page = await context.newPage();
-  const state = await serveSession(context);
-  return { context, page, state };
+  const trace = createTrace();
+  traces.set(name, trace);
+  const state = await serveSession(context, trace);
+  return { context, page, state, trace };
 }
 
 test.describe("recarregar logo depois de sair", () => {
@@ -254,16 +296,19 @@ test.describe("recarregar logo depois de sair", () => {
     baseURL,
     browser,
     buildVersion,
+    traces,
   }, testInfo) => {
     test.setTimeout(420_000);
     buildVersion("1");
     let repeated = 0;
-    const { context, page, state } = await freshContext(
+    const { context, page, state, trace } = await freshContext(
       browser,
-      baseURL as string
+      baseURL as string,
+      traces,
+      "worker-instalado"
     );
     try {
-      const spy = await watchBootRetry(page);
+      const spy = await watchBootRetry(page, trace);
       await page.goto("/");
       await page.evaluate(async () => {
         await navigator.serviceWorker.ready;
@@ -301,19 +346,26 @@ test.describe("recarregar logo depois de sair", () => {
     baseURL,
     browser,
     buildVersion,
+    traces,
   }, testInfo) => {
     test.setTimeout(420_000);
     buildVersion("1");
     let repeated = 0;
     for (let round = 1; round <= ROUNDS; round += 1) {
       // biome-ignore lint/performance/noAwaitInLoops: a new device each round, one at a time
-      const { context, page } = await freshContext(browser, baseURL as string);
+      const { context, page, trace } = await freshContext(
+        browser,
+        baseURL as string,
+        traces,
+        `primeira-visita-${round}`
+      );
       try {
-        const spy = await watchBootRetry(page);
+        const spy = await watchBootRetry(page, trace);
         await signInAndOut(page);
         if ((await reloadAndExpectSignIn(page, spy, round)) > 1) {
           repeated += 1;
         }
+        traces.delete(`primeira-visita-${round}`);
       } finally {
         await context.close();
       }
