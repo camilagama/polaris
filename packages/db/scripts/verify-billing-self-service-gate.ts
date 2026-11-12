@@ -1660,7 +1660,7 @@ async function run() {
       "an owner's refund still not completed 24 hours after the request becomes one occurrence of the incident billing_refund_pending, with one ledger row for the store and request: 25 hours makes one (a won dispute too), 23 hours none, a chargeback none, a second pass none, a completed refund none; only the billing role executes the function, and only with the causes refund_not_completed and refund_rearm_exhausted"
     );
 
-    // the incident of the store's closure that found a refund the provider did not complete: the real store, one ledger row and one occurrence per request and link
+    // the incident of the store's closure that found a refund the provider did not complete: the real store, one ledger row and one occurrence per request and link, with the incident's last reference on that row
     const closureIncidents = async () =>
       Number(
         (
@@ -1669,10 +1669,17 @@ async function run() {
           )
         ).rows[0]?.count ?? 0
       );
+    const closureLastReference = async () =>
+      (
+        await owner.pool.query<{ last_reference: string | null }>(
+          "SELECT last_reference FROM public.operational_incidents WHERE kind = 'billing_refund_pending' AND cause = 'refund_not_completed' AND subject = 'billing.refund_pending'"
+        )
+      ).rows[0]?.last_reference;
     const closureLedger = async (organizationId: string) =>
       (
         await owner.pool.query<{
           fact_type: string;
+          id: string;
           provider: string;
           provider_event_id: string;
           provider_ref: string | null;
@@ -1680,7 +1687,7 @@ async function run() {
           state_before: string;
           status: string;
         }>(
-          `SELECT provider, provider_event_id, fact_type, status, state_before, state_after, provider_ref
+          `SELECT id::text AS id, provider, provider_event_id, fact_type, status, state_before, state_after, provider_ref
              FROM public.billing_events
             WHERE organization_id = $1 AND provider_event_id LIKE 'command:closure_refund_pending:%'
             ORDER BY provider_event_id`,
@@ -1730,6 +1737,12 @@ async function run() {
       1,
       "the first call adds one occurrence of billing_refund_pending / refund_not_completed"
     );
+    assert.ok(closureRow?.id);
+    assert.equal(
+      await closureLastReference(),
+      closureRow.id,
+      "the incident's last reference is the ledger row the first call wrote"
+    );
     // the same request and link again: neither a second row nor a second occurrence
     await billing.recordClosureRefundIncident(
       {
@@ -1748,6 +1761,11 @@ async function run() {
       (await closureIncidents()) - closureBefore,
       1,
       "the same request and link add no occurrence"
+    );
+    assert.equal(
+      await closureLastReference(),
+      closureRow.id,
+      "the same request and link leave the last reference on the first ledger row"
     );
     // another request is another fact
     await billing.recordClosureRefundIncident(
@@ -1768,8 +1786,17 @@ async function run() {
       2,
       "another request adds its own occurrence"
     );
+    const closureNewRow = (
+      await closureLedger(tenantClosure.organizationId)
+    ).find((row) => row.id !== closureRow.id);
+    assert.ok(closureNewRow?.id);
+    assert.equal(
+      await closureLastReference(),
+      closureNewRow.id,
+      "another request moves the last reference to its own ledger row"
+    );
     tests.push(
-      "the closure's refund incident, through the real billing store, writes one ledger row (provider polaris, command:closure_refund_pending, fact_type command, applied, the store's state before and after, the link's reference) and one occurrence of billing_refund_pending / refund_not_completed; the same request and link add neither row nor occurrence, another request adds both"
+      "the closure's refund incident, through the real billing store, writes one ledger row (provider polaris, command:closure_refund_pending, fact_type command, applied, the store's state before and after, the link's reference) and one occurrence of billing_refund_pending / refund_not_completed whose last reference is that row's id; the same request and link add neither row nor occurrence and keep the reference, another request adds both and moves the reference to its row"
     );
 
     // the incident of an amount in force that is not the provider's (0118; ADR 0105, ADR 0085)
