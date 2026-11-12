@@ -124,7 +124,7 @@ export function useLimitFocus(
 }
 
 /** A plain click: a new tab or window asked by a key or the middle button keeps the browser's own way. */
-function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
+export function isPlainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return !(
     event.defaultPrevented ||
     event.button !== 0 ||

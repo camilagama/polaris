@@ -6,6 +6,7 @@ Produtos (`/products`) é o catálogo: a lista de produtos (ativos e arquivados)
 
 - `produtos-lista` a `list "Produtos"`, cada produto um item `[data-product-id]`: a linha é o botão "Editar <nome>" (`[data-row-open]`, abre o produto em Dados) e, ao lado, "Mais ações para <nome>" (Variantes, Imagens, Arquivar). Acima da lista, a contagem ("1.248 produtos"); com mais de 50, "Carregar mais" abaixo do cartão.
 - `produtos-vazio` loja sem produto: "Nenhum produto ainda" e o botão "Novo produto" no vazio.
+- `produto-ver-estoque` no rodapé do diálogo de um produto que existe, o link "Ver estoque" (só com `inventory:read`) fecha o diálogo (o que foi digitado fica guardado, como no Esc) e abre o [Estoque](estoque.md) sem recarregar a página, com a busca já com o nome do produto. O diálogo abre também por `/products?produto=<id>`, e com `&variante=<id>` o campo "SKU · <variante>" da aba Variantes recebe o foco; é o caminho de volta do nome do produto na linha do Estoque.
 - `produto-criar` Dialog "Novo produto": nome, preço de tabela, quantidade e custo; "Mais detalhes" para categoria e descrição.
 - `produto-limite` plano Free no teto de 50 variantes: o Dialog recusa com "Seu plano chegou ao limite de variantes. Nada foi cadastrado."
 - `produto-importar` Dialog "Importar planilha", em 4 passos: Arquivo, Prévia, Importando, Resultado.
@@ -18,6 +19,7 @@ Produtos (`/products`) é o catálogo: a lista de produtos (ativos e arquivados)
 - Celular: botão "Mais" da barra "Destinos", depois o link `Produtos` dentro do Dialog "Mais".
 - Início da loja vazia: "Cadastrar à mão" (`/products?novo=1`, abre o Dialog) e "Importar planilha" (`/products?importar=1`).
 - Aba Categorias: `tab "Categorias"` ou `/products?aba=categorias` (a primeira aba, `/products?aba=produtos`, é o mesmo que `/products`).
+- Pelo nome do produto na linha do Estoque (`/products?produto=<id>`, e `&variante=<id>` para a linha de uma variante).
 - O endereço antigo `/categories` abre a aba Categorias.
 
 ## Driving it with verify.sh (Playwright)

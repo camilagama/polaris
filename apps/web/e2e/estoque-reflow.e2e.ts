@@ -166,6 +166,53 @@ function geometry(page: Page) {
   });
 }
 
+/** Per row: the box of the name link and of the card it sits in. */
+function nameLinks(page: Page) {
+  return page.evaluate(() => {
+    const card = document.querySelector('ul[aria-label="Saldos por variante"]');
+    if (card === null) {
+      throw new Error("the list is not on the screen");
+    }
+    const cardBox = card.getBoundingClientRect();
+    return [...card.querySelectorAll("li")].map((row) => {
+      const link = row.querySelector<HTMLAnchorElement>('a[href^="/products"]');
+      if (link === null) {
+        throw new Error("a row has no link on its name");
+      }
+      const { left, right } = link.getBoundingClientRect();
+      return {
+        cardLeft: cardBox.left,
+        cardRight: cardBox.right,
+        left,
+        name: link.textContent ?? "",
+        right,
+      };
+    });
+  });
+}
+
+for (const [width, fontPixels] of [
+  [320, 20],
+  [360, 16],
+] as const) {
+  reflowTest(
+    `a ${width} px com letra de ${fontPixels} px o nome do produto na linha fica dentro do cartão`,
+    async ({ page }) => {
+      await openStock(page, width, fontPixels);
+      const links = await nameLinks(page);
+      expect(links).toHaveLength(ENTRIES.length);
+      for (const link of links) {
+        expect(
+          link.left,
+          `${link.name} dentro do cartão`
+        ).toBeGreaterThanOrEqual(link.cardLeft - 0.5);
+        expect(link.right).toBeLessThanOrEqual(link.cardRight + 0.5);
+        expect(link.right).toBeLessThanOrEqual(width);
+      }
+    }
+  );
+}
+
 reflowTest(
   "a 320 px com letra de 20 px os três botões de cada linha empilham, inteiros, dentro do cartão e com 44 px",
   async ({ page }) => {
