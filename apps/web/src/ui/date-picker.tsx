@@ -164,6 +164,7 @@ export function DatePicker({
               key={openings}
               mode="single"
               onSelect={pickDay}
+              reasonInFooter={!todayAllowed}
               selected={selected}
               today={todayDate}
             />
@@ -182,7 +183,8 @@ export function DatePicker({
 
 /**
  * The footer of the popover: "Hoje" and, when today is outside the allowed days, the reason written beside it in
- * the small secondary text of the calendar's own reason line, tied to the button by `aria-describedby`. The button
+ * small secondary text, tied to the button by `aria-describedby` (the only place the popover writes it: the calendar
+ * keeps its own line out of the layout, `reasonInFooter`). The button
  * stays focusable (`aria-disabled`, never `disabled`) and chooses nothing.
  */
 export function TodayFooter({
