@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FORM_BODY_CLASS,
   FORM_CLOSE_CLASS,
@@ -7,6 +7,9 @@ import {
   FORM_FOOTER_CLASS,
   FORM_HEADER_CLASS,
   FORM_POPUP_CLASS,
+  followVisualViewport,
+  SMALL_FOOTER_CLASS,
+  SMALL_POPUP_CLASS,
 } from "../src/ui/dialog-layout";
 
 /**
@@ -79,15 +82,180 @@ describe("Dialog, layout de formulário", () => {
     expect(footer).toContain("md:justify-end");
   });
 
-  it("segue a parte visível da tela com o teclado aberto, e o diálogo pequeno fica como era", () => {
-    expect(dialogSource).toContain("window.visualViewport");
-    expect(dialogSource).toContain('"--dialog-height"');
-    expect(dialogSource).toContain('"--dialog-top"');
-    // the question and the confirmation keep their box (`sm:max-w-sm`) and their footer
-    expect(dialogSource).toContain("sm:max-w-sm");
-    expect(dialogSource).toContain(
+  it("os dois layouts seguem a parte visível da tela, e o diálogo pequeno fica como era", () => {
+    expect(dialogSource).toContain("ref={followVisualViewport}");
+    expect(dialogSource).toContain('layout = "dialog"');
+    expect(dialogSource).toContain("SMALL_POPUP_CLASS");
+    expect(dialogSource).toContain("SMALL_FOOTER_CLASS");
+  });
+});
+
+class FakeViewport {
+  height = 700;
+  offsetTop = 0;
+  readonly listeners = new Map<string, Set<() => void>>();
+  addEventListener(type: string, listener: () => void) {
+    const set = this.listeners.get(type) ?? new Set();
+    set.add(listener);
+    this.listeners.set(type, set);
+  }
+  removeEventListener(type: string, listener: () => void) {
+    this.listeners.get(type)?.delete(listener);
+  }
+  fire(type: string) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener();
+    }
+  }
+  count() {
+    return [...this.listeners.values()].reduce((sum, set) => sum + set.size, 0);
+  }
+}
+
+const fakePopup = () => {
+  const values = new Map<string, string>();
+  const listeners = new Map<string, Set<() => void>>();
+  const active = { matches: (_selector: string) => false };
+  const popup = {
+    addEventListener: (type: string, listener: () => void) => {
+      const set = listeners.get(type) ?? new Set();
+      set.add(listener);
+      listeners.set(type, set);
+    },
+    removeEventListener: (type: string, listener: () => void) => {
+      listeners.get(type)?.delete(listener);
+    },
+    ownerDocument: { activeElement: active },
+    scrollTop: 0,
+    style: {
+      setProperty: (name: string, value: string) => values.set(name, value),
+    },
+  };
+  const fire = (type: string) => {
+    for (const listener of listeners.get(type) ?? []) {
+      listener();
+    }
+  };
+  const count = () =>
+    [...listeners.values()].reduce((sum, set) => sum + set.size, 0);
+  return {
+    active,
+    count,
+    fire,
+    popup: popup as unknown as HTMLElement,
+    scroll: popup,
+    values,
+  };
+};
+
+describe("Dialog, segue a janela visível (teclado aberto)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("grava altura, topo e centro da parte visível, de novo a cada resize e scroll, e solta os ouvintes", () => {
+    const viewport = new FakeViewport();
+    vi.stubGlobal("window", { visualViewport: viewport });
+    const { popup, values } = fakePopup();
+    const cleanup = followVisualViewport(popup);
+    expect(values.get("--dialog-height")).toBe("700px");
+    expect(values.get("--dialog-top")).toBe("0px");
+    expect(values.get("--dialog-center")).toBe("350px");
+    viewport.height = 300;
+    viewport.fire("resize");
+    expect(values.get("--dialog-height")).toBe("300px");
+    expect(values.get("--dialog-center")).toBe("150px");
+    viewport.offsetTop = 40;
+    viewport.fire("scroll");
+    expect(values.get("--dialog-top")).toBe("40px");
+    expect(values.get("--dialog-center")).toBe("190px");
+    expect(viewport.count()).toBe(2);
+    cleanup?.();
+    expect(viewport.count()).toBe(0);
+  });
+
+  it("sem visualViewport só mantém a abertura no topo, e sem popup não faz nada", () => {
+    vi.stubGlobal("window", {});
+    const { count, popup } = fakePopup();
+    const cleanup = followVisualViewport(popup);
+    expect(count()).toBeGreaterThan(0);
+    cleanup?.();
+    expect(count()).toBe(0);
+    vi.stubGlobal("window", { visualViewport: new FakeViewport() });
+    expect(followVisualViewport(null)).toBeUndefined();
+  });
+
+  it.each(["keydown", "pointerdown", "touchstart", "wheel"])(
+    "devolve ao topo a rolagem que o foco inicial causou, até %s",
+    (touch) => {
+      vi.stubGlobal("window", {});
+      const { count, fire, popup, scroll } = fakePopup();
+      const cleanup = followVisualViewport(popup);
+      scroll.scrollTop = 29;
+      fire("scroll");
+      expect(scroll.scrollTop).toBe(0);
+      fire(touch);
+      scroll.scrollTop = 29;
+      fire("scroll");
+      expect(scroll.scrollTop).toBe(29);
+      cleanup?.();
+      expect(count()).toBe(0);
+    }
+  );
+
+  it("não devolve ao topo a rolagem que levou o foco a um campo", () => {
+    vi.stubGlobal("window", {});
+    const { active, fire, popup, scroll } = fakePopup();
+    active.matches = (selector: string) => selector.includes("textarea");
+    const again = followVisualViewport(popup);
+    scroll.scrollTop = 29;
+    fire("scroll");
+    expect(scroll.scrollTop).toBe(29);
+    again?.();
+  });
+});
+
+describe("Dialog, layout pequeno", () => {
+  it("mantém a caixa de sempre: central, 24 rem, anel e sombra, rodapé em tira", () => {
+    const popup = classes(SMALL_POPUP_CLASS);
+    expect(popup).toEqual(
+      expect.arrayContaining([
+        "fixed",
+        "top-[var(--dialog-center,50%)]",
+        "left-1/2",
+        "z-50",
+        "grid",
+        "w-full",
+        "max-w-[calc(100%-2rem)]",
+        "-translate-x-1/2",
+        "-translate-y-1/2",
+        "gap-4",
+        "rounded-xl",
+        "bg-popover",
+        "p-4",
+        "shadow-lg",
+        "outline-none",
+        "ring-1",
+        "ring-foreground/[0.06]",
+        "sm:max-w-sm",
+      ])
+    );
+    expect(SMALL_FOOTER_CLASS).toBe(
       "-mx-4 -mb-4 flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end"
     );
-    expect(dialogSource).toContain('layout = "dialog"');
+  });
+
+  it("rola inteiro quando passa da parte visível da janela, sem passar a rolagem à página", () => {
+    const popup = classes(SMALL_POPUP_CLASS);
+    expect(popup).toContain("max-h-[calc(var(--dialog-height,100dvh)-2rem)]");
+    expect(popup).toContain("overflow-y-auto");
+    expect(popup).toContain("overflow-x-hidden");
+    expect(popup).toContain("overscroll-contain");
+    // no fixed footer: nothing in the small layout is a flex column that keeps a part still
+    expect(popup).not.toContain("flex-col");
+    expect(popup).not.toContain("overflow-hidden");
+    expect(SMALL_FOOTER_CLASS).not.toContain("sticky");
+    expect(SMALL_FOOTER_CLASS).not.toContain("shrink-0");
+    expect(SMALL_POPUP_CLASS).not.toContain("100vh");
   });
 });
