@@ -9,6 +9,7 @@ import {
 } from "@/ui/calendar-on-demand";
 import { DatePicker, TodayFooter } from "@/ui/date-picker";
 import {
+  DateRangeFooter,
   DateRangePanel,
   DateRangePicker,
   draftLabel,
@@ -241,6 +242,8 @@ const OPEN_TOGGLE = /<button[^>]*aria-expanded="false"[^>]*>[\s\S]*?<\/button>/;
 const SHORTCUT_GROUP = /<fieldset[^>]*aria-label="Atalhos do período"[^>]*>/;
 const PRESSED_SHORTCUT = /<button[^>]*aria-pressed="true"[^>]*>/;
 const STATUS_LINE = /<p[^>]*aria-live="polite"[^>]*sr-only/;
+const FOOTER_SENTENCE = />(Início [^<]*)<\/p>/;
+const STATUS_LINE_WITH_TEXT = /<p[^>]*aria-live="polite"[^>]*>Início /;
 
 const PRESET_OFF = /data-preset="[^"]*"[^>]*aria-disabled/;
 
@@ -356,6 +359,53 @@ describe("draftLabel, o que o botão de digitar as datas escreve", () => {
 
   it("sem início não escreve nada", () => {
     expect(draftLabel(undefined, today)).toBeUndefined();
+  });
+});
+
+describe("DateRangeFooter, a frase do 1º dia escolhido", () => {
+  const today = "2026-10-24";
+  const quiet = {
+    open: false,
+    reason: undefined,
+    statusId: "status",
+    statusQuiet: false,
+  } as const;
+  const footer = (half: string) =>
+    html(
+      <DateRangeFooter
+        clearable={false}
+        half={half}
+        onClear={noop}
+        today={today}
+        typed={quiet}
+      />
+    );
+  const sentence = (half: string) =>
+    FOOTER_SENTENCE.exec(footer(half))?.[1] ?? "";
+  const buttonDay = (half: string) =>
+    (draftLabel({ from: half }, today) ?? "").replace(" a …", "");
+
+  it("no ano de hoje o rodapé não escreve o ano, e é o mesmo dia do botão", () => {
+    expect(sentence("2026-10-10")).toBe("Início 10/10. Escolha o último dia.");
+    expect(sentence("2026-10-10")).toBe(
+      `Início ${buttonDay("2026-10-10")}. Escolha o último dia.`
+    );
+  });
+
+  it("em outro ano o rodapé escreve o ano, e é o mesmo dia do botão", () => {
+    expect(sentence("2025-10-10")).toBe(
+      "Início 10/10/2025. Escolha o último dia."
+    );
+    expect(sentence("2025-10-10")).toBe(
+      `Início ${buttonDay("2025-10-10")}. Escolha o último dia.`
+    );
+    expect(sentence("2027-01-05")).toBe(
+      `Início ${buttonDay("2027-01-05")}. Escolha o último dia.`
+    );
+  });
+
+  it("a frase segue numa região de status anunciada com educação", () => {
+    expect(footer("2026-10-10")).toMatch(STATUS_LINE_WITH_TEXT);
   });
 });
 

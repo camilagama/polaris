@@ -30,7 +30,7 @@ import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 const NOW = "2026-10-14T12:00:00.000Z";
 const TODAY = "2026-10-14";
 const ANY_NAME = /.+/;
-const HALF_RANGE_NOTE = /Início \d\d\/\d\d\/\d{4}\. Escolha o último dia\./;
+const HALF_RANGE_NOTE = /Início \d\d\/\d\d\. Escolha o último dia\./;
 /** An amount written on the screen: "R$ 450,00". */
 const AN_AMOUNT = /R\$ \d/;
 const rpcPrefix = /^\/rpc\//;
