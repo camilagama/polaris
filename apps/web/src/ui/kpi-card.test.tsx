@@ -83,6 +83,7 @@ describe("KpiTile", () => {
       warningDetail: "5 de 23 dias sem custo",
     });
     expect(warned).toContain('data-kpi-warning=""');
+    expect(warned).not.toContain("data-kpi-notice");
     expect(warned.match(/data-kpi-note-row/g)).toHaveLength(1);
     expect(warned).toContain("h-5 flex-nowrap overflow-hidden");
     expect(warned.indexOf("Incompleta")).toBeLessThan(
