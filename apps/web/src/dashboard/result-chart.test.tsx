@@ -496,3 +496,41 @@ describe("the table of five columns on a phone (AC-7.8)", () => {
     expect(markup).not.toContain("@max-3xl:grid");
   });
 });
+
+const DESTRUCTIVE_CELL = /<td[^>]*text-destructive[^>]*data-label="([^"]*)"/;
+
+describe("the result of a day below zero, in the table that is shown", () => {
+  const days = (october([]).daily ?? []).map((day) =>
+    day.date === "2026-10-03" ? { ...day, operatingResult: "-12.50" } : day
+  );
+  const markup = (visible: boolean) =>
+    renderToStaticMarkup(
+      <NumbersTable
+        hasCosts
+        id="numbers"
+        series={resultSeries(days, "2026-10-25")}
+        visible={visible}
+      />
+    );
+
+  it("paints only the cell of the result of that day, also in the card layout", () => {
+    const html = markup(true);
+    expect(html.match(/text-destructive/g)).toHaveLength(1);
+    const cell = html.match(DESTRUCTIVE_CELL);
+    expect(cell?.[1]).toBe("Resultado do dia");
+    expect(html).toContain("@max-3xl:grid");
+  });
+
+  it("does not paint the table when no result is negative", () => {
+    expect(
+      renderToStaticMarkup(
+        <NumbersTable
+          hasCosts
+          id="numbers"
+          series={resultSeries(october([]).daily ?? [], "2026-10-25")}
+          visible
+        />
+      )
+    ).not.toContain("text-destructive");
+  });
+});

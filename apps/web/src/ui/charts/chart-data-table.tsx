@@ -11,6 +11,8 @@ interface ChartDataRow {
   /** One text per column, in the order of `columns`. */
   cells: readonly string[];
   key: string;
+  /** Indexes into `cells` of the amounts below zero; they are drawn in the destructive color, masked or not. */
+  negativeCells?: readonly number[];
 }
 
 export interface ChartDataTableProps {
@@ -130,6 +132,7 @@ export function ChartDataTable({
                     className={cn(
                       "px-2 py-2.5",
                       columns[index]?.numeric && "text-right tabular-nums",
+                      row.negativeCells?.includes(index) && "text-destructive",
                       stacked && STACK_CELL
                     )}
                     data-label={columns[index]?.header}
