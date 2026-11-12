@@ -187,58 +187,47 @@ function hasText(value: string): boolean {
   return value.trim() !== "";
 }
 
-/**
- * Whether the prices on a line came from the operator: any filled price that is
- * not exactly what the app wrote there. Without a record of what the app wrote
- * (a restored draft, or a price typed since), every filled price counts as typed.
- */
-function pricesTypedByHand(
-  item: { chargedUnitPrice: string; listedUnitPrice: string },
-  applied: PriceSuggestion | null
-): boolean {
-  return (
-    (hasText(item.chargedUnitPrice) &&
-      item.chargedUnitPrice !== applied?.chargedUnitPrice) ||
-    (hasText(item.listedUnitPrice) &&
-      item.listedUnitPrice !== applied?.listedUnitPrice)
-  );
-}
-
 export interface VariantChangePrices {
   chargedUnitPrice: string;
-  /** True when typed prices stayed on a line whose variant changed. */
+  /** True when a typed charged price stayed on a line whose variant changed. */
   keptTyped: boolean;
   listedUnitPrice: string;
 }
 
 /**
- * The prices of a line whose variant was swapped for another. Prices the app
- * wrote follow the new variant (last sale, else list price; empty when it has
- * neither, so the previous variant's price is never charged by accident).
- * Prices typed by the operator stay, both of them, never mixed with new ones.
+ * The prices of a line whose variant was swapped for another. `previous` is
+ * what the app would have suggested for the old variant: a filled price that
+ * differs from it was typed by the operator (the rule of `suggestionHint`).
+ * Without typed prices both follow the new variant (last sale, else list
+ * price; empty when it has neither, so the old variant's price is never
+ * charged by accident). With typed prices the charged one stays, since it is
+ * what was agreed, and the list price follows the new variant, which owns it.
  */
 export function pricesForVariantChange(
   item: { chargedUnitPrice: string; listedUnitPrice: string },
-  applied: PriceSuggestion | null,
-  next: PriceSuggestion | null,
-  typedMark: boolean
+  previous: PriceSuggestion | null,
+  next: PriceSuggestion | null
 ): VariantChangePrices {
-  const filled =
-    hasText(item.chargedUnitPrice) || hasText(item.listedUnitPrice);
-  if (filled && (typedMark || pricesTypedByHand(item, applied))) {
+  const chargedFilled = hasText(item.chargedUnitPrice);
+  const typed =
+    (chargedFilled && item.chargedUnitPrice !== previous?.chargedUnitPrice) ||
+    (hasText(item.listedUnitPrice) &&
+      item.listedUnitPrice !== previous?.listedUnitPrice);
+  if (!typed) {
     return {
-      chargedUnitPrice: item.chargedUnitPrice,
-      keptTyped:
-        next === null ||
-        next.chargedUnitPrice !== item.chargedUnitPrice ||
-        next.listedUnitPrice !== item.listedUnitPrice,
-      listedUnitPrice: item.listedUnitPrice,
+      chargedUnitPrice: next?.chargedUnitPrice ?? "",
+      keptTyped: false,
+      listedUnitPrice: next?.listedUnitPrice ?? "",
     };
   }
   return {
-    chargedUnitPrice: next?.chargedUnitPrice ?? "",
-    keptTyped: false,
-    listedUnitPrice: next?.listedUnitPrice ?? "",
+    chargedUnitPrice: chargedFilled
+      ? item.chargedUnitPrice
+      : (next?.chargedUnitPrice ?? ""),
+    keptTyped:
+      chargedFilled &&
+      (next === null || next.chargedUnitPrice !== item.chargedUnitPrice),
+    listedUnitPrice: next?.listedUnitPrice ?? item.listedUnitPrice,
   };
 }
 

@@ -5,14 +5,15 @@ import { setBrowserFont } from "./sale-item-geometry";
 import { serveLabWorker, WORKER_MARK } from "./worker-mark";
 
 /**
- * Swapping the variant of a line in the sale takes the prices of the new variant, unless the operator typed one of
- * them on that line: then both stay and a note says so. The lab offers Azul (list price 50,00) and Vermelha (10,00).
+ * Swapping the variant of a line in the sale takes the prices of the new variant; when the operator typed a price on
+ * that line the charged price stays, the list price is still the new variant's, and a note says so. The lab offers Azul (list price 50,00) and Vermelha (10,00).
  */
 const AZUL = /Camiseta do laboratório · Azul/;
 const VERMELHA = /Camiseta do laboratório · Vermelha/;
 const ORGANIZATION = "0199c2d0-0000-7000-8000-00000000a001";
 const AZUL_ID = "0199c2d0-0000-7000-8000-0000000000b1";
 const KEPT_NOTICE = "Preço cobrado mantido da variante anterior.";
+const KEPT_NOTICE_PATTERN = /Preço cobrado mantido da variante anterior\./;
 const SUGGESTION_NOTICE = /Preços sugeridos pela última venda/;
 const PRICE_10 = /10,00/;
 const PRICE_45 = /45,00/;
@@ -89,15 +90,18 @@ test("trocar a variante sem editar preço leva o preço da variante nova, no ite
   await expect(summaryOf(page)).toContainText(PRICE_10);
 });
 
-test("trocar a variante com o preço cobrado editado mantém os dois preços e avisa", async ({
+test("trocar a variante com o preço cobrado editado mantém o cobrado, leva a tabela da nova e avisa", async ({
   page,
 }) => {
   const item = await openSale(page);
   await item.getByLabel("Preço cobrado").fill("45,00");
   await swapToRed(page, item);
   await expect(item.getByLabel("Preço cobrado")).toHaveValue("45,00");
-  await expect(item.getByLabel("Preço de tabela")).toHaveValue("49,90");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("10,00");
   await expect(item.getByRole("note")).toContainText(KEPT_NOTICE);
+  await expect(item.getByLabel("Preço cobrado")).toHaveAccessibleDescription(
+    KEPT_NOTICE_PATTERN
+  );
   await expect(summaryOf(page)).toContainText(PRICE_45);
   await expect(summaryOf(page)).not.toContainText(PRICE_10);
 
@@ -125,15 +129,26 @@ test("trocar duas vezes sem editar segue a variante de cada vez", async ({
   await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
 });
 
-test("trocar com só o preço de tabela editado também mantém os dois", async ({
+test("trocar com só o preço de tabela editado mantém o cobrado, leva a tabela da nova e avisa", async ({
   page,
 }) => {
   const item = await openSale(page);
   await item.getByLabel("Preço de tabela").fill("55,00");
   await swapToRed(page, item);
   await expect(item.getByLabel("Preço cobrado")).toHaveValue("49,90");
-  await expect(item.getByLabel("Preço de tabela")).toHaveValue("55,00");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("10,00");
   await expect(item.getByRole("note")).toContainText(KEPT_NOTICE);
+});
+
+test("digitar de novo o preço que o app sugeriu não conta como editado", async ({
+  page,
+}) => {
+  const item = await openSale(page);
+  await item.getByLabel("Preço cobrado").fill("49,90");
+  await swapToRed(page, item);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("10,00");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("10,00");
+  await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
 });
 
 test("cancelar a troca deixa a linha e as dicas como estavam", async ({

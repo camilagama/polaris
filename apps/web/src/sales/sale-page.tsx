@@ -52,7 +52,6 @@ import {
 import {
   KEPT_PRICE_NOTICE,
   mergeLastPrices,
-  type PriceSuggestion,
   pricesForVariantChange,
   type RememberedPrices,
   readLastPrices,
@@ -587,8 +586,7 @@ export function SalePage() {
       applySalePreset(withdrawSalePreset(current, previous, preset), preset)
     );
   }, [editForm, preset]);
-  const appliedPrices = useRef(new Map<string, PriceSuggestion>());
-  const typedPrices = useRef(new Set<string>());
+  const listPrices = useRef(new Map<string, string | null>());
   const [keptPriceNotice, setKeptPriceNotice] = useState<ReadonlySet<string>>(
     () => new Set()
   );
@@ -609,8 +607,6 @@ export function SalePage() {
   const handleItemChange = useCallback(
     (draftId: string, changes: Partial<ItemDraft>) => {
       if ("chargedUnitPrice" in changes || "listedUnitPrice" in changes) {
-        typedPrices.current.add(draftId);
-        appliedPrices.current.delete(draftId);
         setKeptNotice(draftId, false);
       }
       editForm((current) => updateItem(current, draftId, changes));
@@ -632,6 +628,7 @@ export function SalePage() {
         item !== undefined &&
         item.variantId !== "" &&
         item.variantId !== entry.variantId;
+      listPrices.current.set(entry.variantId, entry.listPrice);
       let prices: Pick<
         ItemDraft,
         "chargedUnitPrice" | "listedUnitPrice"
@@ -639,27 +636,17 @@ export function SalePage() {
       if (item && swapping) {
         const swapped = pricesForVariantChange(
           item,
-          appliedPrices.current.get(draftId) ?? null,
-          suggestion,
-          typedPrices.current.has(draftId)
+          suggestPrices(
+            lastPrices,
+            item.variantId,
+            listPrices.current.get(item.variantId) ?? null
+          ),
+          suggestion
         );
         prices = swapped;
         setKeptNotice(draftId, swapped.keptTyped);
-        if (swapped.keptTyped) {
-          typedPrices.current.add(draftId);
-          appliedPrices.current.delete(draftId);
-        } else {
-          typedPrices.current.delete(draftId);
-          appliedPrices.current.set(draftId, swapped);
-        }
       } else if (item) {
-        const untouched =
-          item.chargedUnitPrice.trim() === "" &&
-          item.listedUnitPrice.trim() === "";
         prices = withSuggestedPrices(item, suggestion);
-        if (untouched && suggestion) {
-          appliedPrices.current.set(draftId, suggestion);
-        }
       }
       editForm((current) =>
         updateItem(current, draftId, {

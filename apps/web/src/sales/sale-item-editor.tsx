@@ -13,6 +13,7 @@ import { ProductThumbnail } from "../catalog/product-thumbnail";
 import { stockEntryHref } from "../inventory/stock-entry-link";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
 import { focusLater } from "../lib/focus";
+import { KEPT_PRICE_NOTICE } from "./last-prices-model";
 import { QuantityStepper, TextField } from "./sale-fields";
 import {
   type EvaluationContext,
@@ -323,6 +324,11 @@ function ChosenItemFields({
           />
           <TextField
             addon="R$"
+            describedById={
+              priceHint === KEPT_PRICE_NOTICE
+                ? `${prefix}-price-note`
+                : undefined
+            }
             error={errors[itemFieldKey(item.draftId, "chargedUnitPrice")]}
             id={`${prefix}-charged`}
             inputMode="decimal"
@@ -349,6 +355,9 @@ function ChosenItemFields({
       <div className="flex items-baseline justify-between gap-3">
         <FieldDescription
           className="min-w-0"
+          id={
+            priceHint === KEPT_PRICE_NOTICE ? `${prefix}-price-note` : undefined
+          }
           role={priceHint ? "note" : undefined}
         >
           {priceHint ?? "Preços por unidade."}
