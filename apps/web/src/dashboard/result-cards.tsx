@@ -1,5 +1,6 @@
 import ArrowRightIcon from "lucide-react/dist/esm/icons/arrow-right";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/ui/badge";
 import { OnDemandSparkline } from "@/ui/charts/on-demand";
 import {
@@ -126,36 +127,89 @@ type SparkColor =
   | "var(--chart-ticket)"
   | "var(--destructive)";
 
+const LINK_CLASS =
+  "touch-hit focus-ring -my-1 inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground hover:underline";
+const LINK_ARROW = "@min-[11.5rem]:block hidden size-4";
+
 /**
  * "Ver as 8 vendas" on the support line of the sales card, in the place of the count: a text button with an arrow, no
- * underline and no outline, whose name says the dates and where it goes. The arrow is the first thing to go when the tile
- * is too narrow for the words, which never wrap (320 px with the letter at 20 px).
+ * underline and no outline, whose name says the dates and where it goes. The line is one line tall (the tile does not
+ * grow, whatever the period says): the link is there only while it fits beside the chip, measured on screen, and the
+ * count is the plain text again when it does not. An invisible copy keeps the width of the link while the text shows, so
+ * the link comes back when the room does. The box is 24 px tall in a 20 px line (negative margin), the least a target may
+ * have; the arrow goes first when the tile is narrower than the words need (320 px with the letter at 20 px).
  */
 function SalesLink({
   count,
   onOpen,
   period,
+  text,
 }: {
   count: number;
   onOpen: (period: Period) => void;
   period: Period;
+  text: string;
 }) {
   const label = count === 1 ? "Ver a venda" : `Ver as ${salesCountText(count)}`;
   const handleClick = useCallback(() => onOpen(period), [onOpen, period]);
+  const button = useRef<HTMLButtonElement>(null);
+  const probe = useRef<HTMLSpanElement>(null);
+  const [fits, setFits] = useState(true);
+  const measure = useCallback(() => {
+    const row = probe.current?.parentElement;
+    if (!(probe.current && row)) {
+      return;
+    }
+    const others = [...row.children].filter(
+      (child) => child !== probe.current && child !== button.current
+    );
+    const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+    const used = others.reduce(
+      (sum, child) => sum + child.getBoundingClientRect().width,
+      0
+    );
+    setFits(
+      used + others.length * gap + probe.current.offsetWidth <= row.clientWidth
+    );
+  }, []);
+  // after every render (the chip comes and goes) and whenever the line changes width
+  useLayoutEffect(measure);
+  useLayoutEffect(() => {
+    const row = probe.current?.parentElement;
+    if (!row) {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [measure]);
   return (
-    <button
-      aria-label={`${label} de ${periodRangeLabel(period)} no Histórico`}
-      className="touch-hit focus-ring inline-flex h-4 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground hover:underline"
-      data-kpi-sales-link=""
-      onClick={handleClick}
-      type="button"
-    >
-      {label}
-      <ArrowRightIcon
+    <>
+      {fits ? (
+        <button
+          aria-label={`${label} de ${periodRangeLabel(period)} no Histórico`}
+          className={LINK_CLASS}
+          data-kpi-sales-link=""
+          onClick={handleClick}
+          ref={button}
+          type="button"
+        >
+          {label}
+          <ArrowRightIcon aria-hidden="true" className={LINK_ARROW} />
+        </button>
+      ) : (
+        text
+      )}
+      <span
         aria-hidden="true"
-        className="@min-[11.5rem]:block hidden size-4"
-      />
-    </button>
+        className={cn(LINK_CLASS, "pointer-events-none invisible absolute")}
+        ref={probe}
+        tabIndex={-1}
+      >
+        {label}
+        <ArrowRightIcon aria-hidden="true" className={LINK_ARROW} />
+      </span>
+    </>
   );
 }
 
@@ -185,6 +239,7 @@ function salesNote({
       count={count}
       onOpen={onOpen}
       period={{ from: period.from, to }}
+      text={text}
     />
   ) : (
     text

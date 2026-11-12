@@ -1,6 +1,8 @@
 /// <reference lib="dom" />
 
-import { expect, openJourney, test } from "../fixtures";
+import { addDays, localDate } from "../calendar";
+import { expect, openJourney, runT0, test } from "../fixtures";
+import { seedCashSale, seedProduct, seedStock } from "../seed";
 import {
   historyRows,
   monthToToday,
@@ -12,6 +14,7 @@ import {
   ZONE,
 } from "../pages/resultado-historico";
 
+const ANY_PERIOD_BUTTON = /^Período: .+, editar$/;
 const HISTORY_URL = /\/sales\/history$/;
 const DASHBOARD_URL = /\/dashboard$/;
 const ANY_PERIOD_PILL = /^Período: /;
@@ -73,6 +76,7 @@ test("o link cabe na linha de apoio, sem quebrar nem ficar sob o minigráfico, a
       const rect = (selector: string) =>
         document.querySelector(selector)?.getBoundingClientRect();
       const box = rect("[data-kpi=sales] [data-kpi-sales-link]");
+      const row = rect("[data-kpi=sales] [data-kpi-note-row]");
       const tile = rect("[data-kpi=sales]");
       const spark = rect("[data-kpi=sales] [data-kpi-spark]");
       const lineHeight = Number.parseFloat(
@@ -82,7 +86,7 @@ test("o link cabe na linha de apoio, sem quebrar nem ficar sob o minigráfico, a
         inside: Boolean(
           box && tile && box.left >= tile.left && box.right <= tile.right
         ),
-        oneLine: Boolean(box && box.height <= lineHeight * 1.3),
+        oneLine: Boolean(row && row.height <= lineHeight * 1.3),
         apart: Boolean(
           box &&
             spark &&
@@ -111,6 +115,56 @@ test("o link cabe na linha de apoio, sem quebrar nem ficar sob o minigráfico, a
       oneLine: true,
     });
   }
+});
+
+test("com o chip de comparação o link só fica onde cabe na linha, e o cartão não muda de altura", async ({
+  browser,
+}, testInfo) => {
+  const journey = await openJourney(
+    browser,
+    testInfo,
+    "resultado-historico-chip",
+    { organization: { timezone: ZONE } }
+  );
+  const organizationId = journey.organizationId as string;
+  const { rpc } = journey.user;
+  const today = localDate(runT0(), ZONE);
+  const candle = await seedProduct(rpc, organizationId, "Vela", "45.00");
+  await seedStock(
+    rpc,
+    organizationId,
+    candle.variantId,
+    10,
+    "12.00",
+    addDays(today, -31)
+  );
+  const sell = (occurredAt: string) =>
+    seedCashSale(
+      rpc,
+      organizationId,
+      [{ price: "45.00", quantity: 1, variantId: candle.variantId }],
+      occurredAt
+    );
+  await sell(`${addDays(today, -30)}T15:00:00.000Z`);
+  await sell(new Date(runT0()).toISOString());
+  const { page } = journey;
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: ANY_PERIOD_BUTTON }).click();
+  await page
+    .getByRole("group", { name: "Atalhos do período" })
+    .getByRole("button", { exact: true, name: "Últimos 30 dias" })
+    .click();
+  const card = salesCard(page);
+  await expect(card.locator("[data-kpi-chip-row]")).toBeVisible();
+  const row = card.locator("[data-kpi-note-row]");
+  await expect(row).toContainText("1 venda");
+  await expect(card.locator("[data-kpi-sales-link]")).toHaveCount(0);
+  expect((await row.boundingBox())?.height).toBeLessThanOrEqual(21);
+
+  await page.setViewportSize({ height: 800, width: 1024 });
+  await expect(card.locator("[data-kpi-sales-link]")).toBeVisible();
+  expect((await row.boundingBox())?.height).toBeLessThanOrEqual(21);
 });
 
 test("com uma venda o link diz Ver a venda", async ({ browser }, testInfo) => {
