@@ -11,6 +11,11 @@ export const TEST_CLOCK_LIST = {
     count: 1,
     reason: BEFORE_THE_RULE,
   },
+  "apps/web/e2e-agent/pilha/preparar.ts": {
+    count: 1,
+    reason:
+      "a semeadura do piloto do e2e grava estoque e venda pela /rpc da pilha local, que valida a data contra o relógio real do servidor; o explorador lê a loja no dia de hoje",
+  },
   "apps/web/e2e-pwa/sale-draft.e2e.ts": { count: 2, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/support.ts": { count: 1, reason: BEFORE_THE_RULE },
   "apps/web/e2e-pwa/update-moments.e2e.ts": {
