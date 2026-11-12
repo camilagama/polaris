@@ -45,11 +45,11 @@ import { createDataExportRoutes } from "./routes/data-exports";
 import { createMediaRoutes } from "./routes/media";
 import { systemRoutes } from "./routes/system";
 import { logLimitRefusal } from "./rpc/limit-refusal-log";
+import { rpcRouter as defaultRpcRouter } from "./rpc/router";
 import {
   createTipsStopRoutes,
   type TipsStopRoutesOptions,
 } from "./tips-stop/tips-stop-routes";
-import { rpcRouter as defaultRpcRouter } from "./rpc/router";
 
 type BackgroundTaskRunner = (promise: Promise<unknown>) => void;
 

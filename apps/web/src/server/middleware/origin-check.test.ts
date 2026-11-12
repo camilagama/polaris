@@ -154,6 +154,27 @@ describe("the paths the origin check lets through", () => {
     expect(ORIGIN_CHECK_EXEMPT_PATHS).toEqual([TIPS_STOP_PATH]);
   });
 
+  it.each([
+    `${TIPS_STOP_PATH}/`,
+    TIPS_STOP_PATH.toUpperCase(),
+    "/api//parar-dicas",
+    `${TIPS_STOP_PATH}/x`,
+    `${TIPS_STOP_PATH}-x`,
+  ])(
+    "a variation of its path, %s, is refused or not found, never the page",
+    async (path) => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const response = await createServerApp().request(
+        path,
+        { body: "List-Unsubscribe=One-Click", method: "POST" },
+        { ...bindings, CLIENT_ERRORS_ENABLED: "1" } as WorkerBindings
+      );
+
+      // under `/api/` the check refuses it; out of it (the upper case) nothing answers
+      expect([403, 404]).toContain(response.status);
+    }
+  );
+
   it("no other path of the app under /api or /rpc takes a POST with no Origin", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "info").mockImplementation(() => undefined);

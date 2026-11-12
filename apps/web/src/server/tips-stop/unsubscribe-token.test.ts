@@ -197,6 +197,21 @@ describe("the token that stops the tips e-mails", () => {
     ).toEqual(refused.map(() => undefined));
   });
 
+  it("refuses the same MAC written with the spare bits of its last character set, so a token has one text", async () => {
+    const token = await createUnsubscribeToken(secrets, USER);
+    const [userPart = "", mac = ""] = token.split(".");
+    const alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const index = alphabet.indexOf(mac.at(-1) ?? "A");
+    const spare = index % 2 === 0 ? index + 1 : index - 1;
+    const respelled = `${mac.slice(0, -1)}${alphabet[spare]}`;
+
+    expect(fromBase64Url(respelled)).toEqual(fromBase64Url(mac));
+    await expect(
+      verifyUnsubscribeToken(secrets, `${userPart}.${respelled}`)
+    ).resolves.toBe(undefined);
+  });
+
   it("keeps opening under the previous secret during a rotation, and stops once it is removed", async () => {
     const old = await createUnsubscribeToken({ current: PREVIOUS }, USER);
     const rotating = { current: SECRET, previous: PREVIOUS };

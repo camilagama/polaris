@@ -144,8 +144,13 @@ export async function verifyUnsubscribeToken(
     return undefined;
   }
   const userId = new TextDecoder("utf-8", { fatal: false }).decode(userBytes);
-  // the bytes must be the canonical encoding of the ID, so one person has one token per secret
-  if (!USER_ID.test(userId) || toBase64Url(userBytes) !== encodedUser) {
+  // both parts in their one canonical encoding (the last character of a MAC has spare bits that `atob` ignores), so
+  // one person has one token per secret and the text of a token can be compared as it is
+  if (
+    !USER_ID.test(userId) ||
+    toBase64Url(userBytes) !== encodedUser ||
+    toBase64Url(mac) !== encodedMac
+  ) {
     return undefined;
   }
   const text = signedText(userId);

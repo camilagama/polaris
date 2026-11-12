@@ -117,6 +117,34 @@ export function createTipsStopRoutes({
     await next();
   };
 
+  /** Records the stop; false (logged with the class only) when the write did not happen. */
+  const record = async (
+    context: Context<ServerEnv>,
+    connectionString: string,
+    userId: string
+  ): Promise<boolean> => {
+    let writer: ActivationOptOutWriter | undefined;
+    try {
+      writer = createWriter(connectionString);
+      await writer.record(userId);
+      return true;
+    } catch (error) {
+      // the class only: the message of a driver error may quote the statement, never its parameters, but stays out
+      const code = (error as { code?: unknown } | null)?.code;
+      logger.warn("tips_stop_write_failed", {
+        errorClass: error instanceof Error ? error.name : typeof error,
+        requestId: context.get("requestId"),
+        sqlState: typeof code === "string" ? code : undefined,
+      });
+      logOutcome(context, "unavailable");
+      return false;
+    } finally {
+      if (writer !== undefined) {
+        runInBackground(context, writer.close());
+      }
+    }
+  };
+
   const answer = async (context: Context<ServerEnv>) => {
     const posted = context.req.method.toUpperCase() === "POST";
     if (posted) {
@@ -145,21 +173,8 @@ export function createTipsStopRoutes({
       logOutcome(context, "unavailable");
       return page(context, "unavailable", 503);
     }
-    const writer = createWriter(connectionString);
-    try {
-      await writer.record(userId);
-    } catch (error) {
-      // the class only: the message of a driver error may quote the statement, never its parameters, but stays out
-      const code = (error as { code?: unknown } | null)?.code;
-      logger.warn("tips_stop_write_failed", {
-        errorClass: error instanceof Error ? error.name : typeof error,
-        requestId: context.get("requestId"),
-        sqlState: typeof code === "string" ? code : undefined,
-      });
-      logOutcome(context, "unavailable");
+    if (!(await record(context, connectionString, userId))) {
       return page(context, "unavailable", 503);
-    } finally {
-      runInBackground(context, writer.close());
     }
     logOutcome(context, "recorded");
     return page(context, "done", 200);
