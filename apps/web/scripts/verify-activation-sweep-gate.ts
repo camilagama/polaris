@@ -35,11 +35,16 @@ import { runActivationSweep } from "../src/server/billing/activation-sweep";
  *      stores due: a sweep while another transaction holds the lock of the cap records nothing, two sweeps at once
  *      record the two earliest by trigger and no more (60 counted), an expired step is still recorded, an hour later
  *      nothing more, and the next day the third comes first in the order of the triggers (a batch of 1 says
- *      truncated).
+ *      truncated);
+ *   5. AC-7b.4: the count of the cap follows the day of the sweep's clock: with 58 recorded one second before
+ *      midnight of São Paulo and 5 one second after, a sweep records two of three owed stores and the next morning's
+ *      the third.
  * Every owed notice is checked against its event: type `activation.notice`, pending, the body with the notice's ID
  * alone and the key `activation.notice:<id>`. The stores the other gates left may also be recorded by these sweeps;
  * every check reads only the gate's own stores, except the counts that must not move at all and the cap of the day,
- * which counts everyone. It runs before the gates of the Workers and deletes the activation.notice events written
+ * which counts everyone. A notice is recorded at the database's clock, so after each sweep the gate sets `recorded_at`
+ * of what the sweep recorded to the clock of its case: the cap counts the day of that clock, and a gate that crossed
+ * midnight of São Paulo would otherwise count another day (the last case proves the count one second either side of midnight with the real sweep). It runs before the gates of the Workers and deletes the activation.notice events written
  * since it started, so the dispatcher of web-worker meets none of them (that consumer does not exist yet). The
  * instant is cleared at the end; the fixtures stay, as in the other gates; the logins are dropped.
  */
@@ -78,18 +83,26 @@ interface EventRow {
 
 type SeededOutcome = "owed" | "sent" | "skipped";
 
-/** Notices recorded by hand on one store, a step each (a1, a2, a3), with `recorded_at` the database's clock. */
+/** Notices recorded by hand on one store, a step each (a1, a2, a3), with `recorded_at` at `recordedAt`. */
 async function seedNotices(
   pool: Pick<ReturnType<typeof createDatabase>["pool"], "query">,
   store: Store,
   outcomes: readonly SeededOutcome[],
-  dueAt: Date
+  dueAt: Date,
+  recordedAt: Date
 ) {
   for (const [index, outcome] of outcomes.entries()) {
     await pool.query(
-      `INSERT INTO public.activation_notices (organization_id, user_id, step, due_at, sent_at, skipped_reason)
-       VALUES ($1, $2, $3, $4, CASE WHEN $5 = 'sent' THEN $4::timestamptz END, CASE WHEN $5 = 'skipped' THEN 'expired' END)`,
-      [store.organizationId, store.userId, `a${index + 1}`, dueAt, outcome]
+      `INSERT INTO public.activation_notices (organization_id, user_id, step, due_at, recorded_at, sent_at, skipped_reason)
+       VALUES ($1, $2, $3, $4, $6, CASE WHEN $5 = 'sent' THEN $4::timestamptz END, CASE WHEN $5 = 'skipped' THEN 'expired' END)`,
+      [
+        store.organizationId,
+        store.userId,
+        `a${index + 1}`,
+        dueAt,
+        outcome,
+        recordedAt,
+      ]
     );
   }
 }
@@ -141,8 +154,8 @@ async function run() {
     closers.push(() => second.close());
 
     // the clock of every case: 10:00 of São Paulo on the day the database is in, so every store of the gate (at most
-    // 5 days back) stays inside the 14 days the owner of the series sees, and what the sweeps record (recorded_at is
-    // the database's clock) falls on the day of the cap
+    // 5 days back) stays inside the 14 days the owner of the series sees, and what the sweeps record is set to the day
+    // of the cap (recordedAt)
     const clock = await owner.pool.query<{ ten: Date }>(
       `SELECT (pg_catalog.date_trunc('day', now() AT TIME ZONE '${ZONE}') + interval '10 hours') AT TIME ZONE '${ZONE}' AS ten`
     );
@@ -160,15 +173,46 @@ async function run() {
       )
     );
 
+    /**
+     * Runs `work` and sets `recorded_at` of the notices it recorded to `now`, the clock of the case. The cap of the day
+     * is read from the day of the `now` a sweep is given, but a notice is recorded at the database's real clock: if the
+     * gate crossed midnight of São Paulo, what a case recorded would fall on another day than the one its cap counts.
+     * The notices already there are left as they are, found by their IDs among the rows at or after the real instant
+     * the work started (a row pinned earlier to a future instant is among them, and is not touched). It takes every new
+     * notice of the database, so two calls at once must share the same `now`.
+     */
+    const recordedAt = async <T>(
+      now: Date,
+      work: () => Promise<T>
+    ): Promise<T> => {
+      const began = (
+        await owner.pool.query<{ began: Date }>(
+          "SELECT pg_catalog.clock_timestamp() AS began"
+        )
+      ).rows[0]?.began;
+      assert.ok(began instanceof Date);
+      const known = await owner.pool.query<{ id: string }>(
+        "SELECT id::text AS id FROM public.activation_notices WHERE recorded_at >= $1",
+        [began]
+      );
+      const result = await work();
+      await owner.pool.query(
+        "UPDATE public.activation_notices SET recorded_at = $1 WHERE recorded_at >= $2 AND id::text <> ALL($3::text[])",
+        [now, began, known.rows.map((row) => row.id)]
+      );
+      return result;
+    };
     const sweep = (
       switchOn: boolean,
       now: Date,
       store: BillingStore = first
     ): Promise<ActivationSweepReport> =>
-      runActivationSweep(
-        { ACTIVATION_EMAILS_ENABLED: switchOn ? "true" : "false" },
-        store,
-        now
+      recordedAt(now, () =>
+        runActivationSweep(
+          { ACTIVATION_EMAILS_ENABLED: switchOn ? "true" : "false" },
+          store,
+          now
+        )
       );
     const instant = async () => {
       const state = await owner.pool.query<{
@@ -192,7 +236,7 @@ async function run() {
         notices: Number(result.rows[0]?.notices),
       };
     };
-    const countedToday = async () =>
+    const countedOn = async (day: Date) =>
       Number(
         (
           await owner.pool.query<{ n: string }>(
@@ -200,10 +244,11 @@ async function run() {
               WHERE skipped_reason IS NULL
                 AND recorded_at >= (pg_catalog.date_trunc('day', $1::timestamptz AT TIME ZONE '${ZONE}') AT TIME ZONE '${ZONE}')
                 AND recorded_at < ((pg_catalog.date_trunc('day', $1::timestamptz AT TIME ZONE '${ZONE}') + interval '1 day') AT TIME ZONE '${ZONE}')`,
-            [ten]
+            [day]
           )
         ).rows[0]?.n
       );
+    const countedToday = () => countedOn(ten);
     const newStore = async (
       createdAt: Date,
       status = "active"
@@ -440,7 +485,8 @@ async function run() {
         owner.pool,
         store,
         outcomes.slice(index, index + 3),
-        at(ten, -HOUR)
+        at(ten, -HOUR),
+        ten
       );
     }
     assert.equal(await countedToday(), CAP - 2);
@@ -497,11 +543,13 @@ async function run() {
     assert.deepEqual(await stepsOf(capped[2] as Store), []);
 
     const tomorrow = at(ten, DAY);
-    const firstOfTomorrow = await first.sweepActivationSeries({
-      enabled: true,
-      limit: 1,
-      now: tomorrow,
-    });
+    const firstOfTomorrow = await recordedAt(tomorrow, () =>
+      first.sweepActivationSeries({
+        enabled: true,
+        limit: 1,
+        now: tomorrow,
+      })
+    );
     assert.deepEqual(
       firstOfTomorrow,
       { due: 1, expired: 0, seriesOff: 0, truncated: true },
@@ -524,8 +572,81 @@ async function run() {
     await sweep(false, tomorrow);
     assert.equal((await instant())?.enabled_since, null);
 
-    // the connection check and the four cases: one that did not run would leave the gate green with less proof
-    assert.equal(tests.length, 5, "every case of the gate ran");
+    // 5. AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at. Three days
+    // ahead, 58 notices are recorded one second before midnight of São Paulo and 5 one second after it: only the 58
+    // are the day of the sweep, so two of three owed stores are recorded, and the next morning the third is
+    const dayX = at(ten, 3 * DAY);
+    const midnight = (
+      await owner.pool.query<{ midnight: Date }>(
+        `SELECT (pg_catalog.date_trunc('day', $1::timestamptz AT TIME ZONE '${ZONE}') + interval '1 day') AT TIME ZONE '${ZONE}' AS midnight`,
+        [dayX]
+      )
+    ).rows[0]?.midnight;
+    assert.ok(midnight instanceof Date);
+    const beforeMidnight = at(midnight, -1000);
+    const afterMidnight = at(midnight, 1000);
+    await sweep(true, at(ten, -5 * DAY));
+    await settle(dayX);
+    const owedAcross = [
+      await newStore(at(dayX, -2 * DAY + MINUTE)),
+      await newStore(at(dayX, -2 * DAY + 2 * MINUTE)),
+      await newStore(at(dayX, -2 * DAY + 3 * MINUTE)),
+    ];
+    const countedAcross = await countedOn(dayX);
+    assert.ok(
+      countedAcross <= CAP - 2,
+      `room for the case (${countedAcross} counted)`
+    );
+    const seededAcross: [SeededOutcome[], Date][] = [
+      [
+        Array.from({ length: CAP - 2 - countedAcross }, () => "owed"),
+        beforeMidnight,
+      ],
+      [Array.from({ length: 5 }, () => "owed"), afterMidnight],
+    ];
+    for (const [seededOutcomes, recorded] of seededAcross) {
+      for (let index = 0; index < seededOutcomes.length; index += 3) {
+        const store = await newStore(at(ten, -20 * DAY));
+        await seedNotices(
+          owner.pool,
+          store,
+          seededOutcomes.slice(index, index + 3),
+          at(dayX, -HOUR),
+          recorded
+        );
+      }
+    }
+    assert.equal(await countedOn(beforeMidnight), CAP - 2);
+    assert.equal(await countedOn(afterMidnight), 5);
+    const acrossReport = await settle(dayX);
+    assert.equal(acrossReport.due, 2, "the 5 of the next day are not counted");
+    assert.ok(acrossReport.truncated);
+    assert.deepEqual(await stepsOf(owedAcross[0] as Store), ["a1:owed"]);
+    assert.deepEqual(await stepsOf(owedAcross[1] as Store), ["a1:owed"]);
+    assert.deepEqual(await stepsOf(owedAcross[2] as Store), []);
+    assert.equal(await countedOn(dayX), CAP);
+    assert.equal(await countedOn(afterMidnight), 5);
+    const recordedAtDayX = await owner.pool.query<{ recorded_at: Date }>(
+      "SELECT recorded_at FROM public.activation_notices WHERE organization_id = ANY($1::text[]) AND skipped_reason IS NULL",
+      [owedAcross.slice(0, 2).map((store) => store.organizationId)]
+    );
+    assert.deepEqual(
+      recordedAtDayX.rows.map((row) => row.recorded_at.getTime()),
+      [dayX.getTime(), dayX.getTime()],
+      "what a sweep records carries the clock of its case"
+    );
+    await settle(at(dayX, DAY));
+    assert.deepEqual(await stepsOf(owedAcross[2] as Store), ["a1:owed"]);
+    assert.equal(await countedOn(dayX), CAP, "the day of the cap did not move");
+    for (const store of owedAcross) {
+      await assertEvents(store, "the notices across midnight");
+    }
+    tests.push(
+      "AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at: three days ahead, 58 notices recorded one second before midnight of São Paulo and 5 one second after it, a sweep at 10:00 records two of three owed stores (the 5 of the next day are not counted) and the day stays at 60, the sweep of the next morning records the third, and what a sweep records carries the clock of its case"
+    );
+
+    // the connection check and the five cases: one that did not run would leave the gate green with less proof
+    assert.equal(tests.length, 6, "every case of the gate ran");
     const proven = tests
       .map((test) => test.match(CASE_LABEL)?.[0])
       .filter(Boolean);
