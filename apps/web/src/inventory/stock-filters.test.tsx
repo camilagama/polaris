@@ -4,6 +4,7 @@ import {
   type FilterRule,
   removeRule,
   setRule,
+  TOGGLE_ON,
   visibleRules,
 } from "@/ui/filter-bar-model";
 import {
@@ -65,11 +66,15 @@ describe("os filtros do Estoque na barra", () => {
     expect(one).not.toContain("Limpar tudo");
     const three = render(everything);
     expect(three).toContain("Saldo: Sem saldo, editar");
-    expect(three).toContain("Custo: Desconhecido, editar");
-    expect(three).toContain("Arquivados: Incluir, editar");
+    expect(three).toContain("Custo desconhecido");
+    expect(three).toContain("Arquivados incluídos");
     expect(three).toContain("Limpar tudo");
-    expect(three.indexOf("Saldo:")).toBeLessThan(three.indexOf("Custo:"));
-    expect(three.indexOf("Custo:")).toBeLessThan(three.indexOf("Arquivados:"));
+    expect(three.indexOf("Saldo:")).toBeLessThan(
+      three.indexOf("Custo desconhecido")
+    );
+    expect(three.indexOf("Custo desconhecido")).toBeLessThan(
+      three.indexOf("Arquivados incluídos")
+    );
   });
 
   it("a busca não é filtro da barra: ela fica fora das pílulas", () => {
@@ -92,12 +97,12 @@ describe("os filtros do Estoque na barra", () => {
       stock: "with_stock",
       unknownCost: false,
     });
-    expect(apply(defaultStockFilters, "unknown-cost", "only")).toEqual({
+    expect(apply(defaultStockFilters, "unknown-cost", TOGGLE_ON)).toEqual({
       includeArchived: false,
       stock: "all",
       unknownCost: true,
     });
-    expect(apply(everything, "archived", "include")).toEqual({
+    expect(apply(everything, "archived", TOGGLE_ON)).toEqual({
       includeArchived: true,
       stock: "without_stock",
       unknownCost: true,
@@ -129,6 +134,16 @@ describe("os filtros do Estoque na barra", () => {
     });
   });
 
+  it("os dois de sim ou não são interruptores: o item do menu e o texto da pílula", () => {
+    const toggles = FIELDS.flatMap((field) =>
+      field.type === "toggle" ? [[field.label, field.pillText]] : []
+    );
+    expect(toggles).toEqual([
+      ["Custo desconhecido", "Custo desconhecido"],
+      ["Incluir arquivados", "Arquivados incluídos"],
+    ]);
+  });
+
   it("um valor que nenhuma opção tem não vira filtro", () => {
     expect(apply(defaultStockFilters, "balance", "all")).toEqual({
       includeArchived: false,
@@ -137,6 +152,9 @@ describe("os filtros do Estoque na barra", () => {
     });
     expect(
       visibleRules(FIELDS, [{ fieldId: "balance", value: "qualquer" }])
+    ).toEqual([]);
+    expect(
+      visibleRules(FIELDS, [{ fieldId: "archived", value: "include" }])
     ).toEqual([]);
   });
 
@@ -156,8 +174,9 @@ describe("os filtros do Estoque na barra", () => {
 
   it("sem conexão com o custo já marcado: a pílula diz o motivo e não se edita", () => {
     const html = render({ ...defaultStockFilters, unknownCost: true }, true);
-    expect(html).toContain("Custo: Desconhecido");
-    expect(html).not.toContain("Custo: Desconhecido, editar");
+    expect(html).toContain("Custo desconhecido");
+    expect(html).not.toContain("editar");
+    expect(html).toContain("Tirar o filtro Custo desconhecido");
     expect(html).toContain("Só com conexão");
   });
 });

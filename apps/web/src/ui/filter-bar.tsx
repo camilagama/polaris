@@ -32,11 +32,13 @@ import {
 } from "@/ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import {
+  type EditableFilterField,
   editLabel,
   type FilterField,
   type FilterOption,
@@ -51,7 +53,9 @@ import {
   type SelectFilterField,
   setRule,
   showClearAll,
+  TOGGLE_ON,
   type TextFilterField,
+  type ToggleFilterField,
   visibleRules,
 } from "@/ui/filter-bar-model";
 import { Input } from "@/ui/input";
@@ -263,7 +267,7 @@ function EditorContent({
   onCommit,
   value,
 }: {
-  field: FilterField;
+  field: EditableFilterField;
   onCommit: Commit;
   value: FilterRuleValue | undefined;
 }) {
@@ -371,7 +375,7 @@ function DraftContent({
   statusId,
 }: {
   draft: FilterRuleValue | null;
-  field: FilterField;
+  field: EditableFilterField;
   onDraft: Commit;
   onHalfChange: (half: boolean) => void;
   statusId: string;
@@ -413,7 +417,7 @@ function PhoneEditorContent({
   onApply,
   value,
 }: {
-  field: FilterField;
+  field: EditableFilterField;
   onApply: Commit;
   value: FilterRuleValue | undefined;
 }) {
@@ -491,7 +495,7 @@ interface PillEditorProps {
   commit: Commit;
   /** What the pill's button shows: the field and the value. */
   content: ReactNode;
-  field: FilterField;
+  field: EditableFilterField;
   isEditing: boolean;
   /** The accessible name of the pill's button. */
   name: string;
@@ -573,6 +577,29 @@ function PillEditor({
   );
 }
 
+const PILL_FRAME =
+  "inline-flex h-9 touch:h-11 max-w-full shrink-0 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10";
+
+/** The X of a pill: the only control of a switch's pill. */
+function RemoveButton({
+  field,
+  onRemove,
+}: {
+  field: FilterField;
+  onRemove: () => void;
+}) {
+  return (
+    <button
+      aria-label={removeLabel(field)}
+      className="touch-hit focus-ring grid touch:w-11 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
+      onClick={onRemove}
+      type="button"
+    >
+      <XIcon aria-hidden="true" className="size-4" />
+    </button>
+  );
+}
+
 interface PillProps {
   field: FilterField;
   /** Whether the editor of this pill is open. */
@@ -611,6 +638,22 @@ function FilterPill({
   );
   const remove = useCallback(() => onRemove(field), [field, onRemove]);
   const name = blocked ? lockedLabel(field, text) : editLabel(field, text);
+  const Frame = layer?.PillFrame ?? StillPillFrame;
+  if (field.type === "toggle") {
+    return (
+      <Frame className={PILL_FRAME} motion={pillMotion(level)}>
+        <span className="flex min-w-0 items-center ps-3 pe-2 font-medium">
+          <span className="min-w-0 truncate">{text}</span>
+        </span>
+        {field.disabledReason ? (
+          <span className="flex shrink-0 items-center pe-2 text-muted-foreground text-xs">
+            {field.disabledReason}
+          </span>
+        ) : null}
+        <RemoveButton field={field} onRemove={remove} />
+      </Frame>
+    );
+  }
   // the space keeps "Período 01/10 a 24/10" as the text of the button (the name holds it: WCAG 2.5.3)
   const content = (
     <>
@@ -635,14 +678,8 @@ function FilterPill({
 
   // the row wraps, so `max-w-full` is the width of the screen: a pill with a reason is never wider than it, and it is
   // the value that gives way (it truncates) so the reason and the X stay in sight at 320 and 360 px
-  const Frame = layer?.PillFrame ?? StillPillFrame;
   return (
-    <Frame
-      className={cn(
-        "inline-flex h-9 touch:h-11 max-w-full shrink-0 items-stretch rounded-full border border-border bg-card text-sm has-[[aria-expanded=true]]:border-foreground/70 has-[[aria-expanded=true]]:ring-2 has-[[aria-expanded=true]]:ring-foreground/10"
-      )}
-      motion={pillMotion(level)}
-    >
+    <Frame className={PILL_FRAME} motion={pillMotion(level)}>
       {blocked ? (
         <>
           <button
@@ -674,15 +711,45 @@ function FilterPill({
           value={rule?.value}
         />
       )}
-      <button
-        aria-label={removeLabel(field)}
-        className="touch-hit focus-ring grid touch:w-11 w-9 shrink-0 place-items-center rounded-e-full border-border border-s text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={remove}
-        type="button"
-      >
-        <XIcon aria-hidden="true" className="size-4" />
-      </button>
+      <RemoveButton field={field} onRemove={remove} />
     </Frame>
+  );
+}
+
+/**
+ * A switch in the "Filtrar" menu: a `menuitemcheckbox` that is checked while its pill exists. Touching it turns the
+ * filter on or off and closes the menu, and the focus goes back to "Filtrar". Without the connection it needs
+ * (`disabledReason`) it is `aria-disabled` with the reason under its name, keeps the focus, and neither changes nor closes.
+ */
+function ToggleItem({
+  field,
+  on,
+  onToggle,
+}: {
+  field: ToggleFilterField;
+  on: boolean;
+  onToggle: (field: ToggleFilterField, on: boolean) => void;
+}) {
+  const blocked = field.disabledReason !== undefined;
+  const change = useCallback(
+    (checked: boolean) => onToggle(field, checked),
+    [field, onToggle]
+  );
+  return (
+    <DropdownMenuCheckboxItem
+      aria-disabled={blocked || undefined}
+      checked={on}
+      className={cn(blocked && "text-muted-foreground")}
+      closeOnClick={!blocked}
+      onCheckedChange={blocked ? undefined : change}
+    >
+      <span className="grid min-w-0 flex-1">
+        <span>{field.label}</span>
+        {field.disabledReason ? (
+          <span className="text-support">{field.disabledReason}</span>
+        ) : null}
+      </span>
+    </DropdownMenuCheckboxItem>
   );
 }
 
@@ -732,7 +799,8 @@ function FieldItem({
  * choice among a few options, or the `DateRangePanel` of the period) and its X takes it out. "Filtrar" opens a menu with
  * the fields: those already used are grey with their value at the end, one that cannot be used now is `aria-disabled`
  * with its reason under the name ("Só com conexão"). Choosing a field adds its pill and opens the editor; closing the
- * editor with no value takes the pill back. "Limpar tudo" shows with two or more pills.
+ * editor with no value takes the pill back. A yes-or-no field (`type: "toggle"`) is a checkbox item instead: touching it
+ * turns the filter on or off with no editor, and its pill is a text with only the X. "Limpar tudo" shows with two or more pills.
  *
  * At the `full` level of motion the pills come in and go out with opacity and scale and the neighbours slide (`motion`,
  * as the Araute has it, in `filter-bar-motion.tsx`, loaded by `import()`); on a phone and with `prefers-reduced-motion`
@@ -868,6 +936,14 @@ export function FilterBar({
     return !handedOver;
   }, []);
 
+  const toggle = useCallback(
+    (field: ToggleFilterField, on: boolean) => {
+      closeEditor();
+      onChange(setRule(fields, value, field.id, on ? TOGGLE_ON : null));
+    },
+    [closeEditor, fields, onChange, value]
+  );
+
   const clearAll = useCallback(() => {
     closeEditor();
     onChange([]);
@@ -925,14 +1001,26 @@ export function FilterBar({
             className="w-64 max-w-[calc(100vw-1rem)]"
             finalFocus={menuClosed}
           >
-            {fields.map((field) => (
-              <FieldItem
-                field={field}
-                key={field.id}
-                onChoose={choose}
-                used={shown.find((entry) => entry.field.id === field.id)?.text}
-              />
-            ))}
+            {fields.map((field) => {
+              const used = shown.find(
+                (entry) => entry.field.id === field.id
+              )?.text;
+              return field.type === "toggle" ? (
+                <ToggleItem
+                  field={field}
+                  key={field.id}
+                  on={used !== undefined}
+                  onToggle={toggle}
+                />
+              ) : (
+                <FieldItem
+                  field={field}
+                  key={field.id}
+                  onChoose={choose}
+                  used={used}
+                />
+              );
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
 

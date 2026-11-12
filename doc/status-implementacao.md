@@ -3275,7 +3275,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Status | Observação |
 | --- | --- | --- |
-| Filtros do Estoque (AC-14a) | Em revisão | `inventory/stock-filters.tsx` passa à `FilterBar` do Histórico os campos Saldo (Com saldo, Sem saldo), Custo ("Desconhecido"; sem conexão `aria-disabled` com "Só com conexão") e Arquivados ("Incluir"), no lugar do popup "Filtros" (abas, "Sem custo", "Incluir arquivados"); a busca divide a primeira linha da barra com o "Filtrar" (`leading` da `FilterBar`), e as pílulas descem para a linha de baixo; `?filtro=` e os links da faixa acendem a pílula. O menu da barra ganhou `max-w-[calc(100vw-1rem)]` (a 320 px com letra de 20 px passava da janela). |
+| Filtros do Estoque (AC-14a) | Em revisão | `inventory/stock-filters.tsx` passa à `FilterBar` do Histórico os campos Saldo (Com saldo, Sem saldo), Custo desconhecido e Incluir arquivados (itens de sim ou não que ligam no próprio item do menu e dão uma pílula de texto só; sem conexão o custo fica `aria-disabled` com "Só com conexão"), no lugar do popup "Filtros" (abas, "Sem custo", "Incluir arquivados"); a busca divide a primeira linha da barra com o "Filtrar" (`leading` da `FilterBar`), e as pílulas descem para a linha de baixo; `?filtro=` e os links da faixa acendem a pílula. O menu da barra ganhou `max-w-[calc(100vw-1rem)]` (a 320 px com letra de 20 px passava da janela). |
 
 ### Despesas vira destino próprio na navegação (t982; L2-8, A-08; sem migration)
 

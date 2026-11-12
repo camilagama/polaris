@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useMemo } from "react";
 import { FilterBar, type FilterField, type FilterRule } from "@/ui/filter-bar";
+import { TOGGLE_ON } from "@/ui/filter-bar-model";
 import {
   STOCK_FILTERS,
   type StockFilter,
@@ -14,9 +15,6 @@ const BALANCE_OPTIONS = STOCK_FILTERS.filter(([value]) => value !== "all").map(
 const FIELD_BALANCE = "balance";
 const FIELD_UNKNOWN_COST = "unknown-cost";
 const FIELD_ARCHIVED = "archived";
-
-const UNKNOWN_COST_ONLY = "only";
-const ARCHIVED_INCLUDED = "include";
 
 type StockBarFilters = Pick<
   StockFilters,
@@ -34,10 +32,10 @@ export function stockRules(filters: StockBarFilters): FilterRule[] {
     rules.push({ fieldId: FIELD_BALANCE, value: filters.stock });
   }
   if (filters.unknownCost) {
-    rules.push({ fieldId: FIELD_UNKNOWN_COST, value: UNKNOWN_COST_ONLY });
+    rules.push({ fieldId: FIELD_UNKNOWN_COST, value: TOGGLE_ON });
   }
   if (filters.includeArchived) {
-    rules.push({ fieldId: FIELD_ARCHIVED, value: ARCHIVED_INCLUDED });
+    rules.push({ fieldId: FIELD_ARCHIVED, value: TOGGLE_ON });
   }
   return rules;
 }
@@ -51,9 +49,9 @@ function chosen(rules: readonly FilterRule[], fieldId: string): string {
 export function stockFilters(rules: readonly FilterRule[]): StockBarFilters {
   const balance = chosen(rules, FIELD_BALANCE);
   return {
-    includeArchived: chosen(rules, FIELD_ARCHIVED) === ARCHIVED_INCLUDED,
+    includeArchived: chosen(rules, FIELD_ARCHIVED) === TOGGLE_ON,
     stock: isNarrowingBalance(balance) ? balance : "all",
-    unknownCost: chosen(rules, FIELD_UNKNOWN_COST) === UNKNOWN_COST_ONLY,
+    unknownCost: chosen(rules, FIELD_UNKNOWN_COST) === TOGGLE_ON,
   };
 }
 
@@ -69,15 +67,15 @@ export function stockFields(offline: boolean): FilterField[] {
     {
       disabledReason: offline ? "Só com conexão" : undefined,
       id: FIELD_UNKNOWN_COST,
-      label: "Custo",
-      options: [{ label: "Desconhecido", value: UNKNOWN_COST_ONLY }],
-      type: "select",
+      label: "Custo desconhecido",
+      pillText: "Custo desconhecido",
+      type: "toggle",
     },
     {
       id: FIELD_ARCHIVED,
-      label: "Arquivados",
-      options: [{ label: "Incluir", value: ARCHIVED_INCLUDED }],
-      type: "select",
+      label: "Incluir arquivados",
+      pillText: "Arquivados incluídos",
+      type: "toggle",
     },
   ];
 }
