@@ -86,21 +86,20 @@ export function HeroValue({
   tile?: boolean;
 }) {
   const [hidden] = useHiddenValues();
-  const box = HERO_BOX;
   const size =
     tile && amount !== null
       ? tileFigureSize(writtenLength(amount, hidden))
       : undefined;
   if (amount === null && emptyText) {
     return (
-      <p className={cn(box, "text-muted-foreground")}>
+      <p className={cn(HERO_BOX, "text-muted-foreground")}>
         <span className="font-medium text-sm tracking-normal">{emptyText}</span>
       </p>
     );
   }
   if (amount === null) {
     return (
-      <p className={cn(box, "text-muted-foreground")}>
+      <p className={cn(HERO_BOX, "text-muted-foreground")}>
         <Money text={null} />
       </p>
     );
@@ -114,14 +113,14 @@ export function HeroValue({
   );
   if (hidden) {
     return (
-      <p className={box} data-kpi-value="" style={size}>
+      <p className={HERO_BOX} data-kpi-value="" style={size}>
         {money}
       </p>
     );
   }
   return (
     <p
-      className={cn(box, negative && "text-destructive")}
+      className={cn(HERO_BOX, negative && "text-destructive")}
       data-kpi-value=""
       style={size}
     >
@@ -140,10 +139,9 @@ export function HeroPercent({
   /** The percent as the app writes it ("41,2%"), or null when there is none. */
   text: string | null;
 }) {
-  const box = HERO_BOX;
   if (text === null) {
     return (
-      <p className={cn(box, "text-muted-foreground")}>
+      <p className={cn(HERO_BOX, "text-muted-foreground")}>
         <span aria-hidden="true">—</span>
         <span className="sr-only">sem valor</span>
       </p>
@@ -151,7 +149,10 @@ export function HeroPercent({
   }
   return (
     <p
-      className={cn(box, text.trim().startsWith("-") && "text-destructive")}
+      className={cn(
+        HERO_BOX,
+        text.trim().startsWith("-") && "text-destructive"
+      )}
       data-kpi-value=""
     >
       {text.replace("%", "")}
