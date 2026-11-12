@@ -26,6 +26,7 @@ const TABLE_TAG =
   /<table class="w-full caption-top text-sm[^"]*" id="numbers">/;
 const FIXED_TABLE = /<table class="[^"]*\btable-fixed\b/;
 const DIGIT_OF_AMOUNT = /R\$ \d/;
+const CAPTION_CLASS = /<caption class="([^"]*)"/;
 
 function render(visible?: boolean, rows: typeof ROWS = ROWS) {
   return renderToStaticMarkup(
@@ -132,5 +133,40 @@ describe("ChartDataTable", () => {
       hiddenValues.hidden = false;
       expect(render(true, negative).match(/text-destructive/g)).toHaveLength(1);
     });
+  });
+});
+
+describe("ChartDataTable caption in the stacked layout", () => {
+  const FOUR_COLUMNS = [
+    { header: "Dia" },
+    { header: "Vendas", numeric: true },
+    { header: "Custos", numeric: true },
+    { header: "Resultado do dia", numeric: true },
+  ];
+  const captionClass = (
+    columns: { header: string; numeric?: boolean }[],
+    visible: boolean
+  ) =>
+    CAPTION_CLASS.exec(
+      renderToStaticMarkup(
+        <ChartDataTable
+          caption="Vendas por dia."
+          columns={columns}
+          id="numbers"
+          rows={[]}
+          visible={visible}
+        />
+      )
+    )?.[1];
+
+  it("is a block below 48rem when the shown table turns into cards, so it takes the width of the card", () => {
+    expect(captionClass(FOUR_COLUMNS, true)).toContain("@max-3xl:block");
+  });
+
+  it("stays a table caption when the table is side by side or invisible", () => {
+    expect(captionClass(FOUR_COLUMNS.slice(0, 2), true)).not.toContain(
+      "@max-3xl:block"
+    );
+    expect(captionClass(FOUR_COLUMNS, false)).not.toContain("@max-3xl:block");
   });
 });

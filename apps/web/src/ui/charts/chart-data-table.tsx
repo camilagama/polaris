@@ -32,9 +32,11 @@ export interface ChartDataTableProps {
 /* A shown table of more than three columns would be wider than a phone: below 48rem of its own box (`@container`) each row
    becomes a card, with the first cell as its title and the name of each column (`data-label`) beside its value. The head
    row stays for the screen reader. The invisible table keeps its table layout: a screen reader drops the table semantics
-   of a `table` turned into blocks. Nothing scrolls sideways. */
+   of a `table` turned into blocks. Nothing scrolls sideways. The caption is turned into a block too: a `table-caption`
+   inside a block is wrapped in an anonymous table that shrinks to its narrowest word, one word per line. */
 const STACK_TABLE =
   "@max-3xl:block @max-3xl:[&_tbody]:block @max-3xl:[&_tfoot]:block @max-3xl:[&_tfoot_tr]:block";
+const STACK_CAPTION = "@max-3xl:block";
 const STACK_HEAD =
   "@max-3xl:absolute @max-3xl:left-0 @max-3xl:h-px @max-3xl:w-full @max-3xl:overflow-hidden @max-3xl:[clip-path:inset(50%)] @max-3xl:[&_tr]:block @max-3xl:[&_th]:block @max-3xl:[&_th]:h-auto @max-3xl:[&_th]:whitespace-normal @max-3xl:[&_th]:p-0";
 const STACK_ROW = "@max-3xl:grid @max-3xl:gap-1 @max-3xl:py-3";
@@ -93,7 +95,8 @@ export function ChartDataTable({
         <caption
           className={cn(
             "text-left",
-            visible && "pb-2 text-muted-foreground text-support"
+            visible && "pb-2 text-muted-foreground text-support",
+            stacked && STACK_CAPTION
           )}
         >
           {caption}
