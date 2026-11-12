@@ -4,13 +4,15 @@ import {
   useCallback,
   useState,
 } from "react";
+import { useMotionLevel } from "@/lib/motion-level";
 import { cn } from "@/lib/utils";
 
 /**
  * The new figure comes in whole (fade and a slight rise), never digit by digit. `children` stays the plain DOM, so
- * readers get the final text at once. Only a different `text` after the first draw remounts the box with the entrance;
- * the entrance is dropped when it ends, so a later change of motion level does not replay it; `motion-full:` keeps it off
- * on a phone and under `prefers-reduced-motion`. A change made while the values are hidden is not played when they come
+ * readers get the final text at once. Only a different `text` after the first draw remounts the box with the entrance,
+ * and only when the motion level is `full` at that moment: where the entrance does not play `animationend` never comes,
+ * so a flag left on would replay it, with the same value, when the window later reaches `full` (a tablet turned, a
+ * window widened, "reduce motion" turned off). `motion-full:` also keeps it off on a phone and under `prefers-reduced-motion`. A change made while the values are hidden is not played when they come
  * back, and a day read on a sparkline (and the return from it) swaps with no entrance, so the figure does not blink
  * while the pointer moves.
  */
@@ -29,13 +31,14 @@ export function nextFigureState(
   last: FigureState,
   text: string,
   hidden: boolean,
-  reading: boolean
+  reading: boolean,
+  entering: boolean
 ): FigureState {
   if (last.text === text) {
     return last.reading === reading ? last : { ...last, reading };
   }
   return {
-    animate: !(hidden || reading || last.reading),
+    animate: entering && !(hidden || reading || last.reading),
     generation: last.generation + 1,
     reading,
     text,
@@ -66,7 +69,13 @@ export function AnimatedFigure({
       setLast((state) => ({ ...state, animate: false }));
     }
   }, []);
-  const next = nextFigureState(last, text, hidden, reading);
+  const next = nextFigureState(
+    last,
+    text,
+    hidden,
+    reading,
+    useMotionLevel() === "full"
+  );
   if (next !== last) {
     setLast(next);
   }
