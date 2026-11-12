@@ -1,6 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import config from "../playwright.pwa.config";
 import {
@@ -199,29 +198,11 @@ async function main() {
   }
   const browser = await startImageBrowser();
   try {
-    const code = await playwright(
-      ["--update-snapshots=changed"],
+    return await playwright(
+      [],
       { ...process.env, [VISUAL_WS_ENV]: browser.wsEndpoint },
       browser.container
     );
-    const changed = spawnSync(
-      "git",
-      ["status", "--porcelain", "--", "e2e-pwa/ui-visual.e2e.ts-snapshots"],
-      { encoding: "utf8" }
-    ).stdout;
-    console.log(`TMPDUMP-LIST\n${changed}TMPDUMP-LIST-END`);
-    for (const line of changed.split("\n").filter(Boolean)) {
-      const file = line.slice(3);
-      const raw = readFileSync(`../../${file}`);
-      const data = raw.toString("base64");
-      console.log(`TMPDUMP-SHA ${createHash("sha256").update(raw).digest("hex")} ${raw.length}`);
-      console.log(`TMPDUMP-BEGIN ${file}`);
-      for (let at = 0; at < data.length; at += 3000) {
-        console.log(`TMPDUMP ${data.slice(at, at + 3000)}`);
-      }
-      console.log("TMPDUMP-END");
-    }
-    return code;
   } finally {
     stopContainer(browser.container);
   }
