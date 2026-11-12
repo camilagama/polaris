@@ -3275,7 +3275,7 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 
 | Item | Status | Observação |
 | --- | --- | --- |
-| Filtros do Estoque (AC-14a) | Em revisão | `inventory/stock-filters.tsx` passa à `FilterBar` do Histórico os campos Saldo (Com saldo, Sem saldo), Custo ("Desconhecido"; sem conexão `aria-disabled` com "Só com conexão") e Arquivados ("Incluir"), no lugar do popup "Filtros" (abas, "Sem custo", "Incluir arquivados"); a busca divide a primeira linha da barra com o "Filtrar" (`leading` da `FilterBar`), e as pílulas descem para a linha de baixo; `?filtro=` e os links da faixa acendem a pílula. O menu da barra ganhou `max-w-[calc(100vw-1rem)]` (a 320 px com letra de 20 px passava da janela). |
+| Filtros do Estoque (AC-14a) | Em revisão | `inventory/stock-filters.tsx` passa à `FilterBar` do Histórico os campos Saldo (Com saldo, Sem saldo), Custo desconhecido e Incluir arquivados (itens de sim ou não que ligam no próprio item do menu e dão uma pílula de texto só; sem conexão o custo fica `aria-disabled` com "Só com conexão"), no lugar do popup "Filtros" (abas, "Sem custo", "Incluir arquivados"); a busca divide a primeira linha da barra com o "Filtrar" (`leading` da `FilterBar`), e as pílulas descem para a linha de baixo; `?filtro=` e os links da faixa acendem a pílula. O menu da barra ganhou `max-w-[calc(100vw-1rem)]` (a 320 px com letra de 20 px passava da janela). |
 
 ### Despesas vira destino próprio na navegação (t982; L2-8, A-08; sem migration)
 
@@ -3413,6 +3413,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Log (AC-8a.8) | Em revisão | Uma linha `tips_stop_answered` com método, `reason` e `outcome`; nunca token, query, pessoa ou endereço. |
 | Gerador do link | Em revisão | `unsubscribeLink(baseURL, token)` e `createUnsubscribeToken`, para o consumidor (7c). |
 | Fora deste PR | Pendente | O cabeçalho `List-Unsubscribe` no e-mail e o consumidor (7c); o Switch em Seus dados (8b); criar o segredo em staging e produção (responsável). |
+
+### Avisos de ativação: a varredura no Worker, atrás da flag desligada (t1065; corte ativacao-fase1b, Item 7b; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Flag (AC-7b.1, AC-7b.7) | Em revisão | `ACTIVATION_EMAILS_ENABLED` `"false"` no topo, no staging e na produção de `apps/web/wrangler.jsonc`; só `"true"` liga. Desligada, a varredura só zera o instante da liga. |
+| Varredura (AC-7b.2 a AC-7b.6) | Em revisão | `billing-store.ts` (`sweepActivationSeries`): numa transação, grava o instante quando ele é nulo, chama `activation_notice_candidates(p_now, 50)` e grava cada passo; o devido com o evento `activation.notice`, `expired` e `series_off` como aviso pulado com o motivo. `server/billing/activation-sweep.ts` lê a flag, passa o lote fixo de 50 e loga só contagens; o `billing.maintenance` da faixa 17 a chama, sem cron novo. |
+| Provas | Em revisão | `activation-sweep.test.ts` (flag, lote, log sem `@` nem IDs, a flag dos três ambientes), `worker/index.test.ts` (a ordem na faixa e a falha que não para o resto) e o gate novo `activation-sweep` (PostgreSQL 18 do CI: flag desligada, instante e ciclo, 23h59/24 h, 3 dias, 11:59/12:00, teto em 2 com três lojas, lock tomado e duas varreduras ao mesmo tempo). O gate fixa o `recorded_at` do que cada varredura grava no relógio do caso, para a contagem do teto não mudar de dia se a execução cruzar a meia-noite de São Paulo, e um caso roda a varredura real com 58 gravadas 1 s antes da meia-noite e 5 gravadas 1 s depois, e prova que só as 58 contam. |
+| Fora deste PR | Pendente | O consumidor e o envio (7c) e a parada por reclamação (9). A leitura da CPU da varredura no staging (AC-7b.6) é do Filipe, antes do merge. |
 
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
 

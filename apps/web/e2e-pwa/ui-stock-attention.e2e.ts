@@ -27,14 +27,34 @@ async function expectPills(page: Page, pills: string[]) {
   await expect
     .poll(() =>
       bar(page)
-        .locator('[data-slot="filter-pill"] button:not([aria-label^="Tirar"])')
-        .evaluateAll((buttons) =>
-          buttons.map((button) =>
-            (button.getAttribute("aria-label") ?? "").replace(", editar", "")
-          )
+        .locator('[data-slot="filter-pill"]')
+        .evaluateAll((frames) =>
+          frames.map((frame) => {
+            const editor = frame.querySelector(
+              'button:not([aria-label^="Tirar"])'
+            );
+            return editor
+              ? (editor.getAttribute("aria-label") ?? "").replace(
+                  ", editar",
+                  ""
+                )
+              : (frame.firstElementChild?.textContent ?? "").trim();
+          })
         )
     )
     .toEqual(pills);
+}
+
+/** Turns a yes-or-no filter on from its own item in the "Filtrar" menu: two touches, no second panel; the menu closes and the focus goes back to "Filtrar". */
+async function toggleFilter(page: Page, name: string) {
+  const open = bar(page).getByRole("button", { exact: true, name: "Filtrar" });
+  await open.click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) })
+    .click();
+  await expect(page.getByRole("menu", { name: "Filtrar por" })).toHaveCount(0);
+  await expect(open).toBeFocused();
 }
 
 /** Chooses a field in the "Filtrar" menu and the option in its editor. */
@@ -72,7 +92,7 @@ test.describe("Estoque, Precisa de ação", () => {
     await expect(rows).toContainText("Boné aba reta");
 
     await strip(page).getByRole("link", { name: "1 sem custo" }).click();
-    await expectPills(page, ["Custo: Desconhecido"]);
+    await expectPills(page, ["Custo desconhecido"]);
     await expect(rows.getByRole("listitem")).toHaveCount(1);
     await expect(rows).toContainText("Camiseta do teste");
     // the strip counts the store, not the list: it stays while a filter is on
@@ -86,8 +106,8 @@ test.describe("Estoque, Precisa de ação", () => {
   }) => {
     await stockStates.list(page);
     await page.getByLabel("Buscar no estoque").fill("jeans");
-    await addFilter(page, "Arquivados", "Incluir");
-    await expectPills(page, ["Arquivados: Incluir"]);
+    await toggleFilter(page, "Incluir arquivados");
+    await expectPills(page, ["Arquivados incluídos"]);
     await strip(page)
       .getByRole("link", { name: "1 variante sem saldo" })
       .click();
@@ -210,8 +230,8 @@ test.describe("Estoque, Precisa de ação", () => {
     expect(await axeFaults(page)).toEqual([]);
     await page.keyboard.press("Escape");
     await addFilter(page, "Saldo", "Sem saldo");
-    await addFilter(page, "Arquivados", "Incluir");
-    await expectPills(page, ["Saldo: Sem saldo", "Arquivados: Incluir"]);
+    await toggleFilter(page, "Incluir arquivados");
+    await expectPills(page, ["Saldo: Sem saldo", "Arquivados incluídos"]);
     await expect(
       bar(page).getByRole("button", { name: "Limpar tudo" })
     ).toBeVisible();

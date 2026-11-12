@@ -10,8 +10,8 @@ import {
 /**
  * What the filter bar (`filter-bar.tsx`) knows about its fields and filters, as pure functions with no React, so the
  * rules (what a filter is, what its pill says, what adding, editing and removing do) are tested without a browser. A
- * field is a text, a choice among a few options, or a range of days; there are no operators, the shopkeeper picks a
- * value, never "contains" or "between". The screen owns the list of filters (`FilterRule[]`, in the order they were
+ * field is a text, a choice among a few options, a range of days, or a yes-or-no switch; there are no operators, the
+ * shopkeeper picks a value, never "contains" or "between". The screen owns the list of filters (`FilterRule[]`, in the order they were
  * added) and the bar returns the next list.
  */
 export interface FilterOption {
@@ -41,6 +41,16 @@ export interface SelectFilterField extends FilterFieldBase {
   type: "select";
 }
 
+/**
+ * A yes-or-no filter: its item in the menu is a checkbox that turns it on and off, so one touch makes the pill. The pill
+ * is `pillText` alone (no field-and-value pair, no editor); only its X is a control.
+ */
+export interface ToggleFilterField extends FilterFieldBase {
+  /** What the pill says while the filter is on: "Arquivados incluídos". */
+  pillText: string;
+  type: "toggle";
+}
+
 interface DateRangeFilterField extends FilterFieldBase {
   /** The screen has no future days: "Este mês" ends today (the Histórico); otherwise it is the whole month. */
   endsToday?: boolean | undefined;
@@ -52,7 +62,11 @@ interface DateRangeFilterField extends FilterFieldBase {
 export type FilterField =
   | DateRangeFilterField
   | SelectFilterField
-  | TextFilterField;
+  | TextFilterField
+  | ToggleFilterField;
+
+/** A field that has an editor behind its pill; a switch has none. */
+export type EditableFilterField = Exclude<FilterField, ToggleFilterField>;
 
 export type FilterRuleValue = DateRange | string;
 
@@ -61,6 +75,9 @@ export interface FilterRule {
   fieldId: string;
   value: FilterRuleValue;
 }
+
+/** The value of a switch that is on; there is no rule for one that is off. */
+export const TOGGLE_ON = "on";
 
 /** What the pill of a field being added shows until it has a value. */
 export const PENDING_TEXT = "Escolher";
@@ -82,6 +99,8 @@ export function valueText(
       return typeof value === "string"
         ? field.options.find((option) => option.value === value)?.label
         : undefined;
+    case "toggle":
+      return value === TOGGLE_ON ? field.pillText : undefined;
     case "date-range": {
       const range = typeof value === "string" ? null : validRange(value);
       return range ? formatRange(range, todayOr(field.today)) : undefined;
@@ -162,9 +181,9 @@ export function lockedLabel(field: FilterField, text: string): string {
   return `${field.label}: ${text}`;
 }
 
-/** The name of a pill's X: "Tirar o filtro Período". */
+/** The name of a pill's X: "Tirar o filtro Período"; a switch has no field name in its pill, so it is the pill's text: "Tirar o filtro Arquivados incluídos". */
 export function removeLabel(field: FilterField): string {
-  return `Tirar o filtro ${field.label}`;
+  return `Tirar o filtro ${field.type === "toggle" ? field.pillText : field.label}`;
 }
 
 /** The animation of a pill, as the Araute's smart filter has it (opacity and scale in and out, the neighbours slide). */

@@ -189,7 +189,7 @@ async function useEveryControl(page: Page) {
     "Saldo: Sem saldo, editar"
   );
   await remover(page, "Saldo").click();
-  await addFilter(page, "Arquivados", "Incluir");
+  await toggleFilter(page, "Incluir arquivados");
   await expect(page.getByText("3 variantes")).toBeVisible();
   await expect(page.getByText("Arquivado", { exact: true })).toBeVisible();
   await expect(
@@ -283,6 +283,17 @@ const remover = (page: Page, field: string) =>
 const filterButton = (page: Page) =>
   bar(page).getByRole("button", { exact: true, name: "Filtrar" });
 
+/** Turns a yes-or-no filter on from its own item in the "Filtrar" menu: two touches, no second panel; the menu closes and the focus goes back to "Filtrar". */
+async function toggleFilter(page: Page, name: string) {
+  await filterButton(page).click();
+  await page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitemcheckbox", { name: startsWith(name) })
+    .click();
+  await expect(page.getByRole("menu", { name: "Filtrar por" })).toHaveCount(0);
+  await expect(filterButton(page)).toBeFocused();
+}
+
 /** Chooses a field in the "Filtrar" menu and the option in its editor (the Popover applies at once, the phone's Dialog at "Aplicar"). */
 async function addFilter(page: Page, field: string, option: string) {
   await filterButton(page).click();
@@ -305,11 +316,19 @@ async function expectPills(page: Page, pills: string[]) {
   await expect
     .poll(() =>
       bar(page)
-        .locator('[data-slot="filter-pill"] button:not([aria-label^="Tirar"])')
-        .evaluateAll((buttons) =>
-          buttons.map((button) =>
-            (button.getAttribute("aria-label") ?? "").replace(", editar", "")
-          )
+        .locator('[data-slot="filter-pill"]')
+        .evaluateAll((frames) =>
+          frames.map((frame) => {
+            const editor = frame.querySelector(
+              'button:not([aria-label^="Tirar"])'
+            );
+            return editor
+              ? (editor.getAttribute("aria-label") ?? "").replace(
+                  ", editar",
+                  ""
+                )
+              : (frame.firstElementChild?.textContent ?? "").trim();
+          })
         )
     )
     .toEqual(pills);
@@ -326,16 +345,138 @@ test("cada pílula pede ao servidor o que o filtro de antes pedia e sai pelo X",
   await expect.poll(lastRead).toContain('"stock":"with_stock"');
   await remover(page, "Saldo").click();
   await expect.poll(lastRead).toContain('"stock":"all"');
-  await addFilter(page, "Custo", "Desconhecido");
-  await expectPills(page, ["Custo: Desconhecido"]);
+  await toggleFilter(page, "Custo desconhecido");
+  await expectPills(page, ["Custo desconhecido"]);
   await expect.poll(lastRead).toContain('"cost":"unknown"');
-  await remover(page, "Custo").click();
+  await remover(page, "Custo desconhecido").click();
   await expect.poll(lastRead).not.toContain('"cost"');
-  await addFilter(page, "Arquivados", "Incluir");
-  await expectPills(page, ["Arquivados: Incluir"]);
+  await toggleFilter(page, "Incluir arquivados");
+  await expectPills(page, ["Arquivados incluídos"]);
   await expect.poll(lastRead).toContain('"productStatus":"all"');
-  await remover(page, "Arquivados").click();
+  await remover(page, "Arquivados incluídos").click();
   await expect.poll(lastRead).toContain('"productStatus":"active"');
+  await expectPills(page, []);
+});
+
+const rowNames = (page: Page) =>
+  page.getByRole("list", { name: "Saldos por variante" }).getByRole("listitem");
+
+test("Custo desconhecido liga em 2 toques e a lista é a que ?filtro=sem-custo produz", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    document.addEventListener(
+      "click",
+      () => {
+        const mark = document.documentElement;
+        mark.dataset.touches = String(Number(mark.dataset.touches ?? "0") + 1);
+      },
+      true
+    );
+  });
+  await openStockLab(page, "claro");
+  await page.evaluate(() => {
+    document.documentElement.dataset.touches = "0";
+  });
+  await toggleFilter(page, "Custo desconhecido");
+  expect(
+    Number(await page.evaluate(() => document.documentElement.dataset.touches)),
+    "abrir Filtrar e tocar o item"
+  ).toBe(2);
+  await expectPills(page, ["Custo desconhecido"]);
+  await expect(rowNames(page)).toHaveCount(1);
+  const viaMenu = await rowNames(page).allInnerTexts();
+  const menuRead = listRequests.at(-1);
+
+  await openStockLab(page, "claro", {
+    count: "1 variante",
+    search: "&filtro=sem-custo",
+  });
+  expect(await rowNames(page).allInnerTexts()).toEqual(viaMenu);
+  expect(listRequests.at(-1)).toBe(menuRead);
+});
+
+test("o item ligado fica marcado, tocar de novo desliga e tira a pílula, e o foco volta ao Filtrar", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  await toggleFilter(page, "Incluir arquivados");
+  await expectPills(page, ["Arquivados incluídos"]);
+  await filterButton(page).click();
+  const menu = page.getByRole("menu", { name: "Filtrar por" });
+  const archived = menu.getByRole("menuitemcheckbox", {
+    name: startsWith("Incluir arquivados"),
+  });
+  await expect(archived).toHaveAttribute("aria-checked", "true");
+  await expect(archived).not.toHaveAttribute("aria-disabled", "true");
+  await expect(
+    menu.getByRole("menuitemcheckbox", {
+      name: startsWith("Custo desconhecido"),
+    })
+  ).toHaveAttribute("aria-checked", "false");
+  await archived.click();
+  await expect(menu).toHaveCount(0);
+  await expectPills(page, []);
+  await expect(filterButton(page)).toBeFocused();
+  await expect
+    .poll(() => listRequests.at(-1) ?? "")
+    .toContain('"productStatus":"active"');
+});
+
+test("a pílula do sim ou não é um texto só: sem botão de editar, o X se chama 'Tirar o filtro <texto>' e Limpar tudo vale", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  await toggleFilter(page, "Custo desconhecido");
+  await toggleFilter(page, "Incluir arquivados");
+  const frames = bar(page).locator('[data-slot="filter-pill"]');
+  await expect(frames).toHaveCount(2);
+  await expect(frames.nth(0).locator("button")).toHaveCount(1);
+  await expect(
+    bar(page).getByRole("button", { name: "Tirar o filtro Custo desconhecido" })
+  ).toBeVisible();
+  await expect(
+    bar(page).getByRole("button", {
+      name: "Tirar o filtro Arquivados incluídos",
+    })
+  ).toBeVisible();
+  await remover(page, "Arquivados incluídos").click();
+  await expectPills(page, ["Custo desconhecido"]);
+  await expect(filterButton(page)).toBeFocused();
+  await toggleFilter(page, "Incluir arquivados");
+  await bar(page).getByRole("button", { name: "Limpar tudo" }).click();
+  await expectPills(page, []);
+  await expect.poll(() => listRequests.at(-1) ?? "").not.toContain('"cost"');
+});
+
+/** Opens "Filtrar" by the keyboard and presses `key` on the item of the switch; the menu then closes and the focus is back on "Filtrar". */
+async function pressSwitch(page: Page, key: string) {
+  await filterButton(page).focus();
+  await page.keyboard.press("Enter");
+  const item = page
+    .getByRole("menu", { name: "Filtrar por" })
+    .getByRole("menuitemcheckbox", { name: startsWith("Custo desconhecido") });
+  await item.focus();
+  await page.keyboard.press(key);
+  await expect(page.getByRole("menu", { name: "Filtrar por" })).toHaveCount(0);
+  await expect(filterButton(page)).toBeFocused();
+}
+
+test("teclado: Enter e Espaço no item ligam e desligam, e o foco volta ao Filtrar", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "o teclado é o do desktop"
+  );
+  await openStockLab(page, "claro");
+  await pressSwitch(page, "Enter");
+  await expectPills(page, ["Custo desconhecido"]);
+  await pressSwitch(page, "Enter");
+  await expectPills(page, []);
+  await pressSwitch(page, "Space");
+  await expectPills(page, ["Custo desconhecido"]);
+  await pressSwitch(page, "Space");
   await expectPills(page, []);
 });
 
@@ -346,8 +487,8 @@ test("a barra se chama 'Filtrar estoque', o botão diz 'Filtrar' e 'Limpar tudo'
   await expect(filterButton(page)).toBeVisible();
   await expect(page.getByText("Limpar tudo")).toHaveCount(0);
   await addFilter(page, "Saldo", "Sem saldo");
-  await addFilter(page, "Arquivados", "Incluir");
-  await expectPills(page, ["Saldo: Sem saldo", "Arquivados: Incluir"]);
+  await toggleFilter(page, "Incluir arquivados");
+  await expectPills(page, ["Saldo: Sem saldo", "Arquivados incluídos"]);
   await bar(page).getByRole("button", { name: "Limpar tudo" }).click();
   await expectPills(page, []);
   await expect(filterButton(page)).toBeFocused();
@@ -362,19 +503,24 @@ test("sem conexão o filtro por custo fica desligado com o motivo 'Só com conex
   await expect(page.getByText("Sem conexão.")).toBeVisible();
   await filterButton(page).click();
   const menu = page.getByRole("menu", { name: "Filtrar por" });
-  const cost = menu.getByRole("menuitem", {
-    name: startsWith("Custo"),
+  const cost = menu.getByRole("menuitemcheckbox", {
+    name: startsWith("Custo desconhecido"),
   });
   await expect(cost).toHaveAttribute("aria-disabled", "true");
+  await expect(cost).toHaveAttribute("aria-checked", "false");
   await expect(cost).toContainText("Só com conexão");
+  await cost.focus();
+  await expect(cost).toBeFocused();
   await cost.click({ force: true });
   await expect(menu).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Custo" })).toHaveCount(0);
+  await expectPills(page, []);
   await expect(
     menu.getByRole("menuitem", { name: startsWith("Saldo") })
   ).not.toHaveAttribute("aria-disabled", "true");
   await expect(
-    menu.getByRole("menuitem", { name: startsWith("Arquivados") })
+    menu.getByRole("menuitemcheckbox", {
+      name: startsWith("Incluir arquivados"),
+    })
   ).not.toHaveAttribute("aria-disabled", "true");
 });
 
@@ -395,14 +541,14 @@ test("?filtro=sem-custo abre a lista só com o que não tem custo, pedida ao ser
     count: "1 variante",
     search: "&filtro=sem-custo",
   });
-  await expectPills(page, ["Custo: Desconhecido"]);
+  await expectPills(page, ["Custo desconhecido"]);
   await expect(page.getByText("Camiseta do teste")).toBeVisible();
   await expect(page.getByText("Calça jeans")).toHaveCount(0);
   // the server filters: the first read already carries it, and the stock filter is left open
   expect(listRequests[0]).toContain('"cost":"unknown"');
   expect(listRequests[0]).toContain('"stock":"all"');
   // turning it off goes back to the plain list
-  await remover(page, "Custo").click();
+  await remover(page, "Custo desconhecido").click();
   await expectPills(page, []);
   await expect(page.getByText("2 variantes")).toBeVisible();
   expect(listRequests.at(-1)).not.toContain('"cost"');
@@ -425,7 +571,7 @@ test("a faixa Precisa de ação conta a loja em duas leituras de 100 e não muda
   await expect(page.getByText("0 variantes", { exact: true })).toBeVisible();
   await expect(strip).toContainText("1 variante sem custo");
   await strip.getByRole("link", { name: "1 variante sem custo" }).click();
-  await expectPills(page, ["Custo: Desconhecido"]);
+  await expectPills(page, ["Custo desconhecido"]);
   expect(attentionRequests).toHaveLength(2);
 });
 
@@ -437,7 +583,7 @@ test("o filtro de custo combina com o filtro de saldo na mesma leitura", async (
     search: "&filtro=sem-custo",
   });
   await addFilter(page, "Saldo", "Sem saldo");
-  await expectPills(page, ["Saldo: Sem saldo", "Custo: Desconhecido"]);
+  await expectPills(page, ["Saldo: Sem saldo", "Custo desconhecido"]);
   await expect
     .poll(() => listRequests.at(-1) ?? "")
     .toContain('"stock":"without_stock"');
@@ -458,10 +604,8 @@ test("sem internet com o filtro de custo ativo: sem contagem e a lista diz que s
   // the lab's own checkbox takes the network away; the screen then works from the device
   await page.getByLabel("Rede disponível").uncheck();
   await expect(page.getByText("Sem conexão.")).toBeVisible();
-  await expect(pill(page, "Custo")).toHaveAttribute(
-    "aria-label",
-    "Custo: Desconhecido"
-  );
+  await expectPills(page, ["Custo desconhecido"]);
+  await expect(pill(page, "Custo desconhecido")).toHaveCount(0);
   await expect(bar(page)).toContainText("Só com conexão");
   await expect(
     page.getByText(
@@ -472,7 +616,7 @@ test("sem internet com o filtro de custo ativo: sem contagem e a lista diz que s
   await expect(page.getByText(COUNT_LINE)).toHaveCount(0);
   await expect(page.getByText("Todas as variantes têm custo.")).toHaveCount(0);
   // with the filter off the device's own list (and its count) is back
-  await remover(page, "Custo").click();
+  await remover(page, "Custo desconhecido").click();
   await expect(page.getByText(COUNT_LINE)).toBeVisible();
 });
 
@@ -616,7 +760,10 @@ for (const width of [360, 320]) {
       )
     ).toBeLessThanOrEqual(8);
     expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(width);
-    const pillBox = await pill(page, "Custo").boundingBox();
+    const pillBox = await bar(page)
+      .locator('[data-slot="filter-pill"]')
+      .first()
+      .boundingBox();
     expect(pillBox?.y ?? 0).toBeGreaterThanOrEqual(
       (button?.y ?? 0) + (button?.height ?? 0)
     );

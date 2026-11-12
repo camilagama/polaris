@@ -320,6 +320,15 @@ gates.push(
     script: "verify-migrations-without-superuser-gate.ts",
     superuser: "only",
   },
+  // lives in apps/web: the Worker's hourly sweep of the activation series (ADR 0106, D5 and D6), with the real billing
+  // store. Before the Workers' gates, like the other gates: its sweeps also record the stores the gates before left, and
+  // it deletes the activation.notice events it wrote, so the dispatcher of web-worker finds none of them
+  {
+    env: salesEnv,
+    localOnly: true,
+    name: "activation-sweep",
+    script: "../../../apps/web/scripts/verify-activation-sweep-gate.ts",
+  },
   // lives in apps/web and apps/catalog: the Web and Catalog Workers through their own handlers in workerd, against the job's Postgres.
   // Local Postgres only, like admin-worker. They are the last gates of the list, which is the order they run in (not the order of a
   // suite): the scheduled jobs of the Web Worker run for real against what the gates before left.
@@ -453,6 +462,7 @@ const suites: Record<string, string[]> = {
     "tenant-context",
     "rls",
     "migrations-without-superuser",
+    "activation-sweep",
     "web-worker",
     "catalog-worker",
   ],

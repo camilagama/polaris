@@ -12,6 +12,7 @@ import {
   removeRule,
   setRule,
   showClearAll,
+  TOGGLE_ON,
   valueText,
   visibleRules,
 } from "@/ui/filter-bar-model";
@@ -41,6 +42,19 @@ const FIELDS: FilterField[] = [
     label: "Produto vendido",
     type: "text",
   },
+  {
+    id: "arquivados",
+    label: "Incluir arquivados",
+    pillText: "Arquivados incluídos",
+    type: "toggle",
+  },
+  {
+    disabledReason: "Só com conexão",
+    id: "custo",
+    label: "Custo desconhecido",
+    pillText: "Custo desconhecido",
+    type: "toggle",
+  },
 ];
 
 const PERIOD: FilterRule = {
@@ -49,6 +63,9 @@ const PERIOD: FilterRule = {
 };
 const PAID: FilterRule = { fieldId: "situacao", value: "paga" };
 const CLIENT: FilterRule = { fieldId: "cliente", value: "Maria Souza" };
+
+const ARCHIVED: FilterRule = { fieldId: "arquivados", value: TOGGLE_ON };
+const COST: FilterRule = { fieldId: "custo", value: TOGGLE_ON };
 
 const noop = () => undefined;
 const SEARCH_NAMED = /<search[^>]*aria-label="Filtrar vendas"/;
@@ -94,6 +111,42 @@ describe("o texto de cada pílula", () => {
         to: "2026-10-02",
       })
     ).toBeUndefined();
+  });
+});
+
+describe("o filtro de sim ou não", () => {
+  const archived = FIELDS[4] as FilterField;
+
+  it("ligado, a pílula é o texto do campo; qualquer outro valor não é filtro", () => {
+    expect(valueText(archived, TOGGLE_ON)).toBe("Arquivados incluídos");
+    expect(valueText(archived, "off")).toBeUndefined();
+    expect(valueText(archived, "")).toBeUndefined();
+    expect(valueText(archived, { from: "2026-10-01", to: "2026-10-24" })).toBe(
+      undefined
+    );
+  });
+
+  it("ligar põe o filtro no fim; desligar (null) tira só ele", () => {
+    const on = setRule(FIELDS, [PAID], "arquivados", TOGGLE_ON);
+    expect(ids(on)).toEqual(["situacao", "arquivados"]);
+    expect(ids(setRule(FIELDS, on, "arquivados", null))).toEqual(["situacao"]);
+  });
+
+  it("ligar de novo não duplica a regra", () => {
+    const twice = setRule(FIELDS, [ARCHIVED], "arquivados", TOGGLE_ON);
+    expect(twice).toEqual([ARCHIVED]);
+  });
+
+  it("a barra mostra o texto sem o par campo-valor, na ordem das regras", () => {
+    const shown = visibleRules(FIELDS, [ARCHIVED, PAID]);
+    expect(shown.map((entry) => entry.text)).toEqual([
+      "Arquivados incluídos",
+      "Paga",
+    ]);
+  });
+
+  it("o X se chama 'Tirar o filtro' e o texto da pílula, não o nome do item do menu", () => {
+    expect(removeLabel(archived)).toBe("Tirar o filtro Arquivados incluídos");
   });
 });
 
@@ -303,6 +356,25 @@ describe("a barra, na primeira pintura", () => {
     const edit = tagWith(html([CLIENT]), "Cliente: Maria Souza, editar");
     expect(attribute(edit, "aria-disabled")).toBeUndefined();
     expect(attribute(edit, "aria-haspopup")).toBe("dialog");
+  });
+
+  it("o filtro de sim ou não é um texto só: sem botão de editar, e só o X é controle", () => {
+    const markup = html([ARCHIVED]);
+    expect(markup).toContain("Arquivados incluídos");
+    expect(markup).toContain(
+      'aria-label="Tirar o filtro Arquivados incluídos"'
+    );
+    expect(markup).not.toContain("editar");
+    expect(markup).not.toContain('aria-haspopup="dialog"');
+    expect(markup.match(/<button/g)?.length).toBe(2);
+  });
+
+  it("o filtro de sim ou não de um campo que precisa de conexão diz o motivo na pílula e o X continua", () => {
+    const markup = html([COST]);
+    expect(markup).toContain("Custo desconhecido");
+    expect(markup).toContain("Só com conexão");
+    expect(markup).toContain('aria-label="Tirar o filtro Custo desconhecido"');
+    expect(markup).not.toContain("editar");
   });
 
   it("um filtro de campo que saiu da lista, ou com valor que não serve, não vira pílula", () => {

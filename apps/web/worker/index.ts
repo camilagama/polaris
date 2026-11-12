@@ -24,6 +24,10 @@ import {
   reconcileStagedMedia,
 } from "../src/server/media-reconciler";
 import {
+  type ActivationSweepBindings,
+  runActivationSweep,
+} from "../src/server/billing/activation-sweep";
+import {
   runBillingMaintenance,
   runRefundSafetyNet,
   runUnclaimedTrialSettlement,
@@ -161,10 +165,13 @@ async function runMediaMaintenance(env: WorkerBindings): Promise<JobResult> {
  * causes, asks again for the renewal cancellations still owed, cancels the renewal
  * a refund or a chargeback left alive (and flags the owner's refunds still
  * pending, ADR 0104), reads Woovi's
- * subscriptions again (the reconciliation), settles the trials no reservation paid for (ADR 0101), and
+ * subscriptions again (the reconciliation), settles the trials no reservation paid for (ADR 0101), records the
+ * tips of the activation series owed (ADR 0106; with its switch off, only clears the instant it was seen on), and
  * last hands over the billing notices the queue left owed (ADR 0104).
  */
-async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
+async function runBillingJobs(
+  env: WorkerBindings & ActivationSweepBindings
+): Promise<JobResult> {
   const connectionString = env.BILLING_HYPERDRIVE?.connectionString;
   if (!connectionString) {
     // billing is not provisioned in this environment yet: nothing to do
@@ -221,6 +228,12 @@ async function runBillingJobs(env: WorkerBindings): Promise<JobResult> {
     if (settled) {
       logger.info("billing_unclaimed_trials_complete", { ...settled });
     }
+  } catch (error: unknown) {
+    failures.push(error);
+  }
+  try {
+    // it only records (the consumer of activation.notice sends), so it goes before the handover, the costly job
+    await runActivationSweep(env, store);
   } catch (error: unknown) {
     failures.push(error);
   }

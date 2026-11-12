@@ -1707,6 +1707,49 @@ test.describe("Vendas × custos por dia: só o gráfico, com a ressalva dita uma
     ).toBeLessThanOrEqual(0);
   });
 
+  for (const [width, rootFontSize] of [
+    [360, 16],
+    [320, 20],
+  ] as const) {
+    test(`a ${width} px com letra de ${rootFontSize} px, a legenda da tabela empilhada ocupa a largura do cartão e não quebra uma palavra por linha`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ height: 740, width });
+      await page.route("**/assets/charts-*.js", (route) => route.abort());
+      await openDashboard(page, new FakeReportServer());
+      await page.addStyleTag({
+        content: `html { font-size: ${rootFontSize}px; }`,
+      });
+      const region = chartRegion(page);
+      const caption = region.locator("[data-chart-data-table] caption");
+      await expect(caption).toBeVisible();
+      await expect(region.locator("[data-chart-data-table] table")).toHaveCSS(
+        "display",
+        "block"
+      );
+      const measured = await region.evaluate((element) => {
+        const box = element.querySelector("[data-chart-data-table]");
+        const text = element.querySelector("[data-chart-data-table] caption");
+        if (!(box instanceof HTMLElement && text instanceof HTMLElement)) {
+          throw new Error("a tabela ou a legenda não está na região");
+        }
+        const style = getComputedStyle(text);
+        const lineHeight = Number.parseFloat(style.lineHeight);
+        const paddingBottom = Number.parseFloat(style.paddingBottom);
+        return {
+          boxWidth: box.getBoundingClientRect().width,
+          captionWidth: text.getBoundingClientRect().width,
+          lines:
+            (text.getBoundingClientRect().height - paddingBottom) / lineHeight,
+        };
+      });
+      expect(measured.lines).toBeLessThanOrEqual(2.01);
+      expect(measured.captionWidth).toBeGreaterThanOrEqual(
+        measured.boxWidth - 1
+      );
+    });
+  }
+
   test("com o gráfico aberto, as duas frases do estado de falha não aparecem", async ({
     page,
   }) => {
