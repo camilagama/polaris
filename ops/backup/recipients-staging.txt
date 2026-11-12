@@ -1,6 +1,8 @@
 # Public age key of the staging backup (ADR 0099, docs/runbooks/backup.md).
-# One recipient per line (age1...), from `age-keygen -y` of the identity its holder generated offline.
-# The private key never enters the repository, GitHub, R2 or an agent's machine.
+# One recipient per line (age1...), from `age-keygen -y` of the identity its holder generated.
+# The private key never enters the repository, GitHub or R2. Owner decision of 2026-11-12: it is kept in the
+# OpenBot server vault (mode 0400, outside the repository), not offline; ADR 0099 records the change.
 # Changing this file goes through a reviewed pull request, and the Environment variable
 # BACKUP_RECIPIENTS_SHA256 (sha256sum of this file) changes with it: the job refuses a file that does not match.
 # Without a key line the job refuses to seal, so the backup stays off until the holder's key is added here.
+age1s7zgpklwq8gkcphyg5vw2l0ut0ugtfvydnlwx5xpjc7vzqse5vkslz2084
