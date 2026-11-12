@@ -24,6 +24,7 @@ import {
   ProductThumbnail,
   useThumbnailSequence,
 } from "../catalog/product-thumbnail";
+import { stockProductLinks } from "../catalog/products-link-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
@@ -42,7 +43,6 @@ import {
   stockCoverIds,
   stockListView,
   stockMoreView,
-  stockProductLinks,
 } from "./stock-list-model";
 import { RowActions, triggerId } from "./stock-row-actions";
 import { type StockTarget, stockTarget } from "./stock-target";

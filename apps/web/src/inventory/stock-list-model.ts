@@ -3,8 +3,7 @@ import type {
   InventoryBalanceReadModel,
   PolarisRpcClient,
 } from "@polaris/contracts";
-import { hasCapabilityForRole } from "@polaris/domain/authorization/capabilities";
-import { productHref } from "../catalog/products-link-model";
+import { productHref, STOCK_QUERY_MAX } from "../catalog/products-link-model";
 import { formatQuantity } from "../lib/format";
 import { readErrorMessage } from "../lib/rpc-error";
 import { canInformCost, type StockAction } from "./stock-command-model";
@@ -33,23 +32,6 @@ export interface StockFilters {
   unknownCost: boolean;
 }
 
-/**
- * The two links between the screens, each only for who can read what it leads to: the name of a row of the stock opens the
- * product (`catalog:read`), and "Ver estoque" of a product opens the stock (`inventory:read`).
- */
-export function stockProductLinks(role: string): {
-  toProduct: boolean;
-  toStock: boolean;
-} {
-  return {
-    toProduct: hasCapabilityForRole(role, "catalog:read"),
-    toStock: hasCapabilityForRole(role, "inventory:read"),
-  };
-}
-
-/** The most the server takes in a search. */
-const STOCK_QUERY_MAX = 100;
-
 export const defaultStockFilters: StockFilters = {
   includeArchived: false,
   query: "",
@@ -72,34 +54,6 @@ export function readStockLinkFilters(
     default:
       return { stock: "all", unknownCost: false };
   }
-}
-
-/**
- * `/inventory?busca=<nome>`: what "Ver estoque" of a product asks. The search box opens with the name, so the person
- * sees the filter and can clear it; `arquivados=1` is added for an archived product, which the list leaves out by
- * default. The name is cut to what the search takes.
- */
-export function stockProductHref(
-  productName: string,
-  archived: boolean
-): string {
-  const query = new URLSearchParams({
-    busca: productName.trim().slice(0, STOCK_QUERY_MAX),
-  });
-  if (archived) {
-    query.set("arquivados", "1");
-  }
-  return `/inventory?${query.toString()}`;
-}
-
-/** "Ver estoque" of a product that exists: its link, or null when the role cannot read the stock. */
-export function productStockHref(
-  product: { name: string; status: string } | null,
-  role: string
-): string | null {
-  return product && stockProductLinks(role).toStock
-    ? stockProductHref(product.name, product.status === "archived")
-    : null;
 }
 
 /** The search and the archived switch a link from a product carries; a search is never taken from anywhere else. */

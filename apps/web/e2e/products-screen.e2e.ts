@@ -373,7 +373,14 @@ test("?produto=<uuid>&variante=<uuid>: o campo de SKU da variante recebe o foco,
   );
   await page.getByLabel("Usuário").fill(`user-${crypto.randomUUID()}`);
   await page.getByRole("button", { exact: true, name: "Iniciar" }).click();
+  await expect(page.getByTestId("message")).toContainText(
+    "Iniciar: ok (ready)",
+    { timeout: 20_000 }
+  );
   await expect(page.getByRole("tab", { name: "Variantes" })).toBeFocused();
+  await expect(
+    page.locator(`#product-variant-sku-${id(31)}`)
+  ).not.toBeFocused();
 });
 
 test("?produto=<uuid> que não está na cópia do aparelho diz o mesmo texto e não abre o produto", async ({

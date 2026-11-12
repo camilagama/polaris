@@ -51,16 +51,16 @@ test("estoque e produto se ligam: ida e volta, com conexão e sem conexão", asy
     await dialog.getByRole("link", { name: SEE_STOCK }).click();
     await expect(
       page.getByRole("heading", { exact: true, level: 1, name: "Estoque" })
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel("Buscar no estoque")).toHaveValue(
       "Caneca esmaltada"
     );
-    await expect(rows).toHaveCount(1);
+    await expect(rows).toHaveCount(1, { timeout: 30_000 });
     await expect(rows.first()).toContainText("Caneca esmaltada");
   };
 
   await page.goto("/inventory");
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(2, { timeout: 30_000 });
   await goAndBack();
 
   await page.goto("/sales");

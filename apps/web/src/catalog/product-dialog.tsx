@@ -3,6 +3,7 @@ import CircleAlertIcon from "lucide-react/dist/esm/icons/circle-alert";
 import CloudOffIcon from "lucide-react/dist/esm/icons/cloud-off";
 import {
   type FormEvent,
+  type MouseEvent,
   type ReactNode,
   type Ref,
   useCallback,
@@ -24,8 +25,12 @@ import {
 } from "@/ui/dialog";
 import { FORM_ELEMENT_CLASS, FORM_NOTICE_CLASS } from "@/ui/dialog-layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
+import { dialogEntries } from "@/ui/dialog-history";
+import { navigateInApp } from "../app-shell/address";
 import { tryConnectionNow } from "../lib/browser-connection";
 import { focusLater } from "../lib/focus";
+import { leaveForReturn } from "../lib/kept-for-return";
+import { isPlainClick } from "../subscription/limit-help";
 import { UnsentWorkScope, useUnsentWorkScope } from "../lib/unsent-work";
 import {
   PRODUCT_FORM_ID,
@@ -188,8 +193,8 @@ export function dialogTexts(
 
 interface ProductTabsProps {
   dataInvalid: boolean;
-  /** The form of the data, drawn in the first tab. */
   focusVariantId: string | null;
+  /** The form of the data, drawn in the first tab. */
   form: ReactNode;
   onProductUpdated: (product: ProductReadModel) => void;
   onTabChange: (tab: ProductTab) => void;
@@ -292,7 +297,10 @@ function ProductTabs({
 type BodyProps = Omit<
   ProductDialogProps,
   "finalFocus" | "onClosed" | "onDismiss" | "open"
->;
+> & {
+  /** What the dialog does before "Ver estoque" leaves the screen: it closes and keeps what was typed, as Esc does. */
+  onLeave: () => void;
+};
 
 /**
  * What the open dialog holds: its own state (the errors shown, the tabs seen) starts again at each opening, because
@@ -311,6 +319,7 @@ function ProductDialogBody({
   notice,
   onCancel,
   onChange,
+  onLeave,
   onProductUpdated,
   onSubmit,
   onTabChange,
@@ -429,12 +438,7 @@ function ProductDialogBody({
         ) : null}
         <DialogFooter>
           {stockHref === null ? null : (
-            <a
-              className={cn(buttonVariants({ variant: "link" }), "md:mr-auto")}
-              href={stockHref}
-            >
-              Ver estoque
-            </a>
+            <SeeStockLink href={stockHref} onLeave={onLeave} />
           )}
           <Button
             disabled={isPending}
@@ -456,6 +460,52 @@ function ProductDialogBody({
         </DialogFooter>
       </div>
     </>
+  );
+}
+
+/**
+ * "Ver estoque": the dialog closes and keeps what was typed (as Esc does) and the Estoque opens with no load of the
+ * page, so the draft is still there when the person comes back and the link works without a connection. A click that
+ * asks for a new tab or window keeps the browser's own way.
+ */
+function SeeStockLink({
+  href,
+  onLeave,
+}: {
+  href: string;
+  onLeave: () => void;
+}) {
+  const going = useRef<boolean>(false);
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if (!isPlainClick(event)) {
+        return;
+      }
+      event.preventDefault();
+      if (going.current) {
+        return;
+      }
+      going.current = true;
+      onLeave();
+      // after the render that closed the dialog, and after the step back that takes its entry out of the history
+      window.setTimeout(() => {
+        dialogEntries().afterSteps(() => {
+          leaveForReturn();
+          navigateInApp(href);
+          going.current = false;
+        });
+      }, 0);
+    },
+    [href, onLeave]
+  );
+  return (
+    <a
+      className={cn(buttonVariants({ variant: "link" }), "md:mr-auto")}
+      href={href}
+      onClick={handleClick}
+    >
+      Ver estoque
+    </a>
   );
 }
 
@@ -513,7 +563,7 @@ export function ProductDialog({
         initialFocus={firstFocus(product ? tab : "dados")}
         layout="form"
       >
-        <ProductDialogBody {...body} />
+        <ProductDialogBody {...body} onLeave={onDismiss} />
       </DialogContent>
     </Dialog>
   );

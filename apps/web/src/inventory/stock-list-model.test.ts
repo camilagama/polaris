@@ -1,6 +1,11 @@
 import type { InventoryBalanceEntryReadModel } from "@polaris/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  productStockHref,
+  stockProductHref,
+  stockProductLinks,
+} from "../catalog/products-link-model";
+import {
   canLoadMoreStock,
   defaultStockFilters,
   initialStockListState,
@@ -22,8 +27,6 @@ import {
   stockMoreView,
   readStockLinkFilters,
   readStockLinkSearch,
-  stockProductHref,
-  stockProductLinks,
   stockRowActions,
   stockRows,
   type VariantCount,
@@ -182,6 +185,16 @@ describe("the link between the stock and the product", () => {
         toStock: false,
       });
     }
+  });
+
+  it('gives "Ver estoque" to a product that exists and to a role that can read the stock, with the archived switch for an archived one', () => {
+    const active = { name: "Camiseta", status: "active" };
+    expect(productStockHref(active, "owner")).toBe("/inventory?busca=Camiseta");
+    expect(productStockHref({ ...active, status: "archived" }, "owner")).toBe(
+      "/inventory?busca=Camiseta&arquivados=1"
+    );
+    expect(productStockHref(active, "visitante")).toBeNull();
+    expect(productStockHref(null, "owner")).toBeNull();
   });
 
   it("reads the search back as typed, cut to what the server takes, and nothing else", () => {

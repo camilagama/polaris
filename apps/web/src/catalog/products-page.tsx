@@ -41,7 +41,10 @@ import { ProductList, type ProductListStatus } from "./product-list";
 import { validateOpening } from "./product-opening-model";
 import { filterByName } from "./product-search-model";
 import type { VariantConfigurationDraft } from "./product-variants-model";
-import type { ProductLinkFailure } from "./products-link-model";
+import {
+  type ProductLinkFailure,
+  productStockHref,
+} from "./products-link-model";
 import {
   ActionFeedback,
   LoadErrorNotice,
@@ -61,7 +64,6 @@ import {
   useListPage,
 } from "./screen-parts";
 import { useProductsData } from "./use-products-data";
-import { productStockHref } from "../inventory/stock-list-model";
 import { useProductsLink } from "./use-products-link";
 
 /** The data of a product as the form shows it, to edit or to compare with what was typed. */
