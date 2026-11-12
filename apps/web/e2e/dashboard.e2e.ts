@@ -1951,9 +1951,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
 
     await day("2026-10-14").focus();
     await page.keyboard.press("Enter");
-    await expect(panel).toContainText(
-      "Início 14/10. Escolha o último dia."
-    );
+    await expect(panel).toContainText("Início 14/10. Escolha o último dia.");
 
     // a year back by the keys: the last day the limit allows
     await page.keyboard.press("Shift+PageUp");
@@ -1975,9 +1973,7 @@ test.describe("os períodos (AC-1 a AC-3)", () => {
     await page.keyboard.press("Space");
     await expect(panel).toBeVisible();
     await expect(beyond).toBeFocused();
-    await expect(panel).toContainText(
-      "Início 14/10. Escolha o último dia."
-    );
+    await expect(panel).toContainText("Início 14/10. Escolha o último dia.");
     await expect(periodButton(page)).toHaveAccessibleName(
       "Período: 01/10 a 31/10, editar"
     );
