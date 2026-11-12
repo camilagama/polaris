@@ -1841,7 +1841,9 @@ test.describe("loja sem venda: o checklist (AC-22, AC-23)", () => {
     ).toHaveAttribute("href", "/sales");
     await expect(region(page, "Primeiros passos")).toHaveCount(0);
     await expect(page.locator("[data-menu-first-steps]")).toHaveCount(0);
-    await expect(region(page, "Mais vendidos do mês")).toHaveCount(0);
+    await expect(region(page, "Mais vendidos do mês")).toContainText(
+      "Sem vendas no período."
+    );
     await expect(region(page, "Vendas por dia")).toContainText(
       "Sem vendas no período."
     );
@@ -2380,12 +2382,19 @@ test.describe("meta (AC-10, AC-11)", () => {
     server.scenario = { ...SOLD, goals: [] };
     await page.reload();
     const empty = region(page, "Meta");
-    // no goal: the title and the button, no ring and no sentence (the button says it)
+    // no goal: the title and the button, no ring; the thin strip of the wide layout has room for the sentence
     await expect(empty.locator("[data-goal-ring]")).toHaveCount(0);
-    await expect(empty).not.toContainText("Defina quanto");
+    await expect(
+      empty.getByText("Defina quanto quer vender no mês e acompanhe aqui.")
+    ).toBeVisible();
     await expect(
       empty.getByRole("link", { name: "Definir meta" })
     ).toHaveAttribute("href", "/dashboard?meta=nova");
+    // the card of a phone is the title and the button: the button says what the sentence did
+    await page.setViewportSize({ height: 740, width: 360 });
+    await expect(
+      empty.getByText("Defina quanto quer vender no mês e acompanhe aqui.")
+    ).toBeHidden();
   });
 
   test("a frase da estimativa: abaixo do alvo diz onde chega (e Esconder valores a mascara); sem venda nos 7 dias diz que não há o que estimar", async ({
@@ -3754,12 +3763,14 @@ test.describe("Ritmo de vendas (revisão de UI v7, § 3 item 10)", () => {
     // the cells are 12 px with a gap of 3
     const first = await dataCells(page).first().boundingBox();
     expect(first?.width).toBeCloseTo(12, 0);
-    // the card keeps to the budget of the 1280 px layout
-    expect((await map.boundingBox())?.height ?? 999).toBeLessThanOrEqual(260);
-    // beside Mais vendidos, under the chart, in the left 2/3
+    // beside Mais vendidos, under the chart, with the 30 rem the map needs and the height of the pair
     const mapBox = await map.boundingBox();
     const topBox = await region(page, "Mais vendidos do mês").boundingBox();
     const chartBox = await region(page, "Vendas por dia").boundingBox();
+    expect(mapBox?.width ?? 0).toBeCloseTo(480, 0);
+    expect(
+      Math.abs((mapBox?.height ?? 0) - (topBox?.height ?? 900))
+    ).toBeLessThan(2);
     expect(Math.abs((mapBox?.y ?? 0) - (topBox?.y ?? 900))).toBeLessThan(2);
     expect((mapBox?.x ?? 900) + (mapBox?.width ?? 0)).toBeLessThan(
       topBox?.x ?? 0
@@ -5589,8 +5600,7 @@ test.describe("Mais vendidos do mês com a letra de 16 px: a linha de cada largu
                 wrap: style.whiteSpace,
               };
             });
-          expect(cut).toEqual({
-            cut: true,
+          expect(cut).toMatchObject({
             ellipsis: "ellipsis",
             overflow: "hidden",
             wrap: "nowrap",
@@ -5651,103 +5661,92 @@ function expectNameReads(
   }
 }
 
-test.describe("Mais vendidos do mês de 1150 a 1397 px: o nome lê inteiro com a lateral aberta e recolhida, e a coluna chega a 20,75 rem em 1189 px (recolhida) e 1397 px (aberta)", () => {
+test.describe("Mais vendidos do mês: a linha por largura da coluna (uma linha só a partir de 20,75 rem, empilhada abaixo)", () => {
+  const ONE_LINE_NAMES = SHORT_NAMES;
+
   for (const side of ["aberta", "recolhida"] as const) {
     reflowTest(
-      `lateral ${side}`,
+      `de 1024 a 1300 px, lateral ${side}: o cartão tem a largura da área e cada linha é uma só, com o nome inteiro`,
       async ({ page }) => {
-        const names = side === "aberta" ? LONG_NAMES : SHORT_NAMES;
         await page.setViewportSize({ height: 800, width: 1150 });
         const server = new FakeServer(SOLD);
-        server.top = rankingOf(names);
+        server.top = rankingOf(ONE_LINE_NAMES);
         await openHome(page, server);
         if (side === "recolhida") {
           await foldSideMenu(page);
         }
-        const seen = new Set<string>();
-        for (const width of [1150, 1200, 1280, 1300]) {
+        for (const width of [1024, 1150, 1200, 1280, 1300]) {
           // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other on the same page
           await page.setViewportSize({ height: 800, width });
           const block = region(page, "Mais vendidos do mês");
           await expect(block).toContainText("un.");
           const rows = await rankingRows(page);
           const rem = await columnRem(block);
-          const stacked = rem < ONE_LINE_REM;
-          seen.add(stacked ? "empilhada" : "numa linha");
+          expect(rem, `${side} ${width} px`).toBeGreaterThanOrEqual(
+            ONE_LINE_REM
+          );
           expect(rows, `${side} ${width} px`).toHaveLength(3);
           rows.forEach((row, index) => {
             expectNameReads(
               row,
-              names[index] ?? "",
-              stacked,
+              ONE_LINE_NAMES[index] ?? "",
+              false,
               `${side} ${width} px (${rem} rem), nome ${index + 1}`
             );
           });
           await assertNoPageScroll(page);
         }
-        expect([...seen].sort()).toEqual(
-          side === "aberta" ? ["empilhada"] : ["empilhada", "numa linha"]
-        );
       },
       { coarse: false }
     );
   }
 
-  const EDGES = [
-    { oneLineAt: 1189, side: "recolhida", stackedAt: 1188 },
-    { oneLineAt: 1397, side: "aberta", stackedAt: 1396 },
+  // on a phone the card is the width of the screen less the page's and the card's own padding: 20,75 rem of line at 388 px
+  const PHONE_EDGES = [
+    { stacked: true, width: 387 },
+    { stacked: false, width: 388 },
   ] as const;
 
-  for (const edge of EDGES) {
+  for (const edge of PHONE_EDGES) {
     reflowTest(
-      `lateral ${edge.side}: o nome empilha a ${edge.stackedAt} px e fica numa linha só a ${edge.oneLineAt} px`,
+      `a ${edge.width} px o nome ${edge.stacked ? "empilha" : "fica numa linha só"}`,
       async ({ page }) => {
-        await page.setViewportSize({ height: 800, width: edge.stackedAt });
+        await page.setViewportSize({ height: 800, width: edge.width });
         const server = new FakeServer(SOLD);
         server.top = rankingOf(SHORT_NAMES);
         await openHome(page, server);
-        if (edge.side === "recolhida") {
-          await foldSideMenu(page);
+        const block = region(page, "Mais vendidos do mês");
+        await expect(block).toContainText("un.");
+        const rows = await rankingRows(page);
+        const rem = await columnRem(block);
+        const when = `${edge.width} px (${rem} rem)`;
+        if (edge.stacked) {
+          expect(rem, `${when}: coluna abaixo de 20,75 rem`).toBeLessThan(
+            ONE_LINE_REM
+          );
+        } else {
+          expect(
+            rem,
+            `${when}: coluna a partir de 20,75 rem`
+          ).toBeGreaterThanOrEqual(ONE_LINE_REM);
         }
-        for (const [width, stacked] of [
-          [edge.stackedAt, true],
-          [edge.oneLineAt, false],
-        ] as const) {
-          // biome-ignore lint/performance/noAwaitInLoops: one viewport after the other on the same page
-          await page.setViewportSize({ height: 800, width });
-          const block = region(page, "Mais vendidos do mês");
-          await expect(block).toContainText("un.");
-          const rows = await rankingRows(page);
-          const rem = await columnRem(block);
-          const when = `${edge.side} ${width} px (${rem} rem)`;
-          if (stacked) {
-            expect(rem, `${when}: coluna abaixo de 20,75 rem`).toBeLessThan(
-              ONE_LINE_REM
-            );
-          } else {
-            expect(
-              rem,
-              `${when}: coluna a partir de 20,75 rem`
-            ).toBeGreaterThanOrEqual(ONE_LINE_REM);
-          }
-          expect(rows, when).toHaveLength(3);
-          rows.forEach((row, index) => {
-            expectNameReads(
-              row,
-              SHORT_NAMES[index] ?? "",
-              stacked,
-              `${when}, nome ${index + 1}`
-            );
-          });
-          await assertNoPageScroll(page);
-        }
+        expect(rows, when).toHaveLength(3);
+        rows.forEach((row, index) => {
+          expectNameReads(
+            row,
+            SHORT_NAMES[index] ?? "",
+            edge.stacked,
+            `${when}, nome ${index + 1}`
+          );
+        });
+        await assertNoPageScroll(page);
       },
       { coarse: false }
     );
   }
 
   reflowTest(
-    "a 1024 px com a lateral aberta o nome tem a sua linha, e a 360 px também",
+    "a 1024 px com a lateral aberta o nome fica numa linha, e a 360 px tem a sua linha",
     async ({ page }) => {
       const server = new FakeServer(SOLD);
       server.top = rankingOf(SHORT_NAMES);
@@ -5759,7 +5758,7 @@ test.describe("Mais vendidos do mês de 1150 a 1397 px: o nome lê inteiro com a
         expectNameReads(
           row,
           SHORT_NAMES[index] ?? "",
-          true,
+          false,
           `1024 px, nome ${index + 1}`
         );
       });

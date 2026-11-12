@@ -198,7 +198,11 @@ function balances(input: Record<string, unknown>) {
 export function answer(
   asked: string,
   input: Record<string, unknown>,
-  { failing, fresh }: { failing: boolean; fresh: boolean }
+  {
+    failing,
+    fresh,
+    noGoal,
+  }: { failing: boolean; fresh: boolean; noGoal: boolean }
 ) {
   if (asked === "report/periodSummary") {
     return failing
@@ -218,7 +222,7 @@ export function answer(
     );
   }
   if (asked === "goal/list") {
-    return rpc({ goals: fresh ? [] : [GOAL] });
+    return rpc({ goals: fresh || noGoal ? [] : [GOAL] });
   }
   if (asked === "inventory/listBalances") {
     return rpc(fresh ? { entries: [], nextCursor: null } : balances(input));
@@ -231,6 +235,8 @@ interface HomeServed {
   failing?: boolean;
   /** A store that never sold and has no product: the checklist. */
   fresh?: boolean;
+  /** A store with sales and no goal: the thin strip of the Meta. */
+  noGoal?: boolean;
   signedIn?: boolean;
 }
 
@@ -240,7 +246,12 @@ interface HomeServed {
  */
 export async function serveHome(
   page: Page,
-  { failing = false, fresh = false, signedIn = false }: HomeServed = {}
+  {
+    failing = false,
+    fresh = false,
+    noGoal = false,
+    signedIn = false,
+  }: HomeServed = {}
 ) {
   // without a marked answer of /health the tab is offline: the Início reads nothing and shows its copy, if any
   await serveHealth(page);
@@ -273,7 +284,7 @@ export async function serveHome(
           new URL(route.request().url()).pathname.replace(RPC_PREFIX, ""),
           (route.request().postDataJSON() as { json?: Record<string, unknown> })
             .json ?? {},
-          { failing, fresh }
+          { failing, fresh, noGoal }
         )
       )
     );
@@ -462,19 +473,24 @@ export const homeStates = {
       opened.getByRole("link", { name: "Importar planilha" }).waitFor()
     ),
   /** A store with sales: every block, with the chart and the map drawn (not the boxes that hold their places). */
-  sold: (page: Page) =>
-    openHome(page, {}, async (opened) => {
-      await opened
-        .getByRole("region", { name: "Vendas por dia" })
-        .getByRole("img")
-        .waitFor();
-      await opened
-        .getByRole("region", { name: "Ritmo de vendas" })
-        .locator("[data-heatmap] svg")
-        .waitFor();
-      await opened
-        .locator("[data-chart-loading]")
-        .first()
-        .waitFor({ state: "detached" });
-    }),
+  sold: (page: Page) => openSold(page, {}),
+  /** The same store with no goal: the thin strip of the Meta over the chart. */
+  soldNoGoal: (page: Page) => openSold(page, { noGoal: true }),
 };
+
+function openSold(page: Page, served: HomeServed) {
+  return openHome(page, served, async (opened) => {
+    await opened
+      .getByRole("region", { name: "Vendas por dia" })
+      .getByRole("img")
+      .waitFor();
+    await opened
+      .getByRole("region", { name: "Ritmo de vendas" })
+      .locator("[data-heatmap] svg")
+      .waitFor();
+    await opened
+      .locator("[data-chart-loading]")
+      .first()
+      .waitFor({ state: "detached" });
+  });
+}
