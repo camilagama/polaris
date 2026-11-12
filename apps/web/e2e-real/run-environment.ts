@@ -195,6 +195,17 @@ function offlineRuntimeSecrets(run: RunEnvironment): Record<string, string> {
 }
 
 /**
+ * The key of the links that stop the tips e-mails, made from the run's secret like the offline ones, in every
+ * preview: without it the page answers 503. A journey makes a valid link from the same derivation
+ * (`unsubscribeTokenSecretOf`).
+ */
+export function unsubscribeTokenSecretOf(runSecret: string): string {
+  return createHash("sha256")
+    .update(`UNSUBSCRIBE_TOKEN_SECRET:${runSecret}`)
+    .digest("hex");
+}
+
+/**
  * The closed environment of a preview (as the Gate 2 harness does): the inherited basics, the run's secret, the
  * seven connection strings and the switch of the offline runtime. No `CLOUDFLARE_ENV`: the build and the preview
  * use the top level of wrangler.jsonc, the local one.
@@ -220,6 +231,7 @@ export function previewEnvironment(
     // the reports of errors of the browser, on in the build and in the Worker: a journey checks the line they make
     CLIENT_ERRORS_ENABLED: "1",
     LEGAL_DRAFT_BUILD: "1",
+    UNSUBSCRIBE_TOKEN_SECRET: unsubscribeTokenSecretOf(run.secret),
     VITE_CLIENT_ERRORS_ENABLED: "true",
     VITE_CONFIG_NATIVE_IGNORE_WARNING: "true",
     VITE_OFFLINE_RUNTIME_ENABLED: offlineRuntime ? "true" : "false",

@@ -25,6 +25,7 @@ O plano (Fase 12, PR120) pede CSP e headers centralizados, com testes automatiza
   | `api` | respostas do Worker do apps/web (`/health`, `/ready`, `/rpc/*`, `/api/*`) e o que o catálogo serve que não é página | nada (`default-src 'none'`) |
   | `admin` | o Worker do Admin | nada; sem referrer |
   | `public-document` | HTML do catálogo público | `'self'` e os scripts inline que levam o nonce da resposta |
+  | `form-document` | a página do Worker do apps/web que para os e-mails "Dicas para começar" (`/api/parar-dicas`, [ADR 0106](0106-avisos-de-ativacao-e-medida-de-comportamento.md), D8), sem sessão | só o bloco `<style>` da página pelo hash (`style-src 'sha256-…'`) e o formulário de volta à página (`form-action 'self'`); nenhum script, imagem, fonte ou conexão; sem referrer (o token vai na URL) e `no-store` |
   | `public-media` | bytes de imagem do catálogo | nada, `sandbox`; embutível por qualquer origem |
 
 - **Em todo perfil**: `Strict-Transport-Security: max-age=31536000; includeSubDomains` (sem `preload`, que é um compromisso do domínio e não do código da aplicação), `X-Content-Type-Options: nosniff`, `Permissions-Policy` que nega câmera, microfone, geolocalização, pagamento e USB, `Referrer-Policy` (`strict-origin-when-cross-origin`; `no-referrer` no Admin), `X-Permitted-Cross-Domain-Policies: none` e `frame-ancestors 'none'`. Fora `public-media`: `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin` e `Cross-Origin-Resource-Policy: same-origin`. A imagem pública é `cross-origin` de propósito (o link de uma loja compartilhado num chat mostra a foto) e inerte como documento (`sandbox`).
@@ -39,7 +40,7 @@ O plano (Fase 12, PR120) pede CSP e headers centralizados, com testes automatiza
 - **`script-src 'wasm-unsafe-eval'` no shell**: o armazenamento offline é SQLite compilado para WebAssembly. A palavra-chave só permite compilar WebAssembly; `eval` de JavaScript segue bloqueado.
 - **`connect-src data:` no shell**: a biblioteca embute o módulo WASM como URL `data:`, que só lê bytes já presentes na página e não alcança a rede. Provado em navegador por `e2e/offline-csp.e2e.ts` (a CSP do `_headers` aplicada ao laboratório offline).
 - **`img-src blob: data:` no shell**: pré-visualização e recorte de imagem antes do envio.
-- **Sem `style-src 'unsafe-inline'` em lugar nenhum**: o build emite CSS externo e o React aplica `style` pelo CSSOM, que a CSP não bloqueia. Se uma biblioteca futura precisar de `<style>` inline, a saída é um nonce ou hash, não `'unsafe-inline'`.
+- **Sem `style-src 'unsafe-inline'` em lugar nenhum**: o build emite CSS externo e o React aplica `style` pelo CSSOM, que a CSP não bloqueia. Se uma biblioteca futura precisar de `<style>` inline, a saída é um nonce ou hash, não `'unsafe-inline'`. É o que faz o perfil `form-document`: a página sem script não tem o CSS do build (cujo nome muda a cada build e cujo tema escuro depende da classe `.dark` que um script põe), então leva um bloco de estilo fixo, com os tokens gerados de `theme.css`, autorizado pelo seu hash.
 
 ## Consequências
 

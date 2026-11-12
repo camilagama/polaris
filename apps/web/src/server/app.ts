@@ -46,6 +46,10 @@ import { createMediaRoutes } from "./routes/media";
 import { systemRoutes } from "./routes/system";
 import { logLimitRefusal } from "./rpc/limit-refusal-log";
 import { rpcRouter as defaultRpcRouter } from "./rpc/router";
+import {
+  createTipsStopRoutes,
+  type TipsStopRoutesOptions,
+} from "./tips-stop/tips-stop-routes";
 
 type BackgroundTaskRunner = (promise: Promise<unknown>) => void;
 
@@ -67,6 +71,8 @@ interface ServerAppOptions {
   /** The log of the reports of errors of the browser (one per app, so one per isolate); tests pass their own clock. */
   clientErrorRoutes?: Parameters<typeof createClientErrorRoutes>[0];
   rpcRouter?: typeof defaultRpcRouter;
+  /** The writer of the page that stops the tips e-mails; tests pass one that counts its calls. */
+  tipsStopRoutes?: TipsStopRoutesOptions;
 }
 
 function backgroundTaskRunner(context: Context<ServerEnv>) {
@@ -104,6 +110,7 @@ export function createServerApp({
   },
   clientErrorRoutes,
   rpcRouter = defaultRpcRouter,
+  tipsStopRoutes,
 }: ServerAppOptions = {}) {
   const app = new Hono<ServerEnv>();
   const rpcHandler = new RPCHandler(rpcRouter, {
@@ -246,6 +253,7 @@ export function createServerApp({
   app.route("/", createDataExportRoutes());
   app.route("/", createClosedExportRoutes());
   app.route("/", createClientErrorRoutes(clientErrorRoutes));
+  app.route("/", createTipsStopRoutes(tipsStopRoutes));
   // Provider webhooks sit outside /api and /rpc (browser origin checks): they
   // prove themselves by the provider signature their adapter verifies.
   app.route("/", createBillingWebhookRoutes());

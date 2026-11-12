@@ -20,6 +20,10 @@
  *   referrer and never cached.
  * - `public-document`: the HTML of the public catalog, rendered on the server. Its hydration scripts are
  *   inline, so the policy carries a nonce made for each response instead of 'unsafe-inline'.
+ * - `form-document`: a page the Worker of apps/web renders whole, for a visitor with no session (the page that stops
+ *   the tips e-mails, reached from a link of an e-mail): one native form that posts to the page itself and one style
+ *   block, allowed by its hash. No script at all, no image, font, frame or connection, no referrer (the URL carries a
+ *   token), never framed.
  * - `public-media`: the image bytes of the public catalog, embeddable from other origins on purpose
  *   (a store link shared in a chat shows its photo), and inert as a document.
  *
@@ -34,6 +38,7 @@ export type SecurityProfile =
   | "api"
   | "app-shell"
   | "auth-entry"
+  | "form-document"
   | "public-document"
   | "public-media";
 
@@ -47,6 +52,8 @@ export interface SecurityHeadersOptions {
   imgSources?: readonly string[];
   /** The nonce of this response; required by `public-document`, refused by the other profiles. */
   nonce?: string;
+  /** `sha256-…` of each style block of the page; required by `form-document`, refused by the other profiles. */
+  styleHashes?: readonly string[];
 }
 
 /** The headers of a profile. The isolation ones are absent from `public-media`, which any origin may embed. */
@@ -92,6 +99,7 @@ const HTTPS_ORIGIN =
   /^https:\/\/([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]([a-z0-9-]*[a-z0-9])?(:\d{1,5})?$/;
 const NONCE_PATTERN = /^[A-Za-z0-9+/]{22,}={0,2}$/;
 const NONCE_BYTES = 16;
+const STYLE_HASH_PATTERN = /^sha256-[A-Za-z0-9+/]{43}=$/;
 
 /** An origin that is not exactly `https://host[:port]` (no wildcard, path, scheme alone or keyword) is a mistake. */
 function checkedOrigins(
@@ -185,6 +193,19 @@ function publicDocumentPolicy(
   ] satisfies Directives;
 }
 
+/** The page of one form: its style blocks by hash, the form back to the app, and nothing else. */
+function formDocumentPolicy(styleHashes: readonly string[]) {
+  return [
+    ["default-src", [NONE]],
+    ["style-src", styleHashes.map((hash) => `'${hash}'`)],
+    ["img-src", [NONE]],
+    ["object-src", [NONE]],
+    ["base-uri", [NONE]],
+    ["form-action", [SELF]],
+    ["frame-ancestors", [NONE]],
+  ] satisfies Directives;
+}
+
 /**
  * The Admin page (D-1 of the screen's cut): its own script, sheet and API, and nothing else. `form-action 'none'`
  * because every action goes by `fetch` (a native submit of a failed script must not put a typed text in a URL), and
@@ -219,6 +240,12 @@ const ADMIN_PROFILES: ReadonlySet<SecurityProfile> = new Set([
   "admin-document",
 ]);
 
+/** The profiles that send no referrer at all: the Admin's, and the page whose URL carries a token. */
+const NO_REFERRER_PROFILES: ReadonlySet<SecurityProfile> = new Set([
+  ...ADMIN_PROFILES,
+  "form-document",
+]);
+
 const PERMISSIONS_POLICY =
   "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
 
@@ -228,8 +255,26 @@ function policyFor(
 ): string {
   const connect = checkedOrigins(options.connectSources, "connectSources");
   const img = checkedOrigins(options.imgSources, "imgSources");
-  const { nonce } = options;
+  const { nonce, styleHashes } = options;
 
+  if (profile === "form-document") {
+    if (
+      nonce !== undefined ||
+      styleHashes === undefined ||
+      styleHashes.length === 0 ||
+      !styleHashes.every((hash) => STYLE_HASH_PATTERN.test(hash)) ||
+      connect.length > 0 ||
+      img.length > 0
+    ) {
+      throw new Error(
+        "form-document takes only the sha256 hashes of its style blocks"
+      );
+    }
+    return serialize(formDocumentPolicy(styleHashes));
+  }
+  if (styleHashes !== undefined) {
+    throw new Error(`${profile} has no style block by hash`);
+  }
   if (profile === "public-document") {
     if (nonce === undefined || !NONCE_PATTERN.test(nonce)) {
       throw new Error("public-document needs the nonce of its response");
@@ -277,7 +322,7 @@ export function securityHeaders(
     "Cross-Origin-Resource-Policy":
       profile === "public-media" ? "cross-origin" : "same-origin",
     "Permissions-Policy": PERMISSIONS_POLICY,
-    "Referrer-Policy": ADMIN_PROFILES.has(profile)
+    "Referrer-Policy": NO_REFERRER_PROFILES.has(profile)
       ? "no-referrer"
       : "strict-origin-when-cross-origin",
     // Sent by the application (not only a zone setting) so the policy is versioned and reviewable.
@@ -303,7 +348,11 @@ export function securityHeaders(
  * exception that the catalog's own entry enforces, because its nonce must never be cached.
  */
 export function defaultCacheControl(profile: SecurityProfile): string | null {
-  return profile === "api" || ADMIN_PROFILES.has(profile) ? "no-store" : null;
+  return profile === "api" ||
+    profile === "form-document" ||
+    ADMIN_PROFILES.has(profile)
+    ? "no-store"
+    : null;
 }
 
 /**
