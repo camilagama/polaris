@@ -94,6 +94,15 @@ describe("nextFigureState", () => {
     );
   });
 
+  it("sair do nível full no meio da entrada a encerra, e voltar a full não a toca de novo", () => {
+    const entering = nextFigureState(start, "R$ 20,00", false, false, true);
+    expect(entering.animate).toBe(true);
+    const cut = nextFigureState(entering, "R$ 20,00", false, false, false);
+    expect(cut.animate).toBe(false);
+    expect(cut.generation).toBe(entering.generation);
+    expect(nextFigureState(cut, "R$ 20,00", false, false, true)).toBe(cut);
+  });
+
   it("a entrada é um fade de 200 ms só sob motion-full, sem rolar dígito", () => {
     for (const token of [
       "motion-full:animate-in",

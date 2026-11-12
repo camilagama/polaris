@@ -12,9 +12,10 @@ import { cn } from "@/lib/utils";
  * readers get the final text at once. Only a different `text` after the first draw remounts the box with the entrance,
  * and only when the motion level is `full` at that moment: where the entrance does not play `animationend` never comes,
  * so a flag left on would replay it, with the same value, when the window later reaches `full` (a tablet turned, a
- * window widened, "reduce motion" turned off). `motion-full:` also keeps it off on a phone and under `prefers-reduced-motion`. A change made while the values are hidden is not played when they come
- * back, and a day read on a sparkline (and the return from it) swaps with no entrance, so the figure does not blink
- * while the pointer moves.
+ * window widened, "reduce motion" turned off). `motion-full:` also keeps it off on a phone and under
+ * `prefers-reduced-motion`. The same holds when the level leaves `full` mid-entrance (the animation is cancelled, not
+ * ended). A change made while the values are hidden is not played when they come back, and a day read on a sparkline
+ * (and the return from it) swaps with no entrance, so the figure does not blink while the pointer moves.
  */
 
 export const ENTRANCE =
@@ -35,6 +36,9 @@ export function nextFigureState(
   entering: boolean
 ): FigureState {
   if (last.text === text) {
+    if (last.animate && !entering) {
+      return { ...last, animate: false, reading };
+    }
     return last.reading === reading ? last : { ...last, reading };
   }
   return {
@@ -69,13 +73,8 @@ export function AnimatedFigure({
       setLast((state) => ({ ...state, animate: false }));
     }
   }, []);
-  const next = nextFigureState(
-    last,
-    text,
-    hidden,
-    reading,
-    useMotionLevel() === "full"
-  );
+  const entering = useMotionLevel() === "full";
+  const next = nextFigureState(last, text, hidden, reading, entering);
   if (next !== last) {
     setLast(next);
   }
