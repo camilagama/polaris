@@ -61,7 +61,7 @@ export function createReportRpcHandlers(dependencies: ReportRpcDependencies) {
               { from: input.from, to: input.to },
               {
                 asOf: generatedAt,
-                covers: true,
+                covers: input.topProducts !== undefined,
                 topProducts: input.topProducts,
               }
             );

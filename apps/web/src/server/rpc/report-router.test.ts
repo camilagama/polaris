@@ -139,7 +139,7 @@ describe("report.periodSummary", () => {
       identity,
       { from: "2026-10-01", to: "2026-10-31" },
       // the store's today of a monthly series is the date of the answer's own clock
-      { asOf: summary.generatedAt, covers: true, topProducts: undefined }
+      { asOf: summary.generatedAt, covers: false, topProducts: undefined }
     );
     expect(summary.daily).toEqual(daily);
     // a series by date says nothing more than it did
