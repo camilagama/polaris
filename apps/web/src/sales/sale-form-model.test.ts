@@ -42,6 +42,7 @@ import {
   loadErrorMessage,
   MAX_SALE_ADJUSTMENTS,
   MAX_SALE_ITEMS,
+  otherLinesQuantity,
   mapSaleSubmitError,
   NO_PROFILE_CHOICE,
   parseLocalDateTime,
@@ -654,6 +655,96 @@ describe("exact totals and command body", () => {
       context({ stock: { [variantId]: balance(3, "10.000000") } })
     );
     expect(Object.keys(result.stockWarnings)).toHaveLength(2);
+  });
+
+  describe("the entry link of repeated lines", () => {
+    function twoLines(quantities: [string, string], second = variantId) {
+      let form = addItem(validForm(), "item-2");
+      form = selectItemProduct(form, "item-2", productId);
+      form = selectItemVariant(form, "item-2", second, "Camiseta — Preta / M");
+      form = updateItem(form, lineOf(form).draftId, {
+        quantity: quantities[0],
+      });
+      return updateItem(form, "item-2", {
+        chargedUnitPrice: "10",
+        listedUnitPrice: "10",
+        quantity: quantities[1],
+      });
+    }
+
+    function linkNumbers(form: SaleFormState, ctx: EvaluationContext) {
+      return form.items.map((item) =>
+        stockMissing(
+          item.quantity,
+          stockView(ctx.stock[item.variantId], true),
+          otherLinesQuantity(form.items, item)
+        )
+      );
+    }
+
+    it("leads both lines of the same variant to what the whole sale lacks: 3 + 3 against a balance of 4 is 2", () => {
+      const form = twoLines(["3", "3"]);
+      const ctx = context({ stock: { [variantId]: balance(4, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([2, 2]);
+    });
+
+    it("keeps the single line at its own lack", () => {
+      const form = validForm();
+      const ctx = context({ stock: { [variantId]: balance(1, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([1]);
+    });
+
+    it("leads a balance-0 variant to the sum of its lines", () => {
+      const form = twoLines(["3", "2"]);
+      const ctx = context({ stock: { [variantId]: balance(0, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([5, 5]);
+    });
+
+    it("does not add different variants: each line carries the lack of its own", () => {
+      const form = twoLines(["3", "3"], otherVariantId);
+      const ctx = context({
+        stock: {
+          [variantId]: balance(1, null),
+          [otherVariantId]: {
+            status: "ready",
+            value: {
+              movingAverageCost: null,
+              quantity: 2,
+              variantId: otherVariantId,
+              version: 1,
+            },
+          },
+        },
+      });
+      expect(linkNumbers(form, ctx)).toEqual([2, 1]);
+    });
+
+    it("counts a line whose quantity is not a number as zero, and a blank variant as no one's", () => {
+      const form = twoLines(["3", "abc"]);
+      const ctx = context({ stock: { [variantId]: balance(1, null) } });
+      expect(linkNumbers(form, ctx)).toEqual([2, undefined]);
+      const [first] = form.items;
+      expect(
+        first && otherLinesQuantity(form.items, { ...first, variantId: "" })
+      ).toBe(0);
+    });
+
+    it("shows the warning and the link on the same lines, from the same sum", () => {
+      const form = twoLines(["3", "3"]);
+      const ctx = context({ stock: { [variantId]: balance(4, null) } });
+      const { stockWarnings } = evaluate(form, ctx);
+      const missing = linkNumbers(form, ctx);
+      expect(form.items.map((item) => item.draftId in stockWarnings)).toEqual(
+        missing.map((count) => count !== undefined)
+      );
+      expect(Object.values(stockWarnings)).toEqual([
+        "Acima do saldo (4): a venda é recusada se ele não bastar.",
+        "Acima do saldo (4): a venda é recusada se ele não bastar.",
+      ]);
+      const fits = twoLines(["2", "2"]);
+      expect(Object.keys(evaluate(fits, ctx).stockWarnings)).toHaveLength(0);
+      expect(linkNumbers(fits, ctx)).toEqual([undefined, undefined]);
+    });
   });
 });
 
