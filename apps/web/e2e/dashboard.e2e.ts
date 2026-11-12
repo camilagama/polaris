@@ -3021,7 +3021,7 @@ async function measureStrip(page: Page) {
       .filter((value) => value.scrollWidth > value.clientWidth)
       .map((value) => value.textContent),
     height: strip.getBoundingClientRect().height,
-    warned: strip.querySelector("[data-kpi-warning]") !== null,
+    warned: strip.querySelector("[data-kpi-notice]") !== null,
   }));
 }
 
