@@ -39,7 +39,8 @@ import { runActivationSweep } from "../src/server/billing/activation-sweep";
  * Every owed notice is checked against its event: type `activation.notice`, pending, the body with the notice's ID
  * alone and the key `activation.notice:<id>`. The stores the other gates left may also be recorded by these sweeps;
  * every check reads only the gate's own stores, except the counts that must not move at all and the cap of the day,
- * which counts everyone. It runs after the gates of the Workers, so the events it leaves meet no later dispatcher. The
+ * which counts everyone. It runs before the gates of the Workers and deletes the activation.notice events written
+ * since it started, so the dispatcher of web-worker meets none of them (that consumer does not exist yet). The
  * instant is cleared at the end; the fixtures stay, as in the other gates; the logins are dropped.
  */
 const expectedDatabase =
@@ -147,6 +148,16 @@ async function run() {
     const ten = clock.rows[0]?.ten;
     assert.ok(ten instanceof Date);
     const noon = at(ten, 2 * HOUR);
+    const started = (
+      await owner.pool.query<{ now: Date }>("SELECT now() AS now")
+    ).rows[0]?.now;
+    assert.ok(started instanceof Date);
+    closers.push(() =>
+      owner.pool.query(
+        "DELETE FROM public.event_outbox WHERE type = 'activation.notice' AND created_at >= $1",
+        [started]
+      )
+    );
 
     const sweep = (
       switchOn: boolean,
