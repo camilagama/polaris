@@ -3393,3 +3393,14 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Miniatura | Em revisão | `home/home-figures.tsx`: `ProductThumbnail` de 32 px com a posição num círculo sobre o canto; iniciais sem capa ou sem a chave; a linha de uma só fila passa de 15/20 rem para 20,75 rem de contêiner. `useThumbnailSequence` põe as cinco capas no mesmo lote. |
 | Servidor | Em revisão | `periodSummary` devolve `coverAssetId` por produto do ranking (`readPeriodSummary`, opção `covers`, uma consulta a mais por `readProductCovers`; sem migration, SQL do ranking intacto). Contrato: campo opcional. |
 | Provas | Em revisão | `home-top-products.test.tsx`, `report-router.test.ts`, `period-summary-cache.test.ts`; e2e `home.e2e.ts` (cinco caixas de 32 px a 360 px, nome inteiro a 320/20 e nas larguras de 1150 a 1397 px). |
+
+### UI de 11/11: grade do Início em pares (t1039; sem migration)
+
+| Item | Status | Observação |
+| --- | --- | --- |
+| Pares por linha | Em revisão | `home/home-lower-blocks.tsx`: duas linhas (Meta + Vendas por dia, Ritmo + Mais vendidos) numa consulta de contêiner `@container/home`: de 60 rem de conteúdo, 1/3 + 2/3 e 30 rem + o resto, cartões da mesma altura; abaixo, uma linha por bloco. A ordem do DOM é a da tela em toda largura. |
+| Quem absorve a sobra | Em revisão | Vendas por dia: a altura do desenho cresce até a caixa (`home-chart.tsx`); Meta em pé com o anel centrado (`home-goal.tsx`); Mais vendidos divide a altura por igual a partir de três linhas (`home-figures.tsx`); Ritmo com o mapa centrado entre o título e a frase, e de 41 rem de conteúdo do cartão o mapa à esquerda e a frase e a legenda à direita (`home-rhythm.tsx`). |
+| Sem meta | Em revisão | Faixa fina com "Defina quanto quer vender no mês e acompanhe aqui." (só de 60 rem) e "Definir meta"; o gráfico ocupa a linha inteira. Os blocos sob os cartões esperam a primeira resposta das metas (`useFirstGoalRead`), para a forma da linha do gráfico não mudar depois de desenhada. |
+| Mesma caixa | Em revisão | Mais vendidos de um período sem venda fica na caixa e diz "Sem vendas no período." (antes o bloco sumia). |
+| Provas | Em revisão | e2e-real `jornadas/inicio-grade.e2e.ts` (1280, com e sem meta, 3 e 5 itens: pares da mesma altura, nenhuma faixa vazia de mais de 24 px no pé, Ritmo com 480 px, ordem do DOM igual à da tela, layout shift 0 nos blocos); `e2e/home.e2e.ts` (larguras do Mais vendidos, Ritmo de 480 px e da altura do par, período sem venda); testes de `home-lower-blocks`, `home-goal` e `home-top-products`; baselines do Início a 360, 760, 1024 e 1280, com e sem meta. |
+| Fora | Pendente | O anel de 132 px da Meta em pé (o SVG do Bklit não tem `viewBox`: fica o de 112 px) e o "Ver metas" no pé da Meta. |
