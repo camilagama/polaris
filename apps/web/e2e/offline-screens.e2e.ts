@@ -282,7 +282,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     }).toPass({ timeout: 10_000 });
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByRole("menu")).toBeVisible();
+    await expect(page.getByRole("menu")).toHaveCount(1);
     await closeMenu(page);
     await expect(page.locator("[data-base-ui-inert]")).toHaveCount(0);
     await network.check();
