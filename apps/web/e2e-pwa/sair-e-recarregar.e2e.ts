@@ -115,6 +115,11 @@ async function watchBootRetry(page: Page) {
       note(`committed ${new URL(frame.url()).pathname}`);
     }
   });
+  page.on("requestfailed", (request) => {
+    note(
+      `request failed ${request.resourceType()} ${new URL(request.url()).pathname} (${request.failure()?.errorText})`
+    );
+  });
   page.on("response", (response) => {
     if (SIGN_OUT.test(response.url())) {
       note("sign-out answered");
