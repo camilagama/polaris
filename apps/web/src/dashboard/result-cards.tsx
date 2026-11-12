@@ -142,11 +142,13 @@ function SalesLink({
   count,
   onOpen,
   period,
+  today,
   underChip,
 }: {
   count: number;
   onOpen: (period: Period) => void;
   period: Period;
+  today: string;
   underChip: boolean;
 }) {
   const label = count === 1 ? "Ver a venda" : `Ver as ${salesCountText(count)}`;
@@ -157,7 +159,7 @@ function SalesLink({
         <span aria-hidden="true" className="h-0 basis-full" />
       ) : null}
       <button
-        aria-label={`${label} de ${periodRangeLabel(period)} no Histórico`}
+        aria-label={`${label} de ${periodRangeLabel(period, today)} no Histórico`}
         className={LINK_CLASS}
         data-kpi-sales-link=""
         onClick={handleClick}
@@ -201,6 +203,7 @@ function salesNote({
         count={count}
         onOpen={onOpen}
         period={{ from: period.from, to }}
+        today={today}
         underChip={chip}
       />
     );

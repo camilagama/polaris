@@ -24,6 +24,7 @@ import {
 } from "../dashboard/result-period";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { useLocalWorkspace } from "../offline/runtime/use-local-workspace";
+import { todayOr } from "../ui/date-values";
 import { SavedSalesCard } from "./offline-sale-panels";
 import { HistoryEmptyCard } from "./sale-history-empty";
 import { HistoryFiltersBar } from "./sale-history-filters";
@@ -58,7 +59,7 @@ function ResultLink({ period }: { period: Period }) {
   );
   return (
     <button
-      aria-label={`Ver o resultado deste período, de ${periodRangeLabel(period)}`}
+      aria-label={`Ver o resultado deste período, de ${periodRangeLabel(period, todayOr(undefined))}`}
       className="touch-hit focus-ring inline-flex h-ctl-sm w-fit items-center gap-1 whitespace-nowrap rounded-sm font-medium text-foreground text-sm hover:underline"
       data-history-result-link=""
       onClick={handleClick}

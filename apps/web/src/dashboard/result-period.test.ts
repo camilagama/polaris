@@ -289,12 +289,19 @@ describe("the period that travels in the navigation state", () => {
     ).toBe("custom");
   });
 
-  it("says the ends as dd/mm, with the year only when they differ in it", () => {
-    expect(periodRangeLabel({ from: "2026-10-01", to: "2026-10-14" })).toBe(
-      "01/10 a 14/10"
-    );
-    expect(periodRangeLabel({ from: "2025-11-12", to: "2026-11-12" })).toBe(
-      "12/11/2025 a 12/11/2026"
-    );
+  it("says the ends as the pill does: no year only inside the year of today", () => {
+    const today = "2026-10-14";
+    expect(
+      periodRangeLabel({ from: "2026-10-01", to: "2026-10-14" }, today)
+    ).toBe("01/10 a 14/10");
+    expect(
+      periodRangeLabel({ from: "2025-10-01", to: "2025-10-14" }, today)
+    ).toBe("01/10/2025 a 14/10/2025");
+    expect(
+      periodRangeLabel({ from: "2025-11-12", to: "2026-11-12" }, today)
+    ).toBe("12/11/2025 a 12/11/2026");
+    expect(
+      periodRangeLabel({ from: "2025-10-14", to: "2025-10-14" }, today)
+    ).toBe("14/10/2025");
   });
 });

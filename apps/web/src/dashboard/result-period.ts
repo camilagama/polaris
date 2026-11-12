@@ -1,7 +1,7 @@
 import { monthBounds, monthOfDay } from "../expenses/expense-model";
 import { isCalendarDate } from "../lib/dates";
 import { shortcutLabel } from "../ui/date-range-shortcuts";
-import { presetRange, type RangePreset } from "../ui/date-values";
+import { formatRange, presetRange, type RangePreset } from "../ui/date-values";
 
 /**
  * The periods of the Resultado (corte resultado-v2, AC-1 and AC-2): the presets, the free range, what each one reads,
@@ -255,10 +255,7 @@ export function presetOfPeriod(period: Period, today: string): PeriodPreset {
   );
 }
 
-/** "01/10 a 14/10": the ends of a period as the Histórico's pill says them, with the year only when the ends differ in it. */
-export function periodRangeLabel(period: Period): string {
-  const years = period.from.slice(0, 4) !== period.to.slice(0, 4);
-  const day = (value: string) =>
-    `${value.slice(8, 10)}/${value.slice(5, 7)}${years ? `/${value.slice(0, 4)}` : ""}`;
-  return `${day(period.from)} a ${day(period.to)}`;
+/** The ends of a period as the Histórico's pill says them ("01/10 a 14/10"), with the year when they are not both in the year of `today`. */
+export function periodRangeLabel(period: Period, today: string): string {
+  return formatRange(period, today);
 }
