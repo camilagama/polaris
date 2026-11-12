@@ -77,6 +77,20 @@ async function closeMenu(page: Page) {
 }
 
 
+/**
+ * The menu opens a frame after the click that asks for it (the trigger says `aria-expanded` and the popup is
+ * mounted in that frame, not in the click). Until the frame has been rendered, "closed" is what the page still
+ * shows, so a check right after the click can pass just before the menu appears.
+ */
+async function afterRenderedFrames(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      })
+  );
+}
+
 async function dumpState(page: Page, label: string) {
   const state = await page.evaluate(() => {
     const d = (e: Element) =>
@@ -325,6 +339,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await page.keyboard.press("Escape");
     await trigger.click();
+    await afterRenderedFrames(page);
     // the trigger, not only the popup, says it is closed: a menu the click is still opening has no popup yet,
     // so "no menu" alone can pass just before it appears
     await expect(async () => {
