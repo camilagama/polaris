@@ -3,9 +3,16 @@ import type {
   ProductVariantConfigurationReadModel,
 } from "@polaris/contracts";
 import CircleCheckIcon from "lucide-react/dist/esm/icons/circle-check";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription } from "@/ui/alert";
 import { Button } from "@/ui/button";
+import { focusLater } from "../lib/focus";
 import { orpcClient } from "../lib/orpc";
 import { ProductVariantPriceSection } from "./product-variant-price-section";
 import { ProductVariantSkuSection } from "./product-variant-sku-section";
@@ -18,6 +25,8 @@ import {
 } from "./product-variants-model";
 
 interface ProductVariantsPanelProps {
+  /** The variant the address named: its SKU field takes the focus once the variants are shown. */
+  focusVariantId: string | null;
   /** What was typed in the configuration before the dialog closed by Esc, × or the step back. */
   configurationDraft: VariantConfigurationDraft | null;
   onConfigurationDraftChange: (
@@ -78,6 +87,7 @@ function ConfiguredVariants({
  */
 export function ProductVariantsPanel({
   configurationDraft,
+  focusVariantId,
   onConfigurationDraftChange,
   onProductUpdated,
   organizationId,
@@ -124,6 +134,23 @@ export function ProductVariantsPanel({
       onConfigurationDraftChange(product.id, null);
     }
   }, [configurationDraft, configured, onConfigurationDraftChange, product.id]);
+
+  // the variant of the address, once: the field is in the page when the variants are shown
+  const focused = useRef<boolean>(false);
+  useEffect(() => {
+    if (focused.current || focusVariantId === null || !configuration) {
+      return;
+    }
+    if (
+      !configuration.variants.some((variant) => variant.id === focusVariantId)
+    ) {
+      return;
+    }
+    focused.current = true;
+    focusLater(() =>
+      document.getElementById(`product-variant-sku-${focusVariantId}`)?.focus()
+    );
+  }, [configuration, focusVariantId]);
 
   const handleReload = useCallback(() => {
     setReloadVersion((version) => version + 1);

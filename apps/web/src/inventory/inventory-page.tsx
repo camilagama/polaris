@@ -24,6 +24,7 @@ import {
   ProductThumbnail,
   useThumbnailSequence,
 } from "../catalog/product-thumbnail";
+import { stockProductLinks } from "../catalog/products-link-model";
 import { useCurrentOrganization } from "../lib/current-organization";
 import { focusLater } from "../lib/focus";
 import { useMediaThumbsEnabled } from "../lib/media-thumbs-flag";
@@ -35,6 +36,7 @@ import { StockCommandPanel } from "./stock-command-panel";
 import { StockFiltersBar } from "./stock-filters";
 import {
   readStockLinkFilters,
+  readStockLinkSearch,
   type StockAttentionLink,
   type StockRow,
   stockCountText,
@@ -123,7 +125,11 @@ function Figure({ children, className, label }: FigureProps) {
   );
 }
 
+/** The name of a row that leads to its product: a link on a line of its own, with the 44 px touch area. */
+const PRODUCT_NAME_LINK = `touch-hit ${LINK}`;
+
 interface StockItemProps {
+  canOpenProduct: boolean;
   children: ReactNode;
   onOpen: (event: MouseEvent<HTMLButtonElement>) => void;
   otherPanelOpen: boolean;
@@ -132,6 +138,7 @@ interface StockItemProps {
 }
 
 function StockItem({
+  canOpenProduct,
   children,
   onOpen,
   otherPanelOpen,
@@ -139,6 +146,7 @@ function StockItem({
   row,
 }: StockItemProps) {
   const thumbs = useMediaThumbsEnabled();
+  const rowLocked = panelOpen || otherPanelOpen;
   return (
     <li
       className={cn(
@@ -162,7 +170,17 @@ function StockItem({
           ) : null}
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
-              {row.productName}
+              {canOpenProduct && !rowLocked ? (
+                <a
+                  aria-label={`${row.productName}, ${row.variantText}. Abrir o produto`}
+                  className={PRODUCT_NAME_LINK}
+                  href={row.productHref}
+                >
+                  {row.productName}
+                </a>
+              ) : (
+                row.productName
+              )}
               {row.archived ? <Badge variant="outline">Arquivado</Badge> : null}
             </p>
             <p className="text-muted-foreground text-support [overflow-wrap:anywhere]">
@@ -203,11 +221,7 @@ function StockItem({
             </span>
           </Figure>
         </dl>
-        <RowActions
-          disabled={panelOpen || otherPanelOpen}
-          onOpen={onOpen}
-          row={row}
-        />
+        <RowActions disabled={rowLocked} onOpen={onOpen} row={row} />
       </div>
       {children}
     </li>
@@ -253,9 +267,12 @@ export function InventoryPage() {
     workspace !== null && !workspace.online ? workspace : null;
   const offline = offlineWorkspace !== null;
   // `?filtro=sem-saldo` / `?filtro=sem-custo` open the list already filtered
-  const [linkFilters] = useState(() =>
-    readStockLinkFilters(window.location.search)
-  );
+  // `?busca=` and `?arquivados=1` come from "Ver estoque" of a product: the search box opens with the name
+  const [linkFilters] = useState(() => ({
+    ...readStockLinkFilters(window.location.search),
+    ...readStockLinkSearch(window.location.search),
+  }));
+  const canOpenProduct = stockProductLinks(organization.role).toProduct;
   const {
     applyBalance: applyListBalance,
     filters,
@@ -485,6 +502,7 @@ export function InventoryPage() {
           >
             {view.rows.map((row) => (
               <StockItem
+                canOpenProduct={canOpenProduct}
                 key={row.id}
                 onOpen={handleOpen}
                 otherPanelOpen={
