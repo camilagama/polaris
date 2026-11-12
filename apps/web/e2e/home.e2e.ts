@@ -5545,17 +5545,18 @@ function expectSameRows(
 
 const WIDE_WINDOW = 1440;
 
-test("Mais vendidos do mês: com vendas e nenhum produto restante depois das devoluções, a caixa diz que foram devolvidas", async ({
-  page,
-}) => {
-  const server = new FakeServer(SOLD);
-  server.top = [];
-  await openHome(page, server);
-  const block = region(page, "Mais vendidos do mês");
-  await expect(block).toContainText("As vendas do período foram devolvidas.");
-  await expect(block).not.toContainText("Sem vendas no período.");
-  await expect(block.locator("ol")).toHaveCount(0);
-});
+reflowTest(
+  "Mais vendidos do mês: com vendas e nenhum produto restante depois das devoluções, a caixa diz que foram devolvidas",
+  async ({ page }) => {
+    const server = new FakeServer(SOLD);
+    server.top = [];
+    await openHome(page, server);
+    const block = region(page, "Mais vendidos do mês");
+    await expect(block).toContainText("As vendas do período foram devolvidas.");
+    await expect(block).not.toContainText("Sem vendas no período.");
+    await expect(block.locator("ol")).toHaveCount(0);
+  }
+);
 
 test.describe("Mais vendidos do mês: cinco linhas com a miniatura de 32 px", () => {
   for (const [width, height] of [[360, 740]] as const) {
