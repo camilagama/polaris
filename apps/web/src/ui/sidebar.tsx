@@ -301,7 +301,7 @@ function MobileSheet({
     >
       {/* first in the order: the focus lands on it when the panel opens */}
       <button
-        className="touch-hit focus-ring absolute top-2 right-2 z-10 inline-flex size-ctl-sm items-center justify-center rounded-md text-foreground motion-full:transition-colors hover:bg-accent [&_svg]:size-3.5"
+        className="touch-hit focus-ring absolute top-2 right-2 z-10 inline-flex size-ctl-sm items-center justify-center rounded-md text-foreground motion-full:transition-colors hover:bg-accent [&_svg]:size-4"
         onClick={requestClose}
         type="button"
       >

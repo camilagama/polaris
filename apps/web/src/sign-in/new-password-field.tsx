@@ -101,7 +101,7 @@ function RequirementItem({
       )}
       data-met={met}
     >
-      <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      <Icon aria-hidden="true" className="size-4 shrink-0" />
       <span>
         {text}
         <span className="sr-only">
