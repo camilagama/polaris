@@ -21,6 +21,7 @@ const row: StockRow = {
   costText: "R$ 10,00",
   costUnknown: false,
   id: "variant-1",
+  productHref: "/products?produto=11111111-1111-4111-8111-111111111111",
   productName: "Camiseta Polaris",
   quantity: 5,
   quantityText: "5",

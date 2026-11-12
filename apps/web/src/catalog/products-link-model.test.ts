@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findLinkedProduct,
   PRODUCT_LINK_NOT_FOUND,
+  productHref,
   productLinkFailure,
   readProductsLink,
 } from "./products-link-model";
@@ -31,10 +32,12 @@ describe("readProductsLink", () => {
     expect(readProductsLink(`?produto=${ID}`)).toEqual({
       kind: "product",
       productId: ID,
+      variantId: null,
     });
     expect(readProductsLink(`?produto=${ID.toUpperCase()}`)).toEqual({
       kind: "product",
       productId: ID,
+      variantId: null,
     });
   });
 
@@ -76,7 +79,36 @@ describe("readProductsLink", () => {
     expect(readProductsLink(`?novo=1&produto=${ID}`)).toEqual({
       kind: "product",
       productId: ID,
+      variantId: null,
     });
+  });
+});
+
+describe("the variant of the address", () => {
+  const VARIANT = "0199c2d0-0000-7000-8000-0000000000a1";
+
+  it("is read in lowercase beside the product, and is only a variant when it is an id", () => {
+    expect(
+      readProductsLink(`?produto=${ID}&variante=${VARIANT.toUpperCase()}`)
+    ).toEqual({ kind: "product", productId: ID, variantId: VARIANT });
+    for (const variante of ["", "x", "<script>", `${VARIANT}0`]) {
+      expect(readProductsLink(`?produto=${ID}&variante=${variante}`)).toEqual({
+        kind: "product",
+        productId: ID,
+        variantId: null,
+      });
+    }
+  });
+
+  it("alone opens nothing", () => {
+    expect(readProductsLink(`?variante=${VARIANT}`)).toEqual({ kind: "none" });
+  });
+
+  it("is written by productHref only when the row is one of a variant", () => {
+    expect(productHref(ID)).toBe(`/products?produto=${ID}`);
+    expect(productHref(ID, VARIANT)).toBe(
+      `/products?produto=${ID}&variante=${VARIANT}`
+    );
   });
 });
 

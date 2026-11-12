@@ -361,6 +361,67 @@ test("cada pílula pede ao servidor o que o filtro de antes pedia e sai pelo X",
 const rowNames = (page: Page) =>
   page.getByRole("list", { name: "Saldos por variante" }).getByRole("listitem");
 
+test("o nome da linha é um link para o produto, na variante quando a linha é de variante", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  const shirt = page.getByRole("link", {
+    name: "Camiseta do teste, Azul. Abrir o produto",
+  });
+  await expect(shirt).toHaveText("Camiseta do teste");
+  await expect(shirt).toHaveAttribute(
+    "href",
+    `/products?produto=${SHIRT.productId}&variante=${SHIRT.variantId}`
+  );
+  // the name is a link and not a button: the group of the row has its three commands and no more
+  const group = page.getByRole("group", {
+    name: "Movimentos de Camiseta do teste, Azul",
+  });
+  await expect(group.getByRole("button")).toHaveCount(3);
+  await expect(group.getByRole("link")).toHaveCount(0);
+});
+
+test("com um painel aberto o nome de nenhuma linha leva ao produto, e fechado o link volta", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  const productLinks = page
+    .getByRole("list", { name: "Saldos por variante" })
+    .locator('a[href^="/products"]');
+  await expect(productLinks.first()).toBeVisible();
+  const withLinks = await productLinks.count();
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(productLinks).toHaveCount(0);
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "Camiseta do teste" })
+  ).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Fechar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  await expect(productLinks).toHaveCount(withLinks);
+});
+
+test("?busca=<nome>&arquivados=1 abre o Estoque com a busca à vista e os arquivados incluídos", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro", {
+    count: "3 variantes",
+    search: "&busca=Caneca+esmaltada&arquivados=1",
+  });
+  await expect(page.getByLabel("Buscar no estoque")).toHaveValue(
+    "Caneca esmaltada"
+  );
+  await expectPills(page, ["Arquivados incluídos"]);
+  await expect
+    .poll(() => listRequests.at(-1) ?? "")
+    .toContain('"query":"Caneca esmaltada"');
+  expect(listRequests.at(-1)).toContain('"productStatus":"all"');
+});
+
 test("Custo desconhecido liga em 2 toques e a lista é a que ?filtro=sem-custo produz", async ({
   page,
 }) => {
