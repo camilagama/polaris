@@ -271,9 +271,10 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     // the click on the trigger while the menu leaves (the hole of the backdrop lets it through) opens it again.
     // The exit lasts 100 ms, so the observer holds the popup in the leaving state (`data-closed`) by pausing
     // its animations the moment the attribute appears; the click then happens in the exit by construction, not by
-    // the speed of the runner. Where the popup has no exit animation it unmounts with the close and there is no
-    // exit to click in: the popup is gone, which is also checked. The observer is released right after the click
-    // so the next close runs free.
+    // the speed of the runner. On a desktop with full motion the exit animation must exist and hold the popup, or
+    // the test no longer covers the click in the exit; elsewhere (phone, reduced motion) the popup may unmount
+    // with the close and the click then comes after it. The observer is released right after the click so the
+    // next close runs free.
     // Each step waits for what it causes, not for a time: the Escape is sent until the trigger says "closed"
     // (a key sent before the menu listens is lost), and the click ends in the trigger saying "open" with the
     // popup mounted, which is the frame where the click opens it
@@ -310,6 +311,9 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await expect(async () => {
       const held = await page.locator("[data-exit-held]").count();
       expect(held).toBeLessThanOrEqual(1);
+      if (reducedMotion === "no-preference" && !onPhone(page)) {
+        expect(held).toBe(1);
+      }
       await expect(leaving).toHaveCount(held);
     }).toPass({ timeout: 5000 });
     await trigger.click();
