@@ -4935,7 +4935,7 @@ test.describe("cartões de KPI: escolher ou soltar um dia não move nada no cart
     );
 
     answer();
-    await expect(region(page, "Meta")).toContainText("Meta");
+    await expect(region(page, "Meta")).toContainText("da meta");
     await expect(region(page, "Vendas por dia")).toBeVisible();
     await expect(waiting).toHaveCount(0);
   });
