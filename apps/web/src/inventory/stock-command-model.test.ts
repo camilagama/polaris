@@ -1275,6 +1275,26 @@ describe("informing the cost of units on hand (the cost panel)", () => {
     });
   });
 
+  it("opens the receipt with the quantity the link asks for, as 1 when it is not one the variant can take, and not as an edit", () => {
+    const opened = startStockCommand("receive", target, today, 2);
+    expect(opened.draft).toMatchObject({ quantity: "2" });
+    expect(isStockDraftChanged(opened)).toBe(false);
+    expect(isStockDraftChanged(editStockField(opened, "quantity", "3"))).toBe(
+      true
+    );
+    for (const asked of [undefined, 0, -1, 1.5, Number.NaN, 2_147_483_647]) {
+      expect(
+        startStockCommand("receive", target, today, asked).draft
+      ).toMatchObject({ quantity: "1" });
+    }
+    expect(
+      startStockCommand("receive", target, today, 2_147_483_642).draft
+    ).toMatchObject({ quantity: "2147483642" });
+    expect(
+      startStockCommand("write_off", target, today, 4).draft
+    ).toMatchObject({ quantity: "1" });
+  });
+
   it("starts the quantity of a receipt and of a write-off at 1, and the count empty", () => {
     expect(startStockCommand("receive", target, today).draft).toMatchObject({
       quantity: "1",

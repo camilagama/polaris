@@ -76,6 +76,7 @@ export default defineConfig({
         "jornadas/encerramento.e2e.ts",
         "jornadas/encerramento-aparelho.e2e.ts",
         "jornadas/resultado-historico-offline.e2e.ts",
+        "jornadas/venda-saldo-curto-sem-conexao.e2e.ts",
       ],
       use: { ...desktop, baseURL: origin("online") },
     },
@@ -85,6 +86,7 @@ export default defineConfig({
       testMatch: [
         "jornadas/cliente.e2e.ts",
         "jornadas/venda.e2e.ts",
+        "jornadas/venda-saldo-curto-sem-conexao.e2e.ts",
         "jornadas/encerramento.e2e.ts",
         "jornadas/encerramento-aparelho.e2e.ts",
         "jornadas/resultado-historico-offline.e2e.ts",

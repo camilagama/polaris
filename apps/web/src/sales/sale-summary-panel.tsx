@@ -236,7 +236,10 @@ function FailureNotice({
                 buttonVariants({ size: "sm", variant: "outline" }),
                 "h-auto min-h-ctl-sm max-w-full whitespace-normal py-1.5 text-left"
               )}
-              href={stockEntryHref(submission.failure.entry.variantId)}
+              href={stockEntryHref(
+                submission.failure.entry.variantId,
+                submission.failure.entry.missing
+              )}
             >
               <PackagePlusIcon aria-hidden="true" data-icon="inline-start" />
               Dar entrada no estoque
