@@ -3414,6 +3414,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gerador do link | Em revisão | `unsubscribeLink(baseURL, token)` e `createUnsubscribeToken`, para o consumidor (7c). |
 | Fora deste PR | Pendente | O cabeçalho `List-Unsubscribe` no e-mail e o consumidor (7c); o Switch em Seus dados (8b); criar o segredo em staging e produção (responsável). |
 
+### Avisos de ativação: os modelos das dicas, o rodapé e os cabeçalhos (t1088; corte ativacao-fase1b, Item 7c-1; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Modelos (AC-7c.4, AC-7c.11) | Em revisão | `server/activation/emails/activation-notice-email.tsx`: A1, A2-S0, A2-S1 e A3 (S0 e S1) com o texto aprovado; assunto até 40 caracteres sem a loja; A1 e A2 com um botão, A3 sem botão e com o link de texto "Abrir a loja"; loja cortada em 24 grafemas, escapada, só no corpo e no rodapé. Snapshots do HTML e do texto em `__golden__/`. |
+| Rodapé (AC-7c.5) | Em revisão | Por que recebe (com a loja), "Parar de receber estas dicas" (16 px, sublinhado, cor do texto), os avisos da conta continuam, a razão social da cobrança, o suporte e a Política de Privacidade. Nenhum e-mail diz "série", "descadastro", "opt-out", "ativação" ou "trial"; cobrança e encerramento não têm o link. |
+| Links (AC-7c.6) | Em revisão | Absolutos na origem do app, sem `<img`, `utm_`, query nem ID de loja; só o link de parar leva o token. |
+| Cabeçalhos e sender (AC-7c.9, lado modelo e sender) | Em revisão | `List-Unsubscribe` e `List-Unsubscribe-Post` só nas dicas; `createResendClosureNoticeSender` aceita `headers` só com os dois, em ASCII visível, e lança antes do envio; sem `headers` o corpo ao Resend não tem o campo. |
+| Fora deste PR | Pendente | O consumidor, a releitura, a flag em `WorkerBindings`, o remetente e o segredo da supressão (7c-2); o banco (7c-db). |
+
 ### Avisos de ativação: a varredura no Worker, atrás da flag desligada (t1065; corte ativacao-fase1b, Item 7b; sem migration)
 
 | Item | Status | Observação |
@@ -3422,6 +3432,16 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Varredura (AC-7b.2 a AC-7b.6) | Em revisão | `billing-store.ts` (`sweepActivationSeries`): numa transação, grava o instante quando ele é nulo, chama `activation_notice_candidates(p_now, 50)` e grava cada passo; o devido com o evento `activation.notice`, `expired` e `series_off` como aviso pulado com o motivo. `server/billing/activation-sweep.ts` lê a flag, passa o lote fixo de 50 e loga só contagens; o `billing.maintenance` da faixa 17 a chama, sem cron novo. |
 | Provas | Em revisão | `activation-sweep.test.ts` (flag, lote, log sem `@` nem IDs, a flag dos três ambientes), `worker/index.test.ts` (a ordem na faixa e a falha que não para o resto) e o gate novo `activation-sweep` (PostgreSQL 18 do CI: flag desligada, instante e ciclo, 23h59/24 h, 3 dias, 11:59/12:00, teto em 2 com três lojas, lock tomado e duas varreduras ao mesmo tempo). O gate fixa o `recorded_at` do que cada varredura grava no relógio do caso, para a contagem do teto não mudar de dia se a execução cruzar a meia-noite de São Paulo, e um caso roda a varredura real com 58 gravadas 1 s antes da meia-noite e 5 gravadas 1 s depois, e prova que só as 58 contam. |
 | Fora deste PR | Pendente | O consumidor e o envio (7c) e a parada por reclamação (9). A leitura da CPU da varredura no staging (AC-7b.6) é do Filipe, antes do merge. |
+
+### Avisos de ativação: a releitura do aviso no envio, parte do banco (t1087; corte ativacao-fase1b, Item 7c-db; migration 0131, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Função (AC-7c.12) | Em revisão | `activation_notice_still_owed(p_organization, p_notice, p_now)`, `SECURITY DEFINER` do papel da série, `EXECUTE` só ao runtime de cobrança: nulo, `{"skip": código}` (o primeiro motivo, na ordem do domínio) ou `{"step", "hasProduct", "store"}`. `p_now` a mais de 10 min do banco vira o relógio do banco. |
+| Nome da loja (P-1) | Em revisão | `SELECT (name)` em `organizations` para o papel da série: 35 colunas de leitura, conferidas no fim da migration e no gate. Os candidatos seguem sem o nome (o gate confere as colunas de saída). |
+| Códigos | Em revisão | `packages/domain/src/activation/notices.ts`: os do banco na ordem da releitura e os do Worker, com `outside_send_hours`. |
+| Gate (AC-7c.13) | Em revisão | `activation-candidates` estendido: privilégios e ACL da função, leitores exatos de `organizations.name`, lista exata do papel, uma loja por motivo com paridade contra os candidatos (o a1 de loja que já tem produto vira `state_changed`), a ordem dos motivos, os nulos e o limite do relógio. |
+| Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a). |
 
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
 

@@ -1,6 +1,7 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: a gate runs its probes strictly one at a time, for a clear failure
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import { ACTIVATION_NOTICE_REREAD_REASONS } from "@polaris/domain/activation/notices";
 import { Client } from "pg";
 import { createDatabase } from "../src/client";
 import { setLoginRole, withGateRole } from "./gate-roles";
@@ -54,6 +55,11 @@ import {
  *      every `polaris_*` group and PUBLIC); no runtime nor PUBLIC holds any privilege on `email_opt_outs`, by table or
  *      by column; two calls are one row, an unknown or null person leaves no row and the same answer; and once recorded,
  *      the candidates answer nothing for the person in either of two stores, with the switch on and off.
+ *  10. the re-read (migration 0131, AC-7c.12 and AC-7c.13): `activation_notice_still_owed` is SECURITY DEFINER of the
+ *      owner of the series and only the billing runtime executes it; of the `polaris_*` groups only the expected ones read
+ *      `organizations.name`, the owner of the series among them, and the candidates answer no name; one store per rule
+ *      leaves the candidates while the re-read of its notice answers the code of `@polaris/domain/activation/notices`, in
+ *      that order; the name comes only with a notice still owed; a clock more than 10 minutes away is the database's.
  * Every case runs in a transaction that is rolled back, with the stores the other gates left suspended inside it, so
  * the answers are about this gate's stores only. Local Postgres only: the fixtures write sale headers whose items the
  * deferred checks never see.
@@ -71,6 +77,57 @@ const RECIPIENT_OWNER = "polaris_activation_recipient_owner";
 const MEASURE_OWNER = "polaris_activation_owner";
 const RECIPIENT_FUNCTION = "public.activation_notice_recipient(text, uuid)";
 const OPT_OUT_FUNCTION = "public.activation_record_opt_out(text)";
+const STILL_OWED_FUNCTION =
+  "public.activation_notice_still_owed(text, uuid, timestamptz)";
+/** The exact columns of the owner of the series: those of 0124 and 0126, the INSERT of 0129 and the name of 0131. */
+const NOTICE_OWNER_COLUMNS = [
+  "activation_notices.due_at:SELECT",
+  "activation_notices.failed_at:SELECT",
+  "activation_notices.id:SELECT",
+  "activation_notices.organization_id:SELECT",
+  "activation_notices.recorded_at:SELECT",
+  "activation_notices.sent_at:SELECT",
+  "activation_notices.skipped_reason:SELECT",
+  "activation_notices.step:SELECT",
+  "activation_notices.user_id:SELECT",
+  "activation_series_state.enabled_since:SELECT",
+  "email_opt_outs.user_id:INSERT",
+  "email_opt_outs.user_id:SELECT",
+  "memberships.created_at:SELECT",
+  "memberships.organization_id:SELECT",
+  "memberships.role:SELECT",
+  "memberships.status:SELECT",
+  "memberships.user_id:SELECT",
+  "organization_billing.organization_id:SELECT",
+  "organization_billing.state:SELECT",
+  "organization_billing.trial_started_at:SELECT",
+  "organizations.created_at:SELECT",
+  "organizations.id:SELECT",
+  "organizations.name:SELECT",
+  "organizations.status:SELECT",
+  "platform_internal_organizations.organization_id:SELECT",
+  "privacy_cases.resolved_at:SELECT",
+  "privacy_cases.support_case_id:SELECT",
+  "products.created_at:SELECT",
+  "products.deleted_at:SELECT",
+  "products.organization_id:SELECT",
+  "sales.confirmed_at:SELECT",
+  "sales.organization_id:SELECT",
+  "support_cases.id:SELECT",
+  "support_cases.organization_id:SELECT",
+  "user.email_verified:SELECT",
+  "user.id:SELECT",
+];
+/** Every `polaris_*` group that reads `organizations.name`; the owner of the series joined it in 0131. */
+const ORGANIZATION_NAME_READERS = [
+  "polaris_activation_notice_owner",
+  "polaris_admin_owner",
+  "polaris_billing_owner",
+  "polaris_closed_export_reader",
+  "polaris_onboarding_owner",
+  "polaris_pr11_runtime",
+  "polaris_privacy_owner",
+];
 const ZONE = "America/Sao_Paulo";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -115,6 +172,17 @@ interface StoreSpec {
 interface Store {
   organizationId: string;
   userId: string;
+}
+
+interface ParityCase {
+  /** What the re-read answers; `null` for a store whose notice still holds. */
+  code: string | null;
+  label: string;
+  /** The step of the notice, and how the candidates answer the same store at 10:00. */
+  step: "a1" | "a2" | "a3";
+  candidates: string[];
+  due: Date;
+  store: Store;
 }
 
 const at = (base: Date, offset: number) => new Date(base.getTime() + offset);
@@ -2141,6 +2209,697 @@ async function run() {
     });
     tests.push(
       "the billing runtime writes the outbox event activation.notice (pending, no attempt, the body with the notice's ID alone, the key from it) for an activation_notices row of the same store, and refuses with 42501 (the policy, with its row-level security message): a notice that does not exist, one of another store, a body with a key beside the notice or without it, an ID that is not a uuid or in capitals, another key, the billing type's key, a billing_notices ID as an activation notice and an activation_notices ID as billing.notice (which still asks for its billing_notices row, and records with it); the status and the attempts are refused (42501, permission denied) by the column privileges, which the policy repeats; it still reads no event"
+    );
+
+    // 10. the re-read of a notice when it is sent (0131, AC-7c.12 and AC-7c.13): one function of the owner of the
+    // series answers whether a notice still holds, by the rules of the candidates, and the name of the store only then
+    const stillOwedFunction = await owner.pool.query<{
+      args: string[];
+      config: string[];
+      definer: boolean;
+      modes: string[] | null;
+      owner: string;
+      returns: string;
+      retset: boolean;
+      source: string;
+      volatility: string;
+    }>(
+      `SELECT p.prosecdef AS definer, p.proconfig AS config, p.proowner::regrole::text AS owner, p.prosrc AS source,
+              p.provolatile::text AS volatility, p.prorettype::regtype::text AS returns, p.proretset AS retset,
+              p.proargnames::text[] AS args, p.proargmodes::text[] AS modes
+         FROM pg_catalog.pg_proc AS p WHERE p.oid = $1::regprocedure`,
+      [STILL_OWED_FUNCTION]
+    );
+    const [stillOwedFn] = stillOwedFunction.rows;
+    assert.ok(stillOwedFn);
+    assert.equal(stillOwedFn.definer, true, "the re-read: SECURITY DEFINER");
+    assert.equal(
+      stillOwedFn.owner,
+      NOTICE_OWNER,
+      "the re-read is owned by the owner of the series, the owner of the candidates"
+    );
+    assert.deepEqual(stillOwedFn.config, [
+      "search_path=pg_catalog, public, pg_temp",
+    ]);
+    assert.doesNotMatch(stillOwedFn.source, DYNAMIC_SQL, "no dynamic SQL");
+    assert.equal(stillOwedFn.volatility, "v", "volatile: no cache answers it");
+    assert.deepEqual(
+      {
+        args: stillOwedFn.args,
+        modes: stillOwedFn.modes,
+        returns: stillOwedFn.returns,
+        retset: stillOwedFn.retset,
+      },
+      {
+        args: ["p_organization", "p_notice", "p_now"],
+        modes: null,
+        returns: "jsonb",
+        retset: false,
+      },
+      "the re-read takes three inputs and answers one jsonb, no column of its own"
+    );
+    const candidateColumns = await owner.pool.query<{
+      name: string;
+      type: string;
+    }>(
+      `SELECT a.name, a.type::regtype::text AS type
+         FROM pg_catalog.pg_proc AS p,
+              LATERAL unnest(p.proargnames, p.proargmodes, p.proallargtypes) WITH ORDINALITY AS a (name, mode, type, position)
+        WHERE p.oid = $1::regprocedure AND a.mode = 't'
+        ORDER BY a.position`,
+      [FUNCTION]
+    );
+    assert.deepEqual(
+      candidateColumns.rows.map((row) => `${row.name}:${row.type}`),
+      [
+        "organization_id:text",
+        "user_id:text",
+        "step:text",
+        "due_at:timestamp with time zone",
+        "outcome:text",
+        "truncated:boolean",
+      ],
+      "the candidates answer only IDs, a step, an instant, an outcome and a flag: never the name of the store"
+    );
+    const stillOwedExecutors = await owner.pool.query<{ role: string }>(
+      `SELECT r.role FROM (
+         SELECT 'public' AS role
+         UNION ALL SELECT rolname::text FROM pg_catalog.pg_roles WHERE rolname LIKE 'polaris\\_%' AND NOT rolcanlogin
+       ) AS r
+        WHERE pg_catalog.has_function_privilege(r.role, $1, 'EXECUTE')
+        ORDER BY r.role COLLATE "C"`,
+      [STILL_OWED_FUNCTION]
+    );
+    assert.deepEqual(
+      stillOwedExecutors.rows.map((row) => row.role),
+      [NOTICE_OWNER, BILLING_RUNTIME],
+      "only the billing runtime executes the re-read (and its owner)"
+    );
+    const stillOwedAcl = await owner.pool.query<{ grantee: string }>(
+      `SELECT DISTINCT a.grantee::regrole::text AS grantee
+         FROM pg_catalog.pg_proc AS p, pg_catalog.aclexplode(p.proacl) AS a
+        WHERE p.oid = $1::regprocedure
+        ORDER BY 1`,
+      [STILL_OWED_FUNCTION]
+    );
+    assert.deepEqual(
+      stillOwedAcl.rows.map((row) => row.grantee),
+      [NOTICE_OWNER, BILLING_RUNTIME],
+      "the ACL of the re-read names only its owner and the billing runtime"
+    );
+    const ownedBySeries = await owner.pool.query<{ signature: string }>(
+      `SELECT p.oid::regprocedure::text AS signature FROM pg_catalog.pg_proc AS p
+        WHERE p.proowner = $1::regrole ORDER BY p.oid::regprocedure::text COLLATE "C"`,
+      [NOTICE_OWNER]
+    );
+    assert.deepEqual(
+      ownedBySeries.rows.map((row) => row.signature),
+      [
+        "activation_notice_candidates(timestamp with time zone,integer)",
+        "activation_notice_still_owed(text,uuid,timestamp with time zone)",
+        "activation_record_opt_out(text)",
+      ],
+      "the owner of the series owns exactly its three functions"
+    );
+    for (const [url, role] of [
+      [tenantUrl, runtimeRole],
+      [authUrl, AUTH_RUNTIME],
+    ] as const) {
+      await as(url, async (client) => {
+        await setLoginRole(client, role, "session");
+        await expectSqlState(
+          () =>
+            client.query(
+              "SELECT public.activation_notice_still_owed('x', gen_random_uuid(), now())"
+            ),
+          "42501",
+          `${role} does not execute the re-read`
+        );
+      });
+    }
+    await as(billingUrl, async (client) => {
+      await setLoginRole(client, BILLING_RUNTIME, "session");
+      const answer = await client.query<{ answer: unknown }>(
+        "SELECT public.activation_notice_still_owed('x', gen_random_uuid(), now()) AS answer"
+      );
+      assert.equal(answer.rows[0]?.answer, null, "an unknown notice is null");
+      await expectSqlState(
+        () =>
+          client.query(
+            "SELECT public.activation_notice_still_owed('x', gen_random_uuid(), NULL)"
+          ),
+        "22023",
+        "a null clock is refused"
+      );
+      await expectSqlState(
+        () => client.query("SELECT name FROM public.organizations LIMIT 1"),
+        "42501",
+        "the billing runtime does not read the name of a store"
+      );
+    });
+    tests.push(
+      "AC-7c.12: activation_notice_still_owed(text, uuid, timestamptz) is SECURITY DEFINER of polaris_activation_notice_owner, volatile, with search_path pg_catalog, public, pg_temp and no dynamic SQL, takes three inputs and returns one jsonb (no set, no column of its own); of PUBLIC and every polaris_* group only the billing runtime executes it (and its owner), and its ACL names no one else; a tenant and an authentication login are refused (42501), a billing login gets null for an unknown notice and 22023 for a null clock, and is refused a SELECT of organizations.name (42501); the owner of the series owns exactly the candidates, the re-read and the opt-out; the columns of activation_notice_candidates are exactly organization_id, user_id, step, due_at, outcome and truncated (pg_proc), so the candidates never answer the name of the store"
+    );
+
+    const nameReaders = await owner.pool.query<{ role: string }>(
+      `SELECT r.rolname::text AS role FROM pg_catalog.pg_roles AS r
+        WHERE (r.rolname LIKE 'polaris\\_%' AND NOT r.rolcanlogin)
+          AND pg_catalog.has_column_privilege(r.oid, 'public.organizations', 'name', 'SELECT')
+        ORDER BY r.rolname::text COLLATE "C"`
+    );
+    assert.deepEqual(
+      nameReaders.rows.map((row) => row.role),
+      ORGANIZATION_NAME_READERS,
+      "the exact polaris_* groups that read organizations.name: the owner of the series is the one this migration adds"
+    );
+    const seriesNameReaders = await owner.pool.query<{
+      name: boolean;
+      role: string;
+    }>(
+      `SELECT r.role, pg_catalog.has_column_privilege(r.role, 'public.organizations', 'name', 'SELECT') AS name
+         FROM unnest($1::text[]) AS r (role)
+        ORDER BY r.role COLLATE "C"`,
+      [[NOTICE_OWNER, MEASURE_OWNER, RECIPIENT_OWNER, BILLING_RUNTIME]]
+    );
+    assert.deepEqual(
+      seriesNameReaders.rows,
+      [
+        { name: true, role: NOTICE_OWNER },
+        { name: false, role: MEASURE_OWNER },
+        { name: false, role: RECIPIENT_OWNER },
+        { name: false, role: BILLING_RUNTIME },
+      ],
+      "of the series' roles and the billing runtime only the owner of the series reads the name"
+    );
+    const seriesColumns = await owner.pool.query<{ entry: string }>(
+      `SELECT c.table_name || '.' || c.column_name || ':' || c.privilege_type AS entry
+         FROM information_schema.column_privileges AS c
+        WHERE c.grantee = $1
+        ORDER BY c.table_name || '.' || c.column_name || ':' || c.privilege_type COLLATE "C"`,
+      [NOTICE_OWNER]
+    );
+    assert.deepEqual(
+      seriesColumns.rows.map((row) => row.entry),
+      NOTICE_OWNER_COLUMNS,
+      "the owner of the series holds exactly its columns"
+    );
+    assert.equal(
+      NOTICE_OWNER_COLUMNS.filter((entry) => entry.endsWith(":SELECT")).length,
+      35,
+      "35 columns read"
+    );
+    tests.push(
+      `AC-7c.12 and P-1: has_column_privilege on organizations.name is true for polaris_activation_notice_owner and false for polaris_activation_owner (the measure), polaris_activation_recipient_owner and polaris_billing_runtime; of the polaris_* groups exactly ${ORGANIZATION_NAME_READERS.join(", ")} read it; the owner of the series holds exactly 35 SELECT columns and the INSERT of email_opt_outs.user_id`
+    );
+
+    const transactionNow = async (client: Client) => {
+      const now = (await client.query<{ now: Date }>("SELECT now() AS now"))
+        .rows[0]?.now;
+      assert.ok(now instanceof Date);
+      return now;
+    };
+    const stillOwed = (
+      client: Client,
+      now: Date | null,
+      organizationId: string | null,
+      noticeId: string | null
+    ) =>
+      withGateRole(client, BILLING_RUNTIME, async () => {
+        const result = await client.query<{ answer: unknown }>(
+          "SELECT public.activation_notice_still_owed($1, $2, $3) AS answer",
+          [organizationId, noticeId, now]
+        );
+        return result.rows[0]?.answer ?? null;
+      });
+    const owe = async (
+      client: Client,
+      store: Store,
+      step: string,
+      dueAt: Date,
+      outcome: "owed" | "sent" | "skipped" | "failed" = "owed"
+    ) => {
+      await seedNotice(client, store, step, outcome, dueAt);
+      return String(
+        (
+          await client.query<{ id: string }>(
+            "SELECT id FROM public.activation_notices WHERE user_id = $1 AND step = $2",
+            [store.userId, step]
+          )
+        ).rows[0]?.id
+      );
+    };
+    const STORE_NAME = "Loja do gate de candidatos";
+    /** A store of `createdAt`, with a product an hour later, that breaks each rule of the re-read named in `breaks`. */
+    const breakingStore = async (
+      client: Client,
+      breaks: ReadonlySet<string>,
+      createdAt: Date
+    ) => {
+      const verified = !breaks.has("email_not_verified");
+      const spec: StoreSpec = {
+        createdAt,
+        internal: breaks.has("internal_store"),
+        optOut: breaks.has("opted_out"),
+        product: { at: at(createdAt, HOUR) },
+        sale: breaks.has("activated"),
+        status: breaks.has("store_not_active") ? "suspended" : "active",
+        verified,
+        ...(breaks.has("billing_relation")
+          ? { billing: { state: "active", trial: false } }
+          : {}),
+        ...(breaks.has("privacy_request_open")
+          ? { privacy: "open" as const }
+          : {}),
+      };
+      if (breaks.has("not_first_owner")) {
+        spec.owner = await newPerson(client, verified);
+        await newStore(client, {
+          createdAt: at(createdAt, -HOUR),
+          owner: spec.owner,
+        });
+      }
+      return newStore(client, spec);
+    };
+
+    await scenario(async (client) => {
+      const txNow = await transactionNow(client);
+      // the candidates are asked at 10:00 of São Paulo and the re-read at the transaction's own clock (it replaces one
+      // more than 10 minutes away): the stores are dated from the earlier of the two, so both read the same facts
+      const base = ten < txNow ? ten : txNow;
+      const created = at(base, -26 * HOUR);
+      const a3Created = at(base, -10 * DAY - HOUR);
+      const storeName = "Ateliê da Ana & <Cia>";
+      const cases: ParityCase[] = [];
+      const add = async (
+        label: string,
+        code: string | null,
+        spec: StoreSpec,
+        candidatesAnswer: string[],
+        step: "a1" | "a2" | "a3" = "a1",
+        due = at(spec.createdAt, 24 * HOUR)
+      ) => {
+        const store = await newStore(client, spec);
+        cases.push({
+          candidates: candidatesAnswer,
+          code,
+          due,
+          label,
+          step,
+          store,
+        });
+        return store;
+      };
+      const base0: StoreSpec = { createdAt: created };
+      const control = await add("the eligible control", null, base0, [
+        "a1:due",
+      ]);
+      await client.query(
+        "UPDATE public.organizations SET name = $2 WHERE id = $1",
+        [control.organizationId, storeName]
+      );
+      await add(
+        "a store whose case is only a support case",
+        null,
+        { ...base0, privacy: "support_only" },
+        ["a1:due"]
+      );
+      const a2Created = at(base, -5 * DAY);
+      await add(
+        "a2 of a store with a product (S1)",
+        null,
+        { createdAt: a2Created, product: { at: at(base, -3 * DAY - HOUR) } },
+        ["a2:due"],
+        "a2",
+        at(base, -3 * DAY - HOUR + 3 * DAY)
+      );
+      const a3Control = await add(
+        "a3 after the a2 went out",
+        null,
+        { createdAt: a3Created, product: { at: at(a3Created, HOUR) } },
+        ["a3:due"],
+        "a3",
+        at(a3Created, 10 * DAY)
+      );
+      await seedNotice(client, a3Control, "a2", "sent", at(a3Created, 4 * DAY));
+      const expiredCreated = at(base, -6 * DAY);
+      await add(
+        "the notice 3 days past its trigger",
+        "expired",
+        { createdAt: expiredCreated },
+        ["a1:expired", "a2:due"]
+      );
+      // a product on the 10th day puts the a2 on the 13th: owed, not expired, when the store leaves the 14 days
+      const windowCreated = at(txNow, -14 * DAY - MINUTE);
+      await add(
+        "a store past 14 days of the database's clock",
+        "series_window_passed",
+        {
+          createdAt: windowCreated,
+          product: { at: at(windowCreated, 10 * DAY) },
+        },
+        [],
+        "a2",
+        at(windowCreated, 13 * DAY)
+      );
+      await add(
+        "a1 once the store has a product",
+        "state_changed",
+        { ...base0, product: { at: at(created, HOUR) } },
+        []
+      );
+      await add("sold", "activated", { ...base0, sale: true }, []);
+      await add("opted out", "opted_out", { ...base0, optOut: true }, []);
+      await add(
+        "trial used",
+        "billing_relation",
+        { ...base0, billing: { state: "free", trial: true } },
+        []
+      );
+      await add(
+        "Pro",
+        "billing_relation",
+        { ...base0, billing: { state: "active", trial: false } },
+        []
+      );
+      await add(
+        "suspended",
+        "store_not_active",
+        { ...base0, status: "suspended" },
+        []
+      );
+      await add(
+        "closed",
+        "store_not_active",
+        { ...base0, status: "closed" },
+        []
+      );
+      await add(
+        "open request about personal data",
+        "privacy_request_open",
+        { ...base0, privacy: "open" },
+        []
+      );
+      await add("internal", "internal_store", { ...base0, internal: true }, []);
+      const twoStores = await newPerson(client);
+      await newStore(client, {
+        createdAt: at(created, -HOUR),
+        owner: twoStores,
+      });
+      await add(
+        "second store of the person",
+        "not_first_owner",
+        { ...base0, owner: twoStores },
+        []
+      );
+      const shared = await newStore(client, base0);
+      const coOwner = await newPerson(client);
+      await client.query(
+        "INSERT INTO public.memberships (organization_id, user_id, role, status, created_at) VALUES ($1, $2, 'owner', 'active', $3)",
+        [shared.organizationId, coOwner, at(created, MINUTE)]
+      );
+      cases.push({
+        candidates: [],
+        code: "not_first_owner",
+        due: at(created, 24 * HOUR),
+        label: "a co-owner who is not the founder",
+        step: "a1",
+        store: { organizationId: shared.organizationId, userId: coOwner },
+      });
+      await add(
+        "e-mail not verified",
+        "email_not_verified",
+        { ...base0, verified: false },
+        []
+      );
+      const a3Skipped = await add(
+        "a3 whose a2 was skipped",
+        "state_changed",
+        { createdAt: a3Created, product: { at: at(a3Created, HOUR) } },
+        [],
+        "a3",
+        at(a3Created, 10 * DAY)
+      );
+      await seedNotice(
+        client,
+        a3Skipped,
+        "a2",
+        "skipped",
+        at(a3Created, 4 * DAY)
+      );
+
+      const rows = await candidates(client, ten);
+      for (const parity of cases) {
+        const answered =
+          parity.store.userId === coOwner
+            ? rows
+                .filter((row) => row.user_id === coOwner)
+                .map((row) => `${row.step}:${row.outcome}`)
+            : stepsOf(rows, parity.store);
+        assert.deepEqual(
+          answered,
+          parity.candidates,
+          `${parity.label}: the candidates`
+        );
+      }
+
+      const answers: unknown[] = [];
+      const codesSeen = new Set<string>();
+      for (const parity of cases) {
+        const noticeId = await owe(
+          client,
+          parity.store,
+          parity.step,
+          parity.due
+        );
+        const answer = await stillOwed(
+          client,
+          txNow,
+          parity.store.organizationId,
+          noticeId
+        );
+        answers.push(answer);
+        if (parity.code === null) {
+          assert.deepEqual(
+            Object.keys(answer as object).sort(),
+            ["hasProduct", "step", "store"],
+            `${parity.label}: the three keys`
+          );
+          assert.equal(
+            (answer as { step: string }).step,
+            parity.step,
+            parity.label
+          );
+        } else {
+          assert.deepEqual(answer, { skip: parity.code }, parity.label);
+          codesSeen.add(parity.code);
+        }
+      }
+      assert.deepEqual(
+        [...codesSeen].sort(),
+        [...ACTIVATION_NOTICE_REREAD_REASONS].sort(),
+        "every code the domain lists for the database is answered, and no other"
+      );
+      const byLabel = (label: string) =>
+        answers[cases.findIndex((parity) => parity.label === label)];
+      assert.deepEqual(byLabel("the eligible control"), {
+        hasProduct: false,
+        step: "a1",
+        store: storeName,
+      });
+      assert.deepEqual(byLabel("a2 of a store with a product (S1)"), {
+        hasProduct: true,
+        step: "a2",
+        store: STORE_NAME,
+      });
+      assert.deepEqual(byLabel("a3 after the a2 went out"), {
+        hasProduct: true,
+        step: "a3",
+        store: STORE_NAME,
+      });
+      const serialized = JSON.stringify(answers);
+      assert.ok(!serialized.includes("@"), "no address in any answer");
+      for (const parity of cases) {
+        assert.ok(
+          !serialized.includes(parity.store.userId),
+          `${parity.label}: no person in any answer`
+        );
+      }
+    });
+    await scenario(async (client) => {
+      const txNow = await transactionNow(client);
+      const a3Created = at(txNow, -10 * DAY - HOUR);
+      // a store that breaks every rule from one on answers that one: the order of the domain, rule by rule
+      const chainCodes = ACTIVATION_NOTICE_REREAD_REASONS.slice(2);
+      const chain: [string, Store, string][] = [];
+      for (const [index, code] of chainCodes.entries()) {
+        const store = await breakingStore(
+          client,
+          new Set(chainCodes.slice(index)),
+          a3Created
+        );
+        await seedNotice(
+          client,
+          store,
+          "a2",
+          "skipped",
+          at(a3Created, 4 * DAY)
+        );
+        chain.push([
+          code,
+          store,
+          await owe(client, store, "a3", at(a3Created, 10 * DAY)),
+        ]);
+      }
+      const chainAnswers: unknown[] = [];
+      for (const [, store, noticeId] of chain) {
+        chainAnswers.push(
+          await stillOwed(client, txNow, store.organizationId, noticeId)
+        );
+      }
+      assert.deepEqual(
+        chainAnswers,
+        chainCodes.map((code) => ({ skip: code })),
+        "a store that breaks every rule from one on answers that one"
+      );
+      // the same store, 2 minutes short of 14 days, still in the role's sight: 5 minutes ahead it is past the 14 days
+      // before any rule of its own, and a notice 3 days past its trigger is expired before that
+      const nearlyOld = at(txNow, -14 * DAY + 2 * MINUTE);
+      const old = await breakingStore(client, new Set(chainCodes), nearlyOld);
+      const oldNotice = await owe(client, old, "a2", at(nearlyOld, 13 * DAY));
+      const ahead = at(txNow, 5 * MINUTE);
+      assert.deepEqual(
+        await stillOwed(client, txNow, old.organizationId, oldNotice),
+        { skip: "activated" },
+        "the store of 14 days less 2 minutes is still seen"
+      );
+      assert.deepEqual(
+        await stillOwed(client, ahead, old.organizationId, oldNotice),
+        { skip: "series_window_passed" },
+        "series_window_passed comes before every rule of the store"
+      );
+      await client.query(
+        "UPDATE public.activation_notices SET due_at = $2 WHERE id = $1",
+        [oldNotice, at(txNow, -3 * DAY)]
+      );
+      assert.deepEqual(
+        await stillOwed(client, ahead, old.organizationId, oldNotice),
+        { skip: "expired" },
+        "expired comes before series_window_passed"
+      );
+    });
+
+    await scenario(async (client) => {
+      const txNow = await transactionNow(client);
+      const created = at(txNow, -26 * HOUR);
+      const base0: StoreSpec = { createdAt: created };
+      // null: a notice no longer owed, of another store, unknown, or a missing argument
+      const nullStore = await newStore(client, base0);
+      const resolved: [string, "sent" | "failed" | "skipped"][] = [
+        ["a1", "sent"],
+        ["a2", "failed"],
+        ["a3", "skipped"],
+      ];
+      for (const [step, outcome] of resolved) {
+        const id = await owe(
+          client,
+          nullStore,
+          step,
+          at(created, 24 * HOUR),
+          outcome
+        );
+        assert.equal(
+          await stillOwed(client, txNow, nullStore.organizationId, id),
+          null,
+          `${outcome}: null`
+        );
+      }
+      const control = await newStore(client, base0);
+      const controlId = await owe(
+        client,
+        control,
+        "a1",
+        at(created, 24 * HOUR)
+      );
+      assert.equal(
+        await stillOwed(client, txNow, nullStore.organizationId, controlId),
+        null,
+        "the notice asked for another store: null"
+      );
+      assert.equal(
+        await stillOwed(client, txNow, control.organizationId, randomUUID()),
+        null,
+        "unknown: null"
+      );
+      assert.equal(
+        await stillOwed(client, txNow, control.organizationId, null),
+        null,
+        "no notice: null"
+      );
+      assert.equal(
+        await stillOwed(client, txNow, null, controlId),
+        null,
+        "no store: null"
+      );
+
+      // the clock: within 10 minutes of the database's it is the caller's, farther it is the database's
+      const edge = await newStore(client, {
+        createdAt: at(txNow, -3 * DAY - DAY + 5 * MINUTE),
+      });
+      const edgeId = await owe(
+        client,
+        edge,
+        "a1",
+        at(txNow, -3 * DAY + 5 * MINUTE)
+      );
+      const owedA1 = { hasProduct: false, step: "a1", store: STORE_NAME };
+      assert.deepEqual(
+        await stillOwed(client, txNow, edge.organizationId, edgeId),
+        owedA1,
+        "owed at the database's clock"
+      );
+      assert.deepEqual(
+        await stillOwed(
+          client,
+          at(txNow, 6 * MINUTE),
+          edge.organizationId,
+          edgeId
+        ),
+        { skip: "expired" },
+        "6 minutes ahead is the caller's clock: expired"
+      );
+      assert.deepEqual(
+        await stillOwed(
+          client,
+          at(txNow, 11 * MINUTE),
+          edge.organizationId,
+          edgeId
+        ),
+        owedA1,
+        "11 minutes ahead is replaced by the database's: still owed"
+      );
+      assert.deepEqual(
+        await stillOwed(
+          client,
+          at(txNow, 20 * DAY),
+          edge.organizationId,
+          edgeId
+        ),
+        owedA1,
+        "20 days ahead neither expires the notice nor ends the 14 days"
+      );
+      assert.deepEqual(
+        await stillOwed(
+          client,
+          at(txNow, -20 * DAY),
+          control.organizationId,
+          controlId
+        ),
+        owedA1,
+        "20 days behind is replaced too"
+      );
+    });
+    tests.push(
+      "AC-7c.13 and AC-7c.1 (database side): one store per rule, each also asked to the candidates at 10:00 of São Paulo, which leave it out (or answer it expired) where the re-read of its owed notice answers the code: expired, series_window_passed (a store past 14 days of the database's clock whose a2 is still within 3 days), activated, opted_out, billing_relation (trial used, Pro), store_not_active (suspended, closed), privacy_request_open, internal_store, not_first_owner (second store of the person, a co-owner who is not the founder), email_not_verified, state_changed (an a1 once the store has a product, an a3 whose a2 was skipped); the controls the candidates answer due (a1 of the eligible store, a store whose case is only a support case, a2 with a product, a3 after the a2 went out) get {step, hasProduct, store} with the raw name, and only they get the name; the codes answered are exactly ACTIVATION_NOTICE_REREAD_REASONS of @polaris/domain/activation/notices, and a store that breaks every rule from activated on answers that one, in the domain's order, and a store of 14 days less 2 minutes that breaks them all answers activated at the database's clock, series_window_passed 5 minutes ahead and expired once its notice is 3 days past its trigger; no answer carries an address or a person; null for a notice sent, failed or skipped, asked for another store, unknown, or without store or notice; the caller's clock counts within 10 minutes of the database's (6 minutes ahead expires a notice that the database's clock still owes) and is replaced farther (11 minutes and 20 days ahead, 20 days behind)"
     );
 
     console.log(
