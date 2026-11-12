@@ -5,7 +5,8 @@ import { saoPauloDateOf } from "./provider-period";
  * end falls on. The provider takes the first charge during that day (the Asaas
  * card capture comes in the late afternoon), so a trial that ended at the exact
  * stored instant would drop to Free, and record `over_limit_since`, in the
- * hours between that instant and the confirmation (AC-47).
+ * hours between that instant and the confirmation (AC-47). The hourly sweep
+ * (`sweepDue` in the db package) repeats this day boundary in its SQL.
  */
 export const TRIAL_SLACK_HOURS = 6;
 

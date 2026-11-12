@@ -234,6 +234,26 @@ describe("the renewal of the store (the owner's own record, read by the Admin)",
     });
   });
 
+  it("is renewing for a trial inside the slack that waits for its first charge (AC-47)", () => {
+    const trial: RawRefundWindow = {
+      ...charged,
+      accessEndsAt: sp("2026-10-17T15:00:00"),
+      currentChargeAmount: null,
+      firstChargeAmount: null,
+      firstChargeAt: null,
+      state: "trialing",
+    };
+    for (const local of ["2026-10-17T15:01:00", "2026-10-18T05:59:59"]) {
+      expect(
+        buildRefundWindowView({ ...trial, now: sp(local) }, here).renewal.status
+      ).toBe("renewing");
+    }
+    expect(
+      buildRefundWindowView({ ...trial, now: sp("2026-10-18T06:00:00") }, here)
+        .renewal.status
+    ).toBe("none");
+  });
+
   it("is cancelled with the access already paid: the end and the day to subscribe again are the same instant", () => {
     const view = buildRefundWindowView(
       { ...charged, cancelAtPeriodEnd: true, now },
