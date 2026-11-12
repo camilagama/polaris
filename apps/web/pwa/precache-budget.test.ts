@@ -22,7 +22,6 @@ import {
   chunkBudgetWarnings,
   chartsLine,
   calendarPlacementProblems,
-  counterPlacementProblems,
   chartsPlacementProblems,
   FONT_BUDGET_BYTES,
   HEATMAP_BUDGET_GZIP_BYTES,
@@ -940,50 +939,6 @@ describe("the charts line (ADR 0103, amendment Gráficos, t285)", () => {
       ),
       expect.stringContaining(
         "calendar module @date-fns/tz/date/index.js is in assets/index-abc.js"
-      ),
-    ]);
-  });
-
-  it("fails the counter or @number-flow in a chunk that is not the counter chunk (control: in its own chunk, with the loader outside, it passes)", () => {
-    const counter = "/repo/apps/web/src/ui/figure-counter.tsx";
-    const react =
-      "/repo/node_modules/.bun/@number-flow+react@0.6.2/node_modules/@number-flow/react/dist/NumberFlow-client.js";
-    const core =
-      "/repo/node_modules/.bun/number-flow@0.6.2/node_modules/number-flow/dist/lite.js";
-    const esm =
-      "/repo/node_modules/.bun/esm-env@1.2.2/node_modules/esm-env/index.js";
-    const loader = "/repo/apps/web/src/ui/animated-figure.tsx";
-    const heavy = {
-      [counter]: { renderedLength: 1 },
-      [core]: { renderedLength: 1 },
-      [esm]: { renderedLength: 1 },
-      [react]: { renderedLength: 1 },
-    };
-    expect(
-      counterPlacementProblems([
-        { fileName: "assets/figure-counter-Ab12_x.js", modules: heavy },
-        {
-          fileName: "assets/index-abc.js",
-          modules: { [loader]: { renderedLength: 1 } },
-        },
-      ])
-    ).toEqual([]);
-    expect(
-      counterPlacementProblems([
-        { fileName: "assets/result-cards-Ab12.js", modules: heavy },
-      ])
-    ).toEqual([
-      expect.stringContaining(
-        "counter module /repo/apps/web/src/ui/figure-counter.tsx is in assets/result-cards-Ab12.js"
-      ),
-      expect.stringContaining(
-        "counter module number-flow/dist/lite.js is in assets/result-cards-Ab12.js"
-      ),
-      expect.stringContaining(
-        "counter module esm-env/index.js is in assets/result-cards-Ab12.js"
-      ),
-      expect.stringContaining(
-        "counter module @number-flow/react/dist/NumberFlow-client.js is in assets/result-cards-Ab12.js"
       ),
     ]);
   });

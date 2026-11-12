@@ -27,8 +27,6 @@ import { fileURLToPath } from "node:url";
  * the grid of cells (`HeatmapRect`) and the `<g>` around it. `@visx/group` was already in the closure under
  * `@visx/shape` and `@visx/grid` (same version); `@visx/heatmap` brings only it and `classnames`, both already there.
  * No install script. Only the heat map chunk imports `@visx/heatmap` (the guard of `pwa/precache-budget.ts`).
- * `@number-flow/react` came with the counter of the main numbers of the cards (`src/ui/figure-counter.tsx`, the only file
- * that imports it, loaded on demand): MIT, no install script, two dependencies (`number-flow`, same version, and `esm-env`, no dependencies).
  * `react-day-picker` and `date-fns` came with the date pickers: the month grid of `src/ui/calendar.tsx` (the
  * shadcn `calendar`) and the Portuguese names of months and weekdays. No install script; `react-day-picker` depends
  * only on `date-fns` and `@date-fns/tz`, which have no dependencies. Only the calendar chunk imports them (the guard
@@ -38,7 +36,6 @@ export const UI_ALLOWED_PACKAGES = [
   "@base-ui/react",
   "@fontsource-variable/geist",
   "@fontsource-variable/geist-mono",
-  "@number-flow/react",
   "@tailwindcss/vite",
   "@visx/curve",
   "@visx/event",
@@ -325,22 +322,14 @@ const SOURCE_RULES: { rule: string; pattern: RegExp }[] = [
 
 /**
  * What one file may hold of `SOURCE_RULES`, exactly: the file (its path from the repository root, matched whole, never
- * by the end of the path: the same name in another app or folder still fails), the rule and why. The counter of the
- * cards writes its styles in a `<style>` inside a shadow root, which the policy of the page (`style-src 'self'`) refuses;
- * its root adopts a constructed sheet instead, and the element is never put in the tree. The exception is that one
- * rule in that one file: any other rule in it, or the same rule anywhere else, still fails.
+ * by the end of the path: the same name in another app or folder still fails), the rule and why. Empty: a
+ * constructed sheet is the way around `style-src 'self'` refusing a `<style>`, and no file needs it.
  */
 export const SOURCE_RULE_EXCEPTIONS: readonly {
   file: string;
   rule: string;
   why: string;
-}[] = [
-  {
-    file: "apps/web/src/ui/figure-counter.tsx",
-    rule: "adoptedStyleSheets",
-    why: "a raiz do contador adota uma folha construída no lugar do <style> que o CSP recusa (style-src 'self', sem nonce)",
-  },
-];
+}[] = [];
 
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 

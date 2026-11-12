@@ -299,6 +299,8 @@ A auditoria de UI de 02/11 mediu campos de 34 px e itens de 48 px que sobraram d
 
 ## Emenda: o contador dos números principais dos cartões (t944, 08/11/2026)
 
+> Substituída pela emenda "o número principal entra com um fade" (t1040, 11/11/2026), no fim desta seção de emendas: o contador, a dependência e a exceção de CSP saíram.
+
 **Decisão do usuário (08/11/2026, B-07 da auditoria de polimento):** só os números principais e indicativos dos cartões animam, com o contador no estilo do Bklit; o resto aparece pronto. Isso substitui a frase da emenda de 25/10 ("`@number-flow/react`, que o código não importa: não entram") só no que o contador cobre.
 
 - **Dependência nova:** `@number-flow/react` 0.6.2 (MIT, versão exata, na lista de `ui-supply-chain.ts`; traz `number-flow` 0.6.2 e `esm-env`, os três MIT e sem script de instalação; fechamento em `ui-dependency-closure.txt`). Só `src/ui/figure-counter.tsx` o importa (a emenda de t947, abaixo, o põe num pedaço próprio), e o contador só é usado pelo valor e o chip de percentual do cartão de KPI e pelo percentual da Meta e da Margem (`scripts/ui-source-rules.test.ts`).
@@ -307,9 +309,21 @@ A auditoria de UI de 02/11 mediu campos de 34 px e itens de 48 px que sobraram d
 
 ## Emenda: o contador num pedaço próprio, só no nível `full` (t947, 08/11/2026)
 
+> Substituída pela emenda do t1040: o pedaço `figure-counter-*.js` e o guarda `counterPlacementProblems` saíram.
+
 O pacote do contador (+7,7 kB gzip) ia no pedaço `result-cards` e era baixado no celular, onde o contador nunca roda. `src/ui/animated-figure.tsx` fica leve (a leitura do texto do número e a escolha entre o valor estático e o contador) e carrega `src/ui/figure-counter.tsx`, o único que importa `@number-flow/react`, por `import()` só quando o nível de movimento é `full` e o valor vai contar: no celular (menos de 760 px, ou até 500 px de altura) e com `prefers-reduced-motion` a página não pede o pedaço. O build o põe em `figure-counter-*.js` (6,78 kB gzip; `result-cards` volta a 9,32 kB) e reprova o pacote em outro pedaço (`counterPlacementProblems`, `pwa/precache-budget.ts`); `scripts/ui-source-rules.test.ts` reprova um import estático do contador. O pedaço continua no precache do service worker, para o contador funcionar sem conexão no tablet e no computador: o que muda é que a página do celular não o pede nem o executa.
 
 **Decisão do Arrascaeta (08/11/2026):** tablet com toque e a partir de 760 px usa o layout de computador e anima; o corte é a largura (menos de 760 px, ou até 500 px de altura), não o toque. É o que `motionLevel` já fazia. O valor final aparece na hora, estático, no primeiro quadro, e nunca fica transparente à espera do pedaço (sem teto de espera): com o pedaço já carregado (pré-carregado no nível `full`) o contador começa de zero ao entrar; se o pedaço chega depois, o número que já está na tela não conta essa vez, passa ao contador com o mesmo texto e conta só nas trocas seguintes (período, atualizar); se o pedaço falha ou o navegador não monta o contador, o valor estático fica. O service worker ainda baixa o pedaço (6,78 kB) na instalação, para o precache; o celular não o pede nem o executa. O valor e o chip com o texto ao lado dele não se movem em nenhum quadro (até 1 px, `e2e-real/jornadas/contador.e2e.ts`).
+
+## Emenda: o número principal entra com um fade, sem dígitos rolando (t1040, 11/11/2026)
+
+**Decisão do usuário (09/11/2026, reafirmada em 11/11):** a animação do número principal do cartão de KPI deve ser simples, como nos KPI sparklines do Bklit, e não o odômetro. Isso substitui o contador das duas emendas de 08/11 (t944 e t947).
+
+- **Comportamento.** Quando o valor muda, o número novo entra inteiro, com fade de 200 ms e subida de 4 px (`motion-full:animate-in motion-full:fade-in-0 motion-full:slide-in-from-bottom-1 motion-full:duration-200`, do `tw-animate-css` que o projeto já usa), só nessa troca: a primeira entrada nasce pronta e o mesmo texto não repete. O dia lido no minigráfico (e a volta ao repouso) troca na hora, sem entrada, para o valor acompanhar o ponteiro sem piscar; o `HeroValue` avisa o `AnimatedFigure` com `reading`, como avisa `hidden`. Celular, `prefers-reduced-motion` e valores escondidos não animam (a variante `motion-full:` só existe no nível `full`). Só CSS e uma troca de `key`: nenhum pedaço de código carregado, nenhum shadow root.
+- **Dependência removida.** `@number-flow/react` 0.6.2, `number-flow` 0.6.2 e `esm-env` saem de `apps/web/package.json`, da lista de `ui-supply-chain.ts`, do `ui-dependency-closure.txt` e do `bun.lock`; a regra do Renovate que os travava também sai. Nenhum outro código os importava (o anel da Meta já era sem o `ChartStatFlow`).
+- **CSP.** A exceção da regra `adoptedStyleSheets` (`SOURCE_RULE_EXCEPTIONS`) fica vazia: a regra reprova em todo arquivo de `src/ui/`. O CSP não mudou.
+- **Orçamento do precache.** O pedaço `figure-counter-*.js` (6,78 kB gzip) deixa de existir; o guarda `counterPlacementProblems` saiu com ele. Quem trouxer o pacote de volta é reprovado por `scripts/ui-source-rules.test.ts` (pacote, `<NumberFlow`, `spinTiming`, `figure-counter`, entrada fora de `motion-full:`) e pela lista de pacotes do `ui-supply-chain.ts`.
+- **Constante.** `MOTION.number` (500 ms na curva do eixo Y) saiu de `src/lib/motion-level.ts`; o tween do eixo Y não mudou.
 
 ## Emenda: o Ritmo de vendas só com o mapa (t991)
 

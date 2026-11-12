@@ -1,40 +1,91 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AnimatedFigure, parseFigure } from "./animated-figure";
+import { AnimatedFigure, ENTRANCE, nextFigureState } from "./animated-figure";
 
-describe("parseFigure", () => {
-  it.each([
-    ["R$ 129,90", { signed: false, value: 129.9 }],
-    ["-R$ 99.640,35", { signed: false, value: -99_640.35 }],
-    ["+R$ 436,86", { signed: true, value: 436.86 }],
-    ["−R$ 12,50", { signed: false, value: -12.5 }],
-  ])("%s", (text, figure) => {
-    expect(parseFigure(text)).toEqual(figure);
-  });
-
-  it.each([
-    "",
-    "—",
-    "R$ ••••",
-    "sem valor",
-    "R$ 12",
-    "12 vendas",
-    "R$ 1,5",
-    "41,2%",
-    "+30,0%",
-  ])("%j não é um valor do cartão", (text) => {
-    expect(parseFigure(text)).toBeNull();
-  });
-});
-
-describe("AnimatedFigure sem janela", () => {
-  it("escreve só o número estático, final, no primeiro quadro (o nível sem janela não anima)", () => {
+describe("AnimatedFigure", () => {
+  it("escreve o número final no primeiro quadro, sem entrada (nasce pronto)", () => {
     const markup = renderToStaticMarkup(
       <AnimatedFigure text="R$ 129,90">
         <span data-money="">R$ 129,90</span>
       </AnimatedFigure>
     );
-    expect(markup).toBe('<span data-money="">R$ 129,90</span>');
+    expect(markup).toContain('<span data-money="">R$ 129,90</span>');
+    expect(markup).not.toContain("animate-in");
+    expect(markup).not.toContain("data-figure-changed");
+  });
+
+  it("não tem contador de dígitos: nem pacote, nem casca, nem elemento do contador", () => {
+    const markup = renderToStaticMarkup(
+      <AnimatedFigure text="R$ 129,90">
+        <span>R$ 129,90</span>
+      </AnimatedFigure>
+    );
     expect(markup).not.toContain("data-animated-figure");
+    expect(markup).not.toContain("aria-hidden");
+    expect(markup).not.toContain("<number-flow");
+  });
+});
+
+describe("nextFigureState", () => {
+  const start = {
+    animate: false,
+    generation: 0,
+    reading: false,
+    text: "R$ 10,00",
+  };
+
+  it("o primeiro texto não anima e o mesmo texto devolve o mesmo estado (sem remontar)", () => {
+    expect(nextFigureState(start, "R$ 10,00", false, false)).toBe(start);
+  });
+
+  it("um valor novo começa uma entrada nova, e outro depois começa outra", () => {
+    const first = nextFigureState(start, "R$ 20,00", false, false);
+    expect(first).toEqual({
+      animate: true,
+      generation: 1,
+      reading: false,
+      text: "R$ 20,00",
+    });
+    expect(nextFigureState(first, "R$ 20,00", false, false)).toBe(first);
+    expect(nextFigureState(first, "R$ 30,00", false, false).generation).toBe(2);
+  });
+
+  it("uma troca com os valores escondidos não anima, nem quando eles voltam", () => {
+    const quiet = nextFigureState(start, "R$ 20,00", true, false);
+    expect(quiet.animate).toBe(false);
+    expect(nextFigureState(quiet, "R$ 20,00", false, false)).toBe(quiet);
+  });
+
+  it("cada dia lido no minigráfico troca sem entrada, e a volta ao repouso também", () => {
+    let state = start;
+    for (const text of ["R$ 20,00", "R$ 30,00", "R$ 25,00"]) {
+      state = nextFigureState(state, text, false, true);
+      expect(state.animate).toBe(false);
+    }
+    const back = nextFigureState(state, "R$ 10,00", false, false);
+    expect(back.animate).toBe(false);
+    expect(back.reading).toBe(false);
+    expect(nextFigureState(back, "R$ 40,00", false, false).animate).toBe(true);
+  });
+
+  it("uma leitura que termina no mesmo texto do repouso não deixa a próxima troca sem entrada", () => {
+    const reading = nextFigureState(start, "R$ 10,00", false, true);
+    expect(reading.generation).toBe(start.generation);
+    const rest = nextFigureState(reading, "R$ 10,00", false, false);
+    expect(rest.reading).toBe(false);
+    expect(nextFigureState(rest, "R$ 40,00", false, false).animate).toBe(true);
+  });
+
+  it("a entrada é um fade de 200 ms só sob motion-full, sem rolar dígito", () => {
+    for (const token of [
+      "motion-full:animate-in",
+      "motion-full:fade-in-0",
+      "motion-full:duration-200",
+    ]) {
+      expect(ENTRANCE.split(" ")).toContain(token);
+    }
+    expect(ENTRANCE.split(" ").every((t) => t.startsWith("motion-full:"))).toBe(
+      true
+    );
   });
 });
