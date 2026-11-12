@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { MoneyText } from "@/ui/hidden-values";
 import { cn } from "@/lib/utils";
 import {
@@ -58,8 +59,19 @@ const STACKED_ROW = "@max-[18rem]:grid";
 const STACKED_VALUE =
   "@max-[18rem]:pt-0 @max-[18rem]:pl-4 @max-[18rem]:text-left";
 
+/** On a line of its own, so the row is as wide as the others. */
+const EXPENSES_LINK =
+  "touch-hit focus-ring whitespace-nowrap rounded-sm font-normal text-muted-foreground text-xs underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground";
+
 /** "Como chegamos a este resultado": from gross sales to the estimated result, line by line. */
-export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
+export function ResultChain({
+  canCreateExpense,
+  summary,
+}: {
+  /** `expense:create`: the line of the period's expenses leads to the screen that registers them only for who can. */
+  canCreateExpense: boolean;
+  summary: StoredPeriodSummary;
+}) {
   const rows = chainRows(summary.chain, summary.quality);
   return (
     <Card
@@ -90,43 +102,58 @@ export function ResultChain({ summary }: { summary: StoredPeriodSummary }) {
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
-            <TableRow className={rowClass(row)} key={row.id}>
-              <TableHead
-                className={cn(
-                  "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
-                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                  "@max-[18rem]:pr-4 @max-[18rem]:pb-0"
-                )}
-                scope="row"
-              >
-                <span className="flex items-baseline gap-2">
-                  <span>{row.label}</span>
-                  <span aria-hidden="true" className={LEADER} />
-                </span>
-                {row.note ? (
-                  <span className="mt-0.5 block font-normal text-warning text-xs italic">
-                    <MoneyText text={row.note} />
+            <Fragment key={row.id}>
+              <TableRow className={rowClass(row)}>
+                <TableHead
+                  className={cn(
+                    "h-auto w-full whitespace-normal pr-0 align-top font-[weight:inherit] text-[length:inherit] text-foreground",
+                    row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
+                    "@max-[18rem]:pr-4 @max-[18rem]:pb-0"
+                  )}
+                  scope="row"
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span>{row.label}</span>
+                    <span aria-hidden="true" className={LEADER} />
                   </span>
-                ) : null}
-              </TableHead>
-              <TableCell
-                className={cn(
-                  "pl-2 text-right align-top tabular-nums",
-                  STACKED_VALUE,
-                  row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
-                  row.negative && row.kind !== "line" && "text-destructive"
-                )}
-              >
-                {row.value === EMPTY_VALUE ? (
-                  <>
-                    <span aria-hidden="true">{EMPTY_VALUE}</span>
-                    <span className="sr-only">sem valor</span>
-                  </>
-                ) : (
-                  <MoneyText text={row.value} />
-                )}
-              </TableCell>
-            </TableRow>
+
+                  {row.note ? (
+                    <span className="mt-0.5 block font-normal text-warning text-xs italic">
+                      <MoneyText text={row.note} />
+                    </span>
+                  ) : null}
+                </TableHead>
+                <TableCell
+                  className={cn(
+                    "pl-2 text-right align-top tabular-nums",
+                    STACKED_VALUE,
+                    row.kind === "result" ? "pt-4 pb-2.5" : "py-2",
+                    row.negative && row.kind !== "line" && "text-destructive"
+                  )}
+                >
+                  {row.value === EMPTY_VALUE ? (
+                    <>
+                      <span aria-hidden="true">{EMPTY_VALUE}</span>
+                      <span className="sr-only">sem valor</span>
+                    </>
+                  ) : (
+                    <MoneyText text={row.value} />
+                  )}
+                </TableCell>
+              </TableRow>
+              {row.id === "operatingExpenses" && canCreateExpense ? (
+                <TableRow className="border-b-0 hover:bg-transparent">
+                  <TableCell
+                    className="pt-0 pb-2 @max-[18rem]:pl-4"
+                    colSpan={2}
+                  >
+                    <a className={EXPENSES_LINK} href="/expenses">
+                      Ver despesas
+                    </a>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </Fragment>
           ))}
         </TableBody>
       </Table>
