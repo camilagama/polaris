@@ -328,10 +328,11 @@ function useChosenPeriod({
   return { chosen, periodRow, reloadAll };
 }
 
-/** Mais vendidos of the period shown: a skeleton while the period is read, and the same box with a sentence when no product sold. */
+/** Mais vendidos of the period shown: a skeleton while the period is read, and the same box with a sentence when no product is left (none sold, or all returned). */
 function rankingBlock(
   top: StoredPeriodSummary["topProducts"],
-  chosen: ChosenView | null
+  chosen: ChosenView | null,
+  salesCount: number
 ): React.ReactNode {
   if (chosen?.month.kind === "loading") {
     return <BlockSkeleton label="Carregando os mais vendidos…" lines={5} />;
@@ -343,6 +344,7 @@ function rankingBlock(
   return (
     <TopProductsBlock
       products={top}
+      salesCount={salesCount}
       title={chosen?.rankingTitle ?? "Mais vendidos do mês"}
     />
   );
@@ -378,7 +380,7 @@ function readBlocks(
         todayShown={todayShown && series}
       />
     ),
-    ranking: rankingBlock(top, chosen),
+    ranking: rankingBlock(top, chosen, shown?.quality.salesCount ?? 0),
     // the days of the month are the figures': a copy without the series of the month draws no map either
     rhythm:
       figures.month.daily === undefined ? null : (
