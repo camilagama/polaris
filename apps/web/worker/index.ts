@@ -653,6 +653,13 @@ async function handleBillingNoticeEvent(
   }
 }
 
+/** The 7c replaces this; with the flag of the series off in every environment no row of this type is written. */
+function handleActivationNoticeEvent(): Promise<void> {
+  return Promise.reject(
+    new PermanentHandlerError("activation_consumer_not_ready")
+  );
+}
+
 /**
  * The handler of `organization.closure_notice` (ADR 0102, amended): a milestone of a closure arrived. Without the
  * privacy role there is nothing to read, and a retry would not change it.
@@ -752,6 +759,7 @@ async function consumeQueue(batch: QueueBatch, env: WorkerBindings) {
     return;
   }
   const handlers = {
+    "activation.notice": () => handleActivationNoticeEvent(),
     "billing.notice": (envelope: QueueEnvelope) =>
       handleBillingNoticeEvent(env, envelope),
     "billing.renewal_cancel_requested": (envelope: QueueEnvelope) =>

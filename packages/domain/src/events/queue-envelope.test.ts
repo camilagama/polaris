@@ -39,6 +39,7 @@ describe("the queues", () => {
     );
     expect(queueForEventType("organization.closure_notice")).toBe("default");
     expect(queueForEventType("billing.notice")).toBe("default");
+    expect(queueForEventType("activation.notice")).toBe("default");
   });
 });
 

@@ -3394,6 +3394,15 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gate (AC-8a.4, AC-8a.5, AC-8a.9) | Em revisão | `activation-candidates` estendido (só acrescenta casos): definição da função, executores papel a papel e ACL, privilégios de tabela e de coluna de todo runtime, logins de cobrança, tenant e autenticação recusados, idempotência, pessoa inexistente e nula, e a função de candidatos sem passo da pessoa nas duas lojas com a flag ligada e desligada. |
 | Fora deste PR | Pendente | A rota, o token, a página, o limite por IP e o gerador do link (8a-2); o `skipped: opted_out` do aviso já devido e a releitura da preferência no envio por função do papel da série (7c). |
 
+### Avisos de ativação: o evento do aviso no outbox (t1064; corte ativacao-fase1b, Item 7b, pré-requisito; migration 0130, número provisório)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Política (AC-7b.2) | Em revisão | `event_outbox_billing_runtime_insert_activation_notice`: `INSERT` de `polaris_billing_runtime`, só `activation.notice`, `pending`, sem tentativa, corpo só `{noticeId}` com uuid em minúsculas, chave `activation.notice:<noticeId>` e um `activation_notices` da mesma loja. Só `CREATE POLICY` (expand), com `lock_timeout` de 10 s; sem `GRANT` novo (as cinco colunas da 0101 bastam) e a política de `billing.notice` não muda. |
+| Cadeia do tipo (AC-7b.2) | Em revisão | `activation.notice` entra em `OUTBOX_EVENT_TYPES`, no corpo por tipo e na fila `default` do domínio; o Worker liga um handler que recusa como permanente (`activation_consumer_not_ready`, sem nova tentativa) até o consumidor do 7c existir; com a flag da série desligada nenhuma linha desse tipo nasce. |
+| Gate | Em revisão | `activation-candidates` estendido: grava com aviso da mesma loja; recusa aviso inexistente, de outra loja, corpo com campo a mais ou sem o aviso, ID que não é uuid ou em maiúsculas, chave errada, aviso de cobrança como de ativação e o inverso (cada recusa confere a mensagem de RLS). Status e tentativas diferentes são recusados pelo privilégio de coluna do papel (a política repete a condição, sem prova direta). `event-outbox` ganha a política na lista exata. |
+| Fora deste PR | Pendente | A varredura no Worker (7b, t1065) e o consumidor e o envio (7c). |
+
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
 
 | Item | Status | Observação |
