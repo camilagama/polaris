@@ -99,11 +99,38 @@ describe("ChartDataTable", () => {
       expect(html.match(/text-destructive/g)).toHaveLength(1);
     });
 
-    it("keeps the color while the values are hidden", () => {
+    it("loses the color while the values are hidden, in the table and in the cards", () => {
       hiddenValues.hidden = true;
       const html = render(true, negative);
       expect(html).not.toContain("5,00");
-      expect(html.match(/text-destructive/g)).toHaveLength(1);
+      expect(html).toContain("R$ ••••");
+      expect(html).not.toContain("text-destructive");
+      const stacked = renderToStaticMarkup(
+        <ChartDataTable
+          caption="Vendas por dia."
+          columns={[
+            ...COLUMNS,
+            { header: "Custos", numeric: true },
+            { header: "Resultado do dia", numeric: true },
+          ]}
+          id="numbers"
+          rows={[
+            {
+              cells: ["23/10/2026", "R$ 1,00", "R$ 2,00", "-R$ 5,00"],
+              key: "a",
+              negativeCells: [3],
+            },
+          ]}
+          visible
+        />
+      );
+      expect(stacked).toContain("@max-3xl:grid");
+      expect(stacked).not.toContain("text-destructive");
+    });
+
+    it("takes the color back when the values show again", () => {
+      hiddenValues.hidden = false;
+      expect(render(true, negative).match(/text-destructive/g)).toHaveLength(1);
     });
   });
 });

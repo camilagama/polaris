@@ -1,3 +1,4 @@
+import { useHiddenValues } from "@/lib/hidden-values";
 import { cn } from "@/lib/utils";
 import { MoneyText } from "../hidden-values";
 
@@ -11,7 +12,7 @@ interface ChartDataRow {
   /** One text per column, in the order of `columns`. */
   cells: readonly string[];
   key: string;
-  /** Indexes into `cells` of the amounts below zero; they are drawn in the destructive color, masked or not. */
+  /** Indexes into `cells` of the amounts below zero; they take the destructive color only while the values show: the color does not survive the mask, or it would tell a bystander which day lost money. */
   negativeCells?: readonly number[];
 }
 
@@ -74,6 +75,7 @@ export function ChartDataTable({
   rows,
   visible = false,
 }: ChartDataTableProps) {
+  const [hiddenValues] = useHiddenValues();
   const stacked = visible && columns.length > MAX_SIDE_BY_SIDE_COLUMNS;
   return (
     <div
@@ -132,7 +134,9 @@ export function ChartDataTable({
                     className={cn(
                       "px-2 py-2.5",
                       columns[index]?.numeric && "text-right tabular-nums",
-                      row.negativeCells?.includes(index) && "text-destructive",
+                      !hiddenValues &&
+                        row.negativeCells?.includes(index) &&
+                        "text-destructive",
                       stacked && STACK_CELL
                     )}
                     data-label={columns[index]?.header}
