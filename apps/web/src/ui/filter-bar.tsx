@@ -601,7 +601,7 @@ function RemoveButton({
 }
 
 interface PillProps {
-  field: FilterField;
+  field: EditableFilterField;
   /** Whether the editor of this pill is open. */
   isEditing: boolean;
   /** The animated layer, at the `full` level once loaded; null draws the pill still. */
@@ -615,6 +615,37 @@ interface PillProps {
   /** Absent on the pill of a field just chosen in the menu, which has no value yet. */
   rule: FilterRule | undefined;
   text: string;
+}
+
+/** The pill of a switch: its text alone (and the reason, when the connection it needs is missing), with only the X as a control. */
+function TogglePill({
+  field,
+  layer,
+  level,
+  onRemove,
+  text,
+}: {
+  field: ToggleFilterField;
+  layer: MotionLayer | null;
+  level: MotionLevel;
+  onRemove: (field: FilterField) => void;
+  text: string;
+}) {
+  const remove = useCallback(() => onRemove(field), [field, onRemove]);
+  const Frame = layer?.PillFrame ?? StillPillFrame;
+  return (
+    <Frame className={PILL_FRAME} motion={pillMotion(level)}>
+      <span className="flex min-w-0 items-center ps-3 pe-2 font-medium">
+        <span className="min-w-0 truncate">{text}</span>
+      </span>
+      {field.disabledReason ? (
+        <span className="flex shrink-0 items-center pe-2 text-muted-foreground text-xs">
+          {field.disabledReason}
+        </span>
+      ) : null}
+      <RemoveButton field={field} onRemove={remove} />
+    </Frame>
+  );
 }
 
 function FilterPill({
@@ -638,22 +669,6 @@ function FilterPill({
   );
   const remove = useCallback(() => onRemove(field), [field, onRemove]);
   const name = blocked ? lockedLabel(field, text) : editLabel(field, text);
-  const Frame = layer?.PillFrame ?? StillPillFrame;
-  if (field.type === "toggle") {
-    return (
-      <Frame className={PILL_FRAME} motion={pillMotion(level)}>
-        <span className="flex min-w-0 items-center ps-3 pe-2 font-medium">
-          <span className="min-w-0 truncate">{text}</span>
-        </span>
-        {field.disabledReason ? (
-          <span className="flex shrink-0 items-center pe-2 text-muted-foreground text-xs">
-            {field.disabledReason}
-          </span>
-        ) : null}
-        <RemoveButton field={field} onRemove={remove} />
-      </Frame>
-    );
-  }
   // the space keeps "Período 01/10 a 24/10" as the text of the button (the name holds it: WCAG 2.5.3)
   const content = (
     <>
@@ -676,6 +691,7 @@ function FilterPill({
     </>
   );
 
+  const Frame = layer?.PillFrame ?? StillPillFrame;
   // the row wraps, so `max-w-full` is the width of the screen: a pill with a reason is never wider than it, and it is
   // the value that gives way (it truncates) so the reason and the X stay in sight at 320 and 360 px
   return (
@@ -1027,16 +1043,27 @@ export function FilterBar({
         {/* one keyed list: the pill of a field just chosen and the same pill once it has a value are one element,
               so the editor's trigger (where the focus goes back) is not remounted; `AnimatePresence` does the same */}
         <PillList>
-          {pills.map(({ field, rule, text }) => (
-            <FilterPill
-              {...pillProps}
-              field={field}
-              isEditing={editing === field.id}
-              key={field.id}
-              rule={rule}
-              text={text}
-            />
-          ))}
+          {pills.map(({ field, rule, text }) =>
+            field.type === "toggle" ? (
+              <TogglePill
+                field={field}
+                key={field.id}
+                layer={layer}
+                level={level}
+                onRemove={remove}
+                text={text}
+              />
+            ) : (
+              <FilterPill
+                {...pillProps}
+                field={field}
+                isEditing={editing === field.id}
+                key={field.id}
+                rule={rule}
+                text={text}
+              />
+            )
+          )}
         </PillList>
 
         {showClearAll(shown.length) ? (
