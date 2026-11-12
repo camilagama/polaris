@@ -897,6 +897,13 @@
       "when": 1794464652882,
       "tag": "0130_outbox_do_aviso_da_serie",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1794482293406,
+      "tag": "0131_releitura_das_dicas",
+      "breakpoints": true
     }
   ]
 }
