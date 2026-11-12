@@ -334,6 +334,18 @@ export const alertSignals = [
     windowMinutes: 1440,
   },
   {
+    id: "checkout-pago-no-encerramento",
+    notify: "report",
+    severity: "warning",
+    source: {
+      events: ["billing_closure_paid_checkout_refund_pending"],
+    },
+    threshold: { atLeast: 1, kind: "count" },
+    title:
+      "Checkout aprovado e pago durante o descarte do encerramento (reembolso à mão)",
+    windowMinutes: 1440,
+  },
+  {
     id: "rede-de-reembolso-parada",
     notify: "wake",
     severity: "critical",
