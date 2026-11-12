@@ -181,6 +181,67 @@ export function withSuggestedPrices<
   };
 }
 
+export const KEPT_PRICE_NOTICE = "Preço cobrado mantido da variante anterior.";
+
+function hasText(value: string): boolean {
+  return value.trim() !== "";
+}
+
+/**
+ * Whether the prices on a line came from the operator: any filled price that is
+ * not exactly what the app wrote there. Without a record of what the app wrote
+ * (a restored draft, or a price typed since), every filled price counts as typed.
+ */
+function pricesTypedByHand(
+  item: { chargedUnitPrice: string; listedUnitPrice: string },
+  applied: PriceSuggestion | null
+): boolean {
+  return (
+    (hasText(item.chargedUnitPrice) &&
+      item.chargedUnitPrice !== applied?.chargedUnitPrice) ||
+    (hasText(item.listedUnitPrice) &&
+      item.listedUnitPrice !== applied?.listedUnitPrice)
+  );
+}
+
+export interface VariantChangePrices {
+  chargedUnitPrice: string;
+  /** True when typed prices stayed on a line whose variant changed. */
+  keptTyped: boolean;
+  listedUnitPrice: string;
+}
+
+/**
+ * The prices of a line whose variant was swapped for another. Prices the app
+ * wrote follow the new variant (last sale, else list price; empty when it has
+ * neither, so the previous variant's price is never charged by accident).
+ * Prices typed by the operator stay, both of them, never mixed with new ones.
+ */
+export function pricesForVariantChange(
+  item: { chargedUnitPrice: string; listedUnitPrice: string },
+  applied: PriceSuggestion | null,
+  next: PriceSuggestion | null,
+  typedMark: boolean
+): VariantChangePrices {
+  const filled =
+    hasText(item.chargedUnitPrice) || hasText(item.listedUnitPrice);
+  if (filled && (typedMark || pricesTypedByHand(item, applied))) {
+    return {
+      chargedUnitPrice: item.chargedUnitPrice,
+      keptTyped:
+        next === null ||
+        next.chargedUnitPrice !== item.chargedUnitPrice ||
+        next.listedUnitPrice !== item.listedUnitPrice,
+      listedUnitPrice: item.listedUnitPrice,
+    };
+  }
+  return {
+    chargedUnitPrice: next?.chargedUnitPrice ?? "",
+    keptTyped: false,
+    listedUnitPrice: next?.listedUnitPrice ?? "",
+  };
+}
+
 /**
  * The hint under the price fields while they still hold the suggested values.
  * Once either is edited the hint goes away: the operator's number rules.

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { PreferenceStorage } from "../lib/current-organization-model";
 import {
+  KEPT_PRICE_NOTICE,
   lastPricesKey,
   MAX_REMEMBERED_VARIANTS,
   mergeLastPrices,
   priceFieldText,
+  pricesForVariantChange,
   readLastPrices,
   suggestionHint,
   suggestPrices,
@@ -234,5 +236,155 @@ describe("price suggestions", () => {
     expect(
       suggestionHint(prices, { ...suggested, variantId: green })
     ).toBeNull();
+  });
+});
+
+describe("swapping the variant of a line", () => {
+  const prices = mergeLastPrices(
+    {},
+    [
+      { chargedUnitPrice: "49.90", listedUnitPrice: "49.90", variantId: blue },
+      { chargedUnitPrice: "11.00", listedUnitPrice: "12.50", variantId: green },
+    ],
+    "2026-10-13"
+  );
+  const applied = suggestPrices(prices, blue);
+  const next = suggestPrices(prices, green);
+
+  it("takes the new variant's prices when the app wrote the old ones", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "49,90", listedUnitPrice: "49,90" },
+        applied,
+        suggestPrices({}, green, "12.50"),
+        false
+      )
+    ).toEqual({
+      chargedUnitPrice: "12,50",
+      keptTyped: false,
+      listedUnitPrice: "12,50",
+    });
+  });
+
+  it("prefers the last sale of the new variant over its list price", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "49,90", listedUnitPrice: "49,90" },
+        applied,
+        suggestPrices(prices, green, "99.00"),
+        false
+      )
+    ).toEqual({
+      chargedUnitPrice: "11,00",
+      keptTyped: false,
+      listedUnitPrice: "12,50",
+    });
+  });
+
+  it("fills empty prices with the new variant's", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: " ", listedUnitPrice: "" },
+        null,
+        next,
+        false
+      )
+    ).toMatchObject({ chargedUnitPrice: "11,00", listedUnitPrice: "12,50" });
+  });
+
+  it("keeps both prices when the charged price was typed", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "45,00", listedUnitPrice: "49,90" },
+        applied,
+        next,
+        false
+      )
+    ).toEqual({
+      chargedUnitPrice: "45,00",
+      keptTyped: true,
+      listedUnitPrice: "49,90",
+    });
+  });
+
+  it("keeps both prices when only the list price was typed", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "49,90", listedUnitPrice: "55,00" },
+        applied,
+        next,
+        false
+      )
+    ).toEqual({
+      chargedUnitPrice: "49,90",
+      keptTyped: true,
+      listedUnitPrice: "55,00",
+    });
+  });
+
+  it("keeps typed prices even when the typed value equals the suggestion", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "49,90", listedUnitPrice: "49,90" },
+        applied,
+        next,
+        true
+      )
+    ).toMatchObject({
+      chargedUnitPrice: "49,90",
+      keptTyped: true,
+      listedUnitPrice: "49,90",
+    });
+  });
+
+  it("treats filled prices as typed when nothing records what the app wrote", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "49,90", listedUnitPrice: "49,90" },
+        null,
+        next,
+        false
+      )
+    ).toMatchObject({ chargedUnitPrice: "49,90", keptTyped: true });
+  });
+
+  it("does not warn when the typed prices already are the new variant's", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "11,00", listedUnitPrice: "12,50" },
+        applied,
+        next,
+        true
+      ).keptTyped
+    ).toBe(false);
+  });
+
+  it("empties the app's prices when the new variant has none, and keeps typed ones", () => {
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "49,90", listedUnitPrice: "49,90" },
+        applied,
+        null,
+        false
+      )
+    ).toEqual({ chargedUnitPrice: "", keptTyped: false, listedUnitPrice: "" });
+    expect(
+      pricesForVariantChange(
+        { chargedUnitPrice: "45,00", listedUnitPrice: "49,90" },
+        applied,
+        null,
+        false
+      )
+    ).toEqual({
+      chargedUnitPrice: "45,00",
+      keptTyped: true,
+      listedUnitPrice: "49,90",
+    });
+  });
+
+  it("words the notice for the line", () => {
+    expect(KEPT_PRICE_NOTICE).toBe(
+      "Preço cobrado mantido da variante anterior."
+    );
   });
 });

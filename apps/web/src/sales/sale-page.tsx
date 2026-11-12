@@ -50,7 +50,10 @@ import {
   writeLastPayment,
 } from "./last-payment-model";
 import {
+  KEPT_PRICE_NOTICE,
   mergeLastPrices,
+  type PriceSuggestion,
+  pricesForVariantChange,
   type RememberedPrices,
   readLastPrices,
   suggestionHint,
@@ -584,10 +587,35 @@ export function SalePage() {
       applySalePreset(withdrawSalePreset(current, previous, preset), preset)
     );
   }, [editForm, preset]);
+  const appliedPrices = useRef(new Map<string, PriceSuggestion>());
+  const typedPrices = useRef(new Set<string>());
+  const [keptPriceNotice, setKeptPriceNotice] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  const setKeptNotice = useCallback((draftId: string, kept: boolean) => {
+    setKeptPriceNotice((current) => {
+      if (current.has(draftId) === kept) {
+        return current;
+      }
+      const next = new Set(current);
+      if (kept) {
+        next.add(draftId);
+      } else {
+        next.delete(draftId);
+      }
+      return next;
+    });
+  }, []);
   const handleItemChange = useCallback(
-    (draftId: string, changes: Partial<ItemDraft>) =>
-      editForm((current) => updateItem(current, draftId, changes)),
-    [editForm]
+    (draftId: string, changes: Partial<ItemDraft>) => {
+      if ("chargedUnitPrice" in changes || "listedUnitPrice" in changes) {
+        typedPrices.current.add(draftId);
+        appliedPrices.current.delete(draftId);
+        setKeptNotice(draftId, false);
+      }
+      editForm((current) => updateItem(current, draftId, changes));
+    },
+    [editForm, setKeptNotice]
   );
   const handlePickVariant = useCallback(
     (draftId: string, entry: InventoryBalanceEntryReadModel) => {
@@ -597,12 +625,44 @@ export function SalePage() {
         entry.variantId,
         entry.listPrice
       );
-      editForm((current) => {
-        const item = current.items.find(
-          (candidate) => candidate.draftId === draftId
+      const item = form.items.find(
+        (candidate) => candidate.draftId === draftId
+      );
+      const swapping =
+        item !== undefined &&
+        item.variantId !== "" &&
+        item.variantId !== entry.variantId;
+      let prices: Pick<
+        ItemDraft,
+        "chargedUnitPrice" | "listedUnitPrice"
+      > | null = null;
+      if (item && swapping) {
+        const swapped = pricesForVariantChange(
+          item,
+          appliedPrices.current.get(draftId) ?? null,
+          suggestion,
+          typedPrices.current.has(draftId)
         );
-        const prices = item ? withSuggestedPrices(item, suggestion) : null;
-        return updateItem(current, draftId, {
+        prices = swapped;
+        setKeptNotice(draftId, swapped.keptTyped);
+        if (swapped.keptTyped) {
+          typedPrices.current.add(draftId);
+          appliedPrices.current.delete(draftId);
+        } else {
+          typedPrices.current.delete(draftId);
+          appliedPrices.current.set(draftId, swapped);
+        }
+      } else if (item) {
+        const untouched =
+          item.chargedUnitPrice.trim() === "" &&
+          item.listedUnitPrice.trim() === "";
+        prices = withSuggestedPrices(item, suggestion);
+        if (untouched && suggestion) {
+          appliedPrices.current.set(draftId, suggestion);
+        }
+      }
+      editForm((current) =>
+        updateItem(current, draftId, {
           ...itemChangesForEntry(entry),
           ...(prices
             ? {
@@ -610,13 +670,13 @@ export function SalePage() {
                 listedUnitPrice: prices.listedUnitPrice,
               }
             : {}),
-        });
-      });
+        })
+      );
       focusLater(() =>
         document.getElementById(`sale-item-${draftId}-quantity`)?.focus()
       );
     },
-    [editForm, lastPrices, seedStock]
+    [editForm, form.items, lastPrices, seedStock, setKeptNotice]
   );
   const handleAddItem = useCallback(
     () => editForm((current) => addItem(current, newId())),
@@ -1037,7 +1097,11 @@ export function SalePage() {
                     onRemove={handleRemoveItem}
                     organizationId={organizationId}
                     otherLinesQuantity={otherLinesQuantity(form.items, item)}
-                    priceHint={suggestionHint(lastPrices, item)}
+                    priceHint={
+                      keptPriceNotice.has(item.draftId)
+                        ? KEPT_PRICE_NOTICE
+                        : suggestionHint(lastPrices, item)
+                    }
                     stock={catalog.stock}
                     stockWarning={evaluation.stockWarnings[item.draftId]}
                     summaryLine={summaryLines.get(item.draftId)}
