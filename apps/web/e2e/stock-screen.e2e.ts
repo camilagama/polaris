@@ -381,6 +381,27 @@ test("o nome da linha é um link para o produto, na variante quando a linha é d
   await expect(group.getByRole("link")).toHaveCount(0);
 });
 
+test("com um painel aberto o nome de nenhuma linha leva ao produto, e fechado o link volta", async ({
+  page,
+}) => {
+  await openStockLab(page, "claro");
+  const productLinks = page
+    .getByRole("list", { name: "Saldos por variante" })
+    .locator('a[href^="/products"]');
+  await expect(productLinks.first()).toBeVisible();
+  const withLinks = await productLinks.count();
+  await page.getByRole("button", { name: RECEIVE_JEANS }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toBeVisible();
+  await expect(productLinks).toHaveCount(0);
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receber estoque" })
+  ).toHaveCount(0);
+  await expect(productLinks).toHaveCount(withLinks);
+});
+
 test("?busca=<nome>&arquivados=1 abre o Estoque com a busca à vista e os arquivados incluídos", async ({
   page,
 }) => {

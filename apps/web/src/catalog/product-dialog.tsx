@@ -500,7 +500,7 @@ function SeeStockLink({
   );
   return (
     <a
-      className={cn(buttonVariants({ variant: "link" }), "md:mr-auto")}
+      className={cn(buttonVariants({ variant: "link" }), "h-ctl-md md:mr-auto")}
       href={href}
       onClick={handleClick}
     >

@@ -146,6 +146,7 @@ function StockItem({
   row,
 }: StockItemProps) {
   const thumbs = useMediaThumbsEnabled();
+  const rowLocked = panelOpen || otherPanelOpen;
   return (
     <li
       className={cn(
@@ -169,7 +170,7 @@ function StockItem({
           ) : null}
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium [overflow-wrap:anywhere]">
-              {canOpenProduct ? (
+              {canOpenProduct && !rowLocked ? (
                 <a
                   aria-label={`${row.productName}, ${row.variantText}. Abrir o produto`}
                   className={PRODUCT_NAME_LINK}
@@ -221,7 +222,7 @@ function StockItem({
           </Figure>
         </dl>
         <RowActions
-          disabled={panelOpen || otherPanelOpen}
+          disabled={rowLocked}
           onOpen={onOpen}
           row={row}
         />
