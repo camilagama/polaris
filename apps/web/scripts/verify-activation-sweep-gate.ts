@@ -58,6 +58,7 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const CAP = 60;
+const FAR_DAYS = 30;
 const CAP_LOCK = "activation_notice_candidates";
 const CASE_LABEL = /^AC-7b\.\d(?: and AC-7b\.\d)?/;
 
@@ -572,10 +573,13 @@ async function run() {
     await sweep(false, tomorrow);
     assert.equal((await instant())?.enabled_since, null);
 
-    // 5. AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at. Three days
-    // ahead, 58 notices are recorded one second before midnight of São Paulo and 5 one second after it: only the 58
-    // are the day of the sweep, so two of three owed stores are recorded, and the next morning the third is
-    const dayX = at(ten, 3 * DAY);
+    // 5. AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at. On a day
+    // far ahead, 58 notices are recorded one second before midnight of São Paulo and 5 one second after it: only the 58
+    // are the day of the sweep, so two of three owed stores are recorded, and the next morning the third is.
+    // The day is past the 14 days a store stays a candidate: the stores the other gates left (created at the real hour
+    // the gate runs, whether before or after `ten`) are no longer candidates there, so they cannot be recorded onto
+    // the day's cap ahead of the case's own. A day a few days ahead would have them due or not by the hour of the run.
+    const dayX = at(ten, FAR_DAYS * DAY);
     const midnight = (
       await owner.pool.query<{ midnight: Date }>(
         `SELECT (pg_catalog.date_trunc('day', $1::timestamptz AT TIME ZONE '${ZONE}') + interval '1 day') AT TIME ZONE '${ZONE}' AS midnight`,
@@ -586,6 +590,35 @@ async function run() {
     const beforeMidnight = at(midnight, -1000);
     const afterMidnight = at(midnight, 1000);
     await sweep(true, at(ten, -5 * DAY));
+    // 64 stores as the other gates leave them, on both sides of 10:00 of São Paulo, whose a1 is not yet recorded:
+    // a day closer to the case they would all be due and fill the cap
+    await owner.pool.query(
+      `WITH leftover AS (
+         SELECT n, pg_catalog.gen_random_uuid()::text AS user_id, pg_catalog.gen_random_uuid()::text AS organization_id,
+                $1::timestamptz + (n - 32) * interval '1 minute' AS created_at
+           FROM pg_catalog.generate_series(1, 64) AS n
+       ), users AS (
+         INSERT INTO public."user" (id, name, email, email_verified)
+         SELECT user_id, 'Pessoa de sobra do gate da varredura', 'activation-sweep-' || user_id || '@example.invalid', true
+           FROM leftover
+       ), stores AS (
+         INSERT INTO public.organizations (id, name, timezone, status, created_at)
+         SELECT organization_id, 'Loja de sobra do gate da varredura', $2, 'active', created_at FROM leftover
+       )
+       INSERT INTO public.memberships (organization_id, user_id, role, status, created_at)
+       SELECT organization_id, user_id, 'owner', 'active', created_at FROM leftover`,
+      [ten, ZONE]
+    );
+    const leftoverCandidates = await owner.pool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM public.organizations
+        WHERE name = 'Loja de sobra do gate da varredura' AND created_at > $1::timestamptz - interval '14 days'`,
+      [dayX]
+    );
+    assert.equal(
+      Number(leftoverCandidates.rows[0]?.n),
+      0,
+      "the leftover stores are out of the 14 days of the case's day"
+    );
     await settle(dayX);
     const owedAcross = [
       await newStore(at(dayX, -2 * DAY + MINUTE)),
@@ -642,7 +675,7 @@ async function run() {
       await assertEvents(store, "the notices across midnight");
     }
     tests.push(
-      "AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at: three days ahead, 58 notices recorded one second before midnight of São Paulo and 5 one second after it, a sweep at 10:00 records two of three owed stores (the 5 of the next day are not counted) and the day stays at 60, the sweep of the next morning records the third, and what a sweep records carries the clock of its case"
+      "AC-7b.4: the count of the cap follows the day of the sweep's clock, not the hour the gate runs at: 30 days ahead (past the 14 days of a store, with 64 leftover stores created around 10:00 that cannot fill it), 58 notices recorded one second before midnight of São Paulo and 5 one second after it, a sweep at 10:00 records two of three owed stores (the 5 of the next day are not counted) and the day stays at 60, the sweep of the next morning records the third, and what a sweep records carries the clock of its case"
     );
 
     // the connection check and the five cases: one that did not run would leave the gate green with less proof
