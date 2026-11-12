@@ -3394,6 +3394,17 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gate (AC-8a.4, AC-8a.5, AC-8a.9) | Em revisão | `activation-candidates` estendido (só acrescenta casos): definição da função, executores papel a papel e ACL, privilégios de tabela e de coluna de todo runtime, logins de cobrança, tenant e autenticação recusados, idempotência, pessoa inexistente e nula, e a função de candidatos sem passo da pessoa nas duas lojas com a flag ligada e desligada. |
 | Fora deste PR | Pendente | A rota, o token, a página, o limite por IP e o gerador do link (8a-2); o `skipped: opted_out` do aviso já devido e a releitura da preferência no envio por função do papel da série (7c). |
 
+### Avisos de ativação: o descadastro, parte do Worker (t1069; corte ativacao-fase1b, Item 8a-2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Token (AC-8a.2) | Em revisão | `server/tips-stop/unsubscribe-token.ts`: `<ID em base64url>.<HMAC-SHA256>` sobre `polaris/email-tips-stop/v1` e o ID, sem data; `UNSUBSCRIBE_TOKEN_SECRET` (e `_PREVIOUS_` na rotação), recusado se curto ou igual ao `BETTER_AUTH_SECRET`; adulterado, de outra finalidade ou de outro segredo é recusado. |
+| Rota (AC-8a.1, AC-8a.3, AC-8a.10) | Em revisão | `/api/parar-dicas?t=`: limite por HMAC do IP (`TIPS_STOP_RATE_LIMIT`, 20/min) antes de tudo; token conferido antes de qualquer conexão; GET e HEAD só perguntam; POST (formulário ou `List-Unsubscribe=One-Click`, corpo não lido) grava por `activation_record_opt_out` na conexão de cobrança e responde igual exista ou não a pessoa. Única exceção da guarda de origem (`ORIGIN_CHECK_EXEMPT_PATHS`). |
+| Página (AC-8a.6, AC-8a.7) | Em revisão | HTML do Worker sem script nem link externo, no molde do `EntryScreen`, tema do sistema; perfil `form-document` de `@polaris/http-security` (estilo por hash, `form-action 'self'`, `no-referrer`, `no-store`); tokens gerados de `theme.css`. |
+| Log (AC-8a.8) | Em revisão | Uma linha `tips_stop_answered` com método, `reason` e `outcome`; nunca token, query, pessoa ou endereço. |
+| Gerador do link | Em revisão | `unsubscribeLink(baseURL, token)` e `createUnsubscribeToken`, para o consumidor (7c). |
+| Fora deste PR | Pendente | O cabeçalho `List-Unsubscribe` no e-mail e o consumidor (7c); o Switch em Seus dados (8b); criar o segredo em staging e produção (responsável). |
+
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
 
 | Item | Status | Observação |

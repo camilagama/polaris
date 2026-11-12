@@ -193,7 +193,17 @@ export interface WorkerBindings {
   SYNC_PAYLOAD_HASH_PREVIOUS_SECRET?: string;
   /** The key of the HMAC that identifies an offline command's content (ADR 0079); at least 32 bytes. */
   SYNC_PAYLOAD_HASH_SECRET?: string;
+  /** The limit of `/api/parar-dicas` per address (20 per minute), GET and POST: the page that stops the tips e-mails. */
+  TIPS_STOP_RATE_LIMIT?: RateLimitBinding;
   TURNSTILE_SECRET_KEY?: string;
+  /**
+   * The key of the HMAC of the links that stop the tips e-mails (ADR 0106, D8): a Worker secret of each environment,
+   * 32 characters or more, never the `BETTER_AUTH_SECRET` nor the one of the suppression. Without it the page answers
+   * 503 and no link is made.
+   */
+  UNSUBSCRIBE_TOKEN_SECRET?: string;
+  /** The secret before a rotation of `UNSUBSCRIBE_TOKEN_SECRET`: its links still open until it is removed. */
+  UNSUBSCRIBE_TOKEN_PREVIOUS_SECRET?: string;
   /** The public key of the Turnstile widget of this environment (not a secret). */
   TURNSTILE_SITE_KEY?: string;
   /** Woovi AppID (secret): the sandbox one in staging, the production one only in production (ADR 0101). */
