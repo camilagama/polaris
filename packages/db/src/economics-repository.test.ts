@@ -310,3 +310,78 @@ describe("readPeriodSummary: one entry per date up to 62 days, per month above",
     ).rejects.toBeInstanceOf(InvalidSaleFactError);
   });
 });
+
+describe("readPeriodSummary: a capa de cada produto do ranking", () => {
+  const period = { from: "2026-10-01", to: "2026-10-31" };
+  const FIRST = "0199c2d0-0000-7000-8000-0000000000b1";
+  const SECOND = "0199c2d0-0000-7000-8000-0000000000b2";
+  const COVER = "0199c2d0-0000-7000-8000-0000000000c1";
+
+  function withCovers(covers: Record<string, string>) {
+    const ranking = JSON.stringify(
+      [FIRST, SECOND].map((productId, index) => ({
+        deleted: false,
+        name: `Produto ${index + 1}`,
+        netCents: "1000",
+        productId,
+        quantity: 2,
+      }))
+    );
+    const rows = dayRows(period.from, 31).map((row, index) => ({
+      ...row,
+      ...(index === 0 ? { top_products: ranking } : {}),
+    }));
+    const asked: unknown[] = [];
+    const base = answering(rows).transaction as unknown as Record<
+      string,
+      unknown
+    >;
+    const query = {
+      from: () => query,
+      orderBy: () =>
+        Promise.resolve(
+          Object.entries(covers).map(([productId, coverAssetId]) => ({
+            coverAssetId,
+            productId,
+          }))
+        ),
+      where: (condition: unknown) => {
+        asked.push(condition);
+        return query;
+      },
+    };
+    const transaction = {
+      ...base,
+      selectDistinctOn: () => query,
+    } as unknown as TenantRequestTransaction;
+    return { asked, transaction };
+  }
+
+  it("com a opção covers, cada entrada diz a capa ou null, com uma consulta a mais", async () => {
+    const { asked, transaction } = withCovers({ [FIRST]: COVER });
+    const read = await readPeriodSummary(transaction, identity, period, {
+      covers: true,
+      topProducts: 5,
+    });
+    expect(asked).toHaveLength(1);
+    expect(read.topProducts?.map((entry) => entry.coverAssetId)).toEqual([
+      COVER,
+      null,
+    ]);
+  });
+
+  it("sem a opção, a resposta não tem o campo e nenhuma consulta de capa sai", async () => {
+    const { asked, transaction } = withCovers({ [FIRST]: COVER });
+    const read = await readPeriodSummary(transaction, identity, period, {
+      topProducts: 5,
+    });
+    expect(asked).toHaveLength(0);
+    expect(read.topProducts?.[0]).not.toHaveProperty("coverAssetId");
+  });
+
+  it("sem ranking pedido, covers não faz consulta nenhuma", async () => {
+    const { asked, transaction } = withCovers({ [FIRST]: COVER });
+    await readPeriodSummary(transaction, identity, period, { covers: true });
+    expect(asked).toHaveLength(0);
+  });
+});

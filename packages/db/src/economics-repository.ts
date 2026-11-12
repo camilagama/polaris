@@ -23,6 +23,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
+import { readProductCovers } from "./product-cover";
 import { expenses } from "./schema/expense";
 import { saleAdjustments, saleItems, salePayments, sales } from "./schema/sale";
 import { saleCancellations } from "./schema/sale-cancellation";
@@ -457,6 +458,8 @@ export class InvalidTopProductsError extends Error {
 }
 
 export interface TopProduct extends ProductSales {
+  /** The product's cover (its image of lowest position), null without one; only with the option `covers`. */
+  coverAssetId?: string | null;
   /** The product was deleted after it sold: shown without a link. */
   deleted: boolean;
   /** The product's current name. */
@@ -1124,6 +1127,8 @@ export async function readPeriodSummary(
   options: {
     /** The instant whose date in the store's time zone is "today" for a monthly series; now when absent. */
     asOf?: string | undefined;
+    /** With a ranking, reads the cover of the ranked products in one more indexed query of the same transaction. */
+    covers?: boolean | undefined;
     /** One entry per date or per month; by the length of the period (`MONTHLY_SERIES_ABOVE_DAYS`) when absent. */
     granularity?: "day" | "month" | undefined;
     topProducts?: number | undefined;
@@ -1168,11 +1173,23 @@ export async function readPeriodSummary(
     return { ...shape, reads: { days: rows.length, products: 0 }, result };
   }
   const ranked = rankedOf(first?.top_products);
+  const covers = options.covers
+    ? await readProductCovers(
+        transaction,
+        identity.organizationId,
+        ranked.map((entry) => entry.productId)
+      )
+    : null;
   return {
     ...shape,
     reads: { days: rows.length, products: ranked.length },
     result,
-    topProducts: ranked,
+    topProducts: covers
+      ? ranked.map((entry) => ({
+          ...entry,
+          coverAssetId: covers.get(entry.productId) ?? null,
+        }))
+      : ranked,
   };
 }
 

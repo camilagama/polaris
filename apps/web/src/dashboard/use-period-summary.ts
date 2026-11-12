@@ -21,6 +21,7 @@ import {
   isPeriodSummary,
   readPeriodSummaryCache,
   type StoredDay,
+  TOP_PRODUCTS,
   type StoredPeriodSummary,
   writePeriodSummaryCache,
 } from "../lib/period-summary-cache";
@@ -207,7 +208,7 @@ export function usePeriodSummary(
               organizationId,
               to,
               // the same shape the Início keeps under the same key: the last write never loses the ranking (§ 7.2)
-              topProducts: 3,
+              topProducts: TOP_PRODUCTS,
             },
             { signal }
           ),
