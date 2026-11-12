@@ -44,8 +44,9 @@ const MAX_SIDE_BY_SIDE_COLUMNS = 3;
 
 const align = (numeric: boolean | undefined) => numeric && "text-right";
 
-/* one pixel tall and clipped, as `sr-only` is, but as wide as the page instead of one pixel: the table inside keeps
-   its columns and its text wraps, so nothing in it is wider than the screen; it is out of the flow, so it adds no gap */
+/* one pixel tall and clipped, as `sr-only` is, but as wide as the clip itself (`w-full`) instead of one pixel: the table
+   inside keeps its columns and its text wraps inside the cell, so nothing in it is wider than the clip; it is out of the
+   flow, so it adds no gap */
 const HIDDEN =
   "absolute left-0 h-px w-full overflow-hidden [clip-path:inset(50%)]";
 
