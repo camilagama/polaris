@@ -523,6 +523,14 @@ async function run() {
     await sweep(false, tomorrow);
     assert.equal((await instant())?.enabled_since, null);
 
+    // the connection check and the four cases: one that did not run would leave the gate green with less proof
+    assert.equal(tests.length, 5, "every case of the gate ran");
+    const proven = tests
+      .map((test) => test.match(/^AC-7b\.\d(?: and AC-7b\.\d)?/)?.[0])
+      .filter(Boolean);
+    console.log(
+      `gate-note: ${tests.length} cases passed (${proven.join(", ")})`
+    );
     console.log(
       JSON.stringify(
         {
