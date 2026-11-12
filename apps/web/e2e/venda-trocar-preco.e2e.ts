@@ -105,6 +105,26 @@ test("trocar a variante com o preço cobrado editado mantém os dois preços e a
   await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
 });
 
+test("trocar duas vezes sem editar segue a variante de cada vez", async ({
+  page,
+}) => {
+  const item = await openSale(page);
+  await swapToRed(page, item);
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("10,00");
+  await item
+    .getByRole("button", {
+      name: "Trocar variante de Camiseta do laboratório · Vermelha",
+    })
+    .click();
+  await item
+    .getByRole("combobox", { name: "Produto ou variante" })
+    .fill("camiseta azul");
+  await page.getByRole("option", { name: AZUL }).click();
+  await expect(item.getByLabel("Preço cobrado")).toHaveValue("49,90");
+  await expect(item.getByLabel("Preço de tabela")).toHaveValue("49,90");
+  await expect(item.getByText(KEPT_NOTICE)).toHaveCount(0);
+});
+
 test("trocar com só o preço de tabela editado também mantém os dois", async ({
   page,
 }) => {

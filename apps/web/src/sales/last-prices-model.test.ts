@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PreferenceStorage } from "../lib/current-organization-model";
 import {
-  KEPT_PRICE_NOTICE,
   lastPricesKey,
   MAX_REMEMBERED_VARIANTS,
   mergeLastPrices,
@@ -380,11 +379,5 @@ describe("swapping the variant of a line", () => {
       keptTyped: true,
       listedUnitPrice: "49,90",
     });
-  });
-
-  it("words the notice for the line", () => {
-    expect(KEPT_PRICE_NOTICE).toBe(
-      "Preço cobrado mantido da variante anterior."
-    );
   });
 });
