@@ -4,21 +4,14 @@ import type {
 } from "@polaris/db/billing-store";
 import { logger } from "@polaris/observability/logger";
 import { describeError } from "@polaris/observability/wide-event";
+import type { WorkerBindings } from "../environment";
 
 /** The fixed batch of one hourly sweep (ADR 0106, D5): `truncated` says that more wait for the next hour. */
 export const ACTIVATION_SWEEP_BATCH = 50;
 
-export interface ActivationSweepBindings {
-  /**
-   * `true` turns on the activation series (ADR 0106, D6): the hourly sweep records the tips owed and their outbox
-   * events. Anything else (and absent) leaves it off, and then the sweep only clears the instant the switch was seen
-   * on, so switching it on later never sends what piled up. Off in every environment until the user turns it on.
-   */
-  ACTIVATION_EMAILS_ENABLED?: string;
-}
-
+/** Only the exact text `true` turns the series on (`ACTIVATION_EMAILS_ENABLED`): the sweep and the consumer alike. */
 export function activationEmailsEnabled(
-  bindings: ActivationSweepBindings
+  bindings: Pick<WorkerBindings, "ACTIVATION_EMAILS_ENABLED">
 ): boolean {
   return bindings.ACTIVATION_EMAILS_ENABLED === "true";
 }
@@ -31,7 +24,7 @@ export function activationEmailsEnabled(
  * incomplete with the error's code.
  */
 export async function runActivationSweep(
-  bindings: ActivationSweepBindings,
+  bindings: Pick<WorkerBindings, "ACTIVATION_EMAILS_ENABLED">,
   store: Pick<BillingStore, "sweepActivationSeries">,
   now: Date = new Date()
 ): Promise<ActivationSweepReport> {

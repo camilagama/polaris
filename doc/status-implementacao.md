@@ -3444,6 +3444,18 @@ Origem: achado B do Diego no Pixel 6 (28/10): a venda montada em Vender sumia ao
 | Gate (AC-7c.13) | Em revisão | `activation-candidates` estendido: privilégios e ACL da função, leitores exatos de `organizations.name`, lista exata do papel, uma loja por motivo com paridade contra os candidatos (o a1 de loja que já tem produto vira `state_changed`), a ordem dos motivos, os nulos e o limite do relógio. |
 | Fora deste PR | Pendente | O consumidor que chama a função (7c-2); os modelos (7c-1); `series_stopped` nas duas funções (9a). |
 
+### Avisos de ativação: o consumidor das dicas (t1089; corte ativacao-fase1b, Item 7c-2; sem migration)
+
+| Item | Estado | Detalhe |
+| --- | --- | --- |
+| Consumidor (AC-7c.1, lado Worker) | Em revisão | `server/activation/notice-consumer.ts` troca o `activation_consumer_not_ready`: a flag primeiro, sem leitura (`switched_off`); `claim` e `activation_notice_still_owed` pelo runtime de cobrança (`packages/db/src/activation-notice-store.ts`); configuração; 23 h desde a 1ª tentativa; 08:00–20:00 de São Paulo (`outside_send_hours`); endereço só por `activation_notice_recipient` (`packages/db/src/activation-notice-recipient.ts`); supressão pelo HMAC do endereço normalizado; o primeiro motivo que vale é o gravado. |
+| Freio antes do 9a | Em revisão | `STOP_ENFORCED = false` em `packages/domain/src/activation/notices.ts`: com a flag ligada e tudo configurado, o aviso sai `email_not_configured` e nada é enviado; o 9a a vira `true`. |
+| Configuração (AC-7c.3, P-5, P-6) | Em revisão | `ACTIVATION_EMAIL_FROM` (separado do `AUTH_EMAIL_FROM`), Reply-To `BILLING_SUPPORT_EMAIL` (sem ele nada sai), `ACTIVATION_SUPPRESSION_HMAC_SECRET` e `_PREVIOUS` (32+ caracteres, recusados se iguais a outro segredo do Worker; `PREVIOUS` inválido falha fechado), segredo do token do 8a. Mensagem do HMAC: `activation-suppression:v1:` + endereço normalizado (`normalizeActivationAddress`, função única do domínio). Nada em `wrangler.jsonc` (fase 2). |
+| Envio (AC-7c.8, AC-7c.9) | Em revisão | Chave do Resend `activation-notice/<id>`; `List-Unsubscribe` e `List-Unsubscribe-Post` passados ao sender; 5xx, rede e 409 `concurrent_idempotent_requests` lançam; 409 `invalid_idempotent_request` marca `sent`; 4xx de endereço marca `failed` (`email_rejected`). |
+| Flag | Em revisão | `ACTIVATION_EMAILS_ENABLED` passa para `WorkerBindings`; `runBillingJobs(env: WorkerBindings)`; `activationEmailsEnabled` única leitura, usada pela varredura e pelo consumidor. |
+| Provas | Em revisão | `notice-consumer.test.ts` da série (sender que reprova, um caso por motivo, flag desligada sem leitura, log sem `@`/`R$`/loja, bordas do horário, 409/5xx/4xx), `activation-notice-store.test.ts`, `notices.test.ts` do domínio, `worker/index.test.ts`; `billing/notice-consumer.test.ts` sem diff (AC-7c.10). |
+| Fora deste PR | Pendente | A parada por reclamação, a escrita da supressão e o re-chaveamento (9a); o cartão (8b); o remetente e os segredos no `wrangler.jsonc` e no Worker (fase 2). |
+
 ### UI de 11/11: Mais vendidos com cinco itens e a miniatura (t1038; sem migration)
 
 | Item | Status | Observação |
